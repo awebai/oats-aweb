@@ -20,7 +20,7 @@ To update, check out the named upstream repository at the intended reviewed comm
 ```bash
 node scripts/sync-vendored-skills.mjs --source /path/to/aweb
 npm test
-git diff -- capabilities/oas-aweb/skills
+git diff -- capabilities/oats-aweb/skills
 ```
 
 The sync command refuses a checkout whose `HEAD` differs from its pinned commit. Review the complete generated diff, upstream license, and triggering descriptions before changing the recorded version/ref. Runtime acquisition never fetches these resources.

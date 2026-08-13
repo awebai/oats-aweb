@@ -37,7 +37,7 @@ write it to a temp file and use `--body-file` — inline `--body` shell
 escaping is a recurring failure.
 
 Aliases are instance names (e.g. `dev-coordinator-1`). Discovery:
-`oas status --team` lists this machine's live instances; `oas aweb roster`
+`oats status --team` lists this machine's live instances; `oats aweb roster`
 lists the aweb team across machines.
 
 **Never sleep, poll, or busy-wait for another agent's reply.** Send your
@@ -47,7 +47,7 @@ startup). A `sleep N; aw mail inbox` loop burns tokens, delays the reply,
 and adds nothing. An empty `aw mail inbox` means no UNREAD mail — not that
 messages were lost.
 
-If messaging fails or your identity is missing, `oas aweb setup` diagnoses
+If messaging fails or your identity is missing, `oats aweb setup` diagnoses
 the deployment's aweb state and prints the next step (report it to your
 human rather than re-onboarding yourself).
 

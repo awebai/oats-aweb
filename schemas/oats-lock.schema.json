@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oas.dev/schemas/oas-lock.schema.json",
-  "title": "OAS lockfile (oas-lock.json)",
+  "$id": "https://oats.dev/schemas/oats-lock.schema.json",
+  "title": "OATS lockfile (oats-lock.json)",
   "description": "Scope-local lockfile. lockfileVersion 2 locks whole distribution packages (exact commit + integrity); lockfileVersion 1 is the legacy per-capability marketplace lock, still readable for migration only. A lock never advances silently on restore.",
   "type": "object",
   "required": [
@@ -41,7 +41,7 @@
                 "pattern": "^(git:|path:|catalog:).+"
               },
               "version": {
-                "description": "Version from the locked oas-package.json.",
+                "description": "Version from the locked oats-package.json.",
                 "type": "string",
                 "minLength": 1
               },
@@ -61,7 +61,7 @@
                 "pattern": "^sha256-[0-9a-f]{64}$"
               },
               "capabilities": {
-                "description": "Capability IDs the locked manifest exports. Verification metadata only — must match the locked oas-package.json on restore.",
+                "description": "Capability IDs the locked manifest exports. Verification metadata only — must match the locked oats-package.json on restore.",
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -92,7 +92,7 @@
           }
         },
         "capabilities": {
-          "description": "OPTIONAL legacy v1 capability-lock residue retained during staged migration (entries `oas migrate` could not yet map to packages). Same entry shape as lockfileVersion 1; doctor flags them as pending migration.",
+          "description": "OPTIONAL legacy v1 capability-lock residue retained during staged migration (entries `oats migrate` could not yet map to packages). Same entry shape as lockfileVersion 1; doctor flags them as pending migration.",
           "type": "object",
           "additionalProperties": {
             "type": "object",

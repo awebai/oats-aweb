@@ -7,12 +7,12 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const ROOT = join(REPO, "oas-package");
-const CAPABILITY = join(ROOT, "capabilities", "oas-aweb");
-const HOOK = join(CAPABILITY, "bin", "oas-aweb.mjs");
+const ROOT = join(REPO, "oats-package");
+const CAPABILITY = join(ROOT, "capabilities", "oats-aweb");
+const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
 
 function tempDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), "oas-aweb-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "oats-aweb-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -42,7 +42,7 @@ function run(args = [], env = {}, cwd = ROOT) {
 }
 
 test("manifest resolves the three vendored Agent Skills by expected names", () => {
-  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oas.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const expected = ["aweb-messaging", "aweb-team-membership", "aweb-identity"];
   assert.deepEqual(manifest.skills, expected.map((name) => `skills/${name}`));
   for (const name of expected) {
@@ -53,7 +53,7 @@ test("manifest resolves the three vendored Agent Skills by expected names", () =
 });
 
 test("manifest declares the aligned requirements and a required spawn hook", () => {
-  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oas.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   // Host CLI requirement plus the two runtime-scoped channel requirements —
   // pi (npm) and Claude (marketplace plugin) — never installed at spawn.
   const aw = manifest.requires.find((r) => r.command === "aw");
@@ -104,7 +104,7 @@ test("vendored skills carry exact upstream provenance and MIT license", () => {
 });
 
 test("declared commands and hooks have no npm package imports", () => {
-  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oas.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const entrypointOf = (spec) => (typeof spec === "string" ? spec : spec.command);
   const commands = [
     ...Object.values(manifest.commands || {}),
@@ -131,9 +131,9 @@ test("spawn is fatal when aw is absent (required-hook contract)", async (t) => {
   const home = tempDir(t);
   const result = await run(["spawn"], {
     PATH: tempDir(t),
-    OAS_EVENT: "spawn",
-    OAS_HOME: home,
-    OAS_INSTANCE: "developer-api-1",
+    OATS_EVENT: "spawn",
+    OATS_HOME: home,
+    OATS_INSTANCE: "developer-api-1",
   }, home);
   // A required spawn hook that cannot mint an identity must fail the spawn:
   // an instance that believes it can be woken by mail and cannot is worse than
@@ -150,12 +150,12 @@ test("authority discovery does not walk above the workspace", async (t) => {
   mkdirSync(home, { recursive: true });
   const result = await run(["spawn"], {
     PATH: fakePath(t),
-    OAS_EVENT: "spawn",
-    OAS_HOME: home,
-    OAS_INSTANCE: "example-1",
-    OAS_CONTEXT: workspace,
-    OAS_WORKSPACE: workspace,
-    OAS_TEAM_SCOPE: workspace,
+    OATS_EVENT: "spawn",
+    OATS_HOME: home,
+    OATS_INSTANCE: "example-1",
+    OATS_CONTEXT: workspace,
+    OATS_WORKSPACE: workspace,
+    OATS_TEAM_SCOPE: workspace,
   }, home);
   // Bounded discovery finds no `.aw` within the workspace, so no identity can be
   // minted — fatal for a required spawn hook.
@@ -168,10 +168,10 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
   mkdirSync(join(root, ".aw"));
   const result = await run(["roster"], {
     PATH: fakePath(t, `printf '%s\\n' '{"team_id":"default:test","members":[]}'`),
-    OAS_EVENT: "roster",
-    OAS_HOME: root,
-    OAS_TEAM_SCOPE: root,
-    OAS_TEAM_ID: "default:test",
+    OATS_EVENT: "roster",
+    OATS_HOME: root,
+    OATS_TEAM_SCOPE: root,
+    OATS_TEAM_ID: "default:test",
   }, root);
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /aw mail send --to <alias>/);
@@ -182,9 +182,9 @@ test("retire without persisted identity is an idempotent no-op", async (t) => {
   const home = tempDir(t);
   const result = await run(["retire"], {
     PATH: fakePath(t),
-    OAS_EVENT: "retire",
-    OAS_HOME: home,
-    OAS_META: "{}",
+    OATS_EVENT: "retire",
+    OATS_HOME: home,
+    OATS_META: "{}",
   }, home);
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { meta: { retired: false, reason: "nothing-to-delete" } });

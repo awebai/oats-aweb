@@ -1,31 +1,31 @@
 #!/usr/bin/env node
 /**
- * oas-aweb — OAS messaging-provider hooks for aweb.
+ * oats-aweb — OATS messaging-provider hooks for aweb.
  *
- * Invoked by the OAS kernel at instance lifecycle events (hook contract):
- *   oas-aweb spawn    mint a team-scoped aweb identity for the instance
- *   oas-aweb retire   gracefully self-delete it (BEFORE the home dir is removed)
- *   oas-aweb roster   list the aweb team's members — the cross-machine directory
+ * Invoked by the OATS kernel at instance lifecycle events (hook contract):
+ *   oats-aweb spawn    mint a team-scoped aweb identity for the instance
+ *   oats-aweb retire   gracefully self-delete it (BEFORE the home dir is removed)
+ *   oats-aweb roster   list the aweb team's members — the cross-machine directory
  *                     of live instances (alias = instance name) and humans
- *   oas-aweb setup    guided onboarding: check the aw CLI, initialize the team
+ *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the team
  *                     scope's aweb workspace, create/join the team
  *
  * Env contract (set by the kernel):
- *   OAS_EVENT     spawn|retire
- *   OAS_INSTANCE  instance name (used as the aweb alias)
- *   OAS_HOME      instance home dir (cwd is also set to it)
- *   OAS_CONTEXT   resolution context dir (the soul's repo / agents root parent)
- *   OAS_WORKSPACE the agents root's parent — the team boundary
- *   OAS_SETTINGS  JSON of the provider's `settings:` block
- *   OAS_TEAM_NAME/OAS_TEAM_ID/OAS_TEAM_SCOPE  resolved config `team:` block (may be empty)
- *   OAS_META      JSON persisted from this hook's previous spawn output (retire only)
+ *   OATS_EVENT     spawn|retire
+ *   OATS_INSTANCE  instance name (used as the aweb alias)
+ *   OATS_HOME      instance home dir (cwd is also set to it)
+ *   OATS_CONTEXT   resolution context dir (the soul's repo / agents root parent)
+ *   OATS_WORKSPACE the agents root's parent — the team boundary
+ *   OATS_SETTINGS  JSON of the provider's `settings:` block
+ *   OATS_TEAM_NAME/OATS_TEAM_ID/OATS_TEAM_SCOPE  resolved config `team:` block (may be empty)
+ *   OATS_META      JSON persisted from this hook's previous spawn output (retire only)
  *
  * Output (spawn, stdout JSON):
- *   { "meta": {...persisted to instance.json + OAS_META at retire},
+ *   { "meta": {...persisted to instance.json + OATS_META at retire},
  *     "brief": "one-line TASK.md briefing line", "warning": "non-fatal problem" }
  *
  * EXIT CODE IS THE CONTRACT for the spawn hook. This capability declares
- * `spawn` as required (oas.json), so a nonzero exit fails the spawn and rolls it
+ * `spawn` as required (oats.json), so a nonzero exit fails the spawn and rolls it
  * back. Messaging is the whole point of the capability: an instance whose
  * identity was never minted believes it can be woken by mail and cannot, which
  * is worse than not starting. So identity failures exit nonzero, while genuinely
@@ -88,26 +88,26 @@ function onPath(cmd) {
   return false;
 }
 const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + "\n"); process.exit(code); };
-const warn = (m) => out({ warning: `oas-aweb: ${String(m).slice(0, 300)}` });
+const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
 /** Fatal for a REQUIRED spawn hook: emit metadata for compensation, then exit
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
-const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oas-aweb: ${String(m).slice(0, 300)}` }, 1);
+const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
 
-const event = process.env.OAS_EVENT || process.argv[2];
-const instance = process.env.OAS_INSTANCE;
-const home = process.env.OAS_HOME || process.cwd();
+const event = process.env.OATS_EVENT || process.argv[2];
+const instance = process.env.OATS_INSTANCE;
+const home = process.env.OATS_HOME || process.cwd();
 
 /**
  * The aweb root (minting authority). BOUNDED candidates — the deployment's team
  * scope (from config `team:`) is the natural home; we never walk past the
  * workspace to the laptop root (a `.aw` there would be a different team;
  * minting into it would be a silent cross-team leak):
- *   1. the declared team scope (OAS_TEAM_SCOPE)
+ *   1. the declared team scope (OATS_TEAM_SCOPE)
  *   2. the instance home itself
  *   3. the git repo root containing the home (if any)
  *   4. the resolution context (the soul's target repo) and its git repo root
- *   5. the workspace root (OAS_WORKSPACE — e.g. ~/lfx)
+ *   5. the workspace root (OATS_WORKSPACE — e.g. ~/lfx)
  * First candidate with a `.aw` wins; none → no minting.
  */
 function gitRootOf(startDir) {
@@ -122,28 +122,28 @@ function gitRootOf(startDir) {
 function awebRoot() {
   const candidates = [];
   const push = (p) => { if (p && !candidates.includes(resolve(p))) candidates.push(resolve(p)); };
-  push(process.env.OAS_TEAM_SCOPE);
+  push(process.env.OATS_TEAM_SCOPE);
   push(home);
   push(gitRootOf(home));
-  push(process.env.OAS_CONTEXT);
-  if (process.env.OAS_CONTEXT) push(gitRootOf(process.env.OAS_CONTEXT));
-  push(process.env.OAS_WORKSPACE);
+  push(process.env.OATS_CONTEXT);
+  if (process.env.OATS_CONTEXT) push(gitRootOf(process.env.OATS_CONTEXT));
+  push(process.env.OATS_WORKSPACE);
   for (const c of candidates) if (existsSync(join(c, ".aw"))) return c;
   return undefined;
 }
 
 /** Team memberships from `aw team list --json`. The current CLI returns
- * `memberships`; older output used `teams`. Spawn resolution and `oas aweb
+ * `memberships`; older output used `teams`. Spawn resolution and `oats aweb
  * setup` MUST read this the same way — they drifted once, and because spawn
  * treats "no matching membership" as fatal, the stale reader turned every
  * name-only team config into a blocked spawn (reviewer-602627c). */
 const teamMemberships = (listed) => listed?.memberships || listed?.teams || [];
 const teamIdsOf = (listed) => teamMemberships(listed).map((m) => m.team_id || m.id || m);
 
-const AW_INSTALL = "install the aw CLI first — see https://aweb.ai/docs (or `oas aweb setup` for guided onboarding)";
+const AW_INSTALL = "install the aw CLI first — see https://aweb.ai/docs (or `oats aweb setup` for guided onboarding)";
 const isCommand = ["roster", "setup"].includes(event);
 if (!onPath("aw")) {
-  if (isCommand) { console.error(`oas aweb ${event}: aw CLI not on PATH — ${AW_INSTALL}`); process.exit(1); }
+  if (isCommand) { console.error(`oats aweb ${event}: aw CLI not on PATH — ${AW_INSTALL}`); process.exit(1); }
   if (event === "spawn") fatal(`aw CLI not on PATH, so no identity could be minted and this instance would have no messaging — ${AW_INSTALL}`);
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
@@ -151,22 +151,22 @@ if (!onPath("aw")) {
 if (event === "spawn") {
   let minted;                 // external identity, once `aw team join` succeeds
   const root = awebRoot();
-  if (!root) fatal(`no initialized aweb root (.aw) among the bounded candidates (home, its git repo, context repo, workspace ${process.env.OAS_WORKSPACE || "?"}), so no identity could be minted and this instance would have no messaging — run \`oas aweb setup\` for guided onboarding`);
+  if (!root) fatal(`no initialized aweb root (.aw) among the bounded candidates (home, its git repo, context repo, workspace ${process.env.OATS_WORKSPACE || "?"}), so no identity could be minted and this instance would have no messaging — run \`oats aweb setup\` for guided onboarding`);
   try {
     // Team correctness: the config's `team:` block wins (id, then name), else the
     // root's active team. ALWAYS pass --team-id explicitly — never inherit whatever
     // team happens to be active at mint time — and verify the joined cert matches.
     // The instance name IS the discoverable alias (the team roster doubles as the
     // cross-machine instance directory).
-    let team = process.env.OAS_TEAM_ID || process.env.OAS_TEAM_NAME;
+    let team = process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME;
     if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
-    if (!team) fatal("cannot determine target team (no config team block, no active team at root), so no identity could be minted — set a team: block in oas-config.yaml, or activate a team at the aweb root");
+    if (!team) fatal("cannot determine target team (no config team block, no active team at root), so no identity could be minted — set a team: block in oats-config.yaml, or activate a team at the aweb root");
     // A bare team name (no namespace) resolves against the root's memberships.
     if (!team.includes(":")) {
       const teams = JSON.parse(run(["aw", "team", "list", "--json"], root));
       const match = teamIdsOf(teams).filter((tid) => String(tid).startsWith(`${team}:`));
       if (match.length === 1) team = match[0];
-      else if (match.length > 1) fatal(`team name "${team}" is ambiguous at ${root}: ${match.join(", ")}, so no identity could be minted — set team.id in oas-config.yaml`);
+      else if (match.length > 1) fatal(`team name "${team}" is ambiguous at ${root}: ${match.join(", ")}, so no identity could be minted — set team.id in oats-config.yaml`);
       else fatal(`no membership matching team "${team}" at ${root}, so no identity could be minted — join or create it first (aweb-team-membership skill), or set team.id`);
     }
     // Both of these carry the invite token — one mints it, the other spends it —
@@ -197,13 +197,13 @@ if (event === "spawn") {
       ? ` [WARNING: joined ${joined.team_id}, expected ${team}]` : "";
     // Runtime integration: for Claude Code sessions the aweb-channel plugin
     // carries real-time push events. This hook does NOT install it. The plugin
-    // is a DECLARED runtime requirement (oas.json), consented once at
-    // `oas install` and verified by the kernel before spawn — installing it here
+    // is a DECLARED runtime requirement (oats.json), consented once at
+    // `oats install` and verified by the kernel before spawn — installing it here
     // would mutate the operator's Claude configuration without asking, inside a
     // spawn, which is exactly the silent host mutation the consent gate exists
     // to prevent. By the time this runs the kernel has already proven the plugin
     // is present and enabled, so contributing the flag is safe.
-    const launch = (process.env.OAS_RUNTIME || "") === "claude"
+    const launch = (process.env.OATS_RUNTIME || "") === "claude"
       ? { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" }
       : undefined;
     const channelWarning = undefined;
@@ -211,7 +211,7 @@ if (event === "spawn") {
       meta: { team: joined.team_id, alias },
       brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}.${mismatch} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
-      ...(mismatch ? { warning: `oas-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : channelWarning ? { warning: channelWarning } : {}),
+      ...(mismatch ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : channelWarning ? { warning: channelWarning } : {}),
     });
   } catch (e) {
     // A join may already have created a REMOTE identity before the failure.
@@ -220,14 +220,14 @@ if (event === "spawn") {
     fatal(`identity minting failed: ${e.message || e}`, minted);
   }
 } else if (event === "retire") {
-  const meta = JSON.parse(process.env.OAS_META || "{}");
+  const meta = JSON.parse(process.env.OATS_META || "{}");
   // No alias means the spawn hook never reported an identity: nothing exists to
   // undo, which is completion. An alias WITH no local `.aw` is the opposite —
   // the remote record exists and its key is gone, so the self-delete cannot be
   // authenticated and the cleanup is incomplete, not vacuous (reviewer-602627c).
   if (!meta.alias) out({ meta: { retired: false, reason: "nothing-to-delete" } });
   if (!existsSync(join(home, ".aw"))) {
-    out({ meta: { retired: false, reason: "no-local-identity-key" }, warning: `oas-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
+    out({ meta: { retired: false, reason: "no-local-identity-key" }, warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
   }
   try {
     // Self-delete from inside the home, authenticated by its own key — a remote
@@ -238,17 +238,17 @@ if (event === "spawn") {
     // Exit nonzero: during a required-hook rollback this is the signal that
     // compensation did NOT complete, so the spawn is not reported as cleanly
     // rolled back while a remote identity still exists.
-    out({ meta: { retired: false, reason: "self-delete-failed" }, warning: `oas-aweb: self-delete failed (the remote record will linger until stale): ${e.message || e}` }, 1);
+    out({ meta: { retired: false, reason: "self-delete-failed" }, warning: `oats-aweb: self-delete failed (the remote record will linger until stale): ${e.message || e}` }, 1);
   }
 } else if (event === "roster") {
-  // Cross-machine directory: every OAS-spawned instance joins the team with
+  // Cross-machine directory: every OATS-spawned instance joins the team with
   // alias = instance name, so the team's member roster lists live instances
   // wherever they run (plus human members). Local liveness comes from
-  // `oas status --team`; this is the network view.
+  // `oats status --team`; this is the network view.
   const root = awebRoot();
-  if (!root) { console.error("oas aweb roster: no initialized aweb root (.aw) found"); process.exit(1); }
-  const team = process.env.OAS_TEAM_ID || process.env.OAS_TEAM_NAME || JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
-  if (!team) { console.error("oas aweb roster: cannot determine team (no config team block, no active team)"); process.exit(1); }
+  if (!root) { console.error("oats aweb roster: no initialized aweb root (.aw) found"); process.exit(1); }
+  const team = process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
+  if (!team) { console.error("oats aweb roster: cannot determine team (no config team block, no active team)"); process.exit(1); }
   const teamFlag = team.includes(":") ? ["--team-id", team] : ["--team", team];
   const r = JSON.parse(run(["aw", "id", "team", "members", ...teamFlag, "--json"], root, 60000));
   if (process.argv.includes("--json")) { console.log(JSON.stringify(r, null, 2)); process.exit(0); }
@@ -256,17 +256,17 @@ if (event === "spawn") {
   const members = r.members || [];
   if (!members.length) console.log("  (no member certificates visible from this workspace)");
   for (const m of members) console.log(`  ${m.alias || m.name || m.did || JSON.stringify(m)}`);
-  console.log("\nAliases minted by OAS are instance names; message one with `aw mail send --to <alias> --subject \"...\" --body \"...\"`.");
+  console.log("\nAliases minted by OATS are instance names; message one with `aw mail send --to <alias> --subject \"...\" --body \"...\"`.");
   process.exit(0);
 } else if (event === "setup") {
   // Guided onboarding — idempotent, prints what it finds and the one next step.
-  const scope = process.env.OAS_TEAM_SCOPE || process.cwd();
-  const teamName = process.env.OAS_TEAM_NAME;
-  const teamId = process.env.OAS_TEAM_ID;
+  const scope = process.env.OATS_TEAM_SCOPE || process.cwd();
+  const teamName = process.env.OATS_TEAM_NAME;
+  const teamId = process.env.OATS_TEAM_ID;
   console.log(`aweb onboarding — team scope: ${scope}${teamName ? `, config team: ${teamName}${teamId ? ` (${teamId})` : ""}` : ""}\n`);
   if (!teamName) {
-    console.log("1. Declare your team in the deployment scope's oas-config.yaml first:");
-    console.log("     team:\n       name: <your-team>\n   then re-run `oas aweb setup` from there.");
+    console.log("1. Declare your team in the deployment scope's oats-config.yaml first:");
+    console.log("     team:\n       name: <your-team>\n   then re-run `oats aweb setup` from there.");
     process.exit(0);
   }
   if (!existsSync(join(scope, ".aw"))) {
@@ -284,7 +284,7 @@ if (event === "spawn") {
     console.log(`✓ aweb workspace initialized and member of ${match}.`);
     if (teams.active_team && teams.active_team !== match) console.log(`  Note: active team is ${teams.active_team}; instances join ${match} explicitly, but consider \`aw team switch ${match}\`.`);
     console.log("  Done — spawned instances will join this team automatically (alias = instance name).");
-    console.log("  Roster: `oas aweb roster`  ·  local: `oas status --team`");
+    console.log("  Roster: `oats aweb roster`  ·  local: `oats status --team`");
   } else {
     console.log(`Workspace initialized, but no membership matching "${want}".`);
     console.log(`  Create the team:   cd ${scope} && aw team create ${teamName}`);

@@ -4,12 +4,12 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Repo root holds dev tooling (scripts/, schemas/); the DISTRIBUTED package
-// payload lives in the `oas-package/` subtree. Manifests and their resources
+// payload lives in the `oats-package/` subtree. Manifests and their resources
 // are validated against the payload root; the containment boundary is the
 // payload root, never the repo root (contract: repo-only tooling is not
 // installed bytes and must never be reachable from a package resource path).
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const root = join(repoRoot, "oas-package");
+const root = join(repoRoot, "oats-package");
 const errors = [];
 const report = (path, message) => errors.push(`${path}: ${message}`);
 const readJson = (path) => {
@@ -54,41 +54,41 @@ function safeResource(base, candidate, at, kind = "path") {
   if (realTarget !== realRoot && !realTarget.startsWith(realRoot + sep)) report(at, `${kind} escapes the package root after symlink resolution`);
 }
 
-const packagePath = join(root, "oas-package.json");
-const packageSchemaPath = join(repoRoot, "schemas", "oas-package.schema.json");
+const packagePath = join(root, "oats-package.json");
+const packageSchemaPath = join(repoRoot, "schemas", "oats-package.schema.json");
 const capabilitySchemaPath = join(repoRoot, "schemas", "capability-manifest.schema.json");
 const packageManifest = readJson(packagePath);
 const packageSchema = readJson(packageSchemaPath);
 const capabilitySchema = readJson(capabilitySchemaPath);
 
-if (packageManifest && packageSchema) validateSchema(packageManifest, packageSchema, "oas-package.json");
+if (packageManifest && packageSchema) validateSchema(packageManifest, packageSchema, "oats-package.json");
 
 const configs = packageManifest?.configs && typeof packageManifest.configs === "object" ? packageManifest.configs : {};
 const defaultConfigs = Object.entries(configs).filter(([, spec]) => spec?.default === true);
-if (defaultConfigs.length > 1) report("oas-package.json.configs", "at most one config profile may be marked default");
+if (defaultConfigs.length > 1) report("oats-package.json.configs", "at most one config profile may be marked default");
 for (const [name, spec] of Object.entries(configs)) {
-  if (spec?.path) safeResource(root, spec.path, `oas-package.json.configs.${name}.path`, "config profile");
+  if (spec?.path) safeResource(root, spec.path, `oats-package.json.configs.${name}.path`, "config profile");
 }
 
 const declaredCapabilities = Array.isArray(packageManifest?.capabilities) ? packageManifest.capabilities : [];
 if (declaredCapabilities.length !== 1) {
-  report("oas-package.json.capabilities", `official single-capability package must enumerate exactly one capability directory (found ${declaredCapabilities.length})`);
+  report("oats-package.json.capabilities", `official single-capability package must enumerate exactly one capability directory (found ${declaredCapabilities.length})`);
 }
 
 const capabilities = [];
 for (const [index, capabilityDir] of declaredCapabilities.entries()) {
-  safeResource(root, capabilityDir, `oas-package.json.capabilities[${index}]`, "capability directory");
+  safeResource(root, capabilityDir, `oats-package.json.capabilities[${index}]`, "capability directory");
   if (isAbsolute(capabilityDir) || capabilityDir.split(/[\\/]+/).includes("..")) continue;
-  const manifestPath = join(root, capabilityDir, "oas.json");
-  if (!existsSync(manifestPath)) { report(`oas-package.json.capabilities[${index}]`, `${capabilityDir} has no oas.json`); continue; }
+  const manifestPath = join(root, capabilityDir, "oats.json");
+  if (!existsSync(manifestPath)) { report(`oats-package.json.capabilities[${index}]`, `${capabilityDir} has no oats.json`); continue; }
   const manifest = readJson(manifestPath);
   if (!manifest) continue;
   capabilities.push(manifest);
-  if (capabilitySchema) validateSchema(manifest, capabilitySchema, `${capabilityDir}/oas.json`);
+  if (capabilitySchema) validateSchema(manifest, capabilitySchema, `${capabilityDir}/oats.json`);
   const capabilityRoot = dirname(manifestPath);
-  for (const [resourceIndex, resource] of (manifest.skills || []).entries()) safeResource(capabilityRoot, resource, `${capabilityDir}/oas.json.skills[${resourceIndex}]`, "skill path");
-  if (manifest.inject) safeResource(capabilityRoot, manifest.inject, `${capabilityDir}/oas.json.inject`, "injection path");
-  for (const [agentIndex, agent] of (manifest.agents || []).entries()) safeResource(capabilityRoot, agent, `${capabilityDir}/oas.json.agents[${agentIndex}]`, "agent path");
+  for (const [resourceIndex, resource] of (manifest.skills || []).entries()) safeResource(capabilityRoot, resource, `${capabilityDir}/oats.json.skills[${resourceIndex}]`, "skill path");
+  if (manifest.inject) safeResource(capabilityRoot, manifest.inject, `${capabilityDir}/oats.json.inject`, "injection path");
+  for (const [agentIndex, agent] of (manifest.agents || []).entries()) safeResource(capabilityRoot, agent, `${capabilityDir}/oats.json.agents[${agentIndex}]`, "agent path");
   // A hook may be a plain "entrypoint args" string or the object form
   // { command, required } (only the spawn hook may set required). Commands are
   // always strings. Reduce either to the executable entrypoint for containment.
@@ -96,27 +96,27 @@ for (const [index, capabilityDir] of declaredCapabilities.entries()) {
     const command = typeof spec === "string" ? spec : (spec && typeof spec === "object" ? spec.command : undefined);
     return typeof command === "string" ? command.trim().split(/\s+/)[0] : command;
   };
-  for (const [name, command] of Object.entries(manifest.commands || {})) safeResource(capabilityRoot, entrypoint(command), `${capabilityDir}/oas.json.commands.${name}`, "command entrypoint");
-  for (const [event, hook] of Object.entries(manifest.hooks || {})) safeResource(capabilityRoot, entrypoint(hook), `${capabilityDir}/oas.json.hooks.${event}`, "hook entrypoint");
-  for (const forbidden of ["global", "agent-types", "souls"]) if (forbidden in manifest) report(`${capabilityDir}/oas.json.${forbidden}`, "deployment targeting belongs to config, not a capability manifest");
+  for (const [name, command] of Object.entries(manifest.commands || {})) safeResource(capabilityRoot, entrypoint(command), `${capabilityDir}/oats.json.commands.${name}`, "command entrypoint");
+  for (const [event, hook] of Object.entries(manifest.hooks || {})) safeResource(capabilityRoot, entrypoint(hook), `${capabilityDir}/oats.json.hooks.${event}`, "hook entrypoint");
+  for (const forbidden of ["global", "agent-types", "souls"]) if (forbidden in manifest) report(`${capabilityDir}/oats.json.${forbidden}`, "deployment targeting belongs to config, not a capability manifest");
 }
 
 if (capabilities.length === 1 && packageManifest) {
   const capability = capabilities[0];
-  if (packageManifest.package === "oas.dev") {
-    if (packageManifest.version !== "1.0.0") report("oas-package.json.version", "oas.dev distribution must start at 1.0.0");
-    if (capability.capability !== "oas.review" || capability.version !== "1.2.0") {
-      report("oas-package.json.capabilities[0]", "oas.dev must export capability oas.review@1.2.0");
+  if (packageManifest.package === "oats.dev") {
+    if (packageManifest.version !== "1.0.0") report("oats-package.json.version", "oats.dev distribution must start at 1.0.0");
+    if (capability.capability !== "oats.review" || capability.version !== "1.2.0") {
+      report("oats-package.json.capabilities[0]", "oats.dev must export capability oats.review@1.2.0");
     }
   } else {
-    if (packageManifest.package !== capability.capability) report("oas-package.json.package", "single-capability official package ID must equal its capability ID");
-    if (packageManifest.version !== capability.version) report("oas-package.json.version", "must start at the extracted capability version");
+    if (packageManifest.package !== capability.capability) report("oats-package.json.package", "single-capability official package ID must equal its capability ID");
+    if (packageManifest.version !== capability.version) report("oats-package.json.version", "must start at the extracted capability version");
   }
-  if (packageManifest.compatibility?.oas !== capability.compatibility?.oas) report("oas-package.json.compatibility.oas", "must match the staged capability compatibility floor");
+  if (packageManifest.compatibility?.oats !== capability.compatibility?.oats) report("oats-package.json.compatibility.oats", "must match the staged capability compatibility floor");
 }
 
 if (errors.length) {
   process.stderr.write(`Manifest validation failed:\n- ${errors.join("\n- ")}\n`);
   process.exit(1);
 }
-process.stdout.write(`Validated ${relative(process.cwd(), packagePath) || "oas-package.json"} and ${capabilities.length} capability manifest(s).\n`);
+process.stdout.write(`Validated ${relative(process.cwd(), packagePath) || "oats-package.json"} and ${capabilities.length} capability manifest(s).\n`);

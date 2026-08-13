@@ -21,9 +21,9 @@ if (sourceIndex === -1 || !process.argv[sourceIndex + 1]) {
 const source = resolve(process.argv[sourceIndex + 1]);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Vendored skills are DISTRIBUTED payload: they live under the package root
-// (`oas-package/`), not the repo root that carries this dev-only sync tool.
-const root = join(repoRoot, "oas-package");
-const destination = join(root, "capabilities", "oas-aweb", "skills");
+// (`oats-package/`), not the repo root that carries this dev-only sync tool.
+const root = join(repoRoot, "oats-package");
+const destination = join(root, "capabilities", "oats-aweb", "skills");
 const git = (...args) => execFileSync("git", ["-C", source, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 if (!existsSync(join(source, ".git"))) throw new Error(`${source} is not an aweb git checkout`);
@@ -65,7 +65,7 @@ To update, check out the named upstream repository at the intended reviewed comm
 \`\`\`bash
 node scripts/sync-vendored-skills.mjs --source /path/to/aweb
 npm test
-git diff -- oas-package/capabilities/oas-aweb/skills
+git diff -- oats-package/capabilities/oats-aweb/skills
 \`\`\`
 
 The sync command refuses a checkout whose \`HEAD\` differs from its pinned commit. Review the complete generated diff, upstream license, and triggering descriptions before changing the recorded version/ref. Runtime acquisition never fetches these resources.
