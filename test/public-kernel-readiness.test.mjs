@@ -13,7 +13,7 @@ import {querySelectedKernel,kernelMeetsHomeRouteFloor} from '../oats-package/cap
 const packageRoot=fileURLToPath(new URL('../oats-package',import.meta.url));
 test('actual kernel enforces package floor or couples aweb codecs and retained runtime without a source-version rewrite',async t=>{
  const framework=process.env.OATS_S3_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned merged framework source');return;}
- const {prepareCapturedComposition,approveAvailableCapability,loadCapturedDispatch,scaffoldCapturedInstance,runCapturedProviderBinding}=await import(pathToFileURL(join(framework,'lib/core.mjs')));
+ const {prepareCapturedComposition,approveAvailableCapability,loadCapturedDispatch,scaffoldCapturedInstance,runCapturedProviderBinding,capabilityCompatibility}=await import(pathToFileURL(join(framework,'lib/core.mjs')));
  const {buildCapturedInvocationContext}=await import(pathToFileURL(join(framework,'lib/captured-invocation-context.mjs')));
  const root=fs.realpathSync(fs.mkdtempSync(join(tmpdir(),'aweb-public-producer-')));t.diagnostic('preserved fixture '+root);
  const repo=join(root,'source'),deployment=join(root,'deployment'),tools=join(root,'tools'),marker=join(root,'native-called');
@@ -33,11 +33,21 @@ test('actual kernel enforces package floor or couples aweb codecs and retained r
  const input={deployment,source:{source,soul:'agents/example',revision:git('rev-parse','HEAD'),alias:'example'},standaloneContextKey:'explicit-fixture',operator:{policy:{},document:{kind:'operator',id:'fixture'},bindings:{responsibleHuman:{provider:'oats.aweb',id:'fixture-human'},privateTeam:{provider:'oats.aweb',id:'private:example.invalid'},wider:[]}}};
  const options={repositoryOptions:{environment:env,allowLocalGit:true}};
  const sourceVersion=JSON.parse(fs.readFileSync(join(framework,'package.json'))).version;
- const packageFloor=JSON.parse(fs.readFileSync(join(packageRoot,'oats-package.json'))).compatibility.oats;
- if(packageFloor==='>=0.24.2'&&!kernelMeetsHomeRouteFloor(sourceVersion)){
-  assert.throws(()=>prepareCapturedComposition(input,options),error=>error.code==='incompatible-oats'&&/requires OATS >=0\.24\.2/.test(error.message));
+ const packageManifest=JSON.parse(fs.readFileSync(join(packageRoot,'oats-package.json')));
+ const packageFloor=packageManifest.compatibility.oats;
+ // Use the same public kernel compatibility rule as real preparation, not the
+ // provider's lower underlying HOME/profile API floor or a second version parser.
+ if(!capabilityCompatibility(packageManifest).compatible){
+  let boundary;
+  assert.throws(()=>prepareCapturedComposition(input,options),error=>{
+   if(error.code==='incompatible-oats'&&error.message.includes(`requires OATS ${packageFloor}`)){boundary='package floor';return true;}
+   // Old closed readers can reject the new manifest fields before the floor
+   // comparison. Accept only these exact typed refusals, never arbitrary errors.
+   if(error.code==='invalid-declaration'&&['unknown field at /binding/keys','unknown field at /binding/reasons'].includes(error.message)){boundary='closed binding-interface schema';return true;}
+   return false;
+  });
   assert.equal(fs.existsSync(marker),false);
-  t.diagnostic(`actual kernel ${sourceVersion}: expected package-floor refusal before codecs/native effects; no compatible-version coupling claim`);
+  t.diagnostic(`actual kernel ${sourceVersion}: expected ${boundary} refusal before codecs/native effects; no compatible-version coupling claim`);
   return;
  }
  const pending=prepareCapturedComposition(input,options);

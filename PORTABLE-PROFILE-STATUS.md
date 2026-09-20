@@ -1,5 +1,13 @@
 # Captured messaging — scoped HOME-route compatibility
 
+The 1.11.1 manifest adds `binding.reasons` (30 fixed strings) and `binding.keys`
+(`responsibleHuman`, `privateTeam`, `wider`). The existing1.11.0 serializer already
+emits fixed reasons on refusals; runtime code and its custody/profile rules are
+unchanged. Both package and capability require OATS >=0.24.4 for these manifest
+fields; publish/upgrade the compatible kernel first. The underlying HOME-route
+API floor is separate. Key metadata is shape-validated only in0.24.4, not new
+kernel ownership enforcement.
+
 This source candidate adapts released oats-aweb1.10.3 to the existing portable
 binding/invocation and native aw interfaces. It is not account/grant attestation,
 a new identity registry or proof that a runtime consumed a notification.
@@ -16,8 +24,9 @@ node <caller-cli> --version --json
 node <caller-cli> inspect --deployment D --resolution R --json
 ```
 
-It requires the actual caller version **>=0.24.2** (HOME custody plus the retained
-profile projection and codec-owned CLI locator),
+The unchanged underlying check requires the actual caller version **>=0.24.2**
+(HOME custody plus the retained profile projection and codec-owned CLI locator;
+the1.11.1 package acquisition floor is separately **>=0.24.4**),
 an explicit instance/private-team binding and `delivery: session`, and the actual
 retained `launchSelection` observation for an input-capable ordinary Claude/Codex
 profile. A missing CLI locator, older kernel, missing/mismatched projection,
@@ -119,9 +128,12 @@ holds, native mismatch, replacement and incomplete-enrollment refusal. Actual
 kernel wire/resolver/private-snapshot coupling is separately scoped. The new
 public-producer case at pre-metadata commit143a8a9 used actual b92f0d07 codecs/
 prepare/approval/scaffold/broker/readonly CLI. It preserved that source's actual
-0.24.1 version as a runtime floor hold, not a fake0.24.2 success. Final1.11 metadata
-requires0.24.2 at acquisition; the test explicitly asserts that earlier refusal
-on b92f0d07, and performs full coupling only on a genuinely compatible kernel. A real Claude preparation refuses its declared session
+0.24.1 version as a runtime floor hold, not a fake0.24.2 success. Released1.11.0
+requires0.24.2 at acquisition;1.11.1 requires0.24.4 for the new manifest fields.
+The test uses the kernel's own public compatibility check to expect refusal on
+b92f0d07; its old closed parser rejects the new binding fields before the version
+check. Only the exact typed field/floor refusals are accepted, and full coupling
+runs only on a compatible kernel. A real Claude preparation refuses its declared session
 runtime-package closure; a separate explicitly selected inert Codex fixture
 exercises the retained projection without deleting those constraints or changing
 the pilot runtime. These are NOT real native enrollment, SDK/model/backend,

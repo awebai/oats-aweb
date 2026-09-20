@@ -49,11 +49,13 @@ function validateSchema(value, schema, at, rootSchema = schema, references = [])
   if (schema.type && actual !== schema.type) { report(at, `must be ${schema.type}, got ${actual}`); return; }
   if (typeof value === "string") {
     if (schema.minLength !== undefined && value.length < schema.minLength) report(at, `must contain at least ${schema.minLength} character(s)`);
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) report(at, `must contain at most ${schema.maxLength} character(s)`);
     if (schema.pattern && !(new RegExp(schema.pattern)).test(value)) report(at, `must match ${schema.pattern}`);
     if (schema.not?.pattern && (new RegExp(schema.not.pattern)).test(value)) report(at, `must not match ${schema.not.pattern}`);
   }
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) report(at, `must contain at least ${schema.minItems} item(s)`);
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) report(at, `must contain at most ${schema.maxItems} item(s)`);
     if (schema.uniqueItems && new Set(value.map((item) => JSON.stringify(item))).size !== value.length) report(at, "must contain unique items");
     value.forEach((item, index) => validateSchema(item, schema.items, `${at}[${index}]`, rootSchema, references));
   }
