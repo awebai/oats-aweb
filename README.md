@@ -5,15 +5,19 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.11.0 candidate
+## Portable captured profile — 1.11.1 candidate
 
-This candidate adds the existing manifest-owned binding codec and selected
-execution-input consumer. See [the exact profile boundary](PORTABLE-PROFILE-STATUS.md)
+The 1.11 line provides the manifest-owned binding codec and selected
+execution-input consumer. This patch declares its fixed diagnostic vocabulary
+and owned operator keys; it does not change native execution behavior. See [the exact profile boundary](PORTABLE-PROFILE-STATUS.md)
 for declarations, fixed missing-item diagnostics and native lifecycle behavior.
-It requires **OATS >=0.24.2**:0.24.1 adds captured HOME-route custody;0.24.2
-ships the retained launch projection and caller-owned codec CLI locator merged
-at b92f0d07. Check the actual caller version AND observations; a tag or source
-checkout alone is not installed availability.
+It requires **OATS >=0.24.4** for the new `binding.reasons`/`keys` metadata;
+older closed manifest readers reject those fields. Release and upgrade the
+compatible kernel before selecting this provider. The underlying HOME-route
+custody arrived in0.24.1, and the retained launch projection/caller-owned codec
+CLI locator in0.24.2 at b92f0d07; those runtime checks are unchanged. Check the
+actual caller version AND observations: a tag or source checkout alone is not
+installed availability.
 
 `delivery: session` is explicit. The check reports `needs-configuration` when its
 binding, instance, private-team selection, caller version or retained profile is
@@ -33,13 +37,21 @@ partial outcomes remain recorded for explicit reconciliation.
 
 The codec consumes complete kernel source/workspace/operator declarations,
 reading only messaging-owned fields while preserving other providers' choices.
-Caught normalize/bind errors use existing typed `error.message` with fixed safe
-reasons, never raw exception text, aliases, keys or native diagnostics.
+Already in 1.11.0, normalize/bind/check errors use existing typed `error.message`
+with fixed safe reasons; non-ready checks use `problems[].message`. No raw
+exception text, supplied aliases/keys/values or native diagnostics are relayed.
+The 1.11.1 `binding.reasons` list declares all 30 fixed error/fallback/check
+strings, so an implementing kernel can retain only byte-exact matches. Its
+`binding.keys` is exactly `responsibleHuman`, `privateTeam`, `wider`: workspace
+`teams` and adoption `teamAliases` are not additional operator-map keys. Kernel
+0.24.4 validates the key declaration only; filtering/overlap enforcement is a
+separate later kernel contract. Provider-side foreign-key ignoring remains.
 
 Scoped HOME-route operational custody is NOT human-account/private-grant
 attestation or proof that a model consumed a wake. Parent/operator acceptance of
 actual installed versions, identities and runtime delivery is separate from the
-controlled fixture results. This source candidate is not a published1.11.0 tag.
+controlled fixture results. This 1.11.1 source/version metadata is not proof of
+publication, installation or kernel diagnostic rendering.
 
 ## Native requirements and resources
 

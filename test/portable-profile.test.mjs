@@ -10,6 +10,7 @@ import {spawnSync} from 'node:child_process';
 import {parseBindingJson} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 import {invocationFor} from './helpers/invocation-fixture.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),cap=join(root,'oats-package/capabilities/oats-aweb');
+const declaredReasons=new Set(JSON.parse(fs.readFileSync(join(cap,'oats.json'))).binding.reasons);
 const origin=(kind,path='soul.yaml')=>({kind,document:{kind:'source',source:'git:https://example.invalid/source.git',revision:'a'.repeat(40),path,integrity:{format:'oats.bytes.v1',value:'sha256-'+'b'.repeat(64)}},pointer:''});
 const operator={kind:'operator',document:{kind:'operator',id:'fixture-operator'},pointer:''};
 const context={kind:'workspace',identity:{repository:{kind:'canonical-remote',remote:'git:https://example.invalid/workspace.git'},path:'oats-workspace.yaml'},observation:origin('workspace-default','oats-workspace.yaml')};
@@ -21,7 +22,7 @@ const declarations=[
 ];
 const request=(phase,input,settings={delivery:'session'})=>({schemaVersion:1,phase,slot:'messaging',capability:'oats.aweb',settings,input});
 function fixture(t){const base=fs.realpathSync(fs.mkdtempSync(join(tmpdir(),'aweb-portable-profile-')));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const bin=join(base,'bin'),home=join(base,'home');fs.mkdirSync(bin);fs.mkdirSync(home);const marker=join(base,'native-called');fs.writeFileSync(join(bin,'aw'),`#!/bin/sh\nprintf called >> '${marker}'\nexit 99\n`,{mode:0o755});return{base,home,marker,env:{HOME:home,PATH:bin}};}
-function invoke(f,phase,value){const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),phase],{env:f.env,cwd:f.base,input:Buffer.isBuffer(value)?value:JSON.stringify(value),encoding:'utf8',timeout:10000,maxBuffer:2*1024*1024});assert.equal(r.status,0,r.stderr);assert.equal(r.stderr,'');return{bytes:Buffer.from(r.stdout),value:JSON.parse(r.stdout)};}
+function invoke(f,phase,value){const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),phase],{env:f.env,cwd:f.base,input:Buffer.isBuffer(value)?value:JSON.stringify(value),encoding:'utf8',timeout:10000,maxBuffer:2*1024*1024});assert.equal(r.status,0,r.stderr);assert.equal(r.stderr,'');const response=JSON.parse(r.stdout);for(const message of [response.error?.message,...(response.result?.problems??[]).map(p=>p.message)].filter(v=>v!==undefined))assert.ok(declaredReasons.has(message),'emitted fixed reason must be declared byte-exactly');return{bytes:Buffer.from(r.stdout),value:response};}
 const choose=candidates=>Object.fromEntries(candidates.map(c=>[c.key,{value:c.value,selectedBy:c.origin,constraints:[],considered:[{...c,disposition:'selected'}]}])); // UNIT data only; coupled case uses the real kernel solver.
 function bind(f,ds=declarations){const n=request('normalize',{declarations:ds,context}),normalized=invoke(f,'normalize',n);assert.equal(normalized.value.ok,true);const b=request('bind',{context,model:normalized.value.result.model,choices:choose(normalized.value.result.candidates)}),bound=invoke(f,'bind',b);assert.equal(bound.value.ok,true);const {messagingChoice,...fields}=bound.value.result;return{n,normalized,b,bound,binding:{schemaVersion:1,capability:'oats.aweb',...fields},messagingChoice};}
 
@@ -88,9 +89,13 @@ test('normalize and bind errors name fixed missing items without reflecting alia
 test('manifest keeps required messaging and both delivery resource closures, with canonical codec commands',()=>{
  const m=JSON.parse(fs.readFileSync(join(cap,'oats.json')));assert.equal(m.layer,'messaging');assert.equal(m.hooks.spawn.required,true);assert.equal(m.settings.delivery.default,'channel');assert.deepEqual(m.settings.delivery.values,['channel','session']);assert.ok(m.requires.some(r=>r.command==='aw'));
  for(const runtime of ['pi','claude']){assert.ok(m.requires.some(r=>r.runtime===runtime&&r.when?.delivery==='channel'&&r.package));assert.ok(m.requires.some(r=>r.runtime===runtime&&r.when?.delivery==='session'&&r.ifInstalled===true&&r.minVersion));}
- assert.deepEqual(m.binding,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});assert.equal(m.compatibility.oats,'>=0.24.2');
+ const {keys,reasons,...phases}=m.binding;
+ assert.deepEqual(phases,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});
+ assert.deepEqual(keys,['responsibleHuman','privateTeam','wider']);
+ assert.equal(reasons.length,30);assert.equal(new Set(reasons).size,30);assert.ok(reasons.every(reason=>typeof reason==='string'&&reason.length>0));
+ assert.equal(m.compatibility.oats,'>=0.24.4');
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
- assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.11.0');
+ assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.11.1');
 });
 test('coupled current kernel wire and sole resolver accept actual codec output but do not turn binding into readiness',async t=>{
  const framework=process.env.OATS_P1_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned current framework source');return;}
