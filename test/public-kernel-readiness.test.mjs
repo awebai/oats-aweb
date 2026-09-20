@@ -11,7 +11,7 @@ import {syncBuiltinESMExports} from 'node:module';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {querySelectedKernel,kernelMeetsHomeRouteFloor} from '../oats-package/capabilities/oats-aweb/lib/session-readiness.mjs';
 const packageRoot=fileURLToPath(new URL('../oats-package',import.meta.url));
-test('merged public producer couples actual aweb codecs and retained runtime queries without upgrading its source version',async t=>{
+test('actual kernel enforces package floor or couples aweb codecs and retained runtime without a source-version rewrite',async t=>{
  const framework=process.env.OATS_S3_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned merged framework source');return;}
  const {prepareCapturedComposition,approveAvailableCapability,loadCapturedDispatch,scaffoldCapturedInstance,runCapturedProviderBinding}=await import(pathToFileURL(join(framework,'lib/core.mjs')));
  const {buildCapturedInvocationContext}=await import(pathToFileURL(join(framework,'lib/captured-invocation-context.mjs')));
@@ -31,7 +31,16 @@ test('merged public producer couples actual aweb codecs and retained runtime que
  git('init','--quiet','--initial-branch=fixture');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');git('config','uploadpack.allowFilter','true');git('config','uploadpack.allowAnySHA1InWant','true');
  const source='git:https://example.invalid/aweb-public.git';git('config','--file',gitConfig,`url.${pathToFileURL(repo).href}.insteadOf`,source.slice(4));git('add','.');git('commit','--quiet','-m','controlled source');
  const input={deployment,source:{source,soul:'agents/example',revision:git('rev-parse','HEAD'),alias:'example'},standaloneContextKey:'explicit-fixture',operator:{policy:{},document:{kind:'operator',id:'fixture'},bindings:{responsibleHuman:{provider:'oats.aweb',id:'fixture-human'},privateTeam:{provider:'oats.aweb',id:'private:example.invalid'},wider:[]}}};
- const options={repositoryOptions:{environment:env,allowLocalGit:true}},pending=prepareCapturedComposition(input,options);
+ const options={repositoryOptions:{environment:env,allowLocalGit:true}};
+ const sourceVersion=JSON.parse(fs.readFileSync(join(framework,'package.json'))).version;
+ const packageFloor=JSON.parse(fs.readFileSync(join(packageRoot,'oats-package.json'))).compatibility.oats;
+ if(packageFloor==='>=0.24.2'&&!kernelMeetsHomeRouteFloor(sourceVersion)){
+  assert.throws(()=>prepareCapturedComposition(input,options),error=>error.code==='incompatible-oats'&&/requires OATS >=0\.24\.2/.test(error.message));
+  assert.equal(fs.existsSync(marker),false);
+  t.diagnostic(`actual kernel ${sourceVersion}: expected package-floor refusal before codecs/native effects; no compatible-version coupling claim`);
+  return;
+ }
+ const pending=prepareCapturedComposition(input,options);
  assert.equal(pending.resolution,null,JSON.stringify(pending));assert.ok(pending.problems.some(p=>p.code==='approval-required'));
  approveAvailableCapability(deployment,pending.selections[0].artifactSet,'oats.aweb',{kind:'operator',document:{kind:'operator',id:'fixture-approval'},pointer:''});
  const launch={runtime:'claude',executable:process.execPath,args:[],env:{},model:'retained/model',yolo:false};

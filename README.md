@@ -91,10 +91,13 @@ Focused tests use controlled public-kernel/native-aw doubles and explicit source
 coupling for the wire/resolver/private snapshot transport. Set
 `OATS_S3_FRAMEWORK_ROOT` to an exact verified kernel export for
 `test/public-kernel-readiness.test.mjs`: it couples real codecs, approval/scaffold,
-broker and readonly CLI, with no native setup/start. The merged b92f0d07 source
-still identifies as0.24.1; the test preserves that real version hold rather than
-rewriting it. It also retains Claude's runtime-package requirement refusal and
-uses a separate explicit inert Codex observation fixture, not a pilot fallback.
+broker and readonly CLI, with no native setup/start, when the package floor is
+met. The merged b92f0d07 source still identifies as0.24.1: final1.11 metadata must
+refuse acquisition on it, not rewrite its version. The pre-metadata code commit
+143a8a9 coupled those exact kernel bytes and verified the CLI locator/projection
+while retaining the runtime version hold. That case also preserves Claude's
+runtime-package refusal and uses a separate explicit inert Codex observation
+fixture, not a pilot fallback.
 They are not real
 provider enrollment, SDK/model/backend or broker-consumption evidence. Old failed
 and corrected scopes stay separate. Maintainer vendored updates still use

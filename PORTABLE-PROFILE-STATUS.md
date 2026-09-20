@@ -117,9 +117,11 @@ with controlled kernel-observation and aw doubles. They preserve the original
 PR2 refusal before the corrected eligible case, Pi/old-kernel/missing-projection
 holds, native mismatch, replacement and incomplete-enrollment refusal. Actual
 kernel wire/resolver/private-snapshot coupling is separately scoped. The new
-public-producer case uses actual b92f0d07 codecs/prepare/approval/scaffold/broker/
-readonly CLI. It preserves that source's actual0.24.1 version as a floor hold,
-not a fake0.24.2 success. A real Claude preparation refuses its declared session
+public-producer case at pre-metadata commit143a8a9 used actual b92f0d07 codecs/
+prepare/approval/scaffold/broker/readonly CLI. It preserved that source's actual
+0.24.1 version as a runtime floor hold, not a fake0.24.2 success. Final1.11 metadata
+requires0.24.2 at acquisition; the test explicitly asserts that earlier refusal
+on b92f0d07, and performs full coupling only on a genuinely compatible kernel. A real Claude preparation refuses its declared session
 runtime-package closure; a separate explicitly selected inert Codex fixture
 exercises the retained projection without deleting those constraints or changing
 the pilot runtime. These are NOT real native enrollment, SDK/model/backend,

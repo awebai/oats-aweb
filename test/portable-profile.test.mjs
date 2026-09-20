@@ -88,7 +88,9 @@ test('normalize and bind errors name fixed missing items without reflecting alia
 test('manifest keeps required messaging and both delivery resource closures, with canonical codec commands',()=>{
  const m=JSON.parse(fs.readFileSync(join(cap,'oats.json')));assert.equal(m.layer,'messaging');assert.equal(m.hooks.spawn.required,true);assert.equal(m.settings.delivery.default,'channel');assert.deepEqual(m.settings.delivery.values,['channel','session']);assert.ok(m.requires.some(r=>r.command==='aw'));
  for(const runtime of ['pi','claude']){assert.ok(m.requires.some(r=>r.runtime===runtime&&r.when?.delivery==='channel'&&r.package));assert.ok(m.requires.some(r=>r.runtime===runtime&&r.when?.delivery==='session'&&r.ifInstalled===true&&r.minVersion));}
- assert.deepEqual(m.binding,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});assert.equal(m.compatibility.oats,'>=0.24.0');
+ assert.deepEqual(m.binding,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});assert.equal(m.compatibility.oats,'>=0.24.2');
+ const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
+ assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.11.0');
 });
 test('coupled current kernel wire and sole resolver accept actual codec output but do not turn binding into readiness',async t=>{
  const framework=process.env.OATS_P1_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned current framework source');return;}
