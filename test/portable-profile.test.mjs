@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {handleBindingRequest,parseBindingJson} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
+import {parseBindingJson} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 import {invocationFor} from './helpers/invocation-fixture.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),cap=join(root,'oats-package/capabilities/oats-aweb');
 const origin=(kind,path='soul.yaml')=>({kind,document:{kind:'source',source:'git:https://example.invalid/source.git',revision:'a'.repeat(40),path,integrity:{format:'oats.bytes.v1',value:'sha256-'+'b'.repeat(64)}},pointer:''});
@@ -26,9 +26,12 @@ const choose=candidates=>Object.fromEntries(candidates.map(c=>[c.key,{value:c.va
 function bind(f,ds=declarations){const n=request('normalize',{declarations:ds,context}),normalized=invoke(f,'normalize',n);assert.equal(normalized.value.ok,true);const b=request('bind',{context,model:normalized.value.result.model,choices:choose(normalized.value.result.candidates)}),bound=invoke(f,'bind',b);assert.equal(bound.value.ok,true);const {messagingChoice,...fields}=bound.value.result;return{n,normalized,b,bound,binding:{schemaVersion:1,capability:'oats.aweb',...fields},messagingChoice};}
 
 test('portable declarations retain explicit session delivery, private context and wider consent without native probes',t=>{
- const f=fixture(t),p=bind(f);assert.deepEqual(p.n.settings,{delivery:'session'});assert.deepEqual(p.binding.payload.responsibleHuman,human);assert.deepEqual(p.binding.payload.privateTeam,team);assert.deepEqual(p.binding.payload.wider,[]);assert.deepEqual(p.binding.payload.context,{kind:'workspace',identity:context.identity});assert.deepEqual(p.binding.credentialRefs,{});assert.equal(p.messagingChoice.enabled,true);
- const checked=invoke(f,'check',request('check',{binding:p.binding,context,action:{kind:'inspect'}}));assert.deepEqual(checked.value.result,{status:'unavailable',problems:[{code:'provider-not-qualified'}]});assert.equal(fs.existsSync(f.marker),false);
- const missing=structuredClone(declarations);delete missing[2].value.bindings.privateTeam;const partial=bind(f,missing);assert.deepEqual(invoke(f,'check',request('check',{binding:partial.binding,context,action:{kind:'inspect'}})).value.result,{status:'needs-configuration',problems:[{code:'needs-configuration'}]});
+ const f=fixture(t),p=bind(f);
+ const full=structuredClone(declarations);Object.assign(full[0].value,{schemaVersion:1,name:'example',work:'directory',requires:{messaging:{capability:'oats.aweb',source:'repo:package'}}});Object.assign(full[2].value,{policy:{},document:operator.document});full[2].value.bindings.stores={otherProvider:'retained'};
+ assert.deepEqual(bind(f,full).binding,p.binding,'whole kernel declarations and unrelated provider fields do not replace or invalidate messaging selections');
+ assert.deepEqual(p.n.settings,{delivery:'session'});assert.deepEqual(p.binding.payload.responsibleHuman,human);assert.deepEqual(p.binding.payload.privateTeam,team);assert.deepEqual(p.binding.payload.wider,[]);assert.deepEqual(p.binding.payload.context,{kind:'workspace',identity:context.identity});assert.deepEqual(p.binding.credentialRefs,{});assert.equal(p.messagingChoice.enabled,true);
+ const checked=invoke(f,'check',request('check',{binding:p.binding,context,action:{kind:'inspect'}}));assert.deepEqual(checked.value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:'selected binding and inline captured invocation are required'}]});assert.equal(fs.existsSync(f.marker),false);
+ const missing=structuredClone(declarations);delete missing[2].value.bindings.privateTeam;const partial=bind(f,missing);assert.deepEqual(invoke(f,'check',request('check',{binding:partial.binding,context,action:{kind:'inspect'}})).value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:'an explicit private-team binding is required'}]});
 });
 test('malformed/unknown input never supplies authority, default context, identity copying or delivery downgrade',t=>{
  const f=fixture(t),base=request('normalize',{declarations,context});
@@ -42,9 +45,9 @@ test('inline invocation matches binding/action but shape, admission and supplied
  const f=fixture(t),p=bind(f),action={kind:'command',namespace:'aweb',name:'setup'};
  const invocation=invocationFor({binding:p.binding,context,action});
  const input={binding:p.binding,context,action,invocation};
- assert.deepEqual(handleBindingRequest('check',request('check',input)),{status:'needs-configuration',problems:[{code:'needs-configuration'}]});
+ assert.deepEqual(invoke(f,'check',request('check',input)).value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:'an admitted captured instance intent is required for execution'}]});
  invocation.intent={schemaVersion:1,executionId:'controlled-fixture',incarnationId:invocation.instance.incarnationId,attempt:1};invocation.priorReceipt={canSetup:true,state:'configured'};
- assert.deepEqual(handleBindingRequest('check',request('check',input)),{status:'unavailable',problems:[{code:'provider-not-qualified'}]});
+ assert.deepEqual(invoke(f,'check',request('check',input)).value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:'caller-owned OATS_CLI_BIN and readable kernel version are required'}]});
  for(const change of [{responsibleHuman:{provider:'oats.aweb',id:'foreign'}},{action:{...action,name:'other'}},{context:{kind:'standalone',key:'foreign'}},{capability:'oats.okf'}])assert.equal(invoke(f,'check',request('check',{...input,invocation:{...invocation,...change}})).value.ok,false);
  assert.equal(fs.existsSync(f.marker),false);
 });
@@ -52,9 +55,35 @@ test('all captured native entrypoints refuse before ambient lookup/enrollment/wa
  const f=fixture(t);
  for(const action of ['spawn','retire','setup','roster'])for(const marker of ['OATS_BINDING_FILE','OATS_INVOCATION_CONTEXT_FILE','OATS_SOURCE_RECEIPT_FILE']){
   const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb.mjs'),action],{env:{...f.env,OATS_SETTINGS:'{"delivery":"session"}',[marker]:'/must-not-read/private-fixture',OATS_TEAM_ID:'must-not-borrow:example.invalid'},cwd:f.home,encoding:'utf8',timeout:10000});
-  assert.equal(r.status,1);assert.match(JSON.parse(r.stdout).warning,/captured messaging action is not qualified/);assert.doesNotMatch(r.stdout+r.stderr,/must-not-read|must-not-borrow/);assert.equal(fs.existsSync(f.marker),false);
+  assert.equal(r.status,1);assert.match(JSON.parse(r.stdout).warning,/invalid or changed captured aweb execution input/);assert.doesNotMatch(r.stdout+r.stderr,/must-not-read|must-not-borrow/);assert.equal(fs.existsSync(f.marker),false);
  }
  const legacy=spawnSync(process.execPath,[join(cap,'bin/oats-aweb.mjs'),'retire'],{env:{...f.env,OATS_META:'{}'},cwd:f.home,encoding:'utf8',timeout:10000});assert.equal(legacy.status,0,legacy.stderr);assert.equal(JSON.parse(legacy.stdout).meta.reason,'nothing-to-delete');assert.equal(fs.existsSync(f.marker),false);
+});
+test('normalize and bind errors name fixed missing items without reflecting aliases, keys or input text',t=>{
+ const f=fixture(t),secret='SYNTHETIC_PRIVATE_ALIAS';
+ const expect=(phase,input,code,message)=>{
+  const result=invoke(f,phase,request(phase,input));assert.equal(result.value.ok,false);
+  assert.deepEqual(result.value.error,{code,message});assert.doesNotMatch(result.bytes.toString(),/SYNTHETIC_PRIVATE_ALIAS/);
+ };
+ expect('normalize',{declarations:[],context},'needs-configuration','messaging binding needs one soul declaration');
+ expect('normalize',{declarations,context:{kind:'standalone',key:null}},'needs-configuration','messaging-enabled standalone preparation needs an explicit context key');
+ const noPolicy=structuredClone(declarations);delete noPolicy[1].value.teams.private;
+ expect('normalize',{declarations:noPolicy,context},'needs-configuration','messaging workspace must declare private: per-human');
+ const conflict=[...declarations,...['first','second'].map(target=>({kind:'adoption',value:{teamAliases:{[secret]:target}},origin:origin('import-adoption'),origins:{}}))];
+ expect('normalize',{declarations:conflict,context},'requirement-conflict','adoption team aliases have conflicting mappings');
+ const malformed=structuredClone(declarations);malformed[2].value.bindings.responsibleHuman[secret]='private-value';
+ expect('normalize',{declarations:malformed,context},'invalid-binding','messaging input must match the supported binding contract');
+ const p=bind(f);
+ for(const [key,message] of [['/bindings/messaging/responsibleHuman','an explicit responsible-human binding is required'],['/bindings/messaging/wider','an explicit wider-membership consent list is required']]){
+  const choices=structuredClone(p.b.input.choices);delete choices[key];expect('bind',{context,model:p.b.input.model,choices},'needs-configuration',message);
+ }
+ const ds=structuredClone(declarations);ds[0].value.teams=[secret];ds[2].value.bindings.wider=[secret];
+ const normalized=invoke(f,'normalize',request('normalize',{declarations:ds,context})).value.result;
+ expect('bind',{context,model:normalized.model,choices:choose(normalized.candidates)},'needs-configuration','a selected wider alias needs an explicit workspace team mapping');
+ ds[1].value.teams[secret]={provider:'oats.aweb',id:'other:example.invalid'};
+ const mapped=invoke(f,'normalize',request('normalize',{declarations:ds,context})).value.result,choices=choose(mapped.candidates);delete choices['/bindings/messaging/teams/'+secret];
+ expect('bind',{context,model:mapped.model,choices},'needs-configuration','a selected wider-team binding is required');
+ assert.equal(fs.existsSync(f.marker),false);
 });
 test('manifest keeps required messaging and both delivery resource closures, with canonical codec commands',()=>{
  const m=JSON.parse(fs.readFileSync(join(cap,'oats.json')));assert.equal(m.layer,'messaging');assert.equal(m.hooks.spawn.required,true);assert.equal(m.settings.delivery.default,'channel');assert.deepEqual(m.settings.delivery.values,['channel','session']);assert.ok(m.requires.some(r=>r.command==='aw'));
@@ -67,6 +96,6 @@ test('coupled current kernel wire and sole resolver accept actual codec output b
  const n=request('normalize',{declarations,context}),normalized=invoke(f,'normalize',n);const accepted=wire.decodeBindingResponse(normalized.bytes,n);assert.equal(accepted.ok,true);
  const selected=resolveChoices(accepted.result);assert.equal(selected.status,'resolved');
  const b=request('bind',{context,model:accepted.result.model,choices:selected.choices}),bound=invoke(f,'bind',b),decoded=wire.decodeBindingResponse(bound.bytes,b);assert.equal(decoded.ok,true);assert.deepEqual(decoded.result.messagingChoice.wider,[]);
- const c=request('check',{binding:decoded.result.binding,context,action:{kind:'inspect'}}),checked=invoke(f,'check',c);assert.deepEqual(wire.decodeBindingResponse(checked.bytes,c),{ok:true,result:{status:'unavailable',problems:[{code:'provider-not-qualified'}]}});
+ const c=request('check',{binding:decoded.result.binding,context,action:{kind:'inspect'}}),checked=invoke(f,'check',c);assert.deepEqual(wire.decodeBindingResponse(checked.bytes,c),{ok:true,result:{status:'needs-configuration',problems:[{code:'needs-configuration'}]}});
  assert.equal(fs.existsSync(f.marker),false);assert.equal(fs.existsSync(join(f.home,'.aw')),false);
 });

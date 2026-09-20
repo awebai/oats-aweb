@@ -58,7 +58,9 @@ export function normalizeMessagingDeclarations({declarations,context}={}) {
   const exact=exactContext(context),contextOrigin=context?.kind==='workspace'?clone(context.observation):null,requirements=[],candidates=[],teams={},requested=[],requestedOrigins={},aliases={},aliasOrigins={};let soul=null,privatePolicy=false,privatePolicyOrigin=null;
   for(const raw of declarations) {
     const item=declaration(raw);
-    keys(item.value,item.kind==='adoption'?['teamAliases']:item.kind==='operator'?['bindings']:['teams'],[],'messaging declaration value');
+    // The kernel supplies complete validated source/workspace/operator
+    // declarations, including other providers' fields. Consume only messaging
+    // fields here; do not impose a second closed schema on the whole document.
     if(item.kind==='soul') {
       if(soul) fail('requirement-conflict','multiple soul messaging declarations');soul=item;
       const list=item.value.teams ?? [];
@@ -75,12 +77,12 @@ export function normalizeMessagingDeclarations({declarations,context}={}) {
       const value=item.value.teamAliases;if(value===undefined) continue;if(!obj(value)) fail('invalid-binding','adoption teamAliases must be an object');
       for(const [source,target] of Object.entries(value)) {
         identifier(source,'source team alias');identifier(target,'workspace team alias');
-        if(Object.hasOwn(aliases,source) && aliases[source]!==target) fail('requirement-conflict',`conflicting adoption mapping for ${source}`);
+        if(Object.hasOwn(aliases,source) && aliases[source]!==target) fail('requirement-conflict','adoption team aliases have conflicting mappings');
         aliases[source]=target;aliasOrigins[source]=originAt(item,`/teamAliases/${pointerKey(source)}`,'import-adoption');
       }
     } else {
       const bindings=item.value.bindings;if(bindings===undefined) continue;
-      keys(bindings,['responsibleHuman','privateTeam','wider'],[],'operator messaging bindings');
+      if(!obj(bindings)) fail('invalid-binding','operator bindings must be an object');
       if(Object.hasOwn(bindings,'responsibleHuman')) candidates.push({key:RESPONSIBLE_HUMAN_KEY,kind:'operator',value:humanRef(bindings.responsibleHuman),origin:originAt(item,'/bindings/responsibleHuman','operator')});
       if(Object.hasOwn(bindings,'privateTeam')) candidates.push({key:PRIVATE_TEAM_KEY,kind:'operator',value:teamRef(bindings.privateTeam),origin:originAt(item,'/bindings/privateTeam','operator')});
       if(Object.hasOwn(bindings,'wider')) {
@@ -96,7 +98,7 @@ export function normalizeMessagingDeclarations({declarations,context}={}) {
   return {requirements,candidates,model:{contract:MESSAGING_CONTRACT,version:MESSAGING_CONTRACT_VERSION,context:exact,contextOrigin,requested,requestedOrigins,aliases,aliasOrigins,teams,privatePolicy,privatePolicyOrigin}};
 }
 function selected(choices,key,{optional=false}={}) {
-  const choice=choices?.[key];if(!obj(choice) || !Object.hasOwn(choice,'value') || choice.value===null) {if(optional)return null;fail('needs-configuration',`unresolved messaging binding: ${key}`);}return choice;
+  const choice=choices?.[key];if(!obj(choice) || !Object.hasOwn(choice,'value') || choice.value===null) {if(optional)return null;fail('needs-configuration',key===RESPONSIBLE_HUMAN_KEY?'an explicit responsible-human binding is required':key===WIDER_KEY?'an explicit wider-membership consent list is required':'a selected wider-team binding is required');}return choice;
 }
 
 export function bindMessagingDomain({model,choices}={}) {
@@ -106,7 +108,7 @@ export function bindMessagingDomain({model,choices}={}) {
   const wider=[],provenance=[humanChoice.selectedBy,widerChoice.selectedBy,model.contextOrigin,model.privatePolicyOrigin].filter(obj).map(clone);
   for(const sourceAlias of widerChoice.value) {
     identifier(sourceAlias,'wider team alias');if(!model.requested.includes(sourceAlias)) fail('invalid-binding',`wider consent names undeclared soul alias: ${sourceAlias}`);
-    const workspaceAlias=model.aliases[sourceAlias] ?? sourceAlias,key=model.teams[workspaceAlias];if(!key) fail('needs-configuration',`wider alias has no workspace team mapping: ${sourceAlias}`);
+    const workspaceAlias=model.aliases[sourceAlias] ?? sourceAlias,key=model.teams[workspaceAlias];if(!key) fail('needs-configuration','a selected wider alias needs an explicit workspace team mapping');
     const choice=selected(choices,key),ref=teamRef(choice.value);wider.push(ref);if(obj(choice.selectedBy)) provenance.push(clone(choice.selectedBy));
     if(obj(model.requestedOrigins[sourceAlias])) provenance.push(clone(model.requestedOrigins[sourceAlias]));
     if(obj(model.aliasOrigins[sourceAlias])) provenance.push(clone(model.aliasOrigins[sourceAlias]));

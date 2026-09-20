@@ -40,6 +40,10 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter } from "node:path";
+import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
+import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
+import { runCapturedNative } from "../lib/captured-native.mjs";
+import { parseBindingJson } from "../lib/binding-wire.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -110,12 +114,26 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
 
-// Portable declarations do not authorize legacy ambient identity selection.
-// Refuse BEFORE settings/root/key/wake discovery (including invalid-present or
-// unpaired snapshots). The native captured enrollment adapter is not qualified;
-// do not read private snapshots merely to pretend this legacy path supports it.
-if (["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"].some(key => Object.hasOwn(process.env, key))) {
-  fatal("captured messaging action is not qualified; no legacy identity/team lookup, credential copy, enrollment or wake action was attempted");
+// Any selected snapshot enters the captured consumer BEFORE legacy settings,
+// root discovery or identity handling. Invalid-present never falls back.
+try {
+  const loaded = loadCapturedAwebExecution();
+  if (loaded.kind === "captured") {
+    const event = process.argv[2] || process.env.OATS_EVENT;
+    if ((process.env.OATS_EVENT && process.env.OATS_EVENT !== event) || process.argv.slice(3).some(arg => arg !== "--json")) throw new Error("captured entrypoint arguments differ from the selected action");
+    const manifest = JSON.parse(readFileSync(new URL("../oats.json", import.meta.url), "utf8"));
+    const selected = requireCapturedAwebAction(loaded, event, manifest);
+    const settings = parseBindingJson(Buffer.from(process.env.OATS_SETTINGS || "{}"));
+    if (!settings || typeof settings !== "object" || Array.isArray(settings) || Object.keys(settings).some(k => k !== "delivery")) throw new Error("captured settings support delivery only; no identity copying or ambient fallback");
+    const checked = assessCapturedSessionReadiness({ binding: selected.binding, invocation: selected.context, settings }, {
+      query(args, options) { selected.assertCurrent(); const result = querySelectedKernel(args, options); selected.assertCurrent(); return result; },
+    });
+    if (checked.status !== "ready") out({ ...checked, warning: `oats-aweb: ${checked.problems[0].message}` }, 1);
+    const result = runCapturedNative({ selected, event, settings, run });
+    out(result.output, result.exitCode);
+  }
+} catch (error) {
+  out({ status: "needs-configuration", problems: [{ code: "invalid-binding", message: "invalid or changed captured aweb execution input" }], warning: "oats-aweb: invalid or changed captured aweb execution input; no legacy fallback was used" }, 1);
 }
 
 const event = process.env.OATS_EVENT || process.argv[2];

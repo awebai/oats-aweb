@@ -1,4 +1,5 @@
 import { TextDecoder } from 'node:util';
+import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -140,21 +141,18 @@ function binding(value) {
   for(const origin of value.provenance) if(!obj(origin)) wireError('invalid-binding');
   return value;
 }
-function checkResult(code,status='unavailable') {return {status,problems:[{code}]};}
+function checkResult(message) {return {status:'needs-configuration',problems:[{code:'needs-configuration',message}]};}
 function checkPhase(req) {
   keys(req.input,['binding','context','action','invocation'],['binding','context','action']);
   if(!obj(req.input.action) || typeof req.input.action.kind!=='string') wireError('invalid-binding');
   const current=validateAwebBinding(binding(req.input.binding)),selectedContext=context(req.input.context,{request:true});
   if(!same(selectedContext,current.payload.context)) wireError('invalid-binding');
   const invocation=Object.hasOwn(req.input,'invocation')?validateAwebInvocationContext(req.input.invocation,current,{context:req.input.context,action:req.input.action}):null;
-  if(['command','hook','operation'].includes(req.input.action.kind) && (!invocation || invocation.instance===null || invocation.intent===null)) return checkResult('needs-configuration','needs-configuration');
-  if(current.payload.privateTeam===null) return checkResult('needs-configuration','needs-configuration');
-  // This release candidate implements declaration/selection only. There is no
-  // native H-to-actor delegation/private-context/grant collector or admitted
-  // enrollment adapter yet. A structurally valid selection is NOT readiness.
-  // Never inspect the observer's identity, invoke aw, or accept supplied facts
-  // as permission to mint/join/connect/register a wake broker.
-  return checkResult('provider-not-qualified');
+  if(['command','hook','operation'].includes(req.input.action.kind) && (!invocation || invocation.instance===null || invocation.intent===null)) return checkResult('an admitted captured instance intent is required for execution');
+  if(current.payload.privateTeam===null) return checkResult('an explicit private-team binding is required');
+  // Read-only public kernel observations, not an account/grant attestation.
+  // Native setup is performed only by the separately admitted execution path.
+  return assessCapturedSessionReadiness({binding:current,invocation,settings:req.settings});
 }
 
 export function handleBindingRequest(phase,value) {
@@ -166,6 +164,33 @@ export function handleBindingRequest(phase,value) {
 }
 function response(phase,body) {return {schemaVersion:1,phase,slot:SLOT,capability:CAPABILITY,...body};}
 function errorCode(error) {if(errorCodes.has(error?.wireCode)) return error.wireCode;if(errorCodes.has(error?.code)) return error.code;return 'invalid-binding';}
+// Only these literal domain diagnostics may cross the wire. Never reflect a
+// caught exception's dynamic alias/key/path, native stderr or credential text.
+const safeReasons=new Map([
+  ['needs-configuration',[
+    'messaging-enabled standalone preparation needs an explicit context key',
+    'messaging binding needs one soul declaration',
+    'messaging workspace must declare private: per-human',
+    'an explicit responsible-human binding is required',
+    'an explicit wider-membership consent list is required',
+    'a selected wider-team binding is required',
+    'a selected wider alias needs an explicit workspace team mapping',
+  ]],
+  ['requirement-conflict',['multiple soul messaging declarations','adoption team aliases have conflicting mappings']],
+]);
+const fallbackReasons=Object.freeze({
+  'needs-configuration':'messaging settings and explicit binding selections are required',
+  'requirement-conflict':'messaging declarations contain incompatible requirements',
+  'invalid-binding':'messaging input must match the supported binding contract',
+  'authorization-required':'explicit native messaging authorization is required',
+  'host-requirement-missing':'a required native messaging host resource is unavailable',
+  'provider-unavailable':'the selected messaging provider is unavailable',
+  'provider-not-qualified':'the requested messaging configuration is not qualified',
+});
+function errorProblem(error) {
+  const code=errorCode(error),message=safeReasons.get(code)?.find(literal=>literal===error?.message)??fallbackReasons[code];
+  return {code,message};
+}
 function enforceOutputLimits(value,depth=1,state={entries:0}) {
   if(depth>BINDING_WIRE_LIMITS.depth) wireError('provider-not-qualified');
   if(value===null || typeof value!=='object') return;
@@ -181,9 +206,9 @@ export async function runBindingWire(phase,input=process.stdin,output=process.st
     for await(const chunk of input) {const bytes=Buffer.from(chunk);length+=bytes.length;if(length>BINDING_WIRE_LIMITS.bytes) wireError('invalid-binding');chunks.push(bytes);}
     const result=handleBindingRequest(phase,parseBindingJson(Buffer.concat(chunks,length)));
     answer=response(phase,{ok:true,result});
-  } catch(error) {answer=response(phases.has(phase)?phase:'check',{ok:false,error:{code:errorCode(error)}});}
+  } catch(error) {answer=response(phases.has(phase)?phase:'check',{ok:false,error:errorProblem(error)});}
   let bytes;
   try {enforceOutputLimits(answer);bytes=Buffer.from(JSON.stringify(answer)+'\n');if(bytes.length>BINDING_WIRE_LIMITS.bytes) wireError('provider-not-qualified');}
-  catch {bytes=Buffer.from(JSON.stringify(response(phases.has(phase)?phase:'check',{ok:false,error:{code:'provider-not-qualified'}}))+'\n');}
+  catch {bytes=Buffer.from(JSON.stringify(response(phases.has(phase)?phase:'check',{ok:false,error:{code:'provider-not-qualified',message:'messaging response exceeds the supported wire limits'}}))+'\n');}
   output.write(bytes);return answer.ok;
 }
