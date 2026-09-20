@@ -1,64 +1,105 @@
 # oats-aweb
 
-Official [OATS](https://github.com/awebai/oats) messaging-layer integration for [aweb](https://aweb.ai). It provides:
+Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
+[aweb](https://aweb.ai). It provides per-instance native identities, mail/chat
+skills, team roster discovery and session/channel delivery integration. Messaging
+is separate from durable task tracking; the selected tasks provider owns tasks.
 
-- per-instance, team-scoped aweb identity minting at spawn and self-deletion at retire;
-- bounded authority discovery that never walks above the deployment workspace;
-- `oats aweb roster` and guided `oats aweb setup` commands;
-- reviewed, MIT-licensed `aweb-messaging`, `aweb-team-membership`, and `aweb-identity` skill trees synchronized from `@awebai/pi@0.2.3`; and
-- a Claude Code channel-plugin launch integration for real-time events.
+## Portable captured profile — 1.11.0 candidate
 
-Messaging is deliberately separate from durable task tracking. The selected tasks integration owns task state.
+This candidate adds the existing manifest-owned binding codec and selected
+execution-input consumer. See [the exact profile boundary](PORTABLE-PROFILE-STATUS.md)
+for declarations, fixed missing-item diagnostics and native lifecycle behavior.
+It requires **OATS >=0.24.2**:0.24.1 adds captured HOME-route custody;0.24.2
+ships the retained launch projection and caller-owned codec CLI locator merged
+at b92f0d07. Check the actual caller version AND observations; a tag or source
+checkout alone is not installed availability.
 
-## Requirements
+`delivery: session` is explicit. The check reports `needs-configuration` when its
+binding, instance, private-team selection, caller version or retained profile is
+unavailable; the execution adapter separately reports missing native setup.
+**Strict-Pi print does not accept session input** and remains held; required messaging is never silently removed and the
+runtime is never silently switched. Ordinary input-capable profiles are evaluated
+under their exact retained selection; other required resources/hooks can still
+block native start.
 
-Install the `aw` CLI and initialize an aweb workspace at the deployment's team scope. `oats aweb setup` reports the next onboarding step without authenticating or creating a team silently.
+Native enrollment reuses aw's existing commands from the explicit retained
+deployment's already initialized authority context, for the child's own identity
+and exact selected team. No ambient root search, copied credential, new H/account
+mapping, private-grant protocol or automatic team creation is added. Session
+registration uses the existing home/identity-home/delivery ABI. Native identity,
+workspace and directory correspondence are checked around effects; unknown or
+partial outcomes remain recorded for explicit reconciliation.
 
-The three Agent Skills are vendored package-owned resources under `capabilities/oats-aweb/skills/`; acquisition performs no npm install or runtime fetch. [`VENDORED.md`](capabilities/oats-aweb/skills/VENDORED.md) records the exact upstream repository, `pi-v0.2.3` tag, commit, registry integrity, MIT license, and deterministic local-checkout sync procedure.
+The codec consumes complete kernel source/workspace/operator declarations,
+reading only messaging-owned fields while preserving other providers' choices.
+Caught normalize/bind errors use existing typed `error.message` with fixed safe
+reasons, never raw exception text, aliases, keys or native diagnostics.
 
-The `aw` binary remains a separately consented host requirement. Vendoring the skills does not install, authenticate, or bundle that CLI. The package requires OATS `>=0.19.0`; see [`SCHEMA-STATUS.md`](SCHEMA-STATUS.md) for the remaining released-kernel fixture gate.
+Scoped HOME-route operational custody is NOT human-account/private-grant
+attestation or proof that a model consumed a wake. Parent/operator acceptance of
+actual installed versions, identities and runtime delivery is separate from the
+controlled fixture results. This source candidate is not a published1.11.0 tag.
 
-## Acquire and activate
+## Native requirements and resources
 
-Acquisition does not activate the capability. After an official release exists:
+Install a compatible `aw` CLI separately, through operator-approved setup. The
+captured adapter uses the existing aw1.36.1 command shapes. Its selected deployment
+needs a legitimate existing native context with permission to issue the requested
+invite; OATS does not manufacture that native permission. The child must have its
+own native identity, not an external `AWEB_IDENTITY_HOME` override.
+
+The package owns reviewed MIT-licensed `aweb-messaging`, `aweb-team-membership`
+and `aweb-identity` resources. [Vendored provenance](oats-package/capabilities/oats-aweb/skills/VENDORED.md)
+records the upstream repository, pi-v0.2.3 tag/commit, registry integrity and sync
+procedure. Acquisition performs no npm runtime install or credential setup.
+Native aw and conditional runtime resources remain declared requirements; session
+`ifInstalled` minimums and `AWEB_DELIVERY=session` are not removed to force a pass.
+
+## Classic compatibility — separate from retained authority
+
+The older unbound config-chain path retains its native behavior and channel
+default. A compatible classic scope acquires, explicitly trusts and selects the
+capability before guided setup:
 
 ```bash
-oats install oats.aweb --dir /path/to/scope
+oats install <actual-reviewed-published-package-source> --dir /path/to/scope
 oats trust oats.aweb --dir /path/to/scope
 oats use oats.aweb --global --dir /path/to/scope
 oats aweb setup
 oats doctor /path/to/scope --soul <soul-name>
 ```
 
-A pinned Git source may be used after publication:
-
-```bash
-oats install git:https://github.com/awebai/oats-aweb.git@v1.8.0 --dir /path/to/scope
-```
-
-Commands and identity lifecycle hooks are executable, so they require explicit per-capability trust tied to the exact package integrity. Targeting and team identity are deployment-owned. A typical config scope declares the team boundary and activates the messaging layer:
-
-```yaml
-team:
-  name: example-team
-  id: example-team:aweb.ai
-capabilities:
-  layers:
-    messaging:
-      capability: oats.aweb
-      from: installed
-      global: true
-```
+The source placeholder is explanatory: use an actual published Git revision or
+an available official catalog selection, never an invented future release ref.
+Acquisition is not activation or executable trust. Native enrollment permissions
+are also separate from executable approval. Do not apply these classic forms to
+bypass a captured refusal. The old [schema checkpoint](SCHEMA-STATUS.md) records
+historical work, not current1.11 readiness or a new0.19 fixture requirement.
 
 ## Development
 
 ```bash
+node scripts/validate-manifests.mjs
+node --test test/portable-profile.test.mjs test/captured-execution.test.mjs \
+  test/session-readiness.test.mjs test/captured-native.test.mjs
+# Full local provider unit suite when appropriate:
 npm test
-
-# Maintainer-only vendored update from an exact clean upstream checkout:
-node scripts/sync-vendored-skills.mjs --source /path/to/aweb
-npm test
-git diff -- oats-package/capabilities/oats-aweb/skills
 ```
 
-Tests validate both manifests, skill frontmatter/provenance/licenses, absence of runtime dependency closures, executable independence from omitted npm packages, and missing-CLI/bounded-root/retire hook behavior. The full acquire → lock → trust → activate → spawn probe remains pending released OATS 0.19.0 consumer fixtures.
+Focused tests use controlled public-kernel/native-aw doubles and explicit source
+coupling for the wire/resolver/private snapshot transport. Set
+`OATS_S3_FRAMEWORK_ROOT` to an exact verified kernel export for
+`test/public-kernel-readiness.test.mjs`: it couples real codecs, approval/scaffold,
+broker and readonly CLI, with no native setup/start, when the package floor is
+met. The merged b92f0d07 source still identifies as0.24.1: final1.11 metadata must
+refuse acquisition on it, not rewrite its version. The pre-metadata code commit
+143a8a9 coupled those exact kernel bytes and verified the CLI locator/projection
+while retaining the runtime version hold. That case also preserves Claude's
+runtime-package refusal and uses a separate explicit inert Codex observation
+fixture, not a pilot fallback.
+They are not real
+provider enrollment, SDK/model/backend or broker-consumption evidence. Old failed
+and corrected scopes stay separate. Maintainer vendored updates still use
+`node scripts/sync-vendored-skills.mjs --source /path/to/aweb` against the recorded
+clean upstream revision; this adapter does not edit those vendored skills.

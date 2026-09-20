@@ -118,9 +118,15 @@ test("declared commands and hooks have no npm package imports", () => {
     // Host CLI calls go through execFile/argv, never a shell string (no
     // execSync, no `command -v`), so hostile team names, aliases, or tokens can
     // never be interpolated into a command.
-    assert.match(source, /execFileSync/);
+    if (entrypoint === "bin/oats-aweb.mjs") {
+      assert.match(source, /execFileSync/);
+      assert.match(source, /aw team|aw workspace|aw id team/);
+    } else {
+      // The binding entrypoint delegates bounded JSON transport, not native aw.
+      assert.equal(entrypoint, "bin/oats-aweb-binding.mjs");
+      assert.match(source, /runBindingWire/);
+    }
     assert.doesNotMatch(source, /\bexecSync\b/);
-    assert.match(source, /aw team|aw workspace|aw id team/);
     // The Claude channel plugin is a DECLARED, consented runtime requirement —
     // the hook must never imperatively install it (or add a marketplace) at spawn.
     assert.doesNotMatch(source, /claude plugin (install|marketplace)/);
