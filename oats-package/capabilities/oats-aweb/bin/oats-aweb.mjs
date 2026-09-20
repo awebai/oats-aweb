@@ -110,6 +110,14 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
 
+// Portable declarations do not authorize legacy ambient identity selection.
+// Refuse BEFORE settings/root/key/wake discovery (including invalid-present or
+// unpaired snapshots). The native captured enrollment adapter is not qualified;
+// do not read private snapshots merely to pretend this legacy path supports it.
+if (["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"].some(key => Object.hasOwn(process.env, key))) {
+  fatal("captured messaging action is not qualified; no legacy identity/team lookup, credential copy, enrollment or wake action was attempted");
+}
+
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;
 const home = process.env.OATS_HOME || process.cwd();
