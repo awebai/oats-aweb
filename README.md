@@ -5,7 +5,9 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.11.1 candidate
+## Portable captured profile — 1.11.2
+
+1.11.2 is manifest-only over 1.11.1: it declares `helperInjection: {version: 1, mode: omit}` so a harvest helper (which has no messaging identity) composes without the aweb briefing. Without the declaration the kernel refuses helper composition for every soul that requires messaging (second-operator finding, 2026-09-21). Code identical to 1.11.0.
 
 The 1.11 line provides the manifest-owned binding codec and selected
 execution-input consumer. This patch declares its fixed diagnostic vocabulary
