@@ -23,7 +23,7 @@ const declarations=[
 const request=(phase,input,settings={delivery:'session'})=>({schemaVersion:1,phase,slot:'messaging',capability:'oats.aweb',settings,input});
 function fixture(t){const base=fs.realpathSync(fs.mkdtempSync(join(tmpdir(),'aweb-portable-profile-')));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const bin=join(base,'bin'),home=join(base,'home'),root=join(base,'root');fs.mkdirSync(bin);fs.mkdirSync(home);fs.mkdirSync(join(root,'.aw'),{recursive:true});const marker=join(base,'native-called');fs.writeFileSync(join(bin,'aw'),`#!/bin/sh\nprintf called >> '${marker}'\nexit 99\n`,{mode:0o755});return{base,home,root,marker,env:{HOME:home,PATH:bin}};}
 const reviewedDynamicHostReadiness=message=>message==='no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team'||/^no messaging root at \/.*: run oats aweb setup there or set settings\.oats\.aweb\.root$/.test(message);
-function invoke(f,phase,value){const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),phase],{env:f.env,cwd:f.base,input:Buffer.isBuffer(value)?value:JSON.stringify(value),encoding:'utf8',timeout:10000,maxBuffer:2*1024*1024});assert.equal(r.status,0,r.stderr);assert.equal(r.stderr,'');const response=JSON.parse(r.stdout);for(const message of [response.error?.message,...(response.result?.problems??[]).map(p=>p.message)].filter(v=>v!==undefined))assert.ok(declaredReasons.has(message)||reviewedDynamicHostReadiness(message),'fixed reasons must be declared; 1.12.1 host-readiness problems may name the configured root');return{bytes:Buffer.from(r.stdout),value:response};}
+function invoke(f,phase,value){const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),phase],{env:f.env,cwd:f.base,input:Buffer.isBuffer(value)?value:JSON.stringify(value),encoding:'utf8',timeout:10000,maxBuffer:2*1024*1024});assert.equal(r.status,0,r.stderr);assert.equal(r.stderr,'');const response=JSON.parse(r.stdout);for(const message of [response.error?.message,...(response.result?.problems??[]).map(p=>p.message)].filter(v=>v!==undefined))assert.ok(declaredReasons.has(message)||reviewedDynamicHostReadiness(message),'fixed reasons must be declared; host-readiness problems may name the configured root');return{bytes:Buffer.from(r.stdout),value:response};}
 const choose=candidates=>Object.fromEntries(candidates.map(c=>[c.key,{value:c.value,selectedBy:c.origin,constraints:[],considered:[{...c,disposition:'selected'}]}])); // UNIT data only; coupled case uses the real kernel solver.
 function bind(f,ds=declarations){const n=request('normalize',{declarations:ds,context}),normalized=invoke(f,'normalize',n);assert.equal(normalized.value.ok,true);const b=request('bind',{context,model:normalized.value.result.model,choices:choose(normalized.value.result.candidates)}),bound=invoke(f,'bind',b);assert.equal(bound.value.ok,true);const {messagingChoice,...fields}=bound.value.result;return{n,normalized,b,bound,binding:{schemaVersion:1,capability:'oats.aweb',...fields},messagingChoice};}
 
@@ -95,11 +95,12 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  assert.deepEqual(phases,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});
  assert.deepEqual(keys,['responsibleHuman','privateTeam','wider']);
  assert.equal(reasons.length,30);assert.equal(new Set(reasons).size,30);assert.ok(reasons.every(reason=>typeof reason==='string'&&reason.length>0));
- assert.equal(m.compatibility.oats,'>=0.24.4');
+ assert.equal(m.compatibility.oats,'>=0.25.6');
+ for(const key of ['root','roots','residents'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
  // A harvest helper has no messaging identity: the aweb briefing is omitted from helper compositions (second-operator finding, 2026-09-21).
  assert.deepEqual(m.helperInjection,{version:1,mode:'omit'});
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
- assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.12.1');
+ assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.12.2');
 });
 test('coupled current kernel wire and sole resolver accept actual codec output but do not turn binding into readiness',async t=>{
  const framework=process.env.OATS_P1_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned current framework source');return;}

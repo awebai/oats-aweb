@@ -5,9 +5,19 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.12.0
+## Portable captured profile — 1.12.2
 
-1.12.0 adds resident-identity session grants: `identity.mode: global` makes an
+1.12.2 declares host-only path settings (`root`, `roots`, `residents`) for
+kernels that enforce `hostOnly: true` (OATS >=0.25.6) and hardens `oats aweb
+setup` around existing `aw` primitives only: `aw init --username <u>`,
+`AWEB_API_KEY=… aw init`, and `aw team join <token>`. Guidance no longer names
+nonexistent team-creation shortcut; when a new hosted username is used, setup tells the
+operator to map the workspace team to `default:<u>.aweb.ai` if that is the
+intended team. Readiness now matches the spawn hook's no-explicit-team fallback:
+a root with an active aweb team is ready, while an unmapped workspace team label
+still reports the v2 team-setting remedy.
+
+1.12.0 added resident-identity session grants: `identity.mode: global` makes an
 instance act as a named resident identity through an expiring `aw` grant
 (never minting or copying root keys), `team` is read from the payload,
 `residents.<name>` is the host-only custody map, and every spawn emits the
