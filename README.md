@@ -5,7 +5,16 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.11.2
+## Portable captured profile — 1.12.0
+
+1.12.0 adds resident-identity session grants: `identity.mode: global` makes an
+instance act as a named resident identity through an expiring `aw` grant
+(never minting or copying root keys), `team` is read from the payload,
+`residents.<name>` is the host-only custody map, and every spawn emits the
+messaging-layer meta key `identity` (`{ mode, alias, team, address, resident, grant? }`).
+See `oats-package/capabilities/oats-aweb/oats.json` and the OATS integrations guide.
+
+## 1.11.2
 
 1.11.2 is manifest-only over 1.11.1: it declares `helperInjection: {version: 1, mode: omit}` so a harvest helper (which has no messaging identity) composes without the aweb briefing. Without the declaration the kernel refuses helper composition for every soul that requires messaging (second-operator finding, 2026-09-21). Code identical to 1.11.0.
 
