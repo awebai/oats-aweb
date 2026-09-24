@@ -327,6 +327,8 @@ function custodyPreflight(custody, resident, team, { e2eeRequired = true, fatalO
   const teamRow = (Array.isArray(status.teams) ? status.teams : []).find((t) => t && (t.team_id || t.id) === team);
   if (!teamRow) fail(`team ${team} is not present in custody status`);
   if (teamRow.ready !== true) fail(`team ${team} is not ready in custody status`);
+  if (teamRow.certificate_present === false) fail(`team ${team} certificate is not present in custody status`);
+  if (teamRow.grant_status_endpoint_ready !== undefined && teamRow.grant_status_endpoint_ready !== true) fail(`the aweb server serving team ${team} does not provide grant status yet; hosted grants wait for that deployment`);
   if (status.keys?.signing_ready !== true) fail("keys.signing_ready is false");
   const ops = new Set(Array.isArray(status.ops) ? status.ops.map(String) : []);
   const requiredOps = ["sign_plain_message.v1", ...(e2eeRequired ? ["unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] : [])];

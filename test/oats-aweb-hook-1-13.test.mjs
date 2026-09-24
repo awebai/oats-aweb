@@ -41,7 +41,7 @@ if (a[0] === "custody" && a[1] === "status" && a.includes("--json")) {
     service_id: "custody-fake-4c353d6d",
     socket_path: path.join(process.cwd(), "custody.sock"),
     resident: { did_aw: "did:aw:resident", did_key: "did:key:resident", address: "oats.aweb.ai/resident-alias", alias: "resident-alias" },
-    teams: process.env.FAKE_CUSTODY_TEAMS ? JSON.parse(process.env.FAKE_CUSTODY_TEAMS) : [{ team_id: team, ready: process.env.FAKE_TEAM_READY !== "0", certificate_present: true, grant_status_endpoint_ready: true }],
+    teams: process.env.FAKE_CUSTODY_TEAMS ? JSON.parse(process.env.FAKE_CUSTODY_TEAMS) : [{ team_id: team, ready: process.env.FAKE_TEAM_READY !== "0", certificate_present: process.env.FAKE_CERTIFICATE_PRESENT !== "0", grant_status_endpoint_ready: process.env.FAKE_GRANT_STATUS_ENDPOINT_READY !== "0" }],
     keys: { signing_ready: process.env.FAKE_SIGNING_READY !== "0", encryption_ready: process.env.FAKE_ENCRYPTION_READY !== "0", encryption_key_id: "enc-1" },
     ops: csv("FAKE_CUSTODY_OPS", "sign_plain_message.v1,create_e2ee_envelope.v1,unwrap_e2ee_message.v1,status.v1"),
     freshness: { source: "fake", last_checked_at: "2026-09-24T00:00:00Z", max_cache_age_seconds: 30 },
@@ -129,7 +129,7 @@ test("normal global grants use the 1.13 concrete default scopes and preflight cu
     assert.equal(mint.cwd, realpathSync(custody));
     assert.equal(mint.identityHome, null);
     assert.equal(mint.argv[mint.argv.indexOf("--scope") + 1], NORMAL_SCOPES.join(","));
-    assert.equal(mint.argv.includes("--team"), false, "placeholder floor keeps --team off for current aw");
+    assert.equal(mint.argv.includes("--team"), false, "team floor keeps --team off before aw 1.36.2");
     assert.equal(existsSync(join(home, ".aweb-identity", "grant.yaml")), true);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
@@ -164,6 +164,29 @@ test("custody preflight fails closed with typed status/error and serve remedy be
     assert.match(r.doc.warning, /custody.*not_running/);
     assert.match(r.doc.warning, /daemon_down/);
     assert.match(r.doc.warning, /start aw custody serve for merlin/);
+    assert.equal(logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("custody preflight requires team grant-status endpoint when reported, allows absent readiness, and requires certificate", () => {
+  let base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const { r } = spawnGrant(base, {}, { FAKE_GRANT_STATUS_ENDPOINT_READY: "0" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.doc.warning, /the aweb server serving team t:example\.test does not provide grant status yet; hosted grants wait for that deployment/);
+    assert.equal(logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+  base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const row = { team_id: "t:example.test", ready: true };
+    const { r } = spawnGrant(base, {}, { FAKE_CUSTODY_TEAMS: JSON.stringify([row]) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+  base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const { r } = spawnGrant(base, {}, { FAKE_CERTIFICATE_PRESENT: "0" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.doc.warning, /team t:example\.test certificate is not present in custody status/);
     assert.equal(logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
