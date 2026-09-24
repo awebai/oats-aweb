@@ -1,6 +1,0 @@
-schemaVersion: 1
-workspace:
-  source: git:github.com/awebai/oats
-exports:
-  packages:
-    - path: oats-package
