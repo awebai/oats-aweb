@@ -40,6 +40,8 @@ test('binding-less workspace readiness check follows settings roots, team labels
  const f=fixture(t),workspaceContext={kind:'workspace',workspace:'fixture-workspace',deployment:f.root,soul:'example',team:'experts',instance:null,home:null},action={kind:'readiness'};
  let checked=invoke(f,'check',request('check',{context:workspaceContext,action},{delivery:'session',root:f.root,team:team.id}));
  assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]});assert.equal(fs.existsSync(f.marker),false);
+ checked=invoke(f,'check',request('check',{context:{...workspaceContext,team:null},action},{delivery:'session',root:f.root,team:team.id}));
+ assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]},'a teamless soul context is valid and settings/team env still drive readiness');
  const absent=join(f.base,'absent-deployment');fs.mkdirSync(absent);
  checked=invoke(f,'check',request('check',{context:{...workspaceContext,deployment:absent},action},{delivery:'session'}));
  assert.deepEqual(checked.value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:`no messaging root at ${absent}: run oats aweb setup there or set settings.oats.aweb.root`},{code:'needs-configuration',message:'no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team'}],warnings:[]});

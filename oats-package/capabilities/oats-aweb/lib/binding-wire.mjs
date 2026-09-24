@@ -155,8 +155,9 @@ function binding(value) {
 function checkResult(message) {return {status:'needs-configuration',problems:[{code:'needs-configuration',message}]};}
 function checkProblems(problems) {return problems.length?{status:'needs-configuration',problems}:null;}
 function workspaceReadinessContext(value) {
-  keys(value,['kind','workspace','deployment','soul','team','instance','home'],['kind','workspace','deployment','soul','team']);
-  if(value.kind!=='workspace' || typeof value.workspace!=='string' || !value.workspace.trim() || typeof value.deployment!=='string' || !value.deployment.trim() || typeof value.soul!=='string' || !value.soul.trim() || typeof value.team!=='string' || !value.team.trim()) wireError('invalid-binding');
+  keys(value,['kind','workspace','deployment','soul','team','instance','home'],['kind','workspace','deployment','soul']);
+  if(value.kind!=='workspace' || typeof value.workspace!=='string' || !value.workspace.trim() || typeof value.deployment!=='string' || !value.deployment.trim() || typeof value.soul!=='string' || !value.soul.trim()) wireError('invalid-binding');
+  if(value.team!==null && value.team!==undefined && (typeof value.team!=='string' || !value.team.trim())) wireError('invalid-binding');
   if(value.instance!==null && value.instance!==undefined && (typeof value.instance!=='string' || !value.instance.trim())) wireError('invalid-binding');
   if(value.home!==null && value.home!==undefined && (typeof value.home!=='string' || !value.home.trim())) wireError('invalid-binding');
   return value;
