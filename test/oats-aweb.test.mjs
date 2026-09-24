@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ROOT = join(REPO, "oats-package");
 const CAPABILITY = join(ROOT, "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
+const BINDING = join(CAPABILITY, "bin", "oats-aweb-binding.mjs");
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), "oats-aweb-test-"));
@@ -24,6 +25,50 @@ function fakePath(t, body = "exit 97") {
   writeFileSync(aw, `#!/bin/sh\n${body}\n`);
   chmodSync(aw, 0o755);
   return bin;
+}
+
+function fakeAwSetupPath(t, { activeTeam = "active:example.invalid" } = {}) {
+  const dir = tempDir(t);
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  const calls = join(dir, "calls.jsonl");
+  const aw = join(bin, "aw");
+  writeFileSync(aw, `#!${process.execPath}
+const fs = require("node:fs");
+const path = require("node:path");
+const calls = ${JSON.stringify(calls)};
+const args = process.argv.slice(2);
+fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), hasApiKey: !!process.env.AWEB_API_KEY }) + "\\n");
+const awDir = path.join(process.cwd(), ".aw");
+const teamsFile = path.join(awDir, "teams.json");
+const writeTeams = (team) => { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team }] })); };
+if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
+  if (fs.existsSync(teamsFile)) console.log(fs.readFileSync(teamsFile, "utf8"));
+  else console.log(JSON.stringify({ memberships: [] }));
+} else if (args[0] === "init") {
+  if (args.includes("--do-not-touch-agents-md") && fs.existsSync(path.join(awDir, "identity.yaml"))) { console.log("initialized"); process.exit(0); }
+  if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }
+  const i = args.indexOf("--username");
+  writeTeams(i >= 0 ? "default:" + args[i + 1] + ".aweb.ai" : (process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)}));
+  console.log("initialized");
+} else if (args[0] === "team" && args[1] === "join") {
+  if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }
+  writeTeams(process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)});
+  console.log(JSON.stringify({ team_id: process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)} }));
+} else if (args[0] === "team" && args[1] === "invite") {
+  console.log(JSON.stringify({ token: "INVITE-TOKEN" }));
+} else if (args[0] === "whoami") {
+  console.log(JSON.stringify({ alias: "fixture", did: "did:key:zFixture" }));
+} else if (args[0] === "workspace" && args[1] === "status") {
+  console.log(JSON.stringify({ selected_team: ${JSON.stringify(activeTeam)}, workspace: { alias: "fixture", workspace_path: process.cwd() } }));
+} else if (args[0] === "wake") {
+  console.log("ok");
+} else {
+  console.error("unexpected fake aw " + args.join(" "));
+  process.exit(93);
+}
+`, { mode: 0o755 });
+  return { path: bin, calls, readCalls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
 }
 
 function run(args = [], env = {}, cwd = ROOT) {
@@ -103,6 +148,44 @@ test("vendored skills carry exact upstream provenance and MIT license", () => {
   assert.match(license, /Copyright \(c\) 2025 Juan Reyero/);
 });
 
+test("capability guidance names only real first-level aw verbs", (t) => {
+  const files = [
+    join(CAPABILITY, "bin", "oats-aweb.mjs"),
+    join(CAPABILITY, "injects", "aweb.md"),
+    join(REPO, "README.md"),
+  ];
+  const verbs = new Set();
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    assert.doesNotMatch(text, /aw team create\b/, `${file} must not recommend the nonexistent aw team create command`);
+    for (const match of text.matchAll(/\["aw",\s*"([a-z][a-z0-9-]*)"/g)) verbs.add(match[1]);
+    for (const match of text.matchAll(/`aw\s+([a-z][a-z0-9-]*)\b/g)) verbs.add(match[1]);
+  }
+  assert.ok(verbs.size > 0, "the test must enumerate printed/run aw verbs");
+  const found = spawnSync("aw", ["--help"], { encoding: "utf8" });
+  if (found.error?.code === "ENOENT") {
+    t.skip(`aw CLI not on PATH; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
+    return;
+  }
+  assert.equal(found.status, 0, found.stderr || found.stdout);
+  const version = spawnSync("aw", ["version"], { encoding: "utf8" });
+  const parsed = /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(version.stdout + version.stderr);
+  const atLeast = (floor) => {
+    if (!parsed) return false;
+    const a = parsed.slice(1, 4).map(Number), b = floor.split(".").map(Number);
+    for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+    return true;
+  };
+  if (!atLeast("1.36.1")) {
+    t.skip(`aw ${parsed?.[0] || "unknown"} is older than 1.36.1; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
+    return;
+  }
+  for (const verb of [...verbs].sort()) {
+    const help = spawnSync("aw", [verb, "--help"], { encoding: "utf8", timeout: 10000 });
+    assert.equal(help.status, 0, `aw ${verb} --help failed\nstdout=${help.stdout}\nstderr=${help.stderr}`);
+  }
+});
+
 test("declared commands and hooks have no npm package imports", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const entrypointOf = (spec) => (typeof spec === "string" ? spec : spec.command);
@@ -167,8 +250,8 @@ test("authority discovery does not walk above the workspace", async (t) => {
   // minted — fatal for a required spawn hook.
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
-  assert.match(warning, new RegExp(`no messaging root at ${workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "1.12.1 reports the deployment root it checked");
-  assert.match(warning, /run oats aweb setup there or set settings\.oats\.aweb\.root/, "1.12.1 gives the reviewed v2 root remedy");
+  assert.match(warning, new RegExp(`no messaging root at ${workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "reports the deployment root it checked");
+  assert.match(warning, /run oats aweb setup there or set settings\.oats\.aweb\.root/, "gives the reviewed v2 root remedy");
 });
 
 test("roster guidance uses the required --to recipient flag", async (t) => {
@@ -184,6 +267,71 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /aw mail send --to <alias>/);
   assert.doesNotMatch(result.stdout, /aw mail send <alias>/);
+});
+
+test("setup --username initializes a missing root and reports the hosted default team mapping", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t, { activeTeam: "default:alice.aweb.ai" });
+  const result = await run(["setup", "--username", "alice"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_SETTINGS: JSON.stringify({ root, team: "configured:example.invalid" }),
+  }, root);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--username", "alice"], ["team", "list", "--json"]]);
+  assert.match(result.stdout, /default:alice\.aweb\.ai/);
+  assert.match(result.stdout, /settings\.oats\.aweb\.team/);
+});
+
+test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t, { activeTeam: "hosted:example.invalid" });
+  const result = await run(["setup"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "SECRET-API-KEY",
+    AW_FAKE_TEAM: "hosted:example.invalid",
+    OATS_EVENT: "setup",
+    OATS_SETTINGS: JSON.stringify({ root, team: "hosted:example.invalid" }),
+  }, root);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init"], ["team", "list", "--json"]]);
+  assert.equal(fake.readCalls()[0].hasApiKey, true);
+  assert.doesNotMatch(result.stdout + result.stderr, /SECRET-API-KEY/);
+  assert.match(result.stdout, /readiness: ready/);
+});
+
+test("setup --invite joins without printing the token", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
+  const result = await run(["setup", "--invite", "SECRET-INVITE-TOKEN"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    OATS_EVENT: "setup",
+    OATS_SETTINGS: JSON.stringify({ root, team: "joined:example.invalid" }),
+  }, root);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["team", "join", "SECRET-INVITE-TOKEN"], ["team", "list", "--json"]]);
+  assert.doesNotMatch(result.stdout + result.stderr, /SECRET-INVITE-TOKEN/);
+  assert.match(result.stdout, /readiness: ready/);
+});
+
+test("no-team readiness follows spawn's active-team fallback", async (t) => {
+  const root = tempDir(t), home = join(root, "home");
+  mkdirSync(join(root, ".aw"));
+  mkdirSync(home);
+  writeFileSync(join(root, ".aw", "teams.yaml"), "active_team: active:example.invalid\n");
+  writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] }));
+  const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
+  const binding = { schemaVersion: 1, capability: "oats.aweb", payloadContract: "oats.aweb.messaging", payloadVersion: 1, payload: { responsibleHuman: { provider: "oats.aweb", id: "human" }, context: { kind: "standalone", key: "fixture" }, privateTeam: { provider: "oats.aweb", id: "private:example.invalid" }, wider: [] }, credentialRefs: {}, provenance: [] };
+  const request = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root }, input: { binding, context: binding.payload.context, action: { kind: "inspect" } } };
+  const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, OATS_WORKSPACE: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "" }, input: JSON.stringify(request), encoding: "utf8" });
+  assert.equal(checked.status, 0, checked.stderr);
+  assert.deepEqual(JSON.parse(checked.stdout).result, { status: "ready", problems: [] });
+  const spawned = await run(["spawn"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "fixture-1", OATS_WORKSPACE: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ root }) }, home);
+  assert.equal(spawned.code, 0, spawned.stdout + spawned.stderr);
+  assert.equal(JSON.parse(spawned.stdout).meta.team, "active:example.invalid");
 });
 
 test("retire without persisted identity is an idempotent no-op", async (t) => {

@@ -263,6 +263,10 @@
           },
           "description": {
             "type": "string"
+          },
+          "hostOnly": {
+            "type": "boolean",
+            "description": "When true, the setting is a host fact accepted only from oats-local.yaml settings.<capability>; workspace, byTeam, soul payload and --provider values are refused by kernels that enforce hostOnly."
           }
         },
         "additionalProperties": false
