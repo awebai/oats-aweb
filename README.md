@@ -5,7 +5,13 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.12.2
+## Portable captured profile — 1.12.3
+
+1.12.3 aligns spawned local aliases with aweb's server rule (1-64 characters,
+alphanumeric start, then alphanumeric/`-`/`_`) and refuses an invalid instance
+alias before invoking `aw`; alias-reuse guidance now names both the explicit
+`--name` remedy available on OATS kernels 0.26.0+ and the older `--purpose`
+remedy. The OATS floor remains >=0.25.6.
 
 1.12.2 declares host-only path settings (`root`, `roots`, `residents`) for
 kernels that enforce `hostOnly: true` (OATS >=0.25.6) and hardens `oats aweb
