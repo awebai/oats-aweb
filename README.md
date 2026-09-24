@@ -11,8 +11,9 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
 global-mode spawns check `aw custody status --json` before minting, `profile:
 normal|reviewer` expands to concrete scope lists unless explicit `scopes` are
 provided, grant homes are recorded and cleaned up, and launch-time renewal stays
-off unless `identity.renew: launch` is explicitly set. `GRANT_TEAM_FLAG_MIN`
-remains the placeholder `9.9.9` pending the floor commit. The OATS floor remains
+off unless `identity.renew: launch` is explicitly set. Grant minting passes
+`--team` from aw 1.36.2 (`GRANT_TEAM_FLAG_MIN`); complete custody operations
+need aw 1.36.2 with aweb server 1.27.5. The OATS floor remains
 >=0.25.6.
 
 1.12.3 aligns spawned local aliases with aweb's server rule (1-64 characters,

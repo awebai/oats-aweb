@@ -287,9 +287,10 @@ function wakeRegister(instanceHome, identityHome) {
 function wakeDeregister(instanceHome) {
   try { run(["aw", "wake", "deregister", "--home", instanceHome], instanceHome, 60000); return true; } catch { return false; }
 }
-// TODO(aweb common-slice release): replace this placeholder with the first aw
-// version whose grant subtree accepts `aw id grant mint --team <team-id>`.
-const GRANT_TEAM_FLAG_MIN = "9.9.9";
+// The first aw release whose grant subtree accepts `aw id grant mint --team
+// <team-id>` (and the full normal/reviewer scope lists): aw 1.36.2, paired with
+// aweb server 1.27.5 for complete custody operations. aw 1.36.1 has neither.
+const GRANT_TEAM_FLAG_MIN = "1.36.2";
 const NORMAL_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
 const REVIEWER_GRANT_SCOPES = ["mail.read", "chat.read", "events.read", "coord.read", "presence.write"];
 const residentKeyHint = (name) => `oats-local.yaml settings.oats.aweb.residents.${name || "<name>"}`;
