@@ -3,5 +3,7 @@ name: oats-aweb-expert
 description: "Expert in the oats.aweb package (the messaging provider for aweb identities, mail, chat and roster): its published behaviour, the external systems it meets, and its pull requests."
 work: worktree
 team: global
+capabilities:
+  oats.aweb: { from: package }   # the messaging slot: review asks and coordination arrive by mail
 # oats.core and the oats.okf knowledge slot come from the workspace defaults.
 # What this soul owns and reads in the central base is okf.json beside this file.
