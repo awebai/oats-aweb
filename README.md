@@ -15,7 +15,9 @@ off unless `identity.renew: launch` is explicitly set. Grant minting passes
 `--team` from aw 1.36.2 (`GRANT_TEAM_FLAG_MIN`); complete custody operations
 need aw 1.36.2 with aweb server 1.27.5. Older aw versions do not receive
 `--team` and may reject the full normal-profile scope list, which fails closed
-rather than silently narrowing a grant. The OATS floor remains >=0.25.6.
+rather than silently narrowing a grant. The binding check also answers the
+kernel's binding-less workspace readiness probe (OATS 0.26.0) from settings.
+The OATS floor remains >=0.25.6.
 
 1.12.3 aligns spawned local aliases with aweb's server rule (1-64 characters,
 alphanumeric start, then alphanumeric/`-`/`_`) and refuses an invalid instance
