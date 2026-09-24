@@ -272,16 +272,19 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
 test("setup --username initializes a missing root and reports the hosted default team mapping", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: "default:alice.aweb.ai" });
-  const result = await run(["setup", "--username", "alice"], {
-    PATH: fake.path,
-    AWEB_API_KEY: "",
-    OATS_EVENT: "setup",
-    OATS_SETTINGS: JSON.stringify({ root, team: "configured:example.invalid" }),
-  }, root);
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--username", "alice"], ["team", "list", "--json"]]);
-  assert.match(result.stdout, /default:alice\.aweb\.ai/);
-  assert.match(result.stdout, /settings\.oats\.aweb\.team/);
+  for (const args of [["setup", "--username", "alice"], ["setup", "--username=alice"]]) {
+    const result = await run(args, {
+      PATH: fake.path,
+      AWEB_API_KEY: "",
+      OATS_EVENT: "setup",
+      OATS_SETTINGS: JSON.stringify({ root, team: "configured:example.invalid" }),
+    }, root);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /default:alice\.aweb\.ai/);
+    assert.match(result.stdout, /settings\.oats\.aweb\.team/);
+    rmSync(join(root, ".aw"), { recursive: true, force: true });
+  }
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--username", "alice"], ["team", "list", "--json"], ["init", "--username", "alice"], ["team", "list", "--json"]]);
 });
 
 test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
@@ -304,17 +307,33 @@ test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
 test("setup --invite joins without printing the token", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
-  const result = await run(["setup", "--invite", "SECRET-INVITE-TOKEN"], {
-    PATH: fake.path,
-    AWEB_API_KEY: "",
-    AW_FAKE_TEAM: "joined:example.invalid",
-    OATS_EVENT: "setup",
-    OATS_SETTINGS: JSON.stringify({ root, team: "joined:example.invalid" }),
-  }, root);
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(fake.readCalls().map((c) => c.args), [["team", "join", "SECRET-INVITE-TOKEN"], ["team", "list", "--json"]]);
-  assert.doesNotMatch(result.stdout + result.stderr, /SECRET-INVITE-TOKEN/);
-  assert.match(result.stdout, /readiness: ready/);
+  for (const args of [["setup", "--invite", "SECRET-INVITE-TOKEN"], ["setup", "--invite=SECRET-INVITE-TOKEN"]]) {
+    const result = await run(args, {
+      PATH: fake.path,
+      AWEB_API_KEY: "",
+      AW_FAKE_TEAM: "joined:example.invalid",
+      OATS_EVENT: "setup",
+      OATS_SETTINGS: JSON.stringify({ root, team: "joined:example.invalid" }),
+    }, root);
+    assert.equal(result.code, 0, result.stderr);
+    assert.doesNotMatch(result.stdout + result.stderr, /SECRET-INVITE-TOKEN/);
+    assert.match(result.stdout, /readiness: ready/);
+    rmSync(join(root, ".aw"), { recursive: true, force: true });
+  }
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["team", "join", "SECRET-INVITE-TOKEN"], ["team", "list", "--json"], ["team", "join", "SECRET-INVITE-TOKEN"], ["team", "list", "--json"]]);
+});
+
+test("setup argument parse errors never echo token-shaped input", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  for (const args of [["setup", "--invite="], ["setup", "SECRET-PROBE-TOKEN"]]) {
+    const result = await run(args, { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_SETTINGS: JSON.stringify({ root, team: "joined:example.invalid" }) }, root);
+    assert.equal(result.code, 2, result.stdout + result.stderr);
+    assert.equal(result.stdout, "");
+    assert.doesNotMatch(result.stderr, /SECRET-PROBE-TOKEN|--invite=/);
+    assert.match(result.stderr, /^oats aweb setup: usage: oats aweb setup/);
+  }
+  assert.deepEqual(fake.readCalls(), []);
 });
 
 test("no-team readiness follows spawn's active-team fallback", async (t) => {
