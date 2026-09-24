@@ -166,7 +166,9 @@ test("authority discovery does not walk above the workspace", async (t) => {
   // Bounded discovery finds no `.aw` within the workspace, so no identity can be
   // minted — fatal for a required spawn hook.
   assert.notEqual(result.code, 0, result.stdout);
-  assert.match(JSON.parse(result.stdout).warning, /no initialized aweb root/);
+  const warning = JSON.parse(result.stdout).warning;
+  assert.match(warning, new RegExp(`no messaging root at ${workspace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "1.12.1 reports the deployment root it checked");
+  assert.match(warning, /run oats aweb setup there or set settings\.oats\.aweb\.root/, "1.12.1 gives the reviewed v2 root remedy");
 });
 
 test("roster guidance uses the required --to recipient flag", async (t) => {

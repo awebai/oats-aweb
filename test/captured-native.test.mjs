@@ -43,7 +43,7 @@ test('captured session policy and native HOME setup use selected identity/team a
 });
 test('actual codec emits fixed missing-item messages and conditional readiness, never guesses a profile',t=>{
  for(const [options,status,message] of [[{runtime:'pi'},'needs-configuration',/Pi strict print/],[{version:'0.24.1'},'needs-configuration',/>=0\.24\.2/],[{projection:false},'needs-configuration',/launchSelection/],[{},'ready',null]]){
-  const f=fixture(t,options),action={kind:'inspect'},request={schemaVersion:1,phase:'check',slot:'messaging',capability:'oats.aweb',settings:{delivery:'session'},input:{binding:f.binding,context:f.context,action,invocation:{...f.invocation,action,intent:null}}};
+  const f=fixture(t,options),action={kind:'inspect'},request={schemaVersion:1,phase:'check',slot:'messaging',capability:'oats.aweb',settings:{delivery:'session',root:f.deployment,team:f.binding.payload.privateTeam.id},input:{binding:f.binding,context:f.context,action,invocation:{...f.invocation,action,intent:null}}};
   const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),'check'],{cwd:f.home,env:f.env,input:JSON.stringify(request),encoding:'utf8',timeout:15000});assert.equal(r.status,0,r.stderr);const out=JSON.parse(r.stdout);assert.equal(out.ok,true);assert.equal(out.result.status,status);if(message)assert.match(out.result.problems[0].message,message);assert.equal(f.readCalls().length,0);
  }
 });
