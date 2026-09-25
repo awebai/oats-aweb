@@ -83,10 +83,11 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
 function settings(value,{phase}={}) {
   if(!obj(value)) wireError('invalid-binding');
   if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,phase==='check'?['delivery','team','root','roots','identity','residents']:['delivery','team','root','roots'],[]);
+  keys(value,phase==='check'?['delivery','team','root','roots','identity','residents','join']:['delivery','team','root','roots','join'],[]);
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.team!==undefined && (typeof value.team!=='string' || !value.team.trim())) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
+  if(value.join!==undefined && typeof value.join!=='string') wireError('needs-configuration');
   if(value.roots!==undefined && !obj(value.roots)) wireError('needs-configuration');
   if(obj(value.roots)) for(const [team,root] of Object.entries(value.roots)) if(!team || typeof root!=='string' || !root.trim()) wireError('needs-configuration');
   if(value.identity!==undefined && !obj(value.identity)) wireError('needs-configuration');
@@ -164,6 +165,9 @@ function workspaceReadinessContext(value) {
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export const CUSTODY_ATTACH_MIN = '1.36.3';
+export const WAKE_STREAM_MIN = '1.36.5';
+const CLASSIC_REFUSAL = 'oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x';
+function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_TEAM_LABEL);}
 export function grantYamlCustodySocket(text) {
   const lines=String(text??'').split(/\r?\n/);let inCustody=false,baseIndent=0;
   for(const line of lines) {
@@ -191,21 +195,21 @@ function grantAttachmentProblem(home) {
 }
 function activeTeamAt(root){try{return yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active_team')||yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active');}catch{return undefined;}}
 function teamFromSettings(settings,candidate,{env=process.env}={}) {
-  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || env.OATS_TEAM_NAME || undefined);
+  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || undefined);
   if(configured || env.OATS_TEAM_LABEL) return configured;
   return candidate?.root && isAbsolute(candidate.root) ? activeTeamAt(candidate.root) : undefined;
 }
-function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_TEAM_LABEL);}
 function rootCandidate(settings,team,{deployment,env=process.env}={}) {
   const roots=obj(settings.roots)?settings.roots:{};
   if(team && typeof roots[team]==='string' && roots[team].trim()) return {root:roots[team].trim(),key:`settings.oats.aweb.roots[${JSON.stringify(team)}]`,declared:true};
   if(typeof settings.root==='string' && settings.root.trim()) return {root:settings.root.trim(),key:'settings.oats.aweb.root',declared:true};
-  const candidates=classicEnv(env)?[env.OATS_TEAM_SCOPE,env.OATS_WORKSPACE].filter(Boolean):[env.OATS_WORKSPACE || deployment || env.OATS_TEAM_SCOPE || process.cwd()];
+  const candidates=[env.OATS_WORKSPACE || deployment || process.cwd()];
   for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};
   return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
 }
 function readinessDetails(settings,{deployment,env=process.env}={}) {
-  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || env.OATS_TEAM_NAME || undefined);
+  if(classicEnv(env)) return {team:undefined,candidate:null,result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
+  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || undefined);
   const candidate=rootCandidate(settings,initialTeam,{deployment,env}),team=teamFromSettings(settings,candidate,{env}),problems=[];
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   if(!team) problems.push({code:'needs-configuration',message:'no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team'});
@@ -216,6 +220,21 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   const env={...process.env};for(const name of unsetEnv) delete env[name];
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
+}
+function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
+function wakeReadiness(home,{reliedOn=false}={}) {
+  if(!home || !reliedOn) return {problems:[],warnings:[]};
+  try {
+    const doc=JSON.parse(runAw(['aw','wake','status','--json'],home,{timeout:10000}));
+    const state=doc.daemon_version_state || (doc.daemon_running===false?'not_running':doc.daemon_version?'reported':'unknown');
+    if(state==='reported') {
+      const running=String(doc.daemon_version||'unknown');
+      if(semverLt(running,WAKE_STREAM_MIN)) return {problems:[{code:'wake-daemon-outdated',message:`host wake daemon is running ${running}; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}],warnings:[]};
+      return {problems:[],warnings:[]};
+    }
+    if(state==='not_running') return {problems:[{code:'wake-daemon-not-running',message:'host wake daemon is not running; session delivery relies on it'}],warnings:[]};
+    return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}]};
+  } catch {return {problems:[],warnings:[{code:'wake-daemon-version-unknown',message:`host wake daemon version is unknown; compatibility unproven; required ${WAKE_STREAM_MIN}; upgrade aw, then restart the host wake daemon`}]};}
 }
 function workspaceReadinessPhase(req) {
   const ctx=workspaceReadinessContext(req.input.context);
@@ -237,6 +256,8 @@ function workspaceReadinessPhase(req) {
       catch(e) {problems.push({code:'custody',message:e.message});}
     }
   }
+  const wake=String(req.settings.delivery||'channel')==='session'?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
+  problems.push(...wake.problems);warnings.push(...wake.warnings);
   const result=checkProblems(problems) || {status:'ready',problems:[]};
   return {...result,warnings};
 }
