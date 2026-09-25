@@ -176,8 +176,9 @@ test("capability guidance names only real first-level aw verbs", (t) => {
     for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
     return true;
   };
-  if (!atLeast("1.36.1")) {
-    t.skip(`aw ${parsed?.[0] || "unknown"} is older than 1.36.1; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
+  t.diagnostic(`aw version fixture: ${(version.stdout + version.stderr).trim()}`);
+  if (!atLeast("1.36.6") || !/5a285ceb/.test(version.stdout + version.stderr)) {
+    t.skip(`aw ${parsed?.[0] || "unknown"} is not published 1.36.6 / 5a285ceb; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
     return;
   }
   for (const verb of [...verbs].sort()) {
@@ -244,7 +245,7 @@ test("authority discovery does not walk above the workspace", async (t) => {
     OATS_INSTANCE: "example-1",
     OATS_CONTEXT: workspace,
     OATS_WORKSPACE: workspace,
-    OATS_TEAM_SCOPE: workspace,
+    OATS_WORKSPACE_KEY: "repo:fixture",
   }, home);
   // Bounded discovery finds no `.aw` within the workspace, so no identity can be
   // minted — fatal for a required spawn hook.
@@ -343,13 +344,13 @@ test("spawn accepts a 64-character alias and rejects 65 before aw", async (t) =>
   mkdirSync(badHome);
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
   const alias64 = `a${"b".repeat(63)}`;
-  const accepted = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: okHome, OATS_INSTANCE: alias64, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root }) }, okHome);
+  const accepted = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: okHome, OATS_INSTANCE: alias64, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root, team: "active:example.invalid" }) }, okHome);
   assert.equal(accepted.code, 0, accepted.stdout + accepted.stderr);
   assert.ok(fake.readCalls().some((call) => call.args[0] === "team" && call.args[1] === "join" && call.args.includes("--name") && call.args[call.args.indexOf("--name") + 1] === alias64));
 
   const callsBefore = fake.readCalls().length;
   const alias65 = `a${"b".repeat(64)}`;
-  const refused = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: badHome, OATS_INSTANCE: alias65, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root }) }, badHome);
+  const refused = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: badHome, OATS_INSTANCE: alias65, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root, team: "active:example.invalid" }) }, badHome);
   assert.notEqual(refused.code, 0, refused.stdout);
   assert.match(JSON.parse(refused.stdout).warning, /invalid alias/i);
   assert.equal(fake.readCalls().length, callsBefore, "invalid alias must be refused before any aw call");
@@ -361,7 +362,7 @@ test("alias conflict remedy names --name and --purpose", async (t) => {
   mkdirSync(home);
   const fake = fakeAwSetupPath(t);
   const aw = join(fake.path, "aw");
-  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
+  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
@@ -378,10 +379,10 @@ test("no-team readiness follows spawn's active-team fallback", async (t) => {
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
   const binding = { schemaVersion: 1, capability: "oats.aweb", payloadContract: "oats.aweb.messaging", payloadVersion: 1, payload: { responsibleHuman: { provider: "oats.aweb", id: "human" }, context: { kind: "standalone", key: "fixture" }, privateTeam: { provider: "oats.aweb", id: "private:example.invalid" }, wider: [] }, credentialRefs: {}, provenance: [] };
   const request = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root }, input: { binding, context: binding.payload.context, action: { kind: "inspect" } } };
-  const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, OATS_WORKSPACE: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "" }, input: JSON.stringify(request), encoding: "utf8" });
+  const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, OATS_WORKSPACE: root, OATS_TEAM_ID: "" }, input: JSON.stringify(request), encoding: "utf8" });
   assert.equal(checked.status, 0, checked.stderr);
   assert.deepEqual(JSON.parse(checked.stdout).result, { status: "ready", problems: [] });
-  const spawned = await run(["spawn"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "fixture-1", OATS_WORKSPACE: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ root }) }, home);
+  const spawned = await run(["spawn"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "fixture-1", OATS_WORKSPACE: root, OATS_TEAM_ID: "", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.equal(spawned.code, 0, spawned.stdout + spawned.stderr);
   assert.equal(JSON.parse(spawned.stdout).meta.team, "active:example.invalid");
 });

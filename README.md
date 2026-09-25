@@ -5,7 +5,9 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.13.1
+## Portable captured profile — 1.14.0
+
+1.14.0 requires OATS >=0.26.0 and the workspace model. It removes the classic team-scope path, refuses older-kernel environments with a fixed diagnostic, adds host wake-daemon readiness (`WAKE_STREAM_MIN` 1.36.5), and adds explicit wider-team operations (`oats aweb teams|join|leave`) plus the `join` spawn setting. The primary identity always mints into the personal team: `settings.oats.aweb.team` when set, otherwise the root's active/default team as the stand-in until per-workspace personal teams exist. Mapped workspace labels, including the primary label, are eligible wider teams and join only by `join=` or `oats aweb join`. Joined team identities are local per-team homes (`.aweb-identity-<label>`) and receive by polling in this release.
 
 1.13.1 attaches resident session grant homes to custody at mint time. Global-mode
 spawns pass the preflight's absolute `status.socket_path` to
@@ -116,26 +118,9 @@ procedure. Acquisition performs no npm runtime install or credential setup.
 Native aw and conditional runtime resources remain declared requirements; session
 `ifInstalled` minimums and `AWEB_DELIVERY=session` are not removed to force a pass.
 
-## Classic compatibility — separate from retained authority
+## OATS compatibility
 
-The older unbound config-chain path retains its native behavior and channel
-default. A compatible classic scope acquires, explicitly trusts and selects the
-capability before guided setup:
-
-```bash
-oats install <actual-reviewed-published-package-source> --dir /path/to/scope
-oats trust oats.aweb --dir /path/to/scope
-oats use oats.aweb --global --dir /path/to/scope
-oats aweb setup
-oats doctor /path/to/scope --soul <soul-name>
-```
-
-The source placeholder is explanatory: use an actual published Git revision or
-an available official catalog selection, never an invented future release ref.
-Acquisition is not activation or executable trust. Native enrollment permissions
-are also separate from executable approval. Do not apply these classic forms to
-bypass a captured refusal. The old [schema checkpoint](SCHEMA-STATUS.md) records
-historical work, not current1.11 readiness or a new0.19 fixture requirement.
+Kernels before 0.26.0 are not supported by this release; use oats.aweb 1.13.x there.
 
 ## Development
 
@@ -144,9 +129,9 @@ node scripts/validate-manifests.mjs
 node --test test/portable-profile.test.mjs test/captured-execution.test.mjs \
   test/session-readiness.test.mjs test/captured-native.test.mjs
 # Full local provider unit suite when appropriate. When running through Node 22,
-# invoke the Node 22 binary directly or put the real aw 1.36.3 binary ahead of
-# node_modules/.bin; otherwise a dependency-provided old aw can shadow PATH and
-# fail the fixture custody command with "unknown command custody".
+# invoke the Node 22 binary directly or put the real aw 1.36.6 / 5a285ceb binary
+# ahead of node_modules/.bin; otherwise a dependency-provided old aw can shadow
+# PATH and fail the real-CLI fixtures.
 npm test
 ```
 

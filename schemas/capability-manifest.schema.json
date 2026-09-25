@@ -55,6 +55,15 @@
       "type": "string",
       "minLength": 1
     },
+    "private": {
+      "type": "boolean",
+      "description": "Workspace discovery: true makes this member capability usable only by souls of its own repository (E_CAPABILITY_PRIVATE elsewhere)."
+    },
+    "team": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Workspace discovery: the team label for this capability; else the repository's default from oats-membership.yaml."
+    },
     "layer": {
       "enum": [
         "knowledge",
@@ -247,11 +256,11 @@
       "items": {
         "type": "string"
       },
-      "description": "Package-relative soul directories (soul.yaml + AGENTS.md) \u2014 capability-defined agents; they resolve like local souls where the capability is active, souls stay read-only in the package, instances home under the scope's local-agents/."
+      "description": "Package-relative soul directories (soul.yaml + AGENTS.md) \u2014 capability-defined agents; they resolve where the capability is active, souls stay read-only in the package, instances home under <deployment>/agents/<agent>/instances/."
     },
     "settings": {
       "type": "object",
-      "description": "Declared capability settings: name to { default, values?, description }. Documentation for `oats use --settings`; undeclared settings are still accepted.",
+      "description": "Declared capability settings: name to { default, values?, description }. Documentation for the values a soul, oats-local.yaml or `oats spawn --provider` supplies; undeclared settings are still accepted.",
       "additionalProperties": {
         "type": "object",
         "properties": {
@@ -266,7 +275,7 @@
           },
           "hostOnly": {
             "type": "boolean",
-            "description": "When true, the setting is a host fact accepted only from oats-local.yaml settings.<capability>; workspace, byTeam, soul payload and --provider values are refused by kernels that enforce hostOnly."
+            "description": "When true, this key is a host fact (a custody path, a state directory): the resolver accepts it only from the deployment's oats-local.yaml settings.<capability> and refuses it in the workspace file, byTeam payloads, a soul's slot payload and --provider flags (E_WORKSPACE_SCHEMA reason host-only-key). Decision 27."
           }
         },
         "additionalProperties": false

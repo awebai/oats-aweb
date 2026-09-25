@@ -1,9 +1,9 @@
 {
   "package": "oats.aweb",
-  "version": "1.13.1",
+  "version": "1.14.0",
   "description": "Official OATS messaging integration for team-scoped aweb identities, mail, chat, and roster discovery.",
   "compatibility": {
-    "oats": ">=0.25.6"
+    "oats": ">=0.26.0"
   },
   "capabilities": [
     "capabilities/oats-aweb"
