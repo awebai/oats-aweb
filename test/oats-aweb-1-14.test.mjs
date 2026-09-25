@@ -327,11 +327,12 @@ test("leaving the personal team is refused as E_TEAM_PERSONAL", (t) => {
 
 test("published aw 1.36.6 exposes wake status version state", (t) => {
   const version = spawnSync("aw", ["version"], { encoding: "utf8", timeout: 10000 });
-  if (version.status !== 0 || !/aw\s+1\.36\.6/.test(version.stdout + version.stderr) || !/5a285ceb/.test(version.stdout + version.stderr)) {
-    t.skip(`aw is not published 1.36.6 / 5a285ceb: ${(version.stdout + version.stderr).trim()}`);
+  const versionText = `${version.stdout ?? ""}${version.stderr ?? ""}`;
+  if (version.error || version.status !== 0 || !/aw\s+1\.36\.6/.test(versionText) || !/5a285ceb/.test(versionText)) {
+    t.skip(`aw is not published 1.36.6 / 5a285ceb: ${(version.error?.message || versionText).trim()}`);
     return;
   }
-  t.diagnostic(`aw version fixture: ${(version.stdout + version.stderr).trim()}`);
+  t.diagnostic(`aw version fixture: ${versionText.trim()}`);
   const status = spawnSync("aw", ["wake", "status", "--json"], { encoding: "utf8", timeout: 10000 });
   assert.equal(status.status, 0, status.stderr || status.stdout);
   const doc = JSON.parse(status.stdout);
