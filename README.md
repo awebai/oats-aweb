@@ -5,9 +5,13 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.14.0
+## Portable captured profile — 1.14.1
 
-1.14.0 requires OATS >=0.26.0 and the workspace model. It removes the classic team-scope path, refuses older-kernel environments with a fixed diagnostic, adds host wake-daemon readiness (`WAKE_STREAM_MIN` 1.36.5), and adds explicit wider-team operations (`oats aweb teams|join|leave`) plus the `join` spawn setting. The primary identity always mints into the personal team: `settings.oats.aweb.team` when set, otherwise the root's active/default team as the stand-in until per-workspace personal teams exist. Mapped workspace labels, including the primary label, are eligible wider teams and join only by `join=` or `oats aweb join`. Joined team identities are local per-team homes (`.aweb-identity-<label>`) and receive by polling in this release.
+### Fixed
+
+- `join=` and `oats aweb join` no longer use the human-facing `aw team join` wrapper under an external identity home, which aw's identity-home policy refused in 1.14.0. Joined-team minting now requires aw >= 1.36.12 and redeems the provider-minted invite with `aw --identity-home <home>/.aweb-identity-<label> id team accept-invite <token> --local --name <alias> --json`; the joined root must auto-connect and publish its E2E key. Joined per-team homes are not initialized with `aw init`; they are used only through `--identity-home` for polling and sends. The per-team identity home's parent must be a real (non-symlink) directory, matching aw's identity-home policy. Joined-team leave removes local state only when `aw workspace delete --json` returns the structured receipt `alias_released: true`; explicit `alias_released: false`, identity-deleted-only receipts, malformed JSON, permission/auth errors, transport errors and ambiguous text keep the local joined home and provider record for retry.
+
+1.14.1 requires OATS >=0.26.0 and the workspace model. It removes the classic team-scope path, refuses older-kernel environments with a fixed diagnostic, adds host wake-daemon readiness (`WAKE_STREAM_MIN` 1.36.5), and adds explicit wider-team operations (`oats aweb teams|join|leave`) plus the `join` spawn setting. The primary identity always mints into the personal team: `settings.oats.aweb.team` when set, otherwise the root's active/default team as the stand-in until per-workspace personal teams exist. Mapped workspace labels, including the primary label, are eligible wider teams and join only by `join=` or `oats aweb join`. Joined team identities are local per-team homes (`.aweb-identity-<label>`) and receive by polling in this release.
 
 1.13.1 attaches resident session grant homes to custody at mint time. Global-mode
 spawns pass the preflight's absolute `status.socket_path` to

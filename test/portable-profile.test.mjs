@@ -120,7 +120,7 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  // A harvest helper has no messaging identity: the aweb briefing is omitted from helper compositions (second-operator finding, 2026-09-21).
  assert.deepEqual(m.helperInjection,{version:1,mode:'omit'});
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
- assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.14.0');
+ assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.14.1');
 });
 test('coupled current kernel wire and sole resolver accept actual codec output but do not turn binding into readiness',async t=>{
  const framework=process.env.OATS_P1_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned current framework source');return;}

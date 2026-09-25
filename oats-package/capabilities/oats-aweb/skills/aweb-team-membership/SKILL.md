@@ -30,7 +30,7 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
 - The personal team cannot be left; attempting it is `E_TEAM_PERSONAL`.
 - A label that is not eligible for this soul/workspace is `E_TEAM_NOT_ELIGIBLE`.
 - Joined wider teams use a local identity home such as
-  `<home>/.aweb-identity-<label>` and receive by polling in oats.aweb 1.14.
+  `<home>/.aweb-identity-<label>` and receive by polling in oats.aweb 1.14. Joined teams require aw >= 1.36.12. The provider creates joined homes with `aw id team accept-invite` under `--identity-home`, verifies the root auto-connected, and does not run `aw init` inside the per-team home.
 - Send as a joined team with exactly:
 
 ```bash
@@ -72,7 +72,7 @@ Interpret common states:
 - **Team certificate**: a signed membership statement for an identity; stored in
   `.aw/team-certs/` for native identities.
 - **Personal team**: the default team for the instance's primary identity. In
-  1.14.0, until per-workspace personal teams are available, this may be the
+  1.14.1, until per-workspace personal teams are available, this may be the
   person's default team as a stand-in.
 - **Joined team**: an explicit wider team joined through `oats aweb join`, with a
   separate local identity home in this release.
