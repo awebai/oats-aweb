@@ -50,7 +50,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) { emit(
 if (args[0] === "team" && args[1] === "invite") { const team = args[args.indexOf("--team-id") + 1]; emit({ token: "TOKEN__" + team }); process.exit(0); }
 if (args[0] === "team" && args[1] === "join") { const team = teamFromToken(args[2]); const alias = args[args.indexOf("--name") + 1] || "probe"; const dest = homeForWrite(); fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
 if (args[0] === "init") { console.log("initialized"); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "delete") { fs.rmSync(homeForWrite(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAIL_WORKSPACE_DELETE) { console.error("delete failed"); process.exit(7); } fs.rmSync(homeForWrite(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 `, 0o755);
   return { path: bin, calls, readCalls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
@@ -130,7 +130,8 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
   assert.deepEqual(spawnDoc.meta.joinedTeams.map((j) => ({ label: j.label, team: j.team, receive: j.receive })), [{ label: "alpha", team: "alpha:example.test", receive: "poll" }]);
   assert.equal(spawnDoc.meta.joinedTeams[0].identityHome, join(home, ".aweb-identity-alpha"));
   assert.equal(existsSync(join(home, ".aweb-identity-alpha", "identity.yaml")), true);
-  writeFileSync(join(home, "instance.json"), JSON.stringify({ capabilityMeta: { "oats.aweb": spawnDoc.meta } }, null, 2));
+  const instanceJson = { capabilityMeta: { "oats.aweb": { sentinel: true } } };
+  writeFileSync(join(home, "instance.json"), JSON.stringify(instanceJson, null, 2));
 
   const listed = runHook("teams", { cwd: home, env: { ...env, OATS_EVENT: "teams", OATS_META: JSON.stringify(spawnDoc.meta) }, args: ["--json"] });
   assert.equal(listed.status, 0, listed.stderr);
@@ -142,15 +143,90 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
 
   const joined = runHook("join", { cwd: home, env: { ...env, OATS_EVENT: "join" }, args: ["--labels", "beta", "--json"] });
   assert.equal(joined.status, 0, joined.stdout + joined.stderr);
-  let instance = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
-  assert.deepEqual(instance.capabilityMeta["oats.aweb"].joinedTeams.map((j) => j.label).sort(), ["alpha", "beta"]);
+  assert.deepEqual(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")), instanceJson, "provider command must not rewrite kernel instance.json");
+  let state = JSON.parse(readFileSync(join(home, ".oats-aweb", "teams.json"), "utf8"));
+  assert.deepEqual(state.joinedTeams.map((j) => j.label).sort(), ["alpha", "beta"]);
   assert.equal(existsSync(join(home, ".aweb-identity-beta", "identity.yaml")), true);
 
-  const left = runHook("leave", { cwd: home, env: { ...env, OATS_EVENT: "leave" }, args: ["--labels", "alpha", "--json"] });
+  const failedLeave = runHook("leave", { cwd: home, env: { ...env, OATS_EVENT: "leave", FAIL_WORKSPACE_DELETE: "1" }, args: ["--labels", "beta", "--json"] });
+  assert.notEqual(failedLeave.status, 0);
+  assert.equal(existsSync(join(home, ".aweb-identity-beta", "identity.yaml")), true, "failed leave keeps the key for retry");
+  state = JSON.parse(readFileSync(join(home, ".oats-aweb", "teams.json"), "utf8"));
+  assert.ok(state.joinedTeams.some((j) => j.label === "beta"), "failed leave keeps provider state");
+
+  const left = runHook("leave", { cwd: home, env: { ...env, OATS_EVENT: "leave" }, args: ["--labels", "beta", "--json"] });
   assert.equal(left.status, 0, left.stdout + left.stderr);
-  instance = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
-  assert.deepEqual(instance.capabilityMeta["oats.aweb"].joinedTeams.map((j) => j.label), ["beta"]);
-  assert.equal(existsSync(join(home, ".aweb-identity-alpha")), false);
+  assert.deepEqual(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")), instanceJson, "leave still does not rewrite instance.json");
+  state = JSON.parse(readFileSync(join(home, ".oats-aweb", "teams.json"), "utf8"));
+  assert.deepEqual(state.joinedTeams.map((j) => j.label), ["alpha"]);
+  assert.equal(existsSync(join(home, ".aweb-identity-beta")), false);
+});
+
+test("unmapped primary label falls back to personal root team with readiness warning", (t) => {
+  const root = tempDir(t), home = join(root, "home");
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  writeFileSync(join(root, ".aw", "teams.yaml"), "active_team: personal:example.test\n");
+  mkdirSync(home);
+  const fake = fakeAw114(t);
+  const unmappedTeams = JSON.stringify([{ label: "ghost", team: null, mapped: false, payload: {} }]);
+  const env = {
+    PATH: fake.path,
+    OATS_EVENT: "spawn",
+    OATS_HOME: home,
+    OATS_INSTANCE: "probe",
+    OATS_WORKSPACE: root,
+    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_TEAM_LABEL: "ghost",
+    OATS_TEAM_LABELS: "ghost",
+    OATS_TEAMS_SOURCE: "live",
+    OATS_TEAMS: unmappedTeams,
+    OATS_SETTINGS: JSON.stringify({ root }),
+  };
+  const spawned = runHook("spawn", { cwd: home, env });
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const doc = JSON.parse(spawned.stdout);
+  assert.equal(doc.meta.team, "personal:example.test");
+  assert.match(doc.warning, /team-unmapped.*ghost.*personal:example\.test/);
+
+  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), env, home);
+  const result = JSON.parse(checked.stdout).result;
+  assert.equal(result.status, "ready");
+  assert.match(result.warnings.find((w) => w.code === "team-unmapped").message, /ghost.*personal:example\.test/);
+  assert.equal(result.teams.personal.team, "personal:example.test");
+  assert.deepEqual(result.teams.unmapped, ["ghost"]);
+});
+
+test("teams readiness reports eligible, joined, unmapped and poll receive state", (t) => {
+  const root = tempDir(t), home = join(root, "home");
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  mkdirSync(join(home, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(home, ".oats-aweb", "teams.json"), JSON.stringify({ joinedTeams: [{ label: "alpha", team: "alpha:example.test", identityHome: join(home, ".aweb-identity-alpha"), receive: "poll", since: "2026-09-25T00:00:00Z" }] }));
+  const fake = fakeAw114(t);
+  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root, team: "personal:example.test" }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), {
+    PATH: fake.path,
+    OATS_WORKSPACE: root,
+    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_TEAM_LABELS: "alpha,beta,ghost",
+    OATS_TEAMS_SOURCE: "live",
+    OATS_TEAMS: teamsEnv,
+  }, home);
+  const result = JSON.parse(checked.stdout).result;
+  assert.equal(result.status, "ready");
+  assert.equal(result.teams.personal.team, "personal:example.test");
+  assert.deepEqual(result.teams.eligible.map((e) => ({ label: e.label, joined: e.joined })), [{ label: "alpha", joined: true }, { label: "beta", joined: false }]);
+  assert.deepEqual(result.teams.unmapped, ["ghost"]);
+  assert.deepEqual(result.teams.joined.map((j) => ({ label: j.label, receive: j.receive })), [{ label: "alpha", receive: "poll" }]);
+  assert.ok(result.warnings.some((w) => w.code === "joined-team-poll-only" && /alpha/.test(w.message)));
+});
+
+test("leaving the personal team is refused as E_TEAM_PERSONAL", (t) => {
+  const root = tempDir(t), home = join(root, "home");
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  mkdirSync(home);
+  const fake = fakeAw114(t);
+  const left = runHook("leave", { cwd: home, env: { PATH: fake.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_TEAM_LABEL: "personal", OATS_TEAM_LABELS: "personal", OATS_EVENT: "leave", OATS_HOME: home, OATS_SETTINGS: JSON.stringify({ root, team: "personal:example.test" }) }, args: ["--labels", "personal", "--json"] });
+  assert.notEqual(left.status, 0);
+  assert.match(left.stderr, /E_TEAM_PERSONAL/);
 });
 
 test("published aw 1.36.6 exposes wake status version state", (t) => {
