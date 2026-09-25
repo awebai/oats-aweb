@@ -7,7 +7,7 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
 
 ## Portable captured profile — 1.14.0
 
-1.14.0 requires OATS >=0.26.0 and the workspace model. It removes the classic team-scope path, refuses older-kernel environments with a fixed diagnostic, adds host wake-daemon readiness (`WAKE_STREAM_MIN` 1.36.5), and adds explicit wider-team operations (`oats aweb teams|join|leave`) plus the `join` spawn setting. Joined team identities are local per-team homes (`.aweb-identity-<label>`) and receive by polling in this release.
+1.14.0 requires OATS >=0.26.0 and the workspace model. It removes the classic team-scope path, refuses older-kernel environments with a fixed diagnostic, adds host wake-daemon readiness (`WAKE_STREAM_MIN` 1.36.5), and adds explicit wider-team operations (`oats aweb teams|join|leave`) plus the `join` spawn setting. The primary identity always mints into the personal team: `settings.oats.aweb.team` when set, otherwise the root's active/default team as the stand-in until per-workspace personal teams exist. Mapped workspace labels, including the primary label, are eligible wider teams and join only by `join=` or `oats aweb join`. Joined team identities are local per-team homes (`.aweb-identity-<label>`) and receive by polling in this release.
 
 1.13.1 attaches resident session grant homes to custody at mint time. Global-mode
 spawns pass the preflight's absolute `status.socket_path` to

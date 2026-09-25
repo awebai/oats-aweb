@@ -166,6 +166,98 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
   assert.equal(existsSync(join(home, ".aweb-identity-beta")), false);
 });
 
+
+
+test("mapped primary label is eligible and primary identity still mints into personal team", (t) => {
+  const root = tempDir(t), home = join(root, "home");
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  mkdirSync(home);
+  const fake = fakeAw114(t);
+  const primaryTeams = JSON.stringify([
+    { label: "alpha", team: "alpha:example.test", mapped: true, payload: { team: "alpha:example.test" } },
+    { label: "beta", team: "beta:example.test", mapped: true, payload: { team: "beta:example.test" } },
+  ]);
+  const env = {
+    PATH: fake.path,
+    OATS_EVENT: "spawn",
+    OATS_HOME: home,
+    OATS_INSTANCE: "probe",
+    OATS_WORKSPACE: root,
+    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_TEAM_ID: "alpha:example.test",
+    OATS_TEAM_LABEL: "alpha",
+    OATS_TEAM_LABELS: "alpha,beta",
+    OATS_TEAMS_SOURCE: "live",
+    OATS_TEAMS: primaryTeams,
+    OATS_SETTINGS: JSON.stringify({ root }),
+  };
+  const spawned = runHook("spawn", { cwd: home, env });
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const doc = JSON.parse(spawned.stdout);
+  assert.equal(doc.meta.team, "personal:example.test", "OATS_TEAM_ID names the primary label team, not the primary mint target");
+  assert.equal((doc.meta.joinedTeams || []).length, 0);
+  const inviteCalls = fake.readCalls().filter((c) => c.args[0] === "team" && c.args[1] === "invite");
+  assert.equal(inviteCalls[0].args[inviteCalls[0].args.indexOf("--team-id") + 1], "personal:example.test");
+
+  const listed = runHook("teams", { cwd: home, env: { ...env, OATS_EVENT: "teams", OATS_META: JSON.stringify(doc.meta) }, args: ["--json"] });
+  assert.equal(listed.status, 0, listed.stderr);
+  const teams = JSON.parse(listed.stdout);
+  assert.equal(teams.personal.team, "personal:example.test");
+  assert.deepEqual(teams.eligible.map((e) => ({ label: e.label, team: e.team, joined: e.joined })), [
+    { label: "alpha", team: "alpha:example.test", joined: false },
+    { label: "beta", team: "beta:example.test", joined: false },
+  ]);
+
+  const joinedPrimary = runHook("join", { cwd: home, env: { ...env, OATS_EVENT: "join" }, args: ["--labels", "alpha", "--json"] });
+  assert.equal(joinedPrimary.status, 0, joinedPrimary.stdout + joinedPrimary.stderr);
+  let state = JSON.parse(readFileSync(join(home, ".oats-aweb", "teams.json"), "utf8"));
+  assert.ok(state.joinedTeams.some((j) => j.label === "alpha" && j.team === "alpha:example.test"));
+
+  const leftPrimary = runHook("leave", { cwd: home, env: { ...env, OATS_EVENT: "leave" }, args: ["--labels", "alpha", "--json"] });
+  assert.equal(leftPrimary.status, 0, leftPrimary.stdout + leftPrimary.stderr);
+  state = JSON.parse(readFileSync(join(home, ".oats-aweb", "teams.json"), "utf8"));
+  assert.ok(!state.joinedTeams.some((j) => j.label === "alpha"));
+
+  const joinedAtSpawnHome = join(root, "home-joined-at-spawn");
+  mkdirSync(joinedAtSpawnHome);
+  const joinedAtSpawn = runHook("spawn", { cwd: joinedAtSpawnHome, env: { ...env, OATS_HOME: joinedAtSpawnHome, OATS_SETTINGS: JSON.stringify({ root, join: "alpha" }) } });
+  assert.equal(joinedAtSpawn.status, 0, joinedAtSpawn.stdout + joinedAtSpawn.stderr);
+  const joinedAtSpawnDoc = JSON.parse(joinedAtSpawn.stdout);
+  assert.equal(joinedAtSpawnDoc.meta.team, "personal:example.test");
+  assert.deepEqual(joinedAtSpawnDoc.meta.joinedTeams.map((j) => ({ label: j.label, team: j.team })), [{ label: "alpha", team: "alpha:example.test" }]);
+});
+
+test("retained seat retire leaves joined team identities before releasing the retained primary", (t) => {
+  const root = tempDir(t), home = join(root, "home"), source = join(root, "source", ".aw");
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  mkdirSync(join(home, ".aw"), { recursive: true });
+  mkdirSync(join(home, ".aweb-identity-alpha"), { recursive: true });
+  mkdirSync(join(home, ".oats-aweb"), { recursive: true });
+  mkdirSync(source, { recursive: true });
+  const fake = fakeAw114(t);
+  const lock = join(root, "source", ".aw-retained-seat.json");
+  writeFileSync(lock, JSON.stringify({ home }));
+  const meta = {
+    alias: "retained",
+    team: "personal:example.test",
+    retained: true,
+    source,
+    lock,
+    delivery: "channel",
+    identity: { mode: "global", alias: "retained", team: "personal:example.test" },
+    joinedTeams: [{ label: "alpha", team: "alpha:example.test", identityHome: join(home, ".aweb-identity-alpha"), receive: "poll", since: "2026-09-25T00:00:00Z", alias: "probe" }],
+  };
+  writeFileSync(join(home, ".oats-aweb", "teams.json"), JSON.stringify({ joinedTeams: meta.joinedTeams }, null, 2));
+  const retired = runHook("retire", { cwd: home, env: { PATH: fake.path, OATS_EVENT: "retire", OATS_HOME: home, OATS_META: JSON.stringify(meta), OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const doc = JSON.parse(retired.stdout);
+  assert.equal(doc.meta.retained, true);
+  assert.deepEqual(doc.meta.joinedTeams, []);
+  assert.equal(existsSync(join(home, ".aweb-identity-alpha")), false);
+  assert.equal(existsSync(lock), false);
+  assert.ok(fake.readCalls().some((c) => c.identityHome === join(home, ".aweb-identity-alpha") && c.args[0] === "workspace" && c.args[1] === "delete"));
+});
+
 test("unmapped primary label falls back to personal root team with readiness warning", (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"), { recursive: true });

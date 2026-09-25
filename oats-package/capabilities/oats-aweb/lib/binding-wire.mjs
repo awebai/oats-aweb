@@ -195,7 +195,7 @@ function grantAttachmentProblem(home) {
 }
 function activeTeamAt(root){try{const text=readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8');return yamlScalar(text,'active_team')||yamlScalar(text,'active');}catch{return undefined;}}
 function teamFromSettings(settings,candidate,{env=process.env}={}) {
-  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || undefined);
+  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
   if(configured) return configured;
   return candidate?.root && isAbsolute(candidate.root) ? activeTeamAt(candidate.root) : undefined;
 }
@@ -214,7 +214,7 @@ function joinedTeams(home){if(!home)return[];try{const doc=JSON.parse(readFileSy
 function teamsReadiness({home,team,env=process.env}){const teams=parseOatsTeams(env),joined=joinedTeams(home),joinedLabels=new Set(joined.map(j=>j.label));return{personal:{team:team||null},primary:primaryTeamLabel(env),eligible:teams.filter(t=>t.mapped&&t.team).map(t=>({label:t.label,team:t.team,joined:joinedLabels.has(t.label)})),joined:joined.map(j=>({label:j.label,team:j.team,identityHome:j.identityHome,receive:j.receive||'poll',since:j.since})),unmapped:teams.filter(t=>!t.mapped).map(t=>t.label),at:new Date().toISOString()};}
 function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
-  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || undefined);
+  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
   const candidate=rootCandidate(settings,initialTeam,{deployment,env}),team=teamFromSettings(settings,candidate,{env}),problems=[],warnings=[];
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   const unmapped=unmappedPrimary(env);if(unmapped&&team)warnings.push({code:'team-unmapped',message:`workspace label ${unmapped.label} is not mapped; using personal team ${team}`});

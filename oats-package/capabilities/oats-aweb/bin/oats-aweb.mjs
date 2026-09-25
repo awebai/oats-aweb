@@ -186,8 +186,7 @@ if (!["local", "global"].includes(identityMode) && ["spawn", "retire"].includes(
 if (event === "spawn" && identityMode === "local" && !identitySettings.source && (!instance || !AWEB_ALIAS_RE.test(instance))) fatal(`${AWEB_ALIAS_RULE}; OATS_INSTANCE is ${instance ? "not valid" : "missing"}, so no identity could be minted`);
 const payloadTeam = () => {
   const fromSettings = typeof settings.team === "string" && settings.team.trim() ? settings.team.trim() : undefined;
-  const fromEnv = process.env.OATS_TEAM_ID || undefined;
-  return { team: fromSettings || fromEnv, payload: fromSettings, env: fromEnv };
+  return { team: fromSettings, payload: fromSettings, env: process.env.OATS_TEAM_ID || undefined };
 };
 const identityMeta = ({ mode = "local", alias, team, address = null, resident = null, grant }) => ({ mode, alias, team, address: address || null, resident: resident || null, ...(grant ? { grant } : {}) });
 const teamConfigRemedy = () => "set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team";
@@ -448,7 +447,7 @@ function globalGrantRenew() {
 }
 function globalGrantSpawn() {
   const { team, payload, env: envTeam } = payloadTeam();
-  if (!team) fatal("identity.mode \"global\" requires settings.oats.aweb.team (or OATS_TEAM_ID) before minting a grant");
+  if (!team) fatal("identity.mode \"global\" requires settings.oats.aweb.team before minting a grant");
   const resident = String(identitySettings.resident || "");
   const custody = resolveResidentCustody(resident);
   const grantHome = join(home, ".aweb-identity");
@@ -684,13 +683,11 @@ function unmappedPrimaryRow() {
   const primary = primaryTeamLabel();
   return primary ? parseOatsTeams().find((t) => t.label === primary && !t.mapped) : undefined;
 }
-function personalTeamLabel() { return primaryTeamLabel() || "personal"; }
 function validateJoinLabels(labels, { action = "join" } = {}) {
   const eligible = eligibleTeams();
   const byLabel = new Map(eligible.map((t) => [t.label, t]));
-  const primary = personalTeamLabel();
   for (const label of labels) {
-    if (action === "leave" && (label === primary || label === "personal")) {
+    if (action === "leave" && label === "personal") {
       const error = new Error(`E_TEAM_PERSONAL: ${label} is the personal team and cannot be left`);
       error.code = "E_TEAM_PERSONAL";
       throw error;
@@ -843,7 +840,6 @@ if (event === "launch") {
     const resolvedTeam = payloadTeam();
     let team = resolvedTeam.team;
     const warnings = [];
-    const teamPayloadMismatch = resolvedTeam.payload && resolvedTeam.env && resolvedTeam.payload !== resolvedTeam.env;
     const unmappedPrimary = !team ? unmappedPrimaryRow() : undefined;
     if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
     if (unmappedPrimary && team) warnings.push(`oats-aweb: team-unmapped — workspace label ${unmappedPrimary.label} is not mapped; using personal team ${team}`);
@@ -902,7 +898,7 @@ if (event === "launch") {
     run(["aw", "init", "--do-not-touch-agents-md"], home);
     const alias = joined.alias;
     const mismatch = joined.team_id !== team
-      ? ` [WARNING: joined ${joined.team_id}, expected ${team}]` : teamPayloadMismatch ? ` [WARNING: settings team ${resolvedTeam.payload} differs from OATS team ${resolvedTeam.env}; using payload team]` : "";
+      ? ` [WARNING: joined ${joined.team_id}, expected ${team}]` : "";
     // Runtime integration: for Claude Code sessions the aweb-channel plugin
     // carries real-time push events. This hook does NOT install it. The plugin
     // is a DECLARED runtime requirement (oats.json), consented once at
@@ -930,7 +926,7 @@ if (event === "launch") {
       env,
       brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}.${mismatch}${deliveryBrief} Joined team identities receive by polling in oats.aweb 1.14; run \`oats aweb teams --json\` for identity homes. Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
-      ...(joined.team_id !== team ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : teamPayloadMismatch ? { warning: `oats-aweb: settings.oats.aweb.team ${resolvedTeam.payload} differs from OATS team ${resolvedTeam.env}; using payload team` } : warnings.length ? { warning: warnings.join(" | ") } : channelWarning ? { warning: channelWarning } : {}),
+      ...(joined.team_id !== team ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : warnings.length ? { warning: warnings.join(" | ") } : channelWarning ? { warning: channelWarning } : {}),
     });
   } catch (e) {
     // A join may already have created a REMOTE identity before the failure.
@@ -945,16 +941,17 @@ if (event === "launch") {
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
   if (meta.delivery === "session" && (meta.retained || meta.identity?.mode !== "global")) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
-  if (meta.retained) {
-    if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
-    out({ meta: { retired: true, retained: true, identityReleased: true, ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }, warning: `oats-aweb: released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}` });
-  }
-  if (meta.identity?.mode === "global") globalGrantRetire(meta);
+  if (meta.identity?.mode === "global" && !meta.retained) globalGrantRetire(meta);
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
     catch (e) { retireWarnings.push(`joined team ${joined.label} cleanup failed: ${e.message || e}`); }
   }
   writeProviderTeamsState(meta);
+  if (meta.retained) {
+    if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
+    const retainedWarning = `released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}`;
+    out({ meta: { retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }, warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
+  }
   // No alias means the spawn hook never reported an identity: nothing exists to
   // undo, which is completion. An alias WITH no local `.aw` is the opposite —
   // the remote record exists and its key is gone, so the self-delete cannot be

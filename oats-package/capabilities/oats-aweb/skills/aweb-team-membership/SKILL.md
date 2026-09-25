@@ -55,7 +55,8 @@ Interpret common states:
 
 - `teams.personal.team` is the primary personal team identity wired to the
   harness.
-- `eligible[]` are labels this soul/workspace may explicitly join.
+- `eligible[]` are labels this soul/workspace may explicitly join; the primary
+  label may appear here and is joinable/leavable like any other wider team.
 - `joined[]` are provider-created wider-team memberships; each has an
   `identityHome`, `since`, and `receive` (`poll` in 1.14).
 - `unmapped[]` labels are present on the soul but not mapped by the workspace.

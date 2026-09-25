@@ -340,6 +340,7 @@ test("setup argument parse errors never echo token-shaped input", async (t) => {
 test("spawn accepts a 64-character alias and rejects 65 before aw", async (t) => {
   const root = tempDir(t), okHome = join(root, "ok-home"), badHome = join(root, "bad-home");
   mkdirSync(join(root, ".aw"));
+  writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] }));
   mkdirSync(okHome);
   mkdirSync(badHome);
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
@@ -362,7 +363,7 @@ test("alias conflict remedy names --name and --purpose", async (t) => {
   mkdirSync(home);
   const fake = fakeAwSetupPath(t);
   const aw = join(fake.path, "aw");
-  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
+  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
