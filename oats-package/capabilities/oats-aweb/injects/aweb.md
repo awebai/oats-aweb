@@ -52,10 +52,10 @@ Aliases are instance names (e.g. `dev-coordinator-1`). Discovery:
 `oats status` (in the deployment) lists this machine's live instances; `oats aweb roster`
 lists the aweb team across machines.
 
-**Joined teams.** Your default identity is the personal team — in 1.14.0 the root's default team as a stand-in until per-workspace personal teams exist. Workspace labels, including the primary label, are wider teams only when explicitly joined. If `oats aweb teams --json`
+**Joined teams.** Your default identity is the personal team — in 1.14.1 the root's default team as a stand-in until per-workspace personal teams exist. Workspace labels, including the primary label, are wider teams only when explicitly joined. If `oats aweb teams --json`
 shows joined wider teams, each joined entry has an `identityHome`. Send or reply as
 that team with exactly `aw --identity-home <identityHome> mail|chat ...`. In
-1.14.0 joined teams receive by polling: check `aw --identity-home <identityHome>
+1.14.1 joined teams receive by polling: check `aw --identity-home <identityHome>
 mail inbox` and `aw --identity-home <identityHome> chat pending` at task
 boundaries when you are working through that team. The native channel/wake path
 listens to the primary identity only.

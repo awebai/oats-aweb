@@ -74,6 +74,8 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env
     const why = secretSafe ? "" : (scrub(e.stderr).trim() || (e.status === undefined ? String(e.code || "failed") : ""));
     const err = new Error(`${where} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
     err.status = e.status;
+    err.stdout = scrub(e.stdout).trim();
+    err.stderr = scrub(e.stderr).trim();
     // A classification, never the text: the caller may name a KNOWN failure
     // class (an alias that still holds a certificate) without any output of a
     // credential-handling command reaching a log.
@@ -546,6 +548,22 @@ const workspaceAliasOf = (homeDir) => {
  *  signing key, a team certificate and a workspace binding. */
 const joinedLate = (homeDir) => existsSync(join(homeDir, ".aw", "signing.key")) && existsSync(join(homeDir, ".aw", "team-certs")) && !!workspaceAliasOf(homeDir);
 const JOIN_TIMEOUT_MS = Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) > 0 ? Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) : 120000;
+// The first aw whose joined-team external homes are fully operable: local
+// accept-invite under --identity-home, hosted workspace auto-connect, self-release
+// and joined-root E2E key publication.
+const JOINED_TEAMS_AW_MIN = "1.36.12";
+function joinedTeamsAwFloorProblem() {
+  if (/^\d+\.\d+\.\d+$/.test(JOINED_TEAMS_AW_MIN) && awAtLeast(JOINED_TEAMS_AW_MIN)) return undefined;
+  if (!/^\d+\.\d+\.\d+$/.test(JOINED_TEAMS_AW_MIN)) return `E_TEAM_AW_FLOOR: joined-team identities need an aw release that admits local accept-invite under --identity-home, auto-connects the joined workspace and publishes the joined-root E2E key; installed aw is ${awVersionLabel()}. join= and oats aweb join are gated until that aw release exists`;
+  return `E_TEAM_AW_FLOOR: joined-team identities require aw >= ${JOINED_TEAMS_AW_MIN}; installed aw is ${awVersionLabel()}. join= and oats aweb join are gated until aw admits local accept-invite under --identity-home, auto-connects the joined workspace and publishes the joined-root E2E key`;
+}
+function requireJoinedTeamsAwFloor() {
+  const problem = joinedTeamsAwFloorProblem();
+  if (!problem) return;
+  const error = new Error(problem.replace(/^E_TEAM_AW_FLOOR: /, ""));
+  error.code = "E_TEAM_AW_FLOOR";
+  throw error;
+}
 const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
   return m ? m[1].trim() : undefined;
@@ -727,6 +745,15 @@ function writeProviderTeamsState(meta) {
 function withProviderTeams(meta = {}) { return { ...meta, joinedTeams: readProviderTeamsState(meta).joinedTeams }; }
 function identityHomeForLabel(label) { return join(home, `.aweb-identity-${label}`); }
 function awWithIdentity(identityHome, args) { return ["aw", "--identity-home", identityHome, ...args]; }
+function commandOutput(e) { return [e?.stdout, e?.stderr, e?.message].filter(Boolean).join("\n"); }
+function workspaceConnectRecovery(text) {
+  const m = String(text || "").match(/aw\s+--identity-home\s+\S+\s+workspace\s+connect\s+--service\s+\S+(?:\s+--json)?|aw\s+workspace\s+connect\s+--service\s+\S+(?:\s+--json)?|workspace\s+connect\s+--service\s+\S+(?:\s+--json)?/i);
+  return m ? m[0].trim() : undefined;
+}
+function joinedWorkspacePresent(identityHome) { return existsSync(join(identityHome, "workspace.yaml")); }
+function releaseReceiptStatus(doc) {
+  return doc && typeof doc === "object" && doc.alias_released === true ? "released" : undefined;
+}
 function readCapabilityMeta() {
   if (process.env.OATS_META) { try { return withProviderTeams(JSON.parse(process.env.OATS_META || "{}")); } catch { return withProviderTeams({}); } }
   try { return withProviderTeams(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).capabilityMeta?.["oats.aweb"] || {}); } catch { return withProviderTeams({}); }
@@ -749,25 +776,49 @@ function teamsDocument(meta = readCapabilityMeta()) {
 function mintJoinedTeam(row, meta) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
+  requireJoinedTeamsAwFloor();
   const identityHome = identityHomeForLabel(row.label);
   const root = awebRootForTeam(row.team);
   if (!root) throw new Error(`${awebRootProblem(rootSettingCandidate(row.team))}, so team ${row.label} could not be joined`);
   const inv = parseSecretJson(run(["aw", "team", "invite", "--team-id", row.team, "--json"], root, 45000, { secretSafe: true }), "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
-  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["team", "join", inv.token, "--name", instance || meta.alias, "--json"]), home, JOIN_TIMEOUT_MS, { secrets: [inv.token], secretSafe: true }), "aw team join");
+  let raw, acceptWarning;
+  try {
+    raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", inv.token, "--name", instance || meta.alias, "--local", "--json"]), home, JOIN_TIMEOUT_MS, { secrets: [inv.token], secretSafe: true }), "aw id team accept-invite");
+  } catch (e) {
+    const output = commandOutput(e);
+    const recovery = workspaceConnectRecovery(output);
+    let accepted;
+    try { accepted = parseAwJson(e.stdout || "", "aw id team accept-invite"); } catch { accepted = undefined; }
+    if (!accepted?.team_id) throw new Error(`aw id team accept-invite failed for joined team ${row.label}${recovery ? `; recovery: ${recovery}` : ""}`);
+    raw = accepted;
+    acceptWarning = `joined team ${row.label} was accepted but workspace connect failed${recovery ? `; recovery: ${recovery}` : "; rerun the aw workspace connect recovery command printed by aw"}`;
+  }
   const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : (instance || meta.alias);
   const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : row.team;
   if (team !== row.team) throw new Error(`joined team ${team} differs from requested ${row.team}`);
   const joined = { label: row.label, team, identityHome, receive: "poll", since: new Date().toISOString(), alias };
-  return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true };
+  const next = { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] };
+  if (!joinedWorkspacePresent(identityHome)) {
+    const recovery = workspaceConnectRecovery(JSON.stringify(raw)) || raw.recovery_command || raw.recoveryCommand;
+    return { meta: next, joined, changed: true, warning: acceptWarning || `joined team ${row.label} was accepted but no workspace connection was written under ${identityHome}${recovery ? `; recovery: ${recovery}` : "; rerun the aw workspace connect recovery command printed by aw"}` };
+  }
+  return { meta: next, joined, changed: true, ...(acceptWarning ? { warning: acceptWarning } : {}) };
 }
 function leaveJoinedTeam(label, meta) {
   const joined = joinedTeamsOf(meta);
   const entry = joined.find((j) => j.label === label);
   if (!entry) return { meta, changed: false };
-  try { run(awWithIdentity(entry.identityHome, ["workspace", "delete", entry.alias || meta.alias || instance, "--json"]), home, 60000); } catch { throw new Error(`failed to leave team ${label}; kept ${entry.identityHome} so cleanup can be retried`); }
+  let receipt, released;
+  try {
+    receipt = parseAwJson(run(awWithIdentity(entry.identityHome, ["workspace", "delete", entry.alias || meta.alias || instance, "--json"]), home, 60000), "aw workspace delete");
+    released = releaseReceiptStatus(receipt);
+  } catch (e) {
+    throw new Error(`failed to leave team ${label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
+  }
+  if (!released) throw new Error(`failed to leave team ${label}; workspace delete did not report alias_released: true; kept ${entry.identityHome} so cleanup can be retried: ${JSON.stringify(receipt)}`);
   try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
-  return { meta: { ...meta, joinedTeams: joined.filter((j) => j.label !== label) }, changed: true };
+  return { meta: { ...meta, joinedTeams: joined.filter((j) => j.label !== label) }, changed: true, released, receipt };
 }
 function awebRootForTeam(team) {
   const declared = declaredRootCandidate(team);
@@ -801,13 +852,21 @@ function outputTeamsDocument(doc, json) {
 function runTeamsCommand(kind) {
   const args = parseHomeCommandArgs();
   let meta = readCapabilityMeta();
+  const actions = [];
+  const warnings = [];
   if (kind === "join" || kind === "leave") {
     const rows = validateJoinLabels(args.labels, { action: kind });
     if (!rows.length) throw new Error("labels are required");
-    for (const row of rows) meta = kind === "join" ? mintJoinedTeam(row, meta).meta : leaveJoinedTeam(row.label, meta).meta;
+    for (const row of rows) {
+      const result = kind === "join" ? mintJoinedTeam(row, meta) : leaveJoinedTeam(row.label, meta);
+      meta = result.meta;
+      actions.push({ action: kind, label: row.label, ...(result.released ? { released: result.released } : {}), ...(result.receipt ? { receipt: result.receipt } : {}), ...(result.warning ? { warning: result.warning } : {}) });
+      if (result.warning) warnings.push(`oats-aweb: ${result.warning}`);
+    }
     writeProviderTeamsState(meta);
   }
-  outputTeamsDocument(teamsDocument(meta), args.json);
+  const doc = { ...teamsDocument(meta), ...(actions.length ? { actions } : {}), ...(warnings.length ? { warnings } : {}) };
+  outputTeamsDocument(doc, args.json);
 }
 
 if (event === "launch") {
@@ -929,7 +988,9 @@ if (event === "launch") {
       ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
       : "";
     let meta = { team: joined.team_id, alias, delivery: deliveryMode, identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
-    for (const row of joinRows) meta = mintJoinedTeam(row, meta).meta;
+    const joinFloorProblem = joinRows.length ? joinedTeamsAwFloorProblem() : undefined;
+    if (joinFloorProblem) warnings.push(`oats-aweb: ${joinFloorProblem}`);
+    else for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
     writeProviderTeamsState(meta);
     out({
       meta,
