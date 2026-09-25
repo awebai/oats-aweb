@@ -199,7 +199,7 @@
       "description": "Named operations a GUI or scheduler may invoke through `oats operation run`, each delegating to one of this manifest's commands. kind \"view\" answers { documents: [{label, kind, path, text}] }; \"action\" (default) runs something. context \"home\" (default) runs in an instance home, \"scope\" in the config scope.",
       "type": "object",
       "propertyNames": {
-        "pattern": "^(?:[a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$"
+        "pattern": "^[a-z][a-z0-9-]*$"
       },
       "additionalProperties": {
         "type": "object",

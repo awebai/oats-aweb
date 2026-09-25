@@ -169,13 +169,13 @@
     "AWEB_"
   ],
   "operations": {
-    "messaging:teams": {
+    "teams": {
       "kind": "action",
       "command": "teams",
       "context": "home",
       "description": "Read-only structured JSON summary of eligible and joined aweb teams for this home."
     },
-    "messaging:join": {
+    "join": {
       "kind": "action",
       "command": "join",
       "context": "home",
@@ -189,7 +189,7 @@
         }
       ]
     },
-    "messaging:leave": {
+    "leave": {
       "kind": "action",
       "command": "leave",
       "context": "home",

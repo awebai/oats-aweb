@@ -92,6 +92,7 @@ test("manifest declares 1.14 floor, team setting, commands and home operations",
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
+  const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
   assert.equal(pkg.version, "1.14.0");
   assert.equal(dist.version, "1.14.0");
   assert.equal(manifest.version, "1.14.0");
@@ -101,9 +102,12 @@ test("manifest declares 1.14 floor, team setting, commands and home operations",
   assert.equal(manifest.commands.teams, "bin/oats-aweb.mjs teams");
   assert.equal(manifest.commands.join, "bin/oats-aweb.mjs join");
   assert.equal(manifest.commands.leave, "bin/oats-aweb.mjs leave");
-  assert.equal(manifest.operations["messaging:teams"].kind, "action");
-  assert.equal(manifest.operations["messaging:join"].args[0].flag, "--labels");
-  assert.equal(manifest.operations["messaging:leave"].args[0].required, true);
+  assert.equal(schema.properties.operations.propertyNames.pattern, "^[a-z][a-z0-9-]*$");
+  assert.deepEqual(Object.keys(manifest.operations).sort(), ["join", "leave", "teams"]);
+  assert.ok(!Object.keys(manifest.operations).some((key) => key.includes(":")), "operation keys are names; kernel forms messaging:<name>");
+  assert.equal(manifest.operations.teams.kind, "action");
+  assert.equal(manifest.operations.join.args[0].flag, "--labels");
+  assert.equal(manifest.operations.leave.args[0].required, true);
 });
 
 test("spawn join setting mints joined-team identities and teams/join/leave update instance meta", (t) => {
