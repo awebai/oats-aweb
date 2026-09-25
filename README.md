@@ -13,9 +13,8 @@ spawns pass the preflight's absolute `status.socket_path` to
 attachment with `aw custody status --json` from the grant home with
 `AWEB_IDENTITY_HOME` set to that grant home. Any missing/mismatched attachment
 is revoked and removed; launch renewal keeps the previous grant on attachment
-failure. The temporary `CUSTODY_ATTACH_MIN` remains `9.9.9` until the aw release
-that ships `--custody-socket` is published; do not tag a release with the
-placeholder floor.
+failure. `CUSTODY_ATTACH_MIN` is `1.36.3`, the first published aw release whose
+`aw id grant mint --help` includes `--custody-socket`.
 
 1.13.0 prepares resident grant custody preflight and scoped grant profiles:
 global-mode spawns check `aw custody status --json` before minting, `profile:
@@ -145,7 +144,7 @@ node scripts/validate-manifests.mjs
 node --test test/portable-profile.test.mjs test/captured-execution.test.mjs \
   test/session-readiness.test.mjs test/captured-native.test.mjs
 # Full local provider unit suite when appropriate. When running through Node 22,
-# invoke the Node 22 binary directly or put the real aw 1.36.2 binary ahead of
+# invoke the Node 22 binary directly or put the real aw 1.36.3 binary ahead of
 # node_modules/.bin; otherwise a dependency-provided old aw can shadow PATH and
 # fail the fixture custody command with "unknown command custody".
 npm test

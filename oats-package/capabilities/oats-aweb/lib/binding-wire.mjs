@@ -163,7 +163,7 @@ function workspaceReadinessContext(value) {
   return value;
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
-export const CUSTODY_ATTACH_MIN = '9.9.9';
+export const CUSTODY_ATTACH_MIN = '1.36.3';
 export function grantYamlCustodySocket(text) {
   const lines=String(text??'').split(/\r?\n/);let inCustody=false,baseIndent=0;
   for(const line of lines) {
