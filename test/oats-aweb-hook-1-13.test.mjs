@@ -35,6 +35,11 @@ fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHom
 if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { console.error("grant command refuses external identity home"); process.exit(2); }
 if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.3")); process.exit(0); }
 if (s.startsWith("wake ")) process.exit(0);
+if (a[0] === "team" && a[1] === "list" && a.includes("--json")) {
+  let active = process.env.FAKE_ACTIVE_TEAM || "";
+  try { active = fs.readFileSync(path.join(process.cwd(), ".aw", "teams.yaml"), "utf8").split(/\\n/).find(l => l.startsWith("active_team:"))?.split("active_team:")[1].trim() || active; } catch {}
+  console.log(j({ active_team: active || null, memberships: active ? [{ team_id: active }] : [] })); process.exit(0);
+}
 if (a[0] === "custody" && a[1] === "status" && a.includes("--json")) {
   const team = process.env.FAKE_CUSTODY_TEAM || "t:example.test";
   if (process.env.AWEB_IDENTITY_HOME) {
@@ -95,9 +100,10 @@ function deployment(base) {
   return { root, home };
 }
 
-function resident(base, name = "merlin") {
+function resident(base, name = "merlin", activeTeam = "t:example.test") {
   const custody = join(base, "custody", name);
   write(join(custody, ".aw", "identity.yaml"), "alias: resident-alias\n");
+  write(join(custody, ".aw", "teams.yaml"), `active_team: ${activeTeam}\n`);
   return custody;
 }
 
@@ -155,6 +161,25 @@ test("normal global grants use the 1.13 concrete default scopes and preflight cu
     assert.equal(mint.argv[mint.argv.indexOf("--custody-socket") + 1], join(realpathSync(custody), "custody.sock"));
     assert.equal(mint.argv[mint.argv.indexOf("--team") + 1], "t:example.test");
     assert.equal(existsSync(join(home, ".aweb-identity", "grant.yaml")), true);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global grants without settings team use custody active team, not mapped primary payload", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base, "merlin", "personal:example.test");
+    const payload = { ...settings(custody), team: undefined };
+    const mappedTeams = JSON.stringify([{ label: "alpha", team: "mapped:example.test", mapped: true, payload: { team: "mapped:example.test" } }]);
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "mapped:example.test", OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, OATS_SETTINGS: JSON.stringify(payload), FAKE_CUSTODY_TEAM: "personal:example.test" };
+    const r = runHook(bin, "spawn", env);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.identity.team, "personal:example.test");
+    const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint");
+    assert.equal(mint.argv[mint.argv.indexOf("--team") + 1], "personal:example.test");
+    const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { OATS_WORKSPACE: root, OATS_TEAM_ID: "mapped:example.test", OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "personal:example.test" });
+    assert.equal(checked.status, 0, checked.stderr);
+    assert.equal(checked.doc.result.status, "ready", JSON.stringify(checked.doc.result));
+    assert.equal(checked.doc.result.teams.personal.team, "personal:example.test");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

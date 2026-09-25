@@ -71,9 +71,9 @@ Interpret common states:
   `default:oats.aweb.ai`).
 - **Team certificate**: a signed membership statement for an identity; stored in
   `.aw/team-certs/` for native identities.
-- **Personal team**: the default team for the instance's primary identity. Until
-  per-workspace personal teams are available, this may be the person's default
-  team as a stand-in.
+- **Personal team**: the default team for the instance's primary identity. In
+  1.14.0, until per-workspace personal teams are available, this may be the
+  person's default team as a stand-in.
 - **Joined team**: an explicit wider team joined through `oats aweb join`, with a
   separate local identity home in this release.
 

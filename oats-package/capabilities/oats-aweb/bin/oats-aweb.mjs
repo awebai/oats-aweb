@@ -446,10 +446,15 @@ function globalGrantRenew() {
   out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), ...(warning ? { warning } : {}) });
 }
 function globalGrantSpawn() {
-  const { team, payload, env: envTeam } = payloadTeam();
-  if (!team) fatal("identity.mode \"global\" requires settings.oats.aweb.team before minting a grant");
+  const resolvedTeam = payloadTeam();
   const resident = String(identitySettings.resident || "");
   const custody = resolveResidentCustody(resident);
+  let team = resolvedTeam.team;
+  const teamWarnings = [];
+  const unmappedPrimary = !team ? unmappedPrimaryRow() : undefined;
+  if (!team) team = activeTeamAt(custody);
+  if (unmappedPrimary && team) teamWarnings.push(`oats-aweb: team-unmapped — workspace label ${unmappedPrimary.label} is not mapped; using personal team ${team}`);
+  if (!team) fatal("identity.mode \"global\" requires settings.oats.aweb.team or an active team at the resident custody root before minting a grant");
   const grantHome = join(home, ".aweb-identity");
   if (existsSync(grantHome)) fatal(`${grantHome} already exists; refusing to overwrite an existing aweb session grant home`);
   const scopes = grantScopes();
@@ -497,8 +502,7 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
       }
     }
-    const warnings = [...preflight.warnings];
-    if (payload && envTeam && payload !== envTeam) warnings.push(`oats-aweb: settings.oats.aweb.team ${payload} differs from OATS team ${envTeam}; using payload team`);
+    const warnings = [...teamWarnings, ...preflight.warnings];
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     const deliveryBrief = deliveryMode === "session"
       ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
@@ -546,6 +550,12 @@ const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
   return m ? m[1].trim() : undefined;
 };
+function activeTeamAt(root) {
+  try {
+    const text = readFileSync(join(resolve(root), ".aw", "teams.yaml"), "utf8");
+    return yamlScalar(text, "active_team") || yamlScalar(text, "active");
+  } catch { return undefined; }
+}
 function retainedSeatSpawn(source, takeOver) {
   if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);

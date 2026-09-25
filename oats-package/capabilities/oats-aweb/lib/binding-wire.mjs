@@ -194,9 +194,11 @@ function grantAttachmentProblem(home) {
   return {code:'custody',message:`grant ${id} is not attached to custody; retire and respawn on aw >= ${CUSTODY_ATTACH_MIN}`};
 }
 function activeTeamAt(root){try{const text=readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8');return yamlScalar(text,'active_team')||yamlScalar(text,'active');}catch{return undefined;}}
+function residentCustodyRoot(settings){const identity=obj(settings.identity)?settings.identity:{},residents=obj(settings.residents)?settings.residents:{};const name=typeof identity.resident==='string'?identity.resident:'';const root=name&&typeof residents[name]==='string'?residents[name]:undefined;return identity.mode==='global'&&root&&isAbsolute(root)?root:undefined;}
 function teamFromSettings(settings,candidate,{env=process.env}={}) {
   const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():undefined;
   if(configured) return configured;
+  const custody=residentCustodyRoot(settings);if(custody)return activeTeamAt(custody);
   return candidate?.root && isAbsolute(candidate.root) ? activeTeamAt(candidate.root) : undefined;
 }
 function rootCandidate(settings,team,{deployment,env=process.env}={}) {

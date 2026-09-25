@@ -168,7 +168,7 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
 
 
 
-test("mapped primary label is eligible and primary identity still mints into personal team", (t) => {
+test("mapped primary label in OATS_TEAMS is eligible while no settings team mints primary into personal team", (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home);
@@ -244,7 +244,7 @@ test("retained seat retire leaves joined team identities before releasing the re
     source,
     lock,
     delivery: "channel",
-    identity: { mode: "global", alias: "retained", team: "personal:example.test" },
+    identity: { mode: "local", alias: "retained", team: "personal:example.test" },
     joinedTeams: [{ label: "alpha", team: "alpha:example.test", identityHome: join(home, ".aweb-identity-alpha"), receive: "poll", since: "2026-09-25T00:00:00Z", alias: "probe" }],
   };
   writeFileSync(join(home, ".oats-aweb", "teams.json"), JSON.stringify({ joinedTeams: meta.joinedTeams }, null, 2));

@@ -340,18 +340,17 @@ test("setup argument parse errors never echo token-shaped input", async (t) => {
 test("spawn accepts a 64-character alias and rejects 65 before aw", async (t) => {
   const root = tempDir(t), okHome = join(root, "ok-home"), badHome = join(root, "bad-home");
   mkdirSync(join(root, ".aw"));
-  writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] }));
   mkdirSync(okHome);
   mkdirSync(badHome);
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
   const alias64 = `a${"b".repeat(63)}`;
-  const accepted = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: okHome, OATS_INSTANCE: alias64, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root }) }, okHome);
+  const accepted = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: okHome, OATS_INSTANCE: alias64, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root, team: "active:example.invalid" }) }, okHome);
   assert.equal(accepted.code, 0, accepted.stdout + accepted.stderr);
   assert.ok(fake.readCalls().some((call) => call.args[0] === "team" && call.args[1] === "join" && call.args.includes("--name") && call.args[call.args.indexOf("--name") + 1] === alias64));
 
   const callsBefore = fake.readCalls().length;
   const alias65 = `a${"b".repeat(64)}`;
-  const refused = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: badHome, OATS_INSTANCE: alias65, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root }) }, badHome);
+  const refused = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: badHome, OATS_INSTANCE: alias65, OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root, team: "active:example.invalid" }) }, badHome);
   assert.notEqual(refused.code, 0, refused.stdout);
   assert.match(JSON.parse(refused.stdout).warning, /invalid alias/i);
   assert.equal(fake.readCalls().length, callsBefore, "invalid alias must be refused before any aw call");
