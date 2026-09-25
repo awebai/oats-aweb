@@ -189,7 +189,7 @@ const payloadTeam = () => {
   return { team: fromSettings, payload: fromSettings, env: process.env.OATS_TEAM_ID || undefined };
 };
 const identityMeta = ({ mode = "local", alias, team, address = null, resident = null, grant }) => ({ mode, alias, team, address: address || null, resident: resident || null, ...(grant ? { grant } : {}) });
-const teamConfigRemedy = () => "set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team";
+const teamConfigRemedy = () => "set settings.oats.aweb.team or keep an active team at the aweb root";
 function declaredRootCandidate(team = payloadTeam().team) {
   const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
   if (team && typeof roots[team] === "string" && roots[team].trim()) return { root: roots[team].trim(), key: `settings.oats.aweb.roots[${JSON.stringify(team)}]`, declared: true };
@@ -1069,7 +1069,7 @@ if (event === "launch") {
       return;
     }
     console.log(`  Workspace initialized, but no membership matching "${want}".`);
-    if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; set messaging.byTeam.<label>.team or settings.oats.aweb.team to that id, then re-run setup.`);
+    if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; set settings.oats.aweb.team to that id, then re-run setup.`);
     console.log("  Existing team path: ask a member for an invite token, then run `oats aweb setup --invite <token>` (uses `aw team join <token>` at the root).");
     console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
     console.log("  New hosted-account path: run `oats aweb setup --username <u>` (uses `aw init --username <u>` and creates default:<u>.aweb.ai).");
