@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
@@ -124,6 +125,7 @@ function logLines(base) {
 function runBindingCheck(bin, settings, context, env = {}) {
   const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings, input: { action: { kind: "readiness" }, context } };
   const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...env } });
+  if (!r.error && r.status === 0) assertKernelCheckAnswerRule(r.stdout, input, "oats-aweb 1.13 binding check");
   let doc; try { doc = JSON.parse(r.stdout); } catch { doc = undefined; }
   return { ...r, doc };
 }
@@ -179,7 +181,7 @@ test("global grants without settings team use custody active team, not mapped pr
     const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { OATS_WORKSPACE: root, OATS_TEAM_ID: "mapped:example.test", OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "personal:example.test" });
     assert.equal(checked.status, 0, checked.stderr);
     assert.equal(checked.doc.result.status, "ready", JSON.stringify(checked.doc.result));
-    assert.equal(checked.doc.result.teams.personal.team, "personal:example.test");
+    assert.deepEqual(Object.keys(checked.doc.result).sort(), ["problems", "status", "warnings"]);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

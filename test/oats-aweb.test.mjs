@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ROOT = join(REPO, "oats-package");
@@ -381,6 +382,7 @@ test("no-team readiness follows spawn's active-team fallback", async (t) => {
   const request = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root }, input: { binding, context: binding.payload.context, action: { kind: "inspect" } } };
   const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, OATS_WORKSPACE: root, OATS_TEAM_ID: "" }, input: JSON.stringify(request), encoding: "utf8" });
   assert.equal(checked.status, 0, checked.stderr);
+  assertKernelCheckAnswerRule(checked.stdout, request, "oats-aweb captured binding check");
   assert.deepEqual(JSON.parse(checked.stdout).result, { status: "ready", problems: [] });
   const spawned = await run(["spawn"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "fixture-1", OATS_WORKSPACE: root, OATS_TEAM_ID: "", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.equal(spawned.code, 0, spawned.stdout + spawned.stderr);

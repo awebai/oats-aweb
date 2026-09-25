@@ -5,6 +5,12 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## Portable captured profile — 1.14.2
+
+### Fixed
+
+- 1.14.0–1.14.1: the binding check's answer carried `teams`, which OATS rejects, so readiness showed messaging unknown (`oats.aweb check answered invalid binding data`). Binding check answers now stay inside the kernel's strict `{status, problems, warnings}` result shape; team details remain available through `oats aweb teams --json`.
+
 ## Portable captured profile — 1.14.1
 
 ### Fixed
