@@ -5,7 +5,16 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## Portable captured profile — 1.13.0
+## Portable captured profile — 1.13.1
+
+1.13.1 attaches resident session grant homes to custody at mint time. Global-mode
+spawns pass the preflight's absolute `status.socket_path` to
+`aw id grant mint --custody-socket`, read `grant.yaml` back, then verify the
+attachment with `aw custody status --json` from the grant home with
+`AWEB_IDENTITY_HOME` set to that grant home. Any missing/mismatched attachment
+is revoked and removed; launch renewal keeps the previous grant on attachment
+failure. `CUSTODY_ATTACH_MIN` is `1.36.3`, the first published aw release whose
+`aw id grant mint --help` includes `--custody-socket`.
 
 1.13.0 prepares resident grant custody preflight and scoped grant profiles:
 global-mode spawns check `aw custody status --json` before minting, `profile:
@@ -134,7 +143,10 @@ historical work, not current1.11 readiness or a new0.19 fixture requirement.
 node scripts/validate-manifests.mjs
 node --test test/portable-profile.test.mjs test/captured-execution.test.mjs \
   test/session-readiness.test.mjs test/captured-native.test.mjs
-# Full local provider unit suite when appropriate:
+# Full local provider unit suite when appropriate. When running through Node 22,
+# invoke the Node 22 binary directly or put the real aw 1.36.3 binary ahead of
+# node_modules/.bin; otherwise a dependency-provided old aw can shadow PATH and
+# fail the fixture custody command with "unknown command custody".
 npm test
 ```
 
