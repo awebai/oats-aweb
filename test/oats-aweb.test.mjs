@@ -87,9 +87,9 @@ function run(args = [], env = {}, cwd = ROOT) {
   });
 }
 
-test("manifest resolves the three vendored Agent Skills by expected names", () => {
+test("manifest resolves the OATS playbook and the three vendored Agent Skills by expected names", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
-  const expected = ["aweb-messaging", "aweb-team-membership", "aweb-identity"];
+  const expected = ["oats-aweb", "aweb-messaging", "aweb-team-membership", "aweb-identity"];
   assert.deepEqual(manifest.skills, expected.map((name) => `skills/${name}`));
   for (const name of expected) {
     const skill = readFileSync(join(CAPABILITY, "skills", name, "SKILL.md"), "utf8");
@@ -178,8 +178,8 @@ test("capability guidance names only real first-level aw verbs", (t) => {
     return true;
   };
   t.diagnostic(`aw version fixture: ${(version.stdout + version.stderr).trim()}`);
-  if (!atLeast("1.36.6") || !/5a285ceb/.test(version.stdout + version.stderr)) {
-    t.skip(`aw ${parsed?.[0] || "unknown"} is not published 1.36.6 / 5a285ceb; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
+  if (!atLeast("1.36.6")) {
+    t.skip(`aw ${parsed?.[0] || "unknown"} is older than published 1.36.6; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
     return;
   }
   for (const verb of [...verbs].sort()) {
@@ -246,7 +246,9 @@ test("authority discovery does not walk above the workspace", async (t) => {
     OATS_INSTANCE: "example-1",
     OATS_CONTEXT: workspace,
     OATS_WORKSPACE: workspace,
-    OATS_WORKSPACE_KEY: "repo:fixture",
+    // A local/ key keeps the root path (no hosted per-workspace personal team),
+    // which is the discovery this test bounds.
+    OATS_WORKSPACE_KEY: "local/fixture",
   }, home);
   // Bounded discovery finds no `.aw` within the workspace, so no identity can be
   // minted — fatal for a required spawn hook.

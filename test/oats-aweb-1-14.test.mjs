@@ -118,9 +118,9 @@ test("manifest declares 1.14 floor, team setting, commands and home operations",
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.14.2");
-  assert.equal(dist.version, "1.14.2");
-  assert.equal(manifest.version, "1.14.2");
+  assert.equal(pkg.version, "1.15.0");
+  assert.equal(dist.version, "1.15.0");
+  assert.equal(manifest.version, "1.15.0");
   assert.equal(dist.compatibility.oats, ">=0.26.0");
   assert.equal(manifest.compatibility.oats, ">=0.26.0");
   assert.ok(manifest.settings.join.description.includes("comma-separated eligible team labels"));
@@ -147,7 +147,7 @@ test("spawn join setting gates joined-team identities before minting invites", (
     OATS_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
-    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_WORKSPACE_KEY: "local/fixture",
     OATS_TEAM_ID: "personal:example.test",
     OATS_TEAM_LABELS: "alpha,beta,ghost",
     OATS_TEAMS_SOURCE: "live",
@@ -221,7 +221,7 @@ test("mapped primary label in OATS_TEAMS is eligible while no settings team mint
     OATS_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
-    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_WORKSPACE_KEY: "local/fixture",
     OATS_TEAM_ID: "alpha:example.test",
     OATS_TEAM_LABEL: "alpha",
     OATS_TEAM_LABELS: "alpha,beta",
@@ -274,7 +274,7 @@ test("parked: spawn join setting mints joined-team identities and teams/join/lea
     OATS_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
-    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_WORKSPACE_KEY: "local/fixture",
     OATS_TEAM_ID: "personal:example.test",
     OATS_TEAM_LABELS: "alpha,beta,ghost",
     OATS_TEAMS_SOURCE: "live",
@@ -366,7 +366,7 @@ test("parked: mapped primary joined team can be joined and left once aw floor ex
     OATS_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
-    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_WORKSPACE_KEY: "local/fixture",
     OATS_TEAM_ID: "alpha:example.test",
     OATS_TEAM_LABEL: "alpha",
     OATS_TEAM_LABELS: "alpha,beta",
@@ -418,7 +418,7 @@ test("retained seat retire leaves joined team identities before releasing the re
     joinedTeams: [{ label: "alpha", team: "alpha:example.test", identityHome: join(home, ".aweb-identity-alpha"), receive: "poll", since: "2026-09-25T00:00:00Z", alias: "probe" }],
   };
   writeFileSync(join(home, ".oats-aweb", "teams.json"), JSON.stringify({ joinedTeams: meta.joinedTeams }, null, 2));
-  const retired = runHook("retire", { cwd: home, env: { PATH: fake.path, OATS_EVENT: "retire", OATS_HOME: home, OATS_META: JSON.stringify(meta), OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" } });
+  const retired = runHook("retire", { cwd: home, env: { PATH: fake.path, OATS_EVENT: "retire", OATS_HOME: home, OATS_META: JSON.stringify(meta), OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "local/fixture" } });
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   const doc = JSON.parse(retired.stdout);
   assert.equal(doc.meta.retained, true);
@@ -441,7 +441,7 @@ test("unmapped primary label falls back to personal root team with readiness war
     OATS_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
-    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_WORKSPACE_KEY: "local/fixture",
     OATS_TEAM_LABEL: "ghost",
     OATS_TEAM_LABELS: "ghost",
     OATS_TEAMS_SOURCE: "live",
@@ -470,7 +470,7 @@ test("binding check omits teams data while preserving joined-team readiness warn
   const checked = runBindingCheck(bindingRequest({ delivery: "channel", root, team: "personal:example.test" }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), {
     PATH: fake.path,
     OATS_WORKSPACE: root,
-    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_WORKSPACE_KEY: "local/fixture",
     OATS_TEAM_LABELS: "alpha,beta,ghost",
     OATS_TEAMS_SOURCE: "live",
     OATS_TEAMS: teamsEnv,
@@ -486,7 +486,7 @@ test("leaving the personal team is refused as E_TEAM_PERSONAL", (t) => {
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home);
   const fake = fakeAw114(t);
-  const left = runHook("leave", { cwd: home, env: { PATH: fake.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_TEAM_LABEL: "personal", OATS_TEAM_LABELS: "personal", OATS_EVENT: "leave", OATS_HOME: home, OATS_SETTINGS: JSON.stringify({ root, team: "personal:example.test" }) }, args: ["--labels", "personal", "--json"] });
+  const left = runHook("leave", { cwd: home, env: { PATH: fake.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "local/fixture", OATS_TEAM_LABEL: "personal", OATS_TEAM_LABELS: "personal", OATS_EVENT: "leave", OATS_HOME: home, OATS_SETTINGS: JSON.stringify({ root, team: "personal:example.test" }) }, args: ["--labels", "personal", "--json"] });
   assert.notEqual(left.status, 0);
   assert.match(left.stderr, /E_TEAM_PERSONAL/);
 });
@@ -541,11 +541,12 @@ test("real aw 1.36 identity-home policy admits provider subcommands and pins cur
   }
 });
 
-test("published aw 1.36.6 exposes wake status version state", (t) => {
+test("published aw >= 1.36.6 exposes wake status version state", (t) => {
   const version = spawnSync("aw", ["version"], { encoding: "utf8", timeout: 10000 });
   const versionText = `${version.stdout ?? ""}${version.stderr ?? ""}`;
-  if (version.error || version.status !== 0 || !/aw\s+1\.36\.6/.test(versionText) || !/5a285ceb/.test(versionText)) {
-    t.skip(`aw is not published 1.36.6 / 5a285ceb: ${(version.error?.message || versionText).trim()}`);
+  const m = /aw\s+1\.36\.(\d+)/.exec(versionText);
+  if (version.error || version.status !== 0 || !m || Number(m[1]) < 6) {
+    t.skip(`aw is not a published 1.36.6+: ${(version.error?.message || versionText).trim()}`);
     return;
   }
   t.diagnostic(`aw version fixture: ${versionText.trim()}`);
@@ -564,19 +565,19 @@ test("wake daemon readiness reports outdated, unknown and not-running states", (
   const settings = { delivery: "session", root, team: "personal:example.test" };
 
   const outdatedAw = fakeAw114(t, { wakeStatus: { daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.4" } });
-  let checked = runBindingCheck(bindingRequest(settings, context), { PATH: outdatedAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" }, home);
+  let checked = runBindingCheck(bindingRequest(settings, context), { PATH: outdatedAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "local/fixture" }, home);
   let result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "needs-configuration");
   assert.match(result.problems.find((p) => p.code === "wake-daemon-outdated").message, /running 1\.36\.4.*required 1\.36\.5.*upgrade aw, then restart the host wake daemon/);
 
   const unknownAw = fakeAw114(t, { wakeStatus: { daemon_running: true, daemon_version_state: "unknown" } });
-  checked = runBindingCheck(bindingRequest(settings, context), { PATH: unknownAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" }, home);
+  checked = runBindingCheck(bindingRequest(settings, context), { PATH: unknownAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "local/fixture" }, home);
   result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "ready");
   assert.match(result.warnings.find((w) => w.code === "wake-daemon-version-unknown").message, /compatibility unproven.*upgrade aw, then restart the host wake daemon/);
 
   const downAw = fakeAw114(t, { wakeStatus: { daemon_running: false, daemon_version_state: "not_running" } });
-  checked = runBindingCheck(bindingRequest(settings, context), { PATH: downAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" }, home);
+  checked = runBindingCheck(bindingRequest(settings, context), { PATH: downAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "local/fixture" }, home);
   result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "needs-configuration");
   assert.ok(result.problems.some((p) => p.code === "wake-daemon-not-running"));
