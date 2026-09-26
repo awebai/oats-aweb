@@ -1,6 +1,14 @@
-# Personal enrollment with a per-deployment login (oats.aweb 1.16)
+# Workspace-team enrollment with a per-deployment login (oats.aweb 1.16) — SUPERSEDED
 
-Status: APPROVED 2026-09-26 (co-leads). Supersedes the enrollment half of 1.15, which is
+> **SUPERSEDED 2026-09-26, never implemented.** Two things in this note were withdrawn the same day:
+> - there is no "personal team": a workspace has its default team (the human's directive);
+> - no human login is ever in the provider's path, not even per deployment. Creating a workspace's team is an owner's act outside OATS that produces a root identity; OATS only consumes the root. aweb adds the logged-in account to `aw auth status` and an expected-account check, as optional human tooling.
+>
+> Record of decision: oats-knowledge, integrations-expert decision "A workspace has a default team; there is no personal team". The text below is kept as the record of the withdrawn design.
+
+
+
+Status: SUPERSEDED 2026-09-26 (was approved by the co-leads earlier that day). Supersedes the enrollment half of 1.15, which is
 shipped gated off. Depends on an aweb CLI change (section 4).
 
 ## 1. Problem
