@@ -37,7 +37,7 @@
  * identity joined moments before the failure must still be deletable.
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -125,7 +125,43 @@ function onPath(cmd) {
   }
   return false;
 }
-const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + "\n"); process.exit(code); };
+// Kernel home operations (`oats operation run messaging:teams|join|leave`, run
+// with OATS_OPERATION and --json) read stdout as EXACTLY ONE JSON-v1 envelope
+// whose `ok` agrees with the exit status (oats bin/oats.mjs finishOperation):
+// {schemaVersion:1, ok:true, result} with exit 0, or {schemaVersion:1, ok:false,
+// error:{code, message}} with a nonzero exit. Under OATS_OPERATION every other
+// stdout write goes to stderr and every way out answers one envelope. Without
+// it (`oats aweb teams --json` from a shell) the bare document is unchanged.
+const OPERATION_COMMANDS = ["teams", "join", "leave"];
+const operation = process.env.OATS_OPERATION && OPERATION_COMMANDS.includes(process.env.OATS_EVENT || process.argv[2]) ? process.env.OATS_OPERATION : undefined;
+let operationAnswered = false;
+let lastStderr = "";
+const operationEnvelopeFailure = (code, message, details) => ({ schemaVersion: 1, ok: false, error: { code: code || "E_OPERATION_FAILED", message: String(message || "failed").slice(0, 1000), ...(details ? { details } : {}) } });
+function answerOperation(envelope, exitCode) {
+  operationAnswered = true;
+  writeSync(1, JSON.stringify(envelope) + "\n");
+  process.exit(exitCode);
+}
+const operationOk = (result) => answerOperation({ schemaVersion: 1, ok: true, result }, 0);
+const operationFail = (code, message, details) => answerOperation(operationEnvelopeFailure(code, message, details), 1);
+if (operation) {
+  const toStderr = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...rest) => { if (String(chunk).trim()) lastStderr = String(chunk).trim(); return toStderr(chunk, ...rest); };
+  process.stdout.write = (chunk, ...rest) => process.stderr.write(chunk, ...rest);
+  // Any exit that did not answer (a refusal printed to stderr, an uncaught
+  // error) still answers one failure envelope, and never exits 0.
+  process.on("exit", (code) => {
+    if (operationAnswered) return;
+    operationAnswered = true;
+    writeSync(1, JSON.stringify(operationEnvelopeFailure("E_OPERATION_FAILED", lastStderr || `oats-aweb ${operation} exited ${code} without an answer`)) + "\n");
+    if (!code) process.exitCode = 1;
+  });
+}
+const out = (o, code = 0) => {
+  if (operation) operationFail("E_OPERATION_FAILED", String(o?.warning || o?.problems?.[0]?.message || "failed").replace(/^oats-aweb: /, ""));
+  process.stdout.write(JSON.stringify(o) + "\n");
+  process.exit(code);
+};
 const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
 /** Fatal for a REQUIRED spawn hook: emit metadata for compensation, then exit
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
@@ -868,7 +904,7 @@ function runTeamsCommand(kind) {
       throw error;
     }
     const rows = validateJoinLabels(args.labels, { action: kind });
-    if (!rows.length) throw new Error("labels are required");
+    if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
     // Record every completed label even when a later one fails: a confirmed
     // leave deleted its home, and a join created a remote identity.
     try {
@@ -879,6 +915,11 @@ function runTeamsCommand(kind) {
         actions.push({ action: kind, label: row.label, ...(result.released ? { released: result.released } : {}), ...(result.receipt ? { receipt: result.receipt } : {}), ...(result.warning ? { warning: result.warning } : {}) });
         if (result.warning) warnings.push(`oats-aweb: ${result.warning}`);
       }
+    } catch (e) {
+      // What already happened travels with the failure, so a caller can
+      // reconcile (the operation envelope carries it as error.details).
+      e.partial = { actions };
+      throw e;
     } finally {
       const synced = syncWakeReceive(meta);
       meta = synced.meta;
@@ -887,6 +928,7 @@ function runTeamsCommand(kind) {
     }
   }
   const doc = { ...teamsDocument(meta), ...(actions.length ? { actions } : {}), ...(warnings.length ? { warnings } : {}) };
+  if (operation) operationOk(doc);
   outputTeamsDocument(doc, args.json);
 }
 
@@ -1154,7 +1196,11 @@ if (event === "launch") {
   }
 } else if (["teams", "join", "leave"].includes(event)) {
   try { runTeamsCommand(event); process.exit(0); }
-  catch (e) { console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`); process.exit(1); }
+  catch (e) {
+    console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`);
+    if (operation) operationFail(e.code, e.message || String(e), e.partial ? { ...e.partial, joined: teamsDocument(readCapabilityMeta()).joined } : undefined);
+    process.exit(1);
+  }
 } else if (event === "roster") {
   // Cross-machine directory: every OATS-spawned instance joins the team with
   // alias = instance name, so the team's member roster lists live instances

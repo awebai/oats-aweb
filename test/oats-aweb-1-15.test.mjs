@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
+import { assertKernelOperationAnswer } from "./helpers/kernel-operation-envelope-rule.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -470,4 +471,69 @@ test("oats aweb join is refused for resident-grant (global) homes", (t) => {
   const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_EVENT: "join", OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", resident: "r" } }) }, encoding: "utf8" });
   assert.notEqual(joined.status, 0);
   assert.match(joined.stderr, /global/);
+});
+
+// ---------------------------------------------------------------------------
+// Home operations under `oats operation run` (messaging:teams|join|leave): the
+// kernel runs `node <script> <command> [--labels L] --json` in the home with
+// OATS_OPERATION=<address> and stdin closed, and trusts only exactly one JSON-v1
+// envelope whose ok agrees with the exit status (vendored rule).
+function runOperation(address, command, { cwd, env, labels }) {
+  const argv = [HOOK, command, ...(labels ? ["--labels", labels] : []), "--json"];
+  const { OATS_EVENT, ...rest } = env;
+  return spawnSync(process.execPath, argv, { cwd, env: { ...rest, OATS_OPERATION: address }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 20000 });
+}
+function operationFixture(t, settings = {}) {
+  const fake = fakeAw115(t);
+  const fx = fixture(t, { delivery: "session" });
+  const env = { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ delivery: "session", ...settings }) };
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ instance: "dev-1", capabilityMeta: { "oats.aweb": doc.meta } }));
+  return { fake, fx, env };
+}
+
+test("operations answer one JSON-v1 envelope: teams, join and leave succeed", (t) => {
+  const { fx, env } = operationFixture(t);
+  let v = assertKernelOperationAnswer(runOperation("messaging:teams", "teams", { cwd: fx.home, env }), { ok: true, label: "messaging:teams" });
+  assert.equal(v.result.personal.team, "legacy:example.test");
+  assert.deepEqual(v.result.joined, []);
+  v = assertKernelOperationAnswer(runOperation("messaging:join", "join", { cwd: fx.home, env, labels: "alpha" }), { ok: true, label: "messaging:join" });
+  assert.deepEqual(v.result.actions.map((a) => [a.action, a.label]), [["join", "alpha"]]);
+  assert.deepEqual(v.result.joined.map((j) => [j.label, j.receive]), [["alpha", "native"]]);
+  v = assertKernelOperationAnswer(runOperation("messaging:leave", "leave", { cwd: fx.home, env, labels: "alpha" }), { ok: true, label: "messaging:leave" });
+  assert.deepEqual(v.result.actions.map((a) => [a.action, a.label, a.released]), [["leave", "alpha", "released"]]);
+  assert.deepEqual(v.result.joined, []);
+});
+
+test("operations answer a failure envelope with the provider's code and a nonzero exit", (t) => {
+  const { fake, fx, env } = operationFixture(t);
+  let v = assertKernelOperationAnswer(runOperation("messaging:join", "join", { cwd: fx.home, env, labels: "ghost" }), { ok: false, label: "join ghost" });
+  assert.equal(v.code, "E_TEAM_NOT_ELIGIBLE");
+  assert.match(v.message, /alpha, beta/);
+  v = assertKernelOperationAnswer(runOperation("messaging:leave", "leave", { cwd: fx.home, env, labels: "personal" }), { ok: false, label: "leave personal" });
+  assert.equal(v.code, "E_TEAM_PERSONAL");
+  v = assertKernelOperationAnswer(runOperation("messaging:join", "join", { cwd: fx.home, env: { ...env, OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", resident: "r" } }) }, labels: "alpha" }), { ok: false, label: "join global" });
+  assert.equal(v.code, "E_TEAM_GLOBAL_MODE");
+  // A refusal printed before any document (aw missing from PATH) still answers.
+  const noAw = join(tempDir(t), "bin");
+  mkdirSync(noAw, { recursive: true });
+  symlinkSync(process.execPath, join(noAw, "node"));
+  v = assertKernelOperationAnswer(runOperation("messaging:teams", "teams", { cwd: fx.home, env: { ...env, PATH: `${noAw}:/usr/bin:/bin` } }), { ok: false, label: "teams without aw" });
+  assert.match(v.message, /aw CLI not on PATH/);
+  // A partly failed leave reports what already happened in error.details.
+  assertKernelOperationAnswer(runOperation("messaging:join", "join", { cwd: fx.home, env, labels: "alpha,beta" }), { ok: true, label: "join alpha,beta" });
+  const r = runOperation("messaging:leave", "leave", { cwd: fx.home, env: { ...env, FAKE_DELETE_FAIL_FOR: "beta" }, labels: "alpha,beta" });
+  v = assertKernelOperationAnswer(r, { ok: false, label: "partial leave" });
+  assert.deepEqual(v.envelope.error.details.actions.map((a) => a.label), ["alpha"]);
+  assert.deepEqual(v.envelope.error.details.joined.map((j) => j.label), ["beta"]);
+  assert.deepEqual(fake.readCalls().filter((c) => c.forbidden), []);
+});
+
+test("from a shell (no OATS_OPERATION) teams --json keeps its bare document", (t) => {
+  const { fx, env } = operationFixture(t);
+  const r = spawnSync(process.execPath, [HOOK, "teams", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "teams" }, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const doc = JSON.parse(r.stdout);
+  assert.equal(doc.schemaVersion, undefined);
+  assert.equal(doc.personal.team, "legacy:example.test");
 });
