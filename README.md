@@ -5,6 +5,82 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.15.0 — per-workspace personal team, live receive for joined teams, agent playbook
+
+Requires OATS >=0.26.0, aw >= 1.36.8 for the personal team (>= 1.36.12 for joined
+teams), and an aweb service with personal enrollment (Cloud >= 0.8.12).
+
+### Per-workspace personal team
+
+- With no `settings.oats.aweb.team`, the primary identity now mints into THE
+  person's personal team for THIS workspace: `aw --identity-home
+  <roots.personal>/.aw team ensure --workspace-key <OATS_WORKSPACE_KEY>`
+  get-or-creates it on first use (the server sees only the key's digest), and
+  every later spawn reuses the bound authority. The authority mints from its
+  own root directory (`aw team invite`, which aw does not admit under
+  `--identity-home`), then the instance joins as before.
+- `settings.oats.aweb.roots.personal` (host-only) names the directory whose
+  `.aw` holds that authority; default `<deployment>/.aweb-personal`. A root
+  bound to another workspace is refused.
+- An explicit `settings.oats.aweb.team` (host, soul or spawn) still wins.
+- A `local/` workspace key has no hosted personal team: the root's active team
+  stands in, with the readiness/spawn warning `personal-team-local-workspace`.
+- The first ensure needs this host's aw login once (`aw auth login`); without it
+  spawn fails closed and readiness answers `authorization-required`.
+- Readiness stays read-only: aw's binding marker plus `aw team spawn-authority`
+  (no probe mint). Codes: `personal-team-pending`,
+  `personal-team-authorization-required`, `personal-team-no-spawn-authority`,
+  `personal-team-authority-unverified`, `personal-team-root-occupied`,
+  `personal-team-aw-floor`, `personal-team-local-workspace`.
+- `oats aweb setup` ensures the personal team explicitly; `oats aweb teams`
+  reports `personal.source` (`workspace`, `setting`, `root-fallback`).
+
+### Live receive for joined teams
+
+- Joined identities are registered with the host wake broker
+  (`aw wake register --registration-json -`, aw's multi-identity receive):
+  session-delivery homes register the primary (with controls) plus every joined
+  home; Claude and Pi channel homes use aw's mixed mode (`native-channel` /
+  `native-pi`): the channel keeps the primary, the broker attaches only the
+  joined homes. Codex has no broker surface and keeps polling.
+- The registration follows join, leave (after a confirmed release), session
+  start and retire. `receive` in the teams document is `native` when
+  registered, else `poll`; readiness reports each joined team's actual mode from
+  `aw wake status` (`joined-team-receive` / `joined-team-poll-only` with the
+  reason, e.g. the wake daemon is not running).
+
+### Agent guidance
+
+- New `oats-aweb` skill: identity, personal/eligible/joined teams and
+  `oats aweb teams|join|leave`, roster and addressing, mail/chat, acting as a
+  joined team, delivery and wakes, etiquette, troubleshooting (readiness codes,
+  `E_TEAM_*`, aw floors). The inject is shorter and points to it.
+- Fixed: the inject taught `aw chat send --to <alias>`, which does not exist
+  (`aw chat send` only continues a session); new chats use
+  `aw chat send-and-wait|send-and-leave <alias>`.
+- `oats aweb roster` lists the personal team by default and an eligible team
+  with `--label <label>`.
+
+### Upgrading from 1.14
+
+A deployment that relied on the root's active team (no `settings.oats.aweb.team`)
+on a hosted workspace moves new instances into the per-workspace personal team
+at the first 1.15 spawn (warning `personal-team-created`); instances spawned
+earlier stay in the old team, so their aliases do not resolve from the new team
+until they are respawned. To keep one team, pin
+`settings.oats.aweb.team: <old team id>` in `oats-local.yaml`. The first
+ensure needs this host's `aw auth login` once and aw >= 1.36.8.
+
+### Fixed in 1.15
+
+- Provider commands (`oats aweb roster|join|leave`) and nested spawns/retires no
+  longer inherit the caller's `AWEB_IDENTITY_HOME`: aw treats it as an external
+  identity home, refusing cwd-rooted commands (team invite/list, id team
+  members) and, on retire, deleting the caller's workspace instead of the worker's.
+- A multi-label join/leave that fails part-way records every completed label and
+  keeps the broker registration in step; a failed spawn hands joined teams to
+  compensation.
+
 ## Portable captured profile — 1.14.2
 
 ### Fixed
