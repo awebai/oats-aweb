@@ -29,10 +29,10 @@ joined team, put `--identity-home <identityHome>` before the subcommand.
 | How mail reaches you | the `Comms:` line of `TASK.md` (see section 4) |
 
 - **Personal team.** Your primary identity lives in the personal team of the
-  person you work for, **for this workspace** (`personal.source: workspace`).
-  Everyone this person spawns in this workspace is there with you. If
-  `source` is `setting`, the deployment pinned a team; if `root-fallback`, the
-  workspace has no hosted repository, so the person's default team stands in.
+  person you work for: the aweb root's active team (`personal.source: root`),
+  or the team the deployment pinned (`source: setting`). Everyone this
+  deployment spawns into that team is there with you. (A separate team per
+  workspace arrives in oats.aweb 1.16.)
 - **Joined teams.** A wider team the workspace defines, joined explicitly. Each
   gives you a **separate identity** with the same alias in that team, kept
   under `<home>/.aweb-identity-<label>`. You act as that team only with
@@ -173,14 +173,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 
 | Code | Meaning | Who fixes it |
 |---|---|---|
-| `personal-team-authorization-required` | the per-workspace personal team is not created yet and this host's `aw` is not logged in | human: `aw auth login` on the host, then `oats aweb setup` |
-| `personal-team-pending` | not created yet, host login present; the next spawn creates it | nobody |
-| `personal-team-no-spawn-authority` | the personal-team authority cannot mint identities | human: `oats aweb setup`, or the team owner |
-| `personal-team-authority-unverified` | the spawn-authority check could not reach aweb now | retry later |
-| `personal-team-root-occupied` | `roots.personal` holds another workspace's authority | human: dedicated directory |
-| `personal-team-aw-floor` | host `aw` is older than 1.36.8 | human: upgrade aw |
-| `personal-team-local-workspace` | `local/` workspace key: no per-workspace team; the person's default team stands in | host the workspace repository |
-| `personal-team-created` (spawn) | first spawn after the upgrade created the personal team; earlier instances stay in the old team | human, if one team is wanted: pin `settings.oats.aweb.team` |
+| `personal-root-deferred` | the host set `settings.oats.aweb.roots.personal`; 1.15 ignores it (per-workspace enrollment arrives in 1.16) | nobody; the host may remove the setting |
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the personal team | workspace owner, if a shared team was meant |
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
@@ -195,8 +188,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - `E_TEAM_PERSONAL` — the personal team cannot be left.
 - `E_TEAM_GLOBAL_MODE` — this home acts as a resident identity through a
   session grant; joined teams need local identities. Report it.
-- `E_TEAM_AW_FLOOR` — the host `aw` is too old: joined teams need aw >= 1.36.12,
-  the per-workspace personal team aw >= 1.36.8. Report it; don't work around it.
+- `E_TEAM_AW_FLOOR` — the host `aw` is too old: joined teams need aw >= 1.36.12.
+  Report it; don't work around it.
 - "failed to leave team … kept …" — the release was not confirmed; the identity
   home was kept on purpose so leave can be retried. Retry later or report.
 
