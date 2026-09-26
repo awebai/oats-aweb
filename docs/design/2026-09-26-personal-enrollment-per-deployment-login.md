@@ -1,6 +1,6 @@
 # Personal enrollment with a per-deployment login (oats.aweb 1.16)
 
-Status: PROPOSED 2026-09-26. Supersedes the enrollment half of 1.15, which is
+Status: APPROVED 2026-09-26 (co-leads). Supersedes the enrollment half of 1.15, which is
 shipped gated off. Depends on an aweb CLI change (section 4).
 
 ## 1. Problem
@@ -27,15 +27,21 @@ personal team for the workspace.
 1. **The credential lives with the deployment.** A host-only setting
    `settings.oats.aweb.auth.dir` (default `<deployment>/.oats/aweb/auth`,
    created 0700) names the directory that holds this deployment's human
-   login. The provider passes it to every `aw auth …` and `aw team ensure …`
+   login. It is host state: gitignored, never committed, never copied by
+   `oats sync`, never carried into an instance home or a retirement
+   recovery (a test asserts each). The provider passes it to every `aw auth …` and `aw team ensure …`
    call. It never falls back to the OS user's default location. `oats aweb
    setup` runs the device-flow login into that directory.
 2. **The expected owner is recorded.** A host-only setting
-   `settings.oats.aweb.auth.owner` records the aweb account this deployment
-   belongs to (the stable account id that `aw auth status` reports; its
-   handle is shown for humans). `oats aweb setup` writes it at login, after
-   the human confirms the handle shown.
-3. **Mint only on a match.** Before any `team ensure`, the provider reads
+   `settings.oats.aweb.auth.owner` records the person this deployment
+   belongs to: the stable aweb account id that `aw auth status` reports,
+   plus the person's GitHub login (in OATS a user IS a GitHub account).
+   `oats aweb setup` shows both and writes them at login, after the human
+   confirms them.
+3. **One deployment = one person on a host.** Every instance in the
+   deployment mints under the deployment's owner, whoever spawns it. A
+   second person on the same host uses their own deployment.
+4. **Mint only on a match.** Before any `team ensure`, the provider reads
    `aw auth status --json` from the deployment's directory. It proceeds only
    when the status is authorized AND the account id equals the recorded
    owner. Otherwise it refuses before any network mint:
@@ -44,9 +50,9 @@ personal team for the workspace.
      handles (remedy: log in as the owner in this deployment, or change the
      owner deliberately with `oats aweb setup --owner`);
    - no recorded owner: `needs-configuration` (remedy: `oats aweb setup`).
-4. **Readiness is read-only.** It reports the same states from `aw auth
+5. **Readiness is read-only.** It reports the same states from `aw auth
    status` and the read-only spawn authority; it never mints.
-5. **Unchanged from 1.15:** the per-workspace personal team through `team
+6. **Unchanged from 1.15:** the per-workspace personal team through `team
    ensure` into `roots.personal`; the `local/` workspace-key fallback with its
    warning; joined teams; the multi-identity wake registration; the typed
    error prefixes; unknown failures kept raw and closed.
