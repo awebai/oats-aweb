@@ -169,16 +169,16 @@ test("normal global grants use the 1.13 concrete default scopes and preflight cu
 test("global grants without settings team use custody active team, not mapped primary payload", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base, "merlin", "personal:example.test");
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base, "merlin", "default:example.test");
     const payload = { ...settings(custody), team: undefined };
     const mappedTeams = JSON.stringify([{ label: "alpha", team: "mapped:example.test", mapped: true, payload: { team: "mapped:example.test" } }]);
-    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "mapped:example.test", OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, OATS_SETTINGS: JSON.stringify(payload), FAKE_CUSTODY_TEAM: "personal:example.test" };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "mapped:example.test", OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, OATS_SETTINGS: JSON.stringify(payload), FAKE_CUSTODY_TEAM: "default:example.test" };
     const r = runHook(bin, "spawn", env);
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.equal(r.doc.meta.identity.team, "personal:example.test");
+    assert.equal(r.doc.meta.identity.team, "default:example.test");
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint");
-    assert.equal(mint.argv[mint.argv.indexOf("--team") + 1], "personal:example.test");
-    const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { OATS_WORKSPACE: root, OATS_TEAM_ID: "mapped:example.test", OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "personal:example.test" });
+    assert.equal(mint.argv[mint.argv.indexOf("--team") + 1], "default:example.test");
+    const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { OATS_WORKSPACE: root, OATS_TEAM_ID: "mapped:example.test", OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "default:example.test" });
     assert.equal(checked.status, 0, checked.stderr);
     assert.equal(checked.doc.result.status, "ready", JSON.stringify(checked.doc.result));
     assert.deepEqual(Object.keys(checked.doc.result).sort(), ["problems", "status", "warnings"]);
