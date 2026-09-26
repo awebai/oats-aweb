@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -41,7 +42,9 @@ function runHook(event, { cwd, env = {}, args = [] } = {}) {
 }
 
 function runBindingCheck(input, env = {}, cwd = process.cwd()) {
-  return spawnSync(process.execPath, [BINDING, "check"], { cwd, input: JSON.stringify(input), env: { ...process.env, ...env }, encoding: "utf8", timeout: 20000 });
+  const result = spawnSync(process.execPath, [BINDING, "check"], { cwd, input: JSON.stringify(input), env: { ...process.env, ...env }, encoding: "utf8", timeout: 20000 });
+  if (!result.error && result.status === 0) assertKernelCheckAnswerRule(result.stdout, input, "oats-aweb binding check");
+  return result;
 }
 
 function fakeAw114(t, { wakeStatus = { daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.5", daemon_commit: "347d4875" } } = {}) {
@@ -115,9 +118,9 @@ test("manifest declares 1.14 floor, team setting, commands and home operations",
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.14.1");
-  assert.equal(dist.version, "1.14.1");
-  assert.equal(manifest.version, "1.14.1");
+  assert.equal(pkg.version, "1.14.2");
+  assert.equal(dist.version, "1.14.2");
+  assert.equal(manifest.version, "1.14.2");
   assert.equal(dist.compatibility.oats, ">=0.26.0");
   assert.equal(manifest.compatibility.oats, ">=0.26.0");
   assert.ok(manifest.settings.join.description.includes("comma-separated eligible team labels"));
@@ -454,12 +457,11 @@ test("unmapped primary label falls back to personal root team with readiness war
   const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), env, home);
   const result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "ready");
+  assert.deepEqual(Object.keys(result).sort(), ["problems", "status", "warnings"], "binding check answers must not carry provider-only teams data");
   assert.match(result.warnings.find((w) => w.code === "team-unmapped").message, /ghost.*personal:example\.test/);
-  assert.equal(result.teams.personal.team, "personal:example.test");
-  assert.deepEqual(result.teams.unmapped, ["ghost"]);
 });
 
-test("teams readiness reports eligible, joined, unmapped and poll receive state", (t) => {
+test("binding check omits teams data while preserving joined-team readiness warnings", (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(join(home, ".oats-aweb"), { recursive: true });
@@ -475,10 +477,7 @@ test("teams readiness reports eligible, joined, unmapped and poll receive state"
   }, home);
   const result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "ready");
-  assert.equal(result.teams.personal.team, "personal:example.test");
-  assert.deepEqual(result.teams.eligible.map((e) => ({ label: e.label, joined: e.joined })), [{ label: "alpha", joined: true }, { label: "beta", joined: false }]);
-  assert.deepEqual(result.teams.unmapped, ["ghost"]);
-  assert.deepEqual(result.teams.joined.map((j) => ({ label: j.label, receive: j.receive })), [{ label: "alpha", receive: "poll" }]);
+  assert.deepEqual(Object.keys(result).sort(), ["problems", "status", "warnings"], "kernel check-answer rule rejects extra teams key");
   assert.ok(result.warnings.some((w) => w.code === "joined-team-poll-only" && /alpha/.test(w.message)));
 });
 
