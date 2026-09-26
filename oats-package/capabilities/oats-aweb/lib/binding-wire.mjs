@@ -260,7 +260,8 @@ function readinessDetails(settings,{deployment,env=process.env,personal=true}={}
 }
 function readinessFromSettings(settings,options) {return readinessDetails(settings,{...options,personal:false}).result;}
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
-  const env={...process.env};for(const name of unsetEnv) delete env[name];
+  // An inherited AWEB_IDENTITY_HOME is the caller's identity, never this check's.
+  const env={...process.env};delete env.AWEB_IDENTITY_HOME;for(const name of unsetEnv) delete env[name];
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
 }
@@ -302,16 +303,17 @@ function workspaceReadinessPhase(req) {
   const joined=joinedTeams(ctx.home);
   if(joined.length) {
     let status;try{status=JSON.parse(runAw(['aw','wake','status','--json'],ctx.home,{timeout:10000}));}catch{status=undefined;}
-    const why={'home-not-registered':'this home is not registered with the host wake broker','not-registered-with-broker':'its identity home is not registered with the host wake broker','wake-daemon-not-running':'the host wake daemon is not running'};
+    const why={'home-not-registered':'this home is not registered with the host wake broker','not-registered-with-broker':'its identity home is not registered with the host wake broker','wake-daemon-not-running':'the host wake daemon is not running','stream-not-admitted':'the host wake broker has not admitted its stream'};
     for(const mode of joinedReceiveModes(status,{home:ctx.home,joined})) {
       const row=joined.find(j=>j.label===mode.label);
       if(mode.receive==='native') warnings.push({code:'joined-team-receive',message:`joined team ${mode.label} receives native through the host wake broker (stream ${mode.phase})`});
-      else warnings.push({code:'joined-team-poll-only',message:`joined team ${mode.label} receives by polling: ${status?why[mode.reason]||mode.reason:'aw wake status is unavailable'}; check aw --identity-home ${row.identityHome} mail inbox and chat pending at task boundaries`});
+      else warnings.push({code:'joined-team-poll-only',message:`joined team ${mode.label} receives by polling: ${status?why[mode.reason]||mode.reason:'aw wake status is unavailable'}${mode.detail?` (${mode.detail})`:''}; check aw --identity-home ${row.identityHome} mail inbox and chat pending at task boundaries`});
     }
   }
   const wake=String(req.settings.delivery||'channel')==='session'?wakeReadiness(ctx.home,{reliedOn:true}):{problems:[],warnings:[]};
   problems.push(...wake.problems);warnings.push(...wake.warnings);
-  const result=problems.length?{status:problems.length===details.result.problems.length&&details.result.status!=='ready'?details.result.status:'needs-configuration',problems}:{status:'ready',problems:[]};
+  // A missing host login is the first remedy to show, whatever else is missing.
+  const result=problems.length?{status:details.result.status==='authorization-required'?'authorization-required':'needs-configuration',problems}:{status:'ready',problems:[]};
   return {...result,warnings};
 }
 function checkPhase(req) {

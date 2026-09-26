@@ -61,6 +61,26 @@ teams), and an aweb service with personal enrollment (Cloud >= 0.8.12).
 - `oats aweb roster` lists the personal team by default and an eligible team
   with `--label <label>`.
 
+### Upgrading from 1.14
+
+A deployment that relied on the root's active team (no `settings.oats.aweb.team`)
+on a hosted workspace moves new instances into the per-workspace personal team
+at the first 1.15 spawn (warning `personal-team-created`); instances spawned
+earlier stay in the old team, so their aliases do not resolve from the new team
+until they are respawned. To keep one team, pin
+`settings.oats.aweb.team: <old team id>` in `oats-local.yaml`. The first
+ensure needs this host's `aw auth login` once and aw >= 1.36.8.
+
+### Fixed in 1.15
+
+- Provider commands (`oats aweb roster|join|leave`) and nested spawns/retires no
+  longer inherit the caller's `AWEB_IDENTITY_HOME`: aw treats it as an external
+  identity home, refusing cwd-rooted commands (team invite/list, id team
+  members) and, on retire, deleting the caller's workspace instead of the worker's.
+- A multi-label join/leave that fails part-way records every completed label and
+  keeps the broker registration in step; a failed spawn hands joined teams to
+  compensation.
+
 ## Portable captured profile — 1.14.2
 
 ### Fixed

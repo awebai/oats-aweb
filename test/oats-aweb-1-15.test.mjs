@@ -43,6 +43,14 @@ const regs = () => { try { return JSON.parse(fs.readFileSync(${JSON.stringify(re
 const saveRegs = (r) => fs.writeFileSync(${JSON.stringify(reg)}, JSON.stringify(r));
 const flag = (n) => args.includes(n) ? args[args.indexOf(n) + 1] : undefined;
 const home = () => identityHome || path.join(process.cwd(), ".aw");
+// aw 1.36.12: an AWEB_IDENTITY_HOME in the environment is an external identity
+// home exactly like --identity-home; commands off the allowlist are refused.
+const ALLOWED = ["team ensure", "team spawn-authority", "id team accept-invite", "mail inbox", "mail send", "mail reply", "chat pending", "workspace delete", "wake register", "wake deregister", "wake status", "whoami", "auth status", "version"];
+if (process.env.AWEB_IDENTITY_HOME && !identityHome) {
+  const p2 = args.slice(0, 2).join(" "), p3 = args.slice(0, 3).join(" ");
+  if (!ALLOWED.includes(p2) && !ALLOWED.includes(p3) && args[0] !== "version") { console.error('command "aw ' + (args[0] === "id" ? p3 : p2) + '" is not yet identity-home-aware; refusing to use an external identity home'); process.exit(2); }
+  if (args[0] === "workspace" && args[1] === "delete") { fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME, viaEnv: true }) + "\\n"); console.error("permission denied: not this identity's workspace"); process.exit(8); }
+}
 if (args[0] === "version") { console.log("aw ${version} 44786439"); process.exit(0); }
 if (args[0] === "auth" && args[1] === "status") { emit({ status: process.env.FAKE_AUTH || ${JSON.stringify(auth)} }); process.exit(0); }
 if (args[0] === "team" && args[1] === "ensure") {
@@ -64,7 +72,7 @@ if (args[0] === "team" && args[1] === "join") { const team = args[2].replace(/^T
 if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = args[3].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(path.join(home(), "team-certs"), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: " + alias + "\\n"); emit({ status: "accepted", team_id: team, alias }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }, { alias: "alice" }] }); process.exit(0); }
 if (args[0] === "init") { console.log("initialized"); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "delete") { fs.rmSync(home(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("delete failed"); process.exit(7); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 if (args[0] === "wake" && args[1] === "register") {
   const r = regs();
   if (args.includes("--registration-json")) { const doc = JSON.parse(stdin); if (process.env.FAKE_WAKE_REFUSE) { console.error("refused"); process.exit(2); } r[doc.home] = doc; }
@@ -274,7 +282,7 @@ test("channel homes use aw's mixed mode: the channel keeps the primary, the brok
   assert.deepEqual(reg.receive_identities.map((r) => r.label), ["alpha"]);
   assert.equal(JSON.parse(joined.stdout).joined[0].receive, "native");
 
-  // Leave: re-register before the identity home is removed; last team → deregister.
+  // Leave: deregister only after the release is confirmed and the home removed.
   const left = spawnSync(process.execPath, [HOOK, "leave", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "leave", OATS_META: JSON.stringify(doc.meta) }, encoding: "utf8" });
   assert.equal(left.status, 0, left.stdout + left.stderr);
   assert.equal(fake.registrations()[fx.home], undefined);
@@ -451,4 +459,52 @@ test("real aw: every aw invocation in the skills and inject exists with its flag
   t.diagnostic(`checked ${checked} cited aw invocations`);
   assert.ok(checked > 20);
   assert.deepEqual(problems, []);
+});
+
+test("commands run from inside an instance session (AWEB_IDENTITY_HOME set) still work", (t) => {
+  const fake = fakeAw115(t);
+  const fx = fixture(t);
+  mkdirSync(join(fx.ws, ".aw"), { recursive: true });
+  const env = { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws }) };
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
+  const session = { ...env, AWEB_IDENTITY_HOME: join(fx.home, ".aw"), OATS_META: JSON.stringify(doc.meta) };
+  const roster = spawnSync(process.execPath, [HOOK, "roster", "--json"], { cwd: fx.home, env: { ...session, OATS_EVENT: "roster" }, encoding: "utf8" });
+  assert.equal(roster.status, 0, roster.stdout + roster.stderr);
+  assert.equal(JSON.parse(roster.stdout).team_id, PERSONAL_TEAM);
+  const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...session, OATS_EVENT: "join" }, encoding: "utf8" });
+  assert.equal(joined.status, 0, joined.stdout + joined.stderr);
+
+  // A nested spawn inherits the spawner's AWEB_IDENTITY_HOME: the new instance
+  // still mints its own identity, and retiring it deletes ITS workspace.
+  const worker = join(fx.ws, "agents", "dev", "instances", "dev-w");
+  mkdirSync(worker, { recursive: true });
+  const nested = { ...env, AWEB_IDENTITY_HOME: join(fx.home, ".aw"), OATS_HOME: worker, OATS_INSTANCE: "dev-w" };
+  const wdoc = spawnDoc(runHook("spawn", { cwd: worker, env: nested }));
+  assert.equal(wdoc.meta.alias, "dev-w");
+  const retired = runHook("retire", { cwd: worker, env: { ...nested, OATS_META: JSON.stringify(wdoc.meta) } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(fake.readCalls().some((c) => c.viaEnv), false, "no aw call ran under the spawner's identity");
+});
+
+test("a partly failed multi-label leave records what already happened", (t) => {
+  const fake = fakeAw115(t);
+  const fx = fixture(t);
+  mkdirSync(join(fx.ws, ".aw"), { recursive: true });
+  const env = { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws, join: "alpha,beta" }) };
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
+  assert.equal(doc.meta.joinedTeams.length, 2);
+  rmSync(join(fx.home, ".aweb-identity-beta", "team-certs"), { recursive: true, force: true });
+  const left = spawnSync(process.execPath, [HOOK, "leave", "--labels", "alpha,beta", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "leave", OATS_META: JSON.stringify(doc.meta), FAKE_DELETE_FAIL_FOR: "beta" }, encoding: "utf8" });
+  assert.notEqual(left.status, 0);
+  const state = JSON.parse(readFileSync(join(fx.home, ".oats-aweb", "teams.json"), "utf8"));
+  assert.deepEqual(state.joinedTeams.map((j) => j.label), ["beta"], "alpha's confirmed leave is recorded despite beta failing");
+  assert.deepEqual(fake.registrations()[fx.home].receive_identities.map((r) => r.label), ["beta"], "the broker registration follows the recorded state");
+});
+
+test("oats aweb join is refused for resident-grant (global) homes", (t) => {
+  const fake = fakeAw115(t);
+  const fx = fixture(t);
+  const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_EVENT: "join", OATS_SETTINGS: JSON.stringify({ identity: { mode: "global", resident: "r" } }) }, encoding: "utf8" });
+  assert.notEqual(joined.status, 0);
+  assert.match(joined.stderr, /global/);
 });

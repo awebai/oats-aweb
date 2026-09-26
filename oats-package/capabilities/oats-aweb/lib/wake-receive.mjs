@@ -12,7 +12,6 @@
 import {realpathSync} from 'node:fs';
 import {resolve} from 'node:path';
 
-export const MULTI_RECEIVE_AW_MIN = '1.36.7';
 const JOINED_EVENT_CLASSES = ['mail', 'chat'];
 
 /** external-session | native-channel | native-pi | null (no broker receive). */
@@ -51,6 +50,7 @@ export function joinedReceiveModes(status, {home, joined = []}) {
     const hit = identities.find((r) => r && canon(r.identity_home) === canon(j.identityHome));
     if (!hit) return {label: j.label, receive: 'poll', reason: row ? 'not-registered-with-broker' : 'home-not-registered'};
     if (!running) return {label: j.label, receive: 'poll', reason: 'wake-daemon-not-running'};
+    if (hit.stream_error || hit.stream_admitted === false) return {label: j.label, receive: 'poll', reason: 'stream-not-admitted', detail: String(hit.stream_error || hit.stream_phase || 'not admitted').slice(0, 160)};
     return {label: j.label, receive: 'native', phase: hit.stream_phase || row.phase || 'unknown'};
   });
 }

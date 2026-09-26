@@ -12,9 +12,11 @@ how to behave, and what to do when something is off. For deeper aw detail load
 `aweb-messaging` (mail/chat craft, verification), `aweb-team-membership`
 (certificates, teams) or `aweb-identity` (keys, addresses).
 
-Run every `oats` and `aw` command below **from your instance home** (where
-`TASK.md` is), never from `./work`: both resolve your identity from the
-directory you run them in.
+Run the `oats aweb` commands below **from your instance home** (where
+`TASK.md` is) or pass `--home <your home>`: they resolve which instance you are
+from the directory. Plain `aw` acts as your primary identity from any
+directory, because your session sets `AWEB_IDENTITY_HOME` to it; to act as a
+joined team, put `--identity-home <identityHome>` before the subcommand.
 
 ## 1. Who you are
 
@@ -178,7 +180,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `personal-team-root-occupied` | `roots.personal` holds another workspace's authority | human: dedicated directory |
 | `personal-team-aw-floor` | host `aw` is older than 1.36.8 | human: upgrade aw |
 | `personal-team-local-workspace` | `local/` workspace key: no per-workspace team; the person's default team stands in | host the workspace repository |
-| `personal-team-no-workspace-key` | no workspace key: same fallback | kernel/workspace setup |
+| `personal-team-created` (spawn) | first spawn after the upgrade created the personal team; earlier instances stay in the old team | human, if one team is wanted: pin `settings.oats.aweb.team` |
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the personal team | workspace owner, if a shared team was meant |
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
@@ -191,6 +193,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - `E_TEAM_NOT_ELIGIBLE` — the label is not one of your eligible teams; the
   message lists them. Check the spelling against `oats aweb teams --json`.
 - `E_TEAM_PERSONAL` — the personal team cannot be left.
+- `E_TEAM_GLOBAL_MODE` — this home acts as a resident identity through a
+  session grant; joined teams need local identities. Report it.
 - `E_TEAM_AW_FLOOR` — the host `aw` is too old: joined teams need aw >= 1.36.12,
   the per-workspace personal team aw >= 1.36.8. Report it; don't work around it.
 - "failed to leave team … kept …" — the release was not confirmed; the identity
@@ -213,7 +217,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - `aw mail inbox` shows **unread** only; `--show-all` shows history.
 - `aw chat send` continues a session; it has no `--to`.
 - Every `aw` call for a joined team needs `--identity-home` **before** the subcommand.
-- Commands run from `./work` see no identity; run them from your home.
+- `oats aweb …` run from `./work` cannot tell which instance you are; run it
+  from your home or pass `--home`.
 - Don't hand-edit `.aw`, `.aweb-identity-*` or `.oats-aweb/teams.json`; report mismatches.
 - `oats aweb setup` is the operator's onboarding tool; if messaging is broken,
   report its output to your human instead of re-onboarding yourself.
