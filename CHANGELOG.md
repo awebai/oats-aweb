@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.16.0
+
+Changed (breaking wire names): personal → default team; E_TEAM_PERSONAL → E_TEAM_DEFAULT; teams JSON field personal → defaultTeam; receive label personal → default; roots.personal removed.
+
 ## 1.15.0
 
 In:
