@@ -246,9 +246,7 @@ test("authority discovery does not walk above the workspace", async (t) => {
     OATS_INSTANCE: "example-1",
     OATS_CONTEXT: workspace,
     OATS_WORKSPACE: workspace,
-    // A local/ key keeps the root path (no hosted per-workspace personal team),
-    // which is the discovery this test bounds.
-    OATS_WORKSPACE_KEY: "local/fixture",
+    OATS_WORKSPACE_KEY: "repo:fixture",
   }, home);
   // Bounded discovery finds no `.aw` within the workspace, so no identity can be
   // minted — fatal for a required spawn hook.

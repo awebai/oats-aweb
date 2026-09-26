@@ -37,7 +37,7 @@
  * identity joined moments before the failure must still be deletable.
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -45,7 +45,7 @@ import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/sess
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { CUSTODY_ATTACH_MIN, grantYamlCustodySocket, parseBindingJson } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
-import { LOCAL_WORKSPACE_WARNING, PERSONAL_ENSURE_AW_MIN, PERSONAL_ROOT_KEY, ensureDiagnosticCode, ensureRemedy, personalCredentialRoot, personalRootCandidate, readPersonalBinding, workspaceKeyDigest, workspaceKeyKind } from "../lib/personal-team.mjs";
+import { PERSONAL_ROOT_DEFERRED_WARNING, personalRootDeclared } from "../lib/personal-team.mjs";
 import { runtimeDeliveryFor, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -125,7 +125,43 @@ function onPath(cmd) {
   }
   return false;
 }
-const out = (o, code = 0) => { process.stdout.write(JSON.stringify(o) + "\n"); process.exit(code); };
+// Kernel home operations (`oats operation run messaging:teams|join|leave`, run
+// with OATS_OPERATION and --json) read stdout as EXACTLY ONE JSON-v1 envelope
+// whose `ok` agrees with the exit status (oats bin/oats.mjs finishOperation):
+// {schemaVersion:1, ok:true, result} with exit 0, or {schemaVersion:1, ok:false,
+// error:{code, message}} with a nonzero exit. Under OATS_OPERATION every other
+// stdout write goes to stderr and every way out answers one envelope. Without
+// it (`oats aweb teams --json` from a shell) the bare document is unchanged.
+const OPERATION_COMMANDS = ["teams", "join", "leave"];
+const operation = process.env.OATS_OPERATION && OPERATION_COMMANDS.includes(process.env.OATS_EVENT || process.argv[2]) ? process.env.OATS_OPERATION : undefined;
+let operationAnswered = false;
+let lastStderr = "";
+const operationEnvelopeFailure = (code, message, details) => ({ schemaVersion: 1, ok: false, error: { code: code || "E_OPERATION_FAILED", message: String(message || "failed").slice(0, 1000), ...(details ? { details } : {}) } });
+function answerOperation(envelope, exitCode) {
+  operationAnswered = true;
+  writeSync(1, JSON.stringify(envelope) + "\n");
+  process.exit(exitCode);
+}
+const operationOk = (result) => answerOperation({ schemaVersion: 1, ok: true, result }, 0);
+const operationFail = (code, message, details) => answerOperation(operationEnvelopeFailure(code, message, details), 1);
+if (operation) {
+  const toStderr = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...rest) => { if (String(chunk).trim()) lastStderr = String(chunk).trim(); return toStderr(chunk, ...rest); };
+  process.stdout.write = (chunk, ...rest) => process.stderr.write(chunk, ...rest);
+  // Any exit that did not answer (a refusal printed to stderr, an uncaught
+  // error) still answers one failure envelope, and never exits 0.
+  process.on("exit", (code) => {
+    if (operationAnswered) return;
+    operationAnswered = true;
+    writeSync(1, JSON.stringify(operationEnvelopeFailure("E_OPERATION_FAILED", lastStderr || `oats-aweb ${operation} exited ${code} without an answer`)) + "\n");
+    if (!code) process.exitCode = 1;
+  });
+}
+const out = (o, code = 0) => {
+  if (operation) operationFail("E_OPERATION_FAILED", String(o?.warning || o?.problems?.[0]?.message || "failed").replace(/^oats-aweb: /, ""));
+  process.stdout.write(JSON.stringify(o) + "\n");
+  process.exit(code);
+};
 const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
 /** Fatal for a REQUIRED spawn hook: emit metadata for compensation, then exit
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
@@ -868,7 +904,7 @@ function runTeamsCommand(kind) {
       throw error;
     }
     const rows = validateJoinLabels(args.labels, { action: kind });
-    if (!rows.length) throw new Error("labels are required");
+    if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
     // Record every completed label even when a later one fails: a confirmed
     // leave deleted its home, and a join created a remote identity.
     try {
@@ -879,6 +915,11 @@ function runTeamsCommand(kind) {
         actions.push({ action: kind, label: row.label, ...(result.released ? { released: result.released } : {}), ...(result.receipt ? { receipt: result.receipt } : {}), ...(result.warning ? { warning: result.warning } : {}) });
         if (result.warning) warnings.push(`oats-aweb: ${result.warning}`);
       }
+    } catch (e) {
+      // What already happened travels with the failure, so a caller can
+      // reconcile (the operation envelope carries it as error.details).
+      e.partial = { actions };
+      throw e;
     } finally {
       const synced = syncWakeReceive(meta);
       meta = synced.meta;
@@ -887,69 +928,35 @@ function runTeamsCommand(kind) {
     }
   }
   const doc = { ...teamsDocument(meta), ...(actions.length ? { actions } : {}), ...(warnings.length ? { warnings } : {}) };
+  if (operation) operationOk(doc);
   outputTeamsDocument(doc, args.json);
 }
 
-/** The primary identity's team and the root that mints it (oats.aweb 1.15).
- *  An explicit settings.team (host/soul/spawn) wins. Otherwise a hosted workspace
- *  key gets THE person's personal team for this workspace (aw team ensure, once;
- *  its bound credential root is reused after). A local/ or absent key keeps the
- *  root's active team with a warning. Exits through fatal() on refusal. */
+/** The primary identity's team and the root that mints it, exactly as 1.14.2:
+ *  the config's `team:` (id, then name) wins, else the root's active team.
+ *  Per-workspace personal-team enrollment is deferred to 1.16, so this makes no
+ *  `aw auth` or `aw team ensure` call and a declared roots.personal is ignored
+ *  with a warning. Exits through fatal() on refusal. */
 function resolvePrimaryTeam() {
   const warnings = [];
-  const unmapped = unmappedPrimaryRow();
-  const unmappedWarning = (team) => { if (unmapped && team) warnings.push(`oats-aweb: team-unmapped — workspace label ${unmapped.label} is not mapped; using personal team ${team}`); };
-  const fromLegacyRoot = (source) => {
-    const root = awebRoot();
-    if (!root) fatal(`${awebRootProblem(rootSettingCandidate())}, so no identity could be minted and this instance would have no messaging`);
-    let team = payloadTeam().team;
-    if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
-    if (!team) fatal(`cannot determine target team, so no identity could be minted — ${teamConfigRemedy()}, or activate a team at the aweb root`);
-    if (!team.includes(":")) {
-      const teams = JSON.parse(run(["aw", "team", "list", "--json"], root));
-      const match = teamIdsOf(teams).filter((tid) => String(tid).startsWith(`${team}:`));
-      if (match.length === 1) team = match[0];
-      else if (match.length > 1) fatal(`team name "${team}" is ambiguous at ${root}: ${match.join(", ")}, so no identity could be minted — ${teamConfigRemedy()}`);
-      else fatal(`no membership matching team "${team}" at ${root}, so no identity could be minted — join or create it first (aweb-team-membership skill), or ${teamConfigRemedy()}`);
-    }
-    return { team, root, personal: { team, source, root } };
-  };
-  if (payloadTeam().team) return { ...fromLegacyRoot("setting"), warnings };
-  const key = process.env.OATS_WORKSPACE_KEY;
-  const kind = workspaceKeyKind(key);
-  if (kind !== "hosted") {
-    const resolved = fromLegacyRoot("root-fallback");
-    if (kind === "local") warnings.push(`oats-aweb: personal-team-local-workspace — ${LOCAL_WORKSPACE_WARNING}; using the root's active team ${resolved.team}`);
-    unmappedWarning(resolved.team);
-    return { ...resolved, warnings };
+  const root = awebRoot();
+  if (!root) fatal(`${awebRootProblem(rootSettingCandidate())}, so no identity could be minted and this instance would have no messaging`);
+  let team = payloadTeam().team;
+  const source = team ? "setting" : "root";
+  const unmappedPrimary = !team ? unmappedPrimaryRow() : undefined;
+  if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
+  if (unmappedPrimary && team) warnings.push(`oats-aweb: team-unmapped — workspace label ${unmappedPrimary.label} is not mapped; using personal team ${team}`);
+  if (!team) fatal(`cannot determine target team, so no identity could be minted — ${teamConfigRemedy()}, or activate a team at the aweb root`);
+  // A bare team name (no namespace) resolves against the root's memberships.
+  if (!team.includes(":")) {
+    const teams = JSON.parse(run(["aw", "team", "list", "--json"], root));
+    const match = teamIdsOf(teams).filter((tid) => String(tid).startsWith(`${team}:`));
+    if (match.length === 1) team = match[0];
+    else if (match.length > 1) fatal(`team name "${team}" is ambiguous at ${root}: ${match.join(", ")}, so no identity could be minted — ${teamConfigRemedy()}`);
+    else fatal(`no membership matching team "${team}" at ${root}, so no identity could be minted — join or create it first (aweb-team-membership skill), or ${teamConfigRemedy()}`);
   }
-  const candidate = personalRootCandidate(settings, { env: process.env });
-  if (!candidate.root || !isAbsolute(candidate.root)) fatal(`${PERSONAL_ROOT_KEY} must be an absolute host directory for this workspace's personal-team authority, so no identity could be minted`);
-  const root = resolve(candidate.root), credentialRoot = personalCredentialRoot(root), digest = workspaceKeyDigest(key);
-  let bound = readPersonalBinding(credentialRoot, digest);
-  if (bound?.mismatch) fatal(`${credentialRoot} is bound to another workspace's personal team (${bound.teamId}), so no identity could be minted — point ${PERSONAL_ROOT_KEY} at a dedicated directory for this workspace`);
-  if (!bound) {
-    if (!awAtLeast(PERSONAL_ENSURE_AW_MIN)) fatal(`E_TEAM_AW_FLOOR: the per-workspace personal team needs aw >= ${PERSONAL_ENSURE_AW_MIN} (aw team ensure); installed aw is ${awVersionLabel()}, so no identity could be minted — upgrade aw, or set settings.oats.aweb.team to mint into a chosen team`);
-    mkdirSync(root, { recursive: true, mode: 0o700 });
-    let ensured;
-    try { ensured = parseAwJson(run(["aw", "--identity-home", credentialRoot, "team", "ensure", "--workspace-key", key, "--json"], root, 120000), "aw team ensure"); }
-    catch (e) {
-      const code = ensureDiagnosticCode(`${e.stderr || ""}\n${e.message || ""}`);
-      fatal(`the personal team for this workspace could not be ensured${code ? ` (${code})` : ""}, so no identity could be minted — ${code ? ensureRemedy(code, { root }) : String(e.message || e).slice(0, 200)}`);
-    }
-    bound = readPersonalBinding(credentialRoot, digest);
-    const team = bound?.team || ensured?.canonical_team_id || ensured?.team_id;
-    if (!team || !/^[^\s:]+:[^\s:]+$/.test(team)) fatal("aw team ensure reported no usable personal team id, so no identity could be minted");
-    bound = { ...(bound || {}), team };
-    // First ensure on a deployment that minted into its root's active team
-    // before 1.15: say where earlier instances are, so nobody wonders why
-    // their aliases no longer resolve.
-    const legacy = awebRoot();
-    const legacyTeam = legacy ? activeTeamAt(legacy) : undefined;
-    if (legacyTeam && legacyTeam !== team) warnings.push(`oats-aweb: personal-team-created — this workspace now mints into its per-workspace personal team ${team}; instances spawned before oats.aweb 1.15 stay in ${legacyTeam} (set settings.oats.aweb.team: ${legacyTeam} to keep one team)`);
-  }
-  unmappedWarning(bound.team);
-  return { team: bound.team, root, personal: { team: bound.team, source: "workspace", root }, warnings };
+  if (personalRootDeclared(settings)) warnings.push(`oats-aweb: personal-root-deferred — ${PERSONAL_ROOT_DEFERRED_WARNING}`);
+  return { team, root, source, warnings };
 }
 
 /** The home's runtime. Spawn and launch run in the session's own env; a
@@ -1029,9 +1036,9 @@ if (event === "launch") {
   let minted;                 // external identity, once `aw team join` succeeds
   let spawnMeta;              // with joined teams, once any is accepted
   try {
-    // Team correctness: the personal team for this workspace (or an explicit
-    // settings.team) — ALWAYS passed as --team-id, never whatever team happens to
-    // be active at mint time — and the joined cert is verified to match.
+    // Team correctness: the config's `team:` block wins (id, then name), else the
+    // root's active team. ALWAYS pass --team-id explicitly — never inherit whatever
+    // team happens to be active at mint time — and verify the joined cert matches.
     // The instance name IS the discoverable alias (the team roster doubles as the
     // cross-machine instance directory).
     const primary = resolvePrimaryTeam();
@@ -1103,13 +1110,13 @@ if (event === "launch") {
     const deliveryBrief = deliveryMode === "session"
       ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
       : "";
-    let meta = { team: joined.team_id, alias, delivery: deliveryMode, personal: { ...primary.personal, team: joined.team_id }, ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}), identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
+    let meta = { team: joined.team_id, alias, delivery: deliveryMode, personal: { team: joined.team_id, source: primary.source }, ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}), identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
     const joinFloorProblem = joinRows.length ? joinedTeamsAwFloorProblem() : undefined;
     if (joinFloorProblem) warnings.push(`oats-aweb: ${joinFloorProblem}`);
     else for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
     if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
     writeProviderTeamsState(meta);
-    const personalBrief = meta.personal.source === "workspace" ? "your personal team for this workspace" : meta.personal.source === "setting" ? "the team this deployment configured for you" : "your personal team (the messaging root's active team: this workspace has no hosted per-workspace personal team)";
+    const personalBrief = meta.personal.source === "setting" ? "the team this deployment configured for you" : "your personal team (the messaging root's active team)";
     const joinedNow = joinedTeamsOf(meta);
     const joinedBrief = joinedNow.length ? ` Joined teams: ${joinedNow.map((j) => `${j.label} (${j.team}, receive ${j.receive}, send with \`aw --identity-home ${j.identityHome} mail|chat ...\`)`).join("; ")}.` : "";
     out({
@@ -1189,7 +1196,11 @@ if (event === "launch") {
   }
 } else if (["teams", "join", "leave"].includes(event)) {
   try { runTeamsCommand(event); process.exit(0); }
-  catch (e) { console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`); process.exit(1); }
+  catch (e) {
+    console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`);
+    if (operation) operationFail(e.code, e.message || String(e), e.partial ? { ...e.partial, joined: teamsDocument(readCapabilityMeta()).joined } : undefined);
+    process.exit(1);
+  }
 } else if (event === "roster") {
   // Cross-machine directory: every OATS-spawned instance joins the team with
   // alias = instance name, so the team's member roster lists live instances
@@ -1210,7 +1221,7 @@ if (event === "launch") {
     if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate(team))}, so the roster of ${label} cannot be read from this host`); process.exit(1); }
   } else {
     team = meta.personal?.team || meta.identity?.team || meta.team || process.env.OATS_TEAM_ID;
-    root = meta.personal?.root && existsSync(join(meta.personal.root, ".aw")) ? meta.personal.root : awebRoot();
+    root = awebRoot();
     if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate())}`); process.exit(1); }
     if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
   }
@@ -1242,33 +1253,6 @@ if (event === "launch") {
   const apiKey = !!process.env.AWEB_API_KEY;
   const actions = [username ? "--username" : null, invite ? "--invite" : null, apiKey ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
-
-  // Per-workspace personal team: the default primary team on a hosted workspace.
-  // Setup ensures it explicitly (the same idempotent get-or-create the first
-  // spawn would run), so an operator sees and fixes auth before any spawn.
-  const workspaceKey = process.env.OATS_WORKSPACE_KEY;
-  if (!actions.length && !payloadTeam().team && identityMode === "local" && !identitySettings.source && workspaceKeyKind(workspaceKey) === "hosted") {
-    const pc = personalRootCandidate(settings, { env: process.env });
-    if (!pc.root || !isAbsolute(pc.root)) { console.log(`readiness: needs-configuration\n  ${PERSONAL_ROOT_KEY} must be an absolute host directory.`); process.exit(0); }
-    const proot = resolve(pc.root), cred = personalCredentialRoot(proot);
-    console.log(`aweb onboarding — personal team for workspace ${workspaceKey}\n  authority: ${cred}\n`);
-    let bound = readPersonalBinding(cred, workspaceKeyDigest(workspaceKey));
-    if (bound?.mismatch) { console.log(`readiness: needs-configuration\n  ${cred} is bound to another workspace; point ${PERSONAL_ROOT_KEY} at a dedicated directory.`); process.exit(0); }
-    if (!bound) {
-      if (!awAtLeast(PERSONAL_ENSURE_AW_MIN)) { console.log(`readiness: needs-configuration\n  aw ${awVersionLabel()} cannot create a per-workspace personal team; upgrade to aw >= ${PERSONAL_ENSURE_AW_MIN}.`); process.exit(0); }
-      let auth; try { auth = parseAwJson(run(["aw", "auth", "status", "--json"], undefined, 20000), "aw auth status").status; } catch { auth = undefined; }
-      if (auth !== "authorized") { console.log(`readiness: authorization-required\n  aw auth status: ${auth || "unknown"}. Run \`aw auth login\` on this host once (browser device login to your aweb account), then re-run \`oats aweb setup\`.`); process.exit(0); }
-      mkdirSync(proot, { recursive: true, mode: 0o700 });
-      console.log("Running aw team ensure for this workspace (get-or-create your personal team)...");
-      try { run(["aw", "--identity-home", cred, "team", "ensure", "--workspace-key", workspaceKey, "--json"], proot, 120000); }
-      catch (e) { const code = ensureDiagnosticCode(`${e.stderr || ""}\n${e.message || ""}`); console.log(`readiness: needs-configuration\n  aw team ensure failed${code ? ` (${code})` : ""}: ${ensureRemedy(code, { root: proot })}`); process.exit(0); }
-      bound = readPersonalBinding(cred, workspaceKeyDigest(workspaceKey));
-    }
-    console.log(`readiness: ready\n✓ personal team ${bound?.team || "(bound)"} for this workspace; spawned instances mint into it (alias = instance name).`);
-    console.log("  Joined workspace teams additionally need a host root holding each team: settings.oats.aweb.roots.<team id> (or settings.oats.aweb.root).");
-    console.log("  Roster: `oats aweb roster`  ·  teams: `oats aweb teams --json` (in an instance home)");
-    process.exit(0);
-  }
 
   const resolvedTeam = payloadTeam();
   const teamName = resolvedTeam.team;

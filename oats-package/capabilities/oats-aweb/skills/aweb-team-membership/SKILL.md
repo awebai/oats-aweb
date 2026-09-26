@@ -63,9 +63,8 @@ aw id cert show
 Interpret common states:
 
 - `teams.personal.team` is the primary identity's team, wired to the harness:
-  the person's personal team **for this workspace** (`personal.source:
-  workspace`), a deployment-pinned team (`setting`), or, for a `local/`
-  workspace key, the person's default team (`root-fallback`).
+  the aweb root's active team (`personal.source: root`) or a deployment-pinned
+  team (`setting`). A team per workspace arrives in oats.aweb 1.16.
 - `eligible[]` are labels this soul/workspace may explicitly join; the primary
   label may appear here and is joinable/leavable like any other wider team.
 - `joined[]` are provider-created wider-team memberships; each has an
@@ -82,10 +81,9 @@ Interpret common states:
   `default:oats.aweb.ai`).
 - **Team certificate**: a signed membership statement for an identity; stored in
   `.aw/team-certs/` for native identities.
-- **Personal team**: the default team for the instance's primary identity: one
-  per (person, workspace), created on first use by `aw team ensure` from the
-  host's aw login. A `local/` workspace has none; the person's default team
-  stands in (readiness warning `personal-team-local-workspace`).
+- **Personal team**: the default team for the instance's primary identity: the
+  aweb root's active team, or `settings.oats.aweb.team` when the deployment
+  pins one. Per-workspace personal-team enrollment arrives in oats.aweb 1.16.
 - **Joined team**: an explicit wider team joined through `oats aweb join`, with a
   separate local identity home.
 
