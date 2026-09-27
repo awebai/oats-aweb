@@ -21,11 +21,11 @@ function tempDir(t) {
 }
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 
-/** A fake aw 1.36.12 modelling the 1.15 surface: multi-identity wake
+/** A fake aw 1.36.13 modelling the 1.15 surface: multi-identity wake
  *  registration and wake status derived from the stored registration. Any
  *  `aw auth …` or `aw team ensure` call is recorded as forbidden, exits 97, and
  *  fails the test: 1.15 defers default-team enrollment to 1.16. */
-function fakeAw115(t, { daemon = true, version = "1.36.12" } = {}) {
+function fakeAw115(t, { daemon = true, version = "1.36.13" } = {}) {
   // Registered before tempDir's cleanup so it still sees the call log.
   let readCalls = () => [];
   t.after(() => assert.deepEqual(readCalls().filter((c) => c.forbidden).map((c) => c.args.join(" ")), [], "oats.aweb 1.15 must not call aw auth or aw team ensure"));
@@ -45,7 +45,7 @@ const regs = () => { try { return JSON.parse(fs.readFileSync(${JSON.stringify(re
 const saveRegs = (r) => fs.writeFileSync(${JSON.stringify(reg)}, JSON.stringify(r));
 const flag = (n) => args.includes(n) ? args[args.indexOf(n) + 1] : undefined;
 const home = () => identityHome || path.join(process.cwd(), ".aw");
-// aw 1.36.12: an AWEB_IDENTITY_HOME in the environment is an external identity
+// aw 1.36.13: an AWEB_IDENTITY_HOME in the environment is an external identity
 // home exactly like --identity-home; commands off the allowlist are refused.
 const ALLOWED = ["id team accept-invite", "mail inbox", "mail send", "mail reply", "chat pending", "workspace delete", "wake register", "wake deregister", "wake status", "whoami", "version"];
 if (process.env.AWEB_IDENTITY_HOME && !identityHome) {
@@ -72,7 +72,7 @@ if (args[0] === "wake" && args[1] === "deregister") { const r = regs(); delete r
 if (args[0] === "wake" && args[1] === "status") {
   const running = !process.env.FAKE_DAEMON_DOWN && ${JSON.stringify(daemon)};
   const instances = Object.values(regs()).map((doc) => ({ home: doc.home, delivery: doc.delivery, runtime_delivery: doc.runtime_delivery, phase: running ? "present" : "pending", receive_identities: (doc.receive_identities || [{ identity_home: doc.identity_home }]).map((ri) => ({ ...ri, stream_admitted: running, stream_phase: running ? "connected" : "daemon-down" })) }));
-  emit({ daemon_running: running, daemon_version_state: running ? "reported" : "not_running", daemon_version: running ? "1.36.12" : undefined, instances });
+  emit({ daemon_running: running, daemon_version_state: running ? "reported" : "not_running", daemon_version: running ? "1.36.13" : undefined, instances });
   process.exit(0);
 }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
@@ -120,9 +120,9 @@ test("1.16 manifest: default-team wire names, no enrollment, roots are team-id k
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.16.0");
-  assert.equal(pkg.version, "1.16.0");
-  assert.equal(dist.version, "1.16.0");
+  assert.equal(manifest.version, "1.16.1");
+  assert.equal(pkg.version, "1.16.1");
+  assert.equal(dist.version, "1.16.1");
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
   assert.doesNotMatch(JSON.stringify(manifest), /team ensure|1\.36\.8|per-workspace default team|personal/i);
@@ -284,10 +284,10 @@ test("retire deregisters a channel home that carried joined-team receive", (t) =
 });
 
 // ---------------------------------------------------------------------------
-// Real published aw (>= 1.36.12): the admission table for every 1.15 command
+// Real published aw (>= 1.36.13): the admission table for every 1.15 command
 // under --identity-home, the broker registration shapes, and every aw
 // invocation the skills and inject teach.
-const REAL_AW_MIN = [1, 36, 12];
+const REAL_AW_MIN = [1, 36, 13];
 function realAw(t) {
   const v = spawnSync("aw", ["version"], { encoding: "utf8", timeout: 10000 });
   const m = /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(`${v.stdout ?? ""}${v.stderr ?? ""}`);

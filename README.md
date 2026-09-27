@@ -5,9 +5,13 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.16.1 — onboarding and one aw floor
+
+Requires OATS >=0.26.0 and aw >= 1.36.13. Setup creates hosted accounts on aw 1.36.13 with `aw init --new-account --username <u>`, and the package has one aw floor with older compatibility branches removed.
+
 ## 1.16.0 — the workspace's default team
 
-Requires OATS >=0.26.0 and aw >= 1.36.12 for joined teams. No aweb service
+Requires OATS >=0.26.0 and aw >= 1.36.13. No aweb service
 change and no host enrollment call is needed.
 
 ### Changed (breaking wire names)

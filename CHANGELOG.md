@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.16.1
+
+Fixed: setup creates the account on aw 1.36.13 by passing `--new-account` on the `oats aweb setup --username <u>` path.
+
+Changed: requires aw >= 1.36.13, with a single floor and older-aw branches removed.
+
+Removed: `helperInjection`.
+
 ## 1.16.0
 
 Changed (breaking wire names): personal → default team; E_TEAM_PERSONAL → E_TEAM_DEFAULT; teams JSON field personal → defaultTeam; receive label personal → default; roots.personal removed.
@@ -9,7 +17,7 @@ Changed (breaking wire names): personal → default team; E_TEAM_PERSONAL → E_
 In:
 
 - Live receive for joined teams through the host wake broker's multi-identity
-  registration (`aw wake register --registration-json -`, aw >= 1.36.12):
+  registration (`aw wake register --registration-json -`, aw >= 1.36.13):
   session homes register the primary plus every joined identity home; Claude
   and Pi channel homes use aw's mixed mode (`native-channel` / `native-pi`);
   Codex keeps polling. Readiness reports each joined team's actual mode
