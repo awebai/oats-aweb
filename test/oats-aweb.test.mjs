@@ -23,7 +23,7 @@ function fakePath(t, body = "exit 97") {
   const bin = join(tempDir(t), "bin");
   mkdirSync(bin);
   const aw = join(bin, "aw");
-  writeFileSync(aw, `#!/bin/sh\n${body}\n`);
+  writeFileSync(aw, `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\n${body}\n`);
   chmodSync(aw, 0o755);
   return bin;
 }
@@ -39,6 +39,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const calls = ${JSON.stringify(calls)};
 const args = process.argv.slice(2);
+if (args[0] === "version") { console.log("aw 1.36.13"); process.exit(0); }
 fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), hasApiKey: !!process.env.AWEB_API_KEY }) + "\\n");
 const awDir = path.join(process.cwd(), ".aw");
 const teamsFile = path.join(awDir, "teams.json");
@@ -233,6 +234,22 @@ test("spawn is fatal when aw is absent (required-hook contract)", async (t) => {
   assert.match(JSON.parse(result.stdout).warning, /aw CLI not on PATH/);
 });
 
+test("spawn is fatal when aw version cannot be read", async (t) => {
+  const home = tempDir(t);
+  const bin = tempDir(t);
+  const aw = join(bin, "aw");
+  writeFileSync(aw, `#!/bin/sh\nif [ "$1" = "version" ]; then exit 42; fi\necho unexpected >&2\nexit 93\n`);
+  chmodSync(aw, 0o755);
+  const result = await run(["spawn"], {
+    PATH: bin,
+    OATS_EVENT: "spawn",
+    OATS_HOME: home,
+    OATS_INSTANCE: "developer-api-1",
+  }, home);
+  assert.notEqual(result.code, 0, result.stdout);
+  assert.match(JSON.parse(result.stdout).warning, /aw version could not be read/);
+});
+
 test("authority discovery does not walk above the workspace", async (t) => {
   const outer = tempDir(t);
   const workspace = join(outer, "workspace");
@@ -286,7 +303,7 @@ test("setup --username initializes a missing root and reports the hosted default
     assert.match(result.stdout, /settings\.oats\.aweb\.team/);
     rmSync(join(root, ".aw"), { recursive: true, force: true });
   }
-  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--username", "alice"], ["team", "list", "--json"], ["init", "--username", "alice"], ["team", "list", "--json"]]);
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--new-account", "--username", "alice"], ["team", "list", "--json"], ["init", "--new-account", "--username", "alice"], ["team", "list", "--json"]]);
 });
 
 test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
@@ -363,7 +380,7 @@ test("alias conflict remedy names --name and --purpose", async (t) => {
   mkdirSync(home);
   const fake = fakeAwSetupPath(t);
   const aw = join(fake.path, "aw");
-  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
+  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "version") { console.log("aw 1.36.13"); process.exit(0); }\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_TEAM_ID: "active:example.invalid", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
@@ -380,7 +397,7 @@ test("no-team readiness follows spawn's active-team fallback", async (t) => {
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
   const binding = { schemaVersion: 1, capability: "oats.aweb", payloadContract: "oats.aweb.messaging", payloadVersion: 1, payload: { responsibleHuman: { provider: "oats.aweb", id: "human" }, context: { kind: "standalone", key: "fixture" }, privateTeam: { provider: "oats.aweb", id: "private:example.invalid" }, wider: [] }, credentialRefs: {}, provenance: [] };
   const request = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root }, input: { binding, context: binding.payload.context, action: { kind: "inspect" } } };
-  const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, OATS_WORKSPACE: root, OATS_TEAM_ID: "" }, input: JSON.stringify(request), encoding: "utf8" });
+  const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, PATH: fake.path, OATS_WORKSPACE: root, OATS_TEAM_ID: "" }, input: JSON.stringify(request), encoding: "utf8" });
   assert.equal(checked.status, 0, checked.stderr);
   assertKernelCheckAnswerRule(checked.stdout, request, "oats-aweb captured binding check");
   assert.deepEqual(JSON.parse(checked.stdout).result, { status: "ready", problems: [] });
