@@ -104,20 +104,14 @@ const parseSecretJson = (text, what) => {
 function awVersionTriple() {
   try { return /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(run(["aw", "version"], undefined, 10000)); } catch { return undefined; }
 }
-function awVersionMeets(floor) {
-  const v = awVersionTriple();
-  if (!v) return false;
-  const a = v.slice(1, 4).map(Number), b = floor.split(".").map(Number);
-  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; }
+function semverAtLeast(version, floor) {
+  const a = version.split(".").map(Number), b = floor.split(".").map(Number);
+  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
   return true;
 }
 function awVersionLabel() {
   const v = awVersionTriple();
-  return v ? v.slice(1, 4).join(".") : "unknown";
-}
-function awFloorProblem() {
-  if (awVersionMeets(AW_MIN)) return undefined;
-  return `aw ${awVersionLabel()} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`;
+  return v ? v.slice(1, 4).join(".") : undefined;
 }
 
 function onPath(cmd) {
@@ -271,6 +265,14 @@ function awebRoot() { return resolveAwebRoot(); }
  * name-only team config into a blocked spawn (reviewer-602627c). */
 const teamMemberships = (listed) => listed?.memberships || listed?.teams || [];
 const teamIdsOf = (listed) => teamMemberships(listed).map((m) => m.team_id || m.id || m);
+
+function awFloorProblem() {
+  if (!onPath("aw")) return `aw CLI not on PATH; install aw >= ${AW_MIN}`;
+  const version = awVersionLabel();
+  if (!version) return `aw version could not be read; install aw >= ${AW_MIN}`;
+  if (semverAtLeast(version, AW_MIN)) return undefined;
+  return `aw ${version} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`;
+}
 
 const AW_INSTALL = "install the aw CLI first — see https://aweb.ai/docs (or `oats aweb setup` for guided onboarding)";
 const isCommand = ["roster", "setup", "teams", "join", "leave"].includes(event);

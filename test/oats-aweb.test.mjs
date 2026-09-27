@@ -234,6 +234,22 @@ test("spawn is fatal when aw is absent (required-hook contract)", async (t) => {
   assert.match(JSON.parse(result.stdout).warning, /aw CLI not on PATH/);
 });
 
+test("spawn is fatal when aw version cannot be read", async (t) => {
+  const home = tempDir(t);
+  const bin = tempDir(t);
+  const aw = join(bin, "aw");
+  writeFileSync(aw, `#!/bin/sh\nif [ "$1" = "version" ]; then exit 42; fi\necho unexpected >&2\nexit 93\n`);
+  chmodSync(aw, 0o755);
+  const result = await run(["spawn"], {
+    PATH: bin,
+    OATS_EVENT: "spawn",
+    OATS_HOME: home,
+    OATS_INSTANCE: "developer-api-1",
+  }, home);
+  assert.notEqual(result.code, 0, result.stdout);
+  assert.match(JSON.parse(result.stdout).warning, /aw version could not be read/);
+});
+
 test("authority discovery does not walk above the workspace", async (t) => {
   const outer = tempDir(t);
   const workspace = join(outer, "workspace");
@@ -381,7 +397,7 @@ test("no-team readiness follows spawn's active-team fallback", async (t) => {
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
   const binding = { schemaVersion: 1, capability: "oats.aweb", payloadContract: "oats.aweb.messaging", payloadVersion: 1, payload: { responsibleHuman: { provider: "oats.aweb", id: "human" }, context: { kind: "standalone", key: "fixture" }, privateTeam: { provider: "oats.aweb", id: "private:example.invalid" }, wider: [] }, credentialRefs: {}, provenance: [] };
   const request = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root }, input: { binding, context: binding.payload.context, action: { kind: "inspect" } } };
-  const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, OATS_WORKSPACE: root, OATS_TEAM_ID: "" }, input: JSON.stringify(request), encoding: "utf8" });
+  const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, PATH: fake.path, OATS_WORKSPACE: root, OATS_TEAM_ID: "" }, input: JSON.stringify(request), encoding: "utf8" });
   assert.equal(checked.status, 0, checked.stderr);
   assertKernelCheckAnswerRule(checked.stdout, request, "oats-aweb captured binding check");
   assert.deepEqual(JSON.parse(checked.stdout).result, { status: "ready", problems: [] });

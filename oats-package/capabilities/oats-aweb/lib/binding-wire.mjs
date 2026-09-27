@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
@@ -231,8 +231,9 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
 }
 function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
-function awVersionLabel(){try{const text=runAw(['aw','version'],process.cwd(),{timeout:10000});const m=/aw\s+v?(\d+\.\d+\.\d+)/.exec(text);return m?m[1]:'unknown';}catch{return 'unknown';}}
-function awFloorProblem(){const installed=awVersionLabel();return installed!=='unknown'&&!semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
+function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const st=statSync(join(dir,cmd));if(st.isFile()&&(st.mode&0o111))return true;}catch{}}return false;}
+function awVersionLabel(){try{const text=runAw(['aw','version'],process.cwd(),{timeout:10000});const m=/aw\s+v?(\d+\.\d+\.\d+)/.exec(text);return m?m[1]:undefined;}catch{return undefined;}}
+function awFloorProblem(){if(!onPath('aw'))return{code:'needs-configuration',message:`aw CLI not on PATH; install aw >= ${AW_MIN}`};const installed=awVersionLabel();if(!installed)return{code:'needs-configuration',message:`aw version could not be read; install aw >= ${AW_MIN}`};return !semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
 function wakeReadiness(home,{reliedOn=false}={}) {
   if(!home || !reliedOn) return {problems:[],warnings:[]};
   try {

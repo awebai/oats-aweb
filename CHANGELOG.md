@@ -4,7 +4,7 @@
 
 Fixed: setup creates the account on aw 1.36.13 by passing `--new-account` on the `oats aweb setup --username <u>` path.
 
-Changed: requires aw >= 1.36.13, with a single floor and older-aw branches removed.
+Changed: requires aw >= 1.36.13, with a single floor and older-aw branches removed. The wake-daemon floor moves from 1.36.5 to 1.36.13; restart the daemon on aw 1.36.13.
 
 Removed: `helperInjection`.
 
