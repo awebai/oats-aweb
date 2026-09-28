@@ -43,7 +43,7 @@ fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, cwd: process.
 const emit = (o) => console.log(JSON.stringify(o));
 const regs = () => { try { return JSON.parse(fs.readFileSync(${JSON.stringify(reg)}, "utf8")); } catch { return {}; } };
 const saveRegs = (r) => fs.writeFileSync(${JSON.stringify(reg)}, JSON.stringify(r));
-const flag = (n) => args.includes(n) ? args[args.indexOf(n) + 1] : undefined;
+const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 const home = () => identityHome || path.join(process.cwd(), ".aw");
 // aw 1.36.13: an AWEB_IDENTITY_HOME in the environment is an external identity
 // home exactly like --identity-home; commands off the allowlist are refused.
@@ -87,8 +87,9 @@ console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 }
 
 const teamsEnv = JSON.stringify([
-  { label: "alpha", team: "alpha:example.test", mapped: true, payload: { team: "alpha:example.test" } },
-  { label: "beta", team: "beta:example.test", mapped: true, payload: { team: "beta:example.test" } },
+  { label: "default", team: "legacy:example.test", default: true, from: "local" },
+  { label: "alpha", team: "alpha:example.test", default: false, from: "shared" },
+  { label: "beta", team: "beta:example.test", default: false, from: "shared" },
 ]);
 
 function fixture(t, { key = HOSTED_KEY, settings = {}, delivery, runtime = "claude", legacyRoot = true } = {}) {
@@ -98,7 +99,7 @@ function fixture(t, { key = HOSTED_KEY, settings = {}, delivery, runtime = "clau
   const merged = { ...(delivery ? { delivery } : {}), ...settings };
   const env = {
     OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: key, OATS_WORKSPACE_NAME: "acme",
-    OATS_TEAM_LABEL: "alpha", OATS_TEAM_LABELS: "alpha,beta", OATS_TEAMS: teamsEnv, OATS_TEAMS_SOURCE: "live",
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "legacy:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: teamsEnv, OATS_TEAMS_SOURCE: "live",
     OATS_RUNTIME: runtime, OATS_SETTINGS: JSON.stringify(merged),
   };
   return { ws, home, env, settings: merged, defaultRoot: join(ws, ".aweb-default") };
@@ -116,13 +117,14 @@ function check(fx, fake, settings = fx.settings) {
   return assertKernelCheckAnswerRule(result.stdout, input, "oats-aweb binding check").result;
 }
 
-test("1.16 manifest: default-team wire names, no enrollment, roots are team-id keyed, oats-aweb skill", () => {
+test("1.17 manifest: kernel default-team wire names, no provider team setting, roots are team-id keyed, oats-aweb skill", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.16.1");
-  assert.equal(pkg.version, "1.16.1");
-  assert.equal(dist.version, "1.16.1");
+  assert.equal(manifest.version, "1.17.0");
+  assert.equal(pkg.version, "1.17.0");
+  assert.equal(dist.version, "1.17.0");
+  assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
   assert.doesNotMatch(JSON.stringify(manifest), /team ensure|1\.36\.8|per-workspace default team|personal/i);
@@ -146,10 +148,10 @@ test("hosted workspace: the primary team resolves as in 1.14.2 (root's active te
   const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
   assert.equal(doc.meta.team, "legacy:example.test");
   assert.equal(doc.meta.identity.team, "legacy:example.test");
-  assert.deepEqual(doc.meta.defaultTeam, { team: "legacy:example.test", source: "root" });
+  assert.deepEqual(doc.meta.defaultTeam, { label: "default", team: "legacy:example.test", from: "deployment" });
   const invite = fake.readCalls().find((c) => c.args[0] === "team" && c.args[1] === "invite");
   assert.equal(invite.cwd, fx.ws, "the deployment root mints, as in 1.14.2");
-  assert.equal(invite.args[invite.args.indexOf("--team-id") + 1], "legacy:example.test");
+  assert.equal(invite.args.find((a) => a.startsWith("--team-id="))?.slice("--team-id=".length) ?? invite.args[invite.args.indexOf("--team-id") + 1], "legacy:example.test");
   assert.equal(existsSync(fx.defaultRoot), false, "no default-team authority is created");
   assert.doesNotMatch(`${doc.warning || ""}${doc.brief}`, /default-team-|aw auth|team ensure/);
   const result = check(fx, fake);
@@ -162,19 +164,20 @@ test("a local/ workspace key resolves the same way and says nothing about a defa
   const fx = fixture(t, { key: "local//srv/acme" });
   const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
   assert.equal(doc.meta.team, "legacy:example.test");
-  assert.equal(doc.meta.defaultTeam.source, "root");
+  assert.equal(doc.meta.defaultTeam.from, "deployment");
   assert.doesNotMatch(doc.warning || "", /default-team-/);
   assert.deepEqual(check(fx, fake).warnings.filter((w) => /^default/.test(w.code)), []);
 });
 
-test("an explicit settings.team wins, exactly as in 1.14.2", (t) => {
+test("settings.team is removed and refused", (t) => {
   const fake = fakeAw115(t);
-  const fx = fixture(t, { settings: { team: "alpha:example.test" } });
-  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
-  assert.equal(doc.meta.team, "alpha:example.test");
-  assert.equal(doc.meta.defaultTeam.source, "setting");
-  const bare = fixture(t, { settings: { team: "beta" } });
-  assert.equal(spawnDoc(runHook("spawn", { cwd: bare.home, env: { ...bare.env, PATH: fake.path } })).meta.team, "beta:example.test", "a bare name resolves against the root's memberships");
+  const message = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
+  for (const team of ["alpha:example.test", "beta"]) {
+    const fx = fixture(t, { settings: { team } });
+    const r = runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } });
+    assert.notEqual(r.status, 0);
+    assert.match(JSON.parse(r.stdout).warning, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
 });
 
 test("no aw auth or aw team ensure on any path: spawn, launch, readiness, commands, retire", (t) => {
@@ -338,6 +341,8 @@ test("real aw: the broker accepts the registrations oats.aweb writes (session, n
     const r = spawnSync("aw", ["wake", "register", "--state-dir", state, "--registration-json", "-"], { input: JSON.stringify(doc), encoding: "utf8", timeout: 15000 });
     assert.equal(r.status, 0, `${expected}: ${r.stdout}${r.stderr}`);
     const status = JSON.parse(spawnSync("aw", ["wake", "status", "--state-dir", state, "--json"], { encoding: "utf8", timeout: 15000 }).stdout);
+    assert.equal(status.state_dir, state, "real-aw wake tests must use a temp state dir, never the host broker state");
+    assert.ok(existsSync(join(state, "instances.d")), "aw wake register/status initialized the isolated temp state dir");
     const row = status.instances.find((i) => i.home === home);
     assert.equal(row.runtime_delivery, expected);
     const labels = row.receive_identities.map((ri) => ri.label);
@@ -518,16 +523,14 @@ test("from a shell (no OATS_OPERATION) teams --json keeps its bare document", (t
   const doc = JSON.parse(r.stdout);
   assert.equal(doc.schemaVersion, undefined);
   assert.equal(doc.defaultTeam.team, "legacy:example.test");
-  assert.equal(doc.defaultTeam.source, "root");
+  assert.equal(doc.defaultTeam.from, "deployment");
 });
 
-test("teams defaultTeam.source is always present and derived for older homes", (t) => {
-  for (const [settings, expected] of [[{}, "root"], [{ team: "alpha:example.test" }, "setting"]]) {
-    const { fx, env } = operationFixture(t, settings);
-    const instanceJson = JSON.parse(readFileSync(join(fx.home, "instance.json"), "utf8"));
-    delete instanceJson.capabilityMeta["oats.aweb"].defaultTeam.source;
-    writeFileSync(join(fx.home, "instance.json"), JSON.stringify(instanceJson));
-    const v = assertKernelOperationAnswer(runOperation("messaging:teams", "teams", { cwd: fx.home, env }), { ok: true, label: `messaging:teams ${expected}` });
-    assert.equal(v.result.defaultTeam.source, expected);
-  }
+test("teams defaultTeam.from is always present and derived from kernel env for older homes", (t) => {
+  const { fx, env } = operationFixture(t, {});
+  const instanceJson = JSON.parse(readFileSync(join(fx.home, "instance.json"), "utf8"));
+  delete instanceJson.capabilityMeta["oats.aweb"].defaultTeam.from;
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify(instanceJson));
+  const v = assertKernelOperationAnswer(runOperation("messaging:teams", "teams", { cwd: fx.home, env }), { ok: true, label: "messaging:teams deployment" });
+  assert.equal(v.result.defaultTeam.from, "deployment");
 });
