@@ -761,6 +761,7 @@ test("setup --create fails when aw create omits team_id or invite token", async 
 test("recording per-team roots refuses flow-style oats-local but updates block roots atomically with comments", async (t) => {
   const flowRoot = tempDir(t);
   writeFileSync(join(flowRoot, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\nsettings: { \"oats.aweb\": { roots: {} } }\n");
+  const originalFlowLocal = readFileSync(join(flowRoot, "oats-local.yaml"), "utf8");
   const flowFake = fakeAwSetupPath(t);
   const refused = await run(["setup", "--join", "flow", "--invite", "SECRET", "--service", "https://owner.example/api"], {
     PATH: flowFake.path,
@@ -776,6 +777,9 @@ test("recording per-team roots refuses flow-style oats-local but updates block r
   assert.equal(refused.code, 1);
   assert.match(refused.stderr, /cannot safely update settings\.oats\.aweb\.roots automatically/);
   assert.match(refused.stderr, /add this line by hand/);
+  assert.equal(readFileSync(join(flowRoot, "oats-local.yaml"), "utf8"), originalFlowLocal, "flow-style oats-local.yaml is byte-identical after refusal");
+  assert.equal(existsSync(join(flowRoot, ".aweb-roots", "flow")), false, "refusal happens before creating the per-team root");
+  assert.equal(flowFake.readCalls().some((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite"), false, "refusal happens before accepting the invite");
 
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n# keep me\nsettings:\n  oats.aweb:\n    roots:\n      \"old:example.invalid\": \"/old\"\n");

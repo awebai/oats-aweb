@@ -332,6 +332,21 @@ function findBlockHeader(lines, start, end, indent, names) {
   }
   return -1;
 }
+function assertAwebRootSettingRecordable(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
+  const file = findOatsLocal(start);
+  if (!existsSync(file)) return;
+  const lines = readFileSync(file, "utf8").split(/\r?\n/);
+  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
+  if (typeof settings === "object") unsupportedLocalYaml(file, `line ${settings.unsupported + 1} is not a block-style settings: mapping`, team, rootDir);
+  if (settings < 0) return;
+  const settingsEnd = blockEnd(lines, settings, 0);
+  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
+  if (typeof aweb === "object") unsupportedLocalYaml(file, `line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`, team, rootDir);
+  if (aweb < 0) return;
+  const awebEnd = blockEnd(lines, aweb, 2);
+  const roots = findBlockHeader(lines, aweb + 1, awebEnd, 4, ["roots"]);
+  if (typeof roots === "object") unsupportedLocalYaml(file, `line ${roots.unsupported + 1} is not a block-style roots: mapping`, team, rootDir);
+}
 function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
   const file = findOatsLocal(start);
   const existed = existsSync(file);
@@ -1501,6 +1516,8 @@ if (event === "launch") {
     const idHome = join(teamRoot, ".aw");
     const resumeCommand = setupResumeCommand(label);
     const docs = [...setupServiceDocs(teamRoot), ...serviceDocs];
+    const recordTeam = expectedTeam || configuredTeamForLabel(label) || `<team for ${label}>`;
+    assertAwebRootSettingRecordable(recordTeam, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
     let joined;
     if (existsSync(join(idHome, "identity.yaml"))) {
       if (existsSync(join(idHome, "workspace.yaml"))) throw new Error(`team root ${teamRoot} already holds a connected aweb identity; choose a different label or remove the stale root deliberately`);
