@@ -39,7 +39,7 @@ if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { con
 if (args[0] === "workspace" && args[1] === "connect") { if (process.env.FAKE_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); } const team = flag("--team"), service = flag("--service"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: connected\\nteam_id: " + team + "\\naweb_url: " + service + "\\n"); emit({ status: "connected", team_id: team, aweb_url: service }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home: team_not_hosted"); process.exit(7); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }] }); process.exit(0); }
-if (args[0] === "id" && args[1] === "team" && args[2] === "list") { const team = String(identityHome || "").includes(".aweb-identity-shared") ? "shared:example.test" : "default:example.test"; emit({ memberships: [{ team_id: team, certificate_id: "cert-shared-123" }] }); process.exit(0); }
+if (args[0] === "id" && args[1] === "team" && args[2] === "list") { const team = process.env.FAKE_LIST_OTHER_TEAM ? "other:example.test" : (String(identityHome || "").includes(".aweb-identity-shared") ? "shared:example.test" : "default:example.test"); emit({ memberships: [{ team_id: team, certificate_id: "cert-shared-123", registry_origin: "https://api.awid.ai" }] }); process.exit(0); }
 if (args[0] === "wake" && ["register", "deregister"].includes(args[1])) { console.log("ok"); process.exit(0); }
 if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.13", instances: [] }); process.exit(0); }
 if (args[0] === "init") { fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true }); fs.writeFileSync(path.join(process.cwd(), ".aw", "teams.yaml"), "active_team: default:alice.aweb.ai\\n"); emit({ team_id: "default:alice.aweb.ai" }); process.exit(0); }
@@ -237,7 +237,7 @@ test("failed lost-team leave appends a durable event and keeps the team joined",
   const launched = JSON.parse(launch.stdout);
   assert.match(launched.warning, /joined team shared cleanup failed/);
   assert.match(launched.warning, /team_not_hosted/);
-  assert.match(launched.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --registry example\.test --json/);
+  assert.match(launched.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --registry https:\/\/api\.awid\.ai --json/);
   assert.deepEqual(launched.meta.joinedTeams.map((j) => j.label), ["shared"], "failed leave keeps the still-member team recorded as joined");
   assert.deepEqual(launched.meta.left, [], "failed leave does not add a visible successful leave");
   const teams = JSON.parse(runHook("teams", { cwd: fx.home, env: { ...envAfterLoss, OATS_META: JSON.stringify(launched.meta), FAKE_DELETE_FAIL_FOR: undefined }, args: ["--json"] }).stdout);
@@ -245,7 +245,23 @@ test("failed lost-team leave appends a durable event and keeps the team joined",
   assert.deepEqual(teams.left, []);
   const events = readFileSync(join(fx.home, ".oats-events.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
   const failed = events.find((e) => e.kind === "aweb-team-leave-failed");
-  assert.deepEqual({ label: failed.data.label, team: failed.data.team, alias: failed.data.alias, certificateId: failed.data.certificateId, cleanup: failed.data.cleanup }, { label: "shared", team: "shared:example.test", alias: "dev-1", certificateId: "cert-shared-123", cleanup: "controller" });
+  assert.deepEqual({ label: failed.data.label, team: failed.data.team, alias: failed.data.alias, certificateId: failed.data.certificateId, registry: failed.data.registry, cleanup: failed.data.cleanup }, { label: "shared", team: "shared:example.test", alias: "dev-1", certificateId: "cert-shared-123", registry: "https://api.awid.ai", cleanup: "controller" });
   assert.equal(failed.data.reason, "team_not_hosted");
   assert.equal(events.some((e) => e.kind === "aweb-team-left"), false, "no successful leave event is appended on failure");
+});
+
+test("failed lost-team leave does not use another team's certificate id", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { settings: { join: "shared" } });
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  const envAfterLoss = { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(doc.meta), OATS_TEAMS: JSON.stringify([{ label: "personal", team: "default:example.test", default: true, from: "local" }]), FAKE_DELETE_FAIL_FOR: "shared", FAKE_LIST_OTHER_TEAM: "1" };
+  const launch = runHook("launch", { cwd: fx.home, env: envAfterLoss });
+  assert.equal(launch.status, 0, launch.stdout + launch.stderr);
+  const launched = JSON.parse(launch.stdout);
+  assert.match(launched.warning, /controller cleanup needs the certificate id/);
+  assert.doesNotMatch(launched.warning, /--cert-id cert-shared-123/);
+  const events = readFileSync(join(fx.home, ".oats-events.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+  const failed = events.find((e) => e.kind === "aweb-team-leave-failed");
+  assert.equal(failed.data.certificateId, null);
+  assert.match(failed.data.certificateIdError, /no membership for shared:example\.test/);
 });

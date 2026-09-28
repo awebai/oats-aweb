@@ -370,6 +370,88 @@ test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
   assert.match(result.stdout, /readiness: ready/);
 });
 
+test("setup refuses a missing shared default root with the invite remedy", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const teams = [{ label: "oats-shared", team: "shared:reh.test", default: true, from: "shared" }];
+  const result = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_AGENT: "dev",
+    OATS_DEFAULT_TEAM: "oats-shared",
+    OATS_DEFAULT_TEAM_ID: "shared:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "shared",
+    OATS_TEAMS: JSON.stringify(teams),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared: ask its owner for an invite, then run `oats aweb setup --soul dev --join oats-shared --invite <token>`/);
+  assert.doesNotMatch(result.stdout, /--username|AWEB_API_KEY/);
+  assert.equal(existsSync(join(root, ".aw")), false);
+});
+
+test("setup refuses a shared default root without that membership", async (t) => {
+  const root = tempDir(t);
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  const fake = fakeAwSetupPath(t);
+  const teams = [{ label: "oats-shared", team: "shared:reh.test", default: true, from: "shared" }];
+  const result = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_LIST_TEAMS: JSON.stringify({ memberships: [{ team_id: "other:reh.test" }] }),
+    OATS_EVENT: "setup",
+    OATS_AGENT: "dev",
+    OATS_DEFAULT_TEAM: "oats-shared",
+    OATS_DEFAULT_TEAM_ID: "shared:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "shared",
+    OATS_TEAMS: JSON.stringify(teams),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared/);
+});
+
+test("setup reports non-default shared teams missing from this host", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const teams = [
+    { label: "personal", team: "default:reh.test", default: true, from: "local" },
+    { label: "oats-shared", team: "shared:reh.test", default: false, from: "shared" },
+  ];
+  const result = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_AGENT: "dev",
+    OATS_DEFAULT_TEAM: "personal",
+    OATS_DEFAULT_TEAM_ID: "default:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify(teams),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared/);
+});
+
+test("setup local default with no root keeps the onboarding menu", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const result = await run(["setup"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_DEFAULT_TEAM: "personal",
+    OATS_DEFAULT_TEAM_ID: "default:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify([{ label: "personal", team: "default:reh.test", default: true, from: "local" }]),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /No aweb workspace/);
+  assert.match(result.stdout, /--username <u>/);
+});
+
 test("setup --join --invite accepts into a per-team root without printing the token", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");

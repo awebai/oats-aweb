@@ -1004,16 +1004,33 @@ function outputTeamsDocument(doc, json) {
   for (const warning of doc.warnings || []) console.log(`warning: ${warning}`);
 }
 const actionWarning = (warning) => String(warning || "").slice(0, 300);
+const registryOrigin = (value) => typeof value === "string" && /^https?:\/\//i.test(value.trim()) ? value.trim() : undefined;
+function registryOriginFromJoinedState(row, match, listed) {
+  const fromJson = registryOrigin(match?.registry_origin || match?.registry_url || match?.registry || match?.awid_registry_url || listed?.registry_origin || listed?.registry_url || listed?.registry || listed?.awid_registry_url);
+  if (fromJson) return { registry: fromJson };
+  for (const file of ["identity.yaml", "teams.yaml", "workspace.yaml", "registry.yaml", "config.yaml"]) {
+    try {
+      const text = readFileSync(join(row.identityHome, file), "utf8");
+      for (const key of ["awid_registry_url", "registry_origin", "registry_url", "registry"]) {
+        const found = registryOrigin(yamlScalar(text, key));
+        if (found) return { registry: found };
+      }
+    } catch { /* keep looking */ }
+  }
+  const fromEnv = registryOrigin(process.env.AWID_REGISTRY_URL);
+  if (fromEnv) return { registry: fromEnv };
+  return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };
+}
 function certificateIdForJoinedTeam(row) {
   try {
     const listed = parseAwJson(run(awWithIdentity(row.identityHome, ["id", "team", "list", "--json"]), home, 60000), "aw id team list");
     const memberships = teamMemberships(listed);
-    const match = memberships.find((m) => String(m.team_id || m.id || m.team || m) === row.team) || memberships[0];
+    const match = memberships.find((m) => String(m?.team_id || m?.id || m?.team || m) === row.team);
+    if (!match) return { certificateId: null, certificateIdError: `aw id team list --json returned no membership for ${row.team}` };
     const certificateId = match && typeof match === "object" ? (match.certificate_id || match.cert_id || match.certId || match.certificate?.id || match.cert?.id) : undefined;
-    if (typeof certificateId === "string" && certificateId.trim()) return { certificateId: certificateId.trim() };
-    return { certificateId: null, certificateIdError: `certificate id for ${row.team} was not present in aw id team list --json` };
+    return { ...(typeof certificateId === "string" && certificateId.trim() ? { certificateId: certificateId.trim() } : { certificateId: null, certificateIdError: `certificate id for ${row.team} was not present in aw id team list --json` }), ...registryOriginFromJoinedState(row, match, listed) };
   } catch (e) {
-    return { certificateId: null, certificateIdError: actionWarning(e.message || e) };
+    return { certificateId: null, certificateIdError: actionWarning(e.message || e), ...registryOriginFromJoinedState(row) };
   }
 }
 function failedLeaveDisposition(row, error) {
@@ -1022,10 +1039,11 @@ function failedLeaveDisposition(row, error) {
   const data = { label: row.label, team: row.team, alias: row.alias || instance || null, ...certificateIdForJoinedTeam(row), at: new Date().toISOString(), reason, ...(reason === "team_not_hosted" ? { cleanup: "controller" } : {}) };
   const teamName = String(row.team || "").split(":")[0] || row.team;
   const namespace = String(row.team || "").includes(":") ? String(row.team).split(":").slice(1).join(":") : "<namespace>";
+  const registryArg = data.registry ? ` --registry ${data.registry}` : "";
   const ownerCommand = reason === "team_not_hosted" && data.certificateId
-    ? `; controller cleanup: aw id team remove-member --namespace ${namespace} --team ${teamName} --cert-id ${data.certificateId} --registry ${namespace} --json`
+    ? `; controller cleanup: aw id team remove-member --namespace ${namespace} --team ${teamName} --cert-id ${data.certificateId}${registryArg} --json${data.registryError ? ` (${data.registryError})` : ""}`
     : reason === "team_not_hosted"
-      ? `; controller cleanup needs the certificate id, but ${data.certificateIdError || "it could not be read"}`
+      ? `; controller cleanup needs the certificate id, but ${data.certificateIdError || "it could not be read"}${data.registryError ? ` (${data.registryError})` : ""}`
       : "";
   return { data, warning: `joined team ${row.label} cleanup failed: ${data.reason}${ownerCommand}` };
 }
@@ -1453,6 +1471,14 @@ if (event === "launch") {
     assertNotFlag(label, "team label");
     run([cli, "teams", "add", label, flagEq("--team", team)], process.cwd(), 60000);
   };
+  const setupSoulArg = () => process.env.OATS_AGENT || process.env.OATS_SOUL || process.env.OATS_INSTANCE || "<soul>";
+  const missingSharedRows = (teams) => {
+    const ids = new Set(teamIdsOf(teams).map(String));
+    return parseOatsTeams().filter((t) => t.from === "shared" && t.label && t.team && !ids.has(t.team));
+  };
+  const printSharedMissing = (rows) => {
+    for (const row of rows) console.log(`team ${row.label} (${row.team}) is shared: ask its owner for an invite, then run \`oats aweb setup --soul ${setupSoulArg()} --join ${row.label} --invite <token>\``);
+  };
   const printVerdict = (teams) => {
     const match = matchingTeam(teams);
     if (match) {
@@ -1480,11 +1506,14 @@ if (event === "launch") {
 
   try {
     const hasRoot = existsSync(join(scope, ".aw"));
+    let teams = hasRoot ? readTeams() : { memberships: [] };
     const unmappedDefault = !actions.length && defaultTeamLabel() && !defaultTeamId();
     if (unmappedDefault) {
       console.log(`team ${defaultTeamLabel()} has no provider id yet: ask its owner to run \`oats aweb setup --create ${defaultTeamLabel()} --namespace <domain>\` and commit the id, or ask the owner for an invite and run \`oats aweb setup --join ${defaultTeamLabel()} --invite <token>\`.`);
       process.exit(1);
     }
+    const missingShared = !actions.length ? missingSharedRows(teams) : [];
+    if (missingShared.length) { printSharedMissing(missingShared); process.exit(1); }
     if (!hasRoot && !actions.length) {
       console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
       if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
@@ -1496,7 +1525,6 @@ if (event === "launch") {
       console.log("  Own your domain? Use the aweb-team-membership skill for BYOT flows.");
       process.exit(0);
     }
-    let teams = hasRoot ? readTeams() : { memberships: [] };
     if (createLabel) {
       mkdirSync(scope, { recursive: true });
       const label = createLabel;
