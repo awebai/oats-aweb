@@ -5,7 +5,7 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.17.0 — team model v2 provider
+## 1.17.1 — team model v2 provider
 
 Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
 team model v2 (kernel 0.30): the kernel supplies the default team and eligible
@@ -69,6 +69,8 @@ team `T` uses `roots[T]` when present, otherwise `root`.
 ### Setup acts
 
 `oats aweb setup` is the only onboarding path; spawn/mint/retire never onboard.
+From a deployment directory (outside an instance home), dispatch setup through any
+soul that uses the messaging provider, for example `oats aweb setup --soul <any soul with messaging>`; the provider consumes the kernel-forwarded `--soul` flag and does not use it as team policy.
 Supported acts:
 
 - `oats aweb setup --username <u>`: for a missing hosted root, runs

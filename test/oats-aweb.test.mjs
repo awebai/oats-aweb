@@ -74,14 +74,17 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_CREATE_MODE === "conflict-once") { const creates = fs.readFileSync(calls, "utf8").trim().split("\\n").filter((l) => JSON.parse(l).args.slice(0,3).join(" ") === "id team create").length; if (creates === 1) { console.error("409 conflict: team exists"); process.exit(9); } }
   if (process.env.AW_CREATE_MODE === "missing-id") { console.log(JSON.stringify({ invite_token: "TOKEN__" + team })); process.exit(0); }
   if (process.env.AW_CREATE_MODE === "missing-token") { console.log(JSON.stringify({ team_id: team })); process.exit(0); }
-  console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team }));
+  console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team, aweb_url: "https://app.aweb.ai/api" }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
   const team = process.env.AW_FAKE_TEAM || args[3].replace(/^TOKEN__/, "");
   writeTeams(team);
-  console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root" }));
+  console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", aweb_url: "https://app.aweb.ai/api" }));
 } else if (args[0] === "whoami") {
   console.log(JSON.stringify({ alias: "fixture", did: "did:key:zFixture" }));
 } else if (args[0] === "workspace" && args[1] === "connect") {
+  if (process.env.AW_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); }
+  fs.mkdirSync(awDir, { recursive: true });
+  fs.writeFileSync(path.join(awDir, "workspace.yaml"), "team_id: " + flag("--team") + "\\naweb_url: " + flag("--service") + "\\nalias: fixture\\n");
   console.log(JSON.stringify({ status: "connected" }));
 } else if (args[0] === "workspace" && args[1] === "status") {
   console.log(JSON.stringify({ selected_team: ${JSON.stringify(activeTeam)}, workspace: { alias: "fixture", workspace_path: process.cwd() } }));
@@ -310,7 +313,7 @@ test("authority discovery does not walk above the workspace", async (t) => {
 test("roster guidance uses the required --to recipient flag", async (t) => {
   const root = tempDir(t);
   mkdirSync(join(root, ".aw"));
-  const result = await run(["roster"], {
+  const result = await run(["roster", "--soul", "dev"], {
     PATH: fakePath(t, `printf '%s\\n' '{"team_id":"default:test","members":[]}'`),
     OATS_EVENT: "roster",
     OATS_HOME: root,
@@ -326,7 +329,7 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
 test("setup --username initializes a missing root and reports the hosted default team mapping", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: "default:alice.aweb.ai" });
-  for (const args of [["setup", "--username", "alice"], ["setup", "--username=alice"]]) {
+  for (const args of [["setup", "--soul", "dev", "--username", "alice"], ["setup", "--username=alice", "--soul=dev"]]) {
     const result = await run(args, {
       PATH: fake.path,
       AWEB_API_KEY: "",
@@ -384,6 +387,11 @@ test("setup --join --invite accepts into a per-team root without printing the to
   assert.match(result.stdout, /per-team root/);
   const accept = fake.readCalls().find((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite");
   assert.equal(accept.identityHome, join(root, ".aweb-roots", "joined", ".aw"));
+  const connect = fake.readCalls().find((c) => c.args.slice(0, 2).join(" ") === "workspace connect");
+  assert.equal(connect.identityHome, join(root, ".aweb-roots", "joined", ".aw"));
+  assert.ok(connect.args.includes("--service=https://app.aweb.ai/api"));
+  assert.ok(connect.args.includes("--team=joined:example.invalid"));
+  assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "workspace.yaml")), true);
   assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
 });
 

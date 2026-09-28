@@ -229,6 +229,11 @@ team `T` uses `roots[T]`, else `root`.
 
 **Setup acts:**
 
+From a deployment directory (outside an instance home), call setup through any
+soul that uses this messaging provider: `oats aweb setup --soul <any soul with messaging>`.
+The provider consumes the kernel-forwarded `--soul` dispatch flag; it is not a
+team selector and should not appear in any `aw` call.
+
 - `oats aweb setup --username <u>` → `aw init --new-account --username <u>` for
   a missing hosted root.
 - `AWEB_API_KEY=<key> oats aweb setup` → `aw init` for the hosted team behind

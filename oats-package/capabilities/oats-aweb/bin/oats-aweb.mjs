@@ -870,13 +870,54 @@ function withProviderTeams(meta = {}) { const state = readProviderTeamsState(met
 function identityHomeForLabel(label) { return join(home, `.aweb-identity-${label}`); }
 function awWithIdentity(identityHome, args) { return ["aw", "--identity-home", identityHome, ...args]; }
 function commandOutput(e) { return [e?.stdout, e?.stderr, e?.message].filter(Boolean).join("\n"); }
-function workspaceConnectRecovery(text) {
-  const m = String(text || "").match(/aw\s+--identity-home\s+\S+\s+workspace\s+connect\s+--service\s+\S+(?:\s+--json)?|aw\s+workspace\s+connect\s+--service\s+\S+(?:\s+--json)?|workspace\s+connect\s+--service\s+\S+(?:\s+--json)?/i);
-  return m ? m[0].trim() : undefined;
-}
 function joinedWorkspacePresent(identityHome) { return existsSync(join(identityHome, "workspace.yaml")); }
+function serviceForJoinedTeam(root, label, accepted, ...docs) {
+  const fromAw = [accepted, ...docs].map((d) => d && (d.service || d.service_url || d.aweb_url || d.workspace?.service || d.workspace?.service_url || d.workspace?.aweb_url)).find(Boolean);
+  if (fromAw) return fromAw;
+  const rootWorkspace = root ? join(resolve(root), ".aw", "workspace.yaml") : undefined;
+  const fromRoot = rootWorkspace && existsSync(rootWorkspace) ? yamlScalar(readFileSync(rootWorkspace, "utf8"), "aweb_url") : undefined;
+  if (fromRoot) return fromRoot;
+  throw new Error(`cannot determine the aweb service for joined team ${label} from ${root || "(unknown root)"} (no aweb_url in its .aw/workspace.yaml and aw returned none)`);
+}
 function releaseReceiptStatus(doc) {
   return doc && typeof doc === "object" && doc.alias_released === true ? "released" : undefined;
+}
+function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
+  let receipt, released;
+  const alias = entry.alias || fallbackAlias;
+  if (!alias) throw new Error(`failed to leave team ${entry.label}; no alias is known for ${entry.identityHome}`);
+  try {
+    receipt = parseAwJson(run(awWithIdentity(entry.identityHome, ["workspace", "delete", alias, "--json"]), cwd, 60000), "aw workspace delete");
+    released = releaseReceiptStatus(receipt);
+  } catch (e) {
+    throw new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
+  }
+  if (!released) throw new Error(`failed to leave team ${entry.label}; workspace delete did not report alias_released: true; kept ${entry.identityHome} so cleanup can be retried: ${JSON.stringify(receipt)}`);
+  try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+  return { released, receipt };
+}
+function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [] }) {
+  if (!token || typeof token !== "string") throw new Error(`aw id team accept-invite received no invite token for ${label}`);
+  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", token, flagEq("--name", requestedAlias), "--local", "--json"]), cwd, JOIN_TIMEOUT_MS, { secrets: [token], secretSafe: true }), "aw id team accept-invite");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`aw id team accept-invite returned no usable result for joined team ${label}`);
+  const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : requestedAlias;
+  const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : expectedTeam;
+  if (!team) throw new Error(`aw id team accept-invite returned no team_id for joined team ${label}`);
+  if (expectedTeam && team !== expectedTeam) throw new Error(`joined team ${team} differs from requested ${expectedTeam}`);
+  const joined = { label, team, identityHome, receive: "poll", since: new Date().toISOString(), alias };
+  try {
+    if (!joinedWorkspacePresent(identityHome)) {
+      const service = serviceForJoinedTeam(root, label, raw, ...serviceDocs);
+      run(awWithIdentity(identityHome, ["workspace", "connect", flagEq("--service", service), flagEq("--team", team), "--json"]), cwd, 60000, { secretSafe: true });
+    }
+    if (!joinedWorkspacePresent(identityHome)) throw new Error(`workspace connect did not write ${join(identityHome, "workspace.yaml")}`);
+  } catch (e) {
+    let cleanupNote;
+    try { cleanupJoinedIdentity(joined, requestedAlias, cwd); cleanupNote = "; the joined identity was deleted"; }
+    catch (cleanupError) { cleanupNote = `; cleanup failed: ${cleanupError.message || cleanupError}`; }
+    throw new Error(`joined team ${label} was accepted but workspace connect/verification failed: ${e.message || e}${cleanupNote}`);
+  }
+  return { raw, joined };
 }
 function readCapabilityMeta() {
   if (process.env.OATS_META) { try { return withProviderTeams(JSON.parse(process.env.OATS_META || "{}")); } catch { return withProviderTeams({}); } }
@@ -909,42 +950,15 @@ function mintJoinedTeam(row, meta) {
   if (!root) throw new Error(`${awebRootProblem(rootSettingCandidate(row.team))}, so team ${row.label} could not be joined`);
   const inv = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true }), "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
-  let raw, acceptWarning;
-  try {
-    raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", inv.token, flagEq("--name", instance || meta.alias), "--local", "--json"]), home, JOIN_TIMEOUT_MS, { secrets: [inv.token], secretSafe: true }), "aw id team accept-invite");
-  } catch (e) {
-    const output = commandOutput(e);
-    const recovery = workspaceConnectRecovery(output);
-    let accepted;
-    try { accepted = parseAwJson(e.stdout || "", "aw id team accept-invite"); } catch { accepted = undefined; }
-    if (!accepted?.team_id) throw new Error(`aw id team accept-invite failed for joined team ${row.label}${recovery ? `; recovery: ${recovery}` : ""}`);
-    raw = accepted;
-    acceptWarning = `joined team ${row.label} was accepted but workspace connect failed${recovery ? `; recovery: ${recovery}` : "; rerun the aw workspace connect recovery command printed by aw"}`;
-  }
-  const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : (instance || meta.alias);
-  const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : row.team;
-  if (team !== row.team) throw new Error(`joined team ${team} differs from requested ${row.team}`);
-  const joined = { label: row.label, team, identityHome, receive: "poll", since: new Date().toISOString(), alias };
+  const { joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias: instance || meta.alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] });
   const next = { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] };
-  if (!joinedWorkspacePresent(identityHome)) {
-    const recovery = workspaceConnectRecovery(JSON.stringify(raw)) || raw.recovery_command || raw.recoveryCommand;
-    return { meta: next, joined, changed: true, warning: acceptWarning || `joined team ${row.label} was accepted but no workspace connection was written under ${identityHome}${recovery ? `; recovery: ${recovery}` : "; rerun the aw workspace connect recovery command printed by aw"}` };
-  }
-  return { meta: next, joined, changed: true, ...(acceptWarning ? { warning: acceptWarning } : {}) };
+  return { meta: next, joined, changed: true };
 }
 function leaveJoinedTeam(label, meta) {
   const joined = joinedTeamsOf(meta);
   const entry = joined.find((j) => j.label === label);
   if (!entry) return { meta, changed: false };
-  let receipt, released;
-  try {
-    receipt = parseAwJson(run(awWithIdentity(entry.identityHome, ["workspace", "delete", entry.alias || meta.alias || instance, "--json"]), home, 60000), "aw workspace delete");
-    released = releaseReceiptStatus(receipt);
-  } catch (e) {
-    throw new Error(`failed to leave team ${label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
-  }
-  if (!released) throw new Error(`failed to leave team ${label}; workspace delete did not report alias_released: true; kept ${entry.identityHome} so cleanup can be retried: ${JSON.stringify(receipt)}`);
-  try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+  const { released, receipt } = cleanupJoinedIdentity(entry, meta.alias || instance, home);
   return { meta: { ...meta, joinedTeams: joined.filter((j) => j.label !== label) }, changed: true, released, receipt };
 }
 function awebRootForTeam(team) {
@@ -955,7 +969,18 @@ function awebRootForTeam(team) {
   if (candidate && isAbsolute(candidate.root) && existsSync(join(resolve(candidate.root), ".aw"))) return resolve(candidate.root);
   return undefined;
 }
+function stripForwardedSoul(argv = process.argv.slice(3)) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--soul") { if (i + 1 < argv.length) i++; continue; }
+    if (arg.startsWith("--soul=")) continue;
+    out.push(arg);
+  }
+  return out;
+}
 function parseHomeCommandArgs(argv = process.argv.slice(3)) {
+  argv = stripForwardedSoul(argv);
   const rest = [];
   let json = false, labels;
   for (let i = 0; i < argv.length; i++) {
@@ -1278,7 +1303,7 @@ if (event === "launch") {
   // Default: this instance's default team, listed from the root that minted
   // it. `--label <label>` lists an eligible (joined or not) workspace team from
   // the host root that holds it.
-  const argv = process.argv.slice(3);
+  const argv = stripForwardedSoul(process.argv.slice(3));
   const labelAt = argv.indexOf("--label");
   const label = labelAt >= 0 ? argv[labelAt + 1] : (argv.find((a) => a.startsWith("--label=")) || "").slice("--label=".length) || undefined;
   const meta = readCapabilityMeta();
@@ -1296,7 +1321,7 @@ if (event === "launch") {
   if (!team) { console.error(`oats aweb roster: ${teamConfigRemedy()}`); process.exit(1); }
   const teamFlag = [flagEq(team.includes(":") ? "--team-id" : "--team", team)];
   const r = JSON.parse(run(["aw", "id", "team", "members", ...teamFlag, "--json"], root, 60000));
-  if (process.argv.includes("--json")) { console.log(JSON.stringify(r, null, 2)); process.exit(0); }
+  if (argv.includes("--json")) { console.log(JSON.stringify(r, null, 2)); process.exit(0); }
   console.log(`aweb team ${r.team_id || team} — member roster (cross-machine):`);
   const members = r.members || [];
   if (!members.length) console.log("  (no member certificates visible from this workspace)");
@@ -1306,7 +1331,7 @@ if (event === "launch") {
 } else if (event === "setup") {
   // Guided onboarding — idempotent, prints what it finds and can run one
   // existing aw primitive when the operator supplies the needed authority.
-  const args = process.argv.slice(3).filter((arg) => arg !== "--json");
+  const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
   const usage = "usage: oats aweb setup [--username <hosted-user> | --create <label> [--namespace <domain>] | --join <label> --invite <token>]";
   let username, invite, createLabel, createNamespace, joinLabel;
   for (let i = 0; i < args.length; i++) {
