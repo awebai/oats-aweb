@@ -1118,7 +1118,11 @@ if (event === "launch") {
         appendProviderEvent("aweb-team-left", left);
         warnings.push(`left joined team ${row.label} because it is no longer eligible`);
       }
-      catch (e) { warnings.push(`joined team ${row.label} cleanup failed: ${e.message || e}`); }
+      catch (e) {
+        const failed = { label: row.label, team: row.team, at: new Date().toISOString(), reason: actionWarning(e.message || e) };
+        appendProviderEvent("aweb-team-leave-failed", failed);
+        warnings.push(`joined team ${row.label} cleanup failed: ${failed.reason}`);
+      }
     }
     // Re-register what remains: the runtime may differ from the last session.
     const synced = syncWakeReceive(oldMeta);

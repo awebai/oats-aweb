@@ -257,7 +257,10 @@ provider id yet: its owner runs oats aweb setup, then commits the id, or choose
 another default with oats teams default`. A shared team whose root is missing or
 not a member is an operator setup problem: ask the owner for an invite and run
 `oats aweb setup --join <label> --invite <token>`, or use `--create` if this
-host owns that team.
+host owns that team. When a joined team is removed from the live team set,
+hosted teams are left automatically; on a namespace team you control (BYOT), a
+failed leave is reported as an instance event and the team owner removes the
+member.
 
 **aw floor:** all 1.17 paths require `aw >= 1.36.13`.
 

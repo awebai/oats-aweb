@@ -37,7 +37,7 @@ if (args[0] === "team" && args[1] === "invite") { emit({ token: "TOKEN__" + flag
 if (args[0] === "team" && args[1] === "join") { const team = args[2].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = args[3].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); fs.mkdirSync(path.join(home(), "team-certs"), { recursive: true }); emit({ status: "accepted", team_id: team, alias, aweb_url: "https://service.example.test/api" }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "connect") { if (process.env.FAKE_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); } const team = flag("--team"), service = flag("--service"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: connected\\nteam_id: " + team + "\\naweb_url: " + service + "\\n"); emit({ status: "connected", team_id: team, aweb_url: service }); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "delete") { fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home: team_not_hosted"); process.exit(7); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }] }); process.exit(0); }
 if (args[0] === "wake" && ["register", "deregister"].includes(args[1])) { console.log("ok"); process.exit(0); }
 if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.13", instances: [] }); process.exit(0); }
@@ -224,4 +224,26 @@ test("teams document uses eligible non-default rows and preserves visible live l
   assert.equal(teams.left[0].reason, "no-longer-eligible");
   const events = readFileSync(join(fx.home, ".oats-events.jsonl"), "utf8");
   assert.match(events, /aweb-team-left/);
+});
+
+test("failed lost-team leave appends a durable event and keeps the team joined", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { settings: { join: "shared" } });
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  const envAfterLoss = { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(doc.meta), OATS_TEAMS: JSON.stringify([{ label: "personal", team: "default:example.test", default: true, from: "local" }]), FAKE_DELETE_FAIL_FOR: "shared" };
+  const launch = runHook("launch", { cwd: fx.home, env: envAfterLoss });
+  assert.equal(launch.status, 0, launch.stdout + launch.stderr);
+  const launched = JSON.parse(launch.stdout);
+  assert.match(launched.warning, /joined team shared cleanup failed/);
+  assert.match(launched.warning, /team_not_hosted/);
+  assert.deepEqual(launched.meta.joinedTeams.map((j) => j.label), ["shared"], "failed leave keeps the still-member team recorded as joined");
+  assert.deepEqual(launched.meta.left, [], "failed leave does not add a visible successful leave");
+  const teams = JSON.parse(runHook("teams", { cwd: fx.home, env: { ...envAfterLoss, OATS_META: JSON.stringify(launched.meta), FAKE_DELETE_FAIL_FOR: undefined }, args: ["--json"] }).stdout);
+  assert.deepEqual(teams.joined.map((j) => j.label), ["shared"]);
+  assert.deepEqual(teams.left, []);
+  const events = readFileSync(join(fx.home, ".oats-events.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+  const failed = events.find((e) => e.kind === "aweb-team-leave-failed");
+  assert.deepEqual({ label: failed.data.label, team: failed.data.team }, { label: "shared", team: "shared:example.test" });
+  assert.match(failed.data.reason, /team_not_hosted/);
+  assert.equal(events.some((e) => e.kind === "aweb-team-left"), false, "no successful leave event is appended on failure");
 });

@@ -97,7 +97,10 @@ Supported acts:
 For a committed/shared team whose provider id exists but whose root is not a
 member, setup/readiness tells the operator it is shared: ask the owner for an
 invite, then run `oats aweb setup --join <label> --invite <token>` (or use
-`--create` if this host is the owner creating it).
+`--create` if this host is the owner creating it). When a joined team is removed
+from the live team set, hosted teams are left automatically; on a namespace team
+you control (BYOT), a failed leave is reported as an instance event and the team
+owner removes the member.
 
 ### Readiness messages
 
