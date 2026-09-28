@@ -75,19 +75,22 @@ Supported acts:
   `aw init --new-account --username <u>` and reports the created default team.
 - `AWEB_API_KEY=<key> oats aweb setup`: runs `aw init` for the hosted team behind
   the API key; the key is never printed.
-- `oats aweb setup --create <label> [--namespace <domain>]`: creates a new
-  local/personal team. It normalizes `<label>` to aweb's team-name rule, runs
-  `aw id team create --name <normalized>` (plus `--namespace <domain>` for
-  BYOT), accepts the invite into a new per-team root, records
-  `roots[<team id>]`, then records the local mapping with
-  `OATS_CLI_BIN teams add <label> --team <id>`.
+- `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
+  a customer-controlled namespace. It normalizes `<label>` to aweb's team-name
+  rule, runs `aw id team create --name <normalized> --namespace <domain>`,
+  requires the returned `team_id` and invite token, accepts the invite into a
+  new per-team root, records `roots[<team id>]`, then records the local mapping
+  with `OATS_CLI_BIN teams add <label> --team <id>`. Without `--namespace`,
+  setup refuses hosted additional-team creation until the hosted-team aweb
+  release exists.
 - `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
   never accepts into the existing default root.
-- Owner-creates-shared flow: when the default is an unmapped committed/shared
-  team, the owner runs setup. Setup creates the provider team, accepts it into a
-  per-team root, records the root locally, and **prints the id to commit**; it
-  does not edit the committed team file.
+- Owner-creates-shared flow: when a committed/shared team has no provider id,
+  its owner explicitly runs `oats aweb setup --create <label> --namespace
+  <domain>`. Setup creates the provider team, accepts it into a per-team root,
+  records the root locally, and prints the id to commit. Plain `oats aweb setup`
+  does not create shared teams; it asks for the owner-provided id or invite.
 
 For a committed/shared team whose provider id exists but whose root is not a
 member, setup/readiness tells the operator it is shared: ask the owner for an

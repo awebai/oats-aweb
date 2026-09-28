@@ -38,7 +38,7 @@
  * identity joined moments before the failure must still be deletable.
  */
 import { execFileSync } from "node:child_process";
-import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -309,24 +309,49 @@ function ensureYamlBlock(lines, parentStart, parentEnd, indent, header) {
   lines.splice(parentEnd, 0, row);
   return parentEnd;
 }
+function atomicWrite(file, text) {
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = join(dirname(file), `.${basenameForTemp(file)}.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(tmp, text, { mode: 0o600 });
+  renameSync(tmp, file);
+}
+function basenameForTemp(file) { return file.split(/[\\/]/).pop() || "oats-local.yaml"; }
+function unsupportedLocalYaml(file, detail, team, rootDir) {
+  throw new Error(`${file}: cannot safely update settings.oats.aweb.roots automatically (${detail}); add this line by hand under block-style settings.oats.aweb.roots: ${yamlQuote(team)}: ${yamlQuote(rootDir)}`);
+}
+function findBlockHeader(lines, start, end, indent, names) {
+  const pad = " ".repeat(indent);
+  for (let i = start; i < end; i++) {
+    const line = lines[i];
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    if (!line.startsWith(pad) || line.startsWith(pad + " ")) continue;
+    const trimmed = line.slice(indent).trimEnd();
+    for (const name of names) if (trimmed === `${name}:`) return i;
+    for (const name of names) if (trimmed.startsWith(`${name}:`)) return { unsupported: i, line };
+  }
+  return -1;
+}
 function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
   const file = findOatsLocal(start);
-  mkdirSync(dirname(file), { recursive: true });
-  const lines = existsSync(file) ? readFileSync(file, "utf8").split(/\r?\n/) : ["schemaVersion: 2", "workspace: local"];
+  const existed = existsSync(file);
+  const lines = existed ? readFileSync(file, "utf8").split(/\r?\n/) : ["schemaVersion: 2", "workspace: local"];
   while (lines.length && lines.at(-1) === "") lines.pop();
-  let settings = lines.findIndex((l) => /^settings:\s*$/.test(l));
+  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
+  if (typeof settings === "object") unsupportedLocalYaml(file, `line ${settings.unsupported + 1} is not a block-style settings: mapping`, team, rootDir);
   if (settings < 0) { lines.push("settings:"); settings = lines.length - 1; }
   let settingsEnd = blockEnd(lines, settings, 0);
-  let aweb = ensureYamlBlock(lines, settings, settingsEnd, 2, "oats.aweb");
-  if (aweb === settingsEnd) settingsEnd++;
+  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
+  if (typeof aweb === "object") unsupportedLocalYaml(file, `line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`, team, rootDir);
+  if (aweb < 0) { aweb = ensureYamlBlock(lines, settings, settingsEnd, 2, "oats.aweb"); settingsEnd++; }
   let awebEnd = blockEnd(lines, aweb, 2);
-  let roots = ensureYamlBlock(lines, aweb, awebEnd, 4, "roots");
-  if (roots === awebEnd) awebEnd++;
-  let rootsEnd = blockEnd(lines, roots, 4);
+  let roots = findBlockHeader(lines, aweb + 1, awebEnd, 4, ["roots"]);
+  if (typeof roots === "object") unsupportedLocalYaml(file, `line ${roots.unsupported + 1} is not a block-style roots: mapping`, team, rootDir);
+  if (roots < 0) { roots = ensureYamlBlock(lines, aweb, awebEnd, 4, "roots"); awebEnd++; }
+  const rootsEnd = blockEnd(lines, roots, 4);
   const key = yamlQuote(team), value = yamlQuote(rootDir), row = `      ${key}: ${value}`;
   const existing = lines.findIndex((l, i) => i > roots && i < rootsEnd && l.trimStart().startsWith(`${key}:`));
   if (existing >= 0) lines[existing] = row; else lines.splice(rootsEnd, 0, row);
-  writeFileSync(file, `${lines.join("\n")}\n`);
+  atomicWrite(file, `${lines.join("\n")}\n`);
 }
 function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label)); }
 
@@ -809,7 +834,6 @@ function eligibleTeams() { return parseOatsTeams().filter((t) => !t.default && t
 function labelsCsv(text) { return String(text || "").split(",").map((s) => s.trim()).filter(Boolean); }
 function primaryTeamLabel() { return defaultTeamLabel() || null; }
 function requestedJoinLabels() { return labelsCsv(settings.join); }
-function unmappedPrimaryRow() { return undefined; }
 function validateJoinLabels(labels, { action = "join" } = {}) {
   const eligible = eligibleTeams();
   const byLabel = new Map(eligible.map((t) => [t.label, t]));
@@ -948,9 +972,11 @@ function parseHomeCommandArgs(argv = process.argv.slice(3)) {
 }
 function outputTeamsDocument(doc, json) {
   if (json) { console.log(JSON.stringify(doc)); return; }
-  console.log(`default team: ${doc.defaultTeam.team || "unknown"}`);
+  console.log(`default team: ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.team || "unmapped"})` : "none"}`);
   for (const row of doc.eligible) console.log(`${row.joined ? "joined" : "eligible"}: ${row.label} (${row.team})`);
-  for (const label of doc.unmapped) console.log(`unmapped: ${label}`);
+  for (const row of doc.joined || []) if (!(doc.eligible || []).some((e) => e.label === row.label)) console.log(`joined: ${row.label} (${row.team})`);
+  for (const row of doc.left || []) console.log(`left: ${row.label} (${row.team}) ${row.reason}`);
+  for (const warning of doc.warnings || []) console.log(`warning: ${warning}`);
 }
 const actionWarning = (warning) => String(warning || "").slice(0, 300);
 function runTeamsCommand(kind) {
@@ -1325,35 +1351,43 @@ if (event === "launch") {
   const rootAlias = () => {
     try { const who = JSON.parse(run(["aw", "whoami", "--json"], scope)); return who.alias || who.name || "root"; } catch { return "root"; }
   };
-  const candidateTeamId = (name) => `${name}:${createNamespace || "aweb.ai"}`;
+  const HOSTED_CREATE_FLOOR = "aweb-abkh";
+  const hostedCreateUnavailable = () => `creating an additional hosted team needs aw >= ${HOSTED_CREATE_FLOOR} and aweb Cloud >= ${HOSTED_CREATE_FLOOR}; upgrade aw`;
+  const candidateTeamId = (name) => `${name}:${createNamespace}`;
   const serviceFrom = (...docs) => docs.map((d) => d && (d.service || d.service_url || d.aweb_url || d.workspace?.service || d.workspace?.aweb_url)).find(Boolean) || "https://app.aweb.ai/api";
+  const teamExistsError = (e) => e?.status === 409 || /\b409\b|\bconflict\b|\balready exists\b|\bexists\b/i.test(commandOutput(e));
   const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
+    if (!token || typeof token !== "string") throw new Error(`aw id team create returned no invite token for ${label}`);
     const teamRoot = perTeamRoot(process.env.OATS_WORKSPACE || scope, label);
     const idHome = join(teamRoot, ".aw");
     if (existsSync(join(idHome, "identity.yaml"))) throw new Error(`team root ${teamRoot} already holds an aweb identity; choose a different label or remove the stale root deliberately`);
     mkdirSync(teamRoot, { recursive: true });
     const accepted = parseSecretJson(run(["aw", "--identity-home", idHome, "id", "team", "accept-invite", token, flagEq("--name", rootAlias()), "--local", "--json"], teamRoot, 120000, { secrets: [token], secretSafe: true }), "aw id team accept-invite");
-    const team = accepted.team_id || accepted.team || expectedTeam;
+    if (!accepted?.team_id || typeof accepted.team_id !== "string") throw new Error("aw id team accept-invite returned no team_id");
+    const team = accepted.team_id;
+    if (expectedTeam && team !== expectedTeam) throw new Error(`aw id team accept-invite returned team_id ${team}, expected ${expectedTeam}`);
     try { run(["aw", "--identity-home", idHome, "workspace", "connect", flagEq("--service", serviceFrom(accepted, ...serviceDocs)), flagEq("--team", team), "--json"], teamRoot, 60000, { secretSafe: true }); } catch { /* accept-invite may already have connected; readiness will diagnose if not */ }
     recordAwebRootSetting(team, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
     return { team, teamRoot };
   };
   const createTeam = (label) => {
+    if (!createNamespace) throw new Error(hostedCreateUnavailable());
     const base = normalizeAwebTeamName(label);
     for (let n = 1; n <= 20; n++) {
       const name = n === 1 ? base : `${base}-${n}`;
       const expectedTeam = candidateTeamId(name);
-      const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), "--json"];
-      if (createNamespace) createArgs.splice(createArgs.length - 1, 0, flagEq("--namespace", createNamespace));
+      const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
       try {
-        const created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true }), "aw id team create");
-        const team = created.team_id || created.team || created.id || expectedTeam;
+        const created = parseSecretJson(run(createArgs, scope, 120000), "aw id team create");
+        if (!created?.team_id || typeof created.team_id !== "string") throw new Error("aw id team create returned no team_id");
+        const team = created.team_id;
         const token = created.invite_token || created.invite || created.token;
-        if (token) return acceptIntoTeamRoot(label, token, team, created);
-        return { team, teamRoot: perTeamRoot(process.env.OATS_WORKSPACE || scope, label) };
+        if (!token || typeof token !== "string") throw new Error("aw id team create returned no invite token");
+        return acceptIntoTeamRoot(label, token, team, created);
       } catch (e) {
+        if (!teamExistsError(e)) throw e;
         const teams = readTeams();
-        if (teamIdsOf(teams).some((tid) => String(tid) === expectedTeam)) return { team: expectedTeam, teamRoot: perTeamRoot(process.env.OATS_WORKSPACE || scope, label) };
+        if (teamIdsOf(teams).some((tid) => String(tid) === expectedTeam)) { recordAwebRootSetting(expectedTeam, scope, { start: process.env.OATS_WORKSPACE || scope }); return { team: expectedTeam, teamRoot: scope, reused: true }; }
         if (n === 20) throw new Error(`could not create a unique aweb team for ${JSON.stringify(label)} after suffixing through -20`);
       }
     }
@@ -1391,8 +1425,12 @@ if (event === "launch") {
 
   try {
     const hasRoot = existsSync(join(scope, ".aw"));
-    const committedUnmappedDefault = !actions.length && defaultTeamLabel() && !defaultTeamId() && process.env.OATS_DEFAULT_TEAM_FROM === "soul";
-    if (!hasRoot && !actions.length && !committedUnmappedDefault) {
+    const unmappedDefault = !actions.length && defaultTeamLabel() && !defaultTeamId();
+    if (unmappedDefault) {
+      console.log(`team ${defaultTeamLabel()} has no provider id yet: ask its owner to run \`oats aweb setup --create ${defaultTeamLabel()} --namespace <domain>\` and commit the id, or ask the owner for an invite and run \`oats aweb setup --join ${defaultTeamLabel()} --invite <token>\`.`);
+      process.exit(1);
+    }
+    if (!hasRoot && !actions.length) {
       console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
       if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
       console.log("  Choose one guided setup path:");
@@ -1404,18 +1442,14 @@ if (event === "launch") {
       process.exit(0);
     }
     let teams = hasRoot ? readTeams() : { memberships: [] };
-    if (createLabel || committedUnmappedDefault) {
+    if (createLabel) {
       mkdirSync(scope, { recursive: true });
-      const label = createLabel || defaultTeamLabel();
+      const label = createLabel;
       console.log(`Creating aweb team ${label}${createNamespace ? ` in namespace ${createNamespace}` : ""} for a new per-team root.`);
       const created = createTeam(label);
       teams = readTeams();
-      if (createLabel) {
-        recordLocalTeam(label, created.team);
-        console.log(`✓ created ${created.team}, accepted it into ${created.teamRoot}, recorded roots[${created.team}], and recorded local team ${label} with \`oats teams add ${label} --team ${created.team}\`.`);
-      } else {
-        console.log(`✓ created ${created.team} for shared team ${label} and accepted it into ${created.teamRoot}. Commit this provider id to the shared team definition; setup did not write the committed file.`);
-      }
+      recordLocalTeam(label, created.team);
+      console.log(`✓ created ${created.team}, ${created.reused ? `reused existing member root ${created.teamRoot}` : `accepted it into ${created.teamRoot}`}, recorded roots[${created.team}], and recorded local team ${label} with \`oats teams add ${label} --team ${created.team}\`.`);
       printVerdict(teams);
       process.exit(0);
     }

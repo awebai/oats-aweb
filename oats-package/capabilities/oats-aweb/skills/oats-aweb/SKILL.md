@@ -233,14 +233,18 @@ team `T` uses `roots[T]`, else `root`.
   a missing hosted root.
 - `AWEB_API_KEY=<key> oats aweb setup` → `aw init` for the hosted team behind
   the API key.
-- `oats aweb setup --create <label> [--namespace <domain>]` → normalize the
-  label, create the team, accept into a per-team root, record `roots[team]`, and
-  record the local mapping via `oats teams add <label> --team <id>`.
+- `oats aweb setup --create <label> --namespace <domain>` → owner/admin act for
+  a customer-controlled namespace: normalize the label, create the team, require
+  aw to return `team_id` and an invite token, accept into a per-team root, record
+  `roots[team]`, and record the local mapping via `oats teams add <label> --team
+  <id>`. Without `--namespace`, setup refuses hosted additional-team creation
+  until the hosted-team aweb release exists.
 - `oats aweb setup --join <label> --invite <token>` → accept an existing/shared
   team's invite into a per-team root and record `roots[team]`.
-- For an unmapped committed/shared default, the owner runs setup; it creates the
-  provider team, accepts into a per-team root, records that local root, prints
-  the provider id to commit, and does not edit the committed team file.
+- For an unmapped committed/shared default, plain setup creates nothing; it asks
+  for the owner-provided provider id or invite. The owner explicitly runs
+  `oats aweb setup --create <label> --namespace <domain>`, then commits the
+  printed provider id; setup never edits the committed team file.
 
 **Readiness messages:** no default is exactly `no teams configured: run \`oats
 aweb setup\``. An unmapped default is exactly `the default team <label> has no
@@ -262,11 +266,13 @@ host owns that team.
 - Don't hand-edit `.aw`, `.aweb-identity-*` or `.oats-aweb/teams.json`; report mismatches.
 - `oats aweb setup` is the operator's onboarding tool; if messaging is broken,
   report its output to your human instead of re-onboarding yourself.
-- `oats aweb setup --create <label>` creates a new local team, accepts it into
-  a new per-team root under `.aweb-roots/`, records `settings.oats.aweb.roots`
-  in `oats-local.yaml`, and records it with `oats teams add <label> --team <id>`
-  through the selected OATS CLI. `oats aweb setup --join <label> --invite <token>`
-  uses the same separate-root path for an existing/shared team; never accept a
-  second local team into the existing root. For an unmapped committed/shared
-  default, setup prints the created provider id for the owner to commit; it does
-  not edit the shared file.
+- `oats aweb setup --create <label> --namespace <domain>` creates a new local
+  BYOT team, accepts it into a new per-team root under `.aweb-roots/`, records
+  `settings.oats.aweb.roots` in `oats-local.yaml`, and records it with `oats
+  teams add <label> --team <id>` through the selected OATS CLI. Hosted
+  additional-team creation without `--namespace` is refused until the
+  hosted-team aweb release exists. `oats aweb setup --join <label> --invite
+  <token>` uses the same separate-root path for an existing/shared team; never
+  accept a second local team into the existing root. For an unmapped
+  committed/shared default, plain setup creates nothing and asks for the owner's
+  id or invite; it does not edit the shared file.
