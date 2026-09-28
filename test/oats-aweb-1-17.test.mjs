@@ -151,6 +151,25 @@ test("team setting is refused from host, soul and spawn settings", (t) => {
   const spawned = spawnSync(process.execPath, [HOOK, "spawn"], { cwd: fx.home, env: { ...process.env, ...fx.env, PATH: fake.path, OATS_EVENT: "spawn", OATS_SETTINGS: JSON.stringify({ team: "spawn:example.test" }) }, encoding: "utf8", timeout: 20000 });
   assert.notEqual(spawned.status, 0);
   assert.match(JSON.parse(spawned.stdout).warning, new RegExp(TEAM_SETTING_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const launched = spawnSync(process.execPath, [HOOK, "launch"], { cwd: fx.home, env: { ...process.env, ...fx.env, PATH: fake.path, OATS_EVENT: "launch", OATS_SETTINGS: JSON.stringify({ team: "launch:example.test" }) }, encoding: "utf8", timeout: 20000 });
+  assert.notEqual(launched.status, 0);
+  assert.match(JSON.parse(launched.stdout).warning, new RegExp(TEAM_SETTING_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("retire ignores stale current team and invalid current identity mode", (t) => {
+  for (const [name, settings] of [["stale-team", { team: "old:example.test" }], ["invalid-mode", { identity: { mode: "bogus" } }]]) {
+    const fake = fakeAw117(t);
+    const fx = fixture(t, { settings });
+    mkdirSync(join(fx.home, ".aw"), { recursive: true });
+    write(join(fx.home, ".aw", "identity.yaml"), "alias: dev-1\n");
+    const meta = { alias: "dev-1", team: "default:example.test", identity: { mode: "local", alias: "dev-1", team: "default:example.test" } };
+    const retired = runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify(settings), OATS_META: JSON.stringify(meta) } });
+    assert.equal(retired.status, 0, `${name}: ${retired.stdout}${retired.stderr}`);
+    const doc = JSON.parse(retired.stdout);
+    assert.equal(doc.meta.retired, true, name);
+    assert.equal(fake.calls().some((c) => c.args.join(" ") === "workspace delete dev-1 --json" && c.cwd === fx.home), true, name);
+    if (name === "stale-team") assert.match(doc.warning, new RegExp(TEAM_SETTING_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
 });
 
 test("valid team id is passed inert as one --team-id=value token", (t) => {
