@@ -58,18 +58,19 @@ if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2
 fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome }) + "\\n");
 const emit = (o) => console.log(JSON.stringify(o));
 const teamFromToken = (token) => token.replace(/^TOKEN__/, "");
+const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 const homeForWrite = () => identityHome || path.join(process.cwd(), ".aw");
 const refuseIdentityHome = () => { console.error('command "aw team join" is not yet identity-home-aware; refusing to use an external identity home so principal state cannot fall back to the instance directory. Supported alternatives for this attached principal: aw id team accept-invite'); process.exit(2); };
 if (args[0] === "version") { console.log("aw " + ${JSON.stringify(FAKE_AW_VERSION)} + " 5a285ceb"); process.exit(0); }
 if (args[0] === "wake" && args[1] === "status" && args.includes("--json")) { emit(${JSON.stringify(wakeStatus)}); process.exit(0); }
 if (args[0] === "wake") { console.log("ok"); process.exit(0); }
 if (args[0] === "team" && args[1] === "list" && args.includes("--json")) { emit({ active_team: "default:example.test", memberships: [{ team_id: "default:example.test" }, { team_id: "alpha:example.test" }, { team_id: "beta:example.test" }] }); process.exit(0); }
-if (args[0] === "team" && args[1] === "invite") { const team = args[args.indexOf("--team-id") + 1]; emit({ token: "TOKEN__" + team }); process.exit(0); }
+if (args[0] === "team" && args[1] === "invite") { const team = flag("--team-id"); emit({ token: "TOKEN__" + team }); process.exit(0); }
 if (args[0] === "team" && args[1] === "join" && identityHome) refuseIdentityHome();
-if (args[0] === "team" && args[1] === "join") { const team = teamFromToken(args[2]); const alias = args[args.indexOf("--name") + 1] || "probe"; const dest = homeForWrite(); fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
-if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = teamFromToken(args[3]); const alias = args[args.indexOf("--name") + 1] || "probe"; const dest = homeForWrite(); fs.mkdirSync(path.join(dest, "team-certs"), { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\naweb_url: https://app.aweb.ai/api\\n"); emit({ status: "accepted", team_id: team, alias, cert: path.join(dest, "team-certs", team + ".yaml") }); process.exit(0); }
+if (args[0] === "team" && args[1] === "join") { const team = teamFromToken(args[2]); const alias = flag("--name") || "probe"; const dest = homeForWrite(); fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
+if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = teamFromToken(args[3]); const alias = flag("--name") || "probe"; const dest = homeForWrite(); fs.mkdirSync(path.join(dest, "team-certs"), { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\naweb_url: https://app.aweb.ai/api\\n"); emit({ status: "accepted", team_id: team, alias, cert: path.join(dest, "team-certs", team + ".yaml") }); process.exit(0); }
 if (args[0] === "init") { console.log("initialized"); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "connect") { const dest = homeForWrite(); fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: probe\\nteam_id: alpha:example.test\\naweb_url: " + (args[args.indexOf("--service") + 1] || "https://app.aweb.ai/api") + "\\n"); emit({ status: "connected", team_id: "alpha:example.test", alias: "probe" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "connect") { const dest = homeForWrite(); fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: probe\\nteam_id: alpha:example.test\\naweb_url: " + (flag("--service") || "https://app.aweb.ai/api") + "\\n"); emit({ status: "connected", team_id: "alpha:example.test", alias: "probe" }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAIL_WORKSPACE_DELETE) { console.error("delete failed"); process.exit(7); } if (process.env.PERMISSION_MEMBER_WORKSPACE_DELETE) { console.error("permission denied: identity is not a member of that team"); process.exit(8); } if (process.env.MALFORMED_WORKSPACE_DELETE) { console.log("not json"); process.exit(0); } if (process.env.IDENTITY_DELETED_ONLY_WORKSPACE_DELETE) { emit({ alias: args[2], alias_released: false, alias_released_reason: "already-released", identity_deleted: true }); process.exit(0); } fs.rmSync(homeForWrite(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released", identity_deleted: true }); process.exit(0); }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 `, 0o755);
@@ -81,9 +82,9 @@ function bindingRequest(settings, context) {
 }
 
 const teamsEnv = JSON.stringify([
-  { label: "alpha", team: "alpha:example.test", mapped: true, payload: { team: "alpha:example.test" } },
-  { label: "beta", team: "beta:example.test", mapped: true, payload: { team: "beta:example.test" } },
-  { label: "ghost", team: null, mapped: false, payload: {} },
+  { label: "default", team: "default:example.test", default: true, from: "local" },
+  { label: "alpha", team: "alpha:example.test", default: false, from: "shared" },
+  { label: "beta", team: "beta:example.test", default: false, from: "shared" },
 ]);
 
 test("1.14 refuses classic OATS environments consistently", (t) => {
@@ -108,16 +109,17 @@ test("1.14 refuses classic OATS environments consistently", (t) => {
   assert.deepEqual(fake.readCalls(), [], "classic refusal happens before aw is invoked");
 });
 
-test("manifest declares 1.14 floor, team setting, commands and home operations", () => {
+test("manifest declares 1.17 floor, no provider team setting, commands and home operations", () => {
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.16.1");
-  assert.equal(dist.version, "1.16.1");
-  assert.equal(manifest.version, "1.16.1");
-  assert.equal(dist.compatibility.oats, ">=0.26.0");
-  assert.equal(manifest.compatibility.oats, ">=0.26.0");
+  assert.equal(pkg.version, "1.17.0");
+  assert.equal(dist.version, "1.17.0");
+  assert.equal(manifest.version, "1.17.0");
+  assert.equal(manifest.settings.team, undefined);
+  assert.equal(dist.compatibility.oats, ">=0.30.0");
+  assert.equal(manifest.compatibility.oats, ">=0.30.0");
   assert.ok(manifest.settings.join.description.includes("comma-separated eligible team labels"));
   assert.equal(manifest.commands.teams, "bin/oats-aweb.mjs teams");
   assert.equal(manifest.commands.join, "bin/oats-aweb.mjs join");
@@ -153,8 +155,9 @@ test("mapped primary label in OATS_TEAMS is eligible while no settings team mint
   mkdirSync(home);
   const fake = fakeAw114(t);
   const primaryTeams = JSON.stringify([
-    { label: "alpha", team: "alpha:example.test", mapped: true, payload: { team: "alpha:example.test" } },
-    { label: "beta", team: "beta:example.test", mapped: true, payload: { team: "beta:example.test" } },
+    { label: "default", team: "default:example.test", default: true, from: "local" },
+    { label: "alpha", team: "alpha:example.test", default: false, from: "shared" },
+    { label: "beta", team: "beta:example.test", default: false, from: "shared" },
   ]);
   const env = {
     PATH: fake.path,
@@ -163,6 +166,7 @@ test("mapped primary label in OATS_TEAMS is eligible while no settings team mint
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAM_ID: "alpha:example.test",
     OATS_TEAM_LABEL: "alpha",
     OATS_TEAM_LABELS: "alpha,beta",
@@ -176,7 +180,7 @@ test("mapped primary label in OATS_TEAMS is eligible while no settings team mint
   assert.equal(doc.meta.team, "default:example.test", "OATS_TEAM_ID names the primary label team, not the primary mint target");
   assert.equal((doc.meta.joinedTeams || []).length, 0);
   const inviteCalls = fake.readCalls().filter((c) => c.args[0] === "team" && c.args[1] === "invite");
-  assert.equal(inviteCalls[0].args[inviteCalls[0].args.indexOf("--team-id") + 1], "default:example.test");
+  assert.equal(inviteCalls[0].args.find((a) => a.startsWith("--team-id="))?.slice("--team-id=".length) ?? inviteCalls[0].args[inviteCalls[0].args.indexOf("--team-id") + 1], "default:example.test");
 
   const listed = runHook("teams", { cwd: home, env: { ...env, OATS_EVENT: "teams", OATS_META: JSON.stringify(doc.meta) }, args: ["--json"] });
   assert.equal(listed.status, 0, listed.stderr);
@@ -201,11 +205,12 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAM_ID: "default:example.test",
     OATS_TEAM_LABELS: "alpha,beta,ghost",
     OATS_TEAMS_SOURCE: "live",
     OATS_TEAMS: teamsEnv,
-    OATS_SETTINGS: JSON.stringify({ root, team: "default:example.test", join: "alpha" }),
+    OATS_SETTINGS: JSON.stringify({ root, join: "alpha" }),
   };
   const spawned = runHook("spawn", { cwd: home, env });
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
@@ -223,7 +228,7 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
   const listed = runHook("teams", { cwd: home, env: { ...env, OATS_EVENT: "teams", OATS_META: JSON.stringify(spawnDoc.meta) }, args: ["--json"] });
   assert.equal(listed.status, 0, listed.stderr);
   const teams = JSON.parse(listed.stdout);
-  assert.deepEqual(teams.unmapped, ["ghost"]);
+  assert.equal(teams.unmapped, undefined);
   assert.equal(teams.eligible.find((e) => e.label === "alpha").joined, true);
   assert.equal(teams.eligible.find((e) => e.label === "beta").joined, false);
   assert.equal(teams.joined[0].receive, "poll");
@@ -282,8 +287,9 @@ test("mapped primary joined team can be joined and left", (t) => {
   mkdirSync(home);
   const fake = fakeAw114(t);
   const primaryTeams = JSON.stringify([
-    { label: "alpha", team: "alpha:example.test", mapped: true, payload: { team: "alpha:example.test" } },
-    { label: "beta", team: "beta:example.test", mapped: true, payload: { team: "beta:example.test" } },
+    { label: "default", team: "default:example.test", default: true, from: "local" },
+    { label: "alpha", team: "alpha:example.test", default: false, from: "shared" },
+    { label: "beta", team: "beta:example.test", default: false, from: "shared" },
   ]);
   const env = {
     PATH: fake.path,
@@ -292,6 +298,7 @@ test("mapped primary joined team can be joined and left", (t) => {
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAM_ID: "alpha:example.test",
     OATS_TEAM_LABEL: "alpha",
     OATS_TEAM_LABELS: "alpha,beta",
@@ -353,13 +360,13 @@ test("retained seat retire leaves joined team identities before releasing the re
   assert.ok(fake.readCalls().some((c) => c.identityHome === join(home, ".aweb-identity-alpha") && c.args[0] === "workspace" && c.args[1] === "delete"));
 });
 
-test("unmapped primary label falls back to default root team with readiness warning", (t) => {
+test("kernel default label mints without team-unmapped fallback", (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"), { recursive: true });
   writeFileSync(join(root, ".aw", "teams.yaml"), "active_team: default:example.test\n");
   mkdirSync(home);
   const fake = fakeAw114(t);
-  const unmappedTeams = JSON.stringify([{ label: "ghost", team: null, mapped: false, payload: {} }]);
+  const unmappedTeams = JSON.stringify([{ label: "default", team: "default:example.test", default: true, from: "local" }]);
   const env = {
     PATH: fake.path,
     OATS_EVENT: "spawn",
@@ -367,6 +374,9 @@ test("unmapped primary label falls back to default root team with readiness warn
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_DEFAULT_TEAM: "default",
+    OATS_DEFAULT_TEAM_ID: "default:example.test",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAM_LABEL: "ghost",
     OATS_TEAM_LABELS: "ghost",
     OATS_TEAMS_SOURCE: "live",
@@ -377,13 +387,13 @@ test("unmapped primary label falls back to default root team with readiness warn
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
   const doc = JSON.parse(spawned.stdout);
   assert.equal(doc.meta.team, "default:example.test");
-  assert.match(doc.warning, /team-unmapped.*ghost.*default:example\.test/);
+  assert.equal(doc.warning, undefined);
 
   const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), env, home);
   const result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "ready");
   assert.deepEqual(Object.keys(result).sort(), ["problems", "status", "warnings"], "binding check answers must not carry provider-only teams data");
-  assert.match(result.warnings.find((w) => w.code === "team-unmapped").message, /ghost.*default:example\.test/);
+  assert.equal(result.warnings.some((w) => w.code === "team-unmapped"), false);
 });
 
 test("binding check omits teams data while preserving joined-team readiness warnings", (t) => {
@@ -392,10 +402,13 @@ test("binding check omits teams data while preserving joined-team readiness warn
   mkdirSync(join(home, ".oats-aweb"), { recursive: true });
   writeFileSync(join(home, ".oats-aweb", "teams.json"), JSON.stringify({ joinedTeams: [{ label: "alpha", team: "alpha:example.test", identityHome: join(home, ".aweb-identity-alpha"), receive: "poll", since: "2026-09-25T00:00:00Z" }] }));
   const fake = fakeAw114(t);
-  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root, team: "default:example.test" }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), {
+  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), {
     PATH: fake.path,
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_DEFAULT_TEAM: "default",
+    OATS_DEFAULT_TEAM_ID: "default:example.test",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAM_LABELS: "alpha,beta,ghost",
     OATS_TEAMS_SOURCE: "live",
     OATS_TEAMS: teamsEnv,
@@ -411,7 +424,7 @@ test("leaving the default team is refused as E_TEAM_DEFAULT", (t) => {
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home);
   const fake = fakeAw114(t);
-  const left = runHook("leave", { cwd: home, env: { PATH: fake.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_TEAM_LABEL: "default", OATS_TEAM_LABELS: "default", OATS_EVENT: "leave", OATS_HOME: home, OATS_SETTINGS: JSON.stringify({ root, team: "default:example.test" }) }, args: ["--labels", "default", "--json"] });
+  const left = runHook("leave", { cwd: home, env: { PATH: fake.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAM_LABEL: "default", OATS_TEAM_LABELS: "default", OATS_EVENT: "leave", OATS_HOME: home, OATS_SETTINGS: JSON.stringify({ root }) }, args: ["--labels", "default", "--json"] });
   assert.notEqual(left.status, 0);
   assert.match(left.stderr, /E_TEAM_DEFAULT/);
 });
@@ -427,6 +440,7 @@ test("real aw 1.36 identity-home policy admits provider subcommands and pins cur
   const root = realTempDir(t);
   const identityHome = join(root, ".aweb-identity-x");
   const otherIdentityHome = join(root, ".aweb-identity-y");
+  const wakeState = join(root, "wake-state");
   const home = join(root, "home");
   mkdirSync(identityHome, { recursive: true });
   mkdirSync(otherIdentityHome, { recursive: true });
@@ -451,11 +465,12 @@ test("real aw 1.36 identity-home policy admits provider subcommands and pins cur
     { name: "mail-reply", args: ["mail", "reply", "no-such-message", "--body", "probe", "--json"], expect: /mail|message|identity|initialized|workspace/i },
     { name: "chat-pending", args: ["chat", "pending", "--json"], expect: /chat|identity|initialized|workspace/i },
     { name: "chat-send", args: ["chat", "send", "--session-id", "no-such-session", "--body", "probe", "--json"], expect: /chat|session|identity|initialized|workspace/i },
-    { name: "wake-register", args: ["wake", "register", "--home", home, "--identity-home", otherIdentityHome, "--delivery", "bogus", "--json"], expect: /wake|home|identity|delivery|registration/i },
-    { name: "wake-deregister", args: ["wake", "deregister", "--home", "relative-home", "--json"], expect: /wake|home|absolute|registration|deregister/i },
+    { name: "wake-register", args: ["wake", "register", "--state-dir", wakeState, "--home", home, "--identity-home", otherIdentityHome, "--delivery", "bogus", "--json"], expect: /wake|home|identity|delivery|registration/i },
+    { name: "wake-deregister", args: ["wake", "deregister", "--state-dir", wakeState, "--home", "relative-home", "--json"], expect: /wake|home|absolute|registration|deregister/i },
   ];
 
   for (const row of cases) {
+    if (row.name.startsWith("wake-")) assert.ok(row.args.includes("--state-dir") && row.args.includes(wakeState), `${row.name} must isolate aw wake state`);
     const result = spawnSync("aw", ["--identity-home", identityHome, ...row.args], { cwd: home, encoding: "utf8", timeout: 10000 });
     const output = `${result.stdout}${result.stderr}`;
     assert.doesNotMatch(output, new RegExp(IDENTITY_HOME_POLICY), `${row.name} hit the identity-home policy refusal: ${output}`);
@@ -473,9 +488,12 @@ test("published aw >= 1.36.6 exposes wake status version state", (t) => {
     return;
   }
   t.diagnostic(`aw version fixture: ${versionText.trim()}`);
-  const status = spawnSync("aw", ["wake", "status", "--json"], { encoding: "utf8", timeout: 10000 });
+  const state = join(realTempDir(t), "wake-state");
+  const status = spawnSync("aw", ["wake", "status", "--state-dir", state, "--json"], { encoding: "utf8", timeout: 10000 });
   assert.equal(status.status, 0, status.stderr || status.stdout);
   const doc = JSON.parse(status.stdout);
+  assert.equal(doc.state_dir, state, "real-aw wake tests must use a temp state dir, never the host broker state");
+  assert.ok(existsSync(join(state, "instances.d")), "aw wake status initialized the isolated temp state dir");
   assert.ok(["reported", "unknown", "not_running"].includes(doc.daemon_version_state), status.stdout);
   if (doc.daemon_version_state === "reported") assert.equal(typeof doc.daemon_version, "string");
 });
@@ -485,22 +503,22 @@ test("wake daemon readiness reports outdated, unknown and not-running states", (
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home);
   const context = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
-  const settings = { delivery: "session", root, team: "default:example.test" };
+  const settings = { delivery: "session", root };
 
   const outdatedAw = fakeAw114(t, { wakeStatus: { daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.4" } });
-  let checked = runBindingCheck(bindingRequest(settings, context), { PATH: outdatedAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" }, home);
+  let checked = runBindingCheck(bindingRequest(settings, context), { PATH: outdatedAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);
   let result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "needs-configuration");
   assert.match(result.problems.find((p) => p.code === "wake-daemon-outdated").message, /running 1\.36\.4.*required 1\.36\.13.*upgrade aw, then restart the host wake daemon/);
 
   const unknownAw = fakeAw114(t, { wakeStatus: { daemon_running: true, daemon_version_state: "unknown" } });
-  checked = runBindingCheck(bindingRequest(settings, context), { PATH: unknownAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" }, home);
+  checked = runBindingCheck(bindingRequest(settings, context), { PATH: unknownAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);
   result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "ready");
   assert.match(result.warnings.find((w) => w.code === "wake-daemon-version-unknown").message, /compatibility unproven.*upgrade aw, then restart the host wake daemon/);
 
   const downAw = fakeAw114(t, { wakeStatus: { daemon_running: false, daemon_version_state: "not_running" } });
-  checked = runBindingCheck(bindingRequest(settings, context), { PATH: downAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" }, home);
+  checked = runBindingCheck(bindingRequest(settings, context), { PATH: downAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);
   result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "needs-configuration");
   assert.ok(result.problems.some((p) => p.code === "wake-daemon-not-running"));

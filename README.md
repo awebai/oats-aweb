@@ -5,54 +5,104 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.16.1 — onboarding and one aw floor
+## 1.17.0 — team model v2 provider
 
-Requires OATS >=0.26.0 and aw >= 1.36.13. Setup creates hosted accounts on aw 1.36.13 with `aw init --new-account --username <u>`, and the package has one aw floor with older compatibility branches removed.
+Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
+team model v2 (kernel 0.30): the kernel supplies the default team and eligible
+teams, and oats.aweb never reads a provider `team` setting or the root's active
+team as a fallback.
 
-## 1.16.0 — the workspace's default team
+### Changed (breaking)
 
-Requires OATS >=0.26.0 and aw >= 1.36.13. No aweb service
-change and no host enrollment call is needed.
+- Removed `settings.oats.aweb.team` and legacy `OATS_TEAM_ID` /
+  `OATS_TEAM_LABEL(S)` semantics.
+- The default comes from `OATS_DEFAULT_TEAM` (label), `OATS_DEFAULT_TEAM_ID`
+  (provider id) and `OATS_DEFAULT_TEAM_FROM` (`deployment` or `soul`).
+- `OATS_TEAMS` rows are exactly `{ label, team, default, from }`; eligible join
+  targets are rows with `default: false`.
+- The teams JSON field `defaultTeam` is `{ label, team, from } | null`; `oats aweb teams --json` emits it with
+  `eligible`, `joined`, `left`, and `at`. `left[]` records visible live-read
+  leaves (`reason: "no-longer-eligible"`, last 20).
+- No default configured refuses readiness/spawn with
+  `no teams configured: run \`oats aweb setup\``. An unmapped default has label
+  + from but no id and refuses with
+  `the default team <label> has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default`.
 
-### Changed (breaking wire names)
+Wider teams are still joined explicitly with `settings.oats.aweb.join` at spawn
+or `oats aweb join` while live.
 
-- `personal` is now **default team** in agent-facing prose and diagnostics.
-- `E_TEAM_PERSONAL` is now `E_TEAM_DEFAULT`.
-- The teams JSON field is `defaultTeam`: `{ defaultTeam: { team, source }, primary, eligible, joined, unmapped, at }`. `defaultTeam.source` is always present: `setting` when `settings.oats.aweb.team` named the team, otherwise `root` for the aweb root's active team.
-- The wake broker's primary receive label is `default`.
-- `roots.personal` is removed; `settings.oats.aweb.roots` stays a host-only map keyed by team id only.
+### Provider settings
 
-The default team resolves exactly as before: `settings.oats.aweb.team`, else the
-aweb root's active team. Wider workspace teams are still joined explicitly with
-`oats aweb join` and have their own identity homes.
+Host-owned settings live under `settings.oats.aweb` (normally in
+`oats-local.yaml`). The provider settings are:
 
-### Live receive for joined teams
+- `delivery`: `channel` (default) or `session`. `channel` lets Pi/Claude aweb
+  channel packages wake the session. `session` sets `AWEB_DELIVERY=session` and
+  uses the host wake broker instead.
+- `root`: absolute directory whose `.aw` is the default team's minting root.
+  This root is for one aweb team only.
+- `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over
+  `root` and is required when a deployment mints into more than one aweb team.
+  Each mapped directory owns its own `.aw` identity for exactly that team.
+- `residents`: map of resident name to absolute custody directory for
+  `identity.mode: global`; host-only because it points at custody material.
+- `join`: comma-separated eligible labels to join at spawn.
+- `identity`: local by default; `global` uses a named resident grant.
 
-- Joined identities are registered with the host wake broker
-  (`aw wake register --registration-json -`, aw's multi-identity receive):
-  session-delivery homes register the primary (with controls) plus every joined
-  home; Claude and Pi channel homes use aw's mixed mode (`native-channel` /
-  `native-pi`): the channel keeps the primary, the broker attaches only the
-  joined homes. Codex has no broker surface and keeps polling.
-- The registration follows join, leave (after a confirmed release), session
-  start and retire. `receive` in the teams document is `native` when
-  registered, else `poll`; readiness reports each joined team's actual mode from
-  `aw wake status` (`joined-team-receive` / `joined-team-poll-only` with the
-  reason, e.g. the wake daemon is not running).
+There is deliberately **no** `settings.oats.aweb.team` in 1.17. Team selection
+belongs to the OATS team model (`oats teams`, `oats soul teams`) and reaches the
+provider as `OATS_DEFAULT_TEAM*` and `OATS_TEAMS`. If a `team` setting is present
+at any layer, oats.aweb refuses it instead of treating provider payloads as team
+configuration.
 
-### Agent guidance
+### One root per team
 
-- The `oats-aweb` skill covers identity, default/eligible/joined teams and
-  `oats aweb teams|join|leave`, roster and addressing, mail/chat, acting as a
-  joined team, delivery and wakes, etiquette, troubleshooting (readiness codes,
-  `E_TEAM_*`, aw floors). The inject is short and points to it.
-- Use `aw chat send-and-wait|send-and-leave <alias>` to start chats; `aw chat
-  send` only continues an existing session.
-- `oats aweb roster` lists the default team by default and an eligible team with
-  `--label <label>`.
+A local aweb root holds one local identity and therefore one team membership.
+Accepting a second local team into the same `.aw` would overwrite
+`identity.yaml` and is refused by aw. For every created or joined non-default
+team, setup creates a real per-team root such as
+`<deployment>/.aweb-roots/<label>`, accepts the invite into
+`<root>/.aw`, connects the workspace, and records
+`settings.oats.aweb.roots[<team id>] = <root>` in `oats-local.yaml`. Minting for
+team `T` uses `roots[T]` when present, otherwise `root`.
 
-### Upgrading from 1.15
+### Setup acts
 
-Consumers of teams JSON must read `defaultTeam` instead of `personal`; `defaultTeam.source` is a closed set, `setting` or `root`. Code that
-handles leave refusals must expect `E_TEAM_DEFAULT`. Remove any
-`settings.oats.aweb.roots.personal` setting; roots are keyed by concrete team id.
+`oats aweb setup` is the only onboarding path; spawn/mint/retire never onboard.
+Supported acts:
+
+- `oats aweb setup --username <u>`: for a missing hosted root, runs
+  `aw init --new-account --username <u>` and reports the created default team.
+- `AWEB_API_KEY=<key> oats aweb setup`: runs `aw init` for the hosted team behind
+  the API key; the key is never printed.
+- `oats aweb setup --create <label> [--namespace <domain>]`: creates a new
+  local/personal team. It normalizes `<label>` to aweb's team-name rule, runs
+  `aw id team create --name <normalized>` (plus `--namespace <domain>` for
+  BYOT), accepts the invite into a new per-team root, records
+  `roots[<team id>]`, then records the local mapping with
+  `OATS_CLI_BIN teams add <label> --team <id>`.
+- `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
+  team's invite into a new per-team root and records `roots[<team id>]`. It
+  never accepts into the existing default root.
+- Owner-creates-shared flow: when the default is an unmapped committed/shared
+  team, the owner runs setup. Setup creates the provider team, accepts it into a
+  per-team root, records the root locally, and **prints the id to commit**; it
+  does not edit the committed team file.
+
+For a committed/shared team whose provider id exists but whose root is not a
+member, setup/readiness tells the operator it is shared: ask the owner for an
+invite, then run `oats aweb setup --join <label> --invite <token>` (or use
+`--create` if this host is the owner creating it).
+
+### Readiness messages
+
+- No default configured: `no teams configured: run \`oats aweb setup\``.
+- Unmapped default (label/from set, provider id absent):
+  `the default team <label> has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default`.
+- Shared team root missing or not a member: the remedy names the team/root and
+  tells the operator to run setup, create it, or ask the owner for an invite.
+
+### aw floor
+
+All 1.17 paths require `aw >= 1.36.13`. Older or unreadable `aw` is a readiness
+problem and a required spawn-hook failure.
