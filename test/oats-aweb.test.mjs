@@ -378,7 +378,7 @@ test("setup refuses a missing shared default root with the invite remedy", async
     PATH: fake.path,
     AWEB_API_KEY: "",
     OATS_EVENT: "setup",
-    OATS_AGENT: "dev",
+    OATS_SOUL: "/must/not/use/path-soul",
     OATS_DEFAULT_TEAM: "oats-shared",
     OATS_DEFAULT_TEAM_ID: "shared:reh.test",
     OATS_DEFAULT_TEAM_FROM: "shared",
@@ -478,6 +478,20 @@ test("setup --join --invite accepts into a per-team root without printing the to
   assert.ok(connect.args.includes("--team=joined:example.invalid"));
   assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "workspace.yaml")), true);
   assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
+
+  const afterJoin = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_DEFAULT_TEAM_FROM: "shared",
+    OATS_TEAMS: JSON.stringify([{ label: "joined", team: "joined:example.invalid", default: true, from: "shared" }]),
+    OATS_SETTINGS: JSON.stringify({ root, roots: { "joined:example.invalid": join(root, ".aweb-roots", "joined") } }),
+  }, root);
+  assert.equal(afterJoin.code, 0, afterJoin.stderr);
+  assert.doesNotMatch(afterJoin.stdout, /is shared: ask its owner/);
+  assert.match(afterJoin.stdout, /readiness: ready/);
 });
 
 test("setup --join fails without a service from aw or the root and records nothing", async (t) => {

@@ -969,12 +969,13 @@ function awebRootForTeam(team) {
   if (candidate && isAbsolute(candidate.root) && existsSync(join(resolve(candidate.root), ".aw"))) return resolve(candidate.root);
   return undefined;
 }
+let forwardedSoulArg;
 function stripForwardedSoul(argv = process.argv.slice(3)) {
   const out = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--soul") { if (i + 1 < argv.length) i++; continue; }
-    if (arg.startsWith("--soul=")) continue;
+    if (arg === "--soul") { if (i + 1 < argv.length) forwardedSoulArg = argv[++i]; continue; }
+    if (arg.startsWith("--soul=")) { forwardedSoulArg = arg.slice("--soul=".length); continue; }
     out.push(arg);
   }
   return out;
@@ -1415,10 +1416,11 @@ if (event === "launch") {
 
   const want = teamId || teamName;
   const defaultTeamForUsername = username ? `default:${username}.aweb.ai` : undefined;
-  const readTeams = () => {
-    try { return parseAwJson(run(["aw", "team", "list", "--json"], scope), "aw team list"); }
+  const readTeamsAt = (rootDir) => {
+    try { return parseAwJson(run(["aw", "team", "list", "--json"], rootDir), "aw team list"); }
     catch { return { memberships: [] }; }
   };
+  const readTeams = () => readTeamsAt(scope);
   const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => String(tid) === want || String(tid).startsWith(`${want}:`)) : undefined;
   const rootAlias = () => {
     try { const who = JSON.parse(run(["aw", "whoami", "--json"], scope)); return who.alias || who.name || "root"; } catch { return "root"; }
@@ -1471,11 +1473,14 @@ if (event === "launch") {
     assertNotFlag(label, "team label");
     run([cli, "teams", "add", label, flagEq("--team", team)], process.cwd(), 60000);
   };
-  const setupSoulArg = () => process.env.OATS_AGENT || process.env.OATS_SOUL || process.env.OATS_INSTANCE || "<soul>";
-  const missingSharedRows = (teams) => {
-    const ids = new Set(teamIdsOf(teams).map(String));
-    return parseOatsTeams().filter((t) => t.from === "shared" && t.label && t.team && !ids.has(t.team));
-  };
+  const setupSoulArg = () => forwardedSoulArg || "<soul>";
+  const missingSharedRows = () => parseOatsTeams().filter((t) => {
+    if (t.from !== "shared" || !t.label || !t.team) return false;
+    const teamRoot = awebRootForTeam(t.team);
+    if (!teamRoot) return true;
+    const ids = new Set(teamIdsOf(readTeamsAt(teamRoot)).map(String));
+    return !ids.has(t.team);
+  });
   const printSharedMissing = (rows) => {
     for (const row of rows) console.log(`team ${row.label} (${row.team}) is shared: ask its owner for an invite, then run \`oats aweb setup --soul ${setupSoulArg()} --join ${row.label} --invite <token>\``);
   };
@@ -1512,7 +1517,7 @@ if (event === "launch") {
       console.log(`team ${defaultTeamLabel()} has no provider id yet: ask its owner to run \`oats aweb setup --create ${defaultTeamLabel()} --namespace <domain>\` and commit the id, or ask the owner for an invite and run \`oats aweb setup --join ${defaultTeamLabel()} --invite <token>\`.`);
       process.exit(1);
     }
-    const missingShared = !actions.length ? missingSharedRows(teams) : [];
+    const missingShared = !actions.length ? missingSharedRows() : [];
     if (missingShared.length) { printSharedMissing(missingShared); process.exit(1); }
     if (!hasRoot && !actions.length) {
       console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
