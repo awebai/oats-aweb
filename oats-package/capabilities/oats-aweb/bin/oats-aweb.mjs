@@ -1378,7 +1378,6 @@ if (event === "launch") {
   };
   const hostedCreateUnavailable = () => "creating an additional hosted team needs hosted team creation (aweb-abkh), not yet released in aw or aweb Cloud; use --namespace <domain> for a team you control, or ask the aweb team";
   const candidateTeamId = (name) => `${name}:${createNamespace}`;
-  const serviceFrom = (...docs) => docs.map((d) => d && (d.service || d.service_url || d.aweb_url || d.workspace?.service || d.workspace?.aweb_url)).find(Boolean) || "https://app.aweb.ai/api";
   const teamExistsError = (e) => e?.status === 409 || /\b409\b|\bconflict\b|\balready exists\b|\bexists\b/i.test(commandOutput(e));
   const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
     if (!token || typeof token !== "string") throw new Error(`aw id team create returned no invite token for ${label}`);
@@ -1386,13 +1385,16 @@ if (event === "launch") {
     const idHome = join(teamRoot, ".aw");
     if (existsSync(join(idHome, "identity.yaml"))) throw new Error(`team root ${teamRoot} already holds an aweb identity; choose a different label or remove the stale root deliberately`);
     mkdirSync(teamRoot, { recursive: true });
-    const accepted = parseSecretJson(run(["aw", "--identity-home", idHome, "id", "team", "accept-invite", token, flagEq("--name", rootAlias()), "--local", "--json"], teamRoot, 120000, { secrets: [token], secretSafe: true }), "aw id team accept-invite");
-    if (!accepted?.team_id || typeof accepted.team_id !== "string") throw new Error("aw id team accept-invite returned no team_id");
-    const team = accepted.team_id;
-    if (expectedTeam && team !== expectedTeam) throw new Error(`aw id team accept-invite returned team_id ${team}, expected ${expectedTeam}`);
-    try { run(["aw", "--identity-home", idHome, "workspace", "connect", flagEq("--service", serviceFrom(accepted, ...serviceDocs)), flagEq("--team", team), "--json"], teamRoot, 60000, { secretSafe: true }); } catch { /* accept-invite may already have connected; readiness will diagnose if not */ }
-    recordAwebRootSetting(team, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
-    return { team, teamRoot };
+    let joined;
+    try {
+      ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias: rootAlias(), expectedTeam, root: scope, cwd: teamRoot, serviceDocs }));
+    } catch (e) {
+      if (!existsSync(idHome)) { try { rmSync(teamRoot, { recursive: true, force: true }); } catch { /* best effort after verified cleanup */ } }
+      else throw new Error(`${e.message || e}; kept ${teamRoot} so cleanup can be retried`);
+      throw e;
+    }
+    recordAwebRootSetting(joined.team, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
+    return { team: joined.team, teamRoot };
   };
   const createTeam = (label) => {
     if (!createNamespace) throw new Error(hostedCreateUnavailable());

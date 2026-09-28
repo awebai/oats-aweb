@@ -78,9 +78,12 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
   const team = process.env.AW_FAKE_TEAM || args[3].replace(/^TOKEN__/, "");
   writeTeams(team);
-  console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", aweb_url: "https://app.aweb.ai/api" }));
+  console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", ...(process.env.AW_ACCEPT_OMIT_SERVICE ? {} : { aweb_url: "https://app.aweb.ai/api" }) }));
 } else if (args[0] === "whoami") {
   console.log(JSON.stringify({ alias: "fixture", did: "did:key:zFixture" }));
+} else if (args[0] === "workspace" && args[1] === "delete") {
+  fs.rmSync(awDir, { recursive: true, force: true });
+  console.log(JSON.stringify({ alias_released: true, alias_released_reason: "released" }));
 } else if (args[0] === "workspace" && args[1] === "connect") {
   if (process.env.AW_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); }
   fs.mkdirSync(awDir, { recursive: true });
@@ -393,6 +396,53 @@ test("setup --join --invite accepts into a per-team root without printing the to
   assert.ok(connect.args.includes("--team=joined:example.invalid"));
   assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "workspace.yaml")), true);
   assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
+});
+
+test("setup --join fails without a service from aw or the root and records nothing", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
+  const result = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    AW_ACCEPT_OMIT_SERVICE: "1",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /cannot determine the aweb service for joined team joined from/);
+  assert.match(result.stderr, /no aweb_url in its \.aw\/workspace\.yaml and aw returned none/);
+  assert.equal(fake.readCalls().some((c) => c.args.slice(0, 2).join(" ") === "workspace connect"), false);
+  assert.equal(existsSync(join(root, ".aweb-roots", "joined")), false, "failed setup join removes the per-team root after cleanup");
+  assert.doesNotMatch(readFileSync(join(root, "oats-local.yaml"), "utf8"), /joined:example\.invalid/);
+});
+
+test("setup --join connect failure records nothing and removes the unusable root", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
+  const result = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    AW_CONNECT_FAIL: "1",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /workspace connect\/verification failed/);
+  assert.equal(fake.readCalls().some((c) => c.args.slice(0, 2).join(" ") === "workspace connect"), true);
+  assert.equal(existsSync(join(root, ".aweb-roots", "joined")), false, "failed connect removes the per-team root after cleanup");
+  assert.doesNotMatch(readFileSync(join(root, "oats-local.yaml"), "utf8"), /joined:example\.invalid/);
 });
 
 test("setup --create with namespace creates a local BYOT team, accepts it into a per-team root, and records it with the kernel", async (t) => {
