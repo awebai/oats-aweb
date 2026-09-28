@@ -69,6 +69,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   const namespace = flag("--namespace") || "aweb.ai";
   const team = name + ":" + namespace;
   if (process.env.AW_CREATE_MODE === "network-error") { console.error("network unavailable"); process.exit(73); }
+  if (process.env.AW_CREATE_MODE === "token-leak-error") { console.error("network unavailable token=SECRET-FRESH-INVITE"); process.exit(73); }
   if (process.env.AW_CREATE_MODE === "conflict") { console.error("409 conflict: team exists"); process.exit(9); }
   if (process.env.AW_CREATE_MODE === "conflict-once") { const creates = fs.readFileSync(calls, "utf8").trim().split("\\n").filter((l) => JSON.parse(l).args.slice(0,3).join(" ") === "id team create").length; if (creates === 1) { console.error("409 conflict: team exists"); process.exit(9); } }
   if (process.env.AW_CREATE_MODE === "missing-id") { console.log(JSON.stringify({ invite_token: "TOKEN__" + team })); process.exit(0); }
@@ -429,7 +430,7 @@ test("setup --create without namespace refuses hosted team creation until the aw
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /creating an additional hosted team needs aw >= .* and aweb Cloud >= .*; upgrade aw/);
+  assert.match(result.stderr, /creating an additional hosted team needs hosted team creation \(aweb-abkh\), not yet released in aw or aweb Cloud; use --namespace <domain> for a team you control, or ask the aweb team/);
   assert.deepEqual(fake.readCalls(), []);
   assert.deepEqual(kernel.readCalls(), []);
 });
@@ -478,19 +479,20 @@ test("setup --create suffixes only on 409 conflicts", async (t) => {
   assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "add", label, `--team=${team}`]]);
 });
 
-test("setup --create reports non-409 create errors once and does not suffix", async (t) => {
+test("setup --create reports non-409 create errors once without leaking minted tokens", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t);
   const result = await run(["setup", "--create", "My.Team", "--namespace", "example.invalid"], {
     PATH: fake.path,
     AWEB_API_KEY: "",
-    AW_CREATE_MODE: "network-error",
+    AW_CREATE_MODE: "token-leak-error",
     OATS_EVENT: "setup",
     OATS_CLI_BIN: fakeOatsCli(t).cli,
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /network unavailable/);
+  assert.match(result.stderr, /aw id team failed \(exit 73\) \(output withheld: this command handles credentials\)/);
+  assert.doesNotMatch(result.stderr, /SECRET-FRESH-INVITE|network unavailable/);
   assert.equal(fake.readCalls().filter((c) => c.args.slice(0, 3).join(" ") === "id team create").length, 1);
 });
 

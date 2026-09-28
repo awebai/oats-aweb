@@ -1351,8 +1351,7 @@ if (event === "launch") {
   const rootAlias = () => {
     try { const who = JSON.parse(run(["aw", "whoami", "--json"], scope)); return who.alias || who.name || "root"; } catch { return "root"; }
   };
-  const HOSTED_CREATE_FLOOR = "aweb-abkh";
-  const hostedCreateUnavailable = () => `creating an additional hosted team needs aw >= ${HOSTED_CREATE_FLOOR} and aweb Cloud >= ${HOSTED_CREATE_FLOOR}; upgrade aw`;
+  const hostedCreateUnavailable = () => "creating an additional hosted team needs hosted team creation (aweb-abkh), not yet released in aw or aweb Cloud; use --namespace <domain> for a team you control, or ask the aweb team";
   const candidateTeamId = (name) => `${name}:${createNamespace}`;
   const serviceFrom = (...docs) => docs.map((d) => d && (d.service || d.service_url || d.aweb_url || d.workspace?.service || d.workspace?.aweb_url)).find(Boolean) || "https://app.aweb.ai/api";
   const teamExistsError = (e) => e?.status === 409 || /\b409\b|\bconflict\b|\balready exists\b|\bexists\b/i.test(commandOutput(e));
@@ -1378,7 +1377,7 @@ if (event === "launch") {
       const expectedTeam = candidateTeamId(name);
       const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
       try {
-        const created = parseSecretJson(run(createArgs, scope, 120000), "aw id team create");
+        const created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true }), "aw id team create");
         if (!created?.team_id || typeof created.team_id !== "string") throw new Error("aw id team create returned no team_id");
         const team = created.team_id;
         const token = created.invite_token || created.invite || created.token;
