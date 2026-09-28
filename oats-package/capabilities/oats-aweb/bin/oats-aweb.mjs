@@ -1044,17 +1044,37 @@ function registryOriginFromJoinedState(row, match, listed) {
   if (fromEnv) return { registry: fromEnv };
   return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };
 }
-function certificateIdForJoinedTeam(row) {
+function certificateIdFromJoinedCertificateFile(row) {
+  const certFile = join(row.identityHome, "team-certs", `${String(row.team || "").replace(/:/g, "__")}.pem`);
+  if (!existsSync(certFile)) return { found: false };
   try {
-    const listed = parseAwJson(run(awWithIdentity(row.identityHome, ["id", "team", "list", "--json"]), home, 60000), "aw id team list");
-    const memberships = teamMemberships(listed);
-    const match = memberships.find((m) => String(m?.team_id || m?.id || m?.team || m) === row.team);
-    if (!match) return { certificateId: null, certificateIdError: `aw id team list --json returned no membership for ${row.team}` };
-    const certificateId = match && typeof match === "object" ? (match.certificate_id || match.cert_id || match.certId || match.certificate?.id || match.cert?.id) : undefined;
-    return { ...(typeof certificateId === "string" && certificateId.trim() ? { certificateId: certificateId.trim() } : { certificateId: null, certificateIdError: `certificate id for ${row.team} was not present in aw id team list --json` }), ...registryOriginFromJoinedState(row, match, listed) };
+    const cert = JSON.parse(readFileSync(certFile, "utf8"));
+    if (cert?.team_id !== row.team) return { found: false, error: `certificate file ${certFile} is for ${cert?.team_id || "unknown team"}, not ${row.team}` };
+    const certificateId = typeof cert?.certificate_id === "string" ? cert.certificate_id.trim() : "";
+    if (!certificateId) return { found: false, error: `certificate file ${certFile} did not contain a certificate_id for ${row.team}` };
+    return { found: true, certificateId };
   } catch (e) {
-    return { certificateId: null, certificateIdError: actionWarning(e.message || e), ...registryOriginFromJoinedState(row) };
+    return { found: false, error: `could not read certificate file ${certFile}: ${e.message || e}` };
   }
+}
+function certificateIdForJoinedTeam(row) {
+  const fromFile = certificateIdFromJoinedCertificateFile(row);
+  let listed, match, listError;
+  try {
+    listed = parseAwJson(run(awWithIdentity(row.identityHome, ["id", "team", "list", "--json"]), home, 60000), "aw id team list");
+    const memberships = teamMemberships(listed);
+    match = memberships.find((m) => String(m?.team_id || m?.id || m?.team || m) === row.team);
+  } catch (e) {
+    listError = actionWarning(e.message || e);
+  }
+  const registry = registryOriginFromJoinedState(row, match, listed);
+  if (fromFile.found) return { certificateId: fromFile.certificateId, ...registry };
+  if (match) {
+    const certificateId = match && typeof match === "object" ? (match.certificate_id || match.cert_id || match.certId || match.certificate?.id || match.cert?.id) : undefined;
+    if (typeof certificateId === "string" && certificateId.trim()) return { certificateId: certificateId.trim(), ...registry };
+    return { certificateId: null, certificateIdError: fromFile.error || `certificate id for ${row.team} was not present in the joined certificate file or aw id team list --json`, ...registry };
+  }
+  return { certificateId: null, certificateIdError: fromFile.error || listError || `aw id team list --json returned no membership for ${row.team}`, ...registry };
 }
 function failedLeaveDisposition(row, error) {
   const text = String(error?.message || error || "");
