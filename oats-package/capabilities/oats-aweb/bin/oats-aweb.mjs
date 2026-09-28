@@ -1004,6 +1004,31 @@ function outputTeamsDocument(doc, json) {
   for (const warning of doc.warnings || []) console.log(`warning: ${warning}`);
 }
 const actionWarning = (warning) => String(warning || "").slice(0, 300);
+function certificateIdForJoinedTeam(row) {
+  try {
+    const listed = parseAwJson(run(awWithIdentity(row.identityHome, ["id", "team", "list", "--json"]), home, 60000), "aw id team list");
+    const memberships = teamMemberships(listed);
+    const match = memberships.find((m) => String(m.team_id || m.id || m.team || m) === row.team) || memberships[0];
+    const certificateId = match && typeof match === "object" ? (match.certificate_id || match.cert_id || match.certId || match.certificate?.id || match.cert?.id) : undefined;
+    if (typeof certificateId === "string" && certificateId.trim()) return { certificateId: certificateId.trim() };
+    return { certificateId: null, certificateIdError: `certificate id for ${row.team} was not present in aw id team list --json` };
+  } catch (e) {
+    return { certificateId: null, certificateIdError: actionWarning(e.message || e) };
+  }
+}
+function failedLeaveDisposition(row, error) {
+  const text = String(error?.message || error || "");
+  const reason = /team_not_hosted/i.test(text) ? "team_not_hosted" : actionWarning(text);
+  const data = { label: row.label, team: row.team, alias: row.alias || instance || null, ...certificateIdForJoinedTeam(row), at: new Date().toISOString(), reason, ...(reason === "team_not_hosted" ? { cleanup: "controller" } : {}) };
+  const teamName = String(row.team || "").split(":")[0] || row.team;
+  const namespace = String(row.team || "").includes(":") ? String(row.team).split(":").slice(1).join(":") : "<namespace>";
+  const ownerCommand = reason === "team_not_hosted" && data.certificateId
+    ? `; controller cleanup: aw id team remove-member --namespace ${namespace} --team ${teamName} --cert-id ${data.certificateId} --registry ${namespace} --json`
+    : reason === "team_not_hosted"
+      ? `; controller cleanup needs the certificate id, but ${data.certificateIdError || "it could not be read"}`
+      : "";
+  return { data, warning: `joined team ${row.label} cleanup failed: ${data.reason}${ownerCommand}` };
+}
 function runTeamsCommand(kind) {
   const args = parseHomeCommandArgs();
   let meta = readCapabilityMeta();
@@ -1119,9 +1144,9 @@ if (event === "launch") {
         warnings.push(`left joined team ${row.label} because it is no longer eligible`);
       }
       catch (e) {
-        const failed = { label: row.label, team: row.team, at: new Date().toISOString(), reason: actionWarning(e.message || e) };
-        appendProviderEvent("aweb-team-leave-failed", failed);
-        warnings.push(`joined team ${row.label} cleanup failed: ${failed.reason}`);
+        const failed = failedLeaveDisposition(row, e);
+        appendProviderEvent("aweb-team-leave-failed", failed.data);
+        warnings.push(failed.warning);
       }
     }
     // Re-register what remains: the runtime may differ from the last session.
