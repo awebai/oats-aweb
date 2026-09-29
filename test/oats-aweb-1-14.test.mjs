@@ -71,6 +71,9 @@ if (args[0] === "team" && args[1] === "join") { const team = teamFromToken(args[
 if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = teamFromToken(args[3]); const alias = flag("--name") || "probe"; const dest = homeForWrite(); fs.mkdirSync(path.join(dest, "team-certs"), { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); emit({ status: "accepted", team_id: team, alias, aweb_url: "https://app.aweb.ai/api", cert: path.join(dest, "team-certs", team + ".yaml") }); process.exit(0); }
 if (args[0] === "init") { console.log("initialized"); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "connect") { const dest = homeForWrite(); const team = flag("--team") || "alpha:example.test"; fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: probe\\nteam_id: " + team + "\\naweb_url: " + (flag("--service") || "https://app.aweb.ai/api") + "\\n"); emit({ status: "connected", team_id: team, alias: "probe" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "status") { emit({ workspace: { alias: "retained", workspace_path: process.cwd(), hostname: "fixture" } }); process.exit(0); }
+if (args[0] === "whoami") { let identity = ""; try { identity = fs.readFileSync(path.join(homeForWrite(), "identity.yaml"), "utf8"); } catch {} const field = (name) => (identity.match(new RegExp("^" + name + ":\\\\s*(.+)$", "m")) || [])[1]; emit({ alias: "retained", did: field("did") || "did:key:zFixture", address: field("address") || "fixture.test/retained" }); process.exit(0); }
+if (args[0] === "check" || args[0] === "heartbeat") { console.log("ok"); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAIL_WORKSPACE_DELETE) { console.error("delete failed"); process.exit(7); } if (process.env.PERMISSION_MEMBER_WORKSPACE_DELETE) { console.error("permission denied: identity is not a member of that team"); process.exit(8); } if (process.env.MALFORMED_WORKSPACE_DELETE) { console.log("not json"); process.exit(0); } if (process.env.IDENTITY_DELETED_ONLY_WORKSPACE_DELETE) { emit({ alias: args[2], alias_released: false, alias_released_reason: "already-released", identity_deleted: true }); process.exit(0); } fs.rmSync(homeForWrite(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released", identity_deleted: true }); process.exit(0); }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 `, 0o755);
@@ -114,9 +117,9 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.17.1");
-  assert.equal(dist.version, "1.17.1");
-  assert.equal(manifest.version, "1.17.1");
+  assert.equal(pkg.version, "1.17.2");
+  assert.equal(dist.version, "1.17.2");
+  assert.equal(manifest.version, "1.17.2");
   assert.equal(manifest.settings.team, undefined);
   assert.equal(dist.compatibility.oats, ">=0.30.0");
   assert.equal(manifest.compatibility.oats, ">=0.30.0");
@@ -328,6 +331,43 @@ test("mapped primary joined team can be joined and left", (t) => {
   assert.equal(joinedAtSpawnDoc.meta.team, "default:example.test");
   assert.deepEqual(joinedAtSpawnDoc.meta.joinedTeams.map((j) => ({ label: j.label, team: j.team })), [{ label: "alpha", team: "alpha:example.test" }]);
   assert.equal(doc.meta.team, "default:example.test");
+});
+
+test("retained session seat says it is not broker-registered and gives recovery rule", (t) => {
+  const root = tempDir(t), home = join(root, "home"), source = join(root, "source", ".aw");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, "signing.key"), "fixture-signing-key");
+  writeFileSync(join(source, "identity.yaml"), "alias: retained\ndid: did:key:zRetained\naddress: fixture.test/retained\n");
+  writeFileSync(join(source, "teams.yaml"), "active_team: default:example.test\n");
+  writeFileSync(join(source, "workspace.yaml"), "alias: retained\naweb_url: https://app.aweb.ai/api\n");
+  const fake = fakeAw114(t);
+  const env = {
+    PATH: fake.path,
+    OATS_EVENT: "spawn",
+    OATS_HOME: home,
+    OATS_INSTANCE: "retained",
+    OATS_WORKSPACE: root,
+    OATS_WORKSPACE_KEY: "repo:fixture",
+    OATS_DEFAULT_TEAM: "default",
+    OATS_DEFAULT_TEAM_ID: "default:example.test",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: teamsEnv,
+    OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", source } }),
+  };
+  const spawned = runHook("spawn", { cwd: home, env });
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const doc = JSON.parse(spawned.stdout);
+  assert.equal(doc.meta.retained, true);
+  assert.match(doc.brief, /retained seat is not registered with the host wake broker/);
+  assert.match(doc.brief, /NOTHING wakes you/);
+  assert.match(doc.brief, /aw mail inbox` and `aw chat pending/);
+  assert.match(doc.brief, /Once registered, the broker presents incoming mail\/chat as a waiting line or the full event/);
+  assert.match(doc.brief, /aw mail show --message-id <id> --json/);
+  assert.match(doc.brief, /aw mail inbox --show-all --json/);
+  assert.match(doc.brief, /--cursor/);
+  assert.match(doc.brief, /Read state is not completion/);
+  assert.match(doc.brief, /--conversation-id.*not a recovery check/);
 });
 
 test("retained seat retire leaves joined team identities before releasing the retained primary", (t) => {

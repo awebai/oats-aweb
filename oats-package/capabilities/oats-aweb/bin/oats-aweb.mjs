@@ -661,7 +661,7 @@ function globalGrantSpawn() {
     const warnings = [...teamWarnings, ...preflight.warnings];
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     const deliveryBrief = deliveryMode === "session"
-      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
+      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker presents incoming mail/chat in your terminal, either as a line naming what is waiting or as the full event with body; the native aweb channel is not running. Handle what is presented. After an uncertain crash, compaction or restart, recover by reconciling STATE and task records against exact delivered ids: use \`aw mail show --message-id <id> --json\`, or page \`aw mail inbox --show-all --json\` with \`--cursor\`. Read state is not completion, and \`--conversation-id\` is not a recovery check.`
       : "";
     out({
       meta,
@@ -815,7 +815,7 @@ function retainedSeatSpawn(source, takeOver) {
       : undefined;
     const env = { ...(deliveryMode === "session" ? { AWEB_DELIVERY: "session" } : {}), AWEB_IDENTITY_HOME: dest };
     const deliveryBrief = deliveryMode === "session"
-      ? ` Notification delivery: external (AWEB_DELIVERY=session); until the host wake broker registers this instance NOTHING wakes you: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary.`
+      ? ` Notification delivery: external (AWEB_DELIVERY=session); this retained seat is not registered with the host wake broker, so NOTHING wakes you until it is: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary. Once registered, the broker presents incoming mail/chat as a waiting line or the full event. After an uncertain crash, compaction or restart, recover by exact delivered ids: use \`aw mail show --message-id <id> --json\`, or page \`aw mail inbox --show-all --json\` with \`--cursor\`. Read state is not completion, and \`--conversation-id\` is not a recovery check.`
       : "";
     if (deliveryMode === "session") wakeRegister(home, dest);
     const warnings = [];
@@ -1323,7 +1323,7 @@ if (event === "launch") {
     const channelWarning = undefined;
     if (deliveryMode === "session") wakeRegister(home, join(home, ".aw"));
     const deliveryBrief = deliveryMode === "session"
-      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
+      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker presents incoming mail/chat in your terminal, either as a line naming what is waiting or as the full event with body; the native aweb channel is not running. Handle what is presented. After an uncertain crash, compaction or restart, recover by reconciling STATE and task records against exact delivered ids: use \`aw mail show --message-id <id> --json\`, or page \`aw mail inbox --show-all --json\` with \`--cursor\`. Read state is not completion, and \`--conversation-id\` is not a recovery check.`
       : "";
     let meta = { team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}), identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }

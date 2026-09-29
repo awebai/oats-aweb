@@ -16,7 +16,7 @@ Quick crib (run from your instance home, never from `./work`):
 ```bash
 oats aweb teams --json                                     # defaultTeam, eligible, joined teams
 oats aweb roster                                           # who you can reach
-aw mail inbox                                              # UNREAD mail only (--show-all: history)
+aw mail inbox                                              # UNREAD mail only (recovery: show --message-id or --show-all --json)
 aw mail send --to <alias> --subject "..." --body-file <f>  # recipient needs --to
 aw mail reply <message-id> --body-file <f>                 # stay in the thread
 aw chat send-and-wait <alias> --body-file <f> --start-conversation   # blocking question
@@ -27,11 +27,18 @@ aw --identity-home <identityHome> mail|chat ...            # act as a joined tea
 Always use `--body-file` for anything longer than a sentence. `aw chat send`
 only continues an existing session (`--session-id`); it has no `--to`.
 
-**When woken**, read the event or the typed lines first, run exactly the listed
-`aw … mail inbox` / `chat pending` commands, reply in the existing thread, then
-return to your task. **Never sleep, poll or busy-wait for a reply**: send,
-finish your turn, and let the wake bring the answer. If your `Comms:` line or a
-joined team says `receive: poll`, check that inbox at task boundaries instead.
+**When woken**, read what the broker or channel presents first: it may be a
+line naming what is waiting, or the full mail/chat event with body. Handle what
+is presented; if it lists `aw … mail inbox` / `chat pending` commands, run
+exactly those commands, reply in the existing thread, then return to your task.
+**Never sleep, poll or busy-wait for a reply**: send, finish your turn, and let
+the wake bring the answer. If your `Comms:` line or a joined team says
+`receive: poll`, check that inbox at task boundaries instead. For session
+delivery recovery after an uncertain crash, compaction or restart, reconcile
+STATE and task records against exact delivered ids: use
+`aw mail show --message-id <id> --json`, or page
+`aw mail inbox --show-all --json` with `--cursor`. Read state is not completion,
+and `--conversation-id` is not a recovery check.
 
 Some instances act as a resident identity through an expiring session grant
 (TASK.md says so). Then root keys are not in your home and identity lifecycle

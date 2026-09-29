@@ -122,9 +122,9 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.17.1");
-  assert.equal(pkg.version, "1.17.1");
-  assert.equal(dist.version, "1.17.1");
+  assert.equal(manifest.version, "1.17.2");
+  assert.equal(pkg.version, "1.17.2");
+  assert.equal(dist.version, "1.17.2");
   assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
@@ -141,6 +141,50 @@ test("agent-facing text never tells anyone to run aw auth login or aw team ensur
     assert.doesNotMatch(text, /aw auth login|team ensure|default-team-/, file);
   }
   assert.match(readFileSync(join(REPO, "README.md"), "utf8"), /teams JSON field .*defaultTeam/);
+});
+
+test("session-delivery guidance pins broker presentation and exact recovery rule", (t) => {
+  const presentationFiles = [join(CAPABILITY, "injects", "aweb.md"), join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), join(CAPABILITY, "skills", "aweb-team-membership", "SKILL.md")];
+  for (const file of presentationFiles) {
+    const text = readFileSync(file, "utf8");
+    assert.match(text, /line naming what is waiting|waiting-items line/, file);
+    assert.match(text, /full (mail\/chat )?event/, file);
+    assert.doesNotMatch(text, /aweb: N items waiting/, file);
+  }
+
+  const recoveryFiles = [join(CAPABILITY, "injects", "aweb.md"), join(CAPABILITY, "skills", "oats-aweb", "SKILL.md")];
+  for (const file of recoveryFiles) {
+    const text = readFileSync(file, "utf8");
+    assert.match(text, /aw mail show --message-id <id> --json/, file);
+    assert.match(text, /aw mail inbox --show-all --json/, file);
+    assert.match(text, /--cursor/, file);
+    assert.match(text, /Read state is not completion|read state is not completion/, file);
+    assert.match(text, /--conversation-id.*not (a )?recovery check|not recovery/, file);
+    assert.doesNotMatch(text, /aweb: N items waiting|empty `aw mail inbox` means nothing|last handled `message_id`/, file);
+  }
+
+  const hook = readFileSync(HOOK, "utf8");
+  const capturedNative = readFileSync(join(CAPABILITY, "lib", "captured-native.mjs"), "utf8");
+  for (const [name, text] of [["oats-aweb.mjs", hook], ["captured-native.mjs", capturedNative]]) {
+    assert.match(text, /host wake broker presents incoming mail\/chat/, name);
+    assert.match(text, /aw mail show --message-id <id> --json/, name);
+    assert.match(text, /aw mail inbox --show-all --json/, name);
+    assert.match(text, /--cursor/, name);
+    assert.match(text, /Read state is not completion/, name);
+    assert.match(text, /--conversation-id.*not a recovery check/, name);
+    assert.doesNotMatch(text, /nudges you|last message_id|aw mail inbox --show-all`? and `?aw chat pending/, name);
+  }
+
+  const fake = fakeAw115(t);
+  const fx = fixture(t, { delivery: "session" });
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  assert.match(doc.brief, /line naming what is waiting/);
+  assert.match(doc.brief, /full event with body/);
+  assert.match(doc.brief, /aw mail show --message-id <id> --json/);
+  assert.match(doc.brief, /aw mail inbox --show-all --json/);
+  assert.match(doc.brief, /--cursor/);
+  assert.match(doc.brief, /Read state is not completion/);
+  assert.match(doc.brief, /--conversation-id.*not a recovery check/);
 });
 
 test("hosted workspace: the primary team resolves as in 1.14.2 (root's active team), with no enrollment call", (t) => {
