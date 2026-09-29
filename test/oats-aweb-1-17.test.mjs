@@ -37,7 +37,7 @@ if (args[0] === "team" && args[1] === "invite") { emit({ token: "TOKEN__" + flag
 if (args[0] === "team" && args[1] === "join") { const team = args[2].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = args[3].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); const certDir = path.join(home(), "team-certs"); fs.mkdirSync(certDir, { recursive: true }); if (!process.env.FAKE_CERT_OMIT) { const certTeam = process.env.FAKE_CERT_OTHER_TEAM || team; fs.writeFileSync(path.join(certDir, team.replace(/:/g, "__") + ".pem"), JSON.stringify({ version: 1, certificate_id: "cert-shared-123", team_id: certTeam, alias })); } emit({ status: "accepted", team_id: team, alias, aweb_url: "https://service.example.test/api" }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "connect") { if (process.env.FAKE_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); } const team = flag("--team"), service = flag("--service"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: connected\\nteam_id: " + team + "\\naweb_url: " + service + "\\n"); emit({ status: "connected", team_id: team, aweb_url: service }); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home: team_not_hosted"); process.exit(7); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home: team_not_hosted"); process.exit(7); } if (process.env.FAKE_DEFAULT_TEAM_NOT_HOSTED && !identityHome) { emit({ alias_released: false, alias_released_reason: "team_not_hosted" }); process.exit(0); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }] }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "list") { const team = process.env.FAKE_LIST_OTHER_TEAM ? "other:example.test" : (String(identityHome || "").includes(".aweb-identity-shared") ? "shared:example.test" : "default:example.test"); emit({ memberships: [{ team_id: team, registry_origin: "https://api.awid.ai" }] }); process.exit(0); }
 if (args[0] === "wake" && ["register", "deregister"].includes(args[1])) { console.log("ok"); process.exit(0); }
@@ -170,6 +170,49 @@ test("retire ignores stale current team and invalid current identity mode", (t) 
     assert.equal(fake.calls().some((c) => c.args.join(" ") === "workspace delete dev-1 --json" && c.cwd === fx.home), true, name);
     if (name === "stale-team") assert.match(doc.warning, new RegExp(TEAM_SETTING_MESSAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+});
+
+test("retire reports controller cleanup for joined BYOT teams", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { settings: { join: "shared" } });
+  const spawned = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  const retired = runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(spawned.meta), FAKE_DELETE_FAIL_FOR: "shared" } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const doc = JSON.parse(retired.stdout);
+  assert.match(doc.warning, /joined team shared cleanup failed: team_not_hosted/);
+  assert.match(doc.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --registry https:\/\/api\.awid\.ai --json/);
+  assert.doesNotMatch(doc.warning, /kept .* retry/);
+  assert.deepEqual(doc.meta.pendingControllerCleanup, [{ label: "shared", team: "shared:example.test", alias: "dev-1", certificateId: "cert-shared-123", command: "aw id team remove-member --namespace example.test --team shared --cert-id cert-shared-123 --registry https://api.awid.ai --json" }]);
+});
+
+test("retire reports controller cleanup for a BYOT default identity", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t);
+  mkdirSync(join(fx.home, ".aw", "team-certs"), { recursive: true });
+  write(join(fx.home, ".aw", "identity.yaml"), "alias: dev-1\nteam_id: default:example.test\n");
+  write(join(fx.home, ".aw", "team-certs", "default__example.test.pem"), JSON.stringify({ version: 1, certificate_id: "cert-default-123", team_id: "default:example.test", alias: "dev-1" }));
+  const meta = { alias: "dev-1", team: "default:example.test", identity: { mode: "local", alias: "dev-1", team: "default:example.test" } };
+  const retired = runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(meta), FAKE_DEFAULT_TEAM_NOT_HOSTED: "1", AWID_REGISTRY_URL: "https://api.awid.ai" } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const doc = JSON.parse(retired.stdout);
+  assert.equal(doc.meta.aliasReusable, false);
+  assert.equal(doc.meta.aliasReason, "team_not_hosted");
+  assert.match(doc.warning, /default identity cleanup failed: team_not_hosted/);
+  assert.match(doc.warning, /aw id team remove-member --namespace example\.test --team default --cert-id cert-default-123 --registry https:\/\/api\.awid\.ai --json/);
+  assert.deepEqual(doc.meta.pendingControllerCleanup, [{ label: "default", team: "default:example.test", alias: "dev-1", certificateId: "cert-default-123", command: "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --registry https://api.awid.ai --json" }]);
+});
+
+test("retire of a hosted identity has no controller cleanup disposition", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t);
+  mkdirSync(join(fx.home, ".aw"), { recursive: true });
+  write(join(fx.home, ".aw", "identity.yaml"), "alias: dev-1\n");
+  const meta = { alias: "dev-1", team: "default:example.test", identity: { mode: "local", alias: "dev-1", team: "default:example.test" } };
+  const retired = runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(meta) } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const doc = JSON.parse(retired.stdout);
+  assert.equal(doc.meta.aliasReusable, true);
+  assert.equal(doc.meta.pendingControllerCleanup, undefined);
 });
 
 test("valid team id is passed inert as one --team-id=value token", (t) => {
