@@ -47,7 +47,7 @@ const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1)
 const home = () => identityHome || path.join(process.cwd(), ".aw");
 // aw 1.36.13: an AWEB_IDENTITY_HOME in the environment is an external identity
 // home exactly like --identity-home; commands off the allowlist are refused.
-const ALLOWED = ["id team accept-invite", "mail inbox", "mail send", "mail reply", "chat pending", "workspace delete", "wake register", "wake deregister", "wake status", "whoami", "version"];
+const ALLOWED = ["id team accept-invite", "mail inbox", "mail send", "mail reply", "chat pending", "workspace connect", "workspace delete", "wake register", "wake deregister", "wake status", "whoami", "version"];
 if (process.env.AWEB_IDENTITY_HOME && !identityHome) {
   const p2 = args.slice(0, 2).join(" "), p3 = args.slice(0, 3).join(" ");
   if (!ALLOWED.includes(p2) && !ALLOWED.includes(p3) && args[0] !== "version") { console.error('command "aw ' + (args[0] === "id" ? p3 : p2) + '" is not yet identity-home-aware; refusing to use an external identity home'); process.exit(2); }
@@ -58,9 +58,10 @@ if (args[0] === "auth" || (args[0] === "team" && args[1] === "ensure")) { fs.app
 if (args[0] === "team" && args[1] === "list") { emit({ active_team: "legacy:example.test", memberships: [{ team_id: "legacy:example.test" }, { team_id: "alpha:example.test" }, { team_id: "beta:example.test" }] }); process.exit(0); }
 if (args[0] === "team" && args[1] === "invite") { if (identityHome) { console.error('command "aw team invite" is not yet identity-home-aware'); process.exit(2); } emit({ token: "TOKEN__" + flag("--team-id") }); process.exit(0); }
 if (args[0] === "team" && args[1] === "join") { const team = args[2].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
-if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = args[3].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(path.join(home(), "team-certs"), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: " + alias + "\\n"); emit({ status: "accepted", team_id: team, alias }); process.exit(0); }
+if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = args[3].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(path.join(home(), "team-certs"), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); emit({ status: "accepted", team_id: team, alias, aweb_url: "https://app.aweb.ai/api" }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }, { alias: "alice" }] }); process.exit(0); }
 if (args[0] === "init") { console.log("initialized"); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "connect") { const team = flag("--team"), service = flag("--service") || "https://app.aweb.ai/api"; fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: connected\\nteam_id: " + team + "\\naweb_url: " + service + "\\n"); emit({ status: "connected", team_id: team, aweb_url: service }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("delete failed"); process.exit(7); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 if (args[0] === "wake" && args[1] === "register") {
   const r = regs();
@@ -121,9 +122,9 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.17.0");
-  assert.equal(pkg.version, "1.17.0");
-  assert.equal(dist.version, "1.17.0");
+  assert.equal(manifest.version, "1.17.1");
+  assert.equal(pkg.version, "1.17.1");
+  assert.equal(dist.version, "1.17.1");
   assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);

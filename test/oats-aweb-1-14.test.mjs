@@ -68,9 +68,9 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) { emit(
 if (args[0] === "team" && args[1] === "invite") { const team = flag("--team-id"); emit({ token: "TOKEN__" + team }); process.exit(0); }
 if (args[0] === "team" && args[1] === "join" && identityHome) refuseIdentityHome();
 if (args[0] === "team" && args[1] === "join") { const team = teamFromToken(args[2]); const alias = flag("--name") || "probe"; const dest = homeForWrite(); fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
-if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = teamFromToken(args[3]); const alias = flag("--name") || "probe"; const dest = homeForWrite(); fs.mkdirSync(path.join(dest, "team-certs"), { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\naweb_url: https://app.aweb.ai/api\\n"); emit({ status: "accepted", team_id: team, alias, cert: path.join(dest, "team-certs", team + ".yaml") }); process.exit(0); }
+if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = teamFromToken(args[3]); const alias = flag("--name") || "probe"; const dest = homeForWrite(); fs.mkdirSync(path.join(dest, "team-certs"), { recursive: true }); fs.writeFileSync(path.join(dest, "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); emit({ status: "accepted", team_id: team, alias, aweb_url: "https://app.aweb.ai/api", cert: path.join(dest, "team-certs", team + ".yaml") }); process.exit(0); }
 if (args[0] === "init") { console.log("initialized"); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "connect") { const dest = homeForWrite(); fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: probe\\nteam_id: alpha:example.test\\naweb_url: " + (flag("--service") || "https://app.aweb.ai/api") + "\\n"); emit({ status: "connected", team_id: "alpha:example.test", alias: "probe" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "connect") { const dest = homeForWrite(); const team = flag("--team") || "alpha:example.test"; fs.mkdirSync(dest, { recursive: true }); fs.writeFileSync(path.join(dest, "workspace.yaml"), "alias: probe\\nteam_id: " + team + "\\naweb_url: " + (flag("--service") || "https://app.aweb.ai/api") + "\\n"); emit({ status: "connected", team_id: team, alias: "probe" }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAIL_WORKSPACE_DELETE) { console.error("delete failed"); process.exit(7); } if (process.env.PERMISSION_MEMBER_WORKSPACE_DELETE) { console.error("permission denied: identity is not a member of that team"); process.exit(8); } if (process.env.MALFORMED_WORKSPACE_DELETE) { console.log("not json"); process.exit(0); } if (process.env.IDENTITY_DELETED_ONLY_WORKSPACE_DELETE) { emit({ alias: args[2], alias_released: false, alias_released_reason: "already-released", identity_deleted: true }); process.exit(0); } fs.rmSync(homeForWrite(), { recursive: true, force: true }); emit({ alias: args[2], alias_released: true, alias_released_reason: "released", identity_deleted: true }); process.exit(0); }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 `, 0o755);
@@ -114,9 +114,9 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.17.0");
-  assert.equal(dist.version, "1.17.0");
-  assert.equal(manifest.version, "1.17.0");
+  assert.equal(pkg.version, "1.17.1");
+  assert.equal(dist.version, "1.17.1");
+  assert.equal(manifest.version, "1.17.1");
   assert.equal(manifest.settings.team, undefined);
   assert.equal(dist.compatibility.oats, ">=0.30.0");
   assert.equal(manifest.compatibility.oats, ">=0.30.0");
@@ -146,7 +146,7 @@ test("fake aw 1.14 refuses both joined-team mint forms under --identity-home", (
   assert.equal(acceptLocal.status, 0, acceptLocal.stderr);
   assert.equal(JSON.parse(acceptLocal.stdout).team_id, "alpha:example.test");
   assert.equal(existsSync(join(identityHome, "identity.yaml")), true);
-  assert.equal(existsSync(join(identityHome, "workspace.yaml")), true);
+  assert.equal(existsSync(join(identityHome, "workspace.yaml")), false, "accept-invite alone does not connect the workspace");
 });
 
 test("mapped primary label in OATS_TEAMS is eligible while no settings team mints primary into default team", (t) => {
@@ -218,9 +218,10 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
   assert.deepEqual(spawnDoc.meta.joinedTeams.map((j) => ({ label: j.label, team: j.team, receive: j.receive })), [{ label: "alpha", team: "alpha:example.test", receive: "poll" }]);
   assert.equal(spawnDoc.meta.joinedTeams[0].identityHome, join(home, ".aweb-identity-alpha"));
   assert.equal(existsSync(join(home, ".aweb-identity-alpha", "identity.yaml")), true);
-  assert.equal(existsSync(join(home, ".aweb-identity-alpha", "workspace.yaml")), true, "accept-invite auto-connects the joined workspace");
+  assert.equal(existsSync(join(home, ".aweb-identity-alpha", "workspace.yaml")), true, "joined workspace is explicitly connected after accept-invite");
   let calls = fake.readCalls();
   assert.ok(calls.some((c) => c.identityHome === join(home, ".aweb-identity-alpha") && c.args.slice(0, 3).join(" ") === "id team accept-invite"), "joined team mint uses identity-home-aware accept-invite");
+  assert.ok(calls.some((c) => c.identityHome === join(home, ".aweb-identity-alpha") && c.args.slice(0, 2).join(" ") === "workspace connect"), "joined team mint explicitly connects after accept-invite");
   assert.equal(calls.some((c) => c.identityHome === join(home, ".aweb-identity-alpha") && c.args[0] === "team" && c.args[1] === "join"), false, "joined team mint never uses refused team join under --identity-home");
   const instanceJson = { capabilityMeta: { "oats.aweb": { sentinel: true } } };
   writeFileSync(join(home, "instance.json"), JSON.stringify(instanceJson, null, 2));

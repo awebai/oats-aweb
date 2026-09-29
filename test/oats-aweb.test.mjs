@@ -64,6 +64,9 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   console.log(JSON.stringify({ team_id: process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)} }));
 } else if (args[0] === "team" && args[1] === "invite") {
   console.log(JSON.stringify({ token: "INVITE-TOKEN" }));
+} else if (args[0] === "id" && args[1] === "team" && args[2] === "list") {
+  if (fs.existsSync(teamsFile)) console.log(fs.readFileSync(teamsFile, "utf8"));
+  else console.log(JSON.stringify({ memberships: [] }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "create") {
   const name = flag("--name");
   const namespace = flag("--namespace") || "aweb.ai";
@@ -74,14 +77,21 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_CREATE_MODE === "conflict-once") { const creates = fs.readFileSync(calls, "utf8").trim().split("\\n").filter((l) => JSON.parse(l).args.slice(0,3).join(" ") === "id team create").length; if (creates === 1) { console.error("409 conflict: team exists"); process.exit(9); } }
   if (process.env.AW_CREATE_MODE === "missing-id") { console.log(JSON.stringify({ invite_token: "TOKEN__" + team })); process.exit(0); }
   if (process.env.AW_CREATE_MODE === "missing-token") { console.log(JSON.stringify({ team_id: team })); process.exit(0); }
-  console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team }));
+  console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team, aweb_url: "https://app.aweb.ai/api" }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
   const team = process.env.AW_FAKE_TEAM || args[3].replace(/^TOKEN__/, "");
   writeTeams(team);
-  console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root" }));
+  console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", ...(process.env.AW_ACCEPT_OMIT_SERVICE ? {} : { aweb_url: "https://app.aweb.ai/api" }) }));
 } else if (args[0] === "whoami") {
+  if (process.env.AW_WHOAMI_FAIL) { console.error("no identity"); process.exit(6); }
   console.log(JSON.stringify({ alias: "fixture", did: "did:key:zFixture" }));
+} else if (args[0] === "workspace" && args[1] === "delete") {
+  fs.rmSync(awDir, { recursive: true, force: true });
+  console.log(JSON.stringify({ alias_released: true, alias_released_reason: "released" }));
 } else if (args[0] === "workspace" && args[1] === "connect") {
+  if (process.env.AW_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); }
+  fs.mkdirSync(awDir, { recursive: true });
+  fs.writeFileSync(path.join(awDir, "workspace.yaml"), "team_id: " + flag("--team") + "\\naweb_url: " + flag("--service") + "\\nalias: fixture\\n");
   console.log(JSON.stringify({ status: "connected" }));
 } else if (args[0] === "workspace" && args[1] === "status") {
   console.log(JSON.stringify({ selected_team: ${JSON.stringify(activeTeam)}, workspace: { alias: "fixture", workspace_path: process.cwd() } }));
@@ -310,7 +320,7 @@ test("authority discovery does not walk above the workspace", async (t) => {
 test("roster guidance uses the required --to recipient flag", async (t) => {
   const root = tempDir(t);
   mkdirSync(join(root, ".aw"));
-  const result = await run(["roster"], {
+  const result = await run(["roster", "--soul", "dev"], {
     PATH: fakePath(t, `printf '%s\\n' '{"team_id":"default:test","members":[]}'`),
     OATS_EVENT: "roster",
     OATS_HOME: root,
@@ -326,7 +336,7 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
 test("setup --username initializes a missing root and reports the hosted default team mapping", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: "default:alice.aweb.ai" });
-  for (const args of [["setup", "--username", "alice"], ["setup", "--username=alice"]]) {
+  for (const args of [["setup", "--soul", "dev", "--username", "alice"], ["setup", "--username=alice", "--soul=dev"]]) {
     const result = await run(args, {
       PATH: fake.path,
       AWEB_API_KEY: "",
@@ -364,11 +374,93 @@ test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
   assert.match(result.stdout, /readiness: ready/);
 });
 
+test("setup refuses a missing shared default root with the invite remedy", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const teams = [{ label: "oats-shared", team: "shared:reh.test", default: true, from: "shared" }];
+  const result = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_SOUL: "/must/not/use/path-soul",
+    OATS_DEFAULT_TEAM: "oats-shared",
+    OATS_DEFAULT_TEAM_ID: "shared:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "shared",
+    OATS_TEAMS: JSON.stringify(teams),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared: ask its owner for an invite, then run `oats aweb setup --soul dev --join oats-shared --invite <token>`/);
+  assert.doesNotMatch(result.stdout, /--username|AWEB_API_KEY/);
+  assert.equal(existsSync(join(root, ".aw")), false);
+});
+
+test("setup refuses a shared default root without that membership", async (t) => {
+  const root = tempDir(t);
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  const fake = fakeAwSetupPath(t);
+  const teams = [{ label: "oats-shared", team: "shared:reh.test", default: true, from: "shared" }];
+  const result = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_LIST_TEAMS: JSON.stringify({ memberships: [{ team_id: "other:reh.test" }] }),
+    OATS_EVENT: "setup",
+    OATS_AGENT: "dev",
+    OATS_DEFAULT_TEAM: "oats-shared",
+    OATS_DEFAULT_TEAM_ID: "shared:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "shared",
+    OATS_TEAMS: JSON.stringify(teams),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared/);
+});
+
+test("setup reports non-default shared teams missing from this host", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const teams = [
+    { label: "personal", team: "default:reh.test", default: true, from: "local" },
+    { label: "oats-shared", team: "shared:reh.test", default: false, from: "shared" },
+  ];
+  const result = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_AGENT: "dev",
+    OATS_DEFAULT_TEAM: "personal",
+    OATS_DEFAULT_TEAM_ID: "default:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify(teams),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared/);
+});
+
+test("setup local default with no root keeps the onboarding menu", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const result = await run(["setup"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_DEFAULT_TEAM: "personal",
+    OATS_DEFAULT_TEAM_ID: "default:reh.test",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify([{ label: "personal", team: "default:reh.test", default: true, from: "local" }]),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /No aweb workspace/);
+  assert.match(result.stdout, /--username <u>/);
+});
+
 test("setup --join --invite accepts into a per-team root without printing the token", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
-  const result = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN"], {
+  const result = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN", "--service", "https://owner.example/api"], {
     PATH: fake.path,
     AWEB_API_KEY: "",
     AW_FAKE_TEAM: "joined:example.invalid",
@@ -384,6 +476,159 @@ test("setup --join --invite accepts into a per-team root without printing the to
   assert.match(result.stdout, /per-team root/);
   const accept = fake.readCalls().find((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite");
   assert.equal(accept.identityHome, join(root, ".aweb-roots", "joined", ".aw"));
+  const connect = fake.readCalls().find((c) => c.args.slice(0, 2).join(" ") === "workspace connect");
+  assert.equal(connect.identityHome, join(root, ".aweb-roots", "joined", ".aw"));
+  assert.ok(connect.args.includes("--service=https://owner.example/api"));
+  assert.ok(connect.args.includes("--team=joined:example.invalid"));
+  assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "workspace.yaml")), true);
+  assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
+
+  const afterJoin = await run(["setup", "--soul", "dev"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    OATS_EVENT: "setup",
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_DEFAULT_TEAM_FROM: "shared",
+    OATS_TEAMS: JSON.stringify([{ label: "joined", team: "joined:example.invalid", default: true, from: "shared" }]),
+    OATS_SETTINGS: JSON.stringify({ root, roots: { "joined:example.invalid": join(root, ".aweb-roots", "joined") } }),
+  }, root);
+  assert.equal(afterJoin.code, 0, afterJoin.stderr);
+  assert.doesNotMatch(afterJoin.stdout, /is shared: ask its owner/);
+  assert.match(afterJoin.stdout, /readiness: ready/);
+});
+
+test("setup --join can source service from AWEB_URL or a sibling root", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
+  const fromEnv = await run(["setup", "--join", "envteam", "--invite", "TOKEN__envteam:example.invalid", "--name", "env-alias"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AWEB_URL: "https://env.example/api",
+    AW_FAKE_TEAM: "envteam:example.invalid",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "envteam",
+    OATS_DEFAULT_TEAM_ID: "envteam:example.invalid",
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(fromEnv.code, 0, fromEnv.stderr);
+  assert.ok(fake.readCalls().find((c) => c.identityHome === join(root, ".aweb-roots", "envteam", ".aw") && c.args.includes("--service=https://env.example/api")));
+
+  const sibling = join(root, ".aweb-roots", "envteam");
+  const fromSibling = await run(["setup", "--join", "sibling", "--invite", "TOKEN__sibling:example.invalid", "--name", "sib-alias"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_FAKE_TEAM: "sibling:example.invalid",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "sibling",
+    OATS_DEFAULT_TEAM_ID: "sibling:example.invalid",
+    OATS_SETTINGS: JSON.stringify({ root, roots: { "envteam:example.invalid": sibling } }),
+  }, root);
+  assert.equal(fromSibling.code, 0, fromSibling.stderr);
+  assert.ok(fake.readCalls().find((c) => c.identityHome === join(root, ".aweb-roots", "sibling", ".aw") && c.args.includes("--service=https://env.example/api")));
+});
+
+test("setup --join requires --name when no root identity can supply an alias", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
+  const refused = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN", "--service", "https://owner.example/api"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_WHOAMI_FAIL: "1",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /--name <alias> is required when no root identity is available/);
+  assert.equal(fake.readCalls().some((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite"), false);
+
+  const joined = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN", "--service", "https://owner.example/api", "--name", "dev-alias"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_WHOAMI_FAIL: "1",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(joined.code, 0, joined.stderr);
+  const accept = fake.readCalls().find((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite");
+  assert.ok(accept.args.includes("--name=dev-alias"));
+  assert.equal(accept.args.includes("--name=root"), false);
+});
+
+test("setup --join fails in one line without an explicit, environment, or sibling-root service", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
+  const result = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    AW_ACCEPT_OMIT_SERVICE: "1",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /cannot determine the aweb service for joined team joined from/);
+  assert.match(result.stderr, /pass --service <url> \(ask the team owner; hosted aweb is https:\/\/app\.aweb\.ai\/api\)/);
+  assert.equal(fake.readCalls().some((c) => c.args.slice(0, 2).join(" ") === "workspace connect"), false);
+  assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "identity.yaml")), true, "accepted identity is kept for resume");
+  assert.doesNotMatch(readFileSync(join(root, "oats-local.yaml"), "utf8"), /joined:example\.invalid/);
+});
+
+test("setup --join connect failure keeps the root and can resume without a new invite", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const fake = fakeAwSetupPath(t, { activeTeam: "joined:example.invalid" });
+  const result = await run(["setup", "--join", "joined", "--invite", "SECRET-INVITE-TOKEN", "--service", "https://owner.example/api"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    AW_CONNECT_FAIL: "1",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /workspace connect\/verification failed/);
+  assert.equal(fake.readCalls().some((c) => c.args.slice(0, 2).join(" ") === "workspace connect"), true);
+  assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "identity.yaml")), true, "failed connect keeps the accepted identity for resume");
+  assert.match(result.stderr, /resume with: oats aweb setup --soul <soul> --join joined --service <url>/);
+  assert.doesNotMatch(readFileSync(join(root, "oats-local.yaml"), "utf8"), /joined:example\.invalid/);
+
+  const resumed = await run(["setup", "--join", "joined", "--service", "https://owner.example/api"], {
+    PATH: fake.path,
+    AWEB_API_KEY: "",
+    AW_FAKE_TEAM: "joined:example.invalid",
+    OATS_EVENT: "setup",
+    OATS_WORKSPACE: root,
+    OATS_DEFAULT_TEAM: "joined",
+    OATS_DEFAULT_TEAM_ID: "joined:example.invalid",
+    OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify([{ label: "joined", team: "joined:example.invalid", default: true, from: "shared" }]),
+    OATS_SETTINGS: JSON.stringify({ root }),
+  }, root);
+  assert.equal(resumed.code, 0, resumed.stderr);
+  assert.equal(fake.readCalls().filter((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite").length, 1, "resume does not spend the invite again");
+  assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "workspace.yaml")), true);
   assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
 });
 
@@ -516,8 +761,9 @@ test("setup --create fails when aw create omits team_id or invite token", async 
 test("recording per-team roots refuses flow-style oats-local but updates block roots atomically with comments", async (t) => {
   const flowRoot = tempDir(t);
   writeFileSync(join(flowRoot, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\nsettings: { \"oats.aweb\": { roots: {} } }\n");
+  const originalFlowLocal = readFileSync(join(flowRoot, "oats-local.yaml"), "utf8");
   const flowFake = fakeAwSetupPath(t);
-  const refused = await run(["setup", "--join", "flow", "--invite", "SECRET"], {
+  const refused = await run(["setup", "--join", "flow", "--invite", "SECRET", "--service", "https://owner.example/api"], {
     PATH: flowFake.path,
     AWEB_API_KEY: "",
     AW_FAKE_TEAM: "flow:example.invalid",
@@ -531,11 +777,14 @@ test("recording per-team roots refuses flow-style oats-local but updates block r
   assert.equal(refused.code, 1);
   assert.match(refused.stderr, /cannot safely update settings\.oats\.aweb\.roots automatically/);
   assert.match(refused.stderr, /add this line by hand/);
+  assert.equal(readFileSync(join(flowRoot, "oats-local.yaml"), "utf8"), originalFlowLocal, "flow-style oats-local.yaml is byte-identical after refusal");
+  assert.equal(existsSync(join(flowRoot, ".aweb-roots", "flow")), false, "refusal happens before creating the per-team root");
+  assert.equal(flowFake.readCalls().some((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite"), false, "refusal happens before accepting the invite");
 
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n# keep me\nsettings:\n  oats.aweb:\n    roots:\n      \"old:example.invalid\": \"/old\"\n");
   const fake = fakeAwSetupPath(t);
-  const ok = await run(["setup", "--join", "old", "--invite", "SECRET"], {
+  const ok = await run(["setup", "--join", "old", "--invite", "SECRET", "--service", "https://owner.example/api"], {
     PATH: fake.path,
     AWEB_API_KEY: "",
     AW_FAKE_TEAM: "old:example.invalid",
