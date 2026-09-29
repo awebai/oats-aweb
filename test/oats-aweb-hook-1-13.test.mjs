@@ -152,8 +152,13 @@ function spawnGrant(base, extraSettings = {}, extraEnv = {}) {
 test("normal global grants use the 1.13 concrete default scopes and preflight custody before mint", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { home, custody, r } = spawnGrant(base);
+    const { home, custody, r } = spawnGrant(base, { delivery: "session" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.doc.brief, /line naming what is waiting/);
+    assert.match(r.doc.brief, /aw mail show --message-id <id> --json/);
+    assert.match(r.doc.brief, /aw mail inbox --show-all --json/);
+    assert.match(r.doc.brief, /Read state is not completion/);
+    assert.match(r.doc.brief, /--conversation-id.*not a recovery check/);
     assert.deepEqual(r.doc.meta.identity.grant.scopes, NORMAL_SCOPES);
     assert.equal(r.doc.meta.identity.grant.home, join(home, ".aweb-identity"));
     const lines = logLines(base);
