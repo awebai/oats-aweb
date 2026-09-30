@@ -207,7 +207,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - *Sent from the wrong team:* you forgot or added `--identity-home`. Reply from
   the identity that received the message.
 - *A grant condition* (`grant_expired`, `grant_revoked`, …) in resident-grant
-  mode: stop messaging and report the exact condition; the host renews it.
+  mode: stop messaging and report the exact condition. With `renew: off` the
+  grant expires at its TTL; the remedy is `renew: launch` plus a restart, or a
+  respawn.
 - *Nothing arrives:* compare your `Comms:` line with section 4, run the inbox
   commands once, and report a readiness warning rather than looping.
 - A flag looks wrong: run `aw <command> --help`; never guess flags.
