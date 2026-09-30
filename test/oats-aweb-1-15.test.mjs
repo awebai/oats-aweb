@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 import { assertKernelOperationAnswer } from "./helpers/kernel-operation-envelope-rule.mjs";
+import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -40,6 +41,7 @@ if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2
 let stdin = "";
 if (args.includes("--registration-json")) { try { stdin = fs.readFileSync(0, "utf8"); } catch {} }
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, cwd: process.cwd(), identityHome, stdin }) + "\\n");
+(${joinFromFake})(args);
 const emit = (o) => console.log(JSON.stringify(o));
 const regs = () => { try { return JSON.parse(fs.readFileSync(${JSON.stringify(reg)}, "utf8")); } catch { return {}; } };
 const saveRegs = (r) => fs.writeFileSync(${JSON.stringify(reg)}, JSON.stringify(r));
@@ -122,9 +124,9 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.17.3");
-  assert.equal(pkg.version, "1.17.3");
-  assert.equal(dist.version, "1.17.3");
+  assert.equal(manifest.version, "1.17.4");
+  assert.equal(pkg.version, "1.17.4");
+  assert.equal(dist.version, "1.17.4");
   assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
@@ -205,9 +207,9 @@ test("hosted workspace: the primary team resolves as in 1.14.2 (root's active te
   assert.equal(doc.meta.team, "legacy:example.test");
   assert.equal(doc.meta.identity.team, "legacy:example.test");
   assert.deepEqual(doc.meta.defaultTeam, { label: "default", team: "legacy:example.test", from: "deployment" });
-  const invite = fake.readCalls().find((c) => c.args[0] === "team" && c.args[1] === "invite");
-  assert.equal(invite.cwd, fx.ws, "the deployment root mints, as in 1.14.2");
-  assert.equal(invite.args.find((a) => a.startsWith("--team-id="))?.slice("--team-id=".length) ?? invite.args[invite.args.indexOf("--team-id") + 1], "legacy:example.test");
+  const [mint] = joinFromCalls(fake.readCalls());
+  assert.equal(flagValue(mint.args, "--join-from"), fx.ws, "the deployment root mints, as in 1.14.2");
+  assert.equal(flagValue(mint.args, "--join-team"), "legacy:example.test");
   assert.equal(existsSync(fx.defaultRoot), false, "no default-team authority is created");
   assert.doesNotMatch(`${doc.warning || ""}${doc.brief}`, /default-team-|aw auth|team ensure/);
   const result = check(fx, fake);

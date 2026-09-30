@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
+import { joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ROOT = join(REPO, "oats-package");
@@ -44,6 +45,7 @@ let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
 if (args[0] === "version") { console.log("aw 1.36.13"); process.exit(0); }
 fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY }) + "\\n");
+(${joinFromFake})(args);
 const awDir = identityHome || path.join(process.cwd(), ".aw");
 const teamsFile = path.join(awDir, "teams.json");
 const writeTeams = (team) => { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team }] })); };
@@ -840,7 +842,7 @@ test("spawn accepts a 64-character alias and rejects 65 before aw", async (t) =>
   const alias64 = `a${"b".repeat(63)}`;
   const accepted = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: okHome, OATS_INSTANCE: alias64, OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, okHome);
   assert.equal(accepted.code, 0, accepted.stdout + accepted.stderr);
-  assert.ok(fake.readCalls().some((call) => call.args[0] === "team" && call.args[1] === "join" && (call.args.includes(`--name=${alias64}`) || (call.args.includes("--name") && call.args[call.args.indexOf("--name") + 1] === alias64))));
+  assert.ok(joinFromCalls(fake.readCalls()).some((call) => call.args.includes(`--name=${alias64}`)));
 
   const callsBefore = fake.readCalls().length;
   const alias65 = `a${"b".repeat(64)}`;
@@ -856,7 +858,7 @@ test("alias conflict remedy names --name and --purpose", async (t) => {
   mkdirSync(home);
   const fake = fakeAwSetupPath(t);
   const aw = join(fake.path, "aw");
-  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "version") { console.log("aw 1.36.13"); process.exit(0); }\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
+  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "version") { console.log("aw 1.36.13"); process.exit(0); }\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nif (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;

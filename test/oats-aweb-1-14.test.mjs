@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
+import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -56,6 +57,7 @@ let args = process.argv.slice(2);
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
 fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome }) + "\\n");
+(${joinFromFake})(args);
 const emit = (o) => console.log(JSON.stringify(o));
 const teamFromToken = (token) => token.replace(/^TOKEN__/, "");
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
@@ -117,9 +119,9 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.17.3");
-  assert.equal(dist.version, "1.17.3");
-  assert.equal(manifest.version, "1.17.3");
+  assert.equal(pkg.version, "1.17.4");
+  assert.equal(dist.version, "1.17.4");
+  assert.equal(manifest.version, "1.17.4");
   assert.equal(manifest.settings.team, undefined);
   assert.equal(dist.compatibility.oats, ">=0.30.0");
   assert.equal(manifest.compatibility.oats, ">=0.30.0");
@@ -182,8 +184,9 @@ test("mapped primary label in OATS_TEAMS is eligible while no settings team mint
   const doc = JSON.parse(spawned.stdout);
   assert.equal(doc.meta.team, "default:example.test", "OATS_TEAM_ID names the primary label team, not the primary mint target");
   assert.equal((doc.meta.joinedTeams || []).length, 0);
-  const inviteCalls = fake.readCalls().filter((c) => c.args[0] === "team" && c.args[1] === "invite");
-  assert.equal(inviteCalls[0].args.find((a) => a.startsWith("--team-id="))?.slice("--team-id=".length) ?? inviteCalls[0].args[inviteCalls[0].args.indexOf("--team-id") + 1], "default:example.test");
+  const mints = joinFromCalls(fake.readCalls());
+  assert.equal(mints.length, 1);
+  assert.equal(flagValue(mints[0].args, "--join-team"), "default:example.test");
 
   const listed = runHook("teams", { cwd: home, env: { ...env, OATS_EVENT: "teams", OATS_META: JSON.stringify(doc.meta) }, args: ["--json"] });
   assert.equal(listed.status, 0, listed.stderr);
