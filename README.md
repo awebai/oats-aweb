@@ -5,7 +5,7 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.17.2 — team model v2 provider
+## 1.17.3 — team model v2 provider
 
 Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
 team model v2 (kernel 0.30): the kernel supplies the default team and eligible

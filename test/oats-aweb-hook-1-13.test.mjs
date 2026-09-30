@@ -159,6 +159,9 @@ test("normal global grants use the 1.13 concrete default scopes and preflight cu
     assert.match(r.doc.brief, /aw mail inbox --show-all --json/);
     assert.match(r.doc.brief, /Read state is not completion/);
     assert.match(r.doc.brief, /--conversation-id.*not a recovery check/);
+    assert.match(r.doc.brief, /At session start, run `aw whoami`, then `aw mail inbox` and `aw chat pending`/);
+    assert.match(r.doc.brief, /do not run `aw workspace status` or `aw id show` from this grant seat/);
+    assert.match(r.doc.brief, /Grant inspection \(`aw id grant list\/show`\) runs from the resident custody `\.aw`, not from this grant home/);
     assert.deepEqual(r.doc.meta.identity.grant.scopes, NORMAL_SCOPES);
     assert.equal(r.doc.meta.identity.grant.home, join(home, ".aweb-identity"));
     const lines = logLines(base);
@@ -421,6 +424,29 @@ test("launch renewal mints into a fresh grant home, emits the new locator, and r
     assert.equal(r.doc.meta.identity.grant.home, r.doc.env.AWEB_IDENTITY_HOME);
     assert.ok(logLines(base).some((l) => l.argv.join(" ") === "id grant revoke grant-old --json"));
     assert.equal(logLines(base).some((l) => l.argv.join(" ").includes("foreign-parent-grant")), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("session launch renewal registers the wake broker with the new grant before revoking the old grant", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
+    const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"], home: oldHome } } };
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: r.doc.meta.identity.grant.home });
+    assert.notEqual(r.doc.env.AWEB_IDENTITY_HOME, oldHome);
+    const lines = logLines(base);
+    const wakeIndex = lines.findIndex((l) => l.argv.slice(0, 2).join(" ") === "wake register");
+    assert.notEqual(wakeIndex, -1, "renewal registers the new grant home with the wake broker");
+    const wake = lines[wakeIndex].argv;
+    assert.equal(argvValue(wake, "--home"), home);
+    assert.equal(argvValue(wake, "--identity-home"), r.doc.env.AWEB_IDENTITY_HOME);
+    assert.equal(argvValue(wake, "--delivery"), "session");
+    const oldRevokeIndex = lines.findIndex((l) => l.argv.join(" ") === "id grant revoke grant-old --json");
+    assert.notEqual(oldRevokeIndex, -1, "old grant revoked after new grant is active");
+    assert.ok(wakeIndex < oldRevokeIndex, "broker points at the new grant before the old grant is revoked");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

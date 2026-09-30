@@ -122,9 +122,9 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.17.2");
-  assert.equal(pkg.version, "1.17.2");
-  assert.equal(dist.version, "1.17.2");
+  assert.equal(manifest.version, "1.17.3");
+  assert.equal(pkg.version, "1.17.3");
+  assert.equal(dist.version, "1.17.3");
   assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
@@ -162,6 +162,17 @@ test("session-delivery guidance pins broker presentation and exact recovery rule
     assert.match(text, /--conversation-id.*not (a )?recovery check|not recovery/, file);
     assert.doesNotMatch(text, /aweb: N items waiting|empty `aw mail inbox` means nothing|last handled `message_id`/, file);
   }
+  const oatsSkill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
+  assert.match(oatsSkill, /With `renew: off` the\s+grant expires at its TTL/);
+  assert.match(oatsSkill, /`renew: launch` plus a restart, or a\s+respawn/);
+  assert.doesNotMatch(oatsSkill, /host renews it/);
+  const inject = readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8");
+  assert.match(inject, /At session start in a grant seat, run `aw whoami`,\s+then `aw mail inbox` and `aw chat pending`/);
+  assert.match(inject, /do not run `aw workspace status` or\s+`aw id show` from the grant home/);
+  assert.match(inject, /Grant inspection \(`aw id grant list\/show`\)\s+runs from the resident custody `\.aw`, not from the grant home/);
+  const identitySkill = readFileSync(join(CAPABILITY, "skills", "aweb-identity", "SKILL.md"), "utf8");
+  assert.match(identitySkill, /resident session grant[\s\S]*`aw whoami` only[\s\S]*`aw id show` and `aw id grant list\/show`/);
+  assert.match(identitySkill, /grant inspection runs from the resident custody `\.aw`/);
 
   const hook = readFileSync(HOOK, "utf8");
   const capturedNative = readFileSync(join(CAPABILITY, "lib", "captured-native.mjs"), "utf8");

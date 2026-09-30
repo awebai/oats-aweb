@@ -117,9 +117,9 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.17.2");
-  assert.equal(dist.version, "1.17.2");
-  assert.equal(manifest.version, "1.17.2");
+  assert.equal(pkg.version, "1.17.3");
+  assert.equal(dist.version, "1.17.3");
+  assert.equal(manifest.version, "1.17.3");
   assert.equal(manifest.settings.team, undefined);
   assert.equal(dist.compatibility.oats, ">=0.30.0");
   assert.equal(manifest.compatibility.oats, ">=0.30.0");
@@ -333,7 +333,7 @@ test("mapped primary joined team can be joined and left", (t) => {
   assert.equal(doc.meta.team, "default:example.test");
 });
 
-test("retained session seat says it is not broker-registered and gives recovery rule", (t) => {
+test("retained session seat registers with the broker and gives recovery rule", (t) => {
   const root = tempDir(t), home = join(root, "home"), source = join(root, "source", ".aw");
   mkdirSync(home, { recursive: true });
   mkdirSync(source, { recursive: true });
@@ -359,10 +359,12 @@ test("retained session seat says it is not broker-registered and gives recovery 
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
   const doc = JSON.parse(spawned.stdout);
   assert.equal(doc.meta.retained, true);
-  assert.match(doc.brief, /retained seat is not registered with the host wake broker/);
-  assert.match(doc.brief, /NOTHING wakes you/);
-  assert.match(doc.brief, /aw mail inbox` and `aw chat pending/);
-  assert.match(doc.brief, /Once registered, the broker presents incoming mail\/chat as a waiting line or the full event/);
+  assert.doesNotMatch(doc.brief, /not registered|NOTHING wakes you/);
+  assert.match(doc.brief, /host wake broker presents incoming mail\/chat in your terminal/);
+  assert.match(doc.brief, /either as a line naming what is waiting or as the full event with body/);
+  assert.match(doc.brief, /Handle what is presented/);
+  const calls = fake.readCalls();
+  assert.ok(calls.some((c) => c.args[0] === "wake" && c.args[1] === "register" && c.args.includes("--home") && c.args.includes(home) && c.args.includes("--identity-home") && c.args.includes(join(home, ".aw")) && c.args.includes("--delivery") && c.args.includes("session")), "retained seat registers the copied identity home with the wake broker");
   assert.match(doc.brief, /aw mail show --message-id <id> --json/);
   assert.match(doc.brief, /aw mail inbox --show-all --json/);
   assert.match(doc.brief, /--cursor/);

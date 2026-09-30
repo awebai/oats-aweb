@@ -42,7 +42,11 @@ and `--conversation-id` is not a recovery check.
 
 Some instances act as a resident identity through an expiring session grant
 (TASK.md says so). Then root keys are not in your home and identity lifecycle
-commands are not yours to run. If `aw mail`/`aw chat` reports `grant_expired`,
+commands are not yours to run. At session start in a grant seat, run `aw whoami`,
+then `aw mail inbox` and `aw chat pending`; do not run `aw workspace status` or
+`aw id show` from the grant home. Grant inspection (`aw id grant list/show`)
+runs from the resident custody `.aw`, not from the grant home. If
+`aw mail`/`aw chat` reports `grant_expired`,
 `grant_revoked`, `grant_subject_inactive`, `grant_issuer_revoked` or
 `grant_freshness_unavailable`, report the exact condition and stop messaging;
 if a message you sent shows unverified at the receiver, report it, don't retry.
