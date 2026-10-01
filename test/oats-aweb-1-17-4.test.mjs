@@ -60,12 +60,14 @@ if (args[0] === "wake" && args[1] === "deregister") { span(Number(process.env.FA
 if (args[0] === "workspace" && args[1] === "delete") {
   span(Number(process.env.FAKE_DELETE_MS || 0));
   if (process.env.FAKE_DELETE_FAIL) { console.error("workspace not retired: 503 service unavailable"); process.exit(1); }
+  if (process.env.FAKE_RETRY_401_AFTER_DELETE && fs.existsSync(path.join(process.cwd(), ".aw", "revoked"))) { console.error('aweb: http 401: {"detail":"Certificate cert-dev-1 has been revoked"}'); process.exit(1); }
   const target = args[2];
   let text = ""; try { text = fs.readFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "utf8"); } catch {}
   let identity = ""; try { identity = fs.readFileSync(path.join(process.cwd(), ".aw", "identity.yaml"), "utf8"); } catch {}
   const own = process.env.FAKE_OWN_WORKSPACE_ID || (text.match(/workspace_id:\\s*(\\S+)/) || [])[1], alias = (identity.match(/alias:\\s*(\\S+)/) || [])[1];
   if (target !== own && target !== alias) { console.error("workspace name " + JSON.stringify(target) + " not found"); process.exit(1); }
-  fs.rmSync(path.join(process.cwd(), ".aw"), { recursive: true, force: true });
+  if (process.env.FAKE_RETRY_401_AFTER_DELETE) fs.writeFileSync(path.join(process.cwd(), ".aw", "revoked"), "1\\n");
+  else fs.rmSync(path.join(process.cwd(), ".aw"), { recursive: true, force: true });
   console.log(JSON.stringify({ workspace_id: own, alias, deleted_at: "", identity_deleted: true, alias_released: true, alias_released_reason: "released" }));
   process.exit(0);
 }
@@ -341,6 +343,28 @@ test("retire deletes by the recorded workspace id and overlaps the wake deregist
   assert.ok(del.span.start < dereg.span.end && dereg.span.start < del.span.end, `deregister ${JSON.stringify(dereg.span)} and delete ${JSON.stringify(del.span)} overlap`);
   assert.equal(fx.fake.registrations()[fx.home], undefined, "the registration is gone after retire");
   for (const c of calls) assert.equal(c.env.AW_NO_UPDATE_CHECK, "1");
+});
+
+test("retire retry after successful self-delete does not call the revoked certificate again", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+
+  const first = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_RETRY_401_AFTER_DELETE: "1" });
+  assert.equal(first.status, 0, first.stdout + first.stderr);
+  assert.deepEqual(first.doc, { meta: { retired: true, aliasReusable: true, aliasReason: "released", joinedTeams: [] } });
+  assert.equal(existsSync(join(fx.home, ".aw", "revoked")), true);
+  assert.equal(fx.fake.readCalls().filter((c) => c.args[0] === "workspace" && c.args[1] === "delete" && c.span).length, 1);
+  const marker = JSON.parse(readFileSync(join(fx.home, ".oats-aweb", "default-retire.json"), "utf8"));
+  assert.equal(marker.kind, "default-workspace-delete");
+  assert.equal(marker.retired, true);
+  assert.equal(marker.alias, "dev-1");
+
+  const retry = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_RETRY_401_AFTER_DELETE: "1" });
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.deepEqual(retry.doc, { meta: { retired: true, aliasReusable: true, aliasReason: "released", joinedTeams: [] } });
+  const deletes = fx.fake.readCalls().filter((c) => c.args[0] === "workspace" && c.args[1] === "delete" && c.span);
+  assert.equal(deletes.length, 1, "retry used the local completion marker instead of reusing the revoked cert");
 });
 
 test("retire falls back to the alias when workspace.yaml has no matching entry or cannot be read", (t) => {

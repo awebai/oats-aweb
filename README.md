@@ -5,12 +5,18 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.17.6 — team model v2 provider
+## 1.17.7 — team model v2 provider
 
 Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
 team model v2 (kernel 0.30): the kernel supplies the default team and eligible
 teams, and oats.aweb never reads a provider `team` setting or the root's active
 team as a fallback.
+
+### Fixed
+
+- Native retire writes a local completion marker after the default workspace is
+  self-deleted, so a later retire retry after another hook kept the home does
+  not call `aw workspace delete` again with an already-revoked certificate.
 
 ### Changed (breaking)
 
