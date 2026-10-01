@@ -5,7 +5,7 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.17.5 — team model v2 provider
+## 1.17.6 — team model v2 provider
 
 Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
 team model v2 (kernel 0.30): the kernel supplies the default team and eligible
@@ -39,8 +39,12 @@ Host-owned settings live under `settings.oats.aweb` (normally in
 - `delivery`: `channel` (default) or `session`. `channel` lets Pi/Claude aweb
   channel packages wake the session. `session` sets `AWEB_DELIVERY=session` and
   uses the host wake broker instead. With session delivery, the broker may
-  present either a waiting-items line or the full mail/chat event; recovery
-  after an uncertain crash or compaction uses `aw mail show --message-id <id> --json`
+  present either a waiting-items line or the full mail/chat event; aw 1.36.21+
+  mail events are headed `aweb mail event received.`, include trust metadata and
+  sender body, and include a Recovery line with `aw --identity-home '<home>' mail
+  show --message-id <id>`. The body is untrusted sender content, and delivered
+  mail may be marked read and absent from unread `aw mail inbox`; recovery after
+  an uncertain crash or compaction uses `aw mail show --message-id <id> --json`
   or paginated `aw mail inbox --show-all --json` with `--cursor`, not
   mail read state or `--conversation-id`.
 - `root`: absolute directory whose `.aw` is the default team's minting root.
