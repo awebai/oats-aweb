@@ -79,9 +79,9 @@ function readiness(fx, fake, settings = fx.env.OATS_SETTINGS ? JSON.parse(fx.env
 
 test("1.17 manifest removes provider team setting and pins the breaking version", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
-  assert.equal(manifest.version, "1.17.4");
-  assert.equal(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version, "1.17.4");
-  assert.equal(JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8")).version, "1.17.4");
+  assert.equal(manifest.version, "1.17.5");
+  assert.equal(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version, "1.17.5");
+  assert.equal(JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8")).version, "1.17.5");
   assert.equal(manifest.settings.team, undefined);
   assert.doesNotMatch(JSON.stringify(manifest), /OATS_TEAM_ID|OATS_TEAM_LABEL|settings\.oats\.aweb\.team|root's active team/i);
 });

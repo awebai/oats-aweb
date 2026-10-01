@@ -1,7 +1,8 @@
 // oats.aweb 1.17.4: the spawn hook mints in one aw process (aw init
 // --join-from), the aw floor is read without waiting for aw's update check,
 // every aw child runs with AW_NO_UPDATE_CHECK=1, and retire deletes by
-// workspace id while the wake deregistration runs beside it. Against a fake aw
+// workspace id while the wake deregistration runs beside it. 1.17.5: the
+// requested alias always stands in for the reported one. Against a fake aw
 // that models aw 1.36.17's refusals, not only its successes.
 
 import test from "node:test";
@@ -123,12 +124,12 @@ test("spawn mints with exactly one aw init --join-from from the home, then regis
 // the same bytes.
 const SESSION_BRIEF = ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker presents incoming mail/chat in your terminal, either as a line naming what is waiting or as the full event with body; the native aweb channel is not running. Handle what is presented. After an uncertain crash, compaction or restart, recover by reconciling STATE and task records against exact delivered ids: use \`aw mail show --message-id <id> --json\`, or page \`aw mail inbox --show-all --json\` with \`--cursor\`. Read state is not completion, and \`--conversation-id\` is not a recovery check.`;
 const TAIL = " Load the oats-aweb skill before messaging: `oats aweb teams --json` shows your teams, `oats aweb roster` who you can reach. Coordination stays in your deployment's task layer.";
-function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, mismatch }) {
+function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, mismatch, warning: extraWarning }) {
   const meta = { team, alias, delivery, defaultTeam: { label: "default", team, from: "deployment" }, left: [], runtime, identity: { mode: "local", alias, team, address: null, resident: null } };
   const env = { ...(delivery === "session" ? { AWEB_DELIVERY: "session" } : {}), AWEB_IDENTITY_HOME: join(home, ".aw") };
   const brief = `Comms: you have an aweb identity — alias "${alias}" on team ${team}, this deployment's default team.${mismatch ? ` [WARNING: joined ${team}, expected ${TEAM}]` : ""}${delivery === "session" ? SESSION_BRIEF : ""}${TAIL}`;
   const launch = runtime === "claude" && delivery === "channel" ? { launch: { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" } } : {};
-  const warning = mismatch ? { warning: `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` } : {};
+  const warning = mismatch ? { warning: `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` } : extraWarning ? { warning: extraWarning } : {};
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
 
@@ -141,16 +142,53 @@ test("spawn output is byte-identical to 1.17.3 for the same inputs", (t) => {
   }
 });
 
-test("mint result plausibility: implausible fields fall back to what was asked, a different team warns", (t) => {
+const ALIAS_WARNING = (name) => `oats-aweb: aw reported a different alias than requested; using the requested alias "${name}"`;
+
+test("mint result plausibility: the requested alias stands in, an implausible team falls back, a different team warns", (t) => {
   let fx = fixture(t);
   let r = fx.hook("spawn", { FAKE_JOIN_FROM_REPLY: JSON.stringify({ alias: "not an alias!", team_id: "no-colon" }) });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(r.stdout, expected117(fx.home, { delivery: "session", runtime: "claude" }));
+  assert.equal(r.stdout, expected117(fx.home, { delivery: "session", runtime: "claude", warning: ALIAS_WARNING("dev-1") }));
 
+  // A team mismatch warning still wins over the alias warning (1.17.5).
   fx = fixture(t);
   r = fx.hook("spawn", { FAKE_JOIN_FROM_REPLY: JSON.stringify({ alias: "Dev_1", team_id: "other:example.test" }) });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(r.stdout, expected117(fx.home, { team: "other:example.test", alias: "Dev_1", delivery: "session", runtime: "claude", mismatch: true }));
+  assert.equal(r.stdout, expected117(fx.home, { team: "other:example.test", delivery: "session", runtime: "claude", mismatch: true }));
+
+  // No or empty alias: the requested one, no warning.
+  for (const alias of [undefined, "", "   "]) {
+    fx = fixture(t);
+    r = fx.hook("spawn", { FAKE_JOIN_FROM_REPLY: JSON.stringify({ alias: alias ?? null }) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.stdout, expected117(fx.home, { delivery: "session", runtime: "claude" }), JSON.stringify(alias));
+  }
+});
+
+// ---------------------------------------------------------------- 1.17.5: alias
+
+test("a token echoed back as the alias never reaches meta, the brief or any output", (t) => {
+  const token = "inv_SUPERSECRET_TOKEN_9f3a";
+  for (const [delivery, runtime] of [["session", "claude"], ["channel", "claude"]]) {
+    const fx = fixture(t, { delivery, runtime });
+    const r = fx.hook("spawn", { OATS_INSTANCE: "probe", FAKE_JOIN_FROM_REPLY: JSON.stringify({ alias: token }) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.alias, "probe");
+    assert.equal(r.doc.meta.identity.alias, "probe");
+    assert.match(r.doc.brief, /alias "probe" on team/);
+    assert.equal(r.doc.warning, ALIAS_WARNING("probe"));
+    assert.doesNotMatch(r.stdout + r.stderr, /SUPERSECRET/);
+    assert.equal(r.stdout, expected117(fx.home, { alias: "probe", delivery, runtime, warning: ALIAS_WARNING("probe") }));
+  }
+});
+
+test("a reply alias equal to the requested name is byte-identical to 1.17.4", (t) => {
+  for (const [delivery, runtime] of [["session", "claude"], ["channel", "claude"], ["channel", "codex"]]) {
+    const fx = fixture(t, { delivery, runtime });
+    const r = fx.hook("spawn", { FAKE_JOIN_FROM_REPLY: JSON.stringify({ alias: "dev-1" }) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.stdout, expected117(fx.home, { delivery, runtime }), `${delivery}/${runtime}`);
+  }
 });
 
 // ---------------------------------------------------------------- 3: refusals

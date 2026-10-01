@@ -5,7 +5,7 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.17.4 — team model v2 provider
+## 1.17.5 — team model v2 provider
 
 Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
 team model v2 (kernel 0.30): the kernel supplies the default team and eligible
@@ -129,7 +129,9 @@ home: `aw init --join-from=<root> --join-team=<team> --name=<instance> --json
 connects the workspace, so the invite token never reaches the hook. The mint
 runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` or
 `AWEB_IDENTITY_HOME`, so the service comes from the invite. With session
-delivery the hook then runs `aw wake register`. Joined teams still use
+delivery the hook then runs `aw wake register`. The recorded alias is always
+the requested one: if aw reports another, the hook keeps the instance name and
+adds a warning that quotes nothing from aw's reply. Joined teams still use
 invite + `aw id team accept-invite` under `--identity-home`.
 
 Retire self-deletes with `aw workspace delete <workspace_id>`, taking the id
