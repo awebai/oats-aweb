@@ -1345,7 +1345,8 @@ if (event === "launch") {
     // token lives only inside aw, so the hook cannot tell a token echoed back as
     // the alias from a real alias; a different reported alias is named in a
     // warning that quotes nothing from the reply.
-    if (clean(raw.alias) && clean(raw.alias) !== instance) warnings.push(`oats-aweb: aw reported a different alias than requested; using the requested alias "${instance}"`);
+    const reportedAlias = clean(raw.alias);
+    if (reportedAlias && reportedAlias !== instance) warnings.push(`oats-aweb: aw reported a different alias than requested; using the requested alias "${instance}"`);
     const joined = {
       alias: instance,
       // Team ids are "<name>:<domain>"; anything else is not one, and the
