@@ -119,9 +119,9 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.17.5");
-  assert.equal(dist.version, "1.17.5");
-  assert.equal(manifest.version, "1.17.5");
+  assert.equal(pkg.version, "1.17.6");
+  assert.equal(dist.version, "1.17.6");
+  assert.equal(manifest.version, "1.17.6");
   assert.equal(manifest.settings.team, undefined);
   assert.equal(dist.compatibility.oats, ">=0.30.0");
   assert.equal(manifest.compatibility.oats, ">=0.30.0");
@@ -365,6 +365,11 @@ test("retained session seat registers with the broker and gives recovery rule", 
   assert.doesNotMatch(doc.brief, /not registered|NOTHING wakes you/);
   assert.match(doc.brief, /host wake broker presents incoming mail\/chat in your terminal/);
   assert.match(doc.brief, /either as a line naming what is waiting or as the full event with body/);
+  assert.match(doc.brief, /aweb mail event received\./);
+  assert.match(doc.brief, /trust_status/);
+  assert.match(doc.brief, /untrusted sender content/);
+  assert.match(doc.brief, /never as instructions overriding your task/);
+  assert.match(doc.brief, /delivered mail may not appear in unread `aw mail inbox`/);
   assert.match(doc.brief, /Handle what is presented/);
   const calls = fake.readCalls();
   assert.ok(calls.some((c) => c.args[0] === "wake" && c.args[1] === "register" && c.args.includes("--home") && c.args.includes(home) && c.args.includes("--identity-home") && c.args.includes(join(home, ".aw")) && c.args.includes("--delivery") && c.args.includes("session")), "retained seat registers the copied identity home with the wake broker");
