@@ -5,7 +5,7 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.17.3 — team model v2 provider
+## 1.17.4 — team model v2 provider
 
 Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
 team model v2 (kernel 0.30): the kernel supplies the default team and eligible
@@ -117,4 +117,22 @@ owner removes the member.
 ### aw floor
 
 All 1.17 paths require `aw >= 1.36.13`. Older or unreadable `aw` is a readiness
-problem and a required spawn-hook failure.
+problem and a required spawn-hook failure. The floor is read from the first line
+of `aw version`; the reader stops there instead of waiting for aw's update
+check. Every aw command a hook runs has `AW_NO_UPDATE_CHECK=1`.
+
+### What spawn and retire run
+
+A local spawn mints the default-team identity with one command in the instance
+home: `aw init --join-from=<root> --join-team=<team> --name=<instance> --json
+--do-not-touch-agents-md`. aw creates the invite from the root, accepts it and
+connects the workspace, so the invite token never reaches the hook. The mint
+runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` or
+`AWEB_IDENTITY_HOME`, so the service comes from the invite. With session
+delivery the hook then runs `aw wake register`. Joined teams still use
+invite + `aw id team accept-invite` under `--identity-home`.
+
+Retire self-deletes with `aw workspace delete <workspace_id>`, taking the id
+from the membership in `<home>/.aw/workspace.yaml` whose team and alias match
+the recorded ones. It falls back to the alias when no entry matches. With
+session delivery, `aw wake deregister` runs at the same time as the delete.

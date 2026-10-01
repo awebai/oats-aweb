@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
+import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -28,6 +29,7 @@ const fs = require("node:fs"), path = require("node:path");
 let args = process.argv.slice(2), identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, cwd: process.cwd(), identityHome }) + "\\n");
+(${joinFromFake})(args);
 const emit = (o) => console.log(JSON.stringify(o));
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 const home = () => identityHome || path.join(process.cwd(), ".aw");
@@ -77,9 +79,9 @@ function readiness(fx, fake, settings = fx.env.OATS_SETTINGS ? JSON.parse(fx.env
 
 test("1.17 manifest removes provider team setting and pins the breaking version", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
-  assert.equal(manifest.version, "1.17.3");
-  assert.equal(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version, "1.17.3");
-  assert.equal(JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8")).version, "1.17.3");
+  assert.equal(manifest.version, "1.17.4");
+  assert.equal(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version, "1.17.4");
+  assert.equal(JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8")).version, "1.17.4");
   assert.equal(manifest.settings.team, undefined);
   assert.doesNotMatch(JSON.stringify(manifest), /OATS_TEAM_ID|OATS_TEAM_LABEL|settings\.oats\.aweb\.team|root's active team/i);
 });
@@ -92,8 +94,11 @@ test("spawn mints default identity from kernel default and joins only requested 
   assert.deepEqual(doc.meta.defaultTeam, { label: "personal", team: "default:example.test", from: "soul" });
   assert.equal(doc.meta.joinedTeams.length, 1);
   assert.equal(doc.meta.joinedTeams[0].label, "shared");
+  const [mint] = joinFromCalls(fake.calls());
+  assert.equal(flagValue(mint.args, "--join-team"), "default:example.test");
+  assert.equal(flagValue(mint.args, "--join-from"), fx.ws);
   const invites = fake.calls().filter(c => c.args[0] === "team" && c.args[1] === "invite");
-  assert.deepEqual(invites.map(c => c.args.find((a) => a.startsWith("--team-id="))?.slice("--team-id=".length) ?? c.args[c.args.indexOf("--team-id") + 1]), ["default:example.test", "shared:example.test"]);
+  assert.deepEqual(invites.map(c => flagValue(c.args, "--team-id")), ["shared:example.test"], "only the joined team is minted by invite");
   assert.equal(invites[0].cwd, fx.ws);
   const connect = fake.calls().find(c => c.identityHome === join(fx.home, ".aweb-identity-shared") && c.args[0] === "workspace" && c.args[1] === "connect");
   assert.ok(connect, "joined team is explicitly workspace-connected after accept-invite");
@@ -220,9 +225,9 @@ test("valid team id is passed inert as one --team-id=value token", (t) => {
   const env = { ...process.env, ...fx.env, PATH: fake.path, OATS_DEFAULT_TEAM: "json", OATS_DEFAULT_TEAM_ID: "json:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "json", team: "json:example.test", default: true, from: "local" }]) };
   const r = spawnSync(process.execPath, [HOOK, "spawn"], { cwd: fx.home, env, encoding: "utf8" });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  const invite = fake.calls().find((c) => c.args[0] === "team" && c.args[1] === "invite");
-  assert.ok(invite.args.includes("--team-id=json:example.test"));
-  assert.equal(invite.args.includes("--team-id"), false);
+  const [mint] = joinFromCalls(fake.calls());
+  assert.ok(mint.args.includes("--join-team=json:example.test"));
+  assert.equal(mint.args.includes("--join-team"), false);
 });
 
 test("malformed aweb team ids are refused before any aw call", (t) => {
