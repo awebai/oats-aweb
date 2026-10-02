@@ -119,9 +119,9 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.17.7");
-  assert.equal(dist.version, "1.17.7");
-  assert.equal(manifest.version, "1.17.7");
+  assert.equal(pkg.version, "1.18.0");
+  assert.equal(dist.version, "1.18.0");
+  assert.equal(manifest.version, "1.18.0");
   assert.equal(manifest.settings.team, undefined);
   assert.equal(dist.compatibility.oats, ">=0.30.0");
   assert.equal(manifest.compatibility.oats, ">=0.30.0");
@@ -221,7 +221,9 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
   const spawned = runHook("spawn", { cwd: home, env });
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
   const spawnDoc = JSON.parse(spawned.stdout);
-  assert.deepEqual(spawnDoc.meta.joinedTeams.map((j) => ({ label: j.label, team: j.team, receive: j.receive })), [{ label: "alpha", team: "alpha:example.test", receive: "poll" }]);
+  // No OATS_RUNTIME: under delivery: channel a runtime with no aweb channel is
+  // a broker home, so its joined team receives through the broker.
+  assert.deepEqual(spawnDoc.meta.joinedTeams.map((j) => ({ label: j.label, team: j.team, receive: j.receive })), [{ label: "alpha", team: "alpha:example.test", receive: "native" }]);
   assert.equal(spawnDoc.meta.joinedTeams[0].identityHome, join(home, ".aweb-identity-alpha"));
   assert.equal(existsSync(join(home, ".aweb-identity-alpha", "identity.yaml")), true);
   assert.equal(existsSync(join(home, ".aweb-identity-alpha", "workspace.yaml")), true, "joined workspace is explicitly connected after accept-invite");
@@ -238,7 +240,7 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
   assert.equal(teams.unmapped, undefined);
   assert.equal(teams.eligible.find((e) => e.label === "alpha").joined, true);
   assert.equal(teams.eligible.find((e) => e.label === "beta").joined, false);
-  assert.equal(teams.joined[0].receive, "poll");
+  assert.equal(teams.joined[0].receive, "native");
 
   const joined = runHook("join", { cwd: home, env: { ...env, OATS_EVENT: "join" }, args: ["--labels", "beta", "--json"] });
   assert.equal(joined.status, 0, joined.stdout + joined.stderr);
