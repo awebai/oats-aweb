@@ -58,9 +58,9 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.19.0");
-  assert.equal(pkg.version, "1.19.0");
-  assert.equal(dist.version, "1.19.0");
+  assert.equal(manifest.version, "1.20.0");
+  assert.equal(pkg.version, "1.20.0");
+  assert.equal(dist.version, "1.20.0");
   assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
@@ -436,7 +436,7 @@ test("commands run from inside an instance session (AWEB_IDENTITY_HOME set) stil
   const session = { ...env, AWEB_IDENTITY_HOME: join(fx.home, ".aw"), OATS_META: JSON.stringify(doc.meta) };
   const roster = spawnSync(process.execPath, [HOOK, "roster", "--json"], { cwd: fx.home, env: { ...session, OATS_EVENT: "roster" }, encoding: "utf8" });
   assert.equal(roster.status, 0, roster.stdout + roster.stderr);
-  assert.equal(JSON.parse(roster.stdout).team_id, "legacy:example.test");
+  assert.equal(JSON.parse(roster.stdout).team, "legacy:example.test");
   const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...session, OATS_EVENT: "join" }, encoding: "utf8" });
   assert.equal(joined.status, 0, joined.stdout + joined.stderr);
 

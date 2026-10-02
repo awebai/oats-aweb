@@ -129,7 +129,7 @@ const CHANNEL_BRIEF = {
   claude: " Notification delivery: the aweb channel plugin pushes incoming mail/chat into this Claude Code session; the host wake broker does not deliver to this home.",
   pi: " Notification delivery: the aweb pi extension (@awebai/pi) pushes incoming mail/chat into this pi session; the host wake broker does not deliver to this home.",
 };
-const TAIL = " Load the oats-aweb skill before messaging: `oats aweb teams --json` shows your teams, `oats aweb roster` who you can reach. Coordination stays in your deployment's task layer.";
+const TAIL = " Load the oats-aweb skill before messaging: `oats aweb teams --json` shows your teams, `oats aweb roster` the team's members and workspaces, each labelled. Coordination stays in your deployment's task layer.";
 function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, mismatch, warning: extraWarning }) {
   const meta = { team, alias, delivery, defaultTeam: { label: "default", team, from: "deployment" }, left: [], runtime, identity: { mode: "local", alias, team, address: null, resident: null } };
   // Under channel, Claude and pi use their own channel; every other runtime the broker.
