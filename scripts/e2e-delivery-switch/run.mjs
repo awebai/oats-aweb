@@ -17,16 +17,28 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// One cancellation scope for the run. A signal (or any failure) aborts it:
+// every command main() starts is terminated, every wait in main() throws, and
+// no new command or process starts. Cleanup's commands run outside it.
+const cancel = new AbortController();
+class Cancelled extends Error {}
+function checkpoint() { if (cancel.signal.aborted) throw new Cancelled(`cancelled (${cancel.signal.reason?.message || cancel.signal.reason})`); }
+const pause = async (ms) => { checkpoint(); try { await delay(ms, undefined, { signal: cancel.signal }); } catch { checkpoint(); } };
 const REPO = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const HOOK = join(REPO, "oats-package", "capabilities", "oats-aweb", "bin", "oats-aweb.mjs");
 const INSTANCE = "dev-1";
-const SEND_INTERVAL_MS = 400;
+// Pacing of the real run; the harness's own tests shorten both through the
+// environment so they stay fast. Neither changes what is checked.
+const SEND_INTERVAL_MS = Number(process.env.E2EDS_SEND_INTERVAL_MS) || 400;
+const DOCKER_QUIT_WAIT_MS = Number(process.env.E2EDS_DOCKER_QUIT_WAIT_MS) || 30_000;
 const QUIET_MS = 10_000;
 
 // ---------------------------------------------------------------- arguments
@@ -55,19 +67,24 @@ const cleanupReport = [];     // { step, ok, detail }
 const scenarios = [];         // per-scenario evidence
 const sent = [];              // { seq, phase, id, at }
 const channelNotes = [];      // plugin notifications/claude/channel params
-let TMP, CLONE, project, composeArgs, brokerProc, pluginProc, dockerStartedByUs = false, pluginStderrPath;
+let TMP, CLONE, project, composeArgs, composeUpStarted = false, brokerProc, pluginProc, dockerStartedByUs = false, pluginStderrPath;
 
 const check = (name, ok, detail = "") => { checks.push({ name, ok: !!ok, detail }); if (!ok) console.error(`CHECK FAILED: ${name} ${detail}`); return !!ok; };
 const redact = (s) => String(s).split(TMP || "\0").join("$TMP");
 function logCommand(display, cwd) { commands.push({ display: redact(display), cwd: cwd ? redact(cwd) : undefined }); }
 const quote = (a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${String(a).replace(/'/g, "'\\''")}'`);
 
-async function runCmd(cmd, args, { cwd, env, display, timeout = 120_000, allowFailure = false, quiet = false } = {}) {
+/** Run a command. It belongs to the run's cancellation scope (refused once the
+ *  run is cancelled, SIGTERMed when it is cancelled while running) unless it is
+ *  a cleanup command, which must run after cancellation. */
+async function runCmd(cmd, args, { cwd, env, display, timeout = 120_000, allowFailure = false, quiet = false, cleanupCommand = false } = {}) {
+  if (!cleanupCommand) checkpoint();
   if (!quiet) logCommand(display || [cmd, ...args].map(quote).join(" "), cwd);
   try {
-    const r = await execFileAsync(cmd, args, { cwd, env, timeout, maxBuffer: 32 * 1024 * 1024, encoding: "utf8" });
+    const r = await execFileAsync(cmd, args, { cwd, env, timeout, maxBuffer: 32 * 1024 * 1024, encoding: "utf8", ...(cleanupCommand ? {} : { signal: cancel.signal }) });
     return { ok: true, code: 0, stdout: r.stdout, stderr: r.stderr };
   } catch (e) {
+    if (!cleanupCommand) checkpoint();
     if (allowFailure) return { ok: false, code: e.code, stdout: String(e.stdout || ""), stderr: String(e.stderr || "") };
     throw new Error(`${display || cmd + " " + args.join(" ")} failed (${e.code}): ${redact(String(e.stderr || e.message)).slice(0, 2000)}`);
   }
@@ -101,13 +118,32 @@ async function freePorts(n) {
 async function waitHealthy(url, timeoutMs = 240_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try { const r = await fetch(`${url}/health`); if (r.ok && (await r.json()).status === "ok") return; } catch { /* not up yet */ }
-    await sleep(1000);
+    try { const r = await fetch(`${url}/health`, { signal: cancel.signal }); if (r.ok && (await r.json()).status === "ok") return; } catch { checkpoint(); /* not up yet */ }
+    await pause(1000);
   }
   throw new Error(`${url} did not become healthy`);
 }
-const dockerUp = async ({ quiet = true } = {}) => (await runCmd("docker", ["info"], { allowFailure: true, timeout: 15_000, display: "docker info", quiet })).ok;
-const dockerBackendRunning = () => { try { execFileSync("/usr/bin/pgrep", ["-f", "/Applications/Docker.app/Contents/MacOS/com.docker.backend"]); return true; } catch { return false; } };
+// Every docker call goes to the local Docker Desktop and nowhere else: the
+// caller's DOCKER_HOST, DOCKER_CONTEXT or current context could name a remote
+// daemon, which would then get this run's containers and volumes.
+const DOCKER = process.env.DOCKER_BIN || "docker";
+const DOCKER_DESKTOP_CONTEXT = "desktop-linux";
+const dockerEnv = (() => { const env = { ...process.env, DOCKER_CONTEXT: DOCKER_DESKTOP_CONTEXT }; delete env.DOCKER_HOST; return env; })();
+const docker = (args, opts = {}) => runCmd(DOCKER, args, { env: dockerEnv, display: ["docker", ...args].map(quote).join(" "), ...opts });
+const dockerUp = async ({ quiet = true, cleanupCommand = false } = {}) => (await docker(["info"], { allowFailure: true, timeout: 15_000, quiet, cleanupCommand })).ok;
+/** Refuse unless the desktop-linux context is a local unix socket served by
+ *  Docker Desktop. Runs before any docker command that creates anything. */
+async function verifyLocalDockerDesktop() {
+  let host = "", os = "";
+  try { host = JSON.parse((await docker(["context", "inspect", DOCKER_DESKTOP_CONTEXT])).stdout)[0]?.Endpoints?.docker?.Host || ""; } catch (e) { if (e instanceof Cancelled) throw e; }
+  try { os = (await docker(["info", "--format", "{{.OperatingSystem}}"])).stdout.trim(); } catch (e) { if (e instanceof Cancelled) throw e; }
+  facts.dockerEndpoint = `${host || "?"} (${os || "?"})`;
+  if (!host.startsWith("unix://") || os !== "Docker Desktop") {
+    throw new Error(`refusing to use Docker: context ${DOCKER_DESKTOP_CONTEXT} is ${host || "unreadable"} and the daemon reports "${os || "nothing"}", not a local Docker Desktop socket`);
+  }
+}
+const DOCKER_BACKEND_PATTERN = process.env.DOCKER_DESKTOP_BACKEND_PATTERN || "/Applications/Docker.app/Contents/MacOS/com.docker.backend";
+const dockerBackendRunning = () => { try { execFileSync("/usr/bin/pgrep", ["-f", DOCKER_BACKEND_PATTERN]); return true; } catch { return false; } };
 const pgrep = (pattern) => { try { return execFileSync("/usr/bin/pgrep", ["-fl", pattern], { encoding: "utf8" }).trim(); } catch { return ""; } };
 
 // ---------------------------------------------------------------- broker status
@@ -126,7 +162,7 @@ function trimStatus(s) {
 const listsHome = (s, home) => (s.instances || []).some((i) => i.home === home);
 async function waitFor(pred, timeoutMs, what) {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) { if (await pred()) return true; await sleep(250); }
+  while (Date.now() < deadline) { if (await pred()) return true; await pause(250); }
   check(`${what} (within ${timeoutMs / 1000}s)`, false);
   return false;
 }
@@ -214,19 +250,25 @@ async function sendMail(seq, phase, cwd) {
   const r = await awJSON(["--json", "mail", "send", "--to", INSTANCE, "--body", body], cwd, { display: `aw --json mail send --to ${INSTANCE} --body 'E2E-SEQ-<n> ${phase}'` });
   sent.push({ seq, phase, id: r.message_id, at: new Date().toISOString() });
 }
-/** Send `total` mails at a steady rate; start `switchFn` (not awaited) just
- *  before mail number `switchAt + 1`, so mail keeps arriving while it runs. */
+/** Send `total` mails at a steady rate and run `switchFn` concurrently from
+ *  just before mail number `switchAt + 1`, so mail keeps arriving while it
+ *  runs. Both are owned here: a failed switch stops the sending, a failed send
+ *  waits for the switch, and either failure is thrown only once both settled. */
 async function stream(phase, firstSeq, total, switchAt, switchFn, cwd) {
-  let switching;
-  for (let i = 0; i < total; i++) {
-    if (i === switchAt) switching = switchFn();
-    await sendMail(firstSeq + i, phase, cwd);
-    await sleep(SEND_INTERVAL_MS);
+  let switching, switchFailure;
+  try {
+    for (let i = 0; i < total && !switchFailure; i++) {
+      if (i === switchAt) switching = Promise.resolve().then(switchFn).catch((e) => { switchFailure = e; });
+      await sendMail(firstSeq + i, phase, cwd);
+      await pause(SEND_INTERVAL_MS);
+    }
+  } finally {
+    await switching;
   }
-  await switching;
+  if (switchFailure) throw switchFailure;
   const ids = sent.filter((s) => s.phase === phase).map((s) => s.id);
   await waitFor(() => { const c = countsById(); return ids.every((id) => c.has(id)); }, 120_000, `${phase}: every mail presented at least once`);
-  await sleep(QUIET_MS); // let any late duplicate surface before counting
+  await pause(QUIET_MS); // let any late duplicate surface before counting
   return ids;
 }
 
@@ -255,11 +297,13 @@ async function main() {
   // 2. Docker Desktop.
   if (!(await dockerUp({ quiet: false }))) {
     dockerStartedByUs = true;
+    facts.dockerStartedByUs = true;
     await runCmd("open", ["-a", "Docker"], { display: "open -a Docker" });
     const deadline = Date.now() + 240_000;
-    while (!(await dockerUp())) { if (Date.now() > deadline) throw new Error("Docker did not start"); await sleep(2000); }
+    while (!(await dockerUp())) { if (Date.now() > deadline) throw new Error("Docker did not start"); await pause(2000); }
   }
   facts.dockerStartedByUs = dockerStartedByUs;
+  await verifyLocalDockerDesktop();
 
   // 3. The local aweb + awid stack (server/docker-compose.yml of the clone; no bind mounts).
   const [awebPort, awidPort] = await freePorts(2);
@@ -273,7 +317,9 @@ async function main() {
   ].join("\n") + "\n");
   composeArgs = ["compose", "-p", project, "-f", join(CLONE, "server", "docker-compose.yml"), "--env-file", envFile];
   facts.project = project;
-  await runCmd("docker", [...composeArgs, "up", "-d", "--build", "awid", "aweb"], { cwd: join(CLONE, "server"), display: `docker compose -p ${project} -f $TMP/aweb-oss/server/docker-compose.yml --env-file $TMP/stack.env up -d --build awid aweb`, timeout: 900_000 });
+  checkpoint();
+  composeUpStarted = true; // from here on cleanup brings the project down
+  await docker([...composeArgs, "up", "-d", "--build", "awid", "aweb"], { cwd: join(CLONE, "server"), display: `docker compose -p ${project} -f $TMP/aweb-oss/server/docker-compose.yml --env-file $TMP/stack.env up -d --build awid aweb`, timeout: 900_000 });
   const awebURL = `http://127.0.0.1:${awebPort}`, awidURL = `http://127.0.0.1:${awidPort}`;
   await waitHealthy(awidURL); await waitHealthy(awebURL);
   facts.awebURL = awebURL; facts.awidURL = awidURL;
@@ -313,6 +359,7 @@ console.log(JSON.stringify({ ok: false, error: { message: "fake oats: unsupporte
   chmodSync(fakeOats, 0o755);
   logCommand(`AW_WAKE_OATS_BIN=$TMP/bin/oats aw wake run --state-dir $TMP/wake   # foreground daemon; fake oats appends each presented input to $TMP/broker-presented.jsonl`);
   const brokerLog = openSync(join(TMP, "wake.log"), "a");
+  checkpoint();
   brokerProc = spawn(AW, ["wake", "run", "--state-dir", join(TMP, "wake")], { cwd: TMP, env: { ...baseEnv, AW_WAKE_OATS_BIN: fakeOats }, stdio: ["ignore", brokerLog, brokerLog], detached: true });
   brokerProc.exited = new Promise((ok) => brokerProc.on("exit", (code, signal) => ok({ code, signal })));
   await waitFor(async () => { try { return (await wakeStatus({ quiet: true })).daemon_running === true; } catch { return false; } }, 30_000, "our broker reports daemon_running");
@@ -356,6 +403,7 @@ console.log(JSON.stringify({ ok: false, error: { message: "fake oats: unsupporte
     s1.statuses["after the claude launch hook"] = trimStatus(after);
     check("s1: broker no longer lists the home after the claude launch", !listsHome(after, home));
     // Claude starts with the plugin only after its launch hook succeeded.
+    checkpoint();
     pluginProc = startPlugin(home, identityHome);
     s1.pluginStartedAt = new Date().toISOString();
   }, alice);
@@ -431,14 +479,14 @@ async function cleanup() {
     const left = pgrep(TMP);
     step("no harness process left (pgrep -f $TMP: broker, channel-core runner, plugin)", !left, left || "none");
   }
-  if (composeArgs) {
-    const down = await runCmd("docker", [...composeArgs, "down", "-v", "--rmi", "local", "--remove-orphans"], { cwd: join(CLONE, "server"), display: `docker compose -p ${project} ... down -v --rmi local --remove-orphans`, allowFailure: true, timeout: 300_000 });
+  if (composeUpStarted) {
+    const down = await docker([...composeArgs, "down", "-v", "--rmi", "local", "--remove-orphans"], { cwd: join(CLONE, "server"), display: `docker compose -p ${project} ... down -v --rmi local --remove-orphans`, allowFailure: true, timeout: 300_000, cleanupCommand: true });
     step("docker compose down -v --rmi local --remove-orphans", down.ok, down.ok ? "ok" : down.stderr.slice(-500));
     const label = `label=com.docker.compose.project=${project}`;
-    const ps = await runCmd("docker", ["ps", "-a", "--filter", label, "-q"], { allowFailure: true, display: `docker ps -a --filter ${label} -q` });
-    const vols = await runCmd("docker", ["volume", "ls", "--filter", label, "-q"], { allowFailure: true, display: `docker volume ls --filter ${label} -q` });
-    const nets = await runCmd("docker", ["network", "ls", "--filter", label, "-q"], { allowFailure: true, display: `docker network ls --filter ${label} -q` });
-    const byName = await runCmd("docker", ["volume", "ls", "-q"], { allowFailure: true, display: "docker volume ls -q" });
+    const ps = await docker(["ps", "-a", "--filter", label, "-q"], { allowFailure: true, cleanupCommand: true });
+    const vols = await docker(["volume", "ls", "--filter", label, "-q"], { allowFailure: true, cleanupCommand: true });
+    const nets = await docker(["network", "ls", "--filter", label, "-q"], { allowFailure: true, cleanupCommand: true });
+    const byName = await docker(["volume", "ls", "-q"], { allowFailure: true, cleanupCommand: true });
     const named = byName.stdout.split("\n").filter((v) => v.startsWith(project));
     step(`no containers of project ${project} (docker ps -a)`, ps.ok && !ps.stdout.trim(), ps.stdout.trim() || "none");
     step(`no volumes of project ${project} (docker volume ls)`, vols.ok && !vols.stdout.trim() && !named.length, [vols.stdout.trim(), ...named].filter(Boolean).join(" ") || "none");
@@ -447,16 +495,16 @@ async function cleanup() {
   if (dockerStartedByUs) {
     const stoppedWithin = async (ms) => {
       const deadline = Date.now() + ms;
-      while (Date.now() < deadline) { if (!(await dockerUp()) && !dockerBackendRunning()) return true; await sleep(2000); }
+      while (Date.now() < deadline) { if (!(await dockerUp({ cleanupCommand: true })) && !dockerBackendRunning()) return true; await sleep(2000); }
       return false;
     };
-    await runCmd("osascript", ["-e", 'quit app "Docker"'], { allowFailure: true, display: `osascript -e 'quit app "Docker"'` });
+    await runCmd("osascript", ["-e", 'quit app "Docker"'], { allowFailure: true, display: `osascript -e 'quit app "Docker"'`, cleanupCommand: true });
     let how = "osascript quit";
-    let stopped = await stoppedWithin(30_000);
+    let stopped = await stoppedWithin(DOCKER_QUIT_WAIT_MS);
     if (!stopped) {
       // Docker Desktop 4.x may ignore the AppleScript quit; its own CLI stops it.
       how = "osascript quit was ignored for 30s; `docker desktop stop`";
-      await runCmd("docker", ["desktop", "stop"], { allowFailure: true, display: "docker desktop stop", timeout: 120_000 });
+      await docker(["desktop", "stop"], { allowFailure: true, timeout: 120_000, cleanupCommand: true });
       stopped = await stoppedWithin(90_000);
     }
     step("quit Docker Desktop (docker info fails, no com.docker.backend process)", stopped, stopped ? `stopped (${how})` : `still running (${how})`);
@@ -482,6 +530,7 @@ function receipt(error) {
   L.push(`- oats-aweb hook: ${REPO.split("/").slice(-1)[0]} HEAD ${facts.repoHead || "?"}${facts.repoDirty ? " plus uncommitted changes under oats-package" : ""}; bin/oats-aweb.mjs sha256 ${facts.hookSha256 || "?"}`);
   L.push(`- node ${facts.node}; compose project \`${facts.project || "?"}\`; local stack aweb ${facts.awebURL || "?"}, awid ${facts.awidURL || "?"}; team \`${facts.team || "?"}\``);
   L.push(`- Instance home: \`${facts.home || "?"}\` (\`$TMP\` = one fresh temp dir, removed at the end); HOME, AW_CONFIG_PATH and AW_WAKE_STATE_DIR of every aw/node process were inside it`);
+  L.push(`- Docker endpoint: context ${DOCKER_DESKTOP_CONTEXT}, ${facts.dockerEndpoint || "not verified"}; DOCKER_HOST removed from every docker call`);
   L.push(`- Docker Desktop was ${facts.dockerStartedByUs ? "not running; the harness started it and quit it" : facts.dockerStartedByUs === false ? "already running; the harness left it running" : "not reached"}`, "");
   L.push("## Checks", "");
   for (const c of checks) L.push(`- [${c.ok ? "x" : " "}] ${c.name}${c.detail ? ` — ${redact(c.detail)}` : ""}`);
@@ -535,10 +584,16 @@ function receipt(error) {
 }
 
 // ---------------------------------------------------------------- run
-let cleaningUp = false;
+// main() and cleanup never overlap: whatever ends the run (main settling, a
+// signal, an unexpected rejection) cancels main's scope, waits for main to
+// settle, and only then cleans up from what main actually started.
+let cleaningUp = false, mainSettled;
 async function finish(error) {
   if (cleaningUp) return;
   cleaningUp = true;
+  cancel.abort(error || new Error("run finished"));
+  const mainError = await mainSettled;
+  if (!error && mainError) error = mainError;
   if (error) console.error(`e2e-delivery-switch: ${error.stack || error}`);
   try { frozenBroker = TMP ? brokerPresentations() : []; } catch { frozenBroker = []; }
   try { if (pluginStderrPath && existsSync(pluginStderrPath)) facts.pluginStderr = readFileSync(pluginStderrPath, "utf8").split("\n").filter(Boolean); } catch { /* evidence only */ }
@@ -549,4 +604,6 @@ async function finish(error) {
   process.exit(passed ? 0 : 1);
 }
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => finish(new Error(`interrupted by ${sig}`)));
-main().then(() => finish(), (e) => finish(e));
+process.on("unhandledRejection", (e) => finish(e instanceof Error ? e : new Error(String(e))));
+mainSettled = main().then(() => undefined, (e) => e);
+mainSettled.then((e) => finish(e));

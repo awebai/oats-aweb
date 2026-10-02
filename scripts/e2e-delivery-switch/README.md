@@ -46,7 +46,8 @@ lists any duplicate with its id.
 ## Prerequisites
 
 - macOS with Docker Desktop installed (it may be stopped; the harness starts it).
-- `aw` on PATH (or `AW_BIN=<path>`), `node`, `npm`, `git`.
+- `aw` on PATH (or `AW_BIN=<path>`), `docker` on PATH (or `DOCKER_BIN=<path>`),
+  `node`, `npm`, `git`.
 - A checkout of aweb-oss with `origin/main` fetched. The harness never uses
   that checkout's working tree: it clones it into a temp dir and checks out
   the commit its `origin/main` points at.
@@ -66,7 +67,14 @@ every check passed and every cleanup check came back clean.
 
 ## Isolation
 
-Everything lives under one fresh `mkdtemp` dir (`$TMP` in the receipt):
+Docker means the local Docker Desktop and nothing else. Every docker and
+compose call runs with `DOCKER_HOST` removed and `DOCKER_CONTEXT=desktop-linux`,
+and before anything is created the harness requires `docker context inspect
+desktop-linux` to name a `unix://` socket and `docker info` to report `Docker
+Desktop`; otherwise it refuses to run. A caller's remote `DOCKER_HOST` or
+context never receives the stack.
+
+Everything else lives under one fresh `mkdtemp` dir (`$TMP` in the receipt):
 
 - the aweb-oss clone, from which `docker compose` runs `server/docker-compose.yml`
   (named volumes only, no bind mounts) under a unique project name, with an env
@@ -83,17 +91,34 @@ Everything lives under one fresh `mkdtemp` dir (`$TMP` in the receipt):
 ## Cleanup guarantees
 
 Cleanup runs on success, failure and SIGINT/SIGTERM/SIGHUP, and the receipt
-records each step and its check:
+records each step and its check. The run and its cleanup never overlap: a
+signal or failure cancels the run first (its in-flight commands are SIGTERMed,
+its waits end, and no new command or process starts), cleanup waits for it to
+settle, and only then tears down what the run actually started. In each
+scenario the mail stream and the switch are one unit: a failed switch stops the
+sending, and both settle before the failure propagates.
 
 1. stop the channel plugin and the `aw wake run` daemon (process groups,
    SIGTERM then SIGKILL), then `pgrep -f $TMP` must find nothing (broker,
    channel-core runner, plugin);
-2. `docker compose ... down -v --rmi local --remove-orphans`, then `docker ps -a`,
-   `docker volume ls` and `docker network ls` filtered by the project label
-   must be empty;
+2. whenever `compose up` was started, `docker compose ... down -v --rmi local
+   --remove-orphans`, then `docker ps -a`, `docker volume ls` and `docker
+   network ls` filtered by the project label must be empty;
 3. if the harness started Docker Desktop, quit it (`osascript -e 'quit app
    "Docker"'`, and `docker desktop stop` if the AppleScript quit is ignored
    for 30 s, which Docker Desktop 4.x does) and confirm `docker info` fails
    and no `com.docker.backend` process remains. A Docker Desktop that was
-   already running is left running;
+   already running is left running, because the human's condition for this
+   harness is "leaving the Mac as you found it";
 4. remove `$TMP` and confirm it is gone.
+
+## Tests
+
+`test/e2e-delivery-switch-harness.test.mjs` (part of `node --test`) drives this
+harness with fake `docker`, `aw`, `npm`, `git`, `open` and `osascript` scripts:
+no Docker and no network. It covers a switch that fails mid-stream, SIGTERM
+while Docker Desktop starts, during `compose up` and during the plugin build,
+and a Docker endpoint that is not the local Docker Desktop. The fakes are
+selected with `AW_BIN`, `DOCKER_BIN`, PATH (for `npm`, `git`, `open`,
+`osascript`), and `DOCKER_DESKTOP_BACKEND_PATTERN`, the `pgrep -f` pattern that
+identifies a running Docker Desktop backend.
