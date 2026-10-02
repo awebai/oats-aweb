@@ -264,6 +264,11 @@ test("a launch preview makes no aw call, writes no meta, and contributes what th
   }
 });
 
+test("the manifest declares the launch hook preview-aware", () => {
+  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
+  assert.equal(manifest.launchPreview, true, "without it the kernel runs the hook once, for real");
+});
+
 test("a launch preview leaves a joined team the workspace no longer maps", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: { join: "alpha" } });
   const meta = fx.spawn().meta;
@@ -308,12 +313,27 @@ test("agent-facing text and docs state the per-runtime delivery rule", async () 
   assert.match(readme, /aweb-abmy/);
   assert.match(readme, /existing homes keep the delivery/i);
   const changelog = read(REPO, "CHANGELOG.md");
-  assert.match(changelog, /^# Changelog\n\n## 1\.18\.0\n/);
-  const entry = changelog.split("\n## ")[1];
+  const entry = changelog.split("\n## ").find((section) => section.startsWith("1.18.0\n"));
+  assert.ok(entry, "CHANGELOG has a 1.18.0 entry");
   assert.match(entry, /Codex/);
   assert.match(entry, /aweb-abmy/);
   assert.match(entry, /existing homes keep the delivery/i);
   assert.match(entry, /docs\/terminal-wake-broker\.md/, "the aw duplicate window is stated with its citation");
+});
+
+test("docs state the launch preview contract and what the deregister guard proves", async () => {
+  const { readFileSync } = await import("node:fs");
+  const readme = readFileSync(join(REPO, "README.md"), "utf8");
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  assert.match(changelog, /^# Changelog\n\n## 1\.18\.1\n/);
+  const entry = changelog.split("\n## ")[1];
+  for (const [name, text] of [["README", readme], ["CHANGELOG 1.18.1", entry]]) {
+    assert.match(text, /OATS_LAUNCH_PREVIEW=1/, name);
+    assert.match(text, /volatileEnv/, name);
+    assert.match(text, /confirms that the home is deregistered, not that terminal input\s+has finished/, name);
+    assert.match(text, /aweb-abna/, name);
+    assert.doesNotMatch(text, /stopped typing/, name);
+  }
 });
 
 // A home on the channel path hears nothing without its channel package. The

@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "compatibility": {
     "oats": ">=0.30.0"
   },
