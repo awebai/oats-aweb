@@ -1751,7 +1751,7 @@ if (event === "launch") {
   process.exit(0);
 } else if (event === "connect") {
   // Give a registered server's deployment of this workspace membership in its default team
-  // (oats.aweb 1.20). Every host step runs through the kernel's capability route
+  // (oats.aweb 1.21). Every host step runs through the kernel's capability route
   // (`oats aweb setup … --server <id>`); the invite is minted here, from this deployment's root
   // for that team, and reaches the host only on the routed command's stdin.
   const args = stripForwardedSoul(process.argv.slice(3));

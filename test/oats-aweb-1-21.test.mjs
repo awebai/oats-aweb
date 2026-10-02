@@ -1,4 +1,4 @@
-// oats.aweb 1.20: connecting a deployment on another machine. `setup --invite-stdin`
+// oats.aweb 1.21: connecting a deployment on another machine. `setup --invite-stdin`
 // takes the invite token on stdin, `setup --install-aw` installs aw where it is
 // missing or below the floor, `setup --check-only` answers the host's aw, default
 // team and membership as one JSON document, and `connect <server-id>` drives those
@@ -480,12 +480,12 @@ test("connect prints its steps for a human without --json", async (t) => {
   assert.match(result.stdout, /^ready: yes$/m);
 });
 
-test("1.20.0 is documented: CHANGELOG, README and the oats-aweb skill name connect, --invite-stdin, --install-aw and the token rule", () => {
+test("1.21.0 is documented: CHANGELOG, README and the oats-aweb skill name connect, --invite-stdin, --install-aw and the token rule", () => {
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  const entry = changelog.slice(changelog.indexOf("## 1.20.0"), changelog.indexOf("## 1.19.0"));
+  const entry = changelog.slice(changelog.indexOf("## 1.21.0"), changelog.indexOf("## 1.20.0"));
   const readme = readFileSync(join(REPO, "README.md"), "utf8");
   const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
-  for (const [name, text] of [["CHANGELOG 1.20.0", entry], ["README", readme], ["skill", skill]]) {
+  for (const [name, text] of [["CHANGELOG 1.21.0", entry], ["README", readme], ["skill", skill]]) {
     for (const needle of ["oats aweb connect <server-id>", "--invite-stdin", "--install-aw", "--check-only", "process list"]) assert.ok(text.includes(needle), `${name} lacks ${needle}`);
   }
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
