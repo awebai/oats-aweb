@@ -417,7 +417,7 @@ const AW_VERSION_SPEC_RE = /^[\^~]?\d+\.\d+\.\d+$/;
 async function ensureAw({ install, version }) {
   const problem = await awFloorProblem();
   if (!problem) return { status: "ok", version: await readAwVersion() };
-  if (!install) return { status: "needs-human", detail: problem, remedy: "oats aweb setup --install-aw (runs npm install -g @awebai/aw)" };
+  if (!install) return { status: "needs-human", detail: problem, remedy: "`oats aweb setup --install-aw` (installs aw with npm)" };
   const was = onPath("aw") ? (await readAwVersion()) || "unreadable" : "missing";
   const pkg = `@awebai/aw@${version || `^${AW_MIN}`}`;
   try { run(["npm", "install", "-g", pkg], process.cwd(), 300000); }
@@ -1778,8 +1778,9 @@ if (event === "launch") {
   const soulArgs = forwardedSoulArg ? ["--soul", forwardedSoulArg] : [];
   /** An argument as a shell reads it back: bare when it is plainly safe, else single-quoted. */
   const shellArg = (value) => /^[A-Za-z0-9._\/:@=+-]+$/.test(value) ? value : `'${String(value).replace(/'/g, "'\\''")}'`;
-  /** A runnable `oats aweb …` remedy, with this run's --name and --soul. */
-  const remedyCommand = (argv, { withName = false } = {}) => ["oats", "aweb", ...argv, ...(withName && name ? ["--name", name] : []), ...soulArgs].map(shellArg).join(" ");
+  /** A runnable `oats aweb …` remedy, with this run's --name and --soul, in backticks: every
+   *  command in a remedy is backticked, which is how the Desktop's copy buttons find it. */
+  const remedyCommand = (argv, { withName = false } = {}) => `\`${["oats", "aweb", ...argv, ...(withName && name ? ["--name", name] : []), ...soulArgs].map(shellArg).join(" ")}\``;
   const routedArgv = (argv) => [cli, "aweb", ...argv, ...soulArgs, "--server", serverId];
   const oneLine = (text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 500);
 
@@ -1840,7 +1841,7 @@ if (event === "launch") {
 
   const hostTeam = first.doc.defaultTeam;
   if (!hostTeam?.label || !hostTeam?.team) {
-    steps.push({ step: "invite", status: "needs-human", code: "E_TEAM_UNMAPPED", detail: `the deployment on ${serverId} has no mapped default team`, remedy: `on ${serverId}: give the deployment a default team with a provider id (oats teams --json there shows it), then re-run ${remedyCommand(["connect", serverId], { withName: true })}` });
+    steps.push({ step: "invite", status: "needs-human", code: "E_TEAM_UNMAPPED", detail: `the deployment on ${serverId} has no mapped default team`, remedy: `on ${serverId}: give the deployment a default team with a provider id (\`oats teams --json\` there shows it), then re-run ${remedyCommand(["connect", serverId], { withName: true })}` });
     skipRest("invite");
   }
   team = { label: hostTeam.label, team: hostTeam.team };
@@ -1867,7 +1868,7 @@ if (event === "launch") {
   if (!token.startsWith("aw_inv_")) {
     token = undefined;
     steps.push({ step: "invite", status: "needs-human", code: "E_INVITE_NOT_HOSTED", detail: `${team.team} is not a hosted team: its invites work only on the machine that minted them, so none was sent to ${serverId}`,
-      remedy: `on ${serverId}: aw id team request (in a new root for ${team.team}); a controller of ${team.team} runs the aw id team add-member command it prints; then on ${serverId}: aw id team fetch-cert` });
+      remedy: `on ${serverId}: \`aw id team request\` (in a new root for ${team.team}); a controller of ${team.team} runs the \`aw id team add-member\` command it prints; then on ${serverId}: \`aw id team fetch-cert\`` });
     skipRest("invite");
   }
   steps.push({ step: "invite", status: "done" });

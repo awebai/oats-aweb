@@ -147,6 +147,13 @@ console.log("added 1 package");
   return { path: bin, readCalls: () => existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
 }
 
+/** A remedy's runnable commands are each inside backticks (the Desktop's copy buttons find them
+ *  there): outside the backticked spans no `oats …` or `aw …` command remains. */
+function assertCommandsInBackticks(remedy) {
+  assert.ok(/`(oats|aw) [^`]+`/.test(remedy), `no backticked command in remedy: ${remedy}`);
+  assert.doesNotMatch(remedy.replace(/`[^`]*`/g, ""), /\b(oats (aweb|teams)|aw (id|team|init|workspace)|npm install)\b/, `command outside backticks in remedy: ${remedy}`);
+}
+
 const checkOnly = (stdout) => JSON.parse(stdout.trim().split("\n").pop());
 
 test("setup --install-aw with aw missing installs aw at AW_MIN's release line, re-checks the floor and continues", async (t) => {
@@ -230,7 +237,8 @@ test("setup without --install-aw keeps today's message when aw is missing; --che
   const doc = checkOnly(checked.stdout);
   assert.equal(doc.aw.status, "needs-human");
   assert.match(doc.aw.detail, /aw CLI not on PATH; install aw >= 1\.36\.13/);
-  assert.match(doc.aw.remedy, /oats aweb setup --install-aw/);
+  assert.match(doc.aw.remedy, /`oats aweb setup --install-aw`/);
+  assertCommandsInBackticks(doc.aw.remedy);
   assert.equal(doc.member, null);
   assert.deepEqual(npm.readCalls(), []);
 });
@@ -393,7 +401,8 @@ test("connect from a deployment that is not a member of the host's team fails at
   assert.match(doc.error.message, /this deployment is not a member of joined:example\.invalid/);
   const steps = doc.error.details.steps;
   assert.deepEqual(steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "failed"]]);
-  assert.match(steps[1].remedy, /oats aweb setup --join joined --invite-stdin/);
+  assert.match(steps[1].remedy, /`oats aweb setup --join joined --invite-stdin`/);
+  assertCommandsInBackticks(steps[1].remedy);
   assert.equal(awCall(fx.fake.readCalls(), ["team", "invite"]).length, 0);
   assert.equal(fx.kernel.readCalls().length, 1);
 });
@@ -418,7 +427,8 @@ test("connect drops a non-hosted invite token and asks for the controller flow",
   assert.equal(doc.result.ready, false);
   assert.deepEqual(doc.result.steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "needs-human"], ["join", "skipped"], ["readiness", "skipped"]]);
   assert.equal(doc.result.steps[1].code, "E_INVITE_NOT_HOSTED");
-  assert.match(doc.result.steps[1].remedy, /aw id team request.*aw id team add-member.*aw id team fetch-cert/s);
+  assert.match(doc.result.steps[1].remedy, /`aw id team request`.*`aw id team add-member`.*`aw id team fetch-cert`/s);
+  assertCommandsInBackticks(doc.result.steps[1].remedy);
   assert.equal(doc.result.steps[2].detail, "waits for invite");
   assert.equal(fx.kernel.readCalls().length, 1, "no join was routed");
   assertTokenContained(fx, result, "LOCAL-CONTROLLER-SECRET");
@@ -442,7 +452,7 @@ test("connect with aw missing on the host and no --install-aw needs a human", as
   const doc = envelope(result.stdout);
   assert.equal(doc.result.ready, false);
   assert.deepEqual(doc.result.steps.map((s) => [s.step, s.status]), [["aw", "needs-human"], ["invite", "skipped"], ["join", "skipped"], ["readiness", "skipped"]]);
-  assert.match(doc.result.steps[0].remedy, new RegExp(`oats aweb connect ${SERVER} --install-aw`));
+  assert.equal(doc.result.steps[0].remedy, `\`oats aweb connect ${SERVER} --install-aw\``);
   assert.deepEqual(fx.npm.readCalls(), []);
 });
 
@@ -522,5 +532,23 @@ test("connect's retry remedy keeps --name and --soul", async (t) => {
   assert.equal(result.code, 1, "an unregistered id is unreachable in the fake kernel");
   const missing = await fx.connect([SERVER, "--name", "altair-root", "--soul", "dev", "--json"]);
   assert.equal(missing.code, 0, missing.stdout + missing.stderr);
-  assert.equal(envelope(missing.stdout).result.steps[0].remedy, `oats aweb connect ${SERVER} --install-aw --name altair-root --soul dev`);
+  assert.equal(envelope(missing.stdout).result.steps[0].remedy, `\`oats aweb connect ${SERVER} --install-aw --name altair-root --soul dev\``);
+});
+
+test("connect's unmapped-team and readiness remedies keep their commands in backticks", async (t) => {
+  const unmapped = connectFixture(t, { hostEnv: { OATS_DEFAULT_TEAM_ID: "", OATS_TEAMS: "[]" } });
+  const u = await unmapped.connect([SERVER, "--soul", "dev", "--json"]);
+  assert.equal(u.code, 0, u.stdout + u.stderr);
+  const invite = envelope(u.stdout).result.steps[1];
+  assert.equal(invite.code, "E_TEAM_UNMAPPED");
+  assert.match(invite.remedy, /`oats teams --json`.*`oats aweb connect altair-aweb --soul dev`/);
+  assertCommandsInBackticks(invite.remedy);
+  // The host accepts, but its check after the join still does not see the root as a member.
+  const stale = connectFixture(t, { hostEnv: { AW_LIST_TEAMS: JSON.stringify({ memberships: [] }) } });
+  const r = await stale.connect([SERVER, "--soul", "dev", "--json"]);
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  const readiness = envelope(r.stdout).result.steps[3];
+  assert.equal(readiness.status, "needs-human");
+  assert.equal(readiness.remedy, "on altair-aweb: `oats aweb setup --soul dev`");
+  assertCommandsInBackticks(readiness.remedy);
 });

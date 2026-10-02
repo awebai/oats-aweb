@@ -25,7 +25,8 @@ It runs the host's steps through the kernel's capability route
 | `readiness` | a second `--check-only` on the host: `ok` when aw meets the floor and its root is a member |
 
 Statuses are `ok`, `done`, `needs-human` (with `remedy`), `skipped` (`detail`
-names the step it waits for) and `failed` (`code`, `detail`). With `--json`
+names the step it waits for) and `failed` (`code`, `detail`). Every runnable
+command in a `remedy` is in backticks. With `--json`
 the answer is `{schemaVersion: 1, ok: true, result: {server, team: {label,
 team}, ready, steps}}`. A `failed` step ends the run with `ok: false`,
 `error.code` = that step's code and `error.details.steps` = the steps so far.

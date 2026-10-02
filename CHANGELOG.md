@@ -8,7 +8,7 @@ Added: `oats aweb connect <server-id> [--install-aw] [--name <alias>] [--json]` 
 - `join`: the routed `oats aweb setup --join <label> --invite-stdin --name <alias> [--service <url>]`, the token on its stdin.
 - `readiness`: a second routed `--check-only`, `ok` when aw meets the floor and the host's root is a member.
 
-The host root's alias is the server id, or `--name <alias>` when the id does not fit the aweb alias rule. Every routed call carries the `--soul` connect was dispatched with. `--json` answers `{schemaVersion: 1, ok: true, result: {server, team, ready, steps}}`, with `ok: true` even when steps need a human. A `failed` step ends the run with `ok: false`, `error.code` = that step's code and `error.details.steps` = the steps so far. connect spawns nothing and mints for the deployment's root, never for an instance.
+Every runnable command in a step's `remedy` (and in `--check-only`'s `aw.remedy`) is in backticks, so a client can find and copy it. The host root's alias is the server id, or `--name <alias>` when the id does not fit the aweb alias rule. Every routed call carries the `--soul` connect was dispatched with. `--json` answers `{schemaVersion: 1, ok: true, result: {server, team, ready, steps}}`, with `ok: true` even when steps need a human. A `failed` step ends the run with `ok: false`, `error.code` = that step's code and `error.details.steps` = the steps so far. connect spawns nothing and mints for the deployment's root, never for an instance.
 
 Added: `oats aweb setup --join <label> --invite-stdin` reads the invite token from stdin (the first line, trimmed) and otherwise behaves exactly as `--invite <token>`. `--invite` with `--invite-stdin` is a usage error.
 
