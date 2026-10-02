@@ -220,3 +220,29 @@ test("launch codex -> claude with a joined team: the broker keeps only the joine
   assert.equal(reg.primary_identity_home, join(fx.home, ".aw"));
   assert.deepEqual(reg.receive_identities.map((x) => x.label), ["alpha"], "the primary is the channel's, never the broker's");
 });
+
+// ---------------------------------------------------------------- docs
+
+test("agent-facing text and docs state the per-runtime delivery rule", async () => {
+  const { readFileSync } = await import("node:fs");
+  const read = (...p) => readFileSync(join(...p), "utf8");
+  for (const [name, text] of [["inject", read(CAPABILITY, "injects", "aweb.md")], ["oats-aweb skill", read(CAPABILITY, "skills", "oats-aweb", "SKILL.md")]]) {
+    assert.match(text, /Claude Code[\s\S]{0,80}channel plugin/, name);
+    assert.match(text, /pi[\s\S]{0,40}extension/, name);
+    assert.match(text, /Codex[\s\S]{0,200}host wake broker/, name);
+    assert.doesNotMatch(text, /Codex \/ no channel \| nothing/, name);
+  }
+  const manifest = JSON.parse(read(CAPABILITY, "oats.json"));
+  assert.match(manifest.settings.delivery.description, /Codex/);
+  const readme = read(REPO, "README.md");
+  assert.match(readme, /Codex/);
+  assert.match(readme, /aweb-abmy/);
+  assert.match(readme, /existing homes keep the delivery/i);
+  const changelog = read(REPO, "CHANGELOG.md");
+  assert.match(changelog, /^# Changelog\n\n## 1\.18\.0\n/);
+  const entry = changelog.split("\n## ")[1];
+  assert.match(entry, /Codex/);
+  assert.match(entry, /aweb-abmy/);
+  assert.match(entry, /existing homes keep the delivery/i);
+  assert.match(entry, /docs\/terminal-wake-broker\.md/, "the aw duplicate window is stated with its citation");
+});

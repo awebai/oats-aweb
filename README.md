@@ -42,9 +42,40 @@ or `oats aweb join` while live.
 Host-owned settings live under `settings.oats.aweb` (normally in
 `oats-local.yaml`). The provider settings are:
 
-- `delivery`: `channel` (default) or `session`. `channel` lets Pi/Claude aweb
-  channel packages wake the session. `session` sets `AWEB_DELIVERY=session` and
-  uses the host wake broker instead. With session delivery, the broker may
+- `delivery`: `channel` (default) or `session`. It picks the delivery path per
+  runtime:
+
+  | runtime | `channel` | `session` |
+  |---|---|---|
+  | Claude Code | the `aweb-channel` plugin (launch flag) | host wake broker |
+  | pi | the `@awebai/pi` extension | host wake broker |
+  | Codex, or any runtime without an aweb channel | host wake broker | host wake broker |
+
+  The channel packages push events into the session. The host wake broker
+  presents them by typing into the session's terminal pane, and in Claude Code
+  that keystroke can answer a dialog on the human's behalf (aweb-abmy), so a
+  runtime with a channel uses it by default and the broker covers only the
+  runtimes that have none. The broker path sets `AWEB_DELIVERY=session` (which
+  also keeps any ambient channel package silent) and registers the home with
+  `aw wake register`.
+
+  A home is on exactly one path. Every start decides the path afresh from the
+  setting and the start's runtime (a home can be restarted under another
+  harness): the broker path registers the home, the channel path runs `aw wake
+  deregister` and confirms with `aw wake status --json` that the home is no
+  longer listed. If either step fails the start is refused, since a home on both
+  paths would get every wake twice and a home on neither hears nothing. The
+  kernel runs a home's hooks from its own module copy under the settings
+  captured at spawn, so existing homes keep the delivery they were spawned with;
+  a changed deployment setting applies to new spawns.
+
+  Across a switch between the two paths, each mail is presented once because
+  both mark it read on the server after presenting it, and each presents the
+  unread backlog when it connects. One window remains inside aw: if the broker's
+  delivery child is killed after typing a mail but before marking it read, the
+  channel presents it again (aw's `docs/terminal-wake-broker.md`).
+
+  With broker delivery, the broker may
   present either a waiting-items line or the full mail/chat event; aw 1.36.21+
   mail events are headed `aweb mail event received.`, include trust metadata and
   sender body, and include a Recovery line with `aw --identity-home '<home>' mail
@@ -138,13 +169,14 @@ home: `aw init --join-from=<root> --join-team=<team> --name=<instance> --json
 --do-not-touch-agents-md`. aw creates the invite from the root, accepts it and
 connects the workspace, so the invite token never reaches the hook. The mint
 runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` or
-`AWEB_IDENTITY_HOME`, so the service comes from the invite. With session
-delivery the hook then runs `aw wake register`. The recorded alias is always
+`AWEB_IDENTITY_HOME`, so the service comes from the invite. On the broker
+delivery path the hook then runs `aw wake register`. The recorded alias is always
 the requested one: if aw reports another, the hook keeps the instance name and
 adds a warning that quotes nothing from aw's reply. Joined teams still use
 invite + `aw id team accept-invite` under `--identity-home`.
 
 Retire self-deletes with `aw workspace delete <workspace_id>`, taking the id
 from the membership in `<home>/.aw/workspace.yaml` whose team and alias match
-the recorded ones. It falls back to the alias when no entry matches. With
-session delivery, `aw wake deregister` runs at the same time as the delete.
+the recorded ones. It falls back to the alias when no entry matches. For a home
+whose last start was on the broker path, `aw wake deregister` runs at the same
+time as the delete.

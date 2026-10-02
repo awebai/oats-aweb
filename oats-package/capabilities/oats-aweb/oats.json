@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.17.7",
+  "version": "1.18.0",
   "compatibility": {
     "oats": ">=0.30.0"
   },
@@ -135,7 +135,7 @@
         "channel",
         "session"
       ],
-      "description": "channel: the native aweb channel packages wake the instance (default). session: delivery is external (AWEB_DELIVERY=session), no channel flag; the host wake broker registers the instance once it exists."
+      "description": "channel (default): Claude Code is woken by the aweb-channel plugin and pi by the @awebai/pi extension, which push into the session; Codex and any other runtime without an aweb channel go through the host wake broker (AWEB_DELIVERY=session). Every start re-decides by runtime and leaves the home on exactly one path. session: every runtime goes through the host wake broker (AWEB_DELIVERY=session), no channel flag."
     },
     "root": {
       "hostOnly": true,
