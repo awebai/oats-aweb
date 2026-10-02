@@ -407,6 +407,28 @@ async function awFloorProblem() {
   return `aw ${version} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`;
 }
 
+/** What `npm install -g @awebai/aw@<spec>` may be given: an exact version, or a ^/~ range. */
+const AW_VERSION_SPEC_RE = /^[\^~]?\d+\.\d+\.\d+$/;
+/** The aw step of `setup --install-aw` / `--check-only`, as one status: `ok` (meets the floor),
+ *  `done` (installed now), `needs-human` (missing or old, not asked to install) or `failed`. The
+ *  default install is AW_MIN's release line (`^AW_MIN`, the newest compatible aw). */
+async function ensureAw({ install, version }) {
+  const problem = await awFloorProblem();
+  if (!problem) return { status: "ok", version: await readAwVersion() };
+  if (!install) return { status: "needs-human", detail: problem, remedy: "oats aweb setup --install-aw (runs npm install -g @awebai/aw)" };
+  const was = onPath("aw") ? (await readAwVersion()) || "unreadable" : "missing";
+  const pkg = `@awebai/aw@${version || `^${AW_MIN}`}`;
+  try { run(["npm", "install", "-g", pkg], process.cwd(), 300000); }
+  catch (e) {
+    const why = String(e.stderr || e.message || "").replace(/\s+/g, " ").trim().slice(0, 500);
+    return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}` };
+  }
+  const after = await awFloorProblem();
+  if (after) return { status: "failed", code: "E_AW_FLOOR", detail: `npm install -g ${pkg} ran, but ${after}` };
+  const installed = await readAwVersion();
+  return { status: "done", version: installed, detail: `installed aw ${installed} (was ${was})` };
+}
+
 const AW_INSTALL = "install the aw CLI first — see https://aweb.ai/docs (or `oats aweb setup` for guided onboarding)";
 const isCommand = ["roster", "setup", "teams", "join", "leave"].includes(event);
 const invalidConfiguredTeamId = invalidAwebTeamId();
@@ -414,12 +436,15 @@ if (invalidConfiguredTeamId && (isCommand || ["spawn", "launch"].includes(event)
   if (isCommand) { console.error(`oats aweb ${event}: ${AWEB_TEAM_ID_MESSAGE}`); process.exit(1); }
   fatal(AWEB_TEAM_ID_MESSAGE);
 }
-if (!onPath("aw")) {
+// `setup --install-aw` and `setup --check-only` handle a missing or old aw
+// themselves (installing it, or reporting it in the check document).
+const setupHandlesAw = event === "setup" && process.argv.slice(3).some((arg) => arg === "--install-aw" || arg === "--check-only");
+if (!onPath("aw") && !setupHandlesAw) {
   if (isCommand) { console.error(`oats aweb ${event}: aw CLI not on PATH — ${AW_INSTALL}`); process.exit(1); }
   if (event === "spawn") fatal(`aw CLI not on PATH, so no identity could be minted and this instance would have no messaging — ${AW_INSTALL}`);
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
-if (isCommand || event === "spawn") {
+if ((isCommand && !setupHandlesAw) || event === "spawn") {
   const floorProblem = await awFloorProblem();
   if (floorProblem) {
     if (isCommand) { console.error(`oats aweb ${event}: ${floorProblem}`); process.exit(1); }
@@ -1721,14 +1746,19 @@ if (event === "launch") {
   // Guided onboarding — idempotent, prints what it finds and can run one
   // existing aw primitive when the operator supplies the needed authority.
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
-  const usage = "usage: oats aweb setup [--username <hosted-user> | --create <label> [--namespace <domain>] | --join <label> [--invite <token>] [--service <url>] [--name <alias>]]";
-  let username, invite, createLabel, createNamespace, joinLabel, joinService, joinName;
+  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
+  let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--username" && args[i + 1]) { username = args[++i]; continue; }
     if (arg.startsWith("--username=") && arg.length > "--username=".length) { username = arg.slice("--username=".length); continue; }
     if (arg === "--invite" && args[i + 1]) { invite = args[++i]; continue; }
     if (arg.startsWith("--invite=") && arg.length > "--invite=".length) { invite = arg.slice("--invite=".length); continue; }
+    if (arg === "--invite-stdin") { inviteStdin = true; continue; }
+    if (arg === "--install-aw") { installAw = true; continue; }
+    if (arg === "--aw-version" && args[i + 1]) { awVersion = args[++i]; continue; }
+    if (arg.startsWith("--aw-version=") && arg.length > "--aw-version=".length) { awVersion = arg.slice("--aw-version=".length); continue; }
+    if (arg === "--check-only") { checkOnly = true; continue; }
     if (arg === "--join" && args[i + 1]) { joinLabel = args[++i]; continue; }
     if (arg.startsWith("--join=") && arg.length > "--join=".length) { joinLabel = arg.slice("--join=".length); continue; }
     if (arg === "--create" && args[i + 1]) { createLabel = args[++i]; continue; }
@@ -1743,11 +1773,41 @@ if (event === "launch") {
     process.exit(2);
   }
   if (createNamespace && !createLabel) { console.error(`oats aweb setup: --namespace requires --create\n${usage}`); process.exit(2); }
+  if (invite && inviteStdin) { console.error(`oats aweb setup: --invite and --invite-stdin cannot be combined\n${usage}`); process.exit(2); }
   if (invite && !joinLabel) { console.error(`oats aweb setup: --invite requires --join <label> so the team gets its own root\n${usage}`); process.exit(2); }
+  if (inviteStdin && !joinLabel) { console.error(`oats aweb setup: --invite-stdin requires --join <label> so the team gets its own root\n${usage}`); process.exit(2); }
+  if (checkOnly && (username || createLabel || joinLabel || invite || inviteStdin)) { console.error(`oats aweb setup: --check-only cannot be combined with --username, --create, --join or --invite\n${usage}`); process.exit(2); }
+  if (awVersion && !installAw) { console.error(`oats aweb setup: --aw-version requires --install-aw\n${usage}`); process.exit(2); }
+  if (awVersion && !AW_VERSION_SPEC_RE.test(awVersion)) { console.error(`oats aweb setup: --aw-version must be a version such as 1.36.23, ^1.36.13 or ~1.36.13\n${usage}`); process.exit(2); }
+  // The token is read into memory only: never argv, a file or any output.
+  if (inviteStdin) {
+    try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }
+    if (!invite) { console.error("oats aweb setup: --invite-stdin read no invite token from stdin"); process.exit(1); }
+  }
   if ((joinService || joinName) && !joinLabel) { console.error(`oats aweb setup: --service/--name require --join <label>\n${usage}`); process.exit(2); }
   const apiKey = !!process.env.AWEB_API_KEY;
   const actions = [username ? "--username" : null, joinLabel ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
+
+  const readTeamsAt = (rootDir) => {
+    try { return parseAwJson(run(["aw", "team", "list", "--json"], rootDir), "aw team list"); }
+    catch { return { memberships: [] }; }
+  };
+  if (installAw || checkOnly) {
+    const aw = await ensureAw({ install: installAw, version: awVersion });
+    if (checkOnly) {
+      // The host's answer to `oats aweb connect`: aw, the default team, and whether the root
+      // minting for that team is a member of it (null when aw cannot be asked).
+      const team = defaultTeamId() || null, label = defaultTeamLabel() || null;
+      const awUsable = aw.status === "ok" || aw.status === "done";
+      const teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
+      const member = awUsable ? !!teamRoot && teamIdsOf(readTeamsAt(teamRoot)).map(String).includes(team) : null;
+      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot }));
+      process.exit(aw.status === "failed" ? 1 : 0);
+    }
+    if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }
+    if (aw.status === "done") console.log(`✓ ${aw.detail}`);
+  }
 
   const teamName = defaultTeamId();
   const teamId = defaultTeamId();
@@ -1761,10 +1821,6 @@ if (event === "launch") {
 
   const want = teamId || teamName;
   const defaultTeamForUsername = username ? `default:${username}.aweb.ai` : undefined;
-  const readTeamsAt = (rootDir) => {
-    try { return parseAwJson(run(["aw", "team", "list", "--json"], rootDir), "aw team list"); }
-    catch { return { memberships: [] }; }
-  };
   const readTeams = () => readTeamsAt(scope);
   const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => String(tid) === want || String(tid).startsWith(`${want}:`)) : undefined;
   const rootAlias = () => {
