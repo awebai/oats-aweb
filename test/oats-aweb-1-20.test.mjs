@@ -452,6 +452,7 @@ test("connect with aw missing on the host and no --install-aw needs a human", as
   const doc = envelope(result.stdout);
   assert.equal(doc.result.ready, false);
   assert.deepEqual(doc.result.steps.map((s) => [s.step, s.status]), [["aw", "needs-human"], ["invite", "skipped"], ["join", "skipped"], ["readiness", "skipped"]]);
+  assert.deepEqual(doc.result.team, { label: "joined", team: TEAM }, "the host's default team is reported even when aw blocks the rest");
   assert.equal(doc.result.steps[0].remedy, `\`oats aweb connect ${SERVER} --install-aw\``);
   assert.deepEqual(fx.npm.readCalls(), []);
 });

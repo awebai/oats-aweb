@@ -1831,6 +1831,8 @@ if (event === "launch") {
 
   const first = hostCheck(installAw);
   if (first.failure) fail("aw", first.failure.code, first.failure.detail);
+  const hostTeam = first.doc.defaultTeam;
+  if (hostTeam?.label && hostTeam?.team) team = { label: hostTeam.label, team: hostTeam.team };
   const hostAw = first.doc.aw;
   if (hostAw.status === "failed") fail("aw", hostAw.code || "E_AW", hostAw.detail);
   if (hostAw.status === "needs-human") {
@@ -1839,12 +1841,10 @@ if (event === "launch") {
   }
   steps.push({ step: "aw", status: hostAw.status, detail: hostAw.status === "done" ? hostAw.detail : `aw ${hostAw.version}` });
 
-  const hostTeam = first.doc.defaultTeam;
-  if (!hostTeam?.label || !hostTeam?.team) {
+  if (!team) {
     steps.push({ step: "invite", status: "needs-human", code: "E_TEAM_UNMAPPED", detail: `the deployment on ${serverId} has no mapped default team`, remedy: `on ${serverId}: give the deployment a default team with a provider id (\`oats teams --json\` there shows it), then re-run ${remedyCommand(["connect", serverId], { withName: true })}` });
     skipRest("invite");
   }
-  team = { label: hostTeam.label, team: hostTeam.team };
   if (first.doc.member) {
     steps.push({ step: "invite", status: "ok", detail: "already a member; no invite minted" });
     steps.push({ step: "join", status: "ok", detail: `root ${first.doc.root}` });
