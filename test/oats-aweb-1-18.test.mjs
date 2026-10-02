@@ -246,3 +246,20 @@ test("agent-facing text and docs state the per-runtime delivery rule", async () 
   assert.match(entry, /existing homes keep the delivery/i);
   assert.match(entry, /docs\/terminal-wake-broker\.md/, "the aw duplicate window is stated with its citation");
 });
+
+// A home on the channel path hears nothing without its channel package. The
+// kernel verifies these rows for the target runtime at spawn and at every start
+// and refuses with the install steps; codex has no row because it takes the
+// broker path.
+test("channel delivery requires the channel package for Claude and pi only, naming its install command", async () => {
+  const { readFileSync } = await import("node:fs");
+  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
+  const channelRows = manifest.requires.filter((r) => r.when?.delivery === "channel");
+  assert.deepEqual(channelRows.map((r) => r.runtime).sort(), ["claude", "pi"]);
+  for (const row of channelRows) assert.equal(row.ifInstalled, undefined, `${row.runtime}: absence must fail, not pass`);
+  const claude = channelRows.find((r) => r.runtime === "claude");
+  assert.equal(claude.install, "claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace");
+  const pi = channelRows.find((r) => r.runtime === "pi");
+  assert.equal(pi.install, "pi install npm:@awebai/pi");
+  assert.equal(manifest.requires.some((r) => r.runtime === "codex"), false);
+});

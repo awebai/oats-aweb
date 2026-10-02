@@ -17,7 +17,7 @@
       "runtime": "pi",
       "package": "npm:@awebai/pi",
       "why": "the aweb channel extension for pi sessions — real-time mail/chat awakenings; without it a pi instance can send with `aw` but is never woken by incoming messages",
-      "install": "https://aweb.ai/docs (installed into pi with `pi install npm:@awebai/pi`)",
+      "install": "pi install npm:@awebai/pi",
       "when": {
         "delivery": "channel"
       }
@@ -27,7 +27,7 @@
       "package": "aweb-channel@awebai-marketplace",
       "marketplace": "awebai/claude-plugins",
       "why": "the aweb channel plugin for Claude Code sessions — real-time mail/chat awakenings; without it a Claude instance can send with `aw` but is never woken by incoming messages",
-      "install": "https://aweb.ai/docs (installs the awebai marketplace and the aweb-channel plugin into Claude Code)",
+      "install": "claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace",
       "when": {
         "delivery": "channel"
       }
