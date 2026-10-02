@@ -79,9 +79,9 @@ function readiness(fx, fake, settings = fx.env.OATS_SETTINGS ? JSON.parse(fx.env
 
 test("1.17 manifest removes provider team setting and pins the breaking version", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
-  assert.equal(manifest.version, "1.18.1");
-  assert.equal(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version, "1.18.1");
-  assert.equal(JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8")).version, "1.18.1");
+  assert.equal(manifest.version, "1.19.0");
+  assert.equal(JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version, "1.19.0");
+  assert.equal(JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8")).version, "1.19.0");
   assert.equal(manifest.settings.team, undefined);
   assert.doesNotMatch(JSON.stringify(manifest), /OATS_TEAM_ID|OATS_TEAM_LABEL|settings\.oats\.aweb\.team|root's active team/i);
 });
@@ -265,13 +265,54 @@ test("unmapped default has distinct readiness/spawn failure and nullable default
   fx.env.OATS_DEFAULT_TEAM_FROM = "deployment";
   delete fx.env.OATS_DEFAULT_TEAM_ID;
   fx.env.OATS_TEAMS = JSON.stringify([{ label: "other", team: "other:example.test", default: false, from: "local" }]);
-  const message = "the default team shared-default has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default";
+  const message = "the default team shared-default has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: `oats teams default <label>`, or `defaultTeam:` in oats-workspace.yaml when the workspace doesn't allow local teams";
   assert.deepEqual(readiness(fx, fake), { status: "needs-configuration", problems: [{ code: "needs-configuration", message }], warnings: [] });
   const spawned = runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } });
   assert.notEqual(spawned.status, 0);
   assert.match(spawned.stdout + spawned.stderr, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   const teams = JSON.parse(runHook("teams", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: "{}" }, args: ["--json"] }).stdout);
   assert.deepEqual(teams.defaultTeam, { label: "shared-default", team: null, from: "deployment" });
+});
+
+test("team model 3: a workspace default team is reported as from workspace", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { defaultFrom: "workspace" });
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  assert.deepEqual(doc.meta.defaultTeam, { label: "personal", team: "default:example.test", from: "workspace" });
+  assert.match(doc.brief, /on team default:example\.test, the workspace's default team\./);
+  for (const meta of [doc.meta, {}]) {
+    const teams = JSON.parse(runHook("teams", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(meta) }, args: ["--json"] }).stdout);
+    assert.deepEqual(teams.defaultTeam, { label: "personal", team: "default:example.test", from: "workspace" });
+  }
+});
+
+test("team model 3: join refuses a label outside the eligible rows", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { defaultFrom: "soul" });
+  // OATS 0.38 rows carry `via`; a workspace team this soul's `souls:` entry does not list is not a row.
+  fx.env.OATS_TEAMS = JSON.stringify([
+    { label: "personal", team: "default:example.test", default: true, from: "shared", via: ["default"] },
+    { label: "shared", team: "shared:example.test", default: false, from: "shared", via: ["workspace"] },
+  ]);
+  const env = { ...fx.env, PATH: fake.path, OATS_META: "{}" };
+  const r = runHook("join", { cwd: fx.home, env, args: ["--labels", "docs"] });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout + r.stderr, /E_TEAM_NOT_ELIGIBLE: docs is not an eligible team label for this instance \(eligible: shared\)/);
+  assert.deepEqual(fake.calls().map((c) => c.args[0]), ["version"], "only the aw floor check; nothing for a refused label");
+});
+
+test("team model 3: docs name the workspace default and what setup does where local teams are closed", () => {
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  assert.match(changelog, /^# Changelog\n\n## 1\.19\.0\n/);
+  const entry = changelog.split("\n## ")[1];
+  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
+  const readme = readFileSync(join(REPO, "README.md"), "utf8");
+  for (const [name, text] of [["CHANGELOG 1.19.0", entry], ["skill", skill], ["README", readme]]) {
+    assert.match(text, /workspace/, name);
+    assert.match(text, /localTeams: true/, name);
+    assert.match(text, /`souls:` entry/, name);
+  }
+  assert.match(skill, /`defaultTeam\.from` is `soul`, `deployment` or `workspace`/);
 });
 
 test("teams document uses eligible non-default rows and preserves visible live leaves", (t) => {

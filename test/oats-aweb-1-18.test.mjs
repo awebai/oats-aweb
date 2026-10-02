@@ -325,8 +325,8 @@ test("docs state the launch preview contract and what the deregister guard prove
   const { readFileSync } = await import("node:fs");
   const readme = readFileSync(join(REPO, "README.md"), "utf8");
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  assert.match(changelog, /^# Changelog\n\n## 1\.18\.1\n/);
-  const entry = changelog.split("\n## ")[1];
+  const entry = changelog.split("\n## ").find((section) => section.startsWith("1.18.1\n"));
+  assert.ok(entry, "CHANGELOG has a 1.18.1 entry");
   for (const [name, text] of [["README", readme], ["CHANGELOG 1.18.1", entry]]) {
     assert.match(text, /OATS_LAUNCH_PREVIEW=1/, name);
     assert.match(text, /volatileEnv/, name);

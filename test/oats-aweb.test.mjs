@@ -108,11 +108,15 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   return { path: bin, calls, readCalls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
 }
 
-function fakeOatsCli(t) {
+/** A recording `oats` CLI. `oats teams --json` answers `teams` (the kernel's teams document, as 0.36
+ *  gives it by default: teamsApi 1, no localTeams), or exits 1 when `teams` is "fail". */
+const TEAMS_0_36 = { teamsApi: 1, deployment: "/fixture", defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
+function fakeOatsCli(t, { teams = TEAMS_0_36 } = {}) {
   const dir = tempDir(t);
   const calls = join(dir, "oats-calls.jsonl");
   const cli = join(dir, "oats");
-  writeFileSync(cli, `#!${process.execPath}\nconst fs = require("node:fs");\nfs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() }) + "\\n");\n`, { mode: 0o755 });
+  const answer = teams === "fail" ? `console.error("oats: E_WORKSPACE_SCHEMA fixture refusal"); process.exit(1);` : `console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});`;
+  writeFileSync(cli, `#!${process.execPath}\nconst fs = require("node:fs");\nconst args = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");\nif (args[0] === "teams" && args[1] === "--json") { ${answer} }\n`, { mode: 0o755 });
   return { cli, calls, readCalls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
 }
 
@@ -660,8 +664,87 @@ test("setup --create with namespace creates a local BYOT team, accepts it into a
     ["workspace", "connect", "--service=https://app.aweb.ai/api", `--team=${team}`, "--json"],
     ["team", "list", "--json"],
   ]);
-  assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "add", label, `--team=${team}`]]);
+  assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"], ["teams", "add", label, `--team=${team}`]]);
   assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"my-team:example\.invalid": ".*\.aweb-roots\/my-team"/);
+});
+
+// Team model 3 (OATS 0.38): a workspace without `localTeams: true` refuses `oats teams add|default`.
+const TEAMS_CLOSED = { teamsApi: 2, deployment: "/fixture", localTeams: false, defaultTeam: null, teams: [], souls: {}, problems: [] };
+const setupCreateEnv = (root, kernel, fake) => ({ PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) });
+
+test("setup --create on a closed workspace creates the team, records nothing local, and prints what to commit", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
+  const team = "eng:example.invalid";
+  const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
+  assert.equal(result.code, 0, result.stderr);
+  assert.ok(fake.readCalls().some((c) => c.args.slice(0, 3).join(" ") === "id team create"), "the aweb team is created");
+  assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"]], "no oats teams add on a closed workspace");
+  assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/, "the per-team root is still recorded");
+  assert.match(result.stdout, new RegExp(`teams:\\n\\s+"eng": \\{ team: "${team}" \\}\\n\\s+defaultTeam: "eng"\\n`), "the workspace form, with a default since none is set");
+  assert.match(result.stdout, /to let souls join it \(rather than default to it\), list it in a `souls:` entry's teams/i);
+  assert.match(result.stdout, /localTeams: true/);
+  assert.doesNotMatch(result.stdout, /recorded local team|oats teams add/);
+});
+
+test("setup --create on a closed workspace with a default team prints no defaultTeam line", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t);
+  const kernel = fakeOatsCli(t, { teams: { ...TEAMS_CLOSED, defaultTeam: { label: "main", team: "main:example.invalid", from: "workspace" } } });
+  const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /"eng": \{ team: "eng:example\.invalid" \}/);
+  assert.doesNotMatch(result.stdout, /defaultTeam:/);
+});
+
+test("setup --create on a closed workspace quotes a label YAML would read as a number or boolean", async (t) => {
+  for (const label of ["01", "true", "123"]) {
+    const root = tempDir(t);
+    const fake = fakeAwSetupPath(t);
+    const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
+    const result = await run(["setup", "--create", label, "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
+    assert.equal(result.code, 0, result.stderr);
+    // A JSON string is a YAML string: the committed label and default stay exactly the label.
+    const entry = result.stdout.match(/^\s+(".*"): \{ team: (".*") \}$/m);
+    const defaultTeam = result.stdout.match(/^\s+defaultTeam: (".*")$/m);
+    assert.ok(entry && defaultTeam, `${label}: ${result.stdout}`);
+    assert.equal(JSON.parse(entry[1]), label);
+    assert.equal(JSON.parse(defaultTeam[1]), label);
+    assert.match(JSON.parse(entry[2]), /:example\.invalid$/);
+  }
+});
+
+test("setup --create refuses before creating anything when it cannot tell whether local teams are allowed", async (t) => {
+  for (const kernel of [fakeOatsCli(t, { teams: "fail" }), undefined]) {
+    const root = tempDir(t);
+    const fake = fakeAwSetupPath(t);
+    const env = setupCreateEnv(root, kernel ?? { cli: "" }, fake);
+    if (!kernel) delete env.OATS_CLI_BIN;
+    const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], env, root);
+    assert.equal(result.code, 1, result.stdout);
+    assert.match(result.stderr, /could not tell whether this workspace allows local teams .*; nothing was created/);
+    assert.deepEqual(fake.readCalls(), [], "no aw call: nothing half-done");
+    if (kernel) assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"]]);
+  }
+});
+
+test("setup on a closed workspace advises the workspace form instead of local team verbs", async (t) => {
+  const root = tempDir(t);
+  const fake = fakeAwSetupPath(t, { activeTeam: "default:alice.aweb.ai" });
+  const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
+  const result = await run(["setup", "--username", "alice"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) }, root);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /teams:\n\s+"<label>": \{ team: "default:alice\.aweb\.ai" \}\n\s+defaultTeam: "<label>"/);
+  assert.match(result.stdout, /localTeams: true/);
+  assert.doesNotMatch(result.stdout, /oats teams add|oats teams default/);
+  // Open or unknown (0.36: no localTeams; or no kernel to ask): today's advice.
+  for (const env of [{ OATS_CLI_BIN: fakeOatsCli(t).cli }, {}]) {
+    rmSync(join(root, ".aw"), { recursive: true, force: true });
+    const open = await run(["setup", "--username", "alice"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_SETTINGS: JSON.stringify({ root }), ...env }, root);
+    assert.equal(open.code, 0, open.stderr);
+    assert.match(open.stdout, /record it with `oats teams add <label> --team default:alice\.aweb\.ai` and `oats teams default <label>`/);
+  }
 });
 
 test("setup --create without namespace refuses hosted team creation until the aweb-abkh floor", async (t) => {
@@ -723,7 +806,7 @@ test("setup --create suffixes only on 409 conflicts", async (t) => {
     ["id", "team", "create", `--name=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
     ["id", "team", "create", `--name=${teamName(label)}-2`, `--namespace=${namespace}`, "--json"],
   ]);
-  assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "add", label, `--team=${team}`]]);
+  assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"], ["teams", "add", label, `--team=${team}`]]);
 });
 
 test("setup --create reports non-409 create errors once without leaking minted tokens", async (t) => {
