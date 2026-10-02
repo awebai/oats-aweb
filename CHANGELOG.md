@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.21.0
+
+Added: `oats aweb connect <server-id> [--install-aw] [--name <alias>] [--json]` (awebai/oats#517). Run from a local deployment, it gives the deployment of the same workspace on a registered server (`oats server connect`) membership in that deployment's default team. Steps, in order, with the kernel's step statuses (`ok`, `done`, `needs-human`, `skipped`, `failed`):
+- `aw`: the host's `oats aweb setup --check-only --json` through the kernel's capability route (`--server <id>`), with `--install-aw` when given. It reports aw, the host's default team and whether the host's root for that team is a member.
+- `invite`: a host that is already a member is `ok` and nothing is minted. Otherwise the invite is minted from this deployment's root for the team (`roots[team]`, else `root`) with `aw team invite --team-id <team>`. This deployment not being a member is `failed` (`E_TEAM_NOT_MEMBER`), with the remedy. A token that is not a hosted invite (`aw_inv_`) is dropped and `invite` is `needs-human` (`E_INVITE_NOT_HOSTED`): local-controller invites work only on the machine that minted them, and the remedy names the `aw id team request` / `add-member` / `fetch-cert` flow.
+- `join`: the routed `oats aweb setup --join <label> --invite-stdin --name <alias> [--service <url>]`, the token on its stdin.
+- `readiness`: a second routed `--check-only`, `ok` when aw meets the floor and the host's root is a member.
+
+The host root's alias is the server id, or `--name <alias>` when the id does not fit the aweb alias rule. Every routed call carries the `--soul` connect was dispatched with. `--json` answers `{schemaVersion: 1, ok: true, result: {server, team, ready, steps}}`, with `ok: true` even when steps need a human. A `failed` step ends the run with `ok: false`, `error.code` = that step's code and `error.details.steps` = the steps so far. connect spawns nothing and mints for the deployment's root, never for an instance.
+
+Added: `oats aweb setup --join <label> --invite-stdin` reads the invite token from stdin (the first line, trimmed) and otherwise behaves exactly as `--invite <token>`. `--invite` with `--invite-stdin` is a usage error.
+
+Added: `oats aweb setup --install-aw [--aw-version <v>]`. Where aw is missing or below the floor (aw >= 1.36.13), it runs `npm install -g @awebai/aw@<v>`, where `<v>` defaults to `^1.36.13`, the newest aw of the floor's release line. It then re-checks the floor and continues. npm's failure is relayed with its exit status (`E_AW_INSTALL`); an install that still leaves aw below the floor is `E_AW_FLOOR`. Without the flag, a missing or old aw gives the same message as before.
+
+Added: `oats aweb setup --check-only --json [--install-aw]` answers one line of JSON, `{aw: {status, version?, detail?, remedy?, code?}, defaultTeam: {label, team} | null, member: true | false | null, root: <abs> | null}`. `member` is `null` when aw cannot be asked; `root` is the root setup mints from for the default team (`roots[team]`, else `root`) when it exists. It exits 1 only when an aw install failed.
+
+Security: the invite token travels only in memory and on the routed command's stdin. It never appears in oats argv, a file, a log, a result or an error, and a failed join leaves it nowhere. On the host, `aw id team accept-invite <token>` still takes the token as an argument, as `--invite` always has, so it is visible in the host's process list for the accept call's duration. The invite's lifetime and use count are aw's: aw 1.36.23 has no expiry or single-use flag for `aw team invite`.
+
 ## 1.20.0
 
 Fixed: `oats aweb roster` missed the team's coordinator and did not say what each entry was (awebai/oats-aweb#46). It printed only the certificate listing (`aw id team members`). That listing omits identities whose membership the registry does not list, such as the retained global coordinator of aweb:juan.aweb.ai and dashboard humans. It also lists deployment roots and certificates with no workspace exactly like agents. Readers who took it as "who you can reach" contacted a deployment root.

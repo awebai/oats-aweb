@@ -5,6 +5,67 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.21.0 — connect a deployment on another machine
+
+After `oats server connect` has created the workspace's deployment on another
+machine, one command from the local deployment gives that deployment messaging:
+
+```bash
+oats aweb connect <server-id> --soul <any soul with messaging> [--install-aw] [--name <alias>] [--json]
+```
+
+It runs the host's steps through the kernel's capability route
+(`oats aweb … --server <id>`, OATS feature `capability-route`). The steps are:
+
+| Step | What it does |
+|---|---|
+| `aw` | `oats aweb setup --check-only --json [--install-aw]` on the host: aw, its default team, membership |
+| `invite` | `ok` if the host is already a member (nothing minted); else `aw team invite --team-id <team>` from THIS deployment's root for the team |
+| `join` | `oats aweb setup --join <label> --invite-stdin --name <alias> [--service <url>]` on the host, the token on stdin |
+| `readiness` | a second `--check-only` on the host: `ok` when aw meets the floor and its root is a member |
+
+Statuses are `ok`, `done`, `needs-human` (with `remedy`), `skipped` (`detail`
+names the step it waits for) and `failed` (`code`, `detail`). With `--json`
+the answer is `{schemaVersion: 1, ok: true, result: {server, team: {label,
+team}, ready, steps}}`. A `failed` step ends the run with `ok: false`,
+`error.code` = that step's code and `error.details.steps` = the steps so far.
+Failures: `E_TEAM_NOT_MEMBER` (this deployment cannot invite to the host's
+team: join it here first), a kernel route code such as `E_SSH`,
+`E_INVITE_FAILED`, `E_JOIN_FAILED`, and the host's `E_AW_INSTALL` /
+`E_AW_FLOOR`. A team that is not hosted (a local-controller BYOT team) is
+`needs-human` (`E_INVITE_NOT_HOSTED`), because its invites only work on the
+machine that minted them. The host root's alias is the server id, or `--name`
+when the id is not a valid aweb alias. connect spawns nothing: it mints for the
+deployment's root, never for an instance.
+
+The join half works on its own when someone else mints the invite:
+
+- `oats aweb setup --join <label> --invite-stdin` reads the token from stdin
+  (the first line, trimmed) and behaves exactly as `--invite <token>`. The two
+  flags cannot be combined.
+- `oats aweb setup --install-aw [--aw-version <v>]` runs
+  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.13`)
+  where aw is missing or below the floor, re-checks the floor, then continues.
+- `oats aweb setup --check-only --json` answers, as one line:
+
+```json
+{"aw": {"status": "ok", "version": "1.36.23"},
+ "defaultTeam": {"label": "aweb", "team": "aweb:juan.aweb.ai"},
+ "member": true, "root": "/Users/juanre/Agents/aweb/.aweb-roots/aweb"}
+```
+
+  `aw.status` is `ok`, `done` (installed now: `detail` says from what),
+  `needs-human` (`detail`, `remedy`) or `failed` (`code`, `detail`; exit 1).
+  `member` is `null` when aw cannot be asked, and `root` is the root that mints
+  for the default team (`roots[team]`, else `root`) when one exists.
+
+**The invite token** exists only in connect's memory and on the routed join's
+stdin. It never appears in oats argv, a file, a log, the result or an error
+message, and a failed join leaves it nowhere. On the host, `aw id team
+accept-invite` takes it as an argument, so it is visible in the host's
+process list for the accept call's duration. Its lifetime and use count are aw's: aw
+has no expiry or single-use flag for invites yet.
+
 ## 1.20.0 — a roster that says what each entry is
 
 `oats aweb roster` lists the union of the team's membership certificates

@@ -9,6 +9,8 @@
  *                     of live instances (alias = instance name) and humans
  *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the
  *                     messaging root with aw init / aw team join, verify team
+ *   oats-aweb connect  give a registered server's deployment membership in its
+ *                     default team, through the kernel's --server capability route
  *
  * Env contract (set by the kernel):
  *   OATS_EVENT     spawn|retire
@@ -239,7 +241,7 @@ let settings = {};
 try { settings = JSON.parse(process.env.OATS_SETTINGS || "{}"); } catch { settings = {}; }
 const TEAM_SETTING_MESSAGE = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
 const hasStaleTeamSetting = settings && typeof settings === "object" && !Array.isArray(settings) && Object.hasOwn(settings, "team");
-if (hasStaleTeamSetting && ["spawn", "launch", "setup", "teams", "join", "leave", "roster"].includes(event)) fatal(TEAM_SETTING_MESSAGE);
+if (hasStaleTeamSetting && ["spawn", "launch", "setup", "connect", "teams", "join", "leave", "roster"].includes(event)) fatal(TEAM_SETTING_MESSAGE);
 const deliveryMode = (() => {
   const v = settings.delivery === undefined || settings.delivery === null || settings.delivery === "" ? "channel" : String(settings.delivery);
   return v === "session" ? "session" : "channel";
@@ -430,7 +432,7 @@ async function ensureAw({ install, version }) {
 }
 
 const AW_INSTALL = "install the aw CLI first — see https://aweb.ai/docs (or `oats aweb setup` for guided onboarding)";
-const isCommand = ["roster", "setup", "teams", "join", "leave"].includes(event);
+const isCommand = ["roster", "setup", "connect", "teams", "join", "leave"].includes(event);
 const invalidConfiguredTeamId = invalidAwebTeamId();
 if (invalidConfiguredTeamId && (isCommand || ["spawn", "launch"].includes(event))) {
   if (isCommand) { console.error(`oats aweb ${event}: ${AWEB_TEAM_ID_MESSAGE}`); process.exit(1); }
@@ -1252,6 +1254,11 @@ function rosterLine(m) {
   const kind = ROSTER_KIND_FROM_TEXT[m.kindFrom] ? `${m.kind} (${ROSTER_KIND_FROM_TEXT[m.kindFrom]})` : m.kind;
   return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]`;
 }
+/** `aw team list --json` at a root; no memberships when aw cannot answer there. */
+function readTeamsAt(rootDir) {
+  try { return parseAwJson(run(["aw", "team", "list", "--json"], rootDir), "aw team list"); }
+  catch { return { memberships: [] }; }
+}
 let forwardedSoulArg;
 function stripForwardedSoul(argv = process.argv.slice(3)) {
   const out = [];
@@ -1742,6 +1749,144 @@ if (event === "launch") {
   lines.push(`Message an entry with \`aw mail send --to <alias> --subject "..." --body-file <file>\`${label ? ` as this team: \`aw --identity-home <identityHome> mail send ...\` (identityHome from \`oats aweb teams --json\`)` : ""}.`);
   writeSync(1, `${lines.join("\n")}\n`);
   process.exit(0);
+} else if (event === "connect") {
+  // Give a registered server's deployment of this workspace membership in its default team
+  // (oats.aweb 1.20). Every host step runs through the kernel's capability route
+  // (`oats aweb setup … --server <id>`); the invite is minted here, from this deployment's root
+  // for that team, and reaches the host only on the routed command's stdin.
+  const args = stripForwardedSoul(process.argv.slice(3));
+  const usage = "usage: oats aweb connect <server-id> [--install-aw] [--name <alias>] [--json]";
+  let serverId, installAw = false, name, json = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--json") { json = true; continue; }
+    if (arg === "--install-aw") { installAw = true; continue; }
+    if (arg === "--name" && args[i + 1]) { name = args[++i]; continue; }
+    if (arg.startsWith("--name=") && arg.length > "--name=".length) { name = arg.slice("--name=".length); continue; }
+    if (!arg.startsWith("-") && serverId === undefined) { serverId = arg; continue; }
+    console.error(`oats aweb connect: ${usage}`);
+    process.exit(2);
+  }
+  if (!serverId) { console.error(`oats aweb connect: ${usage}`); process.exit(2); }
+  const alias = name || serverId;
+  if (!AWEB_ALIAS_RE.test(alias)) {
+    console.error(name ? `oats aweb connect: --name ${name}: ${AWEB_ALIAS_RULE}` : `oats aweb connect: server id ${serverId} does not fit the aweb alias rule, so it cannot name the host's root; pass --name <alias>`);
+    process.exit(2);
+  }
+  const cli = process.env.OATS_CLI_BIN;
+  if (!cli) { console.error("oats aweb connect: OATS_CLI_BIN is required (run it as oats aweb connect)"); process.exit(1); }
+  const soulArgs = forwardedSoulArg ? ["--soul", forwardedSoulArg] : [];
+  const routedArgv = (argv) => [cli, "aweb", ...argv, ...soulArgs, "--server", serverId];
+  const oneLine = (text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 500);
+
+  /** The steps of interface §4, in order. */
+  const CONNECT_STEPS = [
+    "aw",
+    "invite",
+    "join",
+    "readiness",
+  ];
+  const steps = [];
+  let team = null;
+  const answer = () => {
+    const ready = steps.length === CONNECT_STEPS.length && steps.every((s) => s.status === "ok" || s.status === "done");
+    if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { server: serverId, team, ready, steps } }));
+    else {
+      printSteps();
+      console.log(`ready: ${ready ? "yes" : "no"}`);
+      for (const s of steps) if (s.remedy) console.log(`  ${s.step}: ${s.remedy}`);
+    }
+    process.exit(0);
+  };
+  const printSteps = () => {
+    console.log(`oats aweb connect ${serverId}: ${team ? `team ${team.label} (${team.team})` : "team unknown"}`);
+    for (const s of steps) console.log(`  ${s.step}: ${s.status}${s.detail ? ` — ${s.detail}` : ""}`);
+  };
+  const fail = (step, code, detail, remedy) => {
+    steps.push({ step, status: "failed", code, detail, ...(remedy ? { remedy } : {}) });
+    if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: detail, details: { steps } } }));
+    else { printSteps(); console.error(`oats aweb connect: ${detail} (${code})${remedy ? `\n  ${remedy}` : ""}`); }
+    process.exit(1);
+  };
+  const skipRest = (after) => {
+    for (const step of CONNECT_STEPS.slice(steps.length)) steps.push({ step, status: "skipped", detail: `waits for ${after}` });
+    answer();
+  };
+  /** The host's `setup --check-only` document, or the failure that kept it from answering. */
+  const hostCheck = (install) => {
+    let text, why;
+    try { text = run(routedArgv(["setup", "--check-only", "--json", ...(install ? ["--install-aw"] : [])]), process.cwd(), 600000); }
+    catch (e) { text = e.stdout; why = e.stderr || e.message; }
+    let doc;
+    try { doc = JSON.parse(String(text || "").trim().split("\n").pop()); } catch { /* no answer */ }
+    if (doc?.ok === false && doc.error) return { failure: { code: doc.error.code || "E_ROUTE", detail: oneLine(doc.error.message) } };
+    if (!doc?.aw) return { failure: { code: "E_ROUTE", detail: `oats aweb setup --check-only on ${serverId} gave no answer${why ? `: ${oneLine(why)}` : ""}` } };
+    return { doc };
+  };
+
+  const first = hostCheck(installAw);
+  if (first.failure) fail("aw", first.failure.code, first.failure.detail);
+  const hostAw = first.doc.aw;
+  if (hostAw.status === "failed") fail("aw", hostAw.code || "E_AW", hostAw.detail);
+  if (hostAw.status === "needs-human") {
+    steps.push({ step: "aw", status: "needs-human", detail: hostAw.detail, remedy: `oats aweb connect ${serverId} --install-aw` });
+    skipRest("aw");
+  }
+  steps.push({ step: "aw", status: hostAw.status, detail: hostAw.status === "done" ? hostAw.detail : `aw ${hostAw.version}` });
+
+  const hostTeam = first.doc.defaultTeam;
+  if (!hostTeam?.label || !hostTeam?.team) {
+    steps.push({ step: "invite", status: "needs-human", code: "E_TEAM_UNMAPPED", detail: `the deployment on ${serverId} has no mapped default team`, remedy: `on ${serverId}: give the deployment a default team with a provider id (oats teams --json there shows it), then re-run oats aweb connect ${serverId}` });
+    skipRest("invite");
+  }
+  team = { label: hostTeam.label, team: hostTeam.team };
+  if (first.doc.member) {
+    steps.push({ step: "invite", status: "ok", detail: "already a member; no invite minted" });
+    steps.push({ step: "join", status: "ok", detail: `root ${first.doc.root}` });
+    steps.push({ step: "readiness", status: "ok" });
+    answer();
+  }
+
+  const localRoot = awebRootForTeam(team.team);
+  if (!localRoot || !teamIdsOf(readTeamsAt(localRoot)).map(String).includes(team.team)) {
+    fail("invite", "E_TEAM_NOT_MEMBER", `this deployment is not a member of ${team.team}${localRoot ? ` (its root ${localRoot} holds no membership)` : " (it has no root for that team)"}, so it cannot invite ${serverId}`,
+      `join ${team.label} here first (oats aweb setup --join ${team.label} --invite <token>, with an invite from a member), or ask a member to connect ${serverId}`);
+  }
+  // The token is a variable here and the routed join's stdin, and nothing else: aw's own
+  // output is withheld (secretSafe) and the token is dropped as soon as the join returns.
+  let token;
+  try {
+    const minted = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", team.team), "--json"], localRoot, 45000, { secretSafe: true }), "aw team invite");
+    token = typeof minted?.token === "string" && minted.token ? minted.token : undefined;
+  } catch (e) { fail("invite", "E_INVITE_FAILED", `aw team invite for ${team.team} failed: ${e.message || e}`); }
+  if (!token) fail("invite", "E_INVITE_FAILED", `aw team invite returned no usable token for ${team.team}`);
+  if (!token.startsWith("aw_inv_")) {
+    token = undefined;
+    steps.push({ step: "invite", status: "needs-human", code: "E_INVITE_NOT_HOSTED", detail: `${team.team} is not a hosted team: its invites work only on the machine that minted them, so none was sent to ${serverId}`,
+      remedy: `on ${serverId}: aw id team request (in a new root for ${team.team}); a controller of ${team.team} runs the aw id team add-member command it prints; then on ${serverId}: aw id team fetch-cert` });
+    skipRest("invite");
+  }
+  steps.push({ step: "invite", status: "done" });
+
+  let service;
+  try { service = yamlScalar(readFileSync(join(localRoot, ".aw", "workspace.yaml"), "utf8"), "aweb_url"); } catch { /* the host finds its own */ }
+  const joinArgv = routedArgv(["setup", "--join", team.label, "--invite-stdin", "--name", alias, ...(service ? ["--service", service] : [])]);
+  let joinFailure;
+  try { run(joinArgv, process.cwd(), JOIN_TIMEOUT_MS + 120000, { input: `${token}\n`, secrets: [token] }); }
+  catch (e) { joinFailure = `oats aweb setup --join ${team.label} on ${serverId} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${e.stderr ? `: ${oneLine(e.stderr)}` : ""}`; }
+  finally { token = undefined; }
+  if (joinFailure) fail("join", "E_JOIN_FAILED", joinFailure);
+
+  const second = hostCheck(false);
+  if (second.failure) {
+    steps.push({ step: "join", status: "done" });
+    fail("readiness", second.failure.code, second.failure.detail);
+  }
+  steps.push({ step: "join", status: "done", detail: `root ${second.doc.root}` });
+  const settled = second.doc;
+  if ((settled.aw?.status === "ok" || settled.aw?.status === "done") && settled.member === true) steps.push({ step: "readiness", status: "ok" });
+  else steps.push({ step: "readiness", status: "needs-human", detail: settled.aw?.status === "ok" ? `${serverId}'s root for ${team.team} is still not a member after the join` : settled.aw?.detail, remedy: `on ${serverId}: oats aweb setup` });
+  answer();
 } else if (event === "setup") {
   // Guided onboarding — idempotent, prints what it finds and can run one
   // existing aw primitive when the operator supplies the needed authority.
@@ -1789,10 +1934,6 @@ if (event === "launch") {
   const actions = [username ? "--username" : null, joinLabel ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
 
-  const readTeamsAt = (rootDir) => {
-    try { return parseAwJson(run(["aw", "team", "list", "--json"], rootDir), "aw team list"); }
-    catch { return { memberships: [] }; }
-  };
   if (installAw || checkOnly) {
     const aw = await ensureAw({ install: installAw, version: awVersion });
     if (checkOnly) {

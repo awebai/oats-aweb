@@ -117,9 +117,10 @@ test("setup --invite-stdin with nothing on stdin refuses before accepting", asyn
 // ---------------------------------------------------------------------------
 // setup --install-aw and setup --check-only
 
-/** A bin directory holding a fake `npm` and, unless `aw` is false, a fake `aw` reporting
- *  `version`. A successful `npm install -g @awebai/aw@…` (re)writes the fake aw at 1.36.23. */
-function fakeNpmPath(t, { aw = undefined } = {}) {
+/** A bin directory holding a fake `npm` and, when `aw` names a version, a fake `aw` reporting
+ *  it. A successful `npm install -g @awebai/aw@…` (re)writes the fake aw at 1.36.23, or copies
+ *  the aw script at `installs`. */
+function fakeNpmPath(t, { aw = undefined, installs = undefined } = {}) {
   const dir = tempDir(t);
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -139,7 +140,7 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) 
 if (process.env.NPM_FAIL) { console.error("npm ERR! 404 Not Found - GET https://registry.npmjs.org/@awebai%2faw"); process.exit(3); }
 if (!process.env.NPM_INSTALLS_OLD) fs.writeFileSync(${JSON.stringify(versionFile)}, "1.36.23\\n");
 else fs.writeFileSync(${JSON.stringify(versionFile)}, "1.30.0\\n");
-fs.writeFileSync(${JSON.stringify(join(bin, "aw"))}, ${JSON.stringify(awScript)}, { mode: 0o755 });
+fs.writeFileSync(${JSON.stringify(join(bin, "aw"))}, ${installs ? `fs.readFileSync(${JSON.stringify(installs)}, "utf8")` : JSON.stringify(awScript)}, { mode: 0o755 });
 console.log("added 1 package");
 `, { mode: 0o755 });
   chmodSync(join(bin, "npm"), 0o755);
@@ -254,4 +255,228 @@ test("setup --check-only cannot be combined with an onboarding action", async (t
   const result = await run(["setup", "--check-only", "--join", "joined"], deploymentEnv(root, { PATH: fake.path }), root);
   assert.equal(result.code, 2);
   assert.match(result.stderr, /--check-only cannot be combined with --username, --create, --join or --invite/);
+});
+
+// ---------------------------------------------------------------------------
+// connect
+
+const SERVER = "altair-aweb";
+const SERVICE = "https://app.aweb.ai/api";
+const HOSTED_TOKEN = "aw_inv_SECRET-CONNECT-TOKEN-91c2";
+
+/** A kernel whose capability route runs `oats aweb … --server <id>` as the hook in the host's
+ *  deployment directory, stdin forwarded untouched: settings.oats.aweb.roots is read back from the
+ *  host's oats-local.yaml as the kernel would. Records each argv (never stdin). `unreachable`
+ *  answers the kernel's ssh failure envelope instead. */
+function fakeKernel(t, { hostDir, hostEnv, unreachable = false }) {
+  const dir = tempDir(t);
+  const calls = join(dir, "kernel-calls.jsonl");
+  const cli = join(dir, "oats");
+  writeFileSync(cli, `#!${process.execPath}
+const fs = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + "\\n");
+const at = args.indexOf("--server");
+if (at < 0 || args[0] !== "aweb") { console.error("fake kernel: unexpected " + args.join(" ")); process.exit(97); }
+const server = args[at + 1];
+const rest = args.filter((_, i) => i !== at && i !== at + 1);
+if (${JSON.stringify(unreachable)} || server !== ${JSON.stringify(SERVER)}) {
+  if (rest.includes("--json")) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "ssh altair: Could not resolve hostname altair" } }));
+  else console.error("oats: ssh altair: Could not resolve hostname altair (E_SSH)");
+  process.exit(1);
+}
+const env = { ...process.env, ...${JSON.stringify(hostEnv)}, OATS_EVENT: rest[1] };
+const local = ${JSON.stringify(join(hostDir, "oats-local.yaml"))};
+const settings = JSON.parse(env.OATS_SETTINGS || "{}");
+if (fs.existsSync(local)) for (const m of fs.readFileSync(local, "utf8").matchAll(/^      "([^"]+)": "([^"]+)"$/gm)) settings.roots = { ...(settings.roots || {}), [m[1]]: m[2] };
+env.OATS_SETTINGS = JSON.stringify(settings);
+const r = spawnSync(process.execPath, [${JSON.stringify(HOOK)}, ...rest.slice(1)], { cwd: ${JSON.stringify(hostDir)}, env, stdio: "inherit" });
+process.exit(r.status ?? 1);
+`, { mode: 0o755 });
+  return { cli, readCalls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
+}
+
+/** A local deployment whose root is a member of TEAM (or of `localTeam`), and a host
+ *  deployment of the same workspace, both on the same fake aw (its state is per directory). */
+function connectFixture(t, { localTeam = TEAM, hostMember = false, hostAw = true, unreachable = false, hostEnv: extraHostEnv = {} } = {}) {
+  const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
+  const localDir = tempDir(t), hostDir = tempDir(t);
+  mkdirSync(join(localDir, ".aw"), { recursive: true });
+  writeFileSync(join(localDir, ".aw", "teams.json"), JSON.stringify({ active_team: localTeam, memberships: [{ team_id: localTeam }] }));
+  writeFileSync(join(localDir, ".aw", "workspace.yaml"), `team_id: ${localTeam}\naweb_url: ${SERVICE}\nalias: local-root\n`);
+  writeFileSync(join(hostDir, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  if (hostMember) {
+    const teamRoot = join(hostDir, ".aweb-roots", "joined");
+    mkdirSync(join(teamRoot, ".aw"), { recursive: true });
+    writeFileSync(join(teamRoot, ".aw", "teams.json"), JSON.stringify({ active_team: TEAM, memberships: [{ team_id: TEAM }] }));
+    writeFileSync(join(hostDir, "oats-local.yaml"), `schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      "${TEAM}": "${teamRoot}"\n`);
+  }
+  const npm = hostAw ? undefined : fakeNpmPath(t, { installs: join(fake.path, "aw") });
+  const hostEnv = { ...deploymentEnv(hostDir), AW_WHOAMI_FAIL: "1", PATH: hostAw ? fake.path : npm.path, ...extraHostEnv };
+  delete hostEnv.OATS_EVENT;
+  const kernel = fakeKernel(t, { hostDir, hostEnv, unreachable });
+  const localEnv = { ...deploymentEnv(localDir), PATH: fake.path, OATS_EVENT: "connect", OATS_CLI_BIN: kernel.cli, AW_INVITE_TOKEN: HOSTED_TOKEN };
+  const connect = (args = [], env = {}) => run(["connect", ...args], { ...localEnv, ...env }, localDir);
+  return { fake, npm, kernel, localDir, hostDir, connect };
+}
+
+const envelope = (stdout) => JSON.parse(stdout.trim().split("\n").pop());
+const awCall = (calls, prefix) => calls.filter((c) => c.args.slice(0, prefix.length).join(" ") === prefix.join(" "));
+
+/** The token appears nowhere but the host's single `aw id team accept-invite` argv. */
+function assertTokenContained(fx, result, token = HOSTED_TOKEN) {
+  assert.ok(!(result.stdout + result.stderr).includes(token), "token in connect output");
+  for (const argv of fx.kernel.readCalls()) assert.ok(!argv.join(" ").includes(token), `token on oats argv: ${argv.join(" ")}`);
+  const awCalls = fx.fake.readCalls();
+  const accepts = awCall(awCalls, ["id", "team", "accept-invite"]);
+  for (const c of awCalls) if (!accepts.includes(c)) assert.ok(!c.args.join(" ").includes(token), `token on aw argv: ${c.args.join(" ")}`);
+  for (const dir of [fx.localDir, fx.hostDir]) for (const f of filesUnder(dir)) assert.ok(!f.text.includes(token), `token written to ${f.path}`);
+}
+
+test("connect on a fresh host installs aw, mints a hosted invite, joins through stdin and reports ready", async (t) => {
+  const fx = connectFixture(t, { hostAw: false });
+  const result = await fx.connect([SERVER, "--install-aw", "--soul", "dev", "--json"]);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.ok, true);
+  const teamRoot = join(fx.hostDir, ".aweb-roots", "joined");
+  assert.deepEqual(doc.result, {
+    server: SERVER, team: { label: "joined", team: TEAM }, ready: true,
+    steps: [
+      { step: "aw", status: "done", detail: "installed aw 1.36.13 (was missing)" },
+      { step: "invite", status: "done" },
+      { step: "join", status: "done", detail: `root ${teamRoot}` },
+      { step: "readiness", status: "ok" },
+    ],
+  });
+  assert.deepEqual(fx.npm.readCalls(), [["install", "-g", `@awebai/aw@^${AW_MIN}`]]);
+  assert.deepEqual(fx.kernel.readCalls(), [
+    ["aweb", "setup", "--check-only", "--json", "--install-aw", "--soul", "dev", "--server", SERVER],
+    ["aweb", "setup", "--join", "joined", "--invite-stdin", "--name", SERVER, "--service", SERVICE, "--soul", "dev", "--server", SERVER],
+    ["aweb", "setup", "--check-only", "--json", "--soul", "dev", "--server", SERVER],
+  ]);
+  const invites = awCall(fx.fake.readCalls(), ["team", "invite"]);
+  assert.equal(invites.length, 1);
+  assert.equal(invites[0].cwd, fx.localDir, "minted from this deployment's root for the team");
+  assert.ok(invites[0].args.includes(`--team-id=${TEAM}`));
+  const accepts = awCall(fx.fake.readCalls(), ["id", "team", "accept-invite"]);
+  assert.equal(accepts.length, 1);
+  assert.equal(accepts[0].args[3], HOSTED_TOKEN, "the host accepted the token connect minted");
+  assert.equal(accepts[0].identityHome, join(teamRoot, ".aw"));
+  assertTokenContained(fx, result);
+});
+
+test("connect with the host already a member mints nothing", async (t) => {
+  const fx = connectFixture(t, { hostMember: true });
+  const result = await fx.connect([SERVER, "--json"]);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  const doc = envelope(result.stdout);
+  assert.deepEqual(doc.result.steps, [
+    { step: "aw", status: "ok", detail: "aw 1.36.13" },
+    { step: "invite", status: "ok", detail: "already a member; no invite minted" },
+    { step: "join", status: "ok", detail: `root ${join(fx.hostDir, ".aweb-roots", "joined")}` },
+    { step: "readiness", status: "ok" },
+  ]);
+  assert.equal(doc.result.ready, true);
+  assert.equal(awCall(fx.fake.readCalls(), ["team", "invite"]).length, 0);
+  assert.equal(fx.kernel.readCalls().length, 1, "one routed check, no join");
+});
+
+test("connect from a deployment that is not a member of the host's team fails at invite with the remedy", async (t) => {
+  const fx = connectFixture(t, { localTeam: "other:example.invalid" });
+  const result = await fx.connect([SERVER, "--json"]);
+  assert.equal(result.code, 1);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.ok, false);
+  assert.equal(doc.error.code, "E_TEAM_NOT_MEMBER");
+  assert.match(doc.error.message, /this deployment is not a member of joined:example\.invalid/);
+  const steps = doc.error.details.steps;
+  assert.deepEqual(steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "failed"]]);
+  assert.match(steps[1].remedy, /oats aweb setup --join joined --invite <token>/);
+  assert.equal(awCall(fx.fake.readCalls(), ["team", "invite"]).length, 0);
+  assert.equal(fx.kernel.readCalls().length, 1);
+});
+
+test("connect to an unreachable host fails at aw with the kernel's code", async (t) => {
+  const fx = connectFixture(t, { unreachable: true });
+  const result = await fx.connect([SERVER, "--json"]);
+  assert.equal(result.code, 1);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.ok, false);
+  assert.equal(doc.error.code, "E_SSH");
+  assert.match(doc.error.message, /Could not resolve hostname altair/);
+  assert.deepEqual(doc.error.details.steps, [{ step: "aw", status: "failed", code: "E_SSH", detail: "ssh altair: Could not resolve hostname altair" }]);
+  assert.equal(awCall(fx.fake.readCalls(), ["team", "invite"]).length, 0);
+});
+
+test("connect drops a non-hosted invite token and asks for the controller flow", async (t) => {
+  const fx = connectFixture(t);
+  const result = await fx.connect([SERVER, "--json"], { AW_INVITE_TOKEN: "LOCAL-CONTROLLER-SECRET" });
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.result.ready, false);
+  assert.deepEqual(doc.result.steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "needs-human"], ["join", "skipped"], ["readiness", "skipped"]]);
+  assert.equal(doc.result.steps[1].code, "E_INVITE_NOT_HOSTED");
+  assert.match(doc.result.steps[1].remedy, /aw id team request.*aw id team add-member.*aw id team fetch-cert/s);
+  assert.equal(doc.result.steps[2].detail, "waits for invite");
+  assert.equal(fx.kernel.readCalls().length, 1, "no join was routed");
+  assertTokenContained(fx, result, "LOCAL-CONTROLLER-SECRET");
+});
+
+test("connect whose join fails leaves the token nowhere and relays the host's error", async (t) => {
+  const fx = connectFixture(t, { hostEnv: { AW_CONNECT_FAIL: "1" } });
+  const result = await fx.connect([SERVER, "--json"]);
+  assert.equal(result.code, 1);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.error.code, "E_JOIN_FAILED");
+  assert.deepEqual(doc.error.details.steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "done"], ["join", "failed"]]);
+  assert.match(doc.error.details.steps[2].detail, /workspace connect\/verification failed/);
+  assertTokenContained(fx, result);
+});
+
+test("connect with aw missing on the host and no --install-aw needs a human", async (t) => {
+  const fx = connectFixture(t, { hostAw: false });
+  const result = await fx.connect([SERVER, "--json"]);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.result.ready, false);
+  assert.deepEqual(doc.result.steps.map((s) => [s.step, s.status]), [["aw", "needs-human"], ["invite", "skipped"], ["join", "skipped"], ["readiness", "skipped"]]);
+  assert.match(doc.result.steps[0].remedy, new RegExp(`oats aweb connect ${SERVER} --install-aw`));
+  assert.deepEqual(fx.npm.readCalls(), []);
+});
+
+test("connect refuses a server id that is not an aweb alias unless --name gives one", async (t) => {
+  const fx = connectFixture(t);
+  const refused = await fx.connect(["altair.lan"]);
+  assert.equal(refused.code, 2);
+  assert.match(refused.stderr, /server id altair\.lan does not fit the aweb alias rule.*pass --name <alias>/);
+  assert.equal(fx.kernel.readCalls().length, 0);
+  const named = await fx.connect([SERVER, "--name", "altair-root", "--json"]);
+  assert.equal(named.code, 0, named.stdout + named.stderr);
+  assert.ok(fx.kernel.readCalls()[1].includes("altair-root"));
+  const accept = awCall(fx.fake.readCalls(), ["id", "team", "accept-invite"])[0];
+  assert.ok(accept.args.includes("--name=altair-root"));
+});
+
+test("connect prints its steps for a human without --json", async (t) => {
+  const fx = connectFixture(t, { hostMember: true });
+  const result = await fx.connect([SERVER]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /^oats aweb connect altair-aweb: team joined \(joined:example\.invalid\)$/m);
+  assert.match(result.stdout, /^  aw: ok — aw 1\.36\.13$/m);
+  assert.match(result.stdout, /^  invite: ok — already a member; no invite minted$/m);
+  assert.match(result.stdout, /^ready: yes$/m);
+});
+
+test("1.20.0 is documented: CHANGELOG, README and the oats-aweb skill name connect, --invite-stdin, --install-aw and the token rule", () => {
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  const entry = changelog.slice(changelog.indexOf("## 1.20.0"), changelog.indexOf("## 1.19.0"));
+  const readme = readFileSync(join(REPO, "README.md"), "utf8");
+  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
+  for (const [name, text] of [["CHANGELOG 1.20.0", entry], ["README", readme], ["skill", skill]]) {
+    for (const needle of ["oats aweb connect <server-id>", "--invite-stdin", "--install-aw", "--check-only", "process list"]) assert.ok(text.includes(needle), `${name} lacks ${needle}`);
+  }
+  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
+  assert.equal(manifest.commands.connect, "bin/oats-aweb.mjs connect");
 });
