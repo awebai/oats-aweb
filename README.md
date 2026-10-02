@@ -5,6 +5,35 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.20.0 — a roster that says what each entry is
+
+`oats aweb roster` lists the union of the team's membership certificates
+(`aw id team members`) and its workspaces (`aw workspace status`, the presence
+view), one entry per alias, each with its sources, status and kind:
+
+```text
+aweb team aweb:juan.aweb.ai — 9 entries (membership certificates and workspaces):
+  aweb — global identity, active, antares, juan.aweb.ai/aweb [presence]
+  juan-reyero — human (from its session context), seen 2d ago [presence]
+  oats-expert-juan — instance (from its workspace path), active, antares [certificate, presence]
+  altair-aweb — deployment root (from its workspace path), seen 3h ago, altair [certificate, presence]
+  cli-dev-review-servers — unknown, certificate only: no workspace record [certificate]
+```
+
+- Kinds: `global identity` (from the identity scope, listed first),
+  `human` / `hosted agent` (from the session context), `instance` /
+  `deployment root` (from the workspace path), else `unknown`. Inferred kinds
+  say so. Nothing is called retired: a certificate with no workspace record is
+  reported as that.
+- aw does not mark the team's coordinator; the roster says so and points at
+  the global identities.
+- If a source cannot be read, or presence is past its 200-workspace cap, the
+  roster lists what it has and prints `Incomplete: <source>: <why>.`
+- `--json`: `{team, members: [{alias, kind, kindFrom, identityScope, address,
+  role, status, sources, presence}], certificatesComplete, presenceComplete,
+  problems}`. Status is `active`, `offline`, `no-workspace-record` or
+  `presence-unknown`.
+
 ## 1.19.0 — team model 3
 
 Works with OATS 0.36 (team model v2) and OATS 0.38 (team model 3, where the

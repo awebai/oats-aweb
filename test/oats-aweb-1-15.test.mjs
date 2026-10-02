@@ -58,9 +58,9 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.19.0");
-  assert.equal(pkg.version, "1.19.0");
-  assert.equal(dist.version, "1.19.0");
+  assert.equal(manifest.version, "1.20.0");
+  assert.equal(pkg.version, "1.20.0");
+  assert.equal(dist.version, "1.20.0");
   assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
@@ -326,14 +326,21 @@ test("real aw: admission table for the 1.15 commands under --identity-home", (t)
     { name: "whoami", args: ["--identity-home", idh, "whoami"], admitted: true, expect: /initialized|identity|workspace|not found/i },
     // refused by aw: why minting roots invite from their own directory (cwd), not --identity-home
     { name: "team invite", args: ["--identity-home", idh, "team", "invite", "--team-id", "x:example.invalid", "--json"], admitted: false, expect: new RegExp(POLICY) },
-    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], admitted: false, expect: new RegExp(POLICY) },
+    // aw made `id team members` identity-home-aware (1.36.23 admits it): either aw's policy
+    // refusal, or admission failing on its own terms (no team in the empty identity home).
+    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], oneOf: [new RegExp(POLICY), /--team-id or both --team and --namespace are required when no active team can be inferred[\s\S]*teams\.yaml/] },
   ];
   for (const row of rows) {
     const r = spawnSync("aw", row.args, { cwd: home, env, encoding: "utf8", timeout: 15000 });
     const text = `${r.stdout}${r.stderr}`;
+    assert.notEqual(r.status, 0, `${row.name} unexpectedly succeeded`);
+    if (row.oneOf) {
+      const matched = row.oneOf.filter((outcome) => outcome.test(text));
+      assert.equal(matched.length, 1, `${row.name}: expected exactly one of the known outcomes: ${text}`);
+      continue;
+    }
     if (row.admitted) assert.doesNotMatch(text, new RegExp(POLICY), `${row.name}: hit the identity-home policy: ${text}`);
     else assert.match(text, new RegExp(POLICY), `${row.name}: expected the identity-home refusal: ${text}`);
-    assert.notEqual(r.status, 0, `${row.name} unexpectedly succeeded`);
     assert.match(text, row.expect, `${row.name}: unexpected failure: ${text}`);
   }
 });
@@ -429,7 +436,7 @@ test("commands run from inside an instance session (AWEB_IDENTITY_HOME set) stil
   const session = { ...env, AWEB_IDENTITY_HOME: join(fx.home, ".aw"), OATS_META: JSON.stringify(doc.meta) };
   const roster = spawnSync(process.execPath, [HOOK, "roster", "--json"], { cwd: fx.home, env: { ...session, OATS_EVENT: "roster" }, encoding: "utf8" });
   assert.equal(roster.status, 0, roster.stdout + roster.stderr);
-  assert.equal(JSON.parse(roster.stdout).team_id, "legacy:example.test");
+  assert.equal(JSON.parse(roster.stdout).team, "legacy:example.test");
   const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...session, OATS_EVENT: "join" }, encoding: "utf8" });
   assert.equal(joined.status, 0, joined.stdout + joined.stderr);
 
