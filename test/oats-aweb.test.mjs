@@ -682,7 +682,7 @@ test("setup --create on a closed workspace creates the team, records nothing loc
   assert.ok(fake.readCalls().some((c) => c.args.slice(0, 3).join(" ") === "id team create"), "the aweb team is created");
   assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"]], "no oats teams add on a closed workspace");
   assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/, "the per-team root is still recorded");
-  assert.match(result.stdout, new RegExp(`teams:\\n\\s+eng: \\{ team: "${team}" \\}\\n\\s+defaultTeam: eng\\n`), "the workspace form, with a default since none is set");
+  assert.match(result.stdout, new RegExp(`teams:\\n\\s+"eng": \\{ team: "${team}" \\}\\n\\s+defaultTeam: "eng"\\n`), "the workspace form, with a default since none is set");
   assert.match(result.stdout, /to let souls join it \(rather than default to it\), list it in a `souls:` entry's teams/i);
   assert.match(result.stdout, /localTeams: true/);
   assert.doesNotMatch(result.stdout, /recorded local team|oats teams add/);
@@ -694,8 +694,25 @@ test("setup --create on a closed workspace with a default team prints no default
   const kernel = fakeOatsCli(t, { teams: { ...TEAMS_CLOSED, defaultTeam: { label: "main", team: "main:example.invalid", from: "workspace" } } });
   const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /eng: \{ team: "eng:example\.invalid" \}/);
-  assert.doesNotMatch(result.stdout, /defaultTeam: eng/);
+  assert.match(result.stdout, /"eng": \{ team: "eng:example\.invalid" \}/);
+  assert.doesNotMatch(result.stdout, /defaultTeam:/);
+});
+
+test("setup --create on a closed workspace quotes a label YAML would read as a number or boolean", async (t) => {
+  for (const label of ["01", "true", "123"]) {
+    const root = tempDir(t);
+    const fake = fakeAwSetupPath(t);
+    const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
+    const result = await run(["setup", "--create", label, "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
+    assert.equal(result.code, 0, result.stderr);
+    // A JSON string is a YAML string: the committed label and default stay exactly the label.
+    const entry = result.stdout.match(/^\s+(".*"): \{ team: (".*") \}$/m);
+    const defaultTeam = result.stdout.match(/^\s+defaultTeam: (".*")$/m);
+    assert.ok(entry && defaultTeam, `${label}: ${result.stdout}`);
+    assert.equal(JSON.parse(entry[1]), label);
+    assert.equal(JSON.parse(defaultTeam[1]), label);
+    assert.match(JSON.parse(entry[2]), /:example\.invalid$/);
+  }
 });
 
 test("setup --create refuses before creating anything when it cannot tell whether local teams are allowed", async (t) => {
@@ -718,7 +735,7 @@ test("setup on a closed workspace advises the workspace form instead of local te
   const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
   const result = await run(["setup", "--username", "alice"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) }, root);
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /teams:\n\s+<label>: \{ team: "default:alice\.aweb\.ai" \}\n\s+defaultTeam: <label>/);
+  assert.match(result.stdout, /teams:\n\s+"<label>": \{ team: "default:alice\.aweb\.ai" \}\n\s+defaultTeam: "<label>"/);
   assert.match(result.stdout, /localTeams: true/);
   assert.doesNotMatch(result.stdout, /oats teams add|oats teams default/);
   // Open or unknown (0.36: no localTeams; or no kernel to ask): today's advice.

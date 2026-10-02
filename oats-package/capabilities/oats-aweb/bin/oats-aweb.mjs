@@ -1734,12 +1734,13 @@ if (event === "launch") {
   };
   /** readLocalTeams, or undefined when the kernel cannot say: advice then falls back to the local verbs. */
   const localTeamsIfKnown = () => { try { return readLocalTeams(); } catch { return undefined; } };
-  /** What to commit for a team a workspace that refuses local teams cannot record here. */
+  /** What to commit for a team a workspace that refuses local teams cannot record here. Values are
+   *  JSON strings, which YAML reads as strings: a label such as `01` or `true` stays that label. */
   const printWorkspaceTeam = (label, team, { hasDefault }) => {
     console.log("  This workspace does not allow local teams; commit the team in oats-workspace.yaml:");
     console.log("    teams:");
-    console.log(`      ${label}: { team: "${team}" }`);
-    if (!hasDefault) console.log(`    defaultTeam: ${label}`);
+    console.log(`      ${JSON.stringify(label)}: { team: ${JSON.stringify(team)} }`);
+    if (!hasDefault) console.log(`    defaultTeam: ${JSON.stringify(label)}`);
     console.log("  To let souls join it (rather than default to it), list it in a `souls:` entry's teams.");
     console.log("  Or add `localTeams: true` to oats-workspace.yaml and re-run setup.");
   };
