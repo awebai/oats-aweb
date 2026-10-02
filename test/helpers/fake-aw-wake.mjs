@@ -19,7 +19,7 @@ function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync
  *  FAKE_WAKE_FAIL=register|deregister makes that `aw wake` subcommand fail;
  *  FAKE_WAKE_DEREGISTER_LATE makes deregister exit 0 and keep the registration,
  *  as aw does when the daemon does not answer in time. */
-export function fakeAwWake(t, { daemon = true, version = "1.36.13" } = {}) {
+export function fakeAwWake(t, { daemon = true, version = "1.36.13", daemonVersion = "1.36.13" } = {}) {
   // Registered before tempDir's cleanup so it still sees the call log.
   let readCalls = () => [];
   t.after(() => assert.deepEqual(readCalls().filter((c) => c.forbidden).map((c) => c.args.join(" ")), [], "oats.aweb 1.15 must not call aw auth or aw team ensure"));
@@ -70,7 +70,7 @@ if (args[0] === "wake" && args[1] === "deregister") { const r = regs(); delete r
 if (args[0] === "wake" && args[1] === "status") {
   const running = !process.env.FAKE_DAEMON_DOWN && ${JSON.stringify(daemon)};
   const instances = Object.values(regs()).map((doc) => ({ home: doc.home, delivery: doc.delivery, runtime_delivery: doc.runtime_delivery, phase: running ? "present" : "pending", receive_identities: (doc.receive_identities || [{ identity_home: doc.identity_home }]).map((ri) => ({ ...ri, stream_admitted: running, stream_phase: running ? "connected" : "daemon-down" })) }));
-  emit({ daemon_running: running, daemon_version_state: running ? "reported" : "not_running", daemon_version: running ? "1.36.13" : undefined, instances });
+  emit({ daemon_running: running, daemon_version_state: running ? "reported" : "not_running", daemon_version: running ? ${JSON.stringify(daemonVersion)} : undefined, instances });
   process.exit(0);
 }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);

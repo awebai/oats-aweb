@@ -5,17 +5,19 @@
 // only: a start on the channel path deregisters the home from the broker, a
 // start on the broker path registers it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
+import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
+const BINDING = join(CAPABILITY, "bin", "oats-aweb-binding.mjs");
 const CHANNEL_FLAG = "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace";
 
 function tempDir(t) {
@@ -29,11 +31,12 @@ const teamsEnv = JSON.stringify([
   { label: "alpha", team: "alpha:example.test", default: false, from: "shared" },
 ]);
 
-function fixture(t, { delivery, runtime = "claude", settings = {} } = {}) {
-  const fake = fakeAwWake(t);
+function fixture(t, { delivery, runtime = "claude", settings = {}, daemon = true, daemonVersion } = {}) {
+  const fake = fakeAwWake(t, { daemon, ...(daemonVersion ? { daemonVersion } : {}) });
   const ws = tempDir(t), home = join(ws, "agents", "dev", "instances", "dev-1");
   mkdirSync(home, { recursive: true });
   mkdirSync(join(ws, ".aw"), { recursive: true });
+  writeFileSync(join(ws, ".aw", "teams.yaml"), "active_team: legacy:example.test\n");
   const merged = { root: ws, ...(delivery ? { delivery } : {}), ...settings };
   const env = {
     PATH: fake.path, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: "github.com/acme/agents", OATS_WORKSPACE_NAME: "acme",
@@ -54,7 +57,18 @@ function fixture(t, { delivery, runtime = "claude", settings = {} } = {}) {
     ...(launchDelivery ? { OATS_SETTINGS: JSON.stringify({ ...merged, delivery: launchDelivery }) } : {}), ...extra,
   });
   const wakeCalls = () => fake.readCalls().filter((c) => c.args[0] === "wake").map((c) => c.args[1]);
-  return { fake, ws, home, hook, spawn, launch, wakeCalls, registered: () => fake.registrations()[home] };
+  /** The kernel's record of the home's last start: the harness it launched
+   *  and the meta this provider returned. */
+  const record = (meta, harness) => writeFileSync(join(home, "instance.json"), JSON.stringify({ harness, launch: { harness }, capabilityMeta: { "oats.aweb": meta } }));
+  /** The binding readiness check for this home, as the kernel asks it. */
+  const readiness = () => {
+    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: merged, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: env.OATS_WORKSPACE_KEY, deployment: ws, soul: "dev", team: "default", instance: "dev-1", home } } };
+    const { OATS_SETTINGS, OATS_HOME, OATS_RUNTIME, ...rest } = env;
+    const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: home, input: JSON.stringify(input), env: { ...rest, OATS_INSTANCE_HOME: home }, encoding: "utf8", timeout: 20000 });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return assertKernelCheckAnswerRule(r.stdout, input, "oats-aweb binding check").result;
+  };
+  return { fake, ws, home, hook, spawn, launch, wakeCalls, record, readiness, registered: () => fake.registrations()[home] };
 }
 
 // ---------------------------------------------------------------- spawn
@@ -262,4 +276,46 @@ test("channel delivery requires the channel package for Claude and pi only, nami
   const pi = channelRows.find((r) => r.runtime === "pi");
   assert.equal(pi.install, "pi install npm:@awebai/pi");
   assert.equal(manifest.requires.some((r) => r.runtime === "codex"), false);
+});
+
+// ---------------------------------------------------------------- empty runtime
+
+test("a start under an empty runtime is a broker start, recorded as such, even after a native one", (t) => {
+  let fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" } });
+  let meta = fx.spawn().meta;
+  let r = fx.launch(meta, "");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.meta.runtime, "", "the start records the runtime it ran under, not the previous one");
+  assert.equal(fx.registered().runtime_delivery, "external-session", "the broker owns the primary when no channel runs");
+  assert.deepEqual(fx.registered().receive_identities.map((x) => x.label), ["default", "alpha"]);
+
+  fx = fixture(t, { delivery: "channel", runtime: "claude" });
+  meta = fx.spawn().meta;
+  r = fx.launch(meta, "");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(fx.registered());
+  fx.record(r.doc.meta, "claude");
+  const retired = fx.hook("retire", { OATS_META: JSON.stringify(r.doc.meta), OATS_RUNTIME: "claude" });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(fx.registered(), undefined, "retire follows the recorded runtime, not an ambient or kernel one");
+});
+
+// ---------------------------------------------------------------- readiness
+
+test("readiness requires the wake daemon for a home the broker delivers to, by its recorded runtime", (t) => {
+  for (const [delivery, runtime, relies] of [["channel", "codex", true], ["session", "claude", true], ["channel", "claude", false], ["channel", "pi", false]]) {
+    const fx = fixture(t, { delivery, runtime, daemon: false });
+    fx.record(fx.spawn().meta, runtime);
+    const result = fx.readiness();
+    const problem = result.problems.find((p) => p.code === "wake-daemon-not-running");
+    assert.equal(!!problem, relies, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
+    if (relies) assert.equal(result.status, "needs-configuration");
+  }
+});
+
+test("readiness reports an outdated wake daemon for a codex channel home", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "codex", daemonVersion: "1.36.6" });
+  fx.record(fx.spawn().meta, "codex");
+  const result = fx.readiness();
+  assert.ok([...result.problems, ...(result.warnings || [])].some((p) => /wake-daemon-outdated/.test(p.code)), JSON.stringify(result));
 });

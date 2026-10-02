@@ -393,7 +393,7 @@ test("launch with renewal off preserves the existing grant locator and session d
     const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: oldHome });
-    assert.deepEqual(r.doc.meta, { ...old, delivery: "session" }, "the start records the delivery it ran under and keeps the grant");
+    assert.deepEqual(r.doc.meta, { ...old, delivery: "session", runtime: "" }, "the start records the delivery and runtime it ran under and keeps the grant");
     assert.deepEqual(logLines(base).map((l) => l.argv.join(" ")), [`wake register --home ${home} --identity-home ${oldHome} --delivery session`], "renewal off calls aw only to keep the broker registration on the existing grant home");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

@@ -46,7 +46,7 @@ import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/sess
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { AW_MIN, grantYamlCustodySocket, parseBindingJson, readAwVersion } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
-import { brokerDelivers, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
+import { brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -479,7 +479,7 @@ function wakeStillRegistered(instanceHome) {
   return statusListsHome(status, instanceHome);
 }
 /** The meta a start records: the delivery setting it ran under and its runtime. */
-const startedMeta = (meta = {}) => ({ ...meta, delivery: deliveryMode, ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}) });
+const startedMeta = (meta = {}) => ({ ...meta, delivery: deliveryMode, runtime: process.env.OATS_RUNTIME || "" });
 /** wakeDeregister as a child that runs while the hook does other work (retire
  *  overlaps it with the self-delete). Settles to whether it succeeded. */
 function wakeDeregisterStarted(instanceHome) {
@@ -1274,14 +1274,13 @@ function appendProviderEvent(kind, data) {
   } catch { /* evidence only */ }
 }
 
-/** The home's runtime. Spawn and launch run in the session's own env; a
- *  join/leave may be run by another agent whose OATS_RUNTIME is its own. */
+/** The home's runtime. Spawn and launch run in the session's own env, empty
+ *  included (deliveryFor decides from the same value); a retire, join or
+ *  leave reads what the last start recorded, since it may be run by another
+ *  agent whose OATS_RUNTIME is its own. */
 function instanceRuntime(meta = {}) {
-  const own = ["spawn", "launch"].includes(event) ? process.env.OATS_RUNTIME : undefined;
-  if (own) return own;
-  if (meta.runtime) return meta.runtime;
-  try { const r = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).runtime; if (r) return r; } catch { /* fall through */ }
-  return process.env.OATS_RUNTIME || undefined;
+  if (["spawn", "launch"].includes(event)) return process.env.OATS_RUNTIME || "";
+  return recordedRuntime(meta, recordedStart(home).harness) ?? (process.env.OATS_RUNTIME || undefined);
 }
 function primaryIdentityHomeOf(meta = {}) {
   return meta.identity?.mode === "global" && meta.identity?.grant?.id ? priorGrantHome(meta) : join(home, ".aw");
@@ -1309,7 +1308,7 @@ function syncWakeReceive(meta) {
     if (brokerDelivers({ delivery, runtime })) { try { wakeRegister(home, primary); } catch (e) { warnings.push(String(e.message || e)); } }
     else if (!wakeDeregister(home)) warnings.push("aw wake deregister failed; the broker treats a stale registration as inactive on its own");
   }
-  const next = { ...meta, ...(runtime ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => ({ ...j, receive: joined.includes(j) ? receive : "poll" })) };
+  const next = { ...meta, ...(typeof runtime === "string" ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => ({ ...j, receive: joined.includes(j) ? receive : "poll" })) };
   return { meta: next, warnings };
 }
 
@@ -1438,7 +1437,7 @@ if (event === "launch") {
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: join(home, ".aw") };
     if (broker) wakeRegister(home, join(home, ".aw"));
-    let meta = { team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], ...(process.env.OATS_RUNTIME ? { runtime: process.env.OATS_RUNTIME } : {}), identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
+    let meta = { team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: identityMeta({ mode: "local", alias, team: joined.team_id }) };
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
     if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
     writeProviderTeamsState(meta);

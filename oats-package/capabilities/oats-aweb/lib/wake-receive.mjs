@@ -10,8 +10,8 @@
 //   primary (aw's mixed mode).
 // Under delivery: channel a runtime with no native surface (Codex, unknown) is
 // an external-session home like any session home (brokerDelivers).
-import {realpathSync} from 'node:fs';
-import {resolve} from 'node:path';
+import {readFileSync, realpathSync} from 'node:fs';
+import {join, resolve} from 'node:path';
 
 const JOINED_EVENT_CLASSES = ['mail', 'chat'];
 
@@ -24,6 +24,23 @@ const NATIVE_CHANNEL_RUNTIMES = ['claude', 'pi'];
  *  doubles every wake, so this is the one path, never both. */
 export function brokerDelivers({delivery, runtime}) {
   return delivery === 'session' || !NATIVE_CHANNEL_RUNTIMES.includes(runtime);
+}
+
+/** What the kernel recorded for a home's last start: this provider's meta
+ *  (capabilityMeta) and the harness it launched. Empty when unreadable. */
+export function recordedStart(home) {
+  let doc;
+  try { doc = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8')); } catch { return {}; }
+  const meta = doc?.capabilityMeta?.['oats.aweb'];
+  const harness = typeof doc?.launch?.harness === 'string' ? doc.launch.harness : typeof doc?.harness === 'string' ? doc.harness : undefined;
+  return {meta: meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined, harness};
+}
+
+/** The runtime a home's last start ran under: what this provider recorded
+ *  (an empty string is a start with no runtime, so no channel), else the
+ *  harness the kernel launched, for a meta that recorded none. */
+export function recordedRuntime(meta, harness) {
+  return typeof meta?.runtime === 'string' ? meta.runtime : harness;
 }
 
 /** external-session | native-channel | native-pi. */
