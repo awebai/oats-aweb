@@ -471,8 +471,10 @@ function syncPrimaryDelivery(identityHome) {
 }
 /** Whether `aw wake status` still lists the home. Deregister exits 0 when it
  *  falls back to deleting the state files (a daemon that did not answer in
- *  time), possibly before the daemon has stopped presenting; the status read
- *  is the proof. An unreadable status counts as still registered. */
+ *  time), possibly while the daemon still holds the registration; the status
+ *  read confirms the home is deregistered. It does not prove terminal input
+ *  has finished: aw drops the home from the broker's map before its runner
+ *  stops (aweb-abna). An unreadable status counts as still registered. */
 function wakeStillRegistered(instanceHome) {
   let status;
   try { status = JSON.parse(String(run(["aw", "wake", "status", "--json"], instanceHome, 60000))); } catch { return true; }
@@ -619,10 +621,14 @@ function validateMintedGrant(minted, grantHome) {
   return { minted, grantId, expiresAt, mintedTeam, alias: typeof minted.alias === "string" && minted.alias ? minted.alias : undefined, address: typeof minted.address === "string" && minted.address ? minted.address : null };
 }
 function parseMintedGrant(raw, grantHome) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome); }
-function globalGrantRenew(oldMeta) {
+/** The renewal mode, refusing anything but "off" and "launch". */
+function checkedRenewMode() {
   const mode = grantRenewMode();
-  if (mode === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
-  if (mode !== "launch") fatal(`identity.renew must be "off" or "launch" (got ${JSON.stringify(identitySettings.renew)})`);
+  if (mode !== "off" && mode !== "launch") fatal(`identity.renew must be "off" or "launch" (got ${JSON.stringify(identitySettings.renew)})`);
+  return mode;
+}
+function globalGrantRenew(oldMeta) {
+  if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
   if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
   const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
   const custody = resolveResidentCustody(resident);
@@ -1317,6 +1323,18 @@ if (event === "launch") {
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
   // over what the meta recorded.
   const started = startedMeta(JSON.parse(process.env.OATS_META || "{}"));
+  // Under OATS_LAUNCH_PREVIEW=1 (the kernel's first pass of every start, and
+  // `oats launch-config preview`) the hook changes nothing: no broker
+  // registration, no renewal, no joined-team sync, no meta. It answers with
+  // the contribution the real start returns, which the joined teams never
+  // change, and refuses what the real start refuses before its first aw call.
+  // A renewal's grant home exists only once the real pass has minted it, so
+  // the preview names the current one and declares it volatile: the kernel
+  // takes its value from the real pass and leaves it out of the comparison.
+  if (process.env.OATS_LAUNCH_PREVIEW === "1") {
+    const renews = (identityMode === "global" || grantRenewMode() === "launch") && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
+    out({ ...retainedLaunchOutput(started), ...(renews ? { volatileEnv: ["AWEB_IDENTITY_HOME"] } : {}) });
+  }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
   if (identityMode === "global" || grantRenewMode() === "launch") globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);

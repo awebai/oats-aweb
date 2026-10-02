@@ -452,6 +452,45 @@ test("session launch renewal registers the wake broker with the new grant before
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
+test("a launch preview with renew=launch names the current grant home as volatile and mints nothing", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
+    const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"], home: oldHome } } };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }) };
+    const preview = runHook(bin, "launch", { ...env, OATS_LAUNCH_PREVIEW: "1" });
+    assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+    assert.equal(existsSync(join(base, "aw.log")), false, "a preview calls no aw");
+    assert.deepEqual(preview.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: oldHome });
+    assert.deepEqual(preview.doc.volatileEnv, ["AWEB_IDENTITY_HOME"], "only the real pass knows the renewed grant home");
+    assert.equal(preview.doc.meta, undefined);
+    const real = runHook(bin, "launch", env);
+    assert.equal(real.status, 0, real.stdout + real.stderr);
+    assert.notEqual(real.doc.env.AWEB_IDENTITY_HOME, oldHome);
+    const { AWEB_IDENTITY_HOME: _volatile, ...stable } = real.doc.env;
+    assert.deepEqual(stable, { AWEB_DELIVERY: "session" }, "every other name is identical between the passes");
+    assert.equal(real.doc.volatileEnv, undefined);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("a launch preview with renewal off keeps the grant home and declares nothing volatile", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
+    const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody), delivery: "session" }) };
+    const preview = runHook(bin, "launch", { ...env, OATS_LAUNCH_PREVIEW: "1" });
+    assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+    assert.equal(existsSync(join(base, "aw.log")), false, "a preview calls no aw");
+    assert.equal(preview.doc.volatileEnv, undefined);
+    const real = runHook(bin, "launch", env);
+    assert.equal(real.status, 0, real.stdout + real.stderr);
+    assert.deepEqual(preview.doc.env, real.doc.env);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
 test("launch renewal keeps the old grant and locator when mint fails", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {

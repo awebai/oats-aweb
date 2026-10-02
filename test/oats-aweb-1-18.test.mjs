@@ -5,7 +5,7 @@
 // only: a start on the channel path deregisters the home from the broker, a
 // start on the broker path registers it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -235,6 +235,66 @@ test("launch codex -> claude with a joined team: the broker keeps only the joine
   assert.deepEqual(reg.receive_identities.map((x) => x.label), ["alpha"], "the primary is the channel's, never the broker's");
 });
 
+// ---------------------------------------------------------------- launch preview (1.18.1)
+
+/** Everything a launch may change: the aw calls it makes, the broker's
+ *  registrations and the provider's own team state. */
+function launchEffects(fx) {
+  let teamsState;
+  try { teamsState = readFileSync(join(fx.home, ".oats-aweb", "teams.json"), "utf8"); } catch { teamsState = undefined; }
+  return { calls: fx.fake.readCalls().length, registrations: fx.fake.registrations(), teamsState };
+}
+/** The part of a launch answer the kernel compares between the preview and
+ *  the real pass: the env it sets and the launch arguments. */
+const contribution = (doc) => ({ env: doc.env ?? {}, launch: doc.launch ?? {} });
+
+test("a launch preview makes no aw call, writes no meta, and contributes what the real start does", (t) => {
+  for (const [delivery, spawned, previewed] of [["channel", "claude", "codex"], ["channel", "codex", "claude"], ["channel", "codex", "pi"], ["session", "claude", "codex"]]) {
+    const label = `${delivery}: ${spawned} home previewed as ${previewed}`;
+    const fx = fixture(t, { delivery, runtime: spawned, settings: { join: "alpha" } });
+    const meta = fx.spawn().meta;
+    const before = launchEffects(fx);
+    const preview = fx.launch(meta, previewed, { extra: { OATS_LAUNCH_PREVIEW: "1" } });
+    assert.equal(preview.status, 0, `${label}: ${preview.stdout}${preview.stderr}`);
+    assert.deepEqual(launchEffects(fx), before, `${label}: a preview changes nothing`);
+    assert.equal(preview.doc.meta, undefined, `${label}: a preview records nothing`);
+    const real = fx.launch(meta, previewed);
+    assert.equal(real.status, 0, `${label}: ${real.stdout}${real.stderr}`);
+    assert.deepEqual(contribution(preview.doc), contribution(real.doc), `${label}: the kernel refuses a start whose passes differ`);
+  }
+});
+
+test("the manifest declares the launch hook preview-aware", () => {
+  const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
+  assert.equal(manifest.launchPreview, true, "without it the kernel runs the hook once, for real");
+});
+
+test("a launch preview leaves a joined team the workspace no longer maps", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: { join: "alpha" } });
+  const meta = fx.spawn().meta;
+  const before = launchEffects(fx);
+  const unmapped = { OATS_TEAMS: JSON.stringify([{ label: "default", team: "legacy:example.test", default: true, from: "local" }]) };
+  const preview = fx.launch(meta, "codex", { extra: { ...unmapped, OATS_LAUNCH_PREVIEW: "1" } });
+  assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+  assert.deepEqual(launchEffects(fx), before, "the preview neither leaves the team nor re-registers");
+  const real = fx.launch(meta, "codex", { extra: unmapped });
+  assert.equal(real.status, 0, real.stdout + real.stderr);
+  assert.match(real.doc.warning, /left joined team alpha/);
+  assert.deepEqual(contribution(preview.doc), contribution(real.doc));
+});
+
+test("a launch preview refuses what the real start refuses before any aw call", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { identity: { mode: "global", resident: "ops", renew: "sometimes" } } });
+  const meta = { identity: { mode: "global", grant: { id: "grant-1" } } };
+  const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
+  assert.notEqual(preview.status, 0);
+  assert.match(preview.doc.warning, /identity\.renew must be "off" or "launch"/);
+  assert.equal(fx.fake.readCalls().length, 0);
+  const real = fx.launch(meta, "claude");
+  assert.notEqual(real.status, 0);
+  assert.match(real.doc.warning, /identity\.renew must be "off" or "launch"/);
+});
+
 // ---------------------------------------------------------------- docs
 
 test("agent-facing text and docs state the per-runtime delivery rule", async () => {
@@ -253,12 +313,27 @@ test("agent-facing text and docs state the per-runtime delivery rule", async () 
   assert.match(readme, /aweb-abmy/);
   assert.match(readme, /existing homes keep the delivery/i);
   const changelog = read(REPO, "CHANGELOG.md");
-  assert.match(changelog, /^# Changelog\n\n## 1\.18\.0\n/);
-  const entry = changelog.split("\n## ")[1];
+  const entry = changelog.split("\n## ").find((section) => section.startsWith("1.18.0\n"));
+  assert.ok(entry, "CHANGELOG has a 1.18.0 entry");
   assert.match(entry, /Codex/);
   assert.match(entry, /aweb-abmy/);
   assert.match(entry, /existing homes keep the delivery/i);
   assert.match(entry, /docs\/terminal-wake-broker\.md/, "the aw duplicate window is stated with its citation");
+});
+
+test("docs state the launch preview contract and what the deregister guard proves", async () => {
+  const { readFileSync } = await import("node:fs");
+  const readme = readFileSync(join(REPO, "README.md"), "utf8");
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  assert.match(changelog, /^# Changelog\n\n## 1\.18\.1\n/);
+  const entry = changelog.split("\n## ")[1];
+  for (const [name, text] of [["README", readme], ["CHANGELOG 1.18.1", entry]]) {
+    assert.match(text, /OATS_LAUNCH_PREVIEW=1/, name);
+    assert.match(text, /volatileEnv/, name);
+    assert.match(text, /confirms that the home is deregistered, not that terminal input\s+has finished/, name);
+    assert.match(text, /aweb-abna/, name);
+    assert.doesNotMatch(text, /stopped typing/, name);
+  }
 });
 
 // A home on the channel path hears nothing without its channel package. The

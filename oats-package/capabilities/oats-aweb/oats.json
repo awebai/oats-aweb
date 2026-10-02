@@ -1,11 +1,12 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "compatibility": {
     "oats": ">=0.30.0"
   },
   "layer": "messaging",
+  "launchPreview": true,
   "description": "Messaging layer via aweb: per-instance team identities, explicit joined teams with live receive, native aw mail/chat skills and the cross-machine team roster.",
   "requires": [
     {

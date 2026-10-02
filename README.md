@@ -65,9 +65,19 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   deregister` and confirms with `aw wake status --json` that the home is no
   longer listed. If either step fails the start is refused, since a home on both
   paths would get every wake twice and a home on neither hears nothing. The
-  kernel runs a home's hooks from its own module copy under the settings
-  captured at spawn, so existing homes keep the delivery they were spawned with;
-  a changed deployment setting applies to new spawns.
+  status read confirms that the home is deregistered, not that terminal input
+  has finished: aw removes the home from the broker's map before its runner
+  stops (aweb-abna). The kernel runs a home's hooks from its own module copy
+  under the settings captured at spawn, so existing homes keep the delivery they
+  were spawned with; a changed deployment setting applies to new spawns.
+
+  Under `OATS_LAUNCH_PREVIEW=1` (`oats launch-config preview`, and the first of
+  the kernel's two launch passes) the launch hook changes nothing: no `aw`
+  call, no grant renewal, no joined-team change, no `meta`. It returns the env
+  and launch arguments the real start returns. With `renew: launch` the renewed
+  grant home exists only after the real pass mints it, so the preview returns
+  the current grant home and lists `AWEB_IDENTITY_HOME` in `volatileEnv`; the
+  kernel takes that value from the real pass.
 
   Across a switch between the two paths, each mail is presented once because
   both mark it read on the server after presenting it, and each presents the
