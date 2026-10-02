@@ -16,6 +16,8 @@ Added: `oats aweb setup --install-aw [--aw-version <v>]`. Where aw is missing or
 
 Added: `oats aweb setup --check-only --json [--install-aw]` answers one line of JSON, `{aw: {status, version?, detail?, remedy?, code?}, defaultTeam: {label, team} | null, member: true | false | null, root: <abs> | null}`. `member` is `null` when aw cannot be asked; `root` is the root setup mints from for the default team (`roots[team]`, else `root`) when it exists. It exits 1 only when an aw install failed.
 
+Fixed: `oats aweb setup --join <label>` recovers a per-team root that a join interrupted after `aw workspace connect` but before `roots[<team id>]` was recorded. When the root's identity holds the expected team's membership it records the root as it is, where before it refused, so a retried `connect` failed forever. A connected root that holds another team is still refused.
+
 Security: the invite token travels only in memory and on the routed command's stdin. It never appears in oats argv, a file, a log, a result or an error, and a failed join leaves it nowhere. On the host, `aw id team accept-invite <token>` still takes the token as an argument, as `--invite` always has, so it is visible in the host's process list for the accept call's duration. The invite's lifetime and use count are aw's: aw 1.36.23 has no expiry or single-use flag for `aw team invite`.
 
 ## 1.20.0

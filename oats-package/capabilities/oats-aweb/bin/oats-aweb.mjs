@@ -1776,6 +1776,10 @@ if (event === "launch") {
   const cli = process.env.OATS_CLI_BIN;
   if (!cli) { console.error("oats aweb connect: OATS_CLI_BIN is required (run it as oats aweb connect)"); process.exit(1); }
   const soulArgs = forwardedSoulArg ? ["--soul", forwardedSoulArg] : [];
+  /** An argument as a shell reads it back: bare when it is plainly safe, else single-quoted. */
+  const shellArg = (value) => /^[A-Za-z0-9._\/:@=+-]+$/.test(value) ? value : `'${String(value).replace(/'/g, "'\\''")}'`;
+  /** A runnable `oats aweb …` remedy, with this run's --name and --soul. */
+  const remedyCommand = (argv, { withName = false } = {}) => ["oats", "aweb", ...argv, ...(withName && name ? ["--name", name] : []), ...soulArgs].map(shellArg).join(" ");
   const routedArgv = (argv) => [cli, "aweb", ...argv, ...soulArgs, "--server", serverId];
   const oneLine = (text) => String(text || "").replace(/\s+/g, " ").trim().slice(0, 500);
 
@@ -1829,14 +1833,14 @@ if (event === "launch") {
   const hostAw = first.doc.aw;
   if (hostAw.status === "failed") fail("aw", hostAw.code || "E_AW", hostAw.detail);
   if (hostAw.status === "needs-human") {
-    steps.push({ step: "aw", status: "needs-human", detail: hostAw.detail, remedy: `oats aweb connect ${serverId} --install-aw` });
+    steps.push({ step: "aw", status: "needs-human", detail: hostAw.detail, remedy: remedyCommand(["connect", serverId, "--install-aw"], { withName: true }) });
     skipRest("aw");
   }
   steps.push({ step: "aw", status: hostAw.status, detail: hostAw.status === "done" ? hostAw.detail : `aw ${hostAw.version}` });
 
   const hostTeam = first.doc.defaultTeam;
   if (!hostTeam?.label || !hostTeam?.team) {
-    steps.push({ step: "invite", status: "needs-human", code: "E_TEAM_UNMAPPED", detail: `the deployment on ${serverId} has no mapped default team`, remedy: `on ${serverId}: give the deployment a default team with a provider id (oats teams --json there shows it), then re-run oats aweb connect ${serverId}` });
+    steps.push({ step: "invite", status: "needs-human", code: "E_TEAM_UNMAPPED", detail: `the deployment on ${serverId} has no mapped default team`, remedy: `on ${serverId}: give the deployment a default team with a provider id (oats teams --json there shows it), then re-run ${remedyCommand(["connect", serverId], { withName: true })}` });
     skipRest("invite");
   }
   team = { label: hostTeam.label, team: hostTeam.team };
@@ -1850,7 +1854,7 @@ if (event === "launch") {
   const localRoot = awebRootForTeam(team.team);
   if (!localRoot || !teamIdsOf(readTeamsAt(localRoot)).map(String).includes(team.team)) {
     fail("invite", "E_TEAM_NOT_MEMBER", `this deployment is not a member of ${team.team}${localRoot ? ` (its root ${localRoot} holds no membership)` : " (it has no root for that team)"}, so it cannot invite ${serverId}`,
-      `join ${team.label} here first (oats aweb setup --join ${team.label} --invite <token>, with an invite from a member), or ask a member to connect ${serverId}`);
+      `join ${team.label} here first (${remedyCommand(["setup", "--join", team.label, "--invite-stdin"])}, with an invite from a member on stdin), or ask a member to connect ${serverId}`);
   }
   // The token is a variable here and the routed join's stdin, and nothing else: aw's own
   // output is withheld (secretSafe) and the token is dropped as soon as the join returns.
@@ -1885,7 +1889,7 @@ if (event === "launch") {
   steps.push({ step: "join", status: "done", detail: `root ${second.doc.root}` });
   const settled = second.doc;
   if ((settled.aw?.status === "ok" || settled.aw?.status === "done") && settled.member === true) steps.push({ step: "readiness", status: "ok" });
-  else steps.push({ step: "readiness", status: "needs-human", detail: settled.aw?.status === "ok" ? `${serverId}'s root for ${team.team} is still not a member after the join` : settled.aw?.detail, remedy: `on ${serverId}: oats aweb setup` });
+  else steps.push({ step: "readiness", status: "needs-human", detail: settled.aw?.status === "ok" ? `${serverId}'s root for ${team.team} is still not a member after the join` : settled.aw?.detail, remedy: `on ${serverId}: ${remedyCommand(["setup"])}` });
   answer();
 } else if (event === "setup") {
   // Guided onboarding — idempotent, prints what it finds and can run one
@@ -2000,7 +2004,14 @@ if (event === "launch") {
     assertAwebRootSettingRecordable(recordTeam, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
     let joined;
     if (existsSync(join(idHome, "identity.yaml"))) {
-      if (existsSync(join(idHome, "workspace.yaml"))) throw new Error(`team root ${teamRoot} already holds a connected aweb identity; choose a different label or remove the stale root deliberately`);
+      if (existsSync(join(idHome, "workspace.yaml"))) {
+        // A join interrupted after the connect but before roots[team] was recorded: the root is
+        // complete, so a root holding the expected team's membership is recorded as it is.
+        const want = expectedTeam || configuredTeamForLabel(label);
+        if (!want || acceptedTeamMembership(idHome, want) !== want) throw new Error(`team root ${teamRoot} already holds a connected aweb identity, but not for ${want || label}; choose a different label or remove the stale root deliberately`);
+        recordAwebRootSetting(want, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
+        return { team: want, teamRoot };
+      }
       joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, resumeCommand });
     } else {
       if (!token || typeof token !== "string") throw new Error(`--join ${label} needs --invite <token> unless ${teamRoot} already holds an accepted unconnected identity to resume`);

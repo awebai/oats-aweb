@@ -393,7 +393,7 @@ test("connect from a deployment that is not a member of the host's team fails at
   assert.match(doc.error.message, /this deployment is not a member of joined:example\.invalid/);
   const steps = doc.error.details.steps;
   assert.deepEqual(steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "failed"]]);
-  assert.match(steps[1].remedy, /oats aweb setup --join joined --invite <token>/);
+  assert.match(steps[1].remedy, /oats aweb setup --join joined --invite-stdin/);
   assert.equal(awCall(fx.fake.readCalls(), ["team", "invite"]).length, 0);
   assert.equal(fx.kernel.readCalls().length, 1);
 });
@@ -479,4 +479,48 @@ test("1.20.0 is documented: CHANGELOG, README and the oats-aweb skill name conne
   }
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   assert.equal(manifest.commands.connect, "bin/oats-aweb.mjs connect");
+});
+
+/** The host's per-team root as an interrupted join leaves it: accepted and connected for `team`,
+ *  its roots[team] setting never recorded. */
+function interruptedHostRoot(hostDir, team) {
+  const idHome = join(hostDir, ".aweb-roots", "joined", ".aw");
+  mkdirSync(idHome, { recursive: true });
+  writeFileSync(join(idHome, "identity.yaml"), "did: did:key:zFixture\n");
+  writeFileSync(join(idHome, "teams.json"), JSON.stringify({ active_team: team, memberships: [{ team_id: team }] }));
+  writeFileSync(join(idHome, "workspace.yaml"), `team_id: ${team}\naweb_url: ${SERVICE}\nalias: ${SERVER}\n`);
+  return join(hostDir, ".aweb-roots", "joined");
+}
+
+test("connect recovers a host whose join was connected but never recorded", async (t) => {
+  const fx = connectFixture(t);
+  const teamRoot = interruptedHostRoot(fx.hostDir, TEAM);
+  const result = await fx.connect([SERVER, "--json"]);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.result.ready, true);
+  assert.deepEqual(doc.result.steps.slice(2), [{ step: "join", status: "done", detail: `root ${teamRoot}` }, { step: "readiness", status: "ok" }]);
+  assert.equal(awCall(fx.fake.readCalls(), ["id", "team", "accept-invite"]).length, 0, "the existing identity is kept, not replaced");
+  assert.match(readFileSync(join(fx.hostDir, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
+  assertTokenContained(fx, result);
+});
+
+test("setup --join still refuses a connected per-team root that holds another team", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  interruptedHostRoot(root, "other:example.invalid");
+  const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
+  const result = await run(["setup", "--join", "joined", "--invite-stdin", "--name", "host-alias"], deploymentEnv(root, { PATH: fake.path }), root, "SECRET-OTHER\n");
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /already holds a connected aweb identity, but not for joined:example\.invalid/);
+  assert.doesNotMatch(readFileSync(join(root, "oats-local.yaml"), "utf8"), /roots/);
+});
+
+test("connect's retry remedy keeps --name and --soul", async (t) => {
+  const fx = connectFixture(t, { hostAw: false });
+  const result = await fx.connect(["altair.lan", "--name", "altair-root", "--soul", "dev", "--json"]);
+  assert.equal(result.code, 1, "an unregistered id is unreachable in the fake kernel");
+  const missing = await fx.connect([SERVER, "--name", "altair-root", "--soul", "dev", "--json"]);
+  assert.equal(missing.code, 0, missing.stdout + missing.stderr);
+  assert.equal(envelope(missing.stdout).result.steps[0].remedy, `oats aweb connect ${SERVER} --install-aw --name altair-root --soul dev`);
 });
