@@ -471,8 +471,10 @@ function syncPrimaryDelivery(identityHome) {
 }
 /** Whether `aw wake status` still lists the home. Deregister exits 0 when it
  *  falls back to deleting the state files (a daemon that did not answer in
- *  time), possibly before the daemon has stopped presenting; the status read
- *  is the proof. An unreadable status counts as still registered. */
+ *  time), possibly while the daemon still holds the registration; the status
+ *  read confirms the home is deregistered. It does not prove terminal input
+ *  has finished: aw drops the home from the broker's map before its runner
+ *  stops (aweb-abna). An unreadable status counts as still registered. */
 function wakeStillRegistered(instanceHome) {
   let status;
   try { status = JSON.parse(String(run(["aw", "wake", "status", "--json"], instanceHome, 60000))); } catch { return true; }
