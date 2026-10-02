@@ -5,6 +5,23 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.19.0 — team model 3
+
+Works with OATS 0.36 (team model v2) and OATS 0.38 (team model 3, where the
+workspace commits the teams a soul may join and its default, and
+`oats-local.yaml` may declare teams only when `oats-workspace.yaml` says
+`localTeams: true`).
+
+- `OATS_DEFAULT_TEAM_FROM` may be `workspace` (the workspace's fallback
+  default); it is reported as itself in `defaultTeam.from` and named in the
+  spawn brief.
+- `oats aweb setup --create` asks the kernel (`oats teams --json`,
+  `localTeams`) before creating anything. Where local teams are closed it
+  creates the aweb team and its per-team root, records no local team, and
+  prints what to commit in `oats-workspace.yaml`. `--username` and the setup
+  verdicts give the same advice there instead of `oats teams add|default`.
+- The unmapped-default remedy names both ways to choose another default.
+
 ## 1.17.7 — team model v2 provider
 
 Requires OATS >=0.30.0 and aw >= 1.36.13. This is the provider side of OATS
@@ -23,7 +40,8 @@ team as a fallback.
 - Removed `settings.oats.aweb.team` and legacy `OATS_TEAM_ID` /
   `OATS_TEAM_LABEL(S)` semantics.
 - The default comes from `OATS_DEFAULT_TEAM` (label), `OATS_DEFAULT_TEAM_ID`
-  (provider id) and `OATS_DEFAULT_TEAM_FROM` (`deployment` or `soul`).
+  (provider id) and `OATS_DEFAULT_TEAM_FROM` (`deployment`, `soul`, or, from
+  OATS 0.38, `workspace`).
 - `OATS_TEAMS` rows are exactly `{ label, team, default, from }`; eligible join
   targets are rows with `default: false`.
 - The teams JSON field `defaultTeam` is `{ label, team, from } | null`; `oats aweb teams --json` emits it with
@@ -32,7 +50,7 @@ team as a fallback.
 - No default configured refuses readiness/spawn with
   `no teams configured: run \`oats aweb setup\``. An unmapped default has label
   + from but no id and refuses with
-  `the default team <label> has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default`.
+  ``the default team <label> has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: `oats teams default <label>`, or `defaultTeam:` in oats-workspace.yaml when the workspace doesn't allow local teams``.
 
 Wider teams are still joined explicitly with `settings.oats.aweb.join` at spawn
 or `oats aweb join` while live.
@@ -139,7 +157,14 @@ Supported acts:
   new per-team root, records `roots[<team id>]`, then records the local mapping
   with `OATS_CLI_BIN teams add <label> --team <id>`. Without `--namespace`,
   setup refuses hosted additional-team creation until the hosted-team aweb
-  release exists.
+  release exists. Before creating anything it reads `OATS_CLI_BIN teams --json`:
+  where `localTeams` is `false` (team model 3: the workspace does not allow
+  local teams), it records no local mapping and prints the `teams:` entry, and
+  `defaultTeam:` when the workspace has none, to commit in
+  `oats-workspace.yaml`, how to let souls join it (a `souls:` entry's teams),
+  and the `localTeams: true` alternative. A kernel without `localTeams` (OATS
+  0.36) takes the local mapping. If the kernel cannot answer, setup refuses
+  before creating anything.
 - `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
   never accepts into the existing default root.
@@ -161,7 +186,7 @@ owner removes the member.
 
 - No default configured: `no teams configured: run \`oats aweb setup\``.
 - Unmapped default (label/from set, provider id absent):
-  `the default team <label> has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default with oats teams default`.
+  ``the default team <label> has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: `oats teams default <label>`, or `defaultTeam:` in oats-workspace.yaml when the workspace doesn't allow local teams``.
 - Shared team root missing or not a member: the remedy names the team/root and
   tells the operator to run setup, create it, or ask the owner for an invite.
 
