@@ -326,14 +326,21 @@ test("real aw: admission table for the 1.15 commands under --identity-home", (t)
     { name: "whoami", args: ["--identity-home", idh, "whoami"], admitted: true, expect: /initialized|identity|workspace|not found/i },
     // refused by aw: why minting roots invite from their own directory (cwd), not --identity-home
     { name: "team invite", args: ["--identity-home", idh, "team", "invite", "--team-id", "x:example.invalid", "--json"], admitted: false, expect: new RegExp(POLICY) },
-    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], admitted: false, expect: new RegExp(POLICY) },
+    // aw made `id team members` identity-home-aware (1.36.23 admits it): either aw's policy
+    // refusal, or admission failing on its own terms (no team in the empty identity home).
+    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], oneOf: [new RegExp(POLICY), /--team-id or both --team and --namespace are required when no active team can be inferred[\s\S]*teams\.yaml/] },
   ];
   for (const row of rows) {
     const r = spawnSync("aw", row.args, { cwd: home, env, encoding: "utf8", timeout: 15000 });
     const text = `${r.stdout}${r.stderr}`;
+    assert.notEqual(r.status, 0, `${row.name} unexpectedly succeeded`);
+    if (row.oneOf) {
+      const matched = row.oneOf.filter((outcome) => outcome.test(text));
+      assert.equal(matched.length, 1, `${row.name}: expected exactly one of the known outcomes: ${text}`);
+      continue;
+    }
     if (row.admitted) assert.doesNotMatch(text, new RegExp(POLICY), `${row.name}: hit the identity-home policy: ${text}`);
     else assert.match(text, new RegExp(POLICY), `${row.name}: expected the identity-home refusal: ${text}`);
-    assert.notEqual(r.status, 0, `${row.name} unexpectedly succeeded`);
     assert.match(text, row.expect, `${row.name}: unexpected failure: ${text}`);
   }
 });
