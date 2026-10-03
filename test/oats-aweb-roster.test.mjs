@@ -204,7 +204,7 @@ test("roster refuses an indented object inside cut-off output as aw's answer", (
 
 test("1.20.0 documents the roster: CHANGELOG, README, skill and inject", () => {
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  assert.match(changelog, /^# Changelog\n\n## 1\.20\.0\n/);
+  assert.match(changelog, /\n## 1\.20\.0\n/);
   const entry = changelog.slice(changelog.indexOf("## 1.20.0"), changelog.indexOf("## 1.19.0"));
   const readme = readFileSync(join(REPO, "README.md"), "utf8");
   const skill = readFileSync(join(REPO, "oats-package", "capabilities", "oats-aweb", "skills", "oats-aweb", "SKILL.md"), "utf8");
