@@ -168,6 +168,22 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   also keeps any ambient channel package silent) and registers the home with
   `aw wake register`.
 
+  Claude Code loads the plugin with
+  `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`,
+  because `aweb-channel` is not on Claude Code's approved channel list. Claude
+  Code's `--channels` registers only plugins on that list; a plugin that is not
+  on it gets a startup warning and its channel does not register. The list is
+  Anthropic's default (the channel plugins in `claude-plugins-official`), or,
+  in a Team/Enterprise organization, the managed `allowedChannelPlugins`, which
+  replaces the default and requires `channelsEnabled: true` (whether other plans
+  honour it is unverified). The development flag makes Claude Code stop at a
+  "Loading development channels" confirmation before every session it starts,
+  until someone answers it in the instance's terminal; nothing answers it for
+  them. So every hook answer that adds the flag (the launch hook's, and the spawn
+  hook's for the start a spawn performs) carries the warning
+  `channel-dev-confirmation`, and readiness reports it for a home whose last
+  start was Claude Code under `channel`.
+
   A home is on exactly one path. Every start decides the path afresh from the
   setting and the start's runtime (a home can be restarted under another
   harness): the broker path registers the home, the channel path runs `aw wake

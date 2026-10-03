@@ -129,7 +129,7 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  for(const key of ['root','roots','residents'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
  assert.equal(Object.hasOwn(m,'helperInjection'),false);
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
- assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.21.0');
+ assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.21.1');
 });
 test('coupled current kernel wire and sole resolver accept actual codec output but do not turn binding into readiness',async t=>{
  const framework=process.env.OATS_P1_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned current framework source');return;}

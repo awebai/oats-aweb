@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.21.1
+
+Added: the warning `channel-dev-confirmation` (awebai/oats-aweb#44). Under `delivery: channel` a Claude Code start loads the aweb-channel plugin with `--dangerously-load-development-channels`, because the plugin is not on Claude Code's approved channel list. Claude Code then stops at its "Loading development channels" confirmation before the session starts, and waits until someone answers it in the instance's terminal. Unattended starts (Desktop starts and restarts, automations, successors) waited there with nothing saying so. Now:
+- every hook answer that adds the flag says so on its warning line, after any other warning: the launch hook's (preview and real pass alike) and the spawn hook's, whose launch arguments the spawn's own start uses. Each start says it once.
+- readiness reports it as a warning (status unchanged) for a home whose last recorded start was Claude Code under `channel`. Without a recorded start the runtime is unknown and nothing is reported.
+
+Nothing answers the confirmation on the human's behalf (aweb-abmy). `--channels` registers only plugins on Claude Code's approved list; for a plugin not on it, Claude Code prints a startup warning and the channel does not register. That list is Anthropic's default (the channel plugins in `claude-plugins-official`), or a Team/Enterprise organization's managed `allowedChannelPlugins`, which replaces the default and requires `channelsEnabled: true` (whether other plans honour it is unverified). Launch arguments and settings are unchanged.
+
 ## 1.21.0
 
 Added: `oats aweb connect <server-id> [--install-aw] [--name <alias>] [--json]` (awebai/oats#517). Run from a local deployment, it gives the deployment of the same workspace on a registered server (`oats server connect`) membership in that deployment's default team. Steps, in order, with the kernel's step statuses (`ok`, `done`, `needs-human`, `skipped`, `failed`):

@@ -394,3 +394,83 @@ test("readiness reports an outdated wake daemon for a codex channel home", (t) =
   const result = fx.readiness();
   assert.ok([...result.problems, ...(result.warnings || [])].some((p) => /wake-daemon-outdated/.test(p.code)), JSON.stringify(result));
 });
+
+// ------------------------------------------- channel-dev-confirmation (1.21.1)
+// Claude Code stops at its development-channels confirmation before every
+// session that loads aweb-channel with --dangerously-load-development-channels
+// (awebai/oats-aweb#44): readiness and every hook answer that adds the flag
+// (the launch hook's, and the spawn hook's for the start a spawn performs) say so.
+
+const DEV_CONFIRMATION = /channel-dev-confirmation — Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/;
+
+test("a Claude start under channel says it will wait at the development-channels confirmation, preview and real alike", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+  const meta = fx.spawn().meta;
+  const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
+  assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+  assert.match(preview.doc.warning, DEV_CONFIRMATION);
+  const real = fx.launch(meta, "claude");
+  assert.equal(real.status, 0, real.stdout + real.stderr);
+  assert.deepEqual(real.doc.launch, { claude: CHANNEL_FLAG });
+  assert.match(real.doc.warning, DEV_CONFIRMATION);
+  assert.match(real.doc.warning, /^oats-aweb: /);
+});
+
+test("the confirmation line joins the start's other warnings", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" } });
+  const meta = fx.spawn().meta;
+  const unmapped = { OATS_TEAMS: JSON.stringify([{ label: "default", team: "legacy:example.test", default: true, from: "local" }]) };
+  const r = fx.launch(meta, "claude", { extra: unmapped });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /left joined team alpha/);
+  assert.match(r.doc.warning, DEV_CONFIRMATION);
+});
+
+test("a Claude spawn under channel says it too: the spawn's own start carries the flag", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+  const r = fx.hook("spawn");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(r.doc.launch, { claude: CHANNEL_FLAG });
+  assert.match(r.doc.warning, DEV_CONFIRMATION);
+});
+
+test("spawns and starts without the Claude channel flag carry no confirmation line", (t) => {
+  for (const [delivery, runtime] of [["channel", "codex"], ["channel", "pi"], ["session", "claude"]]) {
+    const fx = fixture(t, { delivery, runtime });
+    const spawned = fx.hook("spawn");
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    assert.doesNotMatch(spawned.doc.warning || "", /channel-dev-confirmation/, `${delivery}/${runtime} spawn`);
+    for (const extra of [{ OATS_LAUNCH_PREVIEW: "1" }, {}]) {
+      const r = fx.launch(spawned.doc.meta, runtime, { extra });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.doesNotMatch(r.doc.warning || "", /channel-dev-confirmation/, `${delivery}/${runtime}`);
+    }
+  }
+});
+
+test("readiness warns channel-dev-confirmation for a home whose last start was Claude under channel", (t) => {
+  for (const [delivery, runtime, warns] of [["channel", "claude", true], ["channel", "codex", false], ["channel", "pi", false], ["session", "claude", false]]) {
+    const fx = fixture(t, { delivery, runtime });
+    fx.record(fx.spawn().meta, runtime);
+    const result = fx.readiness();
+    const warning = (result.warnings || []).find((w) => w.code === "channel-dev-confirmation");
+    assert.equal(!!warning, warns, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
+    if (warns) {
+      assert.match(warning.message, /^Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/);
+      assert.equal(result.status, "ready", "a warning never changes the status");
+    }
+  }
+});
+
+test("readiness without a recorded start does not guess the runtime", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+  const result = fx.readiness();
+  assert.equal((result.warnings || []).some((w) => w.code === "channel-dev-confirmation"), false, JSON.stringify(result));
+});
+
+test("the skill's readiness table and the changelog name channel-dev-confirmation", () => {
+  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
+  assert.match(skill, /\| `channel-dev-confirmation` \|/);
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  assert.match(changelog, /^## 1\.21\.1\n[\s\S]*channel-dev-confirmation/m);
+});

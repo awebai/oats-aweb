@@ -137,9 +137,12 @@ function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, mi
   const env = { ...(broker ? { AWEB_DELIVERY: "session" } : {}), AWEB_IDENTITY_HOME: join(home, ".aw") };
   const brief = `Comms: you have an aweb identity — alias "${alias}" on team ${team}, this deployment's default team.${mismatch ? ` [WARNING: joined ${team}, expected ${TEAM}]` : ""}${broker ? SESSION_BRIEF : CHANNEL_BRIEF[runtime]}${TAIL}`;
   const launch = runtime === "claude" && !broker ? { launch: { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" } } : {};
-  const warning = mismatch ? { warning: `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` } : extraWarning ? { warning: extraWarning } : {};
+  // A Claude channel start waits at Claude Code's development-channels confirmation (1.21.1).
+  const warnings = [mismatch ? `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` : extraWarning, launch.launch ? DEV_CONFIRMATION_WARNING : undefined].filter(Boolean);
+  const warning = warnings.length ? { warning: warnings.join(" | ") } : {};
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
+const DEV_CONFIRMATION_WARNING = `oats-aweb: channel-dev-confirmation — Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance's terminal: aweb-channel is not on Claude Code's approved channel list, so it is loaded with --dangerously-load-development-channels`;
 
 test("spawn output is pinned byte for byte for the same inputs", (t) => {
   for (const [delivery, runtime] of [["session", "claude"], ["channel", "claude"], ["channel", "pi"], ["channel", "codex"]]) {
@@ -184,7 +187,7 @@ test("a token echoed back as the alias never reaches meta, the brief or any outp
     assert.equal(r.doc.meta.alias, "probe");
     assert.equal(r.doc.meta.identity.alias, "probe");
     assert.match(r.doc.brief, /alias "probe" on team/);
-    assert.equal(r.doc.warning, ALIAS_WARNING("probe"));
+    assert.equal(r.doc.warning, delivery === "channel" ? `${ALIAS_WARNING("probe")} | ${DEV_CONFIRMATION_WARNING}` : ALIAS_WARNING("probe"));
     assert.doesNotMatch(r.stdout + r.stderr, /SUPERSECRET/);
     assert.equal(r.stdout, expected117(fx.home, { alias: "probe", delivery, runtime, warning: ALIAS_WARNING("probe") }));
   }
