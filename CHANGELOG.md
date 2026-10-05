@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+Fixed: target-scoped home receive readiness (issue #34 / aweb-abny). A compatible
+daemon or joined stream registration alone no longer returns ready. The check
+uses captured ownership and the complete retained receive set, validates the
+canonical broker target and current worker/stream/error evidence, and requires
+completed successful unknown-nonshell inspection evidence within a documented
+30-second observation window. Unresolved receive paths are unavailable, including
+joined failures alongside a native primary. Historical input timestamps are not
+current inspection evidence.
+
+Changed: native-primary configuration remains unproven without connection
+telemetry; the Claude development-channel confirmation guidance is preserved.
+Claude/Pi native defaults and Codex's normal supported external broker route are
+unchanged. Positive broker results describe operational transport evidence only,
+not a current-start witness, prompt readiness or actual presentation. Quiet workers
+can age out to unavailable. The unchanged aw 1.36.13 floor lacks worker telemetry,
+so that status shape cannot establish home receive readiness. Null-home checks
+remain prerequisite-only. The public joined receive enum, binding envelope, four
+statuses, settings and lifecycle hooks are unchanged. No version bump or release.
+
 ## 1.21.1
 
 Added: the warning `channel-dev-confirmation` (awebai/oats-aweb#44). Under `delivery: channel` a Claude Code start loads the aweb-channel plugin with `--dangerously-load-development-channels`, because the plugin is not on Claude Code's approved channel list. Claude Code then stops at its "Loading development channels" confirmation before the session starts, and waits until someone answers it in the instance's terminal. Unattended starts (Desktop starts and restarts, automations, successors) waited there with nothing saying so. Now:

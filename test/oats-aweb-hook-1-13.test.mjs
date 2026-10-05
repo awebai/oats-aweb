@@ -365,7 +365,7 @@ test("grant subject alias from grant.yaml wins over mint output, with resident f
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("readiness checks the newest grant home for custody attachment", () => {
+test("readiness checks the recorded final grant locator, never newest directory", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
@@ -377,10 +377,16 @@ test("readiness checks the newest grant home for custody attachment", () => {
     statSync(newHome); // ensure directory exists before utimes()
     utimesSync(newHome, later, later);
     const ctx = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
-    const checked = runBindingCheck(bin, settings(custody), ctx);
+    const record = locator => write(join(home, "instance.json"), JSON.stringify({capabilityMeta:{"oats.aweb":{delivery:"session",runtime:"codex",identity:{mode:"global",grant:{id:"selected",home:locator}}}}}));
+    record(oldHome);
+    let checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.status, 0, checked.stderr);
+    assert.equal(checked.doc.result.status, "unavailable");
+    assert.equal(checked.doc.result.problems.some(p=>p.code === "custody"), false, "unselected newer unattached grant does not override final locator");
+    record(newHome);
+    checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.doc.result.status, "needs-configuration");
-    assert.deepEqual(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.13");
+    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.13");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

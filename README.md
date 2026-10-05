@@ -219,6 +219,49 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   an uncertain crash or compaction uses `aw mail show --message-id <id> --json`
   or paginated `aw mail inbox --show-all --json` with `--cursor`, not
   mail read state or `--conversation-id`.
+  Home readiness evaluates the intended path from the home's captured delivery,
+  runtime and final credential locator, plus retained joined membership. Claude
+  Code and pi use native channels by default; Codex normally uses the supported
+  external broker. Native plugin/extension installation, launch flags and the
+  development-channel confirmation do not prove a connected native receiver:
+  without connection telemetry, home readiness is `unavailable` with
+  `native-receive-unproven`. Joined broker paths still contribute their own
+  failures even when the primary is native. The public joined `receive: native`
+  enum remains unchanged for compatibility; it denotes broker-managed joined
+  delivery, not a harness-native connection or readiness attestation.
+
+  Broker readiness reads one `aw wake status --json` snapshot. It checks the
+  canonical target, compatible running daemon, active/unpaused target, complete
+  identity set and its delivery/ownership/event/control policy, connected admitted
+  streams, running worker, and target/worker/binding errors. It requires matching
+  `unknown` nonshell observations with `readiness_waiting: inspect_done`; an
+  in-flight or failed inspection cannot reuse an earlier successful state.
+  Both snapshot and inspection timestamps must be valid, nonfuture, ordered and
+  at most 30 seconds old. This conservative cutoff is a provider evidence-age heuristic, not a broker
+  guarantee or the provider command timeout. It limits how old a positive
+  observation may be, while deliberately allowing healthy quiet homes to be
+  unavailable. Poll cadence, inspection duration and scheduling jitter can cross
+  this boundary; the cutoff does not promise continuous readiness. Quiet workers inspect at startup and on events, so healthy quiet
+  homes can age out to evidence unavailable without their transport being broken.
+  The aw floor stays 1.36.13; its status lacks worker evidence and therefore cannot
+  prove home receive readiness. Historical input/success timestamps do not help.
+
+  A positive result is bounded operational transport evidence from supported
+  inspection semantics: OATS reports a live nonshell endpoint as `unknown`, not
+  `idle`. Status does not independently attest endpoint presence, current start
+  identity, uninterrupted liveness, prompt readiness, model consumption or actual
+  presentation. Readiness does not refresh the broker, send input, register,
+  resume or modify the home. A soul check with no home remains prerequisite-only.
+  Existing configuration/authentication failures retain their status; uncertain
+  runtime receive evidence yields `unavailable` with a provider problem.
+
+  Valid `.oats-aweb/teams.json` is authoritative over launch metadata because
+  later join/leave commands update it. Missing or malformed local membership
+  state is unavailable. Global grant/retained-root spawn paths may omit this file
+  only when recorded provenance consistently establishes an empty joined set.
+  Grant readiness uses the final recorded `identity.grant.home`, never the newest
+  directory or the caller's `AWEB_IDENTITY_HOME`.
+
 - `root`: absolute directory whose `.aw` is the default team's minting root.
   This root is for one aweb team only.
 - `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over
