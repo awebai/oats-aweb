@@ -191,7 +191,8 @@ test("global grants use kernel default team, not mapped primary payload or custo
     assert.equal(r.doc.meta.identity.team, "default:example.test");
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint");
     assert.equal(argvValue(mint.argv, "--team"), "default:example.test");
-    const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "default:example.test" });
+    // Team/custody prerequisites do not assert a connected home receive path.
+    const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home: null }, { OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "default:example.test" });
     assert.equal(checked.status, 0, checked.stderr);
     assert.equal(checked.doc.result.status, "ready", JSON.stringify(checked.doc.result));
     assert.deepEqual(Object.keys(checked.doc.result).sort(), ["problems", "status", "warnings"]);

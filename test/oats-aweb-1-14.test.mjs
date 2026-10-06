@@ -442,7 +442,8 @@ test("kernel default label mints without team-unmapped fallback", (t) => {
   assert.equal(doc.meta.team, "default:example.test");
   assert.equal(doc.warning, undefined);
 
-  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), env, home);
+  // This checks the selected team prerequisites, not the spawned home transport.
+  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home: null }), env, home);
   const result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "ready");
   assert.deepEqual(Object.keys(result).sort(), ["problems", "status", "warnings"], "binding check answers must not carry provider-only teams data");

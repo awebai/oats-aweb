@@ -281,7 +281,9 @@ async function workspaceReadinessPhase(req) {
     }
   }
   const receiveProblems=[];
-  if(ctx.home) {
+  // Preserve prerequisite diagnostics; receive evidence is meaningful only
+  // after configuration and custody checks succeed.
+  if(ctx.home && !problems.length) {
     const expected=expectedReceive(ctx.home);
     receiveProblems.push(...expected.problems);
     if(!expected.problems.length) {

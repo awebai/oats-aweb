@@ -252,8 +252,9 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   identity, uninterrupted liveness, prompt readiness, model consumption or actual
   presentation. Readiness does not refresh the broker, send input, register,
   resume or modify the home. A soul check with no home remains prerequisite-only.
-  Existing configuration/authentication failures retain their status; uncertain
-  runtime receive evidence yields `unavailable` with a provider problem.
+  Existing configuration/authentication failures retain their diagnostics and
+  skip receive evaluation until prerequisites pass; uncertain runtime receive
+  evidence yields `unavailable` with a provider problem.
 
   Valid `.oats-aweb/teams.json` is authoritative over launch metadata because
   later join/leave commands update it. Missing or malformed local membership

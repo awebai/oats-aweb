@@ -680,3 +680,16 @@ test('evidence-age heuristic boundaries, quiet workers and timing skew use an in
   status.instances[0].last_inspect_at=status.updated_at;
   assert.equal(evaluate(Date.parse('2026-03-02T12:00:00Z'))[0].code,'wake-status-stale','impossible date must not normalize to a fresh observation');
 });
+
+test('failed prerequisites preserve configuration diagnostics without querying a recorded receive path', (t) => {
+  const fx = fixture(t, {delivery:'channel', runtime:'codex'});
+  fx.record(fx.spawn().meta, 'codex');
+  const status = transportStatus(fx); status.instances[0].paused = true; fx.fake.setStatus(status);
+  const before = snapshot(fx.home), calls = fx.fake.readCalls().length;
+  const result = fx.readiness({extra:{OATS_DEFAULT_TEAM_ID:'not a team id'}});
+  assert.deepEqual(result, {status:'needs-configuration', problems:[{
+    code:'needs-configuration', message:'aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)',
+  }], warnings:[]});
+  assert.deepEqual(fx.fake.readCalls().slice(calls), [], 'malformed configuration runs no aw call, including receive status');
+  assert.deepEqual(snapshot(fx.home), before);
+});
