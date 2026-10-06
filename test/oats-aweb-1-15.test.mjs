@@ -162,8 +162,8 @@ test("hosted workspace: the primary team resolves as in 1.14.2 (root's active te
   assert.equal(existsSync(fx.defaultRoot), false, "no default-team authority is created");
   assert.doesNotMatch(`${doc.warning || ""}${doc.brief}`, /default-team-|aw auth|team ensure/);
   const result = check(fx, fake);
-  assert.equal(result.status, "unavailable", JSON.stringify(result));
-  assert.ok(result.problems.some(p => p.code === "receive-record-unavailable"), "unrecorded home cannot prove receive");
+  assert.equal(result.status, "ready", JSON.stringify(result));
+  assert.ok(result.warnings.some(p => p.code === "receive-ownership-unproven"), "unrecorded home checks prerequisites without certifying ownership");
   assert.equal(result.warnings.some((w) => /^default-team-/.test(w.code)), false);
 });
 

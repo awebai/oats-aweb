@@ -384,7 +384,8 @@ test("readiness requires the wake daemon for a home the broker delivers to, by i
     const result = fx.readiness();
     const problem = result.problems.find((p) => p.code === "wake-daemon-not-running");
     assert.equal(!!problem, relies, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
-    assert.equal(result.status, "unavailable");
+    assert.equal(result.status, relies ? "unavailable" : "ready");
+    if (!relies) assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
   }
 });
 
@@ -455,9 +456,14 @@ test("readiness warns channel-dev-confirmation for a home whose last start was C
     const result = fx.readiness();
     const warning = (result.warnings || []).find((w) => w.code === "channel-dev-confirmation");
     assert.equal(!!warning, warns, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
+    if (delivery === "channel" && runtime === "pi") {
+      assert.equal(result.status, "ready", "configured Pi native route carries uncertainty without a broker primary");
+      assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
+    }
     if (warns) {
       assert.match(warning.message, /^Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/);
-      assert.equal(result.status, "unavailable", "native connection is unproven independently of the confirmation warning");
+      assert.equal(result.status, "ready", "configured native route carries a connection uncertainty warning");
+      assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
   }
 });
@@ -507,7 +513,7 @@ function snapshot(dir) {
   return readdirSync(dir, {withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).map(e => [e.name, e.isDirectory() ? snapshot(join(dir,e.name)) : readFileSync(join(dir,e.name)).toString('base64')]);
 }
 
-test("synthetic released unknown-nonshell streaming evidence proves Codex transport mechanics only, read-only and independent of caller", (t) => {
+test("synthetic released unknown-nonshell streaming evidence passes Codex route prerequisites, read-only and independent of caller", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: {join: "alpha"} });
   fx.record(fx.spawn().meta, "codex");
   fx.fake.setStatus(transportStatus(fx));
@@ -516,15 +522,12 @@ test("synthetic released unknown-nonshell streaming evidence proves Codex transp
   assert.equal(result.status, "ready", JSON.stringify(result));
   assert.deepEqual(snapshot(fx.home), before);
   assert.deepEqual(fx.fake.readCalls().slice(calls).map(c => c.args), [["version"], ["wake", "status", "--json"]]);
-  assert.match(result.warnings.find(w => w.code === "joined-team-receive").message, /broker-managed transport/);
+  assert.match(result.warnings.find(w => w.code === "joined-team-receive").message, /observable broker route prerequisites/);
 });
 
 const defects = [
   ["malformed event policy", s => s.instances[0].receive_identities[0].event_classes = [null], "wake-target-binding"],
   ["malformed worker errors", s => s.instances[0].channel_core.binding_errors = null, "wake-status-unavailable"],
-  ["missing inspection", s => delete s.instances[0].last_inspect_at, "receive-inspection-unproven"],
-  ["historical input without inspection", s => {delete s.instances[0].last_inspect_at; Object.assign(s.instances[0].channel_core,{last_success_at:s.updated_at,last_input_at:s.updated_at});}, "receive-inspection-unproven"],
-  ["stale inspection", s => s.instances[0].last_inspect_at = "2020-01-01T00:00:00Z", "receive-inspection-unproven"],
   ["invalid inspection", s => s.instances[0].last_inspect_at = "invalid", "receive-inspection-unproven"],
   ["future inspection", s => s.instances[0].last_inspect_at = "2999-01-01T00:00:00Z", "receive-inspection-unproven"],
   ["inspection newer than snapshot", s => s.updated_at = new Date(Date.parse(s.instances[0].last_inspect_at)-1).toISOString(), "receive-inspection-unproven"],
@@ -532,9 +535,17 @@ const defects = [
   ["malformed snapshot", s => s.updated_at = "invalid", "wake-status-stale"],
   ["shell endpoint", s => {s.instances[0].last_state="shell"; s.instances[0].channel_core.readiness_state="shell";}, "receive-inspection-unproven"],
   ["absent endpoint", s => {s.instances[0].last_state="not-launched"; s.instances[0].channel_core.readiness_state="not-launched";}, "receive-inspection-unproven"],
-  ["in-flight inspection retaining unknown", s => s.instances[0].channel_core.readiness_waiting="inspect_start", "receive-inspection-unproven"],
   ["failed inspection retaining unknown", s => {s.instances[0].channel_core.readiness_waiting="inspect_error"; s.instances[0].channel_core.readiness_error="unavailable";}, "wake-worker-unavailable"],
-  ["missing readiness state", s => delete s.instances[0].channel_core.readiness_state, "receive-inspection-unproven"],
+  ["inspection error without diagnostic", s => s.instances[0].channel_core.readiness_waiting="inspect_error", "receive-inspection-unproven"],
+  ["old failed inspection", s => {s.instances[0].last_inspect_at="2020-01-01T00:00:00Z"; s.instances[0].channel_core.readiness_waiting="inspect_error";}, "receive-inspection-unproven"],
+  ["inspect_start retaining error", s => {s.instances[0].channel_core.readiness_waiting="inspect_start"; s.instances[0].channel_core.readiness_error="previous inspection failed";}, "wake-worker-unavailable"],
+  ["inspect_start retaining stopped endpoint", s => {s.instances[0].channel_core.readiness_waiting="inspect_start"; s.instances[0].last_state="stopped"; s.instances[0].channel_core.readiness_state="stopped";}, "receive-inspection-unproven"],
+  ["inspect_start retaining shell endpoint", s => {s.instances[0].channel_core.readiness_waiting="inspect_start"; s.instances[0].last_state="shell"; s.instances[0].channel_core.readiness_state="shell";}, "receive-inspection-unproven"],
+  ["wrong-type observation", s => s.instances[0].channel_core.readiness_state=17, "wake-status-unavailable"],
+  ["wrong-type inspection", s => s.instances[0].last_inspect_at=17, "receive-inspection-unproven"],
+  ["wrong-type snapshot", s => s.updated_at=17, "wake-status-stale"],
+  ["contradictory usable observation states", s => s.instances[0].last_state="idle", "wake-status-unavailable"],
+  ["inspection error with empty diagnostic", s => {s.instances[0].channel_core.readiness_waiting="inspect_error"; s.instances[0].channel_core.readiness_error="";}, "receive-inspection-unproven"],
   ["conflicting observation state", s => s.instances[0].last_state="stopped", "receive-inspection-unproven"],
   ["worker paused", s => s.instances[0].channel_core.paused=true, "wake-worker-unavailable"],
   ["readiness paused", s => s.instances[0].channel_core.readiness_paused=true, "wake-worker-unavailable"],
@@ -569,8 +580,6 @@ const defects = [
   ["malformed status", s => s.instances = null, "wake-status-unavailable"],
   ["daemon unknown", s => delete s.daemon_running, "wake-daemon-not-running"],
   ["daemon version unknown", s => delete s.daemon_version, "wake-daemon-version-unknown"],
-  ["stale status", s => s.updated_at = "2020-01-01T00:00:00Z", "wake-status-stale"],
-  ["missing status timestamp", s => delete s.updated_at, "wake-status-stale"],
 ];
 for (const [name, change, code] of defects) test(`target readiness rejects ${name}`, (t) => {
   const fx = fixture(t, {delivery: "channel", runtime: "codex"});
@@ -598,7 +607,7 @@ test("mixed native primary retains failed joined problem and confirmation guidan
   const fx = fixture(t, {delivery:"channel",runtime:"claude",settings:{join:"alpha"}});
   fx.record(fx.spawn().meta,"claude"); const status=transportStatus(fx,"claude"); status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
   const result=fx.readiness(); assert.equal(result.status,"unavailable");
-  assert.ok(result.problems.some(p=>p.code==='native-receive-unproven'));
+  assert.ok(result.warnings.some(p=>p.code==='native-receive-unproven'));
   assert.ok(result.problems.some(p=>p.code==='wake-worker-unavailable'));
   assert.ok(result.warnings.some(p=>p.code==='channel-dev-confirmation'));
   assert.ok(result.warnings.some(p=>p.code==='joined-team-poll-only'));
@@ -611,6 +620,7 @@ for (const transition of ['join', 'leave']) test(`retained disk membership wins 
   if(transition==='join') meta.joinedTeams=[];
   else {
     writeFileSync(join(fx.home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
+    rmSync(meta.joinedTeams[0].identityHome,{recursive:true}); // valid old metadata may name a departed identity
     status.instances[0].receive_identities=status.instances[0].receive_identities.filter(r=>r.controls);
     delete status.instances[0].receive_identities[0].label;
   }
@@ -651,8 +661,8 @@ test('captured locators and retained membership fail closed, including global ea
   assert.equal(expectedReceive(home).problems.length,0,'canonical locator aliases agree');
 });
 
-test('evidence-age heuristic boundaries, quiet workers and timing skew use an injected clock', async(t)=>{
-  const {targetReceiveProblems}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+test('observation-age warning boundaries, quiet workers and timing skew use an injected clock', async(t)=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
   const home=tempDir(t), primary=join(home,'.aw'), observed=Date.parse('2026-10-05T12:00:00.000Z');
   mkdirSync(primary);
   const expected={home,runtimeDelivery:'external-session',primary,bindings:[{identity_home:primary,controls:true,event_classes:[]}]};
@@ -661,24 +671,28 @@ test('evidence-age heuristic boundaries, quiet workers and timing skew use an in
     receive_identities:[{identity_home:primary,delivery_owner:'session-hints',controls:true,stream_admitted:true,stream_phase:'streaming'}],
     last_state:'unknown',last_inspect_at:new Date(observed).toISOString(),channel_core:{running:true,readiness_state:'unknown',readiness_waiting:'inspect_done'},
   }]};
-  const evaluate=(now)=>targetReceiveProblems(status,expected,{minimumVersion:'1.36.13',now});
-  for(const elapsed of [0,29999,30000]) assert.deepEqual(evaluate(observed+elapsed),[],String(elapsed));
-  assert.equal(evaluate(observed+30001)[0].code,'wake-status-stale');
+  const evaluate=(now)=>targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  for(const elapsed of [0,29999,30000]) assert.deepEqual(evaluate(observed+elapsed),{problems:[],warnings:[]},String(elapsed));
+  let answer=evaluate(observed+30001);
+  assert.deepEqual(answer.problems,[]);
+  assert.ok(answer.warnings.some(w=>w.code==='receive-observation-aged'));
   status.updated_at=new Date(observed+30001).toISOString();
-  assert.equal(evaluate(observed+30001)[0].code,'receive-inspection-unproven','fresh snapshot cannot freshen a quiet worker');
-  // Prospective 30s polling plus even 1ms inspect time/jitter does not fit the
-  // heuristic; we expose unavailable rather than infer uninterrupted liveness.
-  assert.match(evaluate(observed+30001)[0].message,/quiet healthy worker/);
+  answer=evaluate(observed+30001);
+  assert.deepEqual(answer.problems,[],'new snapshot with quiet old observation remains configured route ready');
+  assert.ok(answer.warnings.some(w=>w.code==='receive-observation-aged'),'fresh snapshot cannot freshen the observation');
+  // A prospective 30s poll plus inspection/jitter may exceed the warning
+  // threshold. This changes the warning, never certifies current liveness.
+  assert.match(answer.warnings.find(w=>w.code==='receive-observation-aged').message,/30(?:\.001|001| seconds)/);
   status.instances[0].last_inspect_at=status.updated_at;
-  assert.deepEqual(evaluate(observed+30001),[]);
-  assert.equal(evaluate(observed+30000)[0].code,'wake-status-stale','future clock skew is unknown');
+  assert.deepEqual(evaluate(observed+30001),{problems:[],warnings:[]});
+  assert.equal(evaluate(observed+30000).problems[0].code,'wake-status-stale','future timestamp remains malformed evidence');
   status.updated_at=new Date(observed+30000).toISOString();
-  assert.equal(evaluate(observed+30001)[0].code,'receive-inspection-unproven','inspection cannot follow its snapshot');
+  assert.equal(evaluate(observed+30001).problems[0].code,'receive-inspection-unproven','inspection cannot follow its snapshot');
   status.instances[0].last_inspect_at='not-a-timestamp';
-  assert.equal(evaluate(observed+30001)[0].code,'receive-inspection-unproven');
+  assert.equal(evaluate(observed+30001).problems[0].code,'receive-inspection-unproven');
   status.updated_at='2026-02-30T12:00:00Z';
   status.instances[0].last_inspect_at=status.updated_at;
-  assert.equal(evaluate(Date.parse('2026-03-02T12:00:00Z'))[0].code,'wake-status-stale','impossible date must not normalize to a fresh observation');
+  assert.equal(evaluate(Date.parse('2026-03-02T12:00:00Z')).problems[0].code,'wake-status-stale','impossible date must not normalize to an observation');
 });
 
 test('failed prerequisites preserve configuration diagnostics without querying a recorded receive path', (t) => {
@@ -692,4 +706,198 @@ test('failed prerequisites preserve configuration diagnostics without querying a
   }], warnings:[]});
   assert.deepEqual(fx.fake.readCalls().slice(calls), [], 'malformed configuration runs no aw call, including receive status');
   assert.deepEqual(snapshot(fx.home), before);
+});
+
+// Revised route claim: these four expectations were first run against a8daef48.
+for (const scenario of ['native', 'aged', 'inspect_start', 'legacy']) test(`route claim revision accepts ${scenario} with explicit uncertainty`, (t) => {
+  const native = scenario === 'native';
+  const fx = fixture(t, {delivery:'channel', runtime:native ? 'claude' : 'codex'});
+  if (scenario !== 'legacy') {
+    fx.record(fx.spawn().meta, native ? 'claude' : 'codex');
+    if (!native) {
+      const status = transportStatus(fx);
+      if (scenario === 'aged') status.instances[0].last_inspect_at = '2020-01-01T00:00:00Z';
+      if (scenario === 'inspect_start') status.instances[0].channel_core.readiness_waiting = 'inspect_start';
+      fx.fake.setStatus(status);
+    }
+  }
+  const result = fx.readiness();
+  assert.equal(result.status, 'ready', JSON.stringify(result));
+  const code = {native:'native-receive-unproven', aged:'receive-observation-aged', inspect_start:'receive-inspection-pending', legacy:'receive-ownership-unproven'}[scenario];
+  assert.ok(result.warnings.some(w => w.code === code), JSON.stringify(result));
+  assert.deepEqual(result.problems, []);
+});
+
+// Released Go status omits zero-value observation fields. This is distinct
+// from channel_core itself/running, which is required worker evidence.
+for (const [name, change] of [
+  ['missing inspection timestamp', s => delete s.instances[0].last_inspect_at],
+  ['missing snapshot timestamp', s => delete s.updated_at],
+  ['missing worker observation state', s => delete s.instances[0].channel_core.readiness_state],
+  ['missing target observation state', s => delete s.instances[0].last_state],
+  ['missing inspection waiting', s => delete s.instances[0].channel_core.readiness_waiting],
+  ['all optional observations omitted', s => {delete s.updated_at; delete s.instances[0].last_inspect_at; delete s.instances[0].last_state; delete s.instances[0].channel_core.readiness_state; delete s.instances[0].channel_core.readiness_waiting;}],
+  ['last input cannot substitute for inspection', s => {delete s.instances[0].last_inspect_at; Object.assign(s.instances[0].channel_core,{last_success_at:s.updated_at,last_input_at:s.updated_at});}],
+]) test(`route readiness warns for ${name}`, t => {
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  fx.record(fx.spawn().meta,'codex');
+  const status=transportStatus(fx); change(status); fx.fake.setStatus(status);
+  const before=snapshot(fx.home), calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.deepEqual(result.problems,[]);
+  assert.ok(result.warnings.some(w=>w.code==='receive-observation-unproven'),JSON.stringify(result));
+  assert.doesNotMatch(result.warnings.map(w=>w.message).join(' '), /has (?:a )?successful|completed successful|proves? (?:a )?successful/i,'absent observations never earn successful-history text');
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});
+
+for(const raw of ['{','null','[]','{"capabilityMeta":{"oats.aweb":null}}','{"capabilityMeta":{"oats.aweb":{"delivery":false}}}','{"capabilityMeta":{"oats.aweb":{"runtime":false}}}']) test(`legacy fallback rejects malformed supplied record ${raw}`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  writeFileSync(join(fx.home,'instance.json'),raw);
+  const before=snapshot(fx.home), calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'),JSON.stringify(result));
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version']]);
+});
+
+test('legacy fallback rejects an unreadable instance record rather than pretending it is absent',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  mkdirSync(join(fx.home,'instance.json'));
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'));
+});
+
+// Older provider records can lack delivery/runtime while retaining identity
+// and membership. The fallback qualifies unknown ownership and still checks
+// every retained joined path; caller runtime is not captured-plan authority.
+for(const failed of [false,true]) test(`legacy missing composition retains ${failed?'failed':'healthy'} joined checks`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta;
+  delete meta.delivery; delete meta.runtime;
+  fx.record(meta,undefined);
+  const status=transportStatus(fx);
+  if(failed) status.instances[0].receive_identities.find(r=>r.label==='alpha').stream_admitted=false;
+  fx.fake.setStatus(status);
+  const result=fx.readiness({extra:{OATS_RUNTIME:'claude',AWEB_IDENTITY_HOME:'/foreign/identity'}});
+  assert.equal(result.status,failed?'unavailable':'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'),JSON.stringify(result));
+  if(failed) assert.ok(result.problems.some(p=>p.code==='wake-stream-unavailable'),JSON.stringify(result));
+  else assert.deepEqual(result.problems,[]);
+});
+
+for(const corruption of ['missing-identity','malformed-state','wrong-control','wrong-policy','duplicate-joined']) test(`legacy known joins reject ${corruption}`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta; delete meta.delivery; delete meta.runtime; fx.record(meta,undefined);
+  const status=transportStatus(fx), joined=status.instances[0].receive_identities.find(r=>r.label==='alpha');
+  if(corruption==='missing-identity') rmSync(meta.joinedTeams[0].identityHome,{recursive:true});
+  if(corruption==='malformed-state') writeFileSync(join(fx.home,'.oats-aweb','teams.json'),'{');
+  if(corruption==='wrong-control') joined.controls=true;
+  if(corruption==='wrong-policy') joined.event_classes=['mail'];
+  if(corruption==='duplicate-joined') status.instances[0].receive_identities.push({...joined});
+  fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code===(['missing-identity','malformed-state'].includes(corruption)?'receive-record-unavailable':'wake-target-binding')),JSON.stringify(result));
+});
+
+for(const [name,settingsDelivery,capturedDelivery,runtime,needsBroker] of [
+  ['captured channel wins over session setting without runtime','session','channel',undefined,false],
+  ['captured session requires broker without runtime','channel','session',undefined,true],
+  ['missing delivery uses session prerequisite setting','session',undefined,undefined,true],
+  ['captured empty runtime is external under channel','channel','channel','',true],
+]) test(`legacy projection: ${name}`,t=>{
+  const fx=fixture(t,{delivery:settingsDelivery,runtime:'codex'}), meta=fx.spawn().meta;
+  if(capturedDelivery===undefined) delete meta.delivery; else meta.delivery=capturedDelivery;
+  if(runtime===undefined) delete meta.runtime; else meta.runtime=runtime;
+  fx.record(meta,undefined);
+  const status=transportStatus(fx); status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
+  const calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,needsBroker?'unavailable':'ready',JSON.stringify(result));
+  if(runtime===undefined || capturedDelivery===undefined) assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  if(needsBroker) assert.ok(result.problems.some(p=>p.code==='wake-worker-unavailable'),JSON.stringify(result));
+  assert.equal(fx.fake.readCalls().slice(calls).filter(c=>c.args[0]==='wake').length,needsBroker?1:0);
+});
+
+test('legacy absent disk state preserves captured known joins and tolerates otherwise valid unknown bindings',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta; delete meta.delivery; delete meta.runtime; fx.record(meta,undefined);
+  rmSync(join(fx.home,'.oats-aweb','teams.json'));
+  const status=transportStatus(fx);
+  // Full ownership is unknown; do not invent an exact primary plan from the
+  // observed broker row. A valid extra stream cannot erase the known alpha.
+  status.instances[0].receive_identities.push({identity_home:'/legacy/other',label:'other',controls:false,event_classes:['mail','chat'],delivery_owner:'session-hints',stream_admitted:true,stream_phase:'streaming'});
+  fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  assert.ok(result.warnings.some(w=>w.code==='joined-team-receive'));
+  status.instances[0].receive_identities.find(r=>r.label==='alpha').stream_admitted=false;
+  fx.fake.setStatus(status);
+  assert.equal(fx.readiness().status,'unavailable','missing optional disk file does not erase captured joined failure');
+});
+
+test('legacy absent membership permits qualified prerequisites but malformed supplied membership does not',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'claude'});
+  writeFileSync(join(fx.home,'instance.json'),JSON.stringify({capabilityMeta:{'oats.aweb':{}}}));
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  mkdirSync(join(fx.home,'.oats-aweb'));
+  writeFileSync(join(fx.home,'.oats-aweb','teams.json'),'{');
+  const malformed=fx.readiness();
+  assert.equal(malformed.status,'unavailable',JSON.stringify(malformed));
+  assert.ok(malformed.problems.some(p=>p.code==='receive-record-unavailable'));
+});
+
+for(const incomplete of [false,true]) for(const [name,change,code] of [
+  ['wrong-type primary locator',s=>s.instances[0].primary_identity_home=false,'wake-target-binding'],
+  ['contradictory primary locator',s=>s.instances[0].primary_identity_home='/foreign/primary','wake-target-binding'],
+  ['aggregate refused stream',s=>s.instances[0].stream_admitted=false,'wake-stream-unavailable'],
+  ['wrong-type stream error',s=>s.instances[0].receive_identities[0].stream_error=false,'wake-status-unavailable'],
+]) test(`${incomplete?'partial':'complete'} target preserves ${name} failure`,t=>{
+  const fx=fixture(t,{delivery:'session',runtime:'codex'}),meta=fx.spawn().meta;
+  if(incomplete) delete meta.runtime;
+  fx.record(meta,incomplete?undefined:'codex');
+  const status=transportStatus(fx);change(status);fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code===code),JSON.stringify(result));
+});
+
+for(const [name,change] of [
+  ['missing primary controls',s=>delete s.instances[0].receive_identities[0].controls],
+  ['restricted primary events',s=>s.instances[0].receive_identities[0].event_classes=['mail']],
+]) test(`partial captured session retains ${name} contradiction`,t=>{
+  const fx=fixture(t,{delivery:'session',runtime:'codex'}),meta=fx.spawn().meta;delete meta.runtime;fx.record(meta,undefined);
+  const status=transportStatus(fx);change(status);fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='wake-target-binding'));
+});
+
+test('missing home is not an absent legacy instance record',async t=>{
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=join(tempDir(t),'does-not-exist');
+  assert.equal(expectedReceive(home).problems[0]?.code,'receive-record-unavailable');
+});
+
+for (const record of ['instance.json', '.oats-aweb/teams.json']) test(`dangling ${record} is unreadable rather than legacy absence`, async t => {
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t);
+  mkdirSync(join(home,'.oats-aweb'));
+  symlinkSync(join(home,'missing-record'),join(home,record));
+  assert.equal(expectedReceive(home).problems[0]?.code,'receive-record-unavailable');
+});
+
+for(const joinedTeams of [null,[null],[{label:'alpha',team:'a:example.test',identityHome:'relative'}]]) test(`malformed captured membership ${JSON.stringify(joinedTeams)} cannot hide behind valid disk`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'claude'}),meta=fx.spawn().meta;
+  delete meta.delivery;delete meta.runtime;meta.joinedTeams=joinedTeams;fx.record(meta,undefined);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'));
 });

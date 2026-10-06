@@ -3,23 +3,34 @@
 ## Unreleased
 
 Fixed: target-scoped home receive readiness (issue #34 / aweb-abny). A compatible
-daemon or joined stream registration alone no longer returns ready. The check
-uses captured ownership and the complete retained receive set, validates the
-canonical broker target and current worker/stream/error evidence, and requires
-completed successful unknown-nonshell inspection evidence within a documented
-30-second observation window. Unresolved receive paths are unavailable, including
-joined failures alongside a native primary. Historical input timestamps are not
-current inspection evidence.
+daemon or joined stream registration alone no longer establishes a complete
+captured receive plan. The check validates the canonical broker target, retained
+identity set and policies, running worker, admitted `streaming` streams and
+target/worker/binding errors. Joined failures remain problems alongside a native
+primary. Missing required worker telemetry remains unavailable, including the
+status shape at the unchanged aw 1.36.13 floor.
 
-Changed: native-primary configuration remains unproven without connection
-telemetry; the Claude development-channel confirmation guidance is preserved.
-Claude/Pi native defaults and Codex's normal supported external broker route are
-unchanged. Positive broker results describe operational transport evidence only,
-not a current-start witness, prompt readiness or actual presentation. Quiet workers
-can age out to unavailable. The unchanged aw 1.36.13 floor lacks worker telemetry,
-so that status shape cannot establish home receive readiness. Null-home checks
-remain prerequisite-only. The public joined receive enum, binding envelope, four
-statuses, settings and lifecycle hooks are unchanged. No version bump or release.
+Changed: `ready` means the configured supported route and observable broker
+prerequisites pass. This deliberately supersedes the earlier unreleased
+recent-observation claim and 30-second status gate. Native connection uncertainty,
+old observations, absent optional inspection evidence and inspection in progress
+now warn; age alone does not make readiness unavailable. The 30-second threshold
+only labels an age warning. Known failures, including prior stopped/error evidence
+during a new inspection, and malformed or contradictory supplied status remain
+problems. No recent endpoint/native connection, current-start, uninterrupted
+liveness, prompt readiness, model consumption or actual presentation is certified.
+
+Changed: genuine legacy absence of captured delivery/runtime uses the documented
+settings-based prerequisite fallback with an explicit incomplete ownership/set
+warning. Valid retained facts and known joined paths still receive their checks;
+malformed, unreadable or contradictory records cannot use this fallback. Complete
+captured plans remain strict. Existing configuration/authentication/custody error
+precedence and null-home prerequisite checks are preserved.
+
+Claude/Pi native defaults, Codex's supported external broker route and the Claude
+development-channel confirmation guidance are unchanged. The public joined
+receive enum, binding envelope, four statuses, settings and lifecycle hooks are
+unchanged. No probes, home writes, version bump or release.
 
 ## 1.21.1
 

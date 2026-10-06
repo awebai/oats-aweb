@@ -4,7 +4,7 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
-import { CHANNEL_DEV_CONFIRMATION, recordedStart, expectedReceive, targetReceiveProblems } from './wake-receive.mjs';
+import { CHANNEL_DEV_CONFIRMATION, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -284,19 +284,22 @@ async function workspaceReadinessPhase(req) {
   // Preserve prerequisite diagnostics; receive evidence is meaningful only
   // after configuration and custody checks succeed.
   if(ctx.home && !problems.length) {
-    const expected=expectedReceive(ctx.home);
+    const expected=expectedReceive(ctx.home,{delivery:req.settings.delivery||'channel'});
     receiveProblems.push(...expected.problems);
+    warnings.push(...(expected.warnings||[]));
     if(!expected.problems.length) {
-      if(expected.native) receiveProblems.push({code:'native-receive-unproven',message:'native receive connection is unproven: plugin/extension configuration and confirmation do not establish connected receive'});
+      if(expected.native) warnings.push({code:'native-receive-unproven',message:'native receive connection is unproven: plugin/extension configuration and confirmation do not establish connected receive'});
       if(expected.runtimeDelivery==='native-channel') warnings.push({...CHANNEL_DEV_CONFIRMATION});
-      if(expected.bindings.length) {
+      if(expected.brokerRequired) {
         let status;
         try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
-        const targetProblems=targetReceiveProblems(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN});
+        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN});
+        const targetProblems=target.problems;
+        warnings.push(...target.warnings);
         receiveProblems.push(...targetProblems);
         for(const joined of expected.joined) {
           if(targetProblems.length) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
-          else warnings.push({code:'joined-team-receive',message:`joined team ${joined.label} has broker-managed transport; this is not harness-native connection or proof of message presentation`});
+          else warnings.push({code:'joined-team-receive',message:`joined team ${joined.label} passes observable broker route prerequisites; this is not harness-native connection or proof of message presentation`});
         }
       }
     }

@@ -219,47 +219,73 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   an uncertain crash or compaction uses `aw mail show --message-id <id> --json`
   or paginated `aw mail inbox --show-all --json` with `--cursor`, not
   mail read state or `--conversation-id`.
-  Home readiness evaluates the intended path from the home's captured delivery,
-  runtime and final credential locator, plus retained joined membership. Claude
-  Code and pi use native channels by default; Codex normally uses the supported
-  external broker. Native plugin/extension installation, launch flags and the
-  development-channel confirmation do not prove a connected native receiver:
-  without connection telemetry, home readiness is `unavailable` with
-  `native-receive-unproven`. Joined broker paths still contribute their own
-  failures even when the primary is native. The public joined `receive: native`
-  enum remains unchanged for compatibility; it denotes broker-managed joined
-  delivery, not a harness-native connection or readiness attestation.
+  Home readiness reports whether the configured supported route and observable
+  broker prerequisites pass. It uses the home's captured delivery, runtime and
+  final credential locator, plus retained joined membership. Claude Code and pi
+  use native channels by default; Codex normally uses the supported external
+  broker. A `ready` result does not certify recent endpoint observation, native
+  connection, current start, uninterrupted liveness, automatic presentation or
+  model consumption.
+
+  Native plugin/extension installation, launch flags and the development-channel
+  confirmation do not prove a connected native receiver. Missing connection
+  telemetry produces the `native-receive-unproven` warning; the confirmation
+  guidance remains. Joined broker paths independently contribute failures even
+  when the primary is native. The public joined `receive: native` enum remains
+  unchanged for compatibility; it denotes broker-managed joined delivery, not
+  a harness-native connection or readiness attestation.
 
   Broker readiness reads one `aw wake status --json` snapshot. It checks the
   canonical target, compatible running daemon, active/unpaused target, complete
-  identity set and its delivery/ownership/event/control policy, connected admitted
-  streams, running worker, and target/worker/binding errors. It requires matching
-  `unknown` nonshell observations with `readiness_waiting: inspect_done`; an
-  in-flight or failed inspection cannot reuse an earlier successful state.
-  Both snapshot and inspection timestamps must be valid, nonfuture, ordered and
-  at most 30 seconds old. This conservative cutoff is a provider evidence-age heuristic, not a broker
-  guarantee or the provider command timeout. It limits how old a positive
-  observation may be, while deliberately allowing healthy quiet homes to be
-  unavailable. Poll cadence, inspection duration and scheduling jitter can cross
-  this boundary; the cutoff does not promise continuous readiness. Quiet workers inspect at startup and on events, so healthy quiet
-  homes can age out to evidence unavailable without their transport being broken.
-  The aw floor stays 1.36.13; its status lacks worker evidence and therefore cannot
-  prove home receive readiness. Historical input/success timestamps do not help.
+  captured identity set and its delivery/ownership/event/control policy,
+  admitted streams in the released `streaming` phase, running worker, and
+  target/worker/binding errors. Missing required daemon, worker or stream
+  evidence is a problem. The aw floor stays 1.36.13; its status lacks worker
+  evidence, so that shape cannot establish the required broker prerequisites.
 
-  A positive result is bounded operational transport evidence from supported
-  inspection semantics: OATS reports a live nonshell endpoint as `unknown`, not
-  `idle`. Status does not independently attest endpoint presence, current start
-  identity, uninterrupted liveness, prompt readiness, model consumption or actual
-  presentation. Readiness does not refresh the broker, send input, register,
-  resume or modify the home. A soul check with no home remains prerequisite-only.
-  Existing configuration/authentication failures retain their diagnostics and
-  skip receive evaluation until prerequisites pass; uncertain runtime receive
-  evidence yields `unavailable` with a provider problem.
+  Observation age, absent optional inspection evidence and an inspection in
+  progress warn without making otherwise satisfied prerequisites unavailable.
+  The 30-second threshold only labels old evidence with its age; it is not a
+  readiness gate, broker guarantee or command timeout. Quiet workers inspect at
+  startup and on events, so their observations can age without a transport
+  failure. Missing observation evidence is unproven, never an invented
+  successful inspection. Supplied timestamps must still be valid, nonfuture
+  and consistently ordered; malformed or contradictory status is a problem.
+  Known stopped/shell/unusable endpoint state, failed inspection and explicit
+  errors remain problems even when old or followed by `inspect_start`, which
+  can retain prior state and errors. `last_inspect_at` also updates on errors;
+  neither it nor historical input/success timestamps establish success.
+
+  OATS reports nonshell inspection as `unknown`, not `idle`. Public status does
+  not independently attest endpoint presence or identify the current start.
+  Readiness does not refresh the broker, send input, register, resume or modify
+  the home. A soul check with no home remains prerequisite-only. Existing
+  configuration/authentication and applicable custody failures retain their
+  diagnostics and skip receive evaluation until prerequisites pass.
+
+  A genuinely absent legacy delivery/runtime record uses the settings-based
+  prerequisite fallback for missing facts and warns that receive ownership and
+  complete-set assurance are unproven. It does not replace valid captured facts
+  with current settings or infer ownership from a broker row or caller runtime.
+  Only absent captured delivery falls back to `settings.delivery`; `session`
+  requires broker checks. Captured `session` requires them even without runtime;
+  captured `channel` without runtime leaves primary ownership unproven, including
+  when current settings say `session`. A retained empty runtime string keeps its
+  existing external-broker meaning. Any known joined path requires broker checks.
+  Retained joined identities still receive target/worker/stream and known-policy
+  checks. Malformed JSON, unreadable records, wrong types, invalid values and
+  contradictory retained facts are problems, not legacy absence.
 
   Valid `.oats-aweb/teams.json` is authoritative over launch metadata because
-  later join/leave commands update it. Missing or malformed local membership
-  state is unavailable. Global grant/retained-root spawn paths may omit this file
-  only when recorded provenance consistently establishes an empty joined set.
+  later join/leave commands update it. Complete captured local plans require
+  valid membership state. Legacy metadata-only joined state is retained with
+  the fallback qualification; a missing file is not evidence that known joins
+  disappeared. If both legacy membership sources are absent, there are no known
+  joined entries, not a certified empty set. Otherwise valid unmatched bindings
+  can remain in a partial legacy projection; every supplied binding must be
+  well-formed and healthy, but the result cannot certify full-set matching.
+  Global grant/retained-root spawn paths may omit this file only
+  when recorded provenance consistently establishes an empty joined set.
   Grant readiness uses the final recorded `identity.grant.home`, never the newest
   directory or the caller's `AWEB_IDENTITY_HOME`.
 
