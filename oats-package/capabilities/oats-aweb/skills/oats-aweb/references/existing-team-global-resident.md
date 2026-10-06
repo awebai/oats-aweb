@@ -5,11 +5,13 @@ acts as a resident identity. It grants no authority to execute the templates.
 Select and review each effect under the deployment's own operation process;
 ordinary worker messaging authority is insufficient for provisioning or custody.
 
-The native owner is preparing `aweb`'s `docs/hosted-global-bootstrap.md` as the
-canonical CLI authority/init/output/diagnostic/recovery contract. Its immutable
-reference is an **unpublished dependency** pending cross-link verification. The
-checkpoints below are source-qualified OATS integration requirements, not a
-second native contract.
+The native [hosted GLOBAL bootstrap contract](https://github.com/awebai/aweb/blob/main/docs/hosted-global-bootstrap.md)
+owns CLI authority, init, outputs, diagnostics and recovery. This is its intended
+publication URL: the supplied reference content is an **unpublished candidate**,
+and the link depends on native publication. Its proposed HTTP diagnostics and
+representative recovery/capture fixtures are not established aw 1.36.23 behavior
+or coverage. The checkpoints below use the pinned sources listed at the end;
+they are OATS integration requirements, not a second native contract.
 
 ## Choose the journey and fix the context
 
@@ -218,15 +220,21 @@ facts and explicit authority, not a loop. A source/config rollback cannot restor
 a deleted key or undo unknown remote effects. Any preservation-contract change
 belongs to the existing identity author/reviewer before implementation.
 
-The native owner's existing resume tests cover error-before-success, **not** the
-exact original team-key/no-repository-origin/same-DID case where the server
-commits and the response is lost. That real-CLI/service-fixture test and any safer
-preservation/refusal contract belong to the native owner. They must account for
-credential effects and deliberately disposition mismatch deletion. Protected
-wrapper guarantees and production E2E acceptance are also unproven; their future
-validation must cover capture failure, sensitive output, nonzero/malformed
-success and interruption. This docs patch executes none of those tests and
-selects no production fault injection, client retry or speculative server repair.
+At the pinned aw 1.36.23 source, the resume tests cover error-before-success,
+**not** the exact original team-key/no-repository-origin/same-DID case where the
+server commits and the response is lost. The unpublished native contract now
+describes author-reported candidate real-CLI/service-fixture characterization of
+that case and protected-capture examples. This is separate candidate evidence,
+pending independent native review; it does not establish installed behavior,
+deployed-server idempotency or production E2E acceptance. In particular, the
+representative continuation models one identity but two credential issuances.
+
+Any safer preservation/refusal contract remains native-owned and must account
+for credential effects and explicitly address mismatch deletion. Protected
+capture requirements still need validation for the selected operator procedure,
+including capture failure, sensitive output, nonzero/malformed success and
+interruption. This docs patch executes none of those tests and selects no
+production fault injection, client retry or speculative server repair.
 
 ## Version and source anchors
 
