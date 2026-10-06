@@ -133,7 +133,7 @@ the sender body, a `Use the aw CLI...` reminder, and a Recovery line such as
 `aw --identity-home '<home>' mail show --message-id <id>`. Handle what is
 presented; do not assume either form.
 
-Which path wakes you follows your runtime. Under the default `delivery:
+The intended receive path follows your runtime. Under the default `delivery:
 channel`, Claude Code takes mail through the aweb channel plugin and pi through
 its aweb extension, which push into the session; Codex (and any runtime without
 an aweb channel) is woken by the host wake broker. Under `delivery: session`
@@ -141,10 +141,17 @@ the host wake broker wakes every runtime. A session is on one path, never both.
 
 | Your `Comms:` line / teams doc says | What wakes you |
 |---|---|
-| `Notification delivery: the aweb channel plugin` (Claude Code) or `the aweb pi extension` (pi) | the channel plugin / pi extension pushes the event; you saw `✓ aweb connected` at start |
+| `Notification delivery: the aweb channel plugin` (Claude Code) or `the aweb pi extension` (pi) | the configured channel plugin / pi extension is intended to push events; this line does not prove connection |
 | `Notification delivery: external` | the host wake broker presents incoming mail/chat in your terminal, either as a waiting-items line or as the full event |
 | joined team with `receive: native` | the host wake broker presents that identity's mail/chat, either as a line with `aw --identity-home <path> …` commands or as the full event |
 | joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries |
+
+Claude/channel defaults to approved selection for new compositions. Admission is
+unverified: Claude may run with no channel wake, potentially without a diagnostic.
+Frozen homes retain their captured mode. An operator may select supported session
+delivery where authorized for unattended use, but must preserve any explicit
+native-channel requirement. Never switch automatically to development or answer
+its confirmation. Source changes do not enroll a channel or recover the runtime.
 
 **When woken:**
 
@@ -230,7 +237,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
-| `channel-dev-confirmation` | a Claude Code start under `delivery: channel` waits at Claude Code's development-channels confirmation until someone answers it in the instance's terminal (also on the start's own warning line) | human: answer it in the terminal; never answer it for them |
+| `channel-dev-confirmation` | an explicitly selected or captured development-mode Claude/channel start waits at Claude Code's development-channels confirmation until someone answers it in the instance's terminal (also on the start's own warning line) | human: answer it in the terminal; never answer it for them |
+| `claude-channel-enrollment-unverified` | approved admission is unverified; Claude may run with no channel wake and no diagnostic | operator: verify admission or choose authorized session delivery; preserve explicit native requirements |
+| `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
@@ -270,6 +279,10 @@ teams; it does not have a provider `team` setting.
   through its channel plugin and pi through its extension, and sends Codex and
   any other runtime through the host wake broker; `session` sends every runtime
   through the broker. The broker path sets `AWEB_DELIVERY=session`.
+- `claudeChannelMode`: `approved` by default or explicit `development` for local
+  channel development only. Host-only: set in `oats-local.yaml`; committed
+  soul/workspace and spawn-provider overrides are refused. No arbitrary arguments
+  or plugin IDs; Pi, Codex and session delivery are unchanged.
 - `root`: absolute directory whose `.aw` is the default team's minting root.
 - `roots`: `{ <team id>: <absolute dir> }`; `roots[team]` wins over `root` and
   is how one deployment mints into several aweb teams.

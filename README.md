@@ -168,21 +168,31 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   also keeps any ambient channel package silent) and registers the home with
   `aw wake register`.
 
-  Claude Code loads the plugin with
-  `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`,
-  because `aweb-channel` is not on Claude Code's approved channel list. Claude
-  Code's `--channels` registers only plugins on that list; a plugin that is not
-  on it gets a startup warning and its channel does not register. The list is
-  Anthropic's default (the channel plugins in `claude-plugins-official`), or,
-  in a Team/Enterprise organization, the managed `allowedChannelPlugins`, which
-  replaces the default and requires `channelsEnabled: true` (whether other plans
-  honour it is unverified). The development flag makes Claude Code stop at a
-  "Loading development channels" confirmation before every session it starts,
-  until someone answers it in the instance's terminal; nothing answers it for
-  them. So every hook answer that adds the flag (the launch hook's, and the spawn
-  hook's for the start a spawn performs) carries the warning
-  `channel-dev-confirmation`, and readiness reports it for a home whose last
-  start was Claude Code under `channel`.
+  New Claude/channel compositions default to
+  `--channels plugin:aweb-channel@awebai-marketplace`. This selects the approved
+  channel mechanism; it does not establish effective plugin admission. Launch
+  and readiness report `claude-channel-enrollment-unverified`: Claude may run
+  with **no channel wake**, potentially without reporting that the channel was
+  not registered. Installation and a configured route are not connection proof.
+  Where broker delivery is authorized, an operator may select `delivery: session`
+  for an unattended home; this must not override an explicit native-channel
+  requirement. No automatic fallback changes the route.
+
+  Explicit host-local `claudeChannelMode: development` instead selects
+  `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
+  It is for deliberate local channel development only. Its
+  `channel-dev-confirmation` warning explains the terminal confirmation; nothing
+  answers that prompt automatically or uses development mode as an admission
+  fallback. Both modes contribute exactly one fixed plugin argument.
+
+  Readiness uses the captured mode or an exact retained provider launch
+  contribution, including historical development arguments. Missing evidence
+  produces `claude-channel-mode-unproven`; current settings do not rewrite a
+  home's history. Malformed or conflicting supplied evidence is a problem.
+  Frozen homes keep their captured modules and arguments. This migration applies
+  to new compositions; it does not enroll the plugin or recover an existing
+  runtime. [Issue #44](https://github.com/awebai/oats-aweb/issues/44) remains open;
+  [cjr adoption #673](https://github.com/awebai/oats/issues/673) is separate.
 
   A home is on exactly one path. Every start decides the path afresh from the
   setting and the start's runtime (a home can be restarted under another
@@ -229,8 +239,8 @@ Host-owned settings live under `settings.oats.aweb` (normally in
 
   Native plugin/extension installation, launch flags and the development-channel
   confirmation do not prove a connected native receiver. Missing connection
-  telemetry produces the `native-receive-unproven` warning; the confirmation
-  guidance remains. Joined broker paths independently contribute failures even
+  telemetry produces the `native-receive-unproven` warning; confirmation
+  guidance applies to captured development mode. Joined broker paths independently contribute failures even
   when the primary is native. The public joined `receive: native` enum remains
   unchanged for compatibility; it denotes broker-managed joined delivery, not
   a harness-native connection or readiness attestation.
@@ -301,6 +311,11 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   Grant readiness uses the final recorded `identity.grant.home`, never the newest
   directory or the caller's `AWEB_IDENTITY_HOME`.
 
+- `claudeChannelMode`: `approved` (default) or `development`, **host-only** in
+  `oats-local.yaml` under `settings.oats.aweb`. Committed soul/workspace settings
+  and spawn-provider overrides are rejected by the kernel. Explicit null, empty,
+  wrong-type or unknown values fail before provider effects. This setting changes
+  only Claude/channel arguments; Pi, Codex and `delivery: session` are unchanged.
 - `root`: absolute directory whose `.aw` is the default team's minting root.
   This root is for one aweb team only.
 - `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over
@@ -404,3 +419,22 @@ from the membership in `<home>/.aw/workspace.yaml` whose team and alias match
 the recorded ones. It falls back to the alias when no entry matches. For a home
 whose last start was on the broker path, `aw wake deregister` runs at the same
 time as the delete.
+
+## Isolated hostOnly contract verification
+
+`test/claude-channel-host-only.test.mjs` imports the real generic `resolveSoul`
+validator from public OATS source `bb2ba8c9a254edb745913b9c5a9d9b833fda932d`
+(package 0.42.0), using this checkout's actual provider manifest. It checks both
+mode values at soul, workspace and spawn-provider layers, the existing
+`host-only-key` diagnostic and `oats-local.yaml` remedy, plus host-local origin
+and omission controls. Unexpected fixture remote reads fail.
+
+CI provisions that exact source outside test discovery and installs only its
+required `yaml@2.9.1` dependency in a separate directory, with lifecycle scripts
+disabled. It runs `OATS_HOST_ONLY_REQUIRED=1` with `OATS_HOST_ONLY_KERNEL_ROOT`
+pointing to the pinned checkout. Missing roots/dependencies and import failures
+fail this required gate. Local `npm test` explicitly skips this opt-in file when
+the root is absent; to exercise it, provision the same source/dependency and run
+`OATS_HOST_ONLY_REQUIRED=1 OATS_HOST_ONLY_KERNEL_ROOT=/absolute/pinned/checkout node --test test/claude-channel-host-only.test.mjs`.
+This verifies the pinned source contract, not every kernel version, a host
+installation, Claude admission or live delivery.

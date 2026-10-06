@@ -4,7 +4,7 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
-import { CHANNEL_DEV_CONFIRMATION, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
+import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -87,7 +87,8 @@ function settings(value,{phase}={}) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
   if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,phase==='check'?['delivery','root','roots','identity','residents','join']:['delivery','root','roots','join'],[]);
+  keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join']:['delivery','claudeChannelMode','root','roots','join'],[]);
+  if(phase!=='check') {try {selectClaudeChannel(value.claudeChannelMode);} catch {wireError('needs-configuration');}}
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
   if(value.join!==undefined && typeof value.join!=='string') wireError('needs-configuration');
@@ -237,6 +238,8 @@ function primaryTeamLabel(env=process.env){return typeof env.OATS_DEFAULT_TEAM==
 function unmappedPrimary(env=process.env){return undefined;}
 
 async function readinessDetails(settings,{deployment,env=process.env}={}) {
+  try { selectClaudeChannel(settings.claudeChannelMode); }
+  catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
@@ -289,7 +292,6 @@ async function workspaceReadinessPhase(req) {
     warnings.push(...(expected.warnings||[]));
     if(!expected.problems.length) {
       if(expected.native) warnings.push({code:'native-receive-unproven',message:'native receive connection is unproven: plugin/extension configuration and confirmation do not establish connected receive'});
-      if(expected.runtimeDelivery==='native-channel') warnings.push({...CHANNEL_DEV_CONFIRMATION});
       if(expected.brokerRequired) {
         let status;
         try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
