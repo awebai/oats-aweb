@@ -268,7 +268,7 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   if ([row.last_error, row.conflict_home, core.last_error, core.readiness_error].some(v => v !== undefined && typeof v !== 'string') ||
       [core.paused, core.readiness_paused].some(v => v !== undefined && typeof v !== 'boolean') ||
       (core.binding_errors !== undefined && !object(core.binding_errors))) return fail('wake-status-unavailable', 'broker target or worker status is malformed');
-  if (row.last_error || row.conflict_home || core.last_error || core.readiness_error || core.paused || core.readiness_paused || (core.binding_errors && (!object(core.binding_errors) || Object.keys(core.binding_errors).length))) return fail('wake-worker-unavailable', 'broker target or worker reports an unresolved error, pause or binding conflict');
+  if (row.last_error || row.conflict_home || core.readiness_error || core.paused || core.readiness_paused || (core.binding_errors && (!object(core.binding_errors) || Object.keys(core.binding_errors).length))) return fail('wake-worker-unavailable', 'broker target or worker reports an unresolved error, pause or binding conflict');
   // inspect_start retains earlier state/errors. A failure stays a failure,
   // regardless of observation age or whether a new inspection is in flight.
   const states = [row.last_state, core.readiness_state];
@@ -291,6 +291,15 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   const inspected = row.last_inspect_at === undefined ? undefined : timestamp(row.last_inspect_at);
   if (updated !== undefined && (!Number.isFinite(updated) || updated > now)) return fail('wake-status-stale', 'supplied broker status timestamp is invalid or future');
   if (inspected !== undefined && (!Number.isFinite(inspected) || inspected > now || (updated !== undefined && inspected > updated))) return fail('receive-inspection-unproven', 'supplied broker inspection timestamp is invalid, future or later than the snapshot');
+  // Released aw retains nonempty LastError across child status updates, while
+  // ReadinessError can clear (channel_core_runner.go:508-539, v1.36.23). There
+  // is no error timestamp/order token; LastSuccessAt is last input, not proof
+  // that inspection followed or resolved this error. Other failures win above.
+  if (core.last_error) {
+    if (core.readiness_waiting !== 'inspect_done' || !core.readiness_state) return fail('wake-worker-unavailable', 'broker worker reports an error without completed nonfailure inspection evidence');
+    const detail = core.last_error.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 160);
+    warnings.push(problem('wake-worker-error-retained', `broker worker retained error of unproven currency alongside completed nonfailure observation (no error/inspection ordering evidence): ${detail}`));
+  }
   for (const [name, at] of [['snapshot', updated], ['inspection', inspected]]) {
     if (at !== undefined && now - at > RECEIVE_OBSERVATION_WARN_AGE_MS) warnings.push(problem('receive-observation-aged', `broker ${name} observation is ${Math.floor((now - at) / 1000)} seconds old (30-second advisory threshold); readiness does not certify recent observation`));
   }

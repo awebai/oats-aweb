@@ -20,6 +20,14 @@ during a new inspection, and malformed or contradictory supplied status remain
 problems. No recent endpoint/native connection, current-start, uninterrupted
 liveness, prompt readiness, model consumption or actual presentation is certified.
 
+Fixed: a retained `channel_core.last_error` alongside completed nonfailure
+inspection evidence now warns with bounded text when no other failure or malformed
+evidence exists. Released aw does not timestamp that error or clear it on every
+status update. The warning reports unproven currency, not proof that inspection
+followed or resolved the error. Input-success timestamps do not decide this;
+without completed observation, or with row/readiness/binding/stream/pause/worker
+failure, readiness remains unavailable.
+
 Changed: genuine legacy absence of captured delivery/runtime uses the documented
 settings-based prerequisite fallback with an explicit incomplete ownership/set
 warning. Valid retained facts and known joined paths still receive their checks;

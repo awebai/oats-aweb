@@ -256,6 +256,18 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   can retain prior state and errors. `last_inspect_at` also updates on errors;
   neither it nor historical input/success timestamps establish success.
 
+  One worker field needs a narrower interpretation: released aw can retain
+  `channel_core.last_error` across subsequent status updates. Node can re-emit
+  that text on ordinary status updates; a new status line does not date the
+  failure. A new worker run can reset the field. With `inspect_done`,
+  a supplied nonfailure worker state, no `readiness_error` and no other failure
+  or malformed evidence, `wake-worker-error-retained` warns with bounded error
+  text. Its currency is unproven. There is no error timestamp or common ordering
+  token to establish that inspection followed the error or resolved it;
+  `last_success_at` records input and is not the deciding signal. Without that
+  completed observation, the worker error remains a problem. Row, readiness,
+  binding, stream, conflict, pause and nonrunning failures remain problems.
+
   OATS reports nonshell inspection as `unknown`, not `idle`. Public status does
   not independently attest endpoint presence or identify the current start.
   Readiness does not refresh the broker, send input, register, resume or modify

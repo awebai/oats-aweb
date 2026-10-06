@@ -1,0 +1,59 @@
+{
+ "daemon_running": true,
+ "daemon_version": "1.36.23",
+ "daemon_version_state": "reported",
+ "instances": [
+  {
+   "channel_core": {
+    "ambient_dropped": 0,
+    "ambient_queued": 0,
+    "bundle_path": "/fixture/user/.config/aw/wake/channel-core/runner.mjs",
+    "evicted_events": 0,
+    "last_error": "E_RUNTIME_AUTHORITY_MISMATCH: instance metadata disagrees with independent session receipt",
+    "last_input_at": "2026-10-06T00:57:43.162Z",
+    "last_run_at": "2026-10-04T13:43:44.403013963Z",
+    "last_success_at": "2026-10-06T00:57:43.162Z",
+    "next_retry_at": "0001-01-01T00:00:00Z",
+    "node_path": "/fixture/user/.local/share/mise/shims/node",
+    "readiness_state": "unknown",
+    "readiness_waiting": "inspect_done",
+    "restart_count": 0,
+    "running": true
+   },
+   "delivery": "session",
+   "evicted_events": 0,
+   "home": "/fixture/home",
+   "identity_home": "/fixture/home/.aw",
+   "last_inspect_at": "2026-10-06T00:57:42.428728113Z",
+   "last_state": "unknown",
+   "paused": false,
+   "phase": "active",
+   "receive_identities": [
+    {
+     "connected_at": "2026-10-04T13:43:44.709163564Z",
+     "controls": true,
+     "delivery_owner": "session-hints",
+     "identity_home": "/fixture/home/.aw",
+     "stream_admitted": true,
+     "stream_phase": "streaming",
+     "unread_count": 1
+    }
+   ],
+   "registered_at": "2026-10-04T13:43:44.346314625Z",
+   "runtime_delivery": "external-session",
+   "stream_admitted": true
+  }
+ ],
+ "max_streams": 128,
+ "state_dir": "/fixture/user/.config/aw/wake",
+ "streams": [
+  {
+   "admitted": true,
+   "connected_at": "2026-10-04T13:43:44.709163564Z",
+   "identity_home": "/fixture/home/.aw",
+   "phase": "streaming",
+   "unread_count": 1
+  }
+ ],
+ "updated_at": "2026-10-06T00:58:24.736529232Z"
+}

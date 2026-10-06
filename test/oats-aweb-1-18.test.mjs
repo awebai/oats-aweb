@@ -549,7 +549,7 @@ const defects = [
   ["conflicting observation state", s => s.instances[0].last_state="stopped", "receive-inspection-unproven"],
   ["worker paused", s => s.instances[0].channel_core.paused=true, "wake-worker-unavailable"],
   ["readiness paused", s => s.instances[0].channel_core.readiness_paused=true, "wake-worker-unavailable"],
-  ["worker error", s => s.instances[0].channel_core.last_error="failed", "wake-worker-unavailable"],
+  ["worker error without completed inspection", s => {s.instances[0].channel_core.last_error="failed"; s.instances[0].channel_core.readiness_waiting="inspect_start";}, "wake-worker-unavailable"],
   ["target error", s => s.instances[0].last_error="failed", "wake-worker-unavailable"],
   ["missing target", s => s.instances = [], "wake-target-missing"],
   ["duplicate target", s => s.instances.push(s.instances[0]), "wake-target-missing"],
@@ -943,4 +943,110 @@ for(const joinedTeams of [null,[null],[{label:'alpha',team:'a:example.test',iden
   const result=fx.readiness();
   assert.equal(result.status,'unavailable',JSON.stringify(result));
   assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'));
+});
+
+// Synthetic shape reported by the paired maintainer on Linux/session Claude
+// (PR53 comment6007038771). Live delivery is peer evidence, not this fixture.
+function retainedWorkerErrorFixture(home) {
+  const now=Date.parse('2026-10-05T12:00:00Z'), primary=join(home,'.aw');
+  const expected={home,runtimeDelivery:'external-session',primary,bindings:[{identity_home:primary,controls:true,event_classes:[]}]};
+  const status={daemon_running:true,daemon_version_state:'reported',daemon_version:'1.36.23',updated_at:new Date(now).toISOString(),instances:[{
+    home,identity_home:primary,runtime_delivery:'external-session',delivery:'session',paused:false,phase:'active',last_state:'unknown',last_inspect_at:new Date(now).toISOString(),
+    receive_identities:[{identity_home:primary,controls:true,delivery_owner:'session-hints',stream_admitted:true,stream_phase:'streaming'}],
+    channel_core:{running:true,readiness_state:'unknown',readiness_waiting:'inspect_done',last_success_at:new Date(now-41000).toISOString(),last_error:'E_RUNTIME_AUTHORITY_MISMATCH: instance metadata disagrees with independent session receipt'},
+  }]};
+  return {now,expected,status};
+}
+
+for(const timing of ['peer','no-input-success','old-input-success','no-observation-timestamps','old-observation']) test(`retained worker error warns with completed nonfailure observation: ${timing}`,async t=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const {now,expected,status}=retainedWorkerErrorFixture(tempDir(t)),row=status.instances[0];
+  if(timing==='no-input-success') delete row.channel_core.last_success_at;
+  if(timing==='old-input-success') row.channel_core.last_success_at='2020-01-01T00:00:00Z';
+  if(timing==='no-observation-timestamps') {delete status.updated_at;delete row.last_inspect_at;}
+  if(timing==='old-observation') {status.updated_at='2020-01-01T00:00:00Z';row.last_inspect_at=status.updated_at;}
+  const before=structuredClone(status);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  assert.deepEqual(result.problems,[],JSON.stringify(result));
+  const warning=result.warnings.find(w=>w.code==='wake-worker-error-retained');
+  assert.ok(warning,JSON.stringify(result));
+  assert.match(warning.message,/unproven currency/);
+  assert.match(warning.message,/E_RUNTIME_AUTHORITY_MISMATCH/);
+  assert.doesNotMatch(warning.message,/resolved|cleared|after the error|later success|historic/);
+  assert.deepEqual(status,before);
+});
+
+for(const [name,change,code] of [
+  ['inspect_error',r=>r.channel_core.readiness_waiting='inspect_error','receive-inspection-unproven'],
+  ['readiness_error',r=>r.channel_core.readiness_error='inspection failed','wake-worker-unavailable'],
+  ['stopped',r=>{r.last_state='stopped';r.channel_core.readiness_state='stopped';},'receive-inspection-unproven'],
+  ['nonrunning',r=>r.channel_core.running=false,'wake-worker-unavailable'],
+  ['row error',r=>r.last_error='target failed','wake-worker-unavailable'],
+  ['conflict',r=>r.conflict_home='/other/home','wake-worker-unavailable'],
+  ['binding error',r=>r.channel_core.binding_errors={alpha:'consumer failed'},'wake-worker-unavailable'],
+  ['stream error',r=>r.receive_identities[0].stream_error='stream failed','wake-stream-unavailable'],
+  ['target pause',r=>r.paused=true,'wake-target-paused'],
+  ['worker pause',r=>r.channel_core.paused=true,'wake-worker-unavailable'],
+  ['readiness pause',r=>r.channel_core.readiness_paused=true,'wake-worker-unavailable'],
+  ['inspect_start',r=>r.channel_core.readiness_waiting='inspect_start','wake-worker-unavailable'],
+  ['missing completion',r=>delete r.channel_core.readiness_waiting,'wake-worker-unavailable'],
+  ['missing completed state',r=>delete r.channel_core.readiness_state,'wake-worker-unavailable'],
+  ['empty completed state',r=>r.channel_core.readiness_state='','wake-worker-unavailable'],
+  ['malformed retained error',r=>r.channel_core.last_error=false,'wake-status-unavailable'],
+  ['malformed state',r=>r.channel_core.readiness_state=42,'wake-status-unavailable'],
+  ['conflicting states',r=>r.last_state='idle','wake-status-unavailable'],
+  ['invalid observation timestamp',r=>r.last_inspect_at='bad','receive-inspection-unproven'],
+]) test(`retained worker error cannot mask ${name} with recent input success`,async t=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const {now,expected,status}=retainedWorkerErrorFixture(tempDir(t)),row=status.instances[0];
+  row.channel_core.last_success_at=status.updated_at;
+  change(row);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  assert.equal(result.problems[0]?.code,code,JSON.stringify(result));
+  assert.equal(result.warnings.some(w=>w.code==='wake-worker-error-retained'),false);
+});
+
+test('retained worker error diagnostic is bounded and contains no terminal controls',async t=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const {now,expected,status}=retainedWorkerErrorFixture(tempDir(t));
+  status.instances[0].channel_core.last_error='failure\n\u001b[31m'+ 'x'.repeat(2000);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  assert.deepEqual(result.problems,[]);
+  const message=result.warnings.find(w=>w.code==='wake-worker-error-retained').message;
+  assert.doesNotMatch(message,/[\u0000-\u001f\u007f-\u009f]/);
+  assert.ok(message.length<350);
+});
+
+test('retained worker error reaches session Claude readiness as a warning without writes or probes',t=>{
+  const fx=fixture(t,{delivery:'session',runtime:'claude'});
+  fx.record(fx.spawn().meta,'claude');
+  const status=transportStatus(fx);
+  status.daemon_version='1.36.23';
+  status.instances[0].channel_core.last_error='E_RUNTIME_AUTHORITY_MISMATCH: instance metadata disagrees with independent session receipt';
+  status.instances[0].channel_core.last_success_at=new Date(Date.parse(status.updated_at)-41000).toISOString();
+  fx.fake.setStatus(status);
+  const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.deepEqual(result.problems,[]);
+  assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});
+
+// Unchanged sanitized status exported by josep-reyero/oats-maintainer-pepe:
+// https://github.com/awebai/oats-aweb/pull/53#issuecomment-6007169594
+// SHA256 02746fda83edbe1ac4bce2aeca1d9b2f30119fb2b6664fb7f6a739f8fffcd60e.
+// Receiving/presentation/public-inspect success is separately peer-reported;
+// the error has no timestamp with which to order it against these observations.
+test('unchanged sanitized peer status warns about retained error and observation age',async()=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const status=JSON.parse(readFileSync(join(REPO,'test','fixtures','readiness-peer-status-6007169594.json'),'utf8'));
+  const expected={home:'/fixture/home',runtimeDelivery:'external-session',primary:'/fixture/home/.aw',bindings:[{identity_home:'/fixture/home/.aw',controls:true,event_classes:[]}]};
+  const before=structuredClone(status);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now:Date.parse('2026-10-06T00:58:24.737Z')});
+  assert.deepEqual(result.problems,[],JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
+  assert.ok(result.warnings.some(w=>w.code==='receive-observation-aged'));
+  assert.deepEqual(status,before);
 });
