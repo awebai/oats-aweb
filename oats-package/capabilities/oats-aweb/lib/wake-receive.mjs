@@ -173,7 +173,7 @@ export function targetReceiveProblems(status, {home, runtimeDelivery, primary, b
     if ((hit.label !== undefined && typeof hit.label !== 'string') || (hit.label || undefined) !== expected.label || (hit.team_id !== undefined && hit.team_id !== expected.team) || hit.delivery_owner !== 'session-hints' ||
         (hit.controls !== undefined && typeof hit.controls !== 'boolean') || (hit.controls === true) !== expected.controls ||
         !Array.isArray(classes) || classes.length !== expected.event_classes.length || classes.some(c => typeof c !== 'string') || JSON.stringify([...classes].sort()) !== JSON.stringify([...expected.event_classes].sort())) return fail('wake-target-binding', 'broker receive ownership, label or event policy differs from the captured home');
-    if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'connected') return fail('wake-stream-unavailable', 'required receive stream is missing, refused or not connected');
+    if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') return fail('wake-stream-unavailable', 'required receive stream is missing, refused or not connected');
   }
   const core = row.channel_core;
   if (!object(core) || core.running !== true) return fail('wake-worker-unavailable', 'broker worker is stopped or current worker evidence is unavailable');

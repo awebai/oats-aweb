@@ -480,19 +480,21 @@ for (const runtime of ["codex", "claude"]) test(`target readiness rejects daemon
   const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
   fx.record(fx.spawn().meta, runtime);
   const reg = fx.registered();
-  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.21", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "connected" })) }] });
+  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.21", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "streaming" })) }] });
   assert.equal(fx.readiness().status, "unavailable");
 });
 
 
 // Synthetic mechanics fixture using only released aw v1.36.21 fields. This
 // does not claim that a live broker delivered or a model consumed any message.
+// aw v1.36.21/v1.36.23 wake/stream.go names StreamLive "streaming";
+// wake/broker.go copies that phase into receive_identities[].stream_phase.
 function transportStatus(fx, runtime = "codex") {
   const now = new Date().toISOString();
   const external = runtime === "codex";
   const reg = fx.registered();
   const receive = (reg.receive_identities || [{ identity_home: reg.identity_home, controls: true }]).map(r => ({
-    ...r, delivery_owner: "session-hints", stream_admitted: true, stream_phase: "connected",
+    ...r, delivery_owner: "session-hints", stream_admitted: true, stream_phase: "streaming",
   }));
   return { updated_at: now, daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.21", instances: [{
     ...reg, identity_home: receive[0].identity_home, runtime_delivery: external ? "external-session" : "native-channel",
@@ -505,7 +507,7 @@ function snapshot(dir) {
   return readdirSync(dir, {withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).map(e => [e.name, e.isDirectory() ? snapshot(join(dir,e.name)) : readFileSync(join(dir,e.name)).toString('base64')]);
 }
 
-test("synthetic released unknown-nonshell evidence proves Codex transport mechanics only, read-only and independent of caller", (t) => {
+test("synthetic released unknown-nonshell streaming evidence proves Codex transport mechanics only, read-only and independent of caller", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: {join: "alpha"} });
   fx.record(fx.spawn().meta, "codex");
   fx.fake.setStatus(transportStatus(fx));
@@ -549,7 +551,10 @@ const defects = [
   ["worker binding error", s => s.instances[0].channel_core.binding_errors = {alpha: "refused"}, "wake-worker-unavailable"],
   ["refused stream", s => s.instances[0].receive_identities[0].stream_admitted = false, "wake-stream-unavailable"],
   ["missing stream admission", s => delete s.instances[0].receive_identities[0].stream_admitted, "wake-stream-unavailable"],
-  ["disconnected stream", s => s.instances[0].receive_identities[0].stream_phase = "backoff", "wake-stream-unavailable"],
+  ...["starting", "retrying", "quarantined", "stopped", "connected"].map(phase => [
+    `non-live stream phase ${phase}`, s => s.instances[0].receive_identities[0].stream_phase = phase, "wake-stream-unavailable",
+  ]),
+  ["missing stream phase", s => delete s.instances[0].receive_identities[0].stream_phase, "wake-stream-unavailable"],
   ["stream error", s => s.instances[0].receive_identities[0].stream_error = "refused", "wake-stream-unavailable"],
   ["missing binding", s => s.instances[0].receive_identities.pop(), "wake-target-binding"],
   ["extra binding", s => s.instances[0].receive_identities.push({...s.instances[0].receive_identities[0], identity_home: "/wrong"}), "wake-target-binding"],
@@ -653,7 +658,7 @@ test('evidence-age heuristic boundaries, quiet workers and timing skew use an in
   const expected={home,runtimeDelivery:'external-session',primary,bindings:[{identity_home:primary,controls:true,event_classes:[]}]};
   const status={updated_at:new Date(observed).toISOString(),daemon_running:true,daemon_version_state:'reported',daemon_version:'1.36.21',instances:[{
     home,identity_home:primary,runtime_delivery:'external-session',delivery:'session',phase:'active',paused:false,
-    receive_identities:[{identity_home:primary,delivery_owner:'session-hints',controls:true,stream_admitted:true,stream_phase:'connected'}],
+    receive_identities:[{identity_home:primary,delivery_owner:'session-hints',controls:true,stream_admitted:true,stream_phase:'streaming'}],
     last_state:'unknown',last_inspect_at:new Date(observed).toISOString(),channel_core:{running:true,readiness_state:'unknown',readiness_waiting:'inspect_done'},
   }]};
   const evaluate=(now)=>targetReceiveProblems(status,expected,{minimumVersion:'1.36.13',now});

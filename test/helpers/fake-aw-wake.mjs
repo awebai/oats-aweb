@@ -71,7 +71,7 @@ if (args[0] === "wake" && args[1] === "deregister") { const r = regs(); delete r
 if (args[0] === "wake" && args[1] === "status") {
   if (fs.existsSync(${JSON.stringify(statusFile)})) { console.log(fs.readFileSync(${JSON.stringify(statusFile)}, "utf8")); process.exit(0); }
   const running = !process.env.FAKE_DAEMON_DOWN && ${JSON.stringify(daemon)};
-  const instances = Object.values(regs()).map((doc) => ({ home: doc.home, identity_home: doc.identity_home || doc.receive_identities?.[0]?.identity_home, primary_identity_home: doc.primary_identity_home, delivery: doc.delivery, runtime_delivery: doc.runtime_delivery || "external-session", phase: running ? "active" : "pending", paused: false, receive_identities: (doc.receive_identities || [{ identity_home: doc.identity_home, controls: true }]).map((ri) => ({ ...ri, delivery_owner: "session-hints", stream_admitted: running, stream_phase: running ? "connected" : "daemon-down" })) }));
+  const instances = Object.values(regs()).map((doc) => ({ home: doc.home, identity_home: doc.identity_home || doc.receive_identities?.[0]?.identity_home, primary_identity_home: doc.primary_identity_home, delivery: doc.delivery, runtime_delivery: doc.runtime_delivery || "external-session", phase: running ? "active" : "pending", paused: false, receive_identities: (doc.receive_identities || [{ identity_home: doc.identity_home, controls: true }]).map((ri) => ({ ...ri, delivery_owner: "session-hints", stream_admitted: running, stream_phase: running ? "streaming" : "daemon-down" })) }));
   emit({ daemon_running: running, daemon_version_state: running ? "reported" : "not_running", daemon_version: running ? ${JSON.stringify(daemonVersion)} : undefined, instances });
   process.exit(0);
 }
