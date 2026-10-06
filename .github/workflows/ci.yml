@@ -18,5 +18,19 @@ jobs:
           node-version: 22
       - name: Validate manifests, vendored skills, and hooks
         run: npm test
+      - name: Provision pinned generic hostOnly validator
+        shell: bash
+        run: |
+          git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-hostonly-kernel"
+          git -C "$RUNNER_TEMP/oats-hostonly-kernel" checkout --detach bb2ba8c9a254edb745913b9c5a9d9b833fda932d
+          test "$(git -C "$RUNNER_TEMP/oats-hostonly-kernel" rev-parse HEAD)" = bb2ba8c9a254edb745913b9c5a9d9b833fda932d
+          mkdir -p "$RUNNER_TEMP/oats-hostonly-deps"
+          npm install --prefix "$RUNNER_TEMP/oats-hostonly-deps" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund yaml@2.9.1
+          ln -s "$RUNNER_TEMP/oats-hostonly-deps/node_modules" "$RUNNER_TEMP/oats-hostonly-kernel/node_modules"
+      - name: Require actual hostOnly refusal and host-local controls
+        env:
+          OATS_HOST_ONLY_REQUIRED: '1'
+          OATS_HOST_ONLY_KERNEL_ROOT: ${{ runner.temp }}/oats-hostonly-kernel
+        run: node --test test/claude-channel-host-only.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+Changed: new Claude/channel compositions select the fixed approved `--channels`
+plugin argument by default. Host-only `settings.oats.aweb.claudeChannelMode` in
+`oats-local.yaml` permits explicit `development` for local channel development;
+invalid values fail before provider effects. Launch and readiness warn that
+approved admission is unverified and Claude may run with no channel wake, possibly
+without a diagnostic. An operator may choose authorized session delivery for an
+unattended home, without overriding an explicit native requirement. No automatic
+fallback or prompt answering occurs. Pi, Codex and session routing are unchanged.
+Captured mode/exact launch evidence controls historical guidance; missing mode
+warns and contradictory evidence fails. Frozen homes are unchanged. Issue #44
+remains open; cjr adoption #673 is separate. No enrollment, install or release is
+performed. CI exercises the actual pinned generic hostOnly validator, including
+committed/spawn refusal and host-local controls.
+
 Fixed: target-scoped home receive readiness (issue #34 / aweb-abny). A compatible
 daemon or joined stream registration alone no longer establishes a complete
 captured receive plan. The check validates the canonical broker target, retained
@@ -35,10 +49,10 @@ malformed, unreadable or contradictory records cannot use this fallback. Complet
 captured plans remain strict. Existing configuration/authentication/custody error
 precedence and null-home prerequisite checks are preserved.
 
-Claude/Pi native defaults, Codex's supported external broker route and the Claude
-development-channel confirmation guidance are unchanged. The public joined
-receive enum, binding envelope, four statuses, settings and lifecycle hooks are
-unchanged. No probes, home writes, version bump or release.
+Claude/Pi native routes and Codex's supported external broker route remain.
+Development-channel confirmation guidance applies to captured development mode.
+The readiness change preserves the public joined receive enum, binding envelope
+and four statuses. No probes, home writes, version bump or release.
 
 ## 1.21.1
 

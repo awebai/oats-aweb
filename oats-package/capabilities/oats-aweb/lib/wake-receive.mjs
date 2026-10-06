@@ -45,16 +45,70 @@ export function recordedRuntime(meta, harness) {
   return typeof meta?.runtime === 'string' ? meta.runtime : harness;
 }
 
-/** Claude Code loads aweb-channel only with
- *  --dangerously-load-development-channels, because the plugin is not on
- *  Claude Code's approved channel list (the Anthropic default list, or a
- *  Team/Enterprise organization's managed allowedChannelPlugins). Before every
- *  session that flag starts, Claude Code shows a confirmation that waits for a
- *  human answer in the terminal; nothing may answer it for them. */
+/** Explicit development selection requires human confirmation. It is neither
+ * an admission fallback nor evidence of a connected receiver. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: 'Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance\'s terminal: aweb-channel is not on Claude Code\'s approved channel list, so it is loaded with --dangerously-load-development-channels',
+  message: 'Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance\'s terminal: development mode is for deliberate local channel development only; never answer the prompt automatically or use it as an admission fallback',
 };
+
+export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
+  approved: '--channels plugin:aweb-channel@awebai-marketplace',
+  development: '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace',
+});
+const CHANNEL_ENROLLMENT_UNVERIFIED = {
+  code: 'claude-channel-enrollment-unverified',
+  message: 'effective approved-channel admission for aweb-channel@awebai-marketplace has not been verified; Claude may run with no channel wake, potentially without Claude reporting that the channel was not registered. For unattended homes where broker delivery is authorized, an operator may select the supported delivery: session alternative; do not override an explicit native-channel requirement. Development mode is only for local channel development, never an automatic fallback',
+};
+
+/** Host selection is a requested mode, never an admission or connection receipt. */
+export function selectClaudeChannel(mode = 'approved') {
+  if (mode !== 'approved' && mode !== 'development') throw new Error('settings.oats.aweb.claudeChannelMode must be approved or development; set it only in oats-local.yaml');
+  return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode], warning: mode === 'approved' ? {...CHANNEL_ENROLLMENT_UNVERIFIED} : {...CHANNEL_DEV_CONFIRMATION}};
+}
+
+/** Recognize only the provider's literal bare selector pairs in an aggregate.
+ * Quoted/escaped text is opaque: another capability's message is not a selector.
+ * This detects contradictions, never assigns provider provenance or rewrites argv. */
+function aggregateClaudeModes(combined) {
+  if (combined === undefined) return [];
+  const bare = combined.replace(/'[^']*'|"(?:\\[\s\S]|[^"\\])*"|\\[\s\S]/g, text => 'x'.repeat(text.length));
+  if (/['"\\]/.test(bare)) throw new Error('captured Claude channel aggregate quoting is ambiguous');
+  const options = bare.split(/(?:^|\s)--(?=\s|$)/, 1)[0];
+  const modes = Object.entries(CLAUDE_CHANNEL_ARGUMENTS).filter(([, argument]) => {
+    const [flag, plugin] = argument.split(' ');
+    return new RegExp(`(?:^|\\s)${flag}\\s+${plugin.replaceAll('.', '\\.')}(?=\\s|$)`).test(options);
+  }).map(([mode]) => mode);
+  // The fixed bare-word contract does not interpret shell expressions.
+  if (modes.length && /[$`;|&<>(){}*?~#]/.test(options)) throw new Error('captured Claude channel aggregate selector context is ambiguous');
+  return modes;
+}
+
+/** Only exact provider contributions identify historical mode. The combined
+ * hook argument is a fallback for old records without per-provider receipts. */
+function capturedClaudeChannel(meta, hooks) {
+  const recorded = meta.claudeChannelMode;
+  if (recorded !== undefined) selectClaudeChannel(recorded);
+  const combined = hooks?.launch?.claude;
+  if ((hooks?.launch !== undefined && !object(hooks.launch)) || (combined !== undefined && typeof combined !== 'string')) throw new Error('captured channel launch is malformed');
+  const exactCombined = Object.values(CLAUDE_CHANNEL_ARGUMENTS).includes(combined) ? combined : undefined;
+  let contribution;
+  if (hooks?.contributions !== undefined) {
+    if (!Array.isArray(hooks.contributions) || hooks.contributions.some(c => !object(c) || typeof c.capability !== 'string')) throw new Error('captured channel contributions are malformed');
+    const own = hooks.contributions.filter(c => c?.capability === 'oats.aweb');
+    if (own.length > 1 || (own[0]?.launch !== undefined && !object(own[0].launch))) throw new Error('captured aweb channel contribution is malformed or duplicated');
+    contribution = own[0]?.launch?.claude;
+    if (contribution !== undefined && !Object.values(CLAUDE_CHANNEL_ARGUMENTS).includes(contribution)) throw new Error('captured aweb channel contribution is malformed');
+  } else {
+    contribution = exactCombined;
+  }
+  const contributed = Object.keys(CLAUDE_CHANNEL_ARGUMENTS).find(mode => CLAUDE_CHANNEL_ARGUMENTS[mode] === contribution);
+  if (recorded !== undefined && contributed !== undefined && recorded !== contributed) throw new Error('captured Claude channel mode contradicts its contribution');
+  const mode = recorded ?? contributed;
+  const aggregateModes = aggregateClaudeModes(combined);
+  if (aggregateModes.length > 1 || (mode !== undefined && aggregateModes.some(value => value !== mode))) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
+  return mode === undefined ? {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'} : selectClaudeChannel(mode).warning;
+}
 
 /** external-session | native-channel | native-pi. */
 export function runtimeDeliveryFor({delivery, runtime}) {
@@ -141,7 +195,9 @@ function receiveRecord(home) {
       (meta.delivery !== undefined && !['session', 'channel'].includes(meta.delivery)) ||
       (doc.launch?.hooks !== undefined && !object(doc.launch.hooks)) ||
       (doc.launch?.hooks?.env !== undefined && !object(doc.launch.hooks.env))) return {error: 'captured delivery/runtime or credential metadata is malformed'};
-  return {meta, runtime: recordedRuntime(meta, doc.launch?.harness ?? doc.harness), identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME};
+  try { if (meta.claudeChannelMode !== undefined) selectClaudeChannel(meta.claudeChannelMode); }
+  catch { return {error: 'captured Claude channel mode is malformed'}; }
+  return {meta, runtime: recordedRuntime(meta, doc.launch?.harness ?? doc.harness), identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks};
 }
 
 /** Preserve valid retained facts even when a legacy record lacks ownership.
@@ -190,6 +246,11 @@ export function expectedReceive(home, {delivery = 'channel'} = {}) {
   const primaryBroker = meta.delivery === undefined ? delivery === 'session' :
     meta.delivery === 'session' || (runtime !== undefined && brokerDelivers({delivery: meta.delivery, runtime}));
   const native = meta.delivery === 'channel' && runtime !== undefined && !primaryBroker;
+  if (meta.claudeChannelMode !== undefined && (meta.delivery !== 'channel' || runtime !== 'claude')) return fail('captured Claude channel mode contradicts delivery/runtime');
+  if (native && runtime === 'claude') {
+    try { warnings.push(capturedClaudeChannel(meta, captured.hooks)); }
+    catch (error) { return fail(error.message); }
+  }
   const bindings = joined.map(j => ({identity_home: j.identityHome, label: j.label, team: j.team, controls: false, event_classes: ['mail', 'chat']}));
   // Incomplete projections retain known joins but do not manufacture an exact
   // primary plan from settings or the broker's supplied binding list.

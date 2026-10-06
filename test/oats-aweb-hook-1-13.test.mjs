@@ -35,6 +35,14 @@ if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { conso
 if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.13")); process.exit(0); }
 if (s.startsWith("wake status")) { console.log(j({ instances: [] })); process.exit(0); }
 if (s.startsWith("wake ")) process.exit(0);
+// Retained-seat responses are opt-in and stay inside the temporary fixture.
+if (process.env.FAKE_RETAINED === "1") {
+  if (a[0] === "workspace" && a[1] === "connect") process.exit(0);
+  if (a[0] === "check" || a[0] === "heartbeat") process.exit(0);
+  if (s === "workspace status --json") { console.log(j({workspace:{alias:"retained",workspace_path:process.cwd()}})); process.exit(0); }
+  if (s === "whoami --json") { console.log(j({did:"did:key:zRetained",address:"fixture.test/retained"})); process.exit(0); }
+}
+
 if (a[0] === "team" && a[1] === "list" && a.includes("--json")) {
   let active = process.env.FAKE_ACTIVE_TEAM || "";
   try { active = fs.readFileSync(path.join(process.cwd(), ".aw", "teams.yaml"), "utf8").split(/\\n/).find(l => l.startsWith("active_team:"))?.split("active_team:")[1].trim() || active; } catch {}
@@ -571,4 +579,91 @@ test("retire revokes the current grant id and removes every .aweb-identity direc
     assert.equal(existsSync(join(home, ".aweb-identity-1")), false);
     assert.equal(existsSync(join(home, ".aweb-identity-2")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
+  const flag = mode === 'approved' ? '--channels' : '--dangerously-load-development-channels';
+  assert.deepEqual(doc.launch, {claude:`${flag} plugin:aweb-channel@awebai-marketplace`});
+  assert.deepEqual(doc.launch.claude.split(' '), [flag,'plugin:aweb-channel@awebai-marketplace'], 'one fixed-plugin contribution, never concatenated modes');
+  if(preview) assert.equal(doc.meta,undefined,'preview records nothing');
+  else assert.equal(doc.meta.claudeChannelMode,mode,'metadata records selected mode, not admission');
+  if(mode==='approved') {
+    assert.match(doc.warning,/claude-channel-enrollment-unverified/);
+    assert.match(doc.warning,/may run with no channel wake, potentially without Claude reporting/);
+    assert.match(doc.warning,/operator may select.*delivery: session.*do not override an explicit native-channel requirement/);
+    assert.doesNotMatch(doc.warning,/channel-dev-confirmation/);
+  } else {
+    assert.match(doc.warning,/channel-dev-confirmation/);
+    assert.match(doc.warning,/deliberate local channel development only/);
+    assert.match(doc.warning,/never answer the prompt automatically or use it as an admission fallback/);
+    assert.doesNotMatch(doc.warning,/claude-channel-enrollment-unverified/);
+  }
+}
+
+for(const selection of [undefined,'approved','development']) test(`global grant Claude channel selector ${selection ?? 'omitted'} keeps grant locator through spawn and launch`,()=>{
+  const base=mkdtempSync(join(tmpdir(),'oats-aweb-113-selector-'));
+  try {
+    const mode=selection ?? 'approved';
+    const selected={delivery:'channel',...(selection===undefined?{}:{claudeChannelMode:selection})};
+    const {bin,root,home,custody,r}=spawnGrant(base,selected,{OATS_RUNTIME:'claude'});
+    assert.equal(r.status,0,r.stdout+r.stderr);
+    assertSelectedClaudeChannel(r.doc,mode);
+    const locator=r.doc.meta.identity.grant.home;
+    assert.equal(locator,join(home,'.aweb-identity'));
+    assert.deepEqual(r.doc.env,{AWEB_IDENTITY_HOME:locator});
+    const grant=readFileSync(join(locator,'grant.yaml'),'utf8');
+    const env={OATS_INSTANCE:'probe',OATS_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_META:JSON.stringify(r.doc.meta),OATS_SETTINGS:JSON.stringify({...settings(custody),...selected}),AWEB_IDENTITY_HOME:join(base,'foreign-caller')};
+    const before=logLines(base);
+    const preview=runHook(bin,'launch',{...env,OATS_LAUNCH_PREVIEW:'1'});
+    assert.equal(preview.status,0,preview.stdout+preview.stderr);
+    assertSelectedClaudeChannel(preview.doc,mode,{preview:true});
+    assert.deepEqual(preview.doc.env,{AWEB_IDENTITY_HOME:locator});
+    assert.deepEqual(logLines(base),before,'preview makes no aw call');
+    assert.equal(readFileSync(join(locator,'grant.yaml'),'utf8'),grant);
+    const launched=runHook(bin,'launch',env);
+    assert.equal(launched.status,0,launched.stdout+launched.stderr);
+    assertSelectedClaudeChannel(launched.doc,mode);
+    assert.deepEqual(launched.doc.env,preview.doc.env);
+    assert.deepEqual(launched.doc.meta.identity,r.doc.meta.identity,'mode selection does not replace the grant');
+    assert.equal(readFileSync(join(locator,'grant.yaml'),'utf8'),grant);
+    assert.equal(logLines(base).filter(l=>l.argv.slice(0,3).join(' ')==='id grant mint').length,1,'launch does not mint again');
+  } finally {rmSync(base,{recursive:true,force:true});}
+});
+
+for(const selection of [undefined,'approved','development']) test(`retained root Claude channel selector ${selection ?? 'omitted'} keeps copied identity through spawn and launch`,()=>{
+  const base=mkdtempSync(join(tmpdir(),'oats-aweb-113-retained-selector-'));
+  try {
+    const mode=selection ?? 'approved',bin=fakeAw(base),{root,home}=deployment(base),source=join(base,'legacy','.aw');
+    write(join(source,'signing.key'),'fixture-signing-key');
+    write(join(source,'identity.yaml'),'alias: retained\ndid: did:key:zRetained\naddress: fixture.test/retained\n');
+    write(join(source,'teams.yaml'),'active_team: t:example.test\n');
+    write(join(source,'workspace.yaml'),'alias: retained\naweb_url: https://fixture.invalid/api\n');
+    const selected={delivery:'channel',identity:{mode:'local',source},...(selection===undefined?{}:{claudeChannelMode:selection})};
+    const env={OATS_INSTANCE:'retained',OATS_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_SETTINGS:JSON.stringify(selected),FAKE_RETAINED:'1'};
+    const spawned=runHook(bin,'spawn',env);
+    assert.equal(spawned.status,0,spawned.stdout+spawned.stderr);
+    assertSelectedClaudeChannel(spawned.doc,mode);
+    assert.equal(spawned.doc.meta.retained,true);
+    assert.equal(spawned.doc.meta.source,source);
+    const locator=join(home,'.aw');
+    assert.deepEqual(spawned.doc.env,{AWEB_IDENTITY_HOME:locator});
+    const copied=readFileSync(join(locator,'identity.yaml'),'utf8');
+    assert.equal(copied,readFileSync(join(source,'identity.yaml'),'utf8'));
+    const before=logLines(base);
+    const launchEnv={...env,OATS_META:JSON.stringify(spawned.doc.meta),AWEB_IDENTITY_HOME:join(base,'foreign-caller')};
+    const preview=runHook(bin,'launch',{...launchEnv,OATS_LAUNCH_PREVIEW:'1'});
+    assert.equal(preview.status,0,preview.stdout+preview.stderr);
+    assertSelectedClaudeChannel(preview.doc,mode,{preview:true});
+    assert.deepEqual(logLines(base),before,'preview does not reconnect the retained seat');
+    const launched=runHook(bin,'launch',launchEnv);
+    assert.equal(launched.status,0,launched.stdout+launched.stderr);
+    assertSelectedClaudeChannel(launched.doc,mode);
+    assert.deepEqual(launched.doc.env,preview.doc.env);
+    assert.equal(launched.doc.env?.AWEB_IDENTITY_HOME ?? spawned.doc.env.AWEB_IDENTITY_HOME,locator,'launch leaves the captured retained locator intact');
+    assert.deepEqual(launched.doc.meta.identity,spawned.doc.meta.identity);
+    assert.equal(launched.doc.meta.source,source);
+    assert.equal(readFileSync(join(locator,'identity.yaml'),'utf8'),copied);
+    assert.equal(readFileSync(join(source,'identity.yaml'),'utf8'),copied);
+    assert.equal(logLines(base).filter(l=>l.argv.slice(0,2).join(' ')==='workspace connect').length,1,'launch does not reconnect or reseat the identity');
+  } finally {rmSync(base,{recursive:true,force:true});}
 });

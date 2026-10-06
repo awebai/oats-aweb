@@ -130,19 +130,22 @@ const CHANNEL_BRIEF = {
   pi: " Notification delivery: the aweb pi extension (@awebai/pi) pushes incoming mail/chat into this pi session; the host wake broker does not deliver to this home.",
 };
 const TAIL = " Load the oats-aweb skill before messaging: `oats aweb teams --json` shows your teams, `oats aweb roster` the team's members and workspaces, each labelled. Coordination stays in your deployment's task layer.";
-function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, mismatch, warning: extraWarning }) {
+function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, claudeChannelMode = "approved", mismatch, warning: extraWarning }) {
   const meta = { team, alias, delivery, defaultTeam: { label: "default", team, from: "deployment" }, left: [], runtime, identity: { mode: "local", alias, team, address: null, resident: null } };
   // Under channel, Claude and pi use their own channel; every other runtime the broker.
   const broker = delivery === "session" || !["claude", "pi"].includes(runtime);
   const env = { ...(broker ? { AWEB_DELIVERY: "session" } : {}), AWEB_IDENTITY_HOME: join(home, ".aw") };
   const brief = `Comms: you have an aweb identity — alias "${alias}" on team ${team}, this deployment's default team.${mismatch ? ` [WARNING: joined ${team}, expected ${TEAM}]` : ""}${broker ? SESSION_BRIEF : CHANNEL_BRIEF[runtime]}${TAIL}`;
-  const launch = runtime === "claude" && !broker ? { launch: { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" } } : {};
-  // A Claude channel start waits at Claude Code's development-channels confirmation (1.21.1).
-  const warnings = [mismatch ? `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` : extraWarning, launch.launch ? DEV_CONFIRMATION_WARNING : undefined].filter(Boolean);
+  const launch = runtime === "claude" && !broker ? { launch: { claude: `${claudeChannelMode === "approved" ? "--channels" : "--dangerously-load-development-channels"} plugin:aweb-channel@awebai-marketplace` } } : {};
+  if (launch.launch) meta.claudeChannelMode = claudeChannelMode;
+  // The changed default is deliberate: approved requests need admission, while
+  // explicit local development retains its confirmation warning.
+  const warnings = [mismatch ? `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` : extraWarning, launch.launch ? (claudeChannelMode === "approved" ? APPROVED_WARNING : DEV_CONFIRMATION_WARNING) : undefined].filter(Boolean);
   const warning = warnings.length ? { warning: warnings.join(" | ") } : {};
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
-const DEV_CONFIRMATION_WARNING = `oats-aweb: channel-dev-confirmation — Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance's terminal: aweb-channel is not on Claude Code's approved channel list, so it is loaded with --dangerously-load-development-channels`;
+const DEV_CONFIRMATION_WARNING = `oats-aweb: channel-dev-confirmation — Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance's terminal: development mode is for deliberate local channel development only; never answer the prompt automatically or use it as an admission fallback`;
+const APPROVED_WARNING = `oats-aweb: claude-channel-enrollment-unverified — effective approved-channel admission for aweb-channel@awebai-marketplace has not been verified; Claude may run with no channel wake, potentially without Claude reporting that the channel was not registered. For unattended homes where broker delivery is authorized, an operator may select the supported delivery: session alternative; do not override an explicit native-channel requirement. Development mode is only for local channel development, never an automatic fallback`;
 
 test("spawn output is pinned byte for byte for the same inputs", (t) => {
   for (const [delivery, runtime] of [["session", "claude"], ["channel", "claude"], ["channel", "pi"], ["channel", "codex"]]) {
@@ -150,6 +153,15 @@ test("spawn output is pinned byte for byte for the same inputs", (t) => {
     const r = fx.hook("spawn");
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(r.stdout, expected117(fx.home, { delivery, runtime }), `${delivery}/${runtime}`);
+  }
+});
+
+test("explicit Claude selector output is pinned byte for byte for both modes", (t) => {
+  for (const claudeChannelMode of ["approved", "development"]) {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+    const r = fx.hook("spawn", { OATS_SETTINGS: JSON.stringify({root:fx.ws, delivery:"channel", claudeChannelMode}) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.stdout, expected117(fx.home, {delivery:"channel", runtime:"claude", claudeChannelMode}));
   }
 });
 
@@ -187,7 +199,7 @@ test("a token echoed back as the alias never reaches meta, the brief or any outp
     assert.equal(r.doc.meta.alias, "probe");
     assert.equal(r.doc.meta.identity.alias, "probe");
     assert.match(r.doc.brief, /alias "probe" on team/);
-    assert.equal(r.doc.warning, delivery === "channel" ? `${ALIAS_WARNING("probe")} | ${DEV_CONFIRMATION_WARNING}` : ALIAS_WARNING("probe"));
+    assert.equal(r.doc.warning, delivery === "channel" ? `${ALIAS_WARNING("probe")} | ${APPROVED_WARNING}` : ALIAS_WARNING("probe"));
     assert.doesNotMatch(r.stdout + r.stderr, /SUPERSECRET/);
     assert.equal(r.stdout, expected117(fx.home, { alias: "probe", delivery, runtime, warning: ALIAS_WARNING("probe") }));
   }

@@ -18,7 +18,8 @@ const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
 const BINDING = join(CAPABILITY, "bin", "oats-aweb-binding.mjs");
-const CHANNEL_FLAG = "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace";
+const CHANNEL_FLAG = "--channels plugin:aweb-channel@awebai-marketplace";
+const DEV_CHANNEL_FLAG = "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace";
 
 function tempDir(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-118-")));
@@ -405,20 +406,20 @@ test("readiness reports an outdated wake daemon for a codex channel home", (t) =
 const DEV_CONFIRMATION = /channel-dev-confirmation — Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/;
 
 test("a Claude start under channel says it will wait at the development-channels confirmation, preview and real alike", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: {claudeChannelMode:"development"} });
   const meta = fx.spawn().meta;
   const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
   assert.equal(preview.status, 0, preview.stdout + preview.stderr);
   assert.match(preview.doc.warning, DEV_CONFIRMATION);
   const real = fx.launch(meta, "claude");
   assert.equal(real.status, 0, real.stdout + real.stderr);
-  assert.deepEqual(real.doc.launch, { claude: CHANNEL_FLAG });
+  assert.deepEqual(real.doc.launch, { claude: DEV_CHANNEL_FLAG });
   assert.match(real.doc.warning, DEV_CONFIRMATION);
   assert.match(real.doc.warning, /^oats-aweb: /);
 });
 
 test("the confirmation line joins the start's other warnings", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" } });
+  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha", claudeChannelMode:"development" } });
   const meta = fx.spawn().meta;
   const unmapped = { OATS_TEAMS: JSON.stringify([{ label: "default", team: "legacy:example.test", default: true, from: "local" }]) };
   const r = fx.launch(meta, "claude", { extra: unmapped });
@@ -428,16 +429,16 @@ test("the confirmation line joins the start's other warnings", (t) => {
 });
 
 test("a Claude spawn under channel says it too: the spawn's own start carries the flag", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: {claudeChannelMode:"development"} });
   const r = fx.hook("spawn");
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.deepEqual(r.doc.launch, { claude: CHANNEL_FLAG });
+  assert.deepEqual(r.doc.launch, { claude: DEV_CHANNEL_FLAG });
   assert.match(r.doc.warning, DEV_CONFIRMATION);
 });
 
 test("spawns and starts without the Claude channel flag carry no confirmation line", (t) => {
   for (const [delivery, runtime] of [["channel", "codex"], ["channel", "pi"], ["session", "claude"]]) {
-    const fx = fixture(t, { delivery, runtime });
+    const fx = fixture(t, { delivery, runtime, settings:{claudeChannelMode:"development"} });
     const spawned = fx.hook("spawn");
     assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
     assert.doesNotMatch(spawned.doc.warning || "", /channel-dev-confirmation/, `${delivery}/${runtime} spawn`);
@@ -451,7 +452,7 @@ test("spawns and starts without the Claude channel flag carry no confirmation li
 
 test("readiness warns channel-dev-confirmation for a home whose last start was Claude under channel", (t) => {
   for (const [delivery, runtime, warns] of [["channel", "claude", true], ["channel", "codex", false], ["channel", "pi", false], ["session", "claude", false]]) {
-    const fx = fixture(t, { delivery, runtime });
+    const fx = fixture(t, { delivery, runtime, settings:{claudeChannelMode:"development"} });
     fx.record(fx.spawn().meta, runtime);
     const result = fx.readiness();
     const warning = (result.warnings || []).find((w) => w.code === "channel-dev-confirmation");
@@ -604,7 +605,7 @@ test("null-home readiness remains prerequisites only", (t) => {
 });
 
 test("mixed native primary retains failed joined problem and confirmation guidance", (t) => {
-  const fx = fixture(t, {delivery:"channel",runtime:"claude",settings:{join:"alpha"}});
+  const fx = fixture(t, {delivery:"channel",runtime:"claude",settings:{join:"alpha",claudeChannelMode:"development"}});
   fx.record(fx.spawn().meta,"claude"); const status=transportStatus(fx,"claude"); status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
   const result=fx.readiness(); assert.equal(result.status,"unavailable");
   assert.ok(result.warnings.some(p=>p.code==='native-receive-unproven'));
@@ -939,7 +940,7 @@ for (const record of ['instance.json', '.oats-aweb/teams.json']) test(`dangling 
 
 for(const joinedTeams of [null,[null],[{label:'alpha',team:'a:example.test',identityHome:'relative'}]]) test(`malformed captured membership ${JSON.stringify(joinedTeams)} cannot hide behind valid disk`,t=>{
   const fx=fixture(t,{delivery:'channel',runtime:'claude'}),meta=fx.spawn().meta;
-  delete meta.delivery;delete meta.runtime;meta.joinedTeams=joinedTeams;fx.record(meta,undefined);
+  delete meta.delivery;delete meta.runtime;delete meta.claudeChannelMode;meta.joinedTeams=joinedTeams;fx.record(meta,undefined);
   const result=fx.readiness();
   assert.equal(result.status,'unavailable',JSON.stringify(result));
   assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'));
@@ -1049,4 +1050,140 @@ test('unchanged sanitized peer status warns about retained error and observation
   assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
   assert.ok(result.warnings.some(w=>w.code==='receive-observation-aged'));
   assert.deepEqual(status,before);
+});
+
+for(const mode of [undefined,'approved']) test(`approved selector emits the fixed approved argument for ${mode??'omission'}`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'claude',settings:mode===undefined?{}:{claudeChannelMode:mode}});
+  const doc=fx.spawn();
+  assert.deepEqual(doc.launch,{claude:'--channels plugin:aweb-channel@awebai-marketplace'});
+  assert.equal(doc.meta.claudeChannelMode,'approved');
+  assert.match(doc.warning,/claude-channel-enrollment-unverified/);
+  assert.match(doc.warning,/no channel wake/i);
+  assert.match(doc.warning,/without.*report/i);
+  fx.record(doc.meta,'claude');
+  assert.ok(fx.readiness().warnings.some(w=>w.code==='claude-channel-enrollment-unverified'));
+});
+
+test('approved selector refuses explicit null before provider calls',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'claude',settings:{claudeChannelMode:null}});
+  const before=snapshot(fx.home);
+  const r=fx.hook('spawn');
+  assert.notEqual(r.status,0);
+  assert.match(r.doc.warning,/claudeChannelMode/);
+  assert.deepEqual(fx.fake.readCalls(),[]);
+  assert.deepEqual(snapshot(fx.home),before);
+});
+
+for (const value of [null, '', 'other', 1, false, [], {}]) test(`Claude selector rejects ${JSON.stringify(value)} before spawn/launch/preview/check effects`, t => {
+  const fx=fixture(t,{settings:{claudeChannelMode:value}});
+  const before=snapshot(fx.home);
+  for(const event of ['spawn','launch']) for(const preview of ['', '1']) {
+    const r=fx.hook(event,{OATS_LAUNCH_PREVIEW:preview});
+    assert.notEqual(r.status,0,r.stdout);
+    assert.match(r.doc.warning,/settings\.oats\.aweb\.claudeChannelMode/);
+  }
+  const result=fx.readiness({targetHome:null});
+  assert.equal(result.status,'needs-configuration');
+  assert.match(JSON.stringify(result.problems),/claudeChannelMode/);
+  assert.deepEqual(fx.fake.readCalls(),[]);
+  assert.deepEqual(snapshot(fx.home),before);
+});
+
+for(const mode of ['approved','development']) test(`local Claude selector ${mode} preserves preview and real launch semantics`,t=>{
+  const fx=fixture(t,{settings:{claudeChannelMode:mode}});
+  const spawned=fx.spawn(),argument=mode==='approved'?CHANNEL_FLAG:DEV_CHANNEL_FLAG;
+  assert.equal(spawned.meta.claudeChannelMode,mode);
+  assert.deepEqual(spawned.launch,{claude:argument});
+  const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+  const preview=fx.launch(spawned.meta,'claude',{extra:{OATS_LAUNCH_PREVIEW:'1'}});
+  assert.equal(preview.status,0,preview.stdout);
+  assert.deepEqual(preview.doc.launch,{claude:argument});
+  assert.equal(preview.doc.meta,undefined);
+  assert.deepEqual(fx.fake.readCalls().slice(calls),[]);
+  assert.deepEqual(snapshot(fx.home),before);
+  const real=fx.launch(spawned.meta,'claude');
+  assert.equal(real.status,0,real.stdout);
+  assert.deepEqual(real.doc.launch,{claude:argument});
+  assert.equal(real.doc.meta.claudeChannelMode,mode);
+  for(const [runtime,delivery] of [['pi','channel'],['codex','channel'],['claude','session']]) {
+    const changed=fx.launch(spawned.meta,runtime,{delivery});
+    assert.equal(changed.status,0,changed.stdout);
+    assert.equal(changed.doc.launch,undefined);
+    assert.equal(changed.doc.meta.claudeChannelMode,undefined);
+  }
+});
+
+for(const [name,mode,hooks,code] of [
+  ['captured approved against current development','approved',{},'claude-channel-enrollment-unverified'],
+  ['captured development against current approved','development',{},'channel-dev-confirmation'],
+  ['historical exact development contribution',undefined,{contributions:[{capability:'oats.aweb',launch:{claude:DEV_CHANNEL_FLAG}}]},'channel-dev-confirmation'],
+  ['historical exact approved contribution',undefined,{contributions:[{capability:'oats.aweb',launch:{claude:CHANNEL_FLAG}}]},'claude-channel-enrollment-unverified'],
+  ['historical aggregate development',undefined,{launch:{claude:DEV_CHANNEL_FLAG}},'channel-dev-confirmation'],
+  ['historical absent contribution',undefined,{},'claude-channel-mode-unproven'],
+  ['historical combined argument is not provider proof',undefined,{launch:{claude:DEV_CHANNEL_FLAG+' --other'}},'claude-channel-mode-unproven'],
+  ['contradictory captured contribution','approved',{contributions:[{capability:'oats.aweb',launch:{claude:DEV_CHANNEL_FLAG}}]},'receive-record-unavailable'],
+  ['malformed captured contribution',undefined,{contributions:[{capability:'oats.aweb',launch:{claude:'--arbitrary'}}]},'receive-record-unavailable'],
+  ['duplicate captured contribution',undefined,{contributions:[{capability:'oats.aweb',launch:{claude:CHANNEL_FLAG}},{capability:'oats.aweb',launch:{claude:CHANNEL_FLAG}}]},'receive-record-unavailable'],
+  ['malformed captured mode',null,{},'receive-record-unavailable'],
+  ['recorded mode conflicts with exact aggregate despite absent own receipt','approved',{launch:{claude:DEV_CHANNEL_FLAG},contributions:[]},'receive-record-unavailable'],
+  ['malformed contributions array',undefined,{contributions:[null]},'receive-record-unavailable'],
+  ['contradictory aggregate and provider arguments',undefined,{launch:{claude:DEV_CHANNEL_FLAG},contributions:[{capability:'oats.aweb',launch:{claude:CHANNEL_FLAG}}]},'receive-record-unavailable'],
+]) test(`Claude selector readiness: ${name}`,t=>{
+  const fx=fixture(t,{settings:{claudeChannelMode:mode==='approved'?'development':'approved'}});
+  const meta=fx.spawn().meta;
+  delete meta.claudeChannelMode;
+  if(mode!==undefined) meta.claudeChannelMode=mode;
+  writeFileSync(join(fx.home,'instance.json'),JSON.stringify({launch:{harness:'claude',hooks},capabilityMeta:{'oats.aweb':meta}}));
+  const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,code==='receive-record-unavailable'?'unavailable':'ready',JSON.stringify(result));
+  assert.ok([...result.problems,...result.warnings].some(w=>w.code===code),JSON.stringify(result));
+  if(result.status==='ready') assert.ok(result.warnings.some(w=>w.code==='native-receive-unproven'));
+  assert.equal(fx.fake.readCalls().slice(calls).filter(c=>c.args[0]==='wake').length,0);
+  assert.deepEqual(snapshot(fx.home),before);
+});
+
+for(const mode of ['approved','development']) for(const evidence of ['both','metadata','receipt']) {
+  const receipts=evidence!=='metadata';
+  const own=mode==='approved'?CHANNEL_FLAG:DEV_CHANNEL_FLAG;
+  const opposite=mode==='approved'?DEV_CHANNEL_FLAG:CHANNEL_FLAG;
+  for(const [kind,aggregate,failed] of [
+    ['consistent',own+' --verbose',false],
+    ['opposite',opposite+' --verbose',true],
+    ['both',own+' '+opposite+' --verbose',true],
+    ['quoted unrelated text',own+` --message "${opposite}"`,false],
+    ['single-quoted unrelated text',own+` --message '${opposite}'`,false],
+    ['different plugin',own+' '+opposite.replace('@awebai-marketplace','@another-marketplace'),false],
+    ['positional text',own+' -- '+opposite,false],
+    ['ambiguous shell expression',own+' $(echo ignored)',true],
+    ['unterminated quote',own+' --message "unfinished',true],
+  ]) test(`multi-provider Claude aggregate ${mode}/${evidence}/${kind}`,async t=>{
+    const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+    const home=tempDir(t);
+    mkdirSync(join(home,'.aw'));
+    mkdirSync(join(home,'.oats-aweb'));
+    writeFileSync(join(home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
+    const hooks={launch:{claude:aggregate},...(receipts?{contributions:[{capability:'oats.aweb',launch:{claude:own}},{capability:'fixture.logging',launch:{claude:'--verbose'}}]}:{})};
+    writeFileSync(join(home,'instance.json'),JSON.stringify({launch:{harness:'claude',hooks},capabilityMeta:{'oats.aweb':{delivery:'channel',runtime:'claude',...(evidence==='receipt'?{}:{claudeChannelMode:mode})}}}));
+    const before=snapshot(home),result=expectedReceive(home);
+    assert.equal(result.problems[0]?.code,failed?'receive-record-unavailable':undefined,JSON.stringify(result));
+    if(!failed) assert.ok(result.warnings.some(w=>w.code===(mode==='approved'?'claude-channel-enrollment-unverified':'channel-dev-confirmation')));
+    assert.deepEqual(snapshot(home),before);
+  });
+}
+
+for(const [name,aggregate,failed] of [
+  ['one selector with extra argument',DEV_CHANNEL_FLAG+' --verbose',false],
+  ['both selectors',CHANNEL_FLAG+' '+DEV_CHANNEL_FLAG+' --verbose',true],
+]) test(`multi-provider Claude aggregate without provenance: ${name}`,async t=>{
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t);
+  mkdirSync(join(home,'.aw'));
+  mkdirSync(join(home,'.oats-aweb'));
+  writeFileSync(join(home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
+  writeFileSync(join(home,'instance.json'),JSON.stringify({launch:{harness:'claude',hooks:{launch:{claude:aggregate}}},capabilityMeta:{'oats.aweb':{delivery:'channel',runtime:'claude'}}}));
+  const before=snapshot(home),result=expectedReceive(home);
+  assert.equal(result.problems[0]?.code,failed?'receive-record-unavailable':undefined,JSON.stringify(result));
+  if(!failed) assert.ok(result.warnings.some(w=>w.code==='claude-channel-mode-unproven'));
+  assert.deepEqual(snapshot(home),before);
 });
