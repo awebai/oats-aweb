@@ -288,7 +288,10 @@ teams; it does not have a provider `team` setting.
   is how one deployment mints into several aweb teams.
 - `residents`: host-only resident custody roots for `identity.mode: global`.
 - `join`: comma-separated eligible labels to join at spawn.
-- `identity`: local by default; global mode uses a named resident grant.
+- `identity`: local by default; global mode consumes a pre-existing named
+  resident through a worker grant. For creation versus reuse and the complete
+  authority/custody/composition journey, read
+  [Existing-team GLOBAL resident](references/existing-team-global-resident.md).
 
 There is deliberately no `settings.oats.aweb.team` in 1.17. Use `oats teams`
 and `oats soul teams`; a stale `team` setting is refused with a message saying
@@ -303,6 +306,12 @@ team `T` uses `roots[T]`, else `root`.
 
 **Setup acts:**
 
+Setup handles deployment-root onboarding; it does not create a fresh GLOBAL
+resident. The [existing-team GLOBAL resident guide](references/existing-team-global-resident.md)
+separates native creation/reuse from provider custody/grant consumption, with
+protected diagnostics and stop rules. Worker authority does not authorize these
+operator acts.
+
 From a deployment directory (outside an instance home), call setup through any
 soul that uses this messaging provider: `oats aweb setup --soul <any soul with messaging>`.
 The provider consumes the kernel-forwarded `--soul` dispatch flag; it is not a
@@ -310,8 +319,10 @@ team selector and should not appear in any `aw` call.
 
 - `oats aweb setup --username <u>` → `aw init --new-account --username <u>` for
   a missing hosted root.
-- `AWEB_API_KEY=<key> oats aweb setup` → `aw init` for the hosted team behind
-  the API key.
+- `oats aweb setup` with `AWEB_API_KEY` supplied through the authorized operator's
+  protected child environment → plain `aw init` for the existing hosted team.
+  Never put the key in a literal command/history. Setup has no `--global`;
+  `--name`/`--service` apply to invite join, not fresh GLOBAL creation.
 - `oats aweb setup --create <label> --namespace <domain>` → owner/admin act for
   a customer-controlled namespace: normalize the label, create the team, require
   aw to return `team_id` and an invite token, accept into a per-team root, record

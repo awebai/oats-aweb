@@ -324,7 +324,10 @@ Host-owned settings live under `settings.oats.aweb` (normally in
 - `residents`: map of resident name to absolute custody directory for
   `identity.mode: global`; host-only because it points at custody material.
 - `join`: comma-separated eligible labels to join at spawn.
-- `identity`: local by default; `global` uses a named resident grant.
+- `identity`: local by default; `global` uses a named resident grant. For fresh
+  GLOBAL creation in an existing hosted team versus resident reuse, follow the
+  [existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md).
+  Global spawn consumes a provisioned resident; it does not create one.
 
 There is deliberately **no** `settings.oats.aweb.team` in 1.17. Team selection
 belongs to the OATS team model (`oats teams`, `oats soul teams`) and reaches the
@@ -345,15 +348,21 @@ team `T` uses `roots[T]` when present, otherwise `root`.
 
 ### Setup acts
 
-`oats aweb setup` is the only onboarding path; spawn/mint/retire never onboard.
+`oats aweb setup` handles the provider's deployment-root onboarding acts below;
+it is not the fresh GLOBAL resident creation path. Global spawn consumes a
+pre-existing resident and mints a worker grant. Use the
+[existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md)
+for authority, destination, native creation/reuse, custody and acceptance boundaries.
 From a deployment directory (outside an instance home), dispatch setup through any
 soul that uses the messaging provider, for example `oats aweb setup --soul <any soul with messaging>`; the provider consumes the kernel-forwarded `--soul` flag and does not use it as team policy.
 Supported acts:
 
 - `oats aweb setup --username <u>`: for a missing hosted root, runs
   `aw init --new-account --username <u>` and reports the created default team.
-- `AWEB_API_KEY=<key> oats aweb setup`: runs `aw init` for the hosted team behind
-  the API key; the key is never printed.
+- `oats aweb setup` with the selected team API key supplied only through the
+  operator's protected child environment (`AWEB_API_KEY`): runs plain `aw init`
+  for that hosted team. No `setup --global` exists; `--name`/`--service` are
+  invite-join options. Do not place the key in a literal command or history.
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
   a customer-controlled namespace. It normalizes `<label>` to aweb's team-name
   rule, runs `aw id team create --name <normalized> --namespace <domain>`,
