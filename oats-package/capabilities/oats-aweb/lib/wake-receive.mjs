@@ -67,6 +67,23 @@ export function selectClaudeChannel(mode = 'approved') {
   return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode], warning: mode === 'approved' ? {...CHANNEL_ENROLLMENT_UNVERIFIED} : {...CHANNEL_DEV_CONFIRMATION}};
 }
 
+/** Recognize only the provider's literal bare selector pairs in an aggregate.
+ * Quoted/escaped text is opaque: another capability's message is not a selector.
+ * This detects contradictions, never assigns provider provenance or rewrites argv. */
+function aggregateClaudeModes(combined) {
+  if (combined === undefined) return [];
+  const bare = combined.replace(/'[^']*'|"(?:\\[\s\S]|[^"\\])*"|\\[\s\S]/g, text => 'x'.repeat(text.length));
+  if (/['"\\]/.test(bare)) throw new Error('captured Claude channel aggregate quoting is ambiguous');
+  const options = bare.split(/(?:^|\s)--(?=\s|$)/, 1)[0];
+  const modes = Object.entries(CLAUDE_CHANNEL_ARGUMENTS).filter(([, argument]) => {
+    const [flag, plugin] = argument.split(' ');
+    return new RegExp(`(?:^|\\s)${flag}\\s+${plugin.replaceAll('.', '\\.')}(?=\\s|$)`).test(options);
+  }).map(([mode]) => mode);
+  // The fixed bare-word contract does not interpret shell expressions.
+  if (modes.length && /[$`;|&<>(){}*?~#]/.test(options)) throw new Error('captured Claude channel aggregate selector context is ambiguous');
+  return modes;
+}
+
 /** Only exact provider contributions identify historical mode. The combined
  * hook argument is a fallback for old records without per-provider receipts. */
 function capturedClaudeChannel(meta, hooks) {
@@ -85,11 +102,11 @@ function capturedClaudeChannel(meta, hooks) {
   } else {
     contribution = exactCombined;
   }
-  if (contribution !== undefined && exactCombined !== undefined && contribution !== exactCombined) throw new Error('captured Claude channel contributions contradict each other');
   const contributed = Object.keys(CLAUDE_CHANNEL_ARGUMENTS).find(mode => CLAUDE_CHANNEL_ARGUMENTS[mode] === contribution);
   if (recorded !== undefined && contributed !== undefined && recorded !== contributed) throw new Error('captured Claude channel mode contradicts its contribution');
-  if (recorded !== undefined && exactCombined !== undefined && CLAUDE_CHANNEL_ARGUMENTS[recorded] !== exactCombined) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
   const mode = recorded ?? contributed;
+  const aggregateModes = aggregateClaudeModes(combined);
+  if (aggregateModes.length > 1 || (mode !== undefined && aggregateModes.some(value => value !== mode))) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
   return mode === undefined ? {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'} : selectClaudeChannel(mode).warning;
 }
 

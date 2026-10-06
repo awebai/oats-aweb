@@ -1142,3 +1142,48 @@ for(const [name,mode,hooks,code] of [
   assert.equal(fx.fake.readCalls().slice(calls).filter(c=>c.args[0]==='wake').length,0);
   assert.deepEqual(snapshot(fx.home),before);
 });
+
+for(const mode of ['approved','development']) for(const evidence of ['both','metadata','receipt']) {
+  const receipts=evidence!=='metadata';
+  const own=mode==='approved'?CHANNEL_FLAG:DEV_CHANNEL_FLAG;
+  const opposite=mode==='approved'?DEV_CHANNEL_FLAG:CHANNEL_FLAG;
+  for(const [kind,aggregate,failed] of [
+    ['consistent',own+' --verbose',false],
+    ['opposite',opposite+' --verbose',true],
+    ['both',own+' '+opposite+' --verbose',true],
+    ['quoted unrelated text',own+` --message "${opposite}"`,false],
+    ['single-quoted unrelated text',own+` --message '${opposite}'`,false],
+    ['different plugin',own+' '+opposite.replace('@awebai-marketplace','@another-marketplace'),false],
+    ['positional text',own+' -- '+opposite,false],
+    ['ambiguous shell expression',own+' $(echo ignored)',true],
+    ['unterminated quote',own+' --message "unfinished',true],
+  ]) test(`multi-provider Claude aggregate ${mode}/${evidence}/${kind}`,async t=>{
+    const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+    const home=tempDir(t);
+    mkdirSync(join(home,'.aw'));
+    mkdirSync(join(home,'.oats-aweb'));
+    writeFileSync(join(home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
+    const hooks={launch:{claude:aggregate},...(receipts?{contributions:[{capability:'oats.aweb',launch:{claude:own}},{capability:'fixture.logging',launch:{claude:'--verbose'}}]}:{})};
+    writeFileSync(join(home,'instance.json'),JSON.stringify({launch:{harness:'claude',hooks},capabilityMeta:{'oats.aweb':{delivery:'channel',runtime:'claude',...(evidence==='receipt'?{}:{claudeChannelMode:mode})}}}));
+    const before=snapshot(home),result=expectedReceive(home);
+    assert.equal(result.problems[0]?.code,failed?'receive-record-unavailable':undefined,JSON.stringify(result));
+    if(!failed) assert.ok(result.warnings.some(w=>w.code===(mode==='approved'?'claude-channel-enrollment-unverified':'channel-dev-confirmation')));
+    assert.deepEqual(snapshot(home),before);
+  });
+}
+
+for(const [name,aggregate,failed] of [
+  ['one selector with extra argument',DEV_CHANNEL_FLAG+' --verbose',false],
+  ['both selectors',CHANNEL_FLAG+' '+DEV_CHANNEL_FLAG+' --verbose',true],
+]) test(`multi-provider Claude aggregate without provenance: ${name}`,async t=>{
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t);
+  mkdirSync(join(home,'.aw'));
+  mkdirSync(join(home,'.oats-aweb'));
+  writeFileSync(join(home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
+  writeFileSync(join(home,'instance.json'),JSON.stringify({launch:{harness:'claude',hooks:{launch:{claude:aggregate}}},capabilityMeta:{'oats.aweb':{delivery:'channel',runtime:'claude'}}}));
+  const before=snapshot(home),result=expectedReceive(home);
+  assert.equal(result.problems[0]?.code,failed?'receive-record-unavailable':undefined,JSON.stringify(result));
+  if(!failed) assert.ok(result.warnings.some(w=>w.code==='claude-channel-mode-unproven'));
+  assert.deepEqual(snapshot(home),before);
+});
