@@ -5,7 +5,7 @@
 // only: a start on the channel path deregisters the home from the broker, a
 // start on the broker path registers it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -61,10 +61,10 @@ function fixture(t, { delivery, runtime = "claude", settings = {}, daemon = true
    *  and the meta this provider returned. */
   const record = (meta, harness) => writeFileSync(join(home, "instance.json"), JSON.stringify({ harness, launch: { harness }, capabilityMeta: { "oats.aweb": meta } }));
   /** The binding readiness check for this home, as the kernel asks it. */
-  const readiness = () => {
-    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: merged, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: env.OATS_WORKSPACE_KEY, deployment: ws, soul: "dev", team: "default", instance: "dev-1", home } } };
+  const readiness = ({ extra = {}, targetHome = home } = {}) => {
+    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: merged, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: env.OATS_WORKSPACE_KEY, deployment: ws, soul: "dev", team: "default", instance: "dev-1", home: targetHome } } };
     const { OATS_SETTINGS, OATS_HOME, OATS_RUNTIME, ...rest } = env;
-    const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: home, input: JSON.stringify(input), env: { ...rest, OATS_INSTANCE_HOME: home }, encoding: "utf8", timeout: 20000 });
+    const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: home, input: JSON.stringify(input), env: { ...rest, OATS_INSTANCE_HOME: home, ...extra }, encoding: "utf8", timeout: 20000 });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     return assertKernelCheckAnswerRule(r.stdout, input, "oats-aweb binding check").result;
   };
@@ -384,7 +384,8 @@ test("readiness requires the wake daemon for a home the broker delivers to, by i
     const result = fx.readiness();
     const problem = result.problems.find((p) => p.code === "wake-daemon-not-running");
     assert.equal(!!problem, relies, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
-    if (relies) assert.equal(result.status, "needs-configuration");
+    assert.equal(result.status, relies ? "unavailable" : "ready");
+    if (!relies) assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
   }
 });
 
@@ -455,9 +456,14 @@ test("readiness warns channel-dev-confirmation for a home whose last start was C
     const result = fx.readiness();
     const warning = (result.warnings || []).find((w) => w.code === "channel-dev-confirmation");
     assert.equal(!!warning, warns, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
+    if (delivery === "channel" && runtime === "pi") {
+      assert.equal(result.status, "ready", "configured Pi native route carries uncertainty without a broker primary");
+      assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
+    }
     if (warns) {
       assert.match(warning.message, /^Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/);
-      assert.equal(result.status, "ready", "a warning never changes the status");
+      assert.equal(result.status, "ready", "configured native route carries a connection uncertainty warning");
+      assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
   }
 });
@@ -473,4 +479,574 @@ test("the skill's readiness table and the changelog name channel-dev-confirmatio
   assert.match(skill, /\| `channel-dev-confirmation` \|/);
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
   assert.match(changelog, /^## 1\.21\.1\n[\s\S]*channel-dev-confirmation/m);
+});
+
+// Released status fields; no worker or successful-prompt telemetry invented.
+for (const runtime of ["codex", "claude"]) test(`target readiness rejects daemon-green paused ${runtime} target`, (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
+  fx.record(fx.spawn().meta, runtime);
+  const reg = fx.registered();
+  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.21", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "streaming" })) }] });
+  assert.equal(fx.readiness().status, "unavailable");
+});
+
+
+// Synthetic mechanics fixture using only released aw v1.36.21 fields. This
+// does not claim that a live broker delivered or a model consumed any message.
+// aw v1.36.21/v1.36.23 wake/stream.go names StreamLive "streaming";
+// wake/broker.go copies that phase into receive_identities[].stream_phase.
+function transportStatus(fx, runtime = "codex") {
+  const now = new Date().toISOString();
+  const external = runtime === "codex";
+  const reg = fx.registered();
+  const receive = (reg.receive_identities || [{ identity_home: reg.identity_home, controls: true }]).map(r => ({
+    ...r, delivery_owner: "session-hints", stream_admitted: true, stream_phase: "streaming",
+  }));
+  return { updated_at: now, daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.21", instances: [{
+    ...reg, identity_home: receive[0].identity_home, runtime_delivery: external ? "external-session" : "native-channel",
+    phase: "active", paused: false, last_inspect_at: now, last_state: "unknown",
+    channel_core: { running: true, readiness_state: "unknown", readiness_waiting: "inspect_done" }, receive_identities: receive,
+  }] };
+}
+
+function snapshot(dir) {
+  return readdirSync(dir, {withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).map(e => [e.name, e.isDirectory() ? snapshot(join(dir,e.name)) : readFileSync(join(dir,e.name)).toString('base64')]);
+}
+
+test("synthetic released unknown-nonshell streaming evidence passes Codex route prerequisites, read-only and independent of caller", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: {join: "alpha"} });
+  fx.record(fx.spawn().meta, "codex");
+  fx.fake.setStatus(transportStatus(fx));
+  const before = snapshot(fx.home), calls = fx.fake.readCalls().length;
+  const result = fx.readiness({extra: {AWEB_IDENTITY_HOME: "/foreign/identity", OATS_RUNTIME: "claude"}});
+  assert.equal(result.status, "ready", JSON.stringify(result));
+  assert.deepEqual(snapshot(fx.home), before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c => c.args), [["version"], ["wake", "status", "--json"]]);
+  assert.match(result.warnings.find(w => w.code === "joined-team-receive").message, /observable broker route prerequisites/);
+});
+
+const defects = [
+  ["malformed event policy", s => s.instances[0].receive_identities[0].event_classes = [null], "wake-target-binding"],
+  ["malformed worker errors", s => s.instances[0].channel_core.binding_errors = null, "wake-status-unavailable"],
+  ["invalid inspection", s => s.instances[0].last_inspect_at = "invalid", "receive-inspection-unproven"],
+  ["future inspection", s => s.instances[0].last_inspect_at = "2999-01-01T00:00:00Z", "receive-inspection-unproven"],
+  ["inspection newer than snapshot", s => s.updated_at = new Date(Date.parse(s.instances[0].last_inspect_at)-1).toISOString(), "receive-inspection-unproven"],
+  ["future snapshot", s => s.updated_at = "2999-01-01T00:00:00Z", "wake-status-stale"],
+  ["malformed snapshot", s => s.updated_at = "invalid", "wake-status-stale"],
+  ["shell endpoint", s => {s.instances[0].last_state="shell"; s.instances[0].channel_core.readiness_state="shell";}, "receive-inspection-unproven"],
+  ["absent endpoint", s => {s.instances[0].last_state="not-launched"; s.instances[0].channel_core.readiness_state="not-launched";}, "receive-inspection-unproven"],
+  ["failed inspection retaining unknown", s => {s.instances[0].channel_core.readiness_waiting="inspect_error"; s.instances[0].channel_core.readiness_error="unavailable";}, "wake-worker-unavailable"],
+  ["inspection error without diagnostic", s => s.instances[0].channel_core.readiness_waiting="inspect_error", "receive-inspection-unproven"],
+  ["old failed inspection", s => {s.instances[0].last_inspect_at="2020-01-01T00:00:00Z"; s.instances[0].channel_core.readiness_waiting="inspect_error";}, "receive-inspection-unproven"],
+  ["inspect_start retaining error", s => {s.instances[0].channel_core.readiness_waiting="inspect_start"; s.instances[0].channel_core.readiness_error="previous inspection failed";}, "wake-worker-unavailable"],
+  ["inspect_start retaining stopped endpoint", s => {s.instances[0].channel_core.readiness_waiting="inspect_start"; s.instances[0].last_state="stopped"; s.instances[0].channel_core.readiness_state="stopped";}, "receive-inspection-unproven"],
+  ["inspect_start retaining shell endpoint", s => {s.instances[0].channel_core.readiness_waiting="inspect_start"; s.instances[0].last_state="shell"; s.instances[0].channel_core.readiness_state="shell";}, "receive-inspection-unproven"],
+  ["wrong-type observation", s => s.instances[0].channel_core.readiness_state=17, "wake-status-unavailable"],
+  ["wrong-type inspection", s => s.instances[0].last_inspect_at=17, "receive-inspection-unproven"],
+  ["wrong-type snapshot", s => s.updated_at=17, "wake-status-stale"],
+  ["contradictory usable observation states", s => s.instances[0].last_state="idle", "wake-status-unavailable"],
+  ["inspection error with empty diagnostic", s => {s.instances[0].channel_core.readiness_waiting="inspect_error"; s.instances[0].channel_core.readiness_error="";}, "receive-inspection-unproven"],
+  ["conflicting observation state", s => s.instances[0].last_state="stopped", "receive-inspection-unproven"],
+  ["worker paused", s => s.instances[0].channel_core.paused=true, "wake-worker-unavailable"],
+  ["readiness paused", s => s.instances[0].channel_core.readiness_paused=true, "wake-worker-unavailable"],
+  ["worker error without completed inspection", s => {s.instances[0].channel_core.last_error="failed"; s.instances[0].channel_core.readiness_waiting="inspect_start";}, "wake-worker-unavailable"],
+  ["target error", s => s.instances[0].last_error="failed", "wake-worker-unavailable"],
+  ["missing target", s => s.instances = [], "wake-target-missing"],
+  ["duplicate target", s => s.instances.push(s.instances[0]), "wake-target-missing"],
+  ["inactive", s => s.instances[0].phase = "inactive", "wake-target-inactive"],
+  ["pending", s => s.instances[0].phase = "pending", "wake-target-inactive"],
+  ["paused", s => s.instances[0].paused = true, "wake-target-paused"],
+  ["pause unknown", s => delete s.instances[0].paused, "wake-target-paused"],
+  ["worker stopped", s => s.instances[0].channel_core.running = false, "wake-worker-unavailable"],
+  ["worker missing at floor", s => {s.daemon_version = "1.36.13"; delete s.instances[0].channel_core;}, "wake-worker-unavailable"],
+  ["worker binding error", s => s.instances[0].channel_core.binding_errors = {alpha: "refused"}, "wake-worker-unavailable"],
+  ["refused stream", s => s.instances[0].receive_identities[0].stream_admitted = false, "wake-stream-unavailable"],
+  ["missing stream admission", s => delete s.instances[0].receive_identities[0].stream_admitted, "wake-stream-unavailable"],
+  ...["starting", "retrying", "quarantined", "stopped", "connected"].map(phase => [
+    `non-live stream phase ${phase}`, s => s.instances[0].receive_identities[0].stream_phase = phase, "wake-stream-unavailable",
+  ]),
+  ["missing stream phase", s => delete s.instances[0].receive_identities[0].stream_phase, "wake-stream-unavailable"],
+  ["stream error", s => s.instances[0].receive_identities[0].stream_error = "refused", "wake-stream-unavailable"],
+  ["missing binding", s => s.instances[0].receive_identities.pop(), "wake-target-binding"],
+  ["extra binding", s => s.instances[0].receive_identities.push({...s.instances[0].receive_identities[0], identity_home: "/wrong"}), "wake-target-binding"],
+  ["wrong binding", s => s.instances[0].receive_identities[0].identity_home = "/wrong", "wake-target-binding"],
+  ["wrong owner", s => s.instances[0].receive_identities[0].delivery_owner = "native", "wake-target-binding"],
+  ["missing owner", s => delete s.instances[0].receive_identities[0].delivery_owner, "wake-target-binding"],
+  ["wrong controls", s => s.instances[0].receive_identities[0].controls = false, "wake-target-binding"],
+  ["wrong event policy", s => s.instances[0].receive_identities[0].event_classes = ["mail"], "wake-target-binding"],
+  ["wrong label", s => s.instances[0].receive_identities[0].label = "wrong", "wake-target-binding"],
+  ["wrong team", s => s.instances[0].receive_identities[0].team_id = "wrong:example.test", "wake-target-binding"],
+  ["wrong runtime", s => s.instances[0].runtime_delivery = "native-channel", "wake-target-binding"],
+  ["malformed status", s => s.instances = null, "wake-status-unavailable"],
+  ["daemon unknown", s => delete s.daemon_running, "wake-daemon-not-running"],
+  ["daemon version unknown", s => delete s.daemon_version, "wake-daemon-version-unknown"],
+];
+for (const [name, change, code] of defects) test(`target readiness rejects ${name}`, (t) => {
+  const fx = fixture(t, {delivery: "channel", runtime: "codex"});
+  fx.record(fx.spawn().meta, "codex");
+  const status = transportStatus(fx); change(status); fx.fake.setStatus(status);
+  const result = fx.readiness();
+  assert.equal(result.status, "unavailable", JSON.stringify(result));
+  assert.ok(result.problems.some(p => p.code === code), JSON.stringify(result));
+});
+
+test("unreadable or malformed status is unavailable without writes", (t) => {
+  const fx = fixture(t, {delivery:"channel", runtime:"codex"}); fx.record(fx.spawn().meta, "codex");
+  for (const raw of ["{", "null", "[]"]) { fx.fake.setStatus(raw); assert.equal(fx.readiness().status,"unavailable"); }
+  assert.equal(fx.readiness({extra:{FAKE_WAKE_FAIL:"status"}}).status,"unavailable");
+});
+
+test("null-home readiness remains prerequisites only", (t) => {
+  const fx = fixture(t, {delivery:"session",runtime:"codex"});
+  const result=fx.readiness({targetHome:null});
+  assert.equal(result.status,"ready",JSON.stringify(result));
+  assert.deepEqual(fx.wakeCalls(),[]);
+});
+
+test("mixed native primary retains failed joined problem and confirmation guidance", (t) => {
+  const fx = fixture(t, {delivery:"channel",runtime:"claude",settings:{join:"alpha"}});
+  fx.record(fx.spawn().meta,"claude"); const status=transportStatus(fx,"claude"); status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
+  const result=fx.readiness(); assert.equal(result.status,"unavailable");
+  assert.ok(result.warnings.some(p=>p.code==='native-receive-unproven'));
+  assert.ok(result.problems.some(p=>p.code==='wake-worker-unavailable'));
+  assert.ok(result.warnings.some(p=>p.code==='channel-dev-confirmation'));
+  assert.ok(result.warnings.some(p=>p.code==='joined-team-poll-only'));
+});
+
+for (const transition of ['join', 'leave']) test(`retained disk membership wins over launch metadata after ${transition}`, (t) => {
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta;
+  const status=transportStatus(fx);
+  if(transition==='join') meta.joinedTeams=[];
+  else {
+    writeFileSync(join(fx.home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
+    rmSync(meta.joinedTeams[0].identityHome,{recursive:true}); // valid old metadata may name a departed identity
+    status.instances[0].receive_identities=status.instances[0].receive_identities.filter(r=>r.controls);
+    delete status.instances[0].receive_identities[0].label;
+  }
+  fx.record(meta,'codex');fx.fake.setStatus(status);
+  assert.equal(fx.readiness().status,'ready');
+});
+
+test('captured locators and retained membership fail closed, including global early-return records', async(t)=>{
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t), primary=join(home,'.aw'), grant=join(home,'.aweb-identity-100'), newer=join(home,'.aweb-identity-200');
+  for(const dir of [primary,grant,newer,join(home,'.oats-aweb')])mkdirSync(dir);
+  const file=join(home,'.oats-aweb','teams.json');
+  const record=(meta,identityHome)=>writeFileSync(join(home,'instance.json'),JSON.stringify({capabilityMeta:{'oats.aweb':meta},launch:{hooks:{env:{AWEB_IDENTITY_HOME:identityHome}}}}));
+  const local={delivery:'channel',runtime:'codex',identity:{mode:'local',team:'default:example.test'}};
+  const global={...local,identity:{mode:'global',grant:{id:'g-100',home:grant}}};
+  const unavailable=()=>assert.equal(expectedReceive(home).problems[0]?.code,'receive-record-unavailable');
+  record(local,primary); unavailable(); // missing local state
+  for(const raw of ['{','null','{}','{"joinedTeams":[null]}','{"joinedTeams":[{"label":"alpha","team":"a:example.test","identityHome":"relative"}]}']){
+    writeFileSync(file,raw);unavailable();
+  }
+  writeFileSync(file,JSON.stringify({joinedTeams:[]}));
+  assert.equal(expectedReceive(home).bindings[0].identity_home,primary);
+  record(local,'/foreign/identity');unavailable();
+  record({...local,delivery:'invalid'},primary);unavailable();
+  record({...local,identity:{mode:'global',grant:{id:'bad'}}},primary);unavailable();
+  rmSync(file);record(global,grant);
+  assert.equal(expectedReceive(home).bindings[0].identity_home,grant,'final locator beats newer directory and ambient environment');
+  record(global,newer);unavailable();
+  record({...global,joinedTeams:[{label:'alpha',team:'a:example.test',identityHome:newer}]},grant);unavailable();
+  record({...local,retained:true,identity:{mode:'global'}},primary);
+  assert.equal(expectedReceive(home).bindings[0].identity_home,primary,'retained-root early return has no joined file');
+  writeFileSync(file,'{');unavailable();
+  writeFileSync(file,JSON.stringify({joinedTeams:[{label:'alpha',team:'a:example.test',identityHome:newer}]}));unavailable();
+  record(local,primary);
+  writeFileSync(file,JSON.stringify({joinedTeams:[{label:'alpha',team:'a:example.test',identityHome:primary}]}));unavailable();
+  const alias=join(home,'identity-alias');symlinkSync(primary,alias);
+  writeFileSync(file,JSON.stringify({joinedTeams:[]}));record(local,alias);
+  assert.equal(expectedReceive(home).problems.length,0,'canonical locator aliases agree');
+});
+
+test('observation-age warning boundaries, quiet workers and timing skew use an injected clock', async(t)=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t), primary=join(home,'.aw'), observed=Date.parse('2026-10-05T12:00:00.000Z');
+  mkdirSync(primary);
+  const expected={home,runtimeDelivery:'external-session',primary,bindings:[{identity_home:primary,controls:true,event_classes:[]}]};
+  const status={updated_at:new Date(observed).toISOString(),daemon_running:true,daemon_version_state:'reported',daemon_version:'1.36.21',instances:[{
+    home,identity_home:primary,runtime_delivery:'external-session',delivery:'session',phase:'active',paused:false,
+    receive_identities:[{identity_home:primary,delivery_owner:'session-hints',controls:true,stream_admitted:true,stream_phase:'streaming'}],
+    last_state:'unknown',last_inspect_at:new Date(observed).toISOString(),channel_core:{running:true,readiness_state:'unknown',readiness_waiting:'inspect_done'},
+  }]};
+  const evaluate=(now)=>targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  for(const elapsed of [0,29999,30000]) assert.deepEqual(evaluate(observed+elapsed),{problems:[],warnings:[]},String(elapsed));
+  let answer=evaluate(observed+30001);
+  assert.deepEqual(answer.problems,[]);
+  assert.ok(answer.warnings.some(w=>w.code==='receive-observation-aged'));
+  status.updated_at=new Date(observed+30001).toISOString();
+  answer=evaluate(observed+30001);
+  assert.deepEqual(answer.problems,[],'new snapshot with quiet old observation remains configured route ready');
+  assert.ok(answer.warnings.some(w=>w.code==='receive-observation-aged'),'fresh snapshot cannot freshen the observation');
+  // A prospective 30s poll plus inspection/jitter may exceed the warning
+  // threshold. This changes the warning, never certifies current liveness.
+  assert.match(answer.warnings.find(w=>w.code==='receive-observation-aged').message,/30(?:\.001|001| seconds)/);
+  status.instances[0].last_inspect_at=status.updated_at;
+  assert.deepEqual(evaluate(observed+30001),{problems:[],warnings:[]});
+  assert.equal(evaluate(observed+30000).problems[0].code,'wake-status-stale','future timestamp remains malformed evidence');
+  status.updated_at=new Date(observed+30000).toISOString();
+  assert.equal(evaluate(observed+30001).problems[0].code,'receive-inspection-unproven','inspection cannot follow its snapshot');
+  status.instances[0].last_inspect_at='not-a-timestamp';
+  assert.equal(evaluate(observed+30001).problems[0].code,'receive-inspection-unproven');
+  status.updated_at='2026-02-30T12:00:00Z';
+  status.instances[0].last_inspect_at=status.updated_at;
+  assert.equal(evaluate(Date.parse('2026-03-02T12:00:00Z')).problems[0].code,'wake-status-stale','impossible date must not normalize to an observation');
+});
+
+test('failed prerequisites preserve configuration diagnostics without querying a recorded receive path', (t) => {
+  const fx = fixture(t, {delivery:'channel', runtime:'codex'});
+  fx.record(fx.spawn().meta, 'codex');
+  const status = transportStatus(fx); status.instances[0].paused = true; fx.fake.setStatus(status);
+  const before = snapshot(fx.home), calls = fx.fake.readCalls().length;
+  const result = fx.readiness({extra:{OATS_DEFAULT_TEAM_ID:'not a team id'}});
+  assert.deepEqual(result, {status:'needs-configuration', problems:[{
+    code:'needs-configuration', message:'aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)',
+  }], warnings:[]});
+  assert.deepEqual(fx.fake.readCalls().slice(calls), [], 'malformed configuration runs no aw call, including receive status');
+  assert.deepEqual(snapshot(fx.home), before);
+});
+
+// Revised route claim: these four expectations were first run against a8daef48.
+for (const scenario of ['native', 'aged', 'inspect_start', 'legacy']) test(`route claim revision accepts ${scenario} with explicit uncertainty`, (t) => {
+  const native = scenario === 'native';
+  const fx = fixture(t, {delivery:'channel', runtime:native ? 'claude' : 'codex'});
+  if (scenario !== 'legacy') {
+    fx.record(fx.spawn().meta, native ? 'claude' : 'codex');
+    if (!native) {
+      const status = transportStatus(fx);
+      if (scenario === 'aged') status.instances[0].last_inspect_at = '2020-01-01T00:00:00Z';
+      if (scenario === 'inspect_start') status.instances[0].channel_core.readiness_waiting = 'inspect_start';
+      fx.fake.setStatus(status);
+    }
+  }
+  const result = fx.readiness();
+  assert.equal(result.status, 'ready', JSON.stringify(result));
+  const code = {native:'native-receive-unproven', aged:'receive-observation-aged', inspect_start:'receive-inspection-pending', legacy:'receive-ownership-unproven'}[scenario];
+  assert.ok(result.warnings.some(w => w.code === code), JSON.stringify(result));
+  assert.deepEqual(result.problems, []);
+});
+
+// Released Go status omits zero-value observation fields. This is distinct
+// from channel_core itself/running, which is required worker evidence.
+for (const [name, change] of [
+  ['missing inspection timestamp', s => delete s.instances[0].last_inspect_at],
+  ['missing snapshot timestamp', s => delete s.updated_at],
+  ['missing worker observation state', s => delete s.instances[0].channel_core.readiness_state],
+  ['missing target observation state', s => delete s.instances[0].last_state],
+  ['missing inspection waiting', s => delete s.instances[0].channel_core.readiness_waiting],
+  ['all optional observations omitted', s => {delete s.updated_at; delete s.instances[0].last_inspect_at; delete s.instances[0].last_state; delete s.instances[0].channel_core.readiness_state; delete s.instances[0].channel_core.readiness_waiting;}],
+  ['last input cannot substitute for inspection', s => {delete s.instances[0].last_inspect_at; Object.assign(s.instances[0].channel_core,{last_success_at:s.updated_at,last_input_at:s.updated_at});}],
+]) test(`route readiness warns for ${name}`, t => {
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  fx.record(fx.spawn().meta,'codex');
+  const status=transportStatus(fx); change(status); fx.fake.setStatus(status);
+  const before=snapshot(fx.home), calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.deepEqual(result.problems,[]);
+  assert.ok(result.warnings.some(w=>w.code==='receive-observation-unproven'),JSON.stringify(result));
+  assert.doesNotMatch(result.warnings.map(w=>w.message).join(' '), /has (?:a )?successful|completed successful|proves? (?:a )?successful/i,'absent observations never earn successful-history text');
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});
+
+for(const raw of ['{','null','[]','{"capabilityMeta":{"oats.aweb":null}}','{"capabilityMeta":{"oats.aweb":{"delivery":false}}}','{"capabilityMeta":{"oats.aweb":{"runtime":false}}}']) test(`legacy fallback rejects malformed supplied record ${raw}`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  writeFileSync(join(fx.home,'instance.json'),raw);
+  const before=snapshot(fx.home), calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'),JSON.stringify(result));
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version']]);
+});
+
+test('legacy fallback rejects an unreadable instance record rather than pretending it is absent',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  mkdirSync(join(fx.home,'instance.json'));
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'));
+});
+
+// Older provider records can lack delivery/runtime while retaining identity
+// and membership. The fallback qualifies unknown ownership and still checks
+// every retained joined path; caller runtime is not captured-plan authority.
+for(const failed of [false,true]) test(`legacy missing composition retains ${failed?'failed':'healthy'} joined checks`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta;
+  delete meta.delivery; delete meta.runtime;
+  fx.record(meta,undefined);
+  const status=transportStatus(fx);
+  if(failed) status.instances[0].receive_identities.find(r=>r.label==='alpha').stream_admitted=false;
+  fx.fake.setStatus(status);
+  const result=fx.readiness({extra:{OATS_RUNTIME:'claude',AWEB_IDENTITY_HOME:'/foreign/identity'}});
+  assert.equal(result.status,failed?'unavailable':'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'),JSON.stringify(result));
+  if(failed) assert.ok(result.problems.some(p=>p.code==='wake-stream-unavailable'),JSON.stringify(result));
+  else assert.deepEqual(result.problems,[]);
+});
+
+for(const corruption of ['missing-identity','malformed-state','wrong-control','wrong-policy','duplicate-joined']) test(`legacy known joins reject ${corruption}`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta; delete meta.delivery; delete meta.runtime; fx.record(meta,undefined);
+  const status=transportStatus(fx), joined=status.instances[0].receive_identities.find(r=>r.label==='alpha');
+  if(corruption==='missing-identity') rmSync(meta.joinedTeams[0].identityHome,{recursive:true});
+  if(corruption==='malformed-state') writeFileSync(join(fx.home,'.oats-aweb','teams.json'),'{');
+  if(corruption==='wrong-control') joined.controls=true;
+  if(corruption==='wrong-policy') joined.event_classes=['mail'];
+  if(corruption==='duplicate-joined') status.instances[0].receive_identities.push({...joined});
+  fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code===(['missing-identity','malformed-state'].includes(corruption)?'receive-record-unavailable':'wake-target-binding')),JSON.stringify(result));
+});
+
+for(const [name,settingsDelivery,capturedDelivery,runtime,needsBroker] of [
+  ['captured channel wins over session setting without runtime','session','channel',undefined,false],
+  ['captured session requires broker without runtime','channel','session',undefined,true],
+  ['missing delivery uses session prerequisite setting','session',undefined,undefined,true],
+  ['captured empty runtime is external under channel','channel','channel','',true],
+]) test(`legacy projection: ${name}`,t=>{
+  const fx=fixture(t,{delivery:settingsDelivery,runtime:'codex'}), meta=fx.spawn().meta;
+  if(capturedDelivery===undefined) delete meta.delivery; else meta.delivery=capturedDelivery;
+  if(runtime===undefined) delete meta.runtime; else meta.runtime=runtime;
+  fx.record(meta,undefined);
+  const status=transportStatus(fx); status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
+  const calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,needsBroker?'unavailable':'ready',JSON.stringify(result));
+  if(runtime===undefined || capturedDelivery===undefined) assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  if(needsBroker) assert.ok(result.problems.some(p=>p.code==='wake-worker-unavailable'),JSON.stringify(result));
+  assert.equal(fx.fake.readCalls().slice(calls).filter(c=>c.args[0]==='wake').length,needsBroker?1:0);
+});
+
+test('legacy absent disk state preserves captured known joins and tolerates otherwise valid unknown bindings',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta; delete meta.delivery; delete meta.runtime; fx.record(meta,undefined);
+  rmSync(join(fx.home,'.oats-aweb','teams.json'));
+  const status=transportStatus(fx);
+  // Full ownership is unknown; do not invent an exact primary plan from the
+  // observed broker row. A valid extra stream cannot erase the known alpha.
+  status.instances[0].receive_identities.push({identity_home:'/legacy/other',label:'other',controls:false,event_classes:['mail','chat'],delivery_owner:'session-hints',stream_admitted:true,stream_phase:'streaming'});
+  fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  assert.ok(result.warnings.some(w=>w.code==='joined-team-receive'));
+  status.instances[0].receive_identities.find(r=>r.label==='alpha').stream_admitted=false;
+  fx.fake.setStatus(status);
+  assert.equal(fx.readiness().status,'unavailable','missing optional disk file does not erase captured joined failure');
+});
+
+test('legacy absent membership permits qualified prerequisites but malformed supplied membership does not',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'claude'});
+  writeFileSync(join(fx.home,'instance.json'),JSON.stringify({capabilityMeta:{'oats.aweb':{}}}));
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  mkdirSync(join(fx.home,'.oats-aweb'));
+  writeFileSync(join(fx.home,'.oats-aweb','teams.json'),'{');
+  const malformed=fx.readiness();
+  assert.equal(malformed.status,'unavailable',JSON.stringify(malformed));
+  assert.ok(malformed.problems.some(p=>p.code==='receive-record-unavailable'));
+});
+
+for(const incomplete of [false,true]) for(const [name,change,code] of [
+  ['wrong-type primary locator',s=>s.instances[0].primary_identity_home=false,'wake-target-binding'],
+  ['contradictory primary locator',s=>s.instances[0].primary_identity_home='/foreign/primary','wake-target-binding'],
+  ['aggregate refused stream',s=>s.instances[0].stream_admitted=false,'wake-stream-unavailable'],
+  ['wrong-type stream error',s=>s.instances[0].receive_identities[0].stream_error=false,'wake-status-unavailable'],
+]) test(`${incomplete?'partial':'complete'} target preserves ${name} failure`,t=>{
+  const fx=fixture(t,{delivery:'session',runtime:'codex'}),meta=fx.spawn().meta;
+  if(incomplete) delete meta.runtime;
+  fx.record(meta,incomplete?undefined:'codex');
+  const status=transportStatus(fx);change(status);fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code===code),JSON.stringify(result));
+});
+
+for(const [name,change] of [
+  ['missing primary controls',s=>delete s.instances[0].receive_identities[0].controls],
+  ['restricted primary events',s=>s.instances[0].receive_identities[0].event_classes=['mail']],
+]) test(`partial captured session retains ${name} contradiction`,t=>{
+  const fx=fixture(t,{delivery:'session',runtime:'codex'}),meta=fx.spawn().meta;delete meta.runtime;fx.record(meta,undefined);
+  const status=transportStatus(fx);change(status);fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='wake-target-binding'));
+});
+
+test('missing home is not an absent legacy instance record',async t=>{
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=join(tempDir(t),'does-not-exist');
+  assert.equal(expectedReceive(home).problems[0]?.code,'receive-record-unavailable');
+});
+
+for (const delivery of [undefined,'channel','session']) for (const mismatch of [false,true]) test(`partial primary team ${mismatch?'contradiction':'agreement'} with ${delivery??'absent'} delivery`, t => {
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta;
+  delete meta.runtime;
+  if(delivery===undefined) delete meta.delivery; else meta.delivery=delivery;
+  fx.record(meta,undefined);
+  const status=transportStatus(fx);
+  status.instances[0].receive_identities[0].team_id=mismatch?'contradictory:example.test':meta.identity.team;
+  fx.fake.setStatus(status);
+  const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,mismatch?'unavailable':'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  if(mismatch) assert.ok(result.problems.some(p=>p.code==='wake-target-binding'));
+  else assert.deepEqual(result.problems,[]);
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});
+
+for (const parent of ['absent','directory','dangling-symlink','valid-symlink']) test(`legacy state parent ${parent} classification`, async t => {
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t),state=join(home,'.oats-aweb');
+  const record=JSON.stringify({capabilityMeta:{'oats.aweb':{delivery:'channel',team:'retained:example.test'}}});
+  writeFileSync(join(home,'instance.json'),record);
+  if(parent==='directory') mkdirSync(state);
+  if(parent.endsWith('symlink')) {
+    const destination=join(home,'state-location');
+    if(parent==='valid-symlink') mkdirSync(destination);
+    symlinkSync(destination,state);
+  }
+  const before=readdirSync(home);
+  const result=expectedReceive(home);
+  if(parent==='dangling-symlink') assert.equal(result.problems[0]?.code,'receive-record-unavailable');
+  else {
+    assert.deepEqual(result.problems,[]);
+    assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+    assert.deepEqual(result.joined,[]);
+    assert.equal(result.brokerRequired,false);
+  }
+  assert.deepEqual(readdirSync(home),before);
+  assert.equal(readFileSync(join(home,'instance.json'),'utf8'),record);
+});
+
+for (const record of ['instance.json', '.oats-aweb/teams.json']) test(`dangling ${record} is unreadable rather than legacy absence`, async t => {
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t);
+  mkdirSync(join(home,'.oats-aweb'));
+  symlinkSync(join(home,'missing-record'),join(home,record));
+  assert.equal(expectedReceive(home).problems[0]?.code,'receive-record-unavailable');
+});
+
+for(const joinedTeams of [null,[null],[{label:'alpha',team:'a:example.test',identityHome:'relative'}]]) test(`malformed captured membership ${JSON.stringify(joinedTeams)} cannot hide behind valid disk`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'claude'}),meta=fx.spawn().meta;
+  delete meta.delivery;delete meta.runtime;meta.joinedTeams=joinedTeams;fx.record(meta,undefined);
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'));
+});
+
+// Synthetic shape reported by the paired maintainer on Linux/session Claude
+// (PR53 comment6007038771). Live delivery is peer evidence, not this fixture.
+function retainedWorkerErrorFixture(home) {
+  const now=Date.parse('2026-10-05T12:00:00Z'), primary=join(home,'.aw');
+  const expected={home,runtimeDelivery:'external-session',primary,bindings:[{identity_home:primary,controls:true,event_classes:[]}]};
+  const status={daemon_running:true,daemon_version_state:'reported',daemon_version:'1.36.23',updated_at:new Date(now).toISOString(),instances:[{
+    home,identity_home:primary,runtime_delivery:'external-session',delivery:'session',paused:false,phase:'active',last_state:'unknown',last_inspect_at:new Date(now).toISOString(),
+    receive_identities:[{identity_home:primary,controls:true,delivery_owner:'session-hints',stream_admitted:true,stream_phase:'streaming'}],
+    channel_core:{running:true,readiness_state:'unknown',readiness_waiting:'inspect_done',last_success_at:new Date(now-41000).toISOString(),last_error:'E_RUNTIME_AUTHORITY_MISMATCH: instance metadata disagrees with independent session receipt'},
+  }]};
+  return {now,expected,status};
+}
+
+for(const timing of ['peer','no-input-success','old-input-success','no-observation-timestamps','old-observation']) test(`retained worker error warns with completed nonfailure observation: ${timing}`,async t=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const {now,expected,status}=retainedWorkerErrorFixture(tempDir(t)),row=status.instances[0];
+  if(timing==='no-input-success') delete row.channel_core.last_success_at;
+  if(timing==='old-input-success') row.channel_core.last_success_at='2020-01-01T00:00:00Z';
+  if(timing==='no-observation-timestamps') {delete status.updated_at;delete row.last_inspect_at;}
+  if(timing==='old-observation') {status.updated_at='2020-01-01T00:00:00Z';row.last_inspect_at=status.updated_at;}
+  const before=structuredClone(status);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  assert.deepEqual(result.problems,[],JSON.stringify(result));
+  const warning=result.warnings.find(w=>w.code==='wake-worker-error-retained');
+  assert.ok(warning,JSON.stringify(result));
+  assert.match(warning.message,/unproven currency/);
+  assert.match(warning.message,/E_RUNTIME_AUTHORITY_MISMATCH/);
+  assert.doesNotMatch(warning.message,/resolved|cleared|after the error|later success|historic/);
+  assert.deepEqual(status,before);
+});
+
+for(const [name,change,code] of [
+  ['inspect_error',r=>r.channel_core.readiness_waiting='inspect_error','receive-inspection-unproven'],
+  ['readiness_error',r=>r.channel_core.readiness_error='inspection failed','wake-worker-unavailable'],
+  ['stopped',r=>{r.last_state='stopped';r.channel_core.readiness_state='stopped';},'receive-inspection-unproven'],
+  ['nonrunning',r=>r.channel_core.running=false,'wake-worker-unavailable'],
+  ['row error',r=>r.last_error='target failed','wake-worker-unavailable'],
+  ['conflict',r=>r.conflict_home='/other/home','wake-worker-unavailable'],
+  ['binding error',r=>r.channel_core.binding_errors={alpha:'consumer failed'},'wake-worker-unavailable'],
+  ['stream error',r=>r.receive_identities[0].stream_error='stream failed','wake-stream-unavailable'],
+  ['target pause',r=>r.paused=true,'wake-target-paused'],
+  ['worker pause',r=>r.channel_core.paused=true,'wake-worker-unavailable'],
+  ['readiness pause',r=>r.channel_core.readiness_paused=true,'wake-worker-unavailable'],
+  ['inspect_start',r=>r.channel_core.readiness_waiting='inspect_start','wake-worker-unavailable'],
+  ['missing completion',r=>delete r.channel_core.readiness_waiting,'wake-worker-unavailable'],
+  ['missing completed state',r=>delete r.channel_core.readiness_state,'wake-worker-unavailable'],
+  ['empty completed state',r=>r.channel_core.readiness_state='','wake-worker-unavailable'],
+  ['malformed retained error',r=>r.channel_core.last_error=false,'wake-status-unavailable'],
+  ['malformed state',r=>r.channel_core.readiness_state=42,'wake-status-unavailable'],
+  ['conflicting states',r=>r.last_state='idle','wake-status-unavailable'],
+  ['invalid observation timestamp',r=>r.last_inspect_at='bad','receive-inspection-unproven'],
+]) test(`retained worker error cannot mask ${name} with recent input success`,async t=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const {now,expected,status}=retainedWorkerErrorFixture(tempDir(t)),row=status.instances[0];
+  row.channel_core.last_success_at=status.updated_at;
+  change(row);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  assert.equal(result.problems[0]?.code,code,JSON.stringify(result));
+  assert.equal(result.warnings.some(w=>w.code==='wake-worker-error-retained'),false);
+});
+
+test('retained worker error diagnostic is bounded and contains no terminal controls',async t=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const {now,expected,status}=retainedWorkerErrorFixture(tempDir(t));
+  status.instances[0].channel_core.last_error='failure\n\u001b[31m'+ 'x'.repeat(2000);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now});
+  assert.deepEqual(result.problems,[]);
+  const message=result.warnings.find(w=>w.code==='wake-worker-error-retained').message;
+  assert.doesNotMatch(message,/[\u0000-\u001f\u007f-\u009f]/);
+  assert.ok(message.length<350);
+});
+
+test('retained worker error reaches session Claude readiness as a warning without writes or probes',t=>{
+  const fx=fixture(t,{delivery:'session',runtime:'claude'});
+  fx.record(fx.spawn().meta,'claude');
+  const status=transportStatus(fx);
+  status.daemon_version='1.36.23';
+  status.instances[0].channel_core.last_error='E_RUNTIME_AUTHORITY_MISMATCH: instance metadata disagrees with independent session receipt';
+  status.instances[0].channel_core.last_success_at=new Date(Date.parse(status.updated_at)-41000).toISOString();
+  fx.fake.setStatus(status);
+  const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.deepEqual(result.problems,[]);
+  assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});
+
+// Unchanged sanitized status exported by josep-reyero/oats-maintainer-pepe:
+// https://github.com/awebai/oats-aweb/pull/53#issuecomment-6007169594
+// SHA256 02746fda83edbe1ac4bce2aeca1d9b2f30119fb2b6664fb7f6a739f8fffcd60e.
+// Receiving/presentation/public-inspect success is separately peer-reported;
+// the error has no timestamp with which to order it against these observations.
+test('unchanged sanitized peer status warns about retained error and observation age',async()=>{
+  const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const status=JSON.parse(readFileSync(join(REPO,'test','fixtures','readiness-peer-status-6007169594.json'),'utf8'));
+  const expected={home:'/fixture/home',runtimeDelivery:'external-session',primary:'/fixture/home/.aw',bindings:[{identity_home:'/fixture/home/.aw',controls:true,event_classes:[]}]};
+  const before=structuredClone(status);
+  const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now:Date.parse('2026-10-06T00:58:24.737Z')});
+  assert.deepEqual(result.problems,[],JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
+  assert.ok(result.warnings.some(w=>w.code==='receive-observation-aged'));
+  assert.deepEqual(status,before);
 });

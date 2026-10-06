@@ -163,6 +163,7 @@ test("hosted workspace: the primary team resolves as in 1.14.2 (root's active te
   assert.doesNotMatch(`${doc.warning || ""}${doc.brief}`, /default-team-|aw auth|team ensure/);
   const result = check(fx, fake);
   assert.equal(result.status, "ready", JSON.stringify(result));
+  assert.ok(result.warnings.some(p => p.code === "receive-ownership-unproven"), "unrecorded home checks prerequisites without certifying ownership");
   assert.equal(result.warnings.some((w) => /^default-team-/.test(w.code)), false);
 });
 
@@ -224,9 +225,11 @@ test("session delivery registers every joined identity with the broker and repor
   assert.equal(doc.meta.joinedTeams[0].receive, "native");
   const listed = spawnSync(process.execPath, [HOOK, "teams", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "teams", OATS_META: JSON.stringify(doc.meta) }, encoding: "utf8" });
   assert.equal(JSON.parse(listed.stdout).joined[0].receive, "native");
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({capabilityMeta:{"oats.aweb":doc.meta}}));
   const result = check({ ...fx, settings: { delivery: "session", root: fx.ws } }, fake);
-  assert.equal(result.status, "ready", JSON.stringify(result));
-  assert.match(result.warnings.find((w) => w.code === "joined-team-receive").message, /alpha.*native/);
+  assert.equal(result.status, "unavailable", JSON.stringify(result));
+  assert.ok(result.problems.some(p => p.code === "wake-worker-unavailable"), "floor status has no worker evidence");
+  assert.match(result.warnings.find((w) => w.code === "joined-team-poll-only").message, /alpha/);
 });
 
 test("channel homes use aw's mixed mode: the channel keeps the primary, the broker takes joined teams", (t) => {
@@ -262,16 +265,19 @@ test("codex channel homes are broker homes: joined teams receive through the bro
   const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
   assert.equal(doc.meta.joinedTeams[0].receive, "native");
   assert.equal(fake.registrations()[fx.home].runtime_delivery, "external-session");
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({capabilityMeta:{"oats.aweb":doc.meta}}));
   const result = check({ ...fx, settings: { root: fx.ws } }, fake);
-  assert.equal(result.warnings.some((w) => w.code === "joined-team-poll-only"), false);
-  assert.match(result.warnings.find((w) => w.code === "joined-team-receive").message, /alpha/);
+  assert.equal(result.status, "unavailable");
+  assert.ok(result.problems.some(p => p.code === "wake-worker-unavailable"));
+  assert.match(result.warnings.find((w) => w.code === "joined-team-poll-only").message, /alpha/);
 });
 
 test("readiness reports poll when the wake daemon is down for a registered joined team", (t) => {
   const fake = fakeAwWake(t);
   const fx = fixture(t, { runtime: "claude" });
   mkdirSync(join(fx.ws, ".aw"), { recursive: true });
-  spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws, join: "alpha" }) } }));
+  const spawned = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws, join: "alpha" }) } }));
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({capabilityMeta:{"oats.aweb":spawned.meta}}));
   const down = { ...fake, path: fake.path };
   const result = spawnSync(process.execPath, [BINDING, "check"], {
     cwd: fx.home,
@@ -279,7 +285,9 @@ test("readiness reports poll when the wake daemon is down for a registered joine
     env: { ...fx.env, PATH: down.path, FAKE_DAEMON_DOWN: "1" }, encoding: "utf8",
   });
   const doc = JSON.parse(result.stdout).result;
-  assert.match(doc.warnings.find((w) => w.code === "joined-team-poll-only").message, /alpha.*wake daemon/);
+  assert.equal(doc.status, "unavailable");
+  assert.ok(doc.problems.some(p=>p.code === "wake-daemon-not-running"));
+  assert.match(doc.warnings.find((w) => w.code === "joined-team-poll-only").message, /alpha.*unproven broker receive/);
 });
 
 test("retire deregisters a channel home that carried joined-team receive", (t) => {

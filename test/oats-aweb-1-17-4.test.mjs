@@ -320,7 +320,8 @@ test("spawn and the binding check do not wait out aw's update check, and the flo
   assert.equal(r.status, 0, r.stdout + r.stderr);
   for (const c of fx.fake.readCalls().filter((c) => c.args[0] === "version")) assert.throws(() => process.kill(c.pid, 0), { code: "ESRCH" }, "the hook left no aw version running");
 
-  const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { root: fx.ws }, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: "fixture", deployment: fx.ws, soul: "dev", team: null, instance: "dev-1", home: fx.home } } };
+  // Exercise the prerequisite version read without asserting receive readiness.
+  const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { root: fx.ws }, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: "fixture", deployment: fx.ws, soul: "dev", team: null, instance: null, home: null } } };
   const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: fx.home, input: JSON.stringify(input), env: { ...fx.env, FAKE_VERSION: "slow" }, encoding: "utf8", timeout: 20000 });
   assert.equal(checked.status, 0, checked.stderr);
   assert.equal(JSON.parse(checked.stdout).result.status, "ready", checked.stdout);

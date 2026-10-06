@@ -219,6 +219,88 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   an uncertain crash or compaction uses `aw mail show --message-id <id> --json`
   or paginated `aw mail inbox --show-all --json` with `--cursor`, not
   mail read state or `--conversation-id`.
+  Home readiness reports whether the configured supported route and observable
+  broker prerequisites pass. It uses the home's captured delivery, runtime and
+  final credential locator, plus retained joined membership. Claude Code and pi
+  use native channels by default; Codex normally uses the supported external
+  broker. A `ready` result does not certify recent endpoint observation, native
+  connection, current start, uninterrupted liveness, automatic presentation or
+  model consumption.
+
+  Native plugin/extension installation, launch flags and the development-channel
+  confirmation do not prove a connected native receiver. Missing connection
+  telemetry produces the `native-receive-unproven` warning; the confirmation
+  guidance remains. Joined broker paths independently contribute failures even
+  when the primary is native. The public joined `receive: native` enum remains
+  unchanged for compatibility; it denotes broker-managed joined delivery, not
+  a harness-native connection or readiness attestation.
+
+  Broker readiness reads one `aw wake status --json` snapshot. It checks the
+  canonical target, compatible running daemon, active/unpaused target, complete
+  captured identity set and its delivery/ownership/event/control policy,
+  admitted streams in the released `streaming` phase, running worker, and
+  target/worker/binding errors. Missing required daemon, worker or stream
+  evidence is a problem. The aw floor stays 1.36.13; its status lacks worker
+  evidence, so that shape cannot establish the required broker prerequisites.
+
+  Observation age, absent optional inspection evidence and an inspection in
+  progress warn without making otherwise satisfied prerequisites unavailable.
+  The 30-second threshold only labels old evidence with its age; it is not a
+  readiness gate, broker guarantee or command timeout. Quiet workers inspect at
+  startup and on events, so their observations can age without a transport
+  failure. Missing observation evidence is unproven, never an invented
+  successful inspection. Supplied timestamps must still be valid, nonfuture
+  and consistently ordered; malformed or contradictory status is a problem.
+  Known stopped/shell/unusable endpoint state, failed inspection and explicit
+  errors remain problems even when old or followed by `inspect_start`, which
+  can retain prior state and errors. `last_inspect_at` also updates on errors;
+  neither it nor historical input/success timestamps establish success.
+
+  One worker field needs a narrower interpretation: released aw can retain
+  `channel_core.last_error` across subsequent status updates. Node can re-emit
+  that text on ordinary status updates; a new status line does not date the
+  failure. A new worker run can reset the field. With `inspect_done`,
+  a supplied nonfailure worker state, no `readiness_error` and no other failure
+  or malformed evidence, `wake-worker-error-retained` warns with bounded error
+  text. Its currency is unproven. There is no error timestamp or common ordering
+  token to establish that inspection followed the error or resolved it;
+  `last_success_at` records input and is not the deciding signal. Without that
+  completed observation, the worker error remains a problem. Row, readiness,
+  binding, stream, conflict, pause and nonrunning failures remain problems.
+
+  OATS reports nonshell inspection as `unknown`, not `idle`. Public status does
+  not independently attest endpoint presence or identify the current start.
+  Readiness does not refresh the broker, send input, register, resume or modify
+  the home. A soul check with no home remains prerequisite-only. Existing
+  configuration/authentication and applicable custody failures retain their
+  diagnostics and skip receive evaluation until prerequisites pass.
+
+  A genuinely absent legacy delivery/runtime record uses the settings-based
+  prerequisite fallback for missing facts and warns that receive ownership and
+  complete-set assurance are unproven. It does not replace valid captured facts
+  with current settings or infer ownership from a broker row or caller runtime.
+  Only absent captured delivery falls back to `settings.delivery`; `session`
+  requires broker checks. Captured `session` requires them even without runtime;
+  captured `channel` without runtime leaves primary ownership unproven, including
+  when current settings say `session`. A retained empty runtime string keeps its
+  existing external-broker meaning. Any known joined path requires broker checks.
+  Retained joined identities still receive target/worker/stream and known-policy
+  checks. Malformed JSON, unreadable records, wrong types, invalid values and
+  contradictory retained facts are problems, not legacy absence.
+
+  Valid `.oats-aweb/teams.json` is authoritative over launch metadata because
+  later join/leave commands update it. Complete captured local plans require
+  valid membership state. Legacy metadata-only joined state is retained with
+  the fallback qualification; a missing file is not evidence that known joins
+  disappeared. If both legacy membership sources are absent, there are no known
+  joined entries, not a certified empty set. Otherwise valid unmatched bindings
+  can remain in a partial legacy projection; every supplied binding must be
+  well-formed and healthy, but the result cannot certify full-set matching.
+  Global grant/retained-root spawn paths may omit this file only
+  when recorded provenance consistently establishes an empty joined set.
+  Grant readiness uses the final recorded `identity.grant.home`, never the newest
+  directory or the caller's `AWEB_IDENTITY_HOME`.
+
 - `root`: absolute directory whose `.aw` is the default team's minting root.
   This root is for one aweb team only.
 - `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over

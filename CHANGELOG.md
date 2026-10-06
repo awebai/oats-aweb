@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+Fixed: target-scoped home receive readiness (issue #34 / aweb-abny). A compatible
+daemon or joined stream registration alone no longer establishes a complete
+captured receive plan. The check validates the canonical broker target, retained
+identity set and policies, running worker, admitted `streaming` streams and
+target/worker/binding errors. Joined failures remain problems alongside a native
+primary. Missing required worker telemetry remains unavailable, including the
+status shape at the unchanged aw 1.36.13 floor.
+
+Changed: `ready` means the configured supported route and observable broker
+prerequisites pass. This deliberately supersedes the earlier unreleased
+recent-observation claim and 30-second status gate. Native connection uncertainty,
+old observations, absent optional inspection evidence and inspection in progress
+now warn; age alone does not make readiness unavailable. The 30-second threshold
+only labels an age warning. Known failures, including prior stopped/error evidence
+during a new inspection, and malformed or contradictory supplied status remain
+problems. No recent endpoint/native connection, current-start, uninterrupted
+liveness, prompt readiness, model consumption or actual presentation is certified.
+
+Fixed: a retained `channel_core.last_error` alongside completed nonfailure
+inspection evidence now warns with bounded text when no other failure or malformed
+evidence exists. Released aw does not timestamp that error or clear it on every
+status update. The warning reports unproven currency, not proof that inspection
+followed or resolved the error. Input-success timestamps do not decide this;
+without completed observation, or with row/readiness/binding/stream/pause/worker
+failure, readiness remains unavailable.
+
+Changed: genuine legacy absence of captured delivery/runtime uses the documented
+settings-based prerequisite fallback with an explicit incomplete ownership/set
+warning. Valid retained facts and known joined paths still receive their checks;
+malformed, unreadable or contradictory records cannot use this fallback. Complete
+captured plans remain strict. Existing configuration/authentication/custody error
+precedence and null-home prerequisite checks are preserved.
+
+Claude/Pi native defaults, Codex's supported external broker route and the Claude
+development-channel confirmation guidance are unchanged. The public joined
+receive enum, binding envelope, four statuses, settings and lifecycle hooks are
+unchanged. No probes, home writes, version bump or release.
+
 ## 1.21.1
 
 Added: the warning `channel-dev-confirmation` (awebai/oats-aweb#44). Under `delivery: channel` a Claude Code start loads the aweb-channel plugin with `--dangerously-load-development-channels`, because the plugin is not on Claude Code's approved channel list. Claude Code then stops at its "Loading development channels" confirmation before the session starts, and waits until someone answers it in the instance's terminal. Unattended starts (Desktop starts and restarts, automations, successors) waited there with nothing saying so. Now:

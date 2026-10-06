@@ -442,7 +442,8 @@ test("kernel default label mints without team-unmapped fallback", (t) => {
   assert.equal(doc.meta.team, "default:example.test");
   assert.equal(doc.warning, undefined);
 
-  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), env, home);
+  // This checks the selected team prerequisites, not the spawned home transport.
+  const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home: null }), env, home);
   const result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "ready");
   assert.deepEqual(Object.keys(result).sort(), ["problems", "status", "warnings"], "binding check answers must not carry provider-only teams data");
@@ -454,6 +455,8 @@ test("binding check omits teams data while preserving joined-team readiness warn
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(join(home, ".oats-aweb"), { recursive: true });
   writeFileSync(join(home, ".oats-aweb", "teams.json"), JSON.stringify({ joinedTeams: [{ label: "alpha", team: "alpha:example.test", identityHome: join(home, ".aweb-identity-alpha"), receive: "poll", since: "2026-09-25T00:00:00Z" }] }));
+  for (const name of ['.aw','.aweb-identity-alpha']) mkdirSync(join(home,name));
+  writeFileSync(join(home,'instance.json'),JSON.stringify({capabilityMeta:{'oats.aweb':{delivery:'channel',runtime:'claude'}}}));
   const fake = fakeAw114(t);
   const checked = runBindingCheck(bindingRequest({ delivery: "channel", root }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }), {
     PATH: fake.path,
@@ -467,7 +470,7 @@ test("binding check omits teams data while preserving joined-team readiness warn
     OATS_TEAMS: teamsEnv,
   }, home);
   const result = JSON.parse(checked.stdout).result;
-  assert.equal(result.status, "ready");
+  assert.equal(result.status, "unavailable");
   assert.deepEqual(Object.keys(result).sort(), ["problems", "status", "warnings"], "kernel check-answer rule rejects extra teams key");
   assert.ok(result.warnings.some((w) => w.code === "joined-team-poll-only" && /alpha/.test(w.message)));
 });
@@ -554,25 +557,28 @@ test("published aw >= 1.36.6 exposes wake status version state", (t) => {
 test("wake daemon readiness reports outdated, unknown and not-running states", (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"), { recursive: true });
-  mkdirSync(home);
+  mkdirSync(join(home,'.aw'),{recursive:true});
+  mkdirSync(join(home,'.oats-aweb'));
+  writeFileSync(join(home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
+  writeFileSync(join(home,'instance.json'),JSON.stringify({capabilityMeta:{'oats.aweb':{delivery:'session',runtime:'codex'}}}));
   const context = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
   const settings = { delivery: "session", root };
 
-  const outdatedAw = fakeAw114(t, { wakeStatus: { daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.4" } });
+  const outdatedAw = fakeAw114(t, { wakeStatus: { instances: [], daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.4" } });
   let checked = runBindingCheck(bindingRequest(settings, context), { PATH: outdatedAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);
   let result = JSON.parse(checked.stdout).result;
-  assert.equal(result.status, "needs-configuration");
-  assert.match(result.problems.find((p) => p.code === "wake-daemon-outdated").message, /running 1\.36\.4.*required 1\.36\.13.*upgrade aw, then restart the host wake daemon/);
+  assert.equal(result.status, "unavailable");
+  assert.match(result.problems.find((p) => p.code === "wake-daemon-outdated").message, /running 1\.36\.4.*required 1\.36\.13/);
 
-  const unknownAw = fakeAw114(t, { wakeStatus: { daemon_running: true, daemon_version_state: "unknown" } });
+  const unknownAw = fakeAw114(t, { wakeStatus: { instances: [], daemon_running: true, daemon_version_state: "unknown" } });
   checked = runBindingCheck(bindingRequest(settings, context), { PATH: unknownAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);
   result = JSON.parse(checked.stdout).result;
-  assert.equal(result.status, "ready");
-  assert.match(result.warnings.find((w) => w.code === "wake-daemon-version-unknown").message, /compatibility unproven.*upgrade aw, then restart the host wake daemon/);
+  assert.equal(result.status, "unavailable");
+  assert.match(result.problems.find((w) => w.code === "wake-daemon-version-unknown").message, /compatibility is unproven/);
 
-  const downAw = fakeAw114(t, { wakeStatus: { daemon_running: false, daemon_version_state: "not_running" } });
+  const downAw = fakeAw114(t, { wakeStatus: { instances: [], daemon_running: false, daemon_version_state: "not_running" } });
   checked = runBindingCheck(bindingRequest(settings, context), { PATH: downAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);
   result = JSON.parse(checked.stdout).result;
-  assert.equal(result.status, "needs-configuration");
+  assert.equal(result.status, "unavailable");
   assert.ok(result.problems.some((p) => p.code === "wake-daemon-not-running"));
 });

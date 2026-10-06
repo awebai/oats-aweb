@@ -191,7 +191,8 @@ test("global grants use kernel default team, not mapped primary payload or custo
     assert.equal(r.doc.meta.identity.team, "default:example.test");
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint");
     assert.equal(argvValue(mint.argv, "--team"), "default:example.test");
-    const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "default:example.test" });
+    // Team/custody prerequisites do not assert a connected home receive path.
+    const checked = runBindingCheck(bin, payload, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home: null }, { OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, FAKE_CUSTODY_TEAM: "default:example.test" });
     assert.equal(checked.status, 0, checked.stderr);
     assert.equal(checked.doc.result.status, "ready", JSON.stringify(checked.doc.result));
     assert.deepEqual(Object.keys(checked.doc.result).sort(), ["problems", "status", "warnings"]);
@@ -365,7 +366,7 @@ test("grant subject alias from grant.yaml wins over mint output, with resident f
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("readiness checks the newest grant home for custody attachment", () => {
+test("readiness checks the recorded final grant locator, never newest directory", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
@@ -377,10 +378,16 @@ test("readiness checks the newest grant home for custody attachment", () => {
     statSync(newHome); // ensure directory exists before utimes()
     utimesSync(newHome, later, later);
     const ctx = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
-    const checked = runBindingCheck(bin, settings(custody), ctx);
+    const record = locator => write(join(home, "instance.json"), JSON.stringify({capabilityMeta:{"oats.aweb":{delivery:"session",runtime:"codex",identity:{mode:"global",grant:{id:"selected",home:locator}}}}}));
+    record(oldHome);
+    let checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.status, 0, checked.stderr);
+    assert.equal(checked.doc.result.status, "unavailable");
+    assert.equal(checked.doc.result.problems.some(p=>p.code === "custody"), false, "unselected newer unattached grant does not override final locator");
+    record(newHome);
+    checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.doc.result.status, "needs-configuration");
-    assert.deepEqual(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.13");
+    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.13");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
