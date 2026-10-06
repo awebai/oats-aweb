@@ -11,7 +11,7 @@
 // Under delivery: channel a runtime with no native surface (Codex, unknown) is
 // an external-session home like any session home (brokerDelivers).
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
-import {isAbsolute, join, resolve} from 'node:path';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 
 const JOINED_EVENT_CLASSES = ['mail', 'chat'];
 // Observation age is advisory; readiness does not certify recent observation.
@@ -110,10 +110,21 @@ const samePath = (a, b) => pathValue(a) && pathValue(b) && canon(a) === canon(b)
 const directory = value => { try { return pathValue(value) && statSync(value).isDirectory(); } catch { return false; } };
 const problem = (code, message) => ({code, message});
 const joinedShape = j => object(j) && typeof j.label === 'string' && j.label.trim() && j.label !== 'default' && typeof j.team === 'string' && j.team.trim() && pathValue(j.identityHome);
-// A dangling symlink is a supplied unreadable record, not legacy absence.
+// A dangling leaf or parent symlink is unreadable, not legacy absence. When
+// components are missing, the nearest existing ancestor must resolve to a dir.
 const absentFile = (file, error) => {
   if (error.code !== 'ENOENT') return false;
-  try { lstatSync(file); return false; } catch (statError) { return statError.code === 'ENOENT'; }
+  let candidate = file;
+  while (true) {
+    try { lstatSync(candidate); }
+    catch (statError) {
+      if (statError.code !== 'ENOENT' || dirname(candidate) === candidate) return false;
+      candidate = dirname(candidate);
+      continue;
+    }
+    if (candidate === file) return false;
+    try { return statSync(candidate).isDirectory(); } catch { return false; }
+  }
 };
 
 /** Readiness alone needs to distinguish legacy absence from corrupt records.
@@ -234,8 +245,10 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
           !Array.isArray(classes) || classes.some(c => !['mail','chat'].includes(c)) || new Set(classes).size !== classes.length ||
           (actualRuntime !== 'external-session' && (hit.controls === true || samePath(hit.identity_home, row.primary_identity_home))) ||
           (hit.controls === true && primary && !samePath(hit.identity_home, primary))) return fail('wake-target-binding', 'partial broker receive policy contradicts retained or supplied facts');
-      if (capturedDelivery === 'session' && primary && samePath(hit.identity_home, primary) &&
-          (hit.controls !== true || classes.length || (hit.team_id !== undefined && primaryTeam !== undefined && hit.team_id !== primaryTeam))) return fail('wake-target-binding', 'broker primary policy contradicts the retained session route');
+      if (primary && samePath(hit.identity_home, primary)) {
+        if (hit.team_id !== undefined && primaryTeam !== undefined && hit.team_id !== primaryTeam) return fail('wake-target-binding', 'broker primary team contradicts the retained identity');
+        if (capturedDelivery === 'session' && (hit.controls !== true || classes.length)) return fail('wake-target-binding', 'broker primary policy contradicts the retained session route');
+      }
       if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') return fail('wake-stream-unavailable', 'supplied receive stream is missing, refused or not connected');
     }
   }

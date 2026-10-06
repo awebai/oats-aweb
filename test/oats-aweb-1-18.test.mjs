@@ -886,6 +886,49 @@ test('missing home is not an absent legacy instance record',async t=>{
   assert.equal(expectedReceive(home).problems[0]?.code,'receive-record-unavailable');
 });
 
+for (const delivery of [undefined,'channel','session']) for (const mismatch of [false,true]) test(`partial primary team ${mismatch?'contradiction':'agreement'} with ${delivery??'absent'} delivery`, t => {
+  const fx=fixture(t,{delivery:'channel',runtime:'codex',settings:{join:'alpha'}});
+  const meta=fx.spawn().meta;
+  delete meta.runtime;
+  if(delivery===undefined) delete meta.delivery; else meta.delivery=delivery;
+  fx.record(meta,undefined);
+  const status=transportStatus(fx);
+  status.instances[0].receive_identities[0].team_id=mismatch?'contradictory:example.test':meta.identity.team;
+  fx.fake.setStatus(status);
+  const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+  const result=fx.readiness();
+  assert.equal(result.status,mismatch?'unavailable':'ready',JSON.stringify(result));
+  assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+  if(mismatch) assert.ok(result.problems.some(p=>p.code==='wake-target-binding'));
+  else assert.deepEqual(result.problems,[]);
+  assert.deepEqual(snapshot(fx.home),before);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});
+
+for (const parent of ['absent','directory','dangling-symlink','valid-symlink']) test(`legacy state parent ${parent} classification`, async t => {
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t),state=join(home,'.oats-aweb');
+  const record=JSON.stringify({capabilityMeta:{'oats.aweb':{delivery:'channel',team:'retained:example.test'}}});
+  writeFileSync(join(home,'instance.json'),record);
+  if(parent==='directory') mkdirSync(state);
+  if(parent.endsWith('symlink')) {
+    const destination=join(home,'state-location');
+    if(parent==='valid-symlink') mkdirSync(destination);
+    symlinkSync(destination,state);
+  }
+  const before=readdirSync(home);
+  const result=expectedReceive(home);
+  if(parent==='dangling-symlink') assert.equal(result.problems[0]?.code,'receive-record-unavailable');
+  else {
+    assert.deepEqual(result.problems,[]);
+    assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
+    assert.deepEqual(result.joined,[]);
+    assert.equal(result.brokerRequired,false);
+  }
+  assert.deepEqual(readdirSync(home),before);
+  assert.equal(readFileSync(join(home,'instance.json'),'utf8'),record);
+});
+
 for (const record of ['instance.json', '.oats-aweb/teams.json']) test(`dangling ${record} is unreadable rather than legacy absence`, async t => {
   const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
   const home=tempDir(t);
