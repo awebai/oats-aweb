@@ -5,13 +5,13 @@ acts as a resident identity. It grants no authority to execute the templates.
 Select and review each effect under the deployment's own operation process;
 ordinary worker messaging authority is insufficient for provisioning or custody.
 
-The native [hosted GLOBAL bootstrap contract](https://github.com/awebai/aweb/blob/main/docs/hosted-global-bootstrap.md)
-owns CLI authority, init, outputs, diagnostics and recovery. This is its intended
-publication URL: the supplied reference content is an **unpublished candidate**,
-and the link depends on native publication. Its proposed HTTP diagnostics and
-representative recovery/capture fixtures are not established aw 1.36.23 behavior
-or coverage. The checkpoints below use the pinned sources listed at the end;
-they are OATS integration requirements, not a second native contract.
+The native [hosted GLOBAL bootstrap contract](https://github.com/awebai/aweb/blob/4e477ad74dabf5a944898e9d6f3f6d169c7f5ff6/docs/hosted-global-bootstrap.md)
+owns CLI authority, init, outputs, diagnostics and recovery. It is published at
+native source revision `4e477ad74dabf5a944898e9d6f3f6d169c7f5ff6`. Source landing
+does not establish a package release or installation: its HTTP diagnostics and
+representative recovery/capture fixtures are not aw 1.36.23 behavior or coverage.
+The checkpoints below use the pinned sources listed at the end; they are OATS
+integration requirements, not a second native contract.
 
 ## Choose the journey and fix the context
 
@@ -222,12 +222,12 @@ belongs to the existing identity author/reviewer before implementation.
 
 At the pinned aw 1.36.23 source, the resume tests cover error-before-success,
 **not** the exact original team-key/no-repository-origin/same-DID case where the
-server commits and the response is lost. The unpublished native contract now
-describes author-reported candidate real-CLI/service-fixture characterization of
-that case and protected-capture examples. This is separate candidate evidence,
-pending independent native review; it does not establish installed behavior,
-deployed-server idempotency or production E2E acceptance. In particular, the
-representative continuation models one identity but two credential issuances.
+server commits and the response is lost. The linked native source revision adds
+real-CLI/service-fixture characterization of that case and protected-capture
+examples, reviewed in the native source change. This is separate source evidence;
+it does not establish released or installed behavior, deployed-server idempotency
+or production E2E acceptance. In particular, the representative continuation
+models one identity but two credential issuances.
 
 Any safer preservation/refusal contract remains native-owned and must account
 for credential effects and explicitly address mismatch deletion. Protected
