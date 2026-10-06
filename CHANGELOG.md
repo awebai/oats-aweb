@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+Documentation: added the shipped existing-team GLOBAL resident journey, linked
+from setup and resident guidance. It separates native fresh creation from reuse,
+plain LOCAL setup and provider grants; documents authority/output/custody and
+acceptance checkpoints, protected diagnostic requirements, stop rules and the
+unchanged native partial-deletion/lost-response limits. This is procedure source
+preparation, not an executable bootstrap/recovery fix, hosted-error diagnosis or
+live acceptance. Native contract cross-link remains pending its immutable source.
+
 Changed: new Claude/channel compositions select the fixed approved `--channels`
 plugin argument by default. Host-only `settings.oats.aweb.claudeChannelMode` in
 `oats-local.yaml` permits explicit `development` for local channel development;
