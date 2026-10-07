@@ -162,28 +162,19 @@ an explicit reviewed release. An operator may select supported session delivery
 where authorized for unattended use, but must preserve any explicit native-channel
 requirement. Source changes do not enroll a channel or recover the runtime.
 
-Development selection may stop at Claude Code's confirmation; nothing in this
-provider answers it. The provider, broker and ordinary agents must never answer
-on the operator's behalf. For future launch support, a compatible kernel may
-answer it at launch under explicit per-home consent recorded in the kernel's
-host-only configuration. This describes a compatibility boundary, not an
-available provider feature or a configuration recipe.
-
-Where that kernel support exists, it is bounded to one qualified exact
-development-confirmation fixture, at most once during the kernel's own launch.
-Folder trust is outside the exception; a folder-trust prompt must block with a
-receipt and zero keys. Consent defaults off and must not be inferred from
-`settings.oats.aweb.claudeChannelMode`, which selects argv only. There is no
+Development selection may stop at Claude Code's confirmation. Current operation
+requires an authorized operator/human to handle that confirmation in the terminal;
+the provider, broker and ordinary agents must never answer it. Automated launch
+confirmation is pending kernel #708, release and qualification; source preparation
+is not installed support and supplies no current operator setting here.
+Folder trust is a separate authorization boundary: never answer a folder-trust
+prompt as development-channel consent or bypass it to reach another prompt.
+`settings.oats.aweb.claudeChannelMode` selects argv, never consent. There is no
 automatic migration, consent inference or approved-to-development fallback.
-Kernels without this support still need operator attention; unsupported fixtures,
-versions or terminal geometry block per kernel behavior, so consent does not
-guarantee unattended startup.
-
-Consult the kernel launch result and durable receipt, where supported, for actual
-answered/blocked/uncertain status; provider mode, consent and readiness do not
-establish an answer. Passing the prompt proves neither plugin installation,
-admission, connection, message presentation nor model consumption;
-`native-receive-unproven` and admission warnings still apply.
+Do not infer unattended startup or prompt completion from mode or readiness.
+Passing the prompt proves neither plugin installation, admission, connection,
+message presentation nor model consumption; `native-receive-unproven` and
+admission warnings still apply.
 
 **When woken:**
 
@@ -224,8 +215,7 @@ messages; readiness itself is read-only. Success requires actual automatic
 presentation and a receiver-verified reply recovered by exact message ID, not
 `ready`, a configured channel or unread status. Next: onboarding records completion.
 `native-receive-unproven` / `claude-channel-enrollment-unverified` means native
-connection/admission remains unproven, not ready for this acceptance. Consult the
-kernel launch receipt and section 4's consent boundary; never bypass a prompt or
+connection/admission remains unproven, not ready for this acceptance. Follow section 4's operator-confirmation boundary; never bypass a prompt or
 an explicit native requirement. Codex uses the broker; joined `receive: native`
 also means broker, distinct from Claude/Pi primary native delivery. After uncertain
 restart, recover exact IDs as above before retrying any effects.
@@ -289,7 +279,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
-| `channel-dev-confirmation` | selected or captured development mode may stop at confirmation; nothing in this provider answers it (section 4, Channel selection and launch consent) | operator: see section 4 for current boundaries and future compatible-kernel support |
+| `channel-dev-confirmation` | selected or captured development mode may stop at confirmation; automated confirmation is pending kernel #708, release and qualification | authorized operator/human handles confirmation in the terminal (section 4); provider, broker and ordinary agents never answer; folder trust remains a separate boundary |
 | `claude-channel-enrollment-unverified` | approved registers no aweb channel without applicable managed `allowedChannelPlugins` or future approval; installation/trusted marketplace is not approval (section 4) | operator: verify admission or choose authorized session delivery; preserve explicit native requirements |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
@@ -336,7 +326,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Selected version | Supported boundary |
 |---|---|
 | Released provider 1.21.1, OATS >=0.30, aw >=1.36.13 | Labelled setup/join/resume, LOCAL instance join/leave, existing GLOBAL resident grant consumption. OATS >=0.38 supplies `localTeams` policy. |
-| Provider source PR61 | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Section 4's bounded kernel consent rules apply. Source is not a release/pin receipt. |
+| Provider source PR61 | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Current confirmation requires an authorized operator/human; automation awaits kernel #708, release and qualification (section 4). Source is not a release/pin receipt. |
 | Setup-root fixes #45/#52/#59, accepted source `a62daf1` / PR63 | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies require this change to be released/composed. Do not infer them from the package's unchanged 1.21.1 label. |
 | Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
 | Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
