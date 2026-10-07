@@ -45,11 +45,12 @@ export function recordedRuntime(meta, harness) {
   return typeof meta?.runtime === 'string' ? meta.runtime : harness;
 }
 
-/** Explicit development selection requires human confirmation. It is neither
- * an admission fallback nor evidence of a connected receiver. */
+/** Development selection is not consent. Only a compatible kernel may answer
+ * during its own launch with explicit per-home consent and an exact qualified
+ * fixture; its result/receipt owns the outcome, not provider readiness. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: 'Claude Code stops at its development-channels confirmation ("Loading development channels") before the session starts, and waits until someone answers it in the instance\'s terminal: development mode is for deliberate local channel development only; never answer the prompt automatically or use it as an admission fallback',
+  message: 'Claude Code may stop at its development-channels confirmation ("Loading development channels"): only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer; the broker and ordinary agents must never answer. Host-only launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel and .workspaceTrust are separate and default OFF; settings.oats.aweb.claudeChannelMode only selects argv, never consent. Consult the kernel launch result and durable receipt for answered/blocked/uncertain status; provider mode, consent and readiness do not establish an answer. Older kernels need operator attention; opted-in unsupported fixture/version/geometry blocks per kernel behavior. Passing the prompt proves neither plugin installation, admission, connection, message presentation nor model consumption. Development mode is for deliberate local channel development only; no automatic migration, consent inference or approved-to-development fallback',
 };
 
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({

@@ -398,14 +398,12 @@ test("readiness reports an outdated wake daemon for a codex channel home", (t) =
 });
 
 // ------------------------------------------- channel-dev-confirmation (1.21.1)
-// Claude Code stops at its development-channels confirmation before every
-// session that loads aweb-channel with --dangerously-load-development-channels
-// (awebai/oats-aweb#44): readiness and every hook answer that adds the flag
-// (the launch hook's, and the spawn hook's for the start a spawn performs) say so.
+// Development selection carries consent-boundary guidance through spawn,
+// launch and readiness; actual prompt outcomes belong to the kernel.
+const DEV_CONFIRMATION_MESSAGE = /Claude Code may stop at its development-channels confirmation .*only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer; the broker and ordinary agents must never answer/;
+const DEV_CONFIRMATION = new RegExp(`channel-dev-confirmation — ${DEV_CONFIRMATION_MESSAGE.source}`);
 
-const DEV_CONFIRMATION = /channel-dev-confirmation — Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/;
-
-test("a Claude start under channel says it will wait at the development-channels confirmation, preview and real alike", (t) => {
+test("a development Claude start explains bounded kernel confirmation, preview and real alike", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: {claudeChannelMode:"development"} });
   const meta = fx.spawn().meta;
   const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
@@ -462,7 +460,7 @@ test("readiness warns channel-dev-confirmation for a home whose last start was C
       assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
     if (warns) {
-      assert.match(warning.message, /^Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/);
+      assert.match(warning.message, DEV_CONFIRMATION_MESSAGE);
       assert.equal(result.status, "ready", "configured native route carries a connection uncertainty warning");
       assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }

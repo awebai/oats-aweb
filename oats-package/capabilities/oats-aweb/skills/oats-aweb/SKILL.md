@@ -150,8 +150,24 @@ Claude/channel defaults to approved selection for new compositions. Admission is
 unverified: Claude may run with no channel wake, potentially without a diagnostic.
 Frozen homes retain their captured mode. An operator may select supported session
 delivery where authorized for unattended use, but must preserve any explicit
-native-channel requirement. Never switch automatically to development or answer
-its confirmation. Source changes do not enroll a channel or recover the runtime.
+native-channel requirement. Never switch automatically to development. Source
+changes do not enroll a channel or recover the runtime.
+
+Development selection may stop at Claude Code's confirmation. Only a compatible
+kernel, during its own launch with explicit per-home consent and a qualified
+exact fixture, may answer; the broker and ordinary agents must never answer.
+Host-only
+`launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
+is separate from `.workspaceTrust`; both default OFF.
+`settings.oats.aweb.claudeChannelMode` selects argv, never consent. There is no
+automatic migration, consent inference or approved-to-development fallback.
+Older kernels need operator attention; opted-in unsupported fixtures, versions or
+terminal geometry block per kernel behavior, so consent does not guarantee
+unattended startup. Consult the kernel launch result and durable receipt for actual
+answered/blocked/uncertain status; provider mode, consent and readiness do not
+establish an answer. Passing the prompt proves neither plugin installation,
+admission, connection, message presentation nor model consumption;
+`native-receive-unproven` and admission warnings still apply.
 
 **When woken:**
 
@@ -237,7 +253,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
-| `channel-dev-confirmation` | an explicitly selected or captured development-mode Claude/channel start waits at Claude Code's development-channels confirmation until someone answers it in the instance's terminal (also on the start's own warning line) | human: answer it in the terminal; never answer it for them |
+| `channel-dev-confirmation` | selected or captured development mode may stop at confirmation; only a compatible kernel may answer during its own launch with explicit per-home consent and a qualified exact fixture (section 4) | operator: consult kernel launch result/durable receipt; older kernels need attention and unsupported opted-in fixtures block; broker and ordinary agents never answer |
 | `claude-channel-enrollment-unverified` | approved admission is unverified; Claude may run with no channel wake and no diagnostic | operator: verify admission or choose authorized session delivery; preserve explicit native requirements |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |

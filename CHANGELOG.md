@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Documentation: superseded the unconditional never-answer development-channel
+guidance with the bounded OATS #708 kernel launch-only exception. Only a compatible
+kernel with explicit per-home consent and a qualified exact fixture may answer
+during its own launch; broker and ordinary agents never answer. Mode selection
+does not grant consent, and the kernel result/durable receipt owns actual prompt
+status. Old kernels need operator attention and unsupported opted-in fixtures
+block. Admission and native-receive warnings remain unchanged. This is source-only
+guidance, not unattended admission or release adoption; issue #44 remains open
+for kernel, release and admission work.
+
 Documentation: added the shipped existing-team GLOBAL resident journey, linked
 from setup and resident guidance. It separates native fresh creation from reuse,
 plain LOCAL setup and provider grants; documents authority/output/custody and
@@ -20,7 +30,8 @@ invalid values fail before provider effects. Launch and readiness warn that
 approved admission is unverified and Claude may run with no channel wake, possibly
 without a diagnostic. An operator may choose authorized session delivery for an
 unattended home, without overriding an explicit native requirement. No automatic
-fallback or prompt answering occurs. Pi, Codex and session routing are unchanged.
+fallback occurs; provider selection never answers prompts. Pi, Codex and session
+routing are unchanged.
 Captured mode/exact launch evidence controls historical guidance; missing mode
 warns and contradictory evidence fails. Frozen homes are unchanged. Issue #44
 remains open; cjr adoption #673 is separate. No enrollment, install or release is

@@ -37,7 +37,18 @@ admission is unverified, so Claude may run with no channel wake, potentially
 without a diagnostic. Frozen homes retain their captured mode. An operator may
 choose supported session delivery for unattended use where authorized, without
 overriding an explicit native-channel requirement. Never switch to development
-as an automatic fallback or answer its confirmation automatically.
+as an automatic fallback. Development selection may stop at confirmation; only a
+compatible kernel, during its own launch with explicit per-home consent and a
+qualified exact fixture, may answer. The broker and ordinary agents must never
+answer. Mode selection is not consent: host-only
+`launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
+and `.workspaceTrust` are separate and default OFF. Consult the kernel launch
+result and durable receipt for actual answered/blocked/uncertain status, never
+infer it from provider mode, consent or readiness. Older kernels need operator
+attention; unsupported opted-in fixture/version/geometry blocks per kernel
+behavior. Passing the prompt proves neither plugin installation, admission,
+connection, message presentation nor model consumption. See /oats-aweb for the
+consent boundary; no automatic migration or consent inference occurs.
 
 **When woken**, read what the broker or channel presents first: it may be a
 line naming what is waiting, or the full mail/chat event with body. aw 1.36.21+

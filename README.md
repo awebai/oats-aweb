@@ -180,10 +180,26 @@ Host-owned settings live under `settings.oats.aweb` (normally in
 
   Explicit host-local `claudeChannelMode: development` instead selects
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
-  It is for deliberate local channel development only. Its
-  `channel-dev-confirmation` warning explains the terminal confirmation; nothing
-  answers that prompt automatically or uses development mode as an admission
-  fallback. Both modes contribute exactly one fixed plugin argument.
+  It is for deliberate local channel development only. Both modes contribute
+  exactly one fixed plugin argument; `settings.oats.aweb.claudeChannelMode`
+  selects argv, never consent. No automatic migration, consent inference or
+  approved-to-development fallback occurs.
+
+  Development selection may stop at Claude Code's confirmation. Only a
+  compatible kernel, during its own launch with explicit per-home consent and a
+  qualified exact fixture, may answer. The broker and ordinary agents must never
+  answer. Host-only
+  `launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
+  is separate from `.workspaceTrust`; both default OFF. Older kernels still
+  need operator attention. Opted-in unsupported fixture/version/geometry blocks
+  per kernel behavior; consent does not guarantee unattended startup.
+
+  The `channel-dev-confirmation` warning describes this boundary, not an observed
+  answer. Consult the kernel launch result and durable receipt for actual
+  answered/blocked/uncertain status; provider mode, consent and readiness do not
+  establish it. Passing the prompt proves neither plugin installation, admission,
+  connection, message presentation nor model consumption. Admission warnings and
+  `native-receive-unproven` still apply.
 
   Readiness uses the captured mode or an exact retained provider launch
   contribution, including historical development arguments. Missing evidence
