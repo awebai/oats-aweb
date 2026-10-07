@@ -39,6 +39,8 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   else if (fs.existsSync(teamsFile)) console.log(fs.readFileSync(teamsFile, "utf8"));
   else console.log(JSON.stringify({ memberships: [] }));
 } else if (args[0] === "init") {
+  if (args.includes("--new-account") && !flag("--name")) { console.error("missing required flag: --name"); process.exit(2); }
+  if (args.includes("--new-account") && process.env.AW_SIGNUP_FAIL) { console.error("fixture signup failure SECRET-SIGNUP-CREDENTIAL"); process.exit(19); }
   if (args.includes("--do-not-touch-agents-md") && fs.existsSync(path.join(awDir, "identity.yaml"))) { console.log("initialized"); process.exit(0); }
   if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }
   const i = args.indexOf("--username");

@@ -398,8 +398,10 @@ From a deployment directory (outside an instance home), dispatch setup through a
 soul that uses the messaging provider, for example `oats aweb setup --soul <any soul with messaging>`; the provider consumes the kernel-forwarded `--soul` flag and does not use it as team policy.
 Supported acts:
 
-- `oats aweb setup --username <u>`: for a missing hosted root, runs
-  `aw init --new-account --username <u>` and reports the created default team.
+- `oats aweb setup --username <u> --name <alias>`: for a missing hosted root, runs
+  `aw init --new-account --username <u> --name <alias>` and reports the created default team. The root alias is required explicitly;
+  missing/invalid names refuse before bootstrap writes. Older provider versions
+  omit the native required name; this correction must be released/composed first.
 - `oats aweb setup` with the selected team API key supplied only through the
   operator's protected child environment (`AWEB_API_KEY`): runs plain `aw init`
   for that hosted team. No `setup --global` exists; `--name`/`--service` are
@@ -499,3 +501,12 @@ the same pinned kernel checkout used by the hostOnly gate. Run it with
 `OATS_HOST_ONLY_REQUIRED=1 OATS_HOST_ONLY_KERNEL_ROOT=/absolute/pinned/checkout`.
 It uses isolated local Git repositories and a fake aw; it does not verify live
 service behavior or perform host onboarding.
+
+The opt-in `test/username-native.test.mjs` checks #66 with an explicitly selected
+real aw 1.36.23 executable (commit `61c38162596d1af9085741d70d15900ff9894257`).
+Run `OATS_TEST_AW_1_36_23=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
+node --test test/username-native.test.mjs`. It records the executable path,
+version/build and SHA-256; isolated HOME and loopback service fixtures prevent
+use of ambient accounts. Signup is deliberately refused: the test proves native
+argument/wire acceptance, secret-output withholding and no root after refusal,
+not successful hosted bootstrap or live membership.

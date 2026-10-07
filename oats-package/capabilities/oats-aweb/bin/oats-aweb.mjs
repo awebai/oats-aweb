@@ -1908,7 +1908,7 @@ if (event === "launch") {
   // Guided onboarding — idempotent, prints what it finds and can run one
   // existing aw primitive when the operator supplies the needed authority.
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
-  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
+  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
   let setupDir;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
@@ -1949,7 +1949,13 @@ if (event === "launch") {
     try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }
     if (!invite) { console.error("oats aweb setup: --invite-stdin read no invite token from stdin"); process.exit(1); }
   }
-  if ((joinService || joinName) && !joinLabel) { console.error(`oats aweb setup: --service/--name require --join <label>\n${usage}`); process.exit(2); }
+  if ((joinService || (joinName && !username)) && !joinLabel) { console.error(`oats aweb setup: --service/--name require --join <label>\n${usage}`); process.exit(2); }
+  // New hosted accounts have no recorded root alias to reuse. Require the
+  // operator's explicit name before installation, directory creation or init.
+  if (username && (!joinName || !AWEB_ALIAS_RE.test(joinName))) {
+    console.error(`oats aweb setup: --username requires --name <alias>; ${AWEB_ALIAS_RULE}`);
+    process.exit(2);
+  }
   const apiKey = !!process.env.AWEB_API_KEY;
   const actions = [username ? "--username" : null, joinLabel ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
@@ -2147,7 +2153,7 @@ if (event === "launch") {
     if (defaultTeamForUsername) adviseRecordDefault(`New hosted users create ${defaultTeamForUsername}`, defaultTeamForUsername, ", then re-run setup");
     console.log(`  Existing team path: ask a member for an appropriate invite token, then run \`${setupInviteCommand(defaultTeamLabel())}\` (accepts into the selected per-team root; supply the token on stdin, never in logs or messages).`);
     console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
-    console.log("  New hosted-account path: run `oats aweb setup --username <u>` (uses `aw init --new-account --username <u>` and creates default:<u>.aweb.ai).");
+    console.log("  New hosted-account path: run `oats aweb setup --username <u> --name <alias>` (uses `aw init --new-account --username <u> --name <alias>` and creates default:<u>.aweb.ai).");
   };
 
   try {
@@ -2166,7 +2172,7 @@ if (event === "launch") {
       console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
       if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
       console.log("  Choose one guided setup path:");
-      console.log("    oats aweb setup --username <u>     # runs `aw init --new-account --username <u>` and creates default:<u>.aweb.ai");
+      console.log("    oats aweb setup --username <u> --name <alias>     # runs `aw init --new-account --username <u> --name <alias>` and creates default:<u>.aweb.ai");
       console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init` for the hosted team behind the key");
       console.log("    oats aweb setup --join <label> --invite <token>    # accepts into a new per-team root");
       console.log("  Or set settings.oats.aweb.root to an absolute directory whose .aw is the aweb minting root, then re-run setup.");
@@ -2206,8 +2212,8 @@ if (event === "launch") {
     if (!hasRoot || !matchingTeam(teams)) {
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (username) {
-        console.log(`Running aw init --new-account --username <u> at ${scope} (username withheld from repeated logs).`);
-        run(["aw", "init", "--new-account", "--username", username], scope, 120000, { secrets: [username], unsetEnv: ["AWEB_API_KEY"] });
+        console.log(`Running aw init --new-account --username <u> --name <alias> at ${scope} (username withheld from repeated logs).`);
+        run(["aw", "init", "--new-account", "--username", username, "--name", joinName], scope, 120000, { secretSafe: true, secrets: [username], unsetEnv: ["AWEB_API_KEY"] });
       } else if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
         run(["aw", "init"], scope, 120000, { secretSafe: true });
