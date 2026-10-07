@@ -198,7 +198,7 @@ test("a token echoed back as the alias never reaches meta, the brief or any outp
     assert.equal(r.doc.meta.alias, "probe");
     assert.equal(r.doc.meta.identity.alias, "probe");
     assert.match(r.doc.brief, /alias "probe" on team/);
-    assert.equal(r.doc.warning, delivery === "channel" ? `${ALIAS_WARNING("probe")} | ${APPROVED_WARNING}` : ALIAS_WARNING("probe"));
+    assert.equal(r.doc.warning, delivery === "channel" ? `${ALIAS_WARNING("probe")} | ${DEV_CONFIRMATION_WARNING}` : ALIAS_WARNING("probe"));
     assert.doesNotMatch(r.stdout + r.stderr, /SUPERSECRET/);
     assert.equal(r.stdout, expected117(fx.home, { alias: "probe", delivery, runtime, warning: ALIAS_WARNING("probe") }));
   }
