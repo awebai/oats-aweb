@@ -587,15 +587,14 @@ function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
   assert.deepEqual(doc.launch.claude.split(' '), [flag,'plugin:aweb-channel@awebai-marketplace'], 'one fixed-plugin contribution, never concatenated modes');
   if(preview) assert.equal(doc.meta,undefined,'preview records nothing');
   else assert.equal(doc.meta.claudeChannelMode,mode,'metadata records selected mode, not admission');
+  assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
   if(mode==='approved') {
     assert.match(doc.warning,/claude-channel-enrollment-unverified/);
-    assert.match(doc.warning,/may run with no channel wake, potentially without Claude reporting/);
-    assert.match(doc.warning,/operator may select.*delivery: session.*do not override an explicit native-channel requirement/);
+    assert.match(doc.warning,/approved mode registers no aweb channel without applicable managed allowedChannelPlugins or future approval/);
     assert.doesNotMatch(doc.warning,/channel-dev-confirmation/);
   } else {
     assert.match(doc.warning,/channel-dev-confirmation/);
-    assert.match(doc.warning,/only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer/);
-    assert.match(doc.warning,/provider, broker and ordinary agents must never answer/);
+    assert.match(doc.warning,/nothing in this provider answers it/);
     assert.doesNotMatch(doc.warning,/claude-channel-enrollment-unverified/);
   }
 }

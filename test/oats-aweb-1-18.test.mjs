@@ -400,10 +400,10 @@ test("readiness reports an outdated wake daemon for a codex channel home", (t) =
 // ------------------------------------------- channel-dev-confirmation (1.21.1)
 // Development selection carries consent-boundary guidance through spawn,
 // launch and readiness; actual prompt outcomes belong to the kernel.
-const DEV_CONFIRMATION_MESSAGE = /Claude Code may stop at its development-channels confirmation .*only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer; the provider, broker and ordinary agents must never answer/;
+const DEV_CONFIRMATION_MESSAGE = /Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 \(Channel selection and launch consent\)\./;
 const DEV_CONFIRMATION = new RegExp(`channel-dev-confirmation — ${DEV_CONFIRMATION_MESSAGE.source}`);
 
-test("a development Claude start explains bounded kernel confirmation, preview and real alike", (t) => {
+test("a development Claude start points to launch consent guidance, preview and real alike", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: {claudeChannelMode:"development"} });
   const meta = fx.spawn().meta;
   const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
@@ -1059,14 +1059,12 @@ for(const mode of [undefined,'approved']) test(`selector emits the fixed argumen
   assert.match(doc.warning,new RegExp(code));
   if(expected==='approved') {
     assert.match(doc.warning,/currently not on the default approved list/);
-    assert.match(doc.warning,/approved mode registers no aweb channel unless applicable managed allowedChannelPlugins for this identity lists the plugin and marketplace/);
-    assert.match(doc.warning,/Installation or a trusted marketplace is not approval/);
-    assert.match(doc.warning,/no channel wake/i);
-    assert.match(doc.warning,/without.*report/i);
+    assert.match(doc.warning,/approved mode registers no aweb channel without applicable managed allowedChannelPlugins or future approval/);
   } else {
-    assert.match(doc.warning,/sole launch opt-in and defaults OFF/);
-    assert.match(doc.warning,/at most once; a folder-trust prompt blocks with a receipt and zero keys/);
+    assert.match(doc.warning,/nothing in this provider answers it/);
   }
+  assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
+  assert.doesNotMatch(doc.warning,/launchPromptAnswers|awebDevelopmentChannel/);
   fx.record(doc.meta,'claude');
   const warnings=fx.readiness().warnings;
   assert.ok(warnings.some(w=>w.code===code));

@@ -44,19 +44,14 @@ an explicit reviewed release. An operator may choose supported session delivery
 for unattended use where authorized, without overriding an explicit native-channel
 requirement. Never switch to development as an automatic fallback.
 
-Development selection may stop at confirmation; only a compatible kernel, during its own launch with explicit per-home consent and a
-qualified exact fixture, may answer. The provider, broker and ordinary agents
-must never answer. Mode selection is not consent: host-only
-`launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
-is the sole launch opt-in and defaults OFF. The kernel may answer exactly one
-qualified development confirmation, at most once; a folder-trust prompt blocks
-with a receipt and zero keys. Folder trust is outside this exception.
-Consult the kernel launch result and durable receipt for actual answered/blocked/uncertain status, never
-infer it from provider mode, consent or readiness. Older kernels need operator
-attention; unsupported opted-in fixture/version/geometry blocks per kernel
-behavior. Passing the prompt proves neither plugin installation, admission,
-connection, message presentation nor model consumption. See /oats-aweb for the
-consent boundary; no automatic migration or consent inference occurs.
+Development selection may stop at confirmation; nothing in this provider answers
+it. For future support, a compatible kernel may answer it at launch under explicit
+per-home consent recorded in the kernel's host-only configuration. This does not
+claim support in the installed kernel. See /oats-aweb section 4, **Channel
+selection and launch consent**, for the boundaries. Provider mode, consent and
+readiness never establish that a prompt was answered; actual outcomes belong to
+the kernel launch result and durable receipt, where supported. Passing
+confirmation does not prove native receive; `native-receive-unproven` remains.
 
 **When woken**, read what the broker or channel presents first: it may be a
 line naming what is waiting, or the full mail/chat event with body. aw 1.36.21+
