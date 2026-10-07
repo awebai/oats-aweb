@@ -695,3 +695,24 @@ test('malformed optional spawn inventory preserves valid grant and never prints 
   assert.equal(logLines(base).some(l=>l.argv.slice(0,3).join(' ')==='id grant revoke'),false);
  } finally {rmSync(base,{recursive:true,force:true});}
 });
+
+
+test('path app IDs and non-origin URLs never escape successful grant receipt validation',()=>{
+ const catalog=JSON.parse(readFileSync(new URL('./fixtures/grant-mint/catalog.json',import.meta.url),'utf8'));
+ for(const kind of ['app','skipped','origin']) {
+  const base=mkdtempSync(join(tmpdir(),'grant-path-refusal-'));
+  try {
+   const pair={apps:structuredClone(catalog.apps),skipped_apps:[]};
+   if(kind==='app')pair.apps[0].app_id='/tmp/PRIVATE_KEY';
+   if(kind==='skipped')pair.skipped_apps=[{app_id:'/tmp/PRIVATE_KEY',code:'app_missing'}];
+   if(kind==='origin')pair.apps[0].origin='https://notes.example/PRIVATE_TOKEN';
+   const {r}=spawnGrant(base,{}, {FAKE_APP_INVENTORY:JSON.stringify(pair)});
+   assert.equal(r.status,0,r.stdout+r.stderr);const grant=r.doc.meta.identity.grant;
+   assert.equal(grant.id,'grant-spawn');assert.equal(grant.appInventoryError,'E_GRANT_APP_INVENTORY');
+   assert.equal(grant.apps,undefined);assert.equal(grant.skipped_apps,undefined);
+   assert.match(r.doc.warning,/E_GRANT_APP_INVENTORY/);assert.doesNotMatch(r.stdout+r.stderr,/PRIVATE_KEY|PRIVATE_TOKEN/);
+   assert.equal(logLines(base).filter(l=>l.argv.slice(0,3).join(' ')==='id grant mint').length,1);
+   assert.equal(logLines(base).some(l=>l.argv.slice(0,3).join(' ')==='id grant revoke'),false);
+  } finally {rmSync(base,{recursive:true,force:true});}
+ }
+});

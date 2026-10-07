@@ -42,3 +42,22 @@ test('bounded display data and unsafe URL/digest shapes become unavailable witho
  for(const r of cases)assert.equal(grantAppInventory(r).appInventoryError,'E_GRANT_APP_INVENTORY');
  const p=grantAppInventory(good);p.apps[0].tools.push('mutated');assert.notDeepEqual(p.apps,good.apps);
 });
+
+
+test('native app names and canonical origin-only values; independent path refusals',()=>{
+ const good=fixture('catalog');
+ for(const origin of ['https://notes.example/PRIVATE_TOKEN','https://notes.example/','https://NOTES.example','https://notes.example.','https://notes.example:443','http://notes.example:80']) {
+  const r=structuredClone(good);r.apps[0].origin=origin;
+  const p=grantAppInventory(r);assert.equal(p.appInventoryError,'E_GRANT_APP_INVENTORY');
+  assert.equal(p.apps,undefined);assert.equal(p.skipped_apps,undefined);
+  assert.doesNotMatch(grantInventoryAdvisory({id:'valid',...p}),/PRIVATE_TOKEN/);
+ }
+ for(const id of ['/tmp/PRIVATE_KEY','-leading','../relative','name.with.dot','na me']) for(const skipped of [false,true]){
+  const r=structuredClone(good);if(skipped)r.skipped_apps=[{app_id:id,code:'app_missing'}];else r.apps[0].app_id=id;
+  const p=grantAppInventory(r);assert.equal(p.appInventoryError,'E_GRANT_APP_INVENTORY');assert.equal(p.apps,undefined);assert.equal(p.skipped_apps,undefined);
+  assert.doesNotMatch(grantInventoryAdvisory({id:'valid',...p}),/PRIVATE_KEY/);
+ }
+ for(const origin of ['https://notes.example','http://localhost:8080','https://[::1]:8443']){
+  const r=structuredClone(good);r.apps[0].origin=origin;r.apps[0].app_id='Notes_2-x';assert.equal(grantAppInventory(r).appInventoryStatus,'known');
+ }
+});
