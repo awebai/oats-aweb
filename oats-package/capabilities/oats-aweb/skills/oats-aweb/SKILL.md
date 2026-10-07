@@ -419,6 +419,10 @@ existing-GLOBAL acceptance below, passing the invite only to its intended recipi
 
 ### Invitations and certificate ownership
 
+For the unreleased #71 provider issue/accept pair, read
+[Issue and accept a LOCAL hosted member invite](references/member-invitation.md)
+before planning or issuing. It is not a human admission or GLOBAL invite.
+
 | Act / selected version and authority | Command or surface | Writes / success / one next step | Error boundary / remedy |
 |---|---|---|---|
 | Issue member invite or remove certificate from external I, aw 1.36.24 | **Blocked:** external-home `team invite` and `id team remove-member` are not allowlisted | No supported external-home invocation; no effect should be attempted. Next: native policy owner supplies a supported selected-authority context. | `command "<path>" is not yet identity-home-aware; refusing to use an external identity home ...` → stop; do not remove selection or substitute ambient root. Help flags alone do not establish admission. |

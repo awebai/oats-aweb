@@ -33,6 +33,12 @@ test('pinned public operator dispatch supplies deployment independently of neste
  const before=fake.readCalls().length;
  r=run(['aweb','setup','--soul','probe','--join','other','--invite','FIXTURE-TOKEN'],{OATS_WORKSPACE:root});
  assert.equal(r.status,1,r.stdout+r.stderr);assert.match(r.stderr,/deployment.*inconsistent/);assert.equal(fake.readCalls().length,before);
+ // Public dispatch of invitation planning must read the selected root and never mint.
+ const invitesBefore=fake.readCalls().filter(c=>c.args?.[0]==='team'&&c.args?.[1]==='invite').length;
+ r=run(['aweb','invite','--soul','probe','--plan','--json']);
+ assert.equal(r.status,0,r.stdout+r.stderr);
+ const plan=JSON.parse(r.stdout);assert.equal(plan.ok,true);assert.equal(plan.result.team,'default:example.invalid');assert.equal(plan.result.root,root);assert.equal(plan.result.plan,true);assert.equal(plan.result.token,undefined);
+ assert.equal(fake.readCalls().filter(c=>c.args?.[0]==='team'&&c.args?.[1]==='invite').length,invitesBefore);
  // The actual public JSON seam, without trusting ambient OATS_AGENT.
  r=run(['inspect','--soul','probe','--dir',dep,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);
  const doc=JSON.parse(r.stdout);assert.equal(doc.schemaVersion,1);assert.equal(doc.ok,true);assert.equal(doc.result.workspace.deployment,dep);assert.equal(doc.result.subject.kind,'soul');assert.notEqual(doc.result.subject.soul,'spoofed-ambient-soul');

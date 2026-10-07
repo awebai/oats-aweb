@@ -130,8 +130,12 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   assert.equal(manifest.commands.teams, "bin/oats-aweb.mjs teams");
   assert.equal(manifest.commands.join, "bin/oats-aweb.mjs join");
   assert.equal(manifest.commands.leave, "bin/oats-aweb.mjs leave");
+  assert.equal(manifest.commands.invite, "bin/oats-aweb.mjs invite");
+  assert.equal(manifest.operations.invite.context, "scope");
+  assert.equal(manifest.operations.invite.kind, "action");
+  assert.equal(manifest.operations.invite.args[0].flag, "--label");
   assert.equal(schema.properties.operations.propertyNames.pattern, "^[a-z][a-z0-9-]*$");
-  assert.deepEqual(Object.keys(manifest.operations).sort(), ["join", "leave", "teams"]);
+  assert.deepEqual(Object.keys(manifest.operations).sort(), ["invite", "join", "leave", "teams"]);
   assert.ok(!Object.keys(manifest.operations).some((key) => key.includes(":")), "operation keys are names; kernel forms messaging:<name>");
   assert.equal(manifest.operations.teams.kind, "action");
   assert.equal(manifest.operations.join.args[0].flag, "--labels");
