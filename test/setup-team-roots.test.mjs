@@ -138,3 +138,12 @@ for (const failure of ['alias', 'accept']) test(`failed ${failure} leaves no new
  assert.equal(r.status, 1);
  assert.ok(!existsSync(join(f.deployment, '.aweb-roots', 'joined')));
 });
+
+for (const residue of ['addition', 'partial']) test(`failed accept retains new root containing ${residue}`, t => {
+ const f = fixture(t), target = join(f.deployment, '.aweb-roots', 'joined');
+ const r = f.run(['setup', '--join', 'joined', '--invite', 'SECRET', '--name', 'host', '--service', 'https://service.invalid'], {
+  AW_ACCEPT_FAIL: '1', [residue === 'addition' ? 'AW_ACCEPT_FAIL_ADDITION' : 'AW_ACCEPT_FAIL_PARTIAL']: '1',
+ });
+ assert.equal(r.status, 1);
+ assert.equal(readFileSync(residue === 'addition' ? join(target, 'concurrent-data') : join(target, '.aw', 'identity.yaml'), 'utf8'), residue === 'addition' ? 'keep addition' : 'partial identity');
+});

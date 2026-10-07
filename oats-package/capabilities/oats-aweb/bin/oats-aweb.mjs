@@ -2040,7 +2040,10 @@ if (event === "launch") {
     } else {
       if (!token || typeof token !== "string") throw new Error(`--join ${label} needs --invite <token> unless ${teamRoot} already holds an accepted unconnected identity to resume`);
       const alias = setupAlias();
-      const createdRoot = mkdirSync(teamRoot, { recursive: true }) !== undefined;
+      mkdirSync(dirname(teamRoot), { recursive: true });
+      let createdRoot = false;
+      try { mkdirSync(teamRoot); createdRoot = true; }
+      catch (e) { if (e.code !== "EEXIST" || !statSync(teamRoot).isDirectory()) throw e; }
       try {
         ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
       } catch (e) {
