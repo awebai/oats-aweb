@@ -319,7 +319,7 @@ test("setup refuses a missing shared default root with the invite remedy", async
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(result.code, 1);
-  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared: ask its owner for an invite, then run `oats aweb setup --soul dev --join oats-shared --invite <token>`/);
+  assert.match(result.stdout, /team oats-shared \(shared:reh\.test\) is shared: ask its owner for an appropriate invite, then run `oats aweb setup --dir .* --soul dev --join oats-shared --invite-stdin --name <alias> --service <url>`/);
   assert.doesNotMatch(result.stdout, /--username|AWEB_API_KEY/);
   assert.equal(existsSync(join(root, ".aw")), false);
 });
@@ -540,7 +540,7 @@ test("setup --join connect failure keeps the root and can resume without a new i
   assert.match(result.stderr, /workspace connect\/verification failed/);
   assert.equal(fake.readCalls().some((c) => c.args.slice(0, 2).join(" ") === "workspace connect"), true);
   assert.equal(existsSync(join(root, ".aweb-roots", "joined", ".aw", "identity.yaml")), true, "failed connect keeps the accepted identity for resume");
-  assert.match(result.stderr, /resume with: oats aweb setup --soul <soul> --join joined --service <url>/);
+  assert.match(result.stderr, /resume with: oats aweb setup --dir .* --soul '<soul>' --join joined --service <url>/);
   assert.doesNotMatch(readFileSync(join(root, "oats-local.yaml"), "utf8"), /joined:example\.invalid/);
 
   const resumed = await run(["setup", "--join", "joined", "--service", "https://owner.example/api"], {
@@ -563,6 +563,7 @@ test("setup --join connect failure keeps the root and can resume without a new i
 
 test("setup --create with namespace creates a local BYOT team, accepts it into a per-team root, and records it with the kernel", async (t) => {
   const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t);
   const kernel = fakeOatsCli(t);
   const label = "My_Team";
@@ -571,7 +572,7 @@ test("setup --create with namespace creates a local BYOT team, accepts it into a
   const result = await run(["setup", "--create", label, "--namespace", namespace], {
     PATH: fake.path,
     AWEB_API_KEY: "",
-    OATS_EVENT: "setup",
+    OATS_EVENT: "setup", OATS_WORKSPACE: root,
     OATS_CLI_BIN: kernel.cli,
     OATS_DEFAULT_TEAM: label,
     OATS_DEFAULT_TEAM_ID: team,
@@ -593,10 +594,11 @@ test("setup --create with namespace creates a local BYOT team, accepts it into a
 
 // Team model 3 (OATS 0.38): a workspace without `localTeams: true` refuses `oats teams add|default`.
 const TEAMS_CLOSED = { teamsApi: 2, deployment: "/fixture", localTeams: false, defaultTeam: null, teams: [], souls: {}, problems: [] };
-const setupCreateEnv = (root, kernel, fake) => ({ PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) });
+const setupCreateEnv = (root, kernel, fake) => ({ OATS_WORKSPACE: root, PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_WORKSPACE: root, OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) });
 
 test("setup --create on a closed workspace creates the team, records nothing local, and prints what to commit", async (t) => {
   const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t);
   const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
   const team = "eng:example.invalid";
@@ -613,6 +615,7 @@ test("setup --create on a closed workspace creates the team, records nothing loc
 
 test("setup --create on a closed workspace with a default team prints no defaultTeam line", async (t) => {
   const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t);
   const kernel = fakeOatsCli(t, { teams: { ...TEAMS_CLOSED, defaultTeam: { label: "main", team: "main:example.invalid", from: "workspace" } } });
   const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
@@ -624,6 +627,7 @@ test("setup --create on a closed workspace with a default team prints no default
 test("setup --create on a closed workspace quotes a label YAML would read as a number or boolean", async (t) => {
   for (const label of ["01", "true", "123"]) {
     const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
     const fake = fakeAwSetupPath(t);
     const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
     const result = await run(["setup", "--create", label, "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
@@ -641,6 +645,7 @@ test("setup --create on a closed workspace quotes a label YAML would read as a n
 test("setup --create refuses before creating anything when it cannot tell whether local teams are allowed", async (t) => {
   for (const kernel of [fakeOatsCli(t, { teams: "fail" }), undefined]) {
     const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
     const fake = fakeAwSetupPath(t);
     const env = setupCreateEnv(root, kernel ?? { cli: "" }, fake);
     if (!kernel) delete env.OATS_CLI_BIN;
@@ -670,20 +675,21 @@ test("setup on a closed workspace advises the workspace form instead of local te
   }
 });
 
-test("setup --create without namespace refuses hosted team creation until the aweb-abkh floor", async (t) => {
+test("setup --create without namespace distinguishes unsupported provider from native hosted creation", async (t) => {
   const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t);
   const kernel = fakeOatsCli(t);
   const result = await run(["setup", "--create", "hosted"], {
     PATH: fake.path,
     AWEB_API_KEY: "",
-    OATS_EVENT: "setup",
+    OATS_EVENT: "setup", OATS_WORKSPACE: root,
     OATS_CLI_BIN: kernel.cli,
     OATS_DEFAULT_TEAM: "hosted",
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /creating an additional hosted team needs hosted team creation \(aweb-abkh\), not yet released in aw or aweb Cloud; use --namespace <domain> for a team you control, or ask the aweb team/);
+  assert.match(result.stderr, /provider setup --create without --namespace is not supported; native aw 1\.36\.24 supports id team create --hosted/);
   assert.deepEqual(fake.readCalls(), []);
   assert.deepEqual(kernel.readCalls(), []);
 });
@@ -710,6 +716,7 @@ test("plain setup with an unmapped default asks for the owner id or invite and c
 
 test("setup --create suffixes only on 409 conflicts", async (t) => {
   const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t);
   const kernel = fakeOatsCli(t);
   const label = "My.Team";
@@ -719,7 +726,7 @@ test("setup --create suffixes only on 409 conflicts", async (t) => {
     PATH: fake.path,
     AWEB_API_KEY: "",
     AW_CREATE_MODE: "conflict-once",
-    OATS_EVENT: "setup",
+    OATS_EVENT: "setup", OATS_WORKSPACE: root,
     OATS_CLI_BIN: kernel.cli,
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
@@ -734,12 +741,13 @@ test("setup --create suffixes only on 409 conflicts", async (t) => {
 
 test("setup --create reports non-409 create errors once without leaking minted tokens", async (t) => {
   const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t);
   const result = await run(["setup", "--create", "My.Team", "--namespace", "example.invalid"], {
     PATH: fake.path,
     AWEB_API_KEY: "",
     AW_CREATE_MODE: "token-leak-error",
-    OATS_EVENT: "setup",
+    OATS_EVENT: "setup", OATS_WORKSPACE: root,
     OATS_CLI_BIN: fakeOatsCli(t).cli,
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
@@ -752,12 +760,13 @@ test("setup --create reports non-409 create errors once without leaking minted t
 test("setup --create fails when aw create omits team_id or invite token", async (t) => {
   for (const [mode, message] of [["missing-id", /aw id team create returned no team_id/], ["missing-token", /aw id team create returned no invite token/]]) {
     const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
     const fake = fakeAwSetupPath(t);
     const result = await run(["setup", "--create", "missing", "--namespace", "example.invalid"], {
       PATH: fake.path,
       AWEB_API_KEY: "",
       AW_CREATE_MODE: mode,
-      OATS_EVENT: "setup",
+      OATS_EVENT: "setup", OATS_WORKSPACE: root,
       OATS_CLI_BIN: fakeOatsCli(t).cli,
       OATS_SETTINGS: JSON.stringify({ root }),
     }, root);

@@ -23,6 +23,7 @@ export function fakeAwSetupPath(t, { activeTeam = "active:example.invalid" } = {
 const fs = require("node:fs");
 const path = require("node:path");
 const calls = ${JSON.stringify(calls)};
+if (process.env.AWEB_IDENTITY_HOME) { console.error("unexpected ambient identity home"); process.exit(94); }
 let args = process.argv.slice(2);
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
@@ -65,6 +66,11 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_CREATE_MODE === "missing-token") { console.log(JSON.stringify({ team_id: team })); process.exit(0); }
   console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team, aweb_url: "https://app.aweb.ai/api" }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
+  if (process.env.AW_ACCEPT_FAIL) {
+    if (process.env.AW_ACCEPT_FAIL_ADDITION) fs.writeFileSync(path.join(path.dirname(awDir), "concurrent-data"), "keep addition");
+    if (process.env.AW_ACCEPT_FAIL_PARTIAL) { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "partial identity"); }
+    console.error("fixture acceptance failure"); process.exit(17);
+  }
   const team = process.env.AW_FAKE_TEAM || args[3].replace(/^TOKEN__/, "");
   writeTeams(team);
   console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", ...(process.env.AW_ACCEPT_OMIT_SERVICE ? {} : { aweb_url: "https://app.aweb.ai/api" }) }));

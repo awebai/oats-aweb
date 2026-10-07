@@ -1,3 +1,4 @@
+import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -204,7 +205,9 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home);
   const fake = fakeAw114(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const env = {
+    OATS_CLI_BIN: currentRootQuery(root, { home, deployment: root, settings: { root } }).cli,
     PATH: fake.path,
     OATS_EVENT: "spawn",
     OATS_HOME: home,
@@ -300,7 +303,9 @@ test("mapped primary joined team can be joined and left", (t) => {
     { label: "alpha", team: "alpha:example.test", default: false, from: "shared" },
     { label: "beta", team: "beta:example.test", default: false, from: "shared" },
   ]);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const env = {
+    OATS_CLI_BIN: currentRootQuery(root, { home, deployment: root, settings: { root } }).cli,
     PATH: fake.path,
     OATS_EVENT: "spawn",
     OATS_HOME: home,
