@@ -364,13 +364,14 @@ Next: use `/oats-teams` to correct the declaration.
 
 ### First LOCAL root and controller-owned team
 
-For unreleased #70 automatic username mapping/default, plan and partial recovery,
+For provider 1.23.0 (#70) automatic username mapping/default, plan and partial recovery,
 read [Username setup and deployment default](references/username-setup.md).
-The released first-account behavior below prints mapping advice instead.
+The provider 1.22.2 first-account behavior below only prints mapping advice,
+as did earlier versions; provider 1.23.0 users follow the reference above.
 
 | Act / prerequisites | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
-| First hosted account, #66 fix required in selected provider; selected account name, explicit root alias and empty LOCAL root | `oats aweb setup --soul S --username <selected-user> --name <root-alias>` | Runs `aw init --new-account --username <selected-user> --name <root-alias>`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `--username requires --name <alias>; invalid alias: ...` → supply an explicit 1–64 character alias (letter/digit first, then letters/digits/`-`/`_`); no soul-derived default. Older provider versions cannot pass this pair; require the fix before effects. `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
+| First hosted account, provider 1.22.2 (#66); selected account name, explicit root alias and empty LOCAL root | `oats aweb setup --soul S --username <selected-user> --name <root-alias>` | Runs `aw init --new-account --username <selected-user> --name <root-alias>`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `--username requires --name <alias>; invalid alias: ...` → supply an explicit 1–64 character alias (letter/digit first, then letters/digits/`-`/`_`); no soul-derived default. Older provider versions cannot pass this pair; require the fix before effects. `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
 | Existing hosted team's first LOCAL root, released provider 1.21.1; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | Plain `aw init`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
 | Additional controller-owned team, released provider 1.21.1; actual controller authority for owned namespace | `oats aweb setup --soul S --create L --namespace <owned-domain>` | Normalizes label, creates team, accepts/connects a per-team root, records `roots[T]`; success is returned canonical membership plus recorded root. Where `localTeams: true`, records local label; otherwise prints `teams:`/`defaultTeam:` to commit in `oats-workspace.yaml`, with eligibility in a `souls:` entry. Next: `/oats-teams` declaration/readback. | `could not tell whether this workspace allows local teams (...); nothing was created` → repair selected kernel/configuration read before retry. No invented controller authority. |
 
@@ -431,7 +432,7 @@ existing-GLOBAL acceptance below, passing the invite only to its intended recipi
 
 ### Invitations and certificate ownership
 
-For the unreleased #71 provider issue/accept pair, read
+For the provider 1.23.0 (#71) issue/accept pair, read
 [Issue and accept a LOCAL hosted member invite](references/member-invitation.md)
 before planning or issuing. It is not a human admission or GLOBAL invite.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.23.0 — 2026-10-07
 
 Documentation (#72): add the released kernel 0.44.0 exact-home operator consent
 recipe, narrow launch qualification, receipt interpretation and retained-session
@@ -18,7 +18,7 @@ ambient authority. Unrelated kernel team warnings do not block issuance;
 failures and selected-label warnings refuse with safe codes. Membership reads
 also isolate native HOME and clean temporary state, including plans. Paired labelled stdin acceptance guidance and pinned native
 loopback/public dispatch regressions accompany the source change; no live
-issuance, timed journey or release qualification is claimed.
+issuance, timed journey or installed qualification is claimed.
 
 Added (#70): hosted username setup selects a normalized default team label or
 explicit `--label`, verifies exactly one matching LOCAL membership and alias,
@@ -28,7 +28,7 @@ conflicts never overwrite shared declarations. `--plan` has no bootstrap,
 installation or configuration effects. Closed policy refuses before bootstrap;
 other failures remain typed errors. Partial writes preserve the root and report
 observed configuration, including a default implicitly set by `teams add`.
-This source change does not establish installed support or timed onboarding.
+This release does not establish local adoption or timed onboarding.
 
 ## 1.22.2 — 2026-10-07
 

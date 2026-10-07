@@ -1,6 +1,6 @@
 # Issue and accept a LOCAL hosted member invite
 
-The following provider act needs the unreleased #71 composition; pinned native
+The following provider act needs the provider 1.23.0 composition (#71); pinned native
 contract evidence is aw 1.36.23. Use an authorized selected deployment D and
 messaging soul S, selected-kernel `OATS_TEAM_SCOPE` dispatch and public
 `teams --dir D --json` with `teamsApi: 2` (verified at OATS 0.42 source

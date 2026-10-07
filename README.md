@@ -401,7 +401,7 @@ soul that uses the messaging provider, for example `oats aweb setup --soul <any 
 Supported acts:
 
 - `oats aweb setup --username <u> --name <alias> [--label L] [--plan] [--json]`:
-  unreleased #70 automatically records the LOCAL team mapping and deployment
+  provider 1.23.0 (#70) automatically records the LOCAL team mapping and deployment
   default through the selected kernel after verifying the root membership.
   Missing/invalid names refuse before effects; the explicit native name fix is
   present in the 1.22.2 composition. Earlier behavior only printed mapping advice.
@@ -500,7 +500,7 @@ the root is absent; to exercise it, provision the same source/dependency and run
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
 
-### Member invitation (unreleased #71)
+### Member invitation (provider 1.23.0, #71)
 
 From the selected deployment, `oats aweb invite --soul S [--label L]
 [--plan] [--json]` selects a declared label (or the selected soul's default),
@@ -579,7 +579,7 @@ the selected messaging soul. These checks do not prove a timed operator journey.
 
 ### Username mapping/default verification
 
-The unreleased #70 flow lives in `lib/setup-team-default.mjs`: it uses the selected
+The provider 1.23.0 (#70) flow lives in `lib/setup-team-default.mjs`: it uses the selected
 `OATS_CLI_BIN` with explicit deployment and sanitized kernel selectors for public
 `teams --json`, `teams add` and `teams default`. It accepts `teamsApi: 2`, including
 standalone `localTeams: null`; only explicit false/`local-teams-closed` is a policy
