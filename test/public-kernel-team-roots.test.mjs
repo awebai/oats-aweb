@@ -52,6 +52,16 @@ test('pinned public operator dispatch supplies deployment independently of neste
  assert.equal(configured.defaultTeam.label,'alice');assert.equal(configured.defaultTeam.team,'default:alice.aweb.ai');
  const initializations=fake.readCalls().filter(c=>c.args[0]==='init').length;
  r=run(setupArgs,{},fresh);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(fake.readCalls().filter(c=>c.args[0]==='init').length,initializations);
+ // A real local default typo is a named failure, without exposing diagnostic text.
+ const localPath=join(dep,'oats-local.yaml'),savedLocal=readFileSync(localPath,'utf8');
+ writeFileSync(localPath,savedLocal+'\ndefaultTeam: typo\n');
+ r=run(['teams','--dir',dep,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.ok(JSON.parse(r.stdout).result.problems.some(p=>p.code==='E_TEAM_UNKNOWN'&&p.severity==='failure'&&p.label==='typo'));
+ const nativeBefore=fake.readCalls().length;
+ // Exercise the provider query directly: public soul dispatch may itself refuse the typo.
+ r=spawnSync(process.execPath,[join(packageRoot,'capabilities/oats-aweb/bin/oats-aweb.mjs'),'invite','--label','default','--plan','--json'],{cwd:dep,env:{...env,OATS_CLI_BIN:join(kernel,'bin/oats.mjs'),OATS_TEAM_SCOPE:dep,OATS_SETTINGS:JSON.stringify({root})},encoding:'utf8'});
+ assert.equal(r.status,1,r.stdout+r.stderr);assert.equal(JSON.parse(r.stdout).error.code,'E_INVITE_TEAM_QUERY');assert.match(JSON.parse(r.stdout).error.message,/E_TEAM_UNKNOWN/);assert.equal(fake.readCalls().length,nativeBefore);
+ writeFileSync(localPath,savedLocal);
  // The actual public JSON seam, without trusting ambient OATS_AGENT.
  r=run(['inspect','--soul','probe','--dir',dep,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);
  const doc=JSON.parse(r.stdout);assert.equal(doc.schemaVersion,1);assert.equal(doc.ok,true);assert.equal(doc.result.workspace.deployment,dep);assert.equal(doc.result.subject.kind,'soul');assert.notEqual(doc.result.subject.soul,'spoofed-ambient-soul');
