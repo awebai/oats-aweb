@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add explicit `aweb probe --home` command and offline round-trip implementation:
+  one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
+  deadlines and public diagnostic projections. No lifecycle/readiness probe,
+  identity provisioning, terminal input or uncertain-send retry.
+- Production sending remains closed pending qualified published CLI and Cloud
+  fresh-conversation support; no provider floor increase or legacy fallback.
+  See `docs/probe.md` for proof limits, JSON timing semantics and separate live
+  acceptance requirements.
+
+
 ## 1.24.0 — 2026-10-09
 
 Docs (#87): the oats-aweb skill's section 4 documents the approved Claude channel

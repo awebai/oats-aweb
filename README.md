@@ -735,3 +735,11 @@ restriction. Unsupported/ambiguous display data becomes unavailable
 without changing native authority; it is never trimmed or expanded. Current
 receipt fixtures are byte copies of aw source873ed2bf; local substitute tests
 do not prove live grant or Folio authority.
+
+## Explicit round-trip probe
+
+`oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
+reports a verified nonce round trip when qualified CLI **and** server support
+are available. It is an explicit send action, never a readiness/lifecycle check.
+The production send gate currently fails closed pending those release contracts;
+there is no legacy fallback. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).

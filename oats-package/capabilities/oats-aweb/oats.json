@@ -74,7 +74,8 @@
     "teams": "bin/oats-aweb.mjs teams",
     "join": "bin/oats-aweb.mjs join",
     "leave": "bin/oats-aweb.mjs leave",
-    "invite": "bin/oats-aweb.mjs invite"
+    "invite": "bin/oats-aweb.mjs invite",
+    "probe": "bin/oats-aweb-probe.mjs"
   },
   "binding": {
     "version": 1,
