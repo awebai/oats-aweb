@@ -158,7 +158,7 @@
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (Go duration, 60s to 720h, default 720h), e2ee (default true), renew (off|launch, default launch)."
     },
     "residents": {
       "hostOnly": true,

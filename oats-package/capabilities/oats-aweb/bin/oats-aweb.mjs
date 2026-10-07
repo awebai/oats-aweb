@@ -53,6 +53,7 @@ import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
+import { resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { selectClaudeChannel, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -576,7 +577,7 @@ function grantScopes() {
   fatal(`identity.profile must be one of "normal" or "reviewer" (got ${JSON.stringify(identitySettings.profile)})`);
 }
 const grantE2eeRequired = () => identitySettings.e2ee !== false;
-const grantRenewMode = () => identitySettings.renew === undefined || identitySettings.renew === null || identitySettings.renew === "" ? "off" : String(identitySettings.renew);
+const grantRenewMode = () => identitySettings.renew === undefined || identitySettings.renew === null || identitySettings.renew === "" ? "launch" : String(identitySettings.renew);
 function resolveResidentCustody(name) {
   if (!name) fatal(`identity.mode "global" requires identity.resident; set ${residentKeyHint("<name>")} to the absolute custody directory for that resident identity`);
   const residents = settings.residents && typeof settings.residents === "object" && !Array.isArray(settings.residents) ? settings.residents : {};
@@ -691,6 +692,10 @@ function validateMintedGrant(minted, grantHome) {
   return { minted, grantId, expiresAt, mintedTeam, alias: typeof minted.alias === "string" && minted.alias ? minted.alias : undefined, address: typeof minted.address === "string" && minted.address ? minted.address : null };
 }
 function parseMintedGrant(raw, grantHome) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome); }
+function checkedGrantTTL() {
+  try { return resolveGrantTTL(identitySettings.ttl); }
+  catch (error) { fatal(error.message); }
+}
 /** The renewal mode, refusing anything but "off" and "launch". */
 function checkedRenewMode() {
   const mode = grantRenewMode();
@@ -698,6 +703,7 @@ function checkedRenewMode() {
   return mode;
 }
 function globalGrantRenew(oldMeta) {
+  const ttl = identityMode === "global" || oldMeta.identity?.mode === "global" ? checkedGrantTTL() : undefined;
   if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
   if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
   const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
@@ -705,7 +711,6 @@ function globalGrantRenew(oldMeta) {
   const team = defaultTeamId() || oldMeta.identity.team;
   if (!team) fatal(teamConfigRemedy());
   const scopes = grantScopes();
-  const ttl = identitySettings.ttl === undefined || identitySettings.ttl === null || identitySettings.ttl === "" ? "8h" : String(identitySettings.ttl);
   const oldHome = priorGrantHome(oldMeta);
   let preflight;
   try { preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), fatalOnError: false, runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal }); }
@@ -752,6 +757,7 @@ function globalGrantRenew(oldMeta) {
   out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), ...(warning ? { warning } : {}) });
 }
 function globalGrantSpawn() {
+  const ttl = checkedGrantTTL();
   const resident = String(identitySettings.resident || "");
   const custody = resolveResidentCustody(resident);
   let team = defaultTeamId();
@@ -760,7 +766,6 @@ function globalGrantSpawn() {
   const grantHome = join(home, ".aweb-identity");
   if (existsSync(grantHome)) fatal(`${grantHome} already exists; refusing to overwrite an existing aweb session grant home`);
   const scopes = grantScopes();
-  const ttl = identitySettings.ttl === undefined || identitySettings.ttl === null || identitySettings.ttl === "" ? "8h" : String(identitySettings.ttl);
   const preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal });
   const custodySocket = requirePreflightCustodySocket(preflight);
   let meta;
@@ -1478,6 +1483,11 @@ if (event === "launch") {
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
   // over what the meta recorded.
   const started = startedMeta(JSON.parse(process.env.OATS_META || "{}"));
+  // Only GLOBAL grants get the new default; ordinary LOCAL launch/join sync
+  // must not enter the renewal helper's retained-grant early return.
+  const globalLaunch = identityMode === "global" || started.identity?.mode === "global";
+  if (globalLaunch) checkedGrantTTL(); // before preview, broker writes or retained returns
+  const renewalPath = globalLaunch || identitySettings.renew === "launch";
   // Under OATS_LAUNCH_PREVIEW=1 (the kernel's first pass of every start, and
   // `oats launch-config preview`) the hook changes nothing: no broker
   // registration, no renewal, no joined-team sync, no meta. It answers with
@@ -1487,11 +1497,11 @@ if (event === "launch") {
   // the preview names the current one and declares it volatile: the kernel
   // takes its value from the real pass and leaves it out of the comparison.
   if (process.env.OATS_LAUNCH_PREVIEW === "1") {
-    const renews = (identityMode === "global" || grantRenewMode() === "launch") && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
+    const renews = renewalPath && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
     out({ ...retainedLaunchOutput(started), ...(renews ? { volatileEnv: ["AWEB_IDENTITY_HOME"] } : {}) });
   }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
-  if (identityMode === "global" || grantRenewMode() === "launch") globalGrantRenew(started);
+  if (renewalPath) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {

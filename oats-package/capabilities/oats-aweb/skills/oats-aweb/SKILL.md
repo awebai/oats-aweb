@@ -450,6 +450,19 @@ certificates remain owner-pending; no recipe is inferred from a past customer cl
 
 ### GLOBAL residents and grant seats
 
+With provider 1.23.0 in the selected composition, GLOBAL grants default to
+`identity.ttl: 720h` (30 days, aw's maximum) and `identity.renew: launch`.
+Every actual launch attempts a fresh grant; preview never mints. Do not
+configure shorter TTLs for customer seats. Explicit shorter Go durations from
+60s through 720h remain supported; invalid/over-limit TTLs refuse before effects
+with `E_GRANT_TTL`, including retained-grant paths. Explicit `renew: off`
+retains the existing finite grant. Renewal failures preserve the previous grant
+under the existing recovery rules and do not extend its expiry. A continuously
+running seat can expire after 720h without a successful re-mint; non-expiring
+grants remain requested upstream (#80), not delivered here. Existing captured
+provider modules/settings do not change automatically when this version ships.
+LOCAL identities are unchanged; there is no timer or background renewal.
+
 Read [A GLOBAL resident in an existing hosted team](references/existing-team-global-resident.md)
 for the fresh/reuse card, versioned commands, protected output, diagnostic and
 custody checkpoints. Setup has no `--global`; GLOBAL spawn consumes a provisioned
