@@ -150,10 +150,18 @@ a root's current active team is not a substitute. Host-only
 
 For resident consumption, the provider reads `identity.mode: global`,
 `identity.resident`, `identity.scopes` (explicit nonempty list, or the selected
-`profile` defaults), `identity.ttl` (default `8h`), `identity.renew` (`off` by
-default or explicit `launch`) and `identity.e2ee` (required unless explicitly
+`profile` defaults), `identity.ttl` (default `720h` in provider 1.23.0),
+`identity.renew` (`launch` by default or explicit `off`) and `identity.e2ee` (required unless explicitly
 false). Profiles are `normal` or `reviewer`; choose scopes/TTL under the owner's
 least-authority decision, not by copying another worker's grant.
+Do not configure shorter TTLs for customer seats. Explicit shorter durations
+remain supported, using native Go duration syntax from 60s through 720h
+(30 days); invalid/over-limit values refuse with `E_GRANT_TTL` before effects.
+Actual launches re-mint by default, previews do not. Explicit `renew: off`
+and failed renewals leave a finite grant: running beyond its expiry without a
+successful re-mint can still expire. Non-expiring grants are requested upstream
+in oats-aweb#80 and are not provided here. No background renewal runs, and old
+homes retain their captured composition/settings until explicitly recomposed.
 
 Assign one host/user/resident root to the selected custody service. Starting that
 service is a separate authorized host operation, not a worker action. Before

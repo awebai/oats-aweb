@@ -2,6 +2,16 @@
 
 ## 1.23.0 — 2026-10-07
 
+Changed: GLOBAL grants default to the aw maximum of 720h (30 days) and are
+renewed at each actual launch by default (previously 8h and renewal off).
+Shared native-compatible duration validation refuses values outside 60s..720h
+before grant/launch effects, including retained paths; explicit shorter valid
+TTLs and `renew: off` remain supported. Preview never mints; LOCAL behavior and
+renewal failure/custody/cleanup rules are unchanged. Existing captured homes
+are not automatically updated. 720h still expires: a seat running beyond it
+without a successful re-mint can expire. Non-expiring grants have been requested
+from aw (oats-aweb#80); that requirement is not solved by this change.
+
 Documentation (#72): add the released kernel 0.44.0 exact-home operator consent
 recipe, narrow launch qualification, receipt interpretation and retained-session
 recovery. Preserve the released completion limitation tracked in oats#754;

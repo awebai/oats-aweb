@@ -346,6 +346,17 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   GLOBAL creation in an existing hosted team versus resident reuse, follow the
   [existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md).
   Global spawn consumes a provisioned resident; it does not create one.
+  GLOBAL grants default to `identity.ttl: 720h` (30 days, the native maximum)
+  and `identity.renew: launch`: each actual launch re-mints, while preview
+  makes no changes. Explicit `renew: off` retains the finite grant; explicit
+  shorter valid TTLs remain supported. Durations must use Go syntax and fall
+  between 60s and 720h; `E_GRANT_TTL` refuses invalid/out-of-range values
+  before grant or launch effects, including retained-grant paths.
+  Do not configure shorter TTLs for customer seats. A seat running beyond its
+  expiry without a successful re-mint can still expire; non-expiring grants
+  are requested upstream in [#80](https://github.com/awebai/oats-aweb/issues/80).
+  Existing homes retain their captured provider/settings until explicitly
+  recomposed; publishing this version does not update them automatically.
 
 There is deliberately **no** `settings.oats.aweb.team` in 1.17. Team selection
 belongs to the OATS team model (`oats teams`, `oats soul teams`) and reaches the
@@ -597,3 +608,22 @@ resumes mapping without signup. Its deliberately refused loopback signup still
 does not prove successful hosted account creation. Neither fixture is a timed
 M3 operator journey. Run the existing full suite with the explicit public/native
 test variables above; no service install or customer operation is part of testing.
+
+### Grant duration and renewal verification
+
+GLOBAL spawn and launch use the shared `lib/grant-duration.mjs` resolver.
+It preserves absent/null/empty default aliases and Go duration syntax, including
+component-wise nanosecond truncation. Launch validates before preview, broker
+registration or retained-grant returns. LOCAL launch must keep its ordinary
+joined-team lifecycle instead of entering the GLOBAL renewal early return.
+
+Run `node --test test/grant-duration.test.mjs test/oats-aweb-hook-1-13.test.mjs`
+for duration boundaries, mint arguments, default/explicit renewal and retained
+failure/preview controls. With `OATS_TEST_AW_1_36_23` pointing at the pinned
+1.36.23 executable, `test/grant-duration-native.test.mjs` checks version, help
+and duration flag parsing in an isolated home. It always passes `--help`:
+no mint executes, and syntactically valid out-of-range values can pass this
+help check. The 60s..720h range is separately enforced by provider tests and
+qualified against native source `61c38162596d1af9085741d70d15900ff9894257`
+(`cmd/aw/id_grant.go`). These checks are not live custody, grant or expiry
+acceptance.

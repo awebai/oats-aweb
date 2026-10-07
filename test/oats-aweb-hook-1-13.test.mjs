@@ -405,7 +405,7 @@ test("launch with renewal off preserves the existing grant locator and session d
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: oldHome });
     assert.deepEqual(r.doc.meta, { ...old, delivery: "session", runtime: "" }, "the start records the delivery and runtime it ran under and keeps the grant");
@@ -495,7 +495,7 @@ test("a launch preview with renewal off keeps the grant home and declares nothin
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
-    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody), delivery: "session" }) };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }) };
     const preview = runHook(bin, "launch", { ...env, OATS_LAUNCH_PREVIEW: "1" });
     assert.equal(preview.status, 0, preview.stdout + preview.stderr);
     assert.equal(existsSync(join(base, "aw.log")), false, "a preview calls no aw");
@@ -599,7 +599,7 @@ function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
   }
 }
 
-for(const selection of [undefined,'approved','development']) test(`global grant Claude channel selector ${selection ?? 'omitted'} keeps grant locator through spawn and launch`,()=>{
+for(const selection of [undefined,'approved','development']) test(`global grant Claude channel selector ${selection ?? 'omitted'} with explicit renewal off keeps grant locator through spawn and launch`,()=>{
   const base=mkdtempSync(join(tmpdir(),'oats-aweb-113-selector-'));
   try {
     const mode=selection ?? 'development';
@@ -611,7 +611,7 @@ for(const selection of [undefined,'approved','development']) test(`global grant 
     assert.equal(locator,join(home,'.aweb-identity'));
     assert.deepEqual(r.doc.env,{AWEB_IDENTITY_HOME:locator});
     const grant=readFileSync(join(locator,'grant.yaml'),'utf8');
-    const env={OATS_INSTANCE:'probe',OATS_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_META:JSON.stringify(r.doc.meta),OATS_SETTINGS:JSON.stringify({...settings(custody),...selected}),AWEB_IDENTITY_HOME:join(base,'foreign-caller')};
+    const env={OATS_INSTANCE:'probe',OATS_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_META:JSON.stringify(r.doc.meta),OATS_SETTINGS:JSON.stringify({...settings(custody, { renew: "off" }),...selected}),AWEB_IDENTITY_HOME:join(base,'foreign-caller')};
     const before=logLines(base);
     const preview=runHook(bin,'launch',{...env,OATS_LAUNCH_PREVIEW:'1'});
     assert.equal(preview.status,0,preview.stdout+preview.stderr);
@@ -665,4 +665,72 @@ for(const selection of [undefined,'approved','development']) test(`retained root
     assert.equal(readFileSync(join(source,'identity.yaml'),'utf8'),copied);
     assert.equal(logLines(base).filter(l=>l.argv.slice(0,2).join(' ')==='workspace connect').length,1,'launch does not reconnect or reseat the identity');
   } finally {rmSync(base,{recursive:true,force:true});}
+});
+
+test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never mints", () => {
+  for (const ttl of [undefined, null, "", "90m", "720h", "719h60m", "+43200m", "2591999.999999999s"]) {
+    const base = mkdtempSync(join(tmpdir(), "oats-grant-default-"));
+    try {
+      const bin = fakeAw(base), { root, home } = deployment(base), custody = resident(base);
+      const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+        OATS_SETTINGS: JSON.stringify(settings(custody, ttl === undefined ? {} : { ttl })) };
+      const spawned = runHook(bin, "spawn", env);
+      assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+      assert.equal(argvValue(logLines(base).find(l => l.argv.slice(0, 3).join(" ") === "id grant mint").argv, "--ttl"), ttl || "720h");
+      write(join(base, "aw.log"), "");
+      const launchEnv = { ...env, OATS_META: JSON.stringify(spawned.doc.meta) };
+      const preview = runHook(bin, "launch", { ...launchEnv, OATS_LAUNCH_PREVIEW: "1" });
+      assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+      assert.deepEqual(preview.doc.volatileEnv, ["AWEB_IDENTITY_HOME"]);
+      assert.equal(readFileSync(join(base, "aw.log"), "utf8"), "", "preview has no native effects");
+      const renewed = runHook(bin, "launch", launchEnv);
+      assert.equal(renewed.status, 0, renewed.stdout + renewed.stderr);
+      const mints = logLines(base).filter(l => l.argv.slice(0, 3).join(" ") === "id grant mint");
+      assert.equal(mints.length, 1, "omitted renewal setting must re-mint");
+      assert.equal(argvValue(mints[0].argv, "--ttl"), ttl || "720h");
+      assert.notEqual(renewed.doc.meta.identity.grant.home, spawned.doc.meta.identity.grant.home);
+    } finally { rmSync(base, { recursive: true, force: true }); }
+  }
+});
+
+test("invalid GLOBAL TTL refuses before effects, including off and retained or preview launch", () => {
+  for (const ttl of ["720h1ns", "43200m.000000001s", "2592000.000000001s", "720.000000001h", "59.999s", "1d", "8hgarbage", 720, "-1h"]) {
+    const base = mkdtempSync(join(tmpdir(), "oats-grant-invalid-"));
+    try {
+      const bin = fakeAw(base), { root, home } = deployment(base), custody = resident(base);
+      const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+        OATS_SETTINGS: JSON.stringify(settings(custody, { ttl, renew: "off" })) };
+      const grantHome = join(home, ".aweb-identity");
+      const old = { identity: { mode: "global", grant: { id: "retained", home: grantHome } } };
+      for (const [event, extra] of [["spawn", {}], ["launch", { OATS_META: JSON.stringify(old) }],
+        ["launch", {}], ["launch", { OATS_META: JSON.stringify(old), OATS_LAUNCH_PREVIEW: "1" }]]) {
+        write(join(base, "aw.log"), "");
+        if (event === "launch") write(join(grantHome, "grant.yaml"), "retained fixture unchanged");
+        const result = runHook(bin, event, { ...env, ...extra });
+        assert.notEqual(result.status, 0, JSON.stringify({ ttl, event, output: result.stdout }));
+        assert.match(result.doc.warning, /E_GRANT_TTL.*60s.*720h/);
+        if (event === "spawn") assert.equal(existsSync(grantHome), false);
+        else assert.equal(readFileSync(join(grantHome, "grant.yaml"), "utf8"), "retained fixture unchanged");
+        assert.ok(logLines(base).every(l => l.argv.join(" ") === "version"), "no custody/mint/revoke/broker effects");
+      }
+    } finally { rmSync(base, { recursive: true, force: true }); }
+  }
+});
+
+test("LOCAL launch with omitted renewal ignores GLOBAL-only TTL and retains normal lifecycle output", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-local-grant-default-"));
+  try {
+    const bin = fakeAw(base), { root, home } = deployment(base);
+    const old = { delivery: "session", identity: { mode: "local", alias: "probe", team: "t:example.test" } };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+      OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", ttl: "721h" } }) };
+    const preview = runHook(bin, "launch", { ...env, OATS_LAUNCH_PREVIEW: "1" });
+    assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+    assert.equal(existsSync(join(base, "aw.log")), false);
+    assert.equal(preview.doc.volatileEnv, undefined);
+    const launched = runHook(bin, "launch", env);
+    assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+    assert.deepEqual(launched.doc.meta.identity, old.identity);
+    assert.equal(logLines(base).some(l => l.argv[0] === "id"), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });
