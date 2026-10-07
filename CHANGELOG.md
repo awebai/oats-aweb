@@ -2,6 +2,19 @@
 
 ## 1.22.0 — 2026-10-07
 
+Documentation: add version-qualified provider act cards for LOCAL root setup,
+controller/hosted team creation, labelled join and tokenless resume, invitations,
+GLOBAL resident/custody/grant boundaries and receive verification. Preserve PR61's
+Claude development default and bounded kernel consent guidance. Native aw 1.36.24
+hosted creation is distinct from the unsupported provider wrapper; secret-bearing
+JSON requires private capture. External-home invite/removal and doctor-local
+forms remain unavailable, while supported acceptance/diagnostic categories are
+named. Dashboard team and organization invitations remain distinct from agent
+membership. Onboarding owns intake/completion and teams owns policy; one intake
+covers routine steps. Setup-root fixes remain source/release-qualified, and no
+#56 token-only, #58 registration or #60 GLOBAL wider-team procedure is advertised
+as installed. No live rehearsal, release, install or vendored-skill edit.
+
 Documentation: superseded the unconditional never-answer development-channel
 guidance with the bounded OATS #708 kernel launch-only exception. Only a compatible
 kernel with explicit per-home consent and a qualified exact fixture may answer

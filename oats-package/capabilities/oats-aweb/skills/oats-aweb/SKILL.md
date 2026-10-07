@@ -18,6 +18,8 @@ from the directory. Plain `aw` acts as your primary identity from any
 directory, because your session sets `AWEB_IDENTITY_HOME` to it; to act as a
 joined team, put `--identity-home <identityHome>` before the subcommand.
 
+Procedure evidence: [maintainer-approved command/version matrix](https://github.com/awebai/oats/issues/709#issuecomment-6030635650).
+
 ## 1. Who you are
 
 | Fact | Where to read it |
@@ -213,21 +215,41 @@ the receipts of earlier side effects before retrying. `aw mail show
 stays useful for new waiting mail that was not already delivered into the
 session.
 
+### Receive verification and recovery
+
+Card: provider 1.21.1 commands plus the captured route's versioned prerequisites;
+selected H and authorized harmless nonce exchange. Run `oats readiness --home H
+--json`, then use section 3's mail/reply procedure. Writes only the authorized
+messages; readiness itself is read-only. Success requires actual automatic
+presentation and a receiver-verified reply recovered by exact message ID, not
+`ready`, a configured channel or unread status. Next: onboarding records completion.
+`native-receive-unproven` / `claude-channel-enrollment-unverified` means native
+connection/admission remains unproven, not ready for this acceptance. Consult the
+kernel launch receipt and section 4's consent boundary; never bypass a prompt or
+an explicit native requirement. Codex uses the broker; joined `receive: native`
+also means broker, distinct from Claude/Pi primary native delivery. After uncertain
+restart, recover exact IDs as above before retrying any effects.
+
 ## 5. Teams: join and leave
 
-```bash
-oats aweb teams --json                  # {defaultTeam, primary, eligible, joined, unmapped}
-oats aweb join --labels <label>[,<label>]
-oats aweb leave --labels <label>[,<label>]
-```
+Card: released provider 1.21.1, LOCAL selected H, authorized eligible L and
+minting authority for its canonical T. Run from H, not the caller's worktree.
 
-- Join only when your human, coordinator or task asks you to work with that
-  team. Joining mints a new identity for you in that team.
-- You may join only `eligible[]` labels; anything else is `E_TEAM_NOT_ELIGIBLE`.
-- The workspace's default team cannot be left (`E_TEAM_DEFAULT` when the label is `default`).
-- When the workspace stops mapping a team, your next session start leaves it.
-- Do not run native `aw team join|switch|leave|invite` for your identities; the
-  provider keeps homes, broker registration and retire cleanup consistent.
+| Act | Command | Writes / success / one next step | Error → remedy |
+|---|---|---|---|
+| Inspect | `oats aweb teams --json` | Read-only default/eligible/joined/left facts; success: intended target is identified. Next: selected authorized join or leave. | Unknown label → `/oats-teams` resolves policy, never a guessed team. |
+| Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; root failure → section 8 LOCAL join. |
+| Leave | `oats aweb leave --labels L` | Releases membership/receive registration; success: joined entry is absent after confirmed release. Next: `oats aweb teams --json` readback. | `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop; policy change does not migrate this identity. |
+
+Before #52 is released/composed, a home can hold stale captured minting roots;
+report that prerequisite instead of borrowing another identity. The fixed explicit
+join queries current exact-team root authority; launch/retire still use captured
+settings. Existing joined receipts do not require another acceptance. GLOBAL
+`E_TEAM_GLOBAL_MODE` means `joined teams need local per-team identities; this home
+acts as a resident identity through a session grant (identity.mode "global")`:
+stop at #60's owner-pending grant contract, never use native switch/join in-seat.
+When a team becomes ineligible, launch attempts leave; an unconfirmed release
+keeps the identity and reports the failure. Do not manually delete its receipts.
 
 ## 6. Etiquette
 
@@ -254,7 +276,7 @@ Check your own state first:
 
 ```bash
 aw whoami                          # identity you act as here
-aw workspace status                # connection of the primary identity
+aw workspace status                # LOCAL primary only; not a GLOBAL grant-seat check
 oats aweb teams --json             # defaultTeam/joined teams and receive modes
 oats readiness --home "$PWD" --json   # the provider's readiness answer for this home
 ```
@@ -300,110 +322,154 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 
 ## 8. Provider configuration and setup internals
 
-OATS owns team selection. oats.aweb receives the kernel's default and eligible
-teams; it does not have a provider `team` setting.
+Intake, ordering and completion belong to `/oats-onboarding`;
+team declarations, defaults, eligibility and their configuration errors belong
+to `/oats-teams`. Use those owners, not a second recipe here. One authorized
+intake carries through routine steps. If an account, authority, identity scope,
+name, service, directory or receive requirement is missing, report that one
+named blocker; do not substitute a value or ask permission again at each step.
 
-**Settings under `settings.oats.aweb`:**
+### Version and selected context
 
-- `delivery`: `channel` (default) or `session`. `channel` wakes Claude Code
-  through its channel plugin and pi through its extension, and sends Codex and
-  any other runtime through the host wake broker; `session` sends every runtime
-  through the broker. The broker path sets `AWEB_DELIVERY=session`.
-- `claudeChannelMode`: `development` by default or explicit `approved`. Host-only:
-  set in `oats-local.yaml`; committed soul/workspace and spawn-provider overrides are refused. No arbitrary arguments
-  or plugin IDs; Pi, Codex and session delivery are unchanged.
-- `root`: absolute directory whose `.aw` is the default team's minting root.
-- `roots`: `{ <team id>: <absolute dir> }`; `roots[team]` wins over `root` and
-  is how one deployment mints into several aweb teams.
-- `residents`: host-only resident custody roots for `identity.mode: global`.
-- `join`: comma-separated eligible labels to join at spawn.
-- `identity`: local by default; global mode consumes a pre-existing named
-  resident through a worker grant. For creation versus reuse and the complete
-  authority/custody/composition journey, read
-  [Existing-team GLOBAL resident](references/existing-team-global-resident.md).
+These are source-qualified cards, not an installation or live-acceptance receipt.
 
-There is deliberately no `settings.oats.aweb.team` in 1.17. Use `oats teams`
-and `oats soul teams`; a stale `team` setting is refused with a message saying
-teams are not a setting since oats.aweb 1.17 / OATS 0.30.
+| Selected version | Supported boundary |
+|---|---|
+| Released provider 1.21.1, OATS >=0.30, aw >=1.36.13 | Labelled setup/join/resume, LOCAL instance join/leave, existing GLOBAL resident grant consumption. OATS >=0.38 supplies `localTeams` policy. |
+| Provider source PR61 | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Section 4's bounded kernel consent rules apply. Source is not a release/pin receipt. |
+| Setup-root fixes #45/#52/#59, accepted source `a62daf1` / PR63 | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies require this change to be released/composed. Do not infer them from the package's unchanged 1.21.1 label. |
+| Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
+| Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
-**One root per team.** A local aweb root holds one local identity and one team
-membership. Setup never accepts a second local team into an existing `.aw`.
-For created or joined teams it creates `<deployment>/.aweb-roots/<label>`,
-accepts the invite into `<root>/.aw`, connects it, and records
-`settings.oats.aweb.roots[<team id>] = <root>` in `oats-local.yaml`. Minting for
-team `T` uses `roots[T]`, else `root`.
+`D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
+`T` = canonical `name:namespace` team ID, `H` = selected instance home,
+`I` = authorized native identity home, `R` = resident parent. These are input
+slots, never defaults to invent; an internal UUID is not `T`.
 
-**Setup acts:**
+Setup commands run **in D, outside an instance session**, with `--soul S`.
+The #45/#59 source also accepts `--dir D`; before that release, run in D and
+omit the forwarded `--dir` because the old provider parser rejects it. Supply
+name/service explicitly when the selected root cannot provide them. Keep the
+operator's protected child environment free of unrelated identity selectors and
+credentials; never clear an explicit identity selection to bypass native policy.
 
-Setup handles deployment-root onboarding; it does not create a fresh GLOBAL
-resident. The [existing-team GLOBAL resident guide](references/existing-team-global-resident.md)
-separates native creation/reuse from provider custody/grant consumption, with
-protected diagnostics and stop rules. Worker authority does not authorize these
-operator acts.
+Host-only settings under `settings.oats.aweb`: `root` is the default LOCAL
+minting parent; `roots[T]` overrides it; `residents.<name>` is a GLOBAL custody
+parent. `delivery` is `channel` (default) or `session`; Codex always uses the
+broker, Claude/Pi primary channels remain distinct from joined broker delivery.
+`claudeChannelMode` is development by default in PR61, or explicit approved,
+set only in `oats-local.yaml`; no arbitrary arguments or plugin IDs.
+`join` selects eligible LOCAL labels at spawn; `identity` defaults to local.
+There is no `settings.oats.aweb.team`: the emitted refusal is
+`teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams`.
+Next: use `/oats-teams` to correct the declaration.
 
-From a deployment directory (outside an instance home), call setup through any
-soul that uses this messaging provider: `oats aweb setup --soul <any soul with messaging>`.
-The provider consumes the kernel-forwarded `--soul` dispatch flag; it is not a
-team selector and should not appear in any `aw` call.
+### First LOCAL root and controller-owned team
 
-- `oats aweb setup --username <u>` → `aw init --new-account --username <u>` for
-  a missing hosted root.
-- `oats aweb setup` with `AWEB_API_KEY` supplied through the authorized operator's
-  protected child environment → plain `aw init` for the existing hosted team.
-  Never put the key in a literal command/history. Setup has no `--global`;
-  `--name`/`--service` apply to invite join, not fresh GLOBAL creation.
-- `oats aweb setup --create <label> --namespace <domain>` → owner/admin act for
-  a customer-controlled namespace: normalize the label, create the team, require
-  aw to return `team_id` and an invite token, accept into a per-team root, record
-  `roots[team]`, and record the local mapping via `oats teams add <label> --team
-  <id>`. Without `--namespace`, setup refuses hosted additional-team creation
-  until the hosted-team aweb release exists. Where the workspace does not allow
-  local teams (OATS 0.38 without `localTeams: true` in `oats-workspace.yaml`),
-  setup records no local mapping and prints the `teams:` entry (and
-  `defaultTeam:` when there is none) to commit in `oats-workspace.yaml`; a soul
-  joins it only when a `souls:` entry lists it. If setup cannot ask the kernel,
-  it refuses before creating anything.
-- `oats aweb setup --join <label> --invite <token>` → accept an existing/shared
-  team's invite into a per-team root and record `roots[team]`.
-- `oats aweb setup --join <label> --invite-stdin` → the same, with the token
-  read from stdin (first line, trimmed); never combined with `--invite`.
-- `oats aweb setup --install-aw [--aw-version <v>]` → where aw is missing or
-  below the floor, `npm install -g @awebai/aw@<v>` (default `^1.36.13`), then
-  re-check the floor and continue.
-- `oats aweb setup --check-only --json` → one JSON line: `{aw, defaultTeam,
-  member, root}` (whether the default team's root is a member).
+| Act / prerequisites | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
+|---|---|---|---|
+| First hosted account, released provider 1.21.1; selected account name and empty LOCAL root | `oats aweb setup --soul S --username <selected-user>` | Runs `aw init --new-account`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
+| Existing hosted team's first LOCAL root, same versions; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | Plain `aw init`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
+| Additional controller-owned team, same versions; actual controller authority for owned namespace | `oats aweb setup --soul S --create L --namespace <owned-domain>` | Normalizes label, creates team, accepts/connects a per-team root, records `roots[T]`; success is returned canonical membership plus recorded root. Where `localTeams: true`, records local label; otherwise prints `teams:`/`defaultTeam:` to commit in `oats-workspace.yaml`, with eligibility in a `souls:` entry. Next: `/oats-teams` declaration/readback. | `could not tell whether this workspace allows local teams (...); nothing was created` → repair selected kernel/configuration read before retry. No invented controller authority. |
 
-**Connecting a deployment on another machine.** After `oats server connect`,
-the human runs, from the local deployment, `oats aweb connect <server-id>
---soul <soul> [--install-aw] [--name <alias>] [--json]`. Through the kernel's
-`--server` capability route it checks or installs aw on the host (`aw`). It
-mints an invite from this deployment's root for the host's default team, or
-mints nothing when the host is already a member (`invite`). It runs `setup
---join <label> --invite-stdin` there with the token on stdin (`join`), then
-checks again (`readiness`). This deployment not being a member is
-`E_TEAM_NOT_MEMBER`; a non-hosted (BYOT local-controller) team is
-`needs-human`. The token is never in argv, a file, a log or output on this side;
-on the host, `aw id team accept-invite` shows it in the process list while it
-runs. Never paste an invite token into a message or a command line when
-`--invite-stdin` or `connect` can carry it.
-- For an unmapped committed/shared default, plain setup creates nothing; it asks
-  for the owner-provided provider id or invite. The owner explicitly runs
-  `oats aweb setup --create <label> --namespace <domain>`, then commits the
-  printed provider id; setup never edits the committed team file.
+For created or joined LOCAL teams, one identity owns each separate `.aw`; never
+accept a second LOCAL team into an existing identity. Intended new root is
+`D/.aweb-roots/<normalized-label>`. Before #45 release, a nested/external default
+root is a placement blocker: select the fixed provider before effects. The fix
+uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
+and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
+place; no automatic move, deletion or fresh acceptance is part of setup.
+
+### LOCAL team join and resume
+
+Released provider 1.21.1 supports labelled join and tokenless resume; the
+placement guard above applies. Prerequisites: selected LOCAL scope, D/S/L,
+appropriate member invite, root alias/service and required team policy from intake.
+
+| Act | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
+|---|---|---|---|
+| Join | `oats aweb setup --soul S --join L --invite-stdin --name <root-alias> --service <selected-url>` | Reads first trimmed stdin line; accepts into the per-team `.aw`, connects workspace, records `roots[T]`. Success: matching canonical membership, connected root and recorded path. Next: `/oats-teams` mapping/default readback. | `--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule` → supply the selected alias. |
+| Resume accepted but unconnected, or connected but unrecorded root | `oats aweb setup --soul S --join L --service <selected-url>` | Uses retained matching identity; connects or records it, without another redemption. Success: membership/connect/root record all agree. Next: provider check below after mapping. | `team root <path> already holds a connected aweb identity, but not for <team>` → stop and reconcile selected label/root; do not delete or buy another acceptance with a new token. |
+| Check selected default after mapping | `oats aweb setup --soul S --check-only --json` | Read-only `{aw, defaultTeam, member, root}`; success requires usable aw, intended default and `member: true` at intended root. Next: onboarding's staffing/completion stage. | `member: false` is a result, not an error code → reconcile selected root/team via the join card. |
+
+`--invite <token>` is still parsed, but stdin keeps the token off provider argv;
+never paste it in history, logs or messages. Native accept currently receives it
+in argv for that call's duration. `--invite` and `--invite-stdin` cannot combine.
+Token-only refusal remains `--invite-stdin requires --join <label> so the team
+gets its own root` (or `--invite requires --join <label> ...`). Use labelled join;
+#56 is a future cutover. `--service/--name require --join <label>` means these
+are not fresh GLOBAL creation options. The old invite-only verdict is stale:
+use the labelled command above, never `aw team join` in an OATS-owned root.
+
+### Hosted team creation
+
+Provider bare `oats aweb setup --create L` is **unsupported**. Older source emits
+`creating an additional hosted team needs hosted team creation (aweb-abkh), not
+yet released in aw or aweb Cloud; use --namespace <domain> for a team you control,
+or ask the aweb team`. That release claim is stale: #59 corrects it; it does not
+add a provider hosted-create wrapper. Next: use the native card only when its
+version/authority prerequisites are satisfied, otherwise report the missing prerequisite.
+
+Native card: **aw 1.36.24**, selected I and source T; Cloud authority is org
+owner/admin principal or human team admin/editor, not any live member.
+
+```text
+aw --identity-home I id team create --hosted --name <new-team> --team T --request-id <uuid> --json
+```
+
+Writes hosted sibling team and invite, **does not join the caller**. Success:
+returned canonical new team matches selection and private invite is captured.
+JSON **includes the token**; capture stdout/stderr/exit privately, never echo or
+log it. Text hides it unless `--show-token`; do not add that flag for reporting.
+Same request ID and parameters replay the request; uncertain outcomes require
+same-context readback, not a new UUID. Emitted `--name is required` means supply the selected name. Other native
+nonzero output is retained privately, not interpreted as rollback. Next: selected LOCAL join or
+existing-GLOBAL acceptance below, passing the invite only to its intended recipient.
+
+### Invitations and certificate ownership
+
+| Act / selected version and authority | Command or surface | Writes / success / one next step | Error boundary / remedy |
+|---|---|---|---|
+| Issue member invite or remove certificate from external I, aw 1.36.24 | **Blocked:** external-home `team invite` and `id team remove-member` are not allowlisted | No supported external-home invocation; no effect should be attempted. Next: native policy owner supplies a supported selected-authority context. | `command "<path>" is not yet identity-home-aware; refusing to use an external identity home ...` → stop; do not remove selection or substitute ambient root. Help flags alone do not establish admission. |
+| Existing GLOBAL resident accepts appropriate GLOBAL invite, aw 1.36.24; selected owner of retained R | `aw --identity-home R/.aw id team accept-invite <private-token> --global --no-address` | Adds membership to existing GLOBAL identity; no fresh resident. Token must come from protected execution input, never a literal shell-history entry; native argv may expose it during the call. Success: returned membership matches intended T and same resident. Next: owner verifies resident membership/readiness. | `--address and --no-address cannot be used together` → use the intake-selected address branch. Other nonzero/uncertain output → private reconciliation, not fresh init or LOCAL downgrade. Use `--address <owned-address>` only if intake selected that branch. |
+| Dashboard human team invite, Cloud source `7665d863`; org owner/admin, selected email/role | Select team → **Members** → email + role → **Add** | Existing user added; new email pending invitation requires verified inviter email. Roles admin/editor/viewer; no viewer on public teams. Success: intended membership or pending invite readback. Next: verify recipient completion. | Permission or validation failure → correct authority/input in dashboard; no agent-token/OATS substitute. |
+| Organization human invite, same Cloud source; org owner/admin | Organization settings `/organizations/:organizationSlug/settings` → email + admin/member role | Organization invitation/membership, distinct from team certificate. Success: organization readback matches selection. Next: verify recipient completion. | Dashboard failure → organization owner resolves it, not provider membership. |
+
+Certificate revocation, native workspace cleanup, hosted team archive and OATS
+grant-seat retirement are different acts. A team API key does not bypass external
+identity-home admission. Generic GLOBAL cleanup and archive with active
+certificates remain owner-pending; no recipe is inferred from a past customer cleanup.
+
+### GLOBAL residents and grant seats
+
+Read [A GLOBAL resident in an existing hosted team](references/existing-team-global-resident.md)
+for the fresh/reuse card, versioned commands, protected output, diagnostic and
+custody checkpoints. Setup has no `--global`; GLOBAL spawn consumes a provisioned
+resident and creates a scoped worker grant. Worker home has no root key; it is
+not keyless. LOCAL root/spawn-authority diagnostics are never a GLOBAL gate.
+#58's future registration path is not installed here; it is intended to expose
+one onboarding command plus one printed host step until service-manager integration,
+not automatic daemon startup. Wider-team grant extension remains unsupported #60.
+
+**Existing connect command (provider 1.21):** after `oats server connect`, from D:
+`oats aweb connect <server-id> --soul S [--install-aw] [--name <alias>] [--json]`.
+Prerequisites: selected hosted default, local invite authority, kernel capability
+routing. Writes remote per-team root via stdin join; success: final remote
+membership/readiness check. Next: onboarding's remote staffing stage.
+`E_TEAM_NOT_MEMBER` → fix this deployment's authority first; BYOT is `needs-human`,
+not a hosted invite fallback. Tokens remain private; target native accept has argv exposure.
+
+**Existing aw installation option:** `oats aweb setup --soul S --install-aw [--aw-version <v>]`
+requires already-authorized installation; runs npm and rechecks the floor. Success:
+usable selected aw. Next: continue selected setup card. `E_AW_INSTALL`/`E_AW_FLOOR`
+→ resolve installation/version with the operator; no automatic upgrade from a read.
 
 **Readiness messages:** no default is exactly `no teams configured: run \`oats
-aweb setup\``. An unmapped default is exactly ``the default team <label> has no
-provider id yet: its owner runs oats aweb setup, then commits the id, or choose
-another default: `oats teams default <label>`, or `defaultTeam:` in
-oats-workspace.yaml when the workspace doesn't allow local teams``. A shared team whose root is missing or
-not a member is an operator setup problem: ask the owner for an invite and run
-`oats aweb setup --join <label> --invite <token>`, or use `--create` if this
-host owns that team. When a joined team is removed from the live team set,
-hosted teams are left automatically; on a namespace team you control (BYOT), a
-failed leave is reported as an instance event and the team owner removes the
-member.
-
-**aw floor:** all 1.17 paths require `aw >= 1.36.13`.
+aweb setup\``. An unmapped default is `the default team <label> has no provider id
+yet: its owner runs oats aweb setup, then commits the id, or choose another default:
+\`oats teams default <label>\`, or \`defaultTeam:\` in oats-workspace.yaml when the
+workspace doesn't allow local teams`. Next: `/oats-teams` owns mapping/default
+policy. Plain setup creates nothing for that unmapped committed/shared default.
 
 ## Gotchas
 
@@ -415,14 +481,5 @@ member.
 - Don't hand-edit `.aw`, `.aweb-identity-*` or `.oats-aweb/teams.json`; report mismatches.
 - `oats aweb setup` is the operator's onboarding tool; if messaging is broken,
   report its output to your human instead of re-onboarding yourself.
-- `oats aweb setup --create <label> --namespace <domain>` creates a new local
-  BYOT team, accepts it into a new per-team root under `.aweb-roots/`, records
-  `settings.oats.aweb.roots` in `oats-local.yaml`, and records it with `oats
-  teams add <label> --team <id>` through the selected OATS CLI, or, where the
-  workspace does not allow local teams, prints what to commit instead. Hosted
-  additional-team creation without `--namespace` is refused until the
-  hosted-team aweb release exists. `oats aweb setup --join <label> --invite
-  <token>` uses the same separate-root path for an existing/shared team; never
-  accept a second local team into the existing root. For an unmapped
-  committed/shared default, plain setup creates nothing and asks for the owner's
-  id or invite; it does not edit the shared file.
+- Provider setup, invitations and custody use the selected act in section 8; do not
+  substitute bare hosted create, token-only join or an external-home policy bypass.
