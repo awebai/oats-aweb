@@ -494,6 +494,52 @@ the root is absent; to exercise it, provision the same source/dependency and run
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
 
+### Member invitation (unreleased #71)
+
+From the selected deployment, `oats aweb invite --soul S [--label L]
+[--plan] [--json]` selects a declared label (or the selected soul's default),
+checks its canonical team and root membership, then asks native/server authority
+to issue a LOCAL hosted member invitation. There is no recipient argument:
+the accepting side chooses its own alias. This is not a dashboard human invite,
+GLOBAL invitation or local-controller/BYOT issuance.
+
+`--plan` only reads team/root/membership and states what would be requested; it
+neither mints nor proves permission. Apply uses `roots[T]`, or `root` only when
+that override is absent; invalid explicit roots refuse. Native invocation uses
+the selected root as cwd, explicit team ID, isolated disposable HOME and no
+inherited credentials, controller state, external identity home or routing.
+Membership is not an owner/admin claim; the server decides issuance authority.
+
+Success prints the token once (plain stdout), or once at `result.token` inside
+`{schemaVersion:1,ok:true,result}` with `--json`. Capture it privately and pass
+only to the intended accepting operator's labelled `setup --invite-stdin`
+procedure in `/oats-aweb` §8, **Invitations and certificate ownership**. Never
+log, echo, put in argv/history, or send it as ordinary mail. Native acceptance
+still exposes its token argument in the target host's process list temporarily.
+A token is not bound to the future alias. Issuance is never automatically retried.
+
+`E_INVITE_ARGUMENT`, `E_INVITE_DEPLOYMENT`, `E_INVITE_TEAM_QUERY`,
+`E_INVITE_TEAM`, `E_INVITE_ROOT` and `E_INVITE_MEMBERSHIP` refuse before issuance.
+Repair the selected input/context/root rather than substitute an ambient identity.
+Unrelated kernel warnings do not block invitation; all failure-severity problems
+and selected-label warnings do. Refusals name only known safe problem codes,
+never arbitrary diagnostic text. Membership reads and issuance both isolate
+native HOME; plans discard temporary state without changing the selected root.
+For pinned aw 1.36.23, only its anchored CLI-generated HTTP 401/403 prefix maps
+to `E_INVITE_DENIED`; details are statically withheld, never matched as role or
+body prose. Other statuses, transport and unknown native errors are
+`E_INVITE_NATIVE`. Invalid successful native output is `E_INVITE_OUTPUT`.
+Inspect an uncertain issuance before any deliberate retry. No mandatory authority
+query or extra Cloud version floor is introduced. This act additionally requires
+the selected kernel to dispatch `OATS_TEAM_SCOPE` and expose public
+`teams --dir D --json` with `schemaVersion: 1`, `teamsApi: 2`, the selected
+deployment, declarations and problems. The public fixture pins OATS 0.42 source
+`bb2ba8c9a254edb745913b9c5a9d9b833fda932d`; it does not establish the earliest
+compatible release. Unsupported/malformed query schemas refuse before minting.
+The package-wide OATS >=0.30.0 floor stays unchanged for other behavior.
+This source feature needs a
+future provider release/composition and is not installed by this documentation.
+
 ### Isolated team-root verification
 
 `test/setup-team-roots.test.mjs` exercises placement, parser remedies and current
@@ -512,3 +558,15 @@ version/build and SHA-256; isolated HOME and loopback service fixtures prevent
 use of ambient accounts. Signup is deliberately refused: the test proves native
 argument/wire acceptance, secret-output withholding and no root after refusal,
 not successful hosted bootstrap or live membership.
+
+`test/invite.test.mjs` covers selection and output failures. The opt-in
+`test/invite-native.test.mjs` uses the same pinned executable above; run with
+`OATS_TEST_AW_1_36_23=/absolute/path/to/aw OATS_INVITE_NATIVE_REQUIRED=1
+node --test test/invite-native.test.mjs`. It exercises provider-to-native argv,
+selected-root certificate routing, synthetic loopback success and plain-detail
+HTTP denials, withheld hostile bodies, no-write plan and foreign controller-state
+isolation. Generated keys/certificates and invite strings are fixtures, not live
+authority or usable tokens. Native JSON decoding/missing-token failures exit
+nonzero and remain `E_INVITE_NATIVE`; malformed exit-zero output is tested with
+a substitute. The public-kernel fixture also dispatches invite planning through
+the selected messaging soul. These checks do not prove a timed operator journey.

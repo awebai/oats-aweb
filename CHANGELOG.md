@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Added (#71): `oats aweb invite [--label L] [--plan] [--json]` issues a LOCAL
+hosted member invite from the selected deployment team root. No recipient alias
+is accepted; the accepting side chooses its name. Plans read without minting or
+claiming permission. Native/server authority decides issuance, with isolated
+credentials/controller state, deliberate token-once output and secret-safe
+HTTP denial/error handling. Unsupported controller-only routes do not borrow
+ambient authority. Unrelated kernel team warnings do not block issuance;
+failures and selected-label warnings refuse with safe codes. Membership reads
+also isolate native HOME and clean temporary state, including plans. Paired labelled stdin acceptance guidance and pinned native
+loopback/public dispatch regressions accompany the source change; no live
+issuance, timed journey or release qualification is claimed.
+
 ## 1.22.2 — 2026-10-07
 
 Fixed (#66): hosted-account setup requires explicit `--name <alias>` with

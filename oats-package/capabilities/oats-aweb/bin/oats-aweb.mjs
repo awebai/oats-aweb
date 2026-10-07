@@ -40,6 +40,9 @@
  * kernel feeds it to the retire hook to compensate partial state, and an
  * identity joined moments before the failure must still be deletable.
  */
+import { inviteMain } from '../lib/invite.mjs';
+if ((process.env.OATS_EVENT || process.argv[2]) === 'invite') process.exit(inviteMain(process.argv.slice(3)));
+
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";

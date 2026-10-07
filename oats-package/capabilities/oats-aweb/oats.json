@@ -73,7 +73,8 @@
     "binding-check": "bin/oats-aweb-binding.mjs check",
     "teams": "bin/oats-aweb.mjs teams",
     "join": "bin/oats-aweb.mjs join",
-    "leave": "bin/oats-aweb.mjs leave"
+    "leave": "bin/oats-aweb.mjs leave",
+    "invite": "bin/oats-aweb.mjs invite"
   },
   "binding": {
     "version": 1,
@@ -202,6 +203,19 @@
           "flag": "--labels",
           "required": true,
           "description": "Comma-separated joined team labels to leave."
+        }
+      ]
+    },
+    "invite": {
+      "kind": "action",
+      "command": "invite",
+      "context": "scope",
+      "description": "Issue a LOCAL member invite from the selected deployment root; server decides authority. Returns a secret token; capture privately.",
+      "args": [
+        {
+          "name": "label",
+          "flag": "--label",
+          "description": "Declared team label; defaults to selected default team."
         }
       ]
     }
