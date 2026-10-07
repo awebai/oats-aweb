@@ -420,7 +420,7 @@ test("local-mode launch with renew=launch still preserves delivery launch contri
     const old = { delivery: "session", identity: { mode: "local", alias: "probe", team: "t:example.test", address: null, resident: null } };
     const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", renew: "launch" }, residents: { merlin: custody } }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session" });
+    assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aw") });
     assert.equal(logLines(base).some((l) => l.argv[0] !== "wake"), false, "local renew=launch does not try grant renewal");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
