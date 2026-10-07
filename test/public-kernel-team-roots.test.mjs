@@ -42,6 +42,16 @@ test('pinned public operator dispatch supplies deployment independently of neste
  assert.equal(r.status,0,r.stdout+r.stderr);
  const plan=JSON.parse(r.stdout);assert.equal(plan.ok,true);assert.equal(plan.result.team,'default:example.invalid');assert.equal(plan.result.root,root);assert.equal(plan.result.plan,true);assert.equal(plan.result.token,undefined);
  assert.equal(fake.readCalls().filter(c=>c.args?.[0]==='team'&&c.args?.[1]==='invite').length,invitesBefore);
+ // Fresh hosted username setup plans without effects, then uses public team verbs.
+ const fresh=join(base,'fresh-deployment'),freshRoot=join(fresh,'root');mkdirSync(fresh);
+ writeFileSync(join(fresh,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    root: ${freshRoot}\n`);
+ const setupArgs=['aweb','setup','--soul','probe','--dir',fresh,'--username','alice','--name','root-1','--json'];
+ r=run([...setupArgs,'--plan']);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(JSON.parse(r.stdout).result.plan,true);assert.equal(existsSync(freshRoot),false);
+ r=run(setupArgs);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(JSON.parse(r.stdout).result.team,'default:alice.aweb.ai');
+ r=run(['teams','--dir',fresh,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);const configured=JSON.parse(r.stdout).result;
+ assert.equal(configured.defaultTeam.label,'alice');assert.equal(configured.defaultTeam.team,'default:alice.aweb.ai');
+ const initializations=fake.readCalls().filter(c=>c.args[0]==='init').length;
+ r=run(setupArgs);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(fake.readCalls().filter(c=>c.args[0]==='init').length,initializations);
  // The actual public JSON seam, without trusting ambient OATS_AGENT.
  r=run(['inspect','--soul','probe','--dir',dep,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);
  const doc=JSON.parse(r.stdout);assert.equal(doc.schemaVersion,1);assert.equal(doc.ok,true);assert.equal(doc.result.workspace.deployment,dep);assert.equal(doc.result.subject.kind,'soul');assert.notEqual(doc.result.subject.soul,'spoofed-ambient-soul');

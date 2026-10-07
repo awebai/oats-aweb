@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 import { joinFromCalls } from "./helpers/fake-aw-join-from.mjs";
+import { fakeKernelTeamConfig } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -264,12 +265,15 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
 
 test("setup --username initializes a missing root and reports the hosted default team mapping", async (t) => {
   const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const kernel = fakeKernelTeamConfig(join(tempDir(t), "kernel"), root);
   const fake = fakeAwSetupPath(t, { activeTeam: "default:alice.aweb.ai" });
   for (const args of [["setup", "--soul", "dev", "--username", "alice", "--name", "deployment-root"], ["setup", "--username=alice", "--name=deployment-root", "--soul=dev"]]) {
     const result = await run(args, {
       PATH: fake.path,
       AWEB_API_KEY: "",
       OATS_EVENT: "setup",
+      OATS_WORKSPACE: root, OATS_CLI_BIN: kernel.cli,
       OATS_DEFAULT_TEAM: "default",
       OATS_DEFAULT_TEAM_ID: "default:alice.aweb.ai",
       OATS_DEFAULT_TEAM_FROM: "deployment",
@@ -277,7 +281,7 @@ test("setup --username initializes a missing root and reports the hosted default
     }, root);
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /default:alice\.aweb\.ai/);
-    assert.match(result.stdout, /readiness: ready/);
+    assert.match(result.stdout, /mapping and deployment default alice read back successfully/);
     rmSync(join(root, ".aw"), { recursive: true, force: true });
   }
   assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--new-account", "--username", "alice", "--name", "deployment-root"], ["team", "list", "--json"], ["init", "--new-account", "--username", "alice", "--name", "deployment-root"], ["team", "list", "--json"]]);
@@ -657,22 +661,17 @@ test("setup --create refuses before creating anything when it cannot tell whethe
   }
 });
 
-test("setup on a closed workspace advises the workspace form instead of local team verbs", async (t) => {
+test("username setup refuses closed or unavailable team policy before account effects", async (t) => {
   const root = tempDir(t);
-  const fake = fakeAwSetupPath(t, { activeTeam: "default:alice.aweb.ai" });
-  const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
-  const result = await run(["setup", "--username", "alice", "--name", "deployment-root"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) }, root);
-  assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /teams:\n\s+"<label>": \{ team: "default:alice\.aweb\.ai" \}\n\s+defaultTeam: "<label>"/);
-  assert.match(result.stdout, /localTeams: true/);
-  assert.doesNotMatch(result.stdout, /oats teams add|oats teams default/);
-  // Open or unknown (0.36: no localTeams; or no kernel to ask): today's advice.
-  for (const env of [{ OATS_CLI_BIN: fakeOatsCli(t).cli }, {}]) {
-    rmSync(join(root, ".aw"), { recursive: true, force: true });
-    const open = await run(["setup", "--username", "alice", "--name", "deployment-root"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_SETTINGS: JSON.stringify({ root }), ...env }, root);
-    assert.equal(open.code, 0, open.stderr);
-    assert.match(open.stdout, /record it with `oats teams add <label> --team default:alice\.aweb\.ai` and `oats teams default <label>`/);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const fake = fakeAwSetupPath(t), kernel = fakeKernelTeamConfig(join(tempDir(t), "kernel"), root, { localTeams: false });
+  for (const cli of [kernel.cli, ""]) {
+    const result = await run(["setup", "--username", "alice", "--name", "deployment-root"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_WORKSPACE: root, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root }) }, root);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, cli ? /E_SETUP_POLICY.*local-teams-closed/ : /E_SETUP_KERNEL/);
+    assert.equal(existsSync(join(root, ".aw")), false);
   }
+  assert.deepEqual(fake.readCalls(), []);
 });
 
 test("setup --create without namespace distinguishes unsupported provider from native hosted creation", async (t) => {
@@ -926,8 +925,10 @@ test("username setup refuses missing or invalid explicit alias before installati
 
 test("username setup with explicit alias withholds credential-bearing native failure", async (t) => {
   const root = tempDir(t), fake = fakeAwSetupPath(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const kernel = fakeKernelTeamConfig(join(tempDir(t), "kernel"), root);
   const r = await run(["setup", "--username", "alice", "--name", "root-1"], {
-    PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", AW_SIGNUP_FAIL: "1", OATS_SETTINGS: JSON.stringify({ root }),
+    PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_WORKSPACE: root, OATS_CLI_BIN: kernel.cli, AW_SIGNUP_FAIL: "1", OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(r.code, 1);
   assert.match(r.stderr, /output withheld/);

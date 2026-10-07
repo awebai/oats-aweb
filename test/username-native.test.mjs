@@ -5,11 +5,12 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { fakeKernelTeamConfig } from './helpers/fake-kernel-team-config.mjs';
 
 const hook = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs', import.meta.url));
 function run(command, args, options) {
@@ -65,8 +66,10 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   assert.equal(missing.code, 2); assert.match(missing.stderr, /missing required flag: --name/);
   assert.equal(calls.length, 0); assert.equal(existsSync(join(nativeRoot, '.aw')), false);
   const root = join(scratch, 'provider'); mkdirSync(root);
+  writeFileSync(join(root, 'oats-local.yaml'), 'schemaVersion: 2\nworkspace: fixture\n');
+  const kernel = fakeKernelTeamConfig(join(scratch, 'kernel'), root);
   const result = await run(process.execPath, [hook, 'setup', '--username', 'fixture-user', '--name', 'fixture-root'], {
-    cwd: root, env: { ...env, OATS_EVENT: 'setup', OATS_SETTINGS: JSON.stringify({ root }) },
+    cwd: root, env: { ...env, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) },
   });
   assert.equal(result.code, 1, result.stderr); assert.equal(result.signal, null);
   assert.match(result.stderr, /output withheld/);

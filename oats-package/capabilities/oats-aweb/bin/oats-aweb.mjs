@@ -51,6 +51,7 @@ import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/cap
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
+import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { selectClaudeChannel, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
@@ -445,7 +446,7 @@ if (invalidConfiguredTeamId && (isCommand || ["spawn", "launch"].includes(event)
 }
 // `setup --install-aw` and `setup --check-only` handle a missing or old aw
 // themselves (installing it, or reporting it in the check document).
-const setupHandlesAw = event === "setup" && process.argv.slice(3).some((arg) => arg === "--install-aw" || arg === "--check-only");
+const setupHandlesAw = event === "setup" && process.argv.slice(3).some((arg) => arg === "--install-aw" || arg === "--check-only" || arg === "--plan" || arg === "--username" || arg.startsWith("--username="));
 if (!onPath("aw") && !setupHandlesAw) {
   if (isCommand) { console.error(`oats aweb ${event}: aw CLI not on PATH — ${AW_INSTALL}`); process.exit(1); }
   if (event === "spawn") fatal(`aw CLI not on PATH, so no identity could be minted and this instance would have no messaging — ${AW_INSTALL}`);
@@ -1911,13 +1912,16 @@ if (event === "launch") {
   // Guided onboarding — idempotent, prints what it finds and can run one
   // existing aw primitive when the operator supplies the needed authority.
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
-  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
-  let setupDir;
+  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
+  let setupDir, setupLabel, setupPlan = false;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--dir" && args[i + 1]) { setupDir = resolve(args[++i]); continue; }
     if (arg.startsWith("--dir=") && arg.length > 6) { setupDir = resolve(arg.slice(6)); continue; }
+    if (arg === "--plan") { setupPlan = true; continue; }
+    if (arg === "--label" && args[i + 1]) { setupLabel = args[++i]; continue; }
+    if (arg.startsWith("--label=") && arg.length > 8) { setupLabel = arg.slice(8); continue; }
     if (arg === "--username" && args[i + 1]) { username = args[++i]; continue; }
     if (arg.startsWith("--username=") && arg.length > "--username=".length) { username = arg.slice("--username=".length); continue; }
     if (arg === "--invite" && args[i + 1]) { invite = args[++i]; continue; }
@@ -1940,6 +1944,7 @@ if (event === "launch") {
     console.error(`oats aweb setup: ${usage}`);
     process.exit(2);
   }
+  if ((setupLabel !== undefined || setupPlan) && !username) { console.error(`oats aweb setup: --label/--plan require --username\n${usage}`); process.exit(2); }
   if (createNamespace && !createLabel) { console.error(`oats aweb setup: --namespace requires --create\n${usage}`); process.exit(2); }
   if (invite && inviteStdin) { console.error(`oats aweb setup: --invite and --invite-stdin cannot be combined\n${usage}`); process.exit(2); }
   if (invite && !joinLabel) { console.error(`oats aweb setup: --invite requires --join <label> so the team gets its own root\n${usage}`); process.exit(2); }
@@ -1962,6 +1967,28 @@ if (event === "launch") {
   const apiKey = !!process.env.AWEB_API_KEY;
   const actions = [username ? "--username" : null, joinLabel ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
+
+  if (username) {
+    const json = process.argv.includes('--json');
+    try {
+      const result = await setupUsernameDefault({ username, name: joinName, label: setupLabel, plan: setupPlan, dir: setupDir, installAw, awVersion }, { normalize: normalizeAwebTeamName, ensureAw, run });
+      if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result }));
+      else if (result.plan) {
+        console.log(`Plan: label ${result.label}, predicted team ${result.predictedTeam}, root ${result.root}; bootstrap ${result.bootstrap}. No effects.`);
+        console.log(JSON.stringify(result.configuration));
+      } else {
+        console.log(`✓ verified ${result.team} at ${result.root}; mapping and deployment default ${result.label} read back successfully.`);
+        console.log(JSON.stringify({ steps: result.steps, observed: result.observed }));
+        console.log('Next: use /oats-onboarding for staffing and receive verification; configuration success is not live receive readiness.');
+      }
+      process.exit(0);
+    } catch (error) {
+      const problem = { code: error.code || 'E_SETUP_FAILED', message: error.message, details: error.details };
+      if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: problem }));
+      else console.error(`oats aweb setup: ${problem.code}: ${problem.message}\n${JSON.stringify(problem.details || {})}`);
+      process.exit(1);
+    }
+  }
 
   if (installAw || checkOnly) {
     const aw = await ensureAw({ install: installAw, version: awVersion });

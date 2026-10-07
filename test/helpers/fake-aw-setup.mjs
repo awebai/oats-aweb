@@ -32,7 +32,7 @@ fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome
 (${joinFromFake})(args);
 const awDir = identityHome || path.join(process.cwd(), ".aw");
 const teamsFile = path.join(awDir, "teams.json");
-const writeTeams = (team) => { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team }] })); };
+const writeTeams = (team, facts = {}) => { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team, ...facts }] })); };
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_LIST_TEAMS) console.log(process.env.AW_LIST_TEAMS);
@@ -44,7 +44,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (args.includes("--do-not-touch-agents-md") && fs.existsSync(path.join(awDir, "identity.yaml"))) { console.log("initialized"); process.exit(0); }
   if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }
   const i = args.indexOf("--username");
-  writeTeams(i >= 0 ? "default:" + args[i + 1] + ".aweb.ai" : (process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)}));
+  writeTeams(i >= 0 ? "default:" + args[i + 1] + ".aweb.ai" : (process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)}), args.includes("--new-account") ? { alias: flag("--name"), identity_scope: "local" } : {});
   console.log("initialized");
 } else if (args[0] === "team" && args[1] === "join") {
   if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }
