@@ -441,18 +441,52 @@ not keyless. LOCAL root/spawn-authority diagnostics are never a GLOBAL gate.
 one onboarding command plus one printed host step until service-manager integration,
 not automatic daemon startup. Wider-team grant extension remains unsupported #60.
 
-**Existing connect command (provider 1.21):** after `oats server connect`, from D:
-`oats aweb connect <server-id> --soul S [--install-aw] [--name <alias>] [--json]`.
-Prerequisites: selected hosted default, local invite authority, kernel capability
-routing. Writes remote per-team root via stdin join; success: final remote
-membership/readiness check. Next: onboarding's remote staffing stage.
-`E_TEAM_NOT_MEMBER` → fix this deployment's authority first; BYOT is `needs-human`,
-not a hosted invite fallback. Tokens remain private; target native accept has argv exposure.
+### Connecting a deployment on another machine
 
-**Existing aw installation option:** `oats aweb setup --soul S --install-aw [--aw-version <v>]`
-requires already-authorized installation; runs npm and rechecks the floor. Success:
-usable selected aw. Next: continue selected setup card. `E_AW_INSTALL`/`E_AW_FLOOR`
-→ resolve installation/version with the operator; no automatic upgrade from a read.
+Released provider 1.21.0/1.21.1; aw floor 1.36.13. Prerequisites: the operator
+has completed `oats server connect`, selected the registered server and its mapped
+hosted default team, and has local invite authority for that team. Run from the
+local deployment D, outside an instance session; the selected kernel routes
+remote setup through `--server` to the server's deployment and messaging soul.
+The LOCAL placement/version guard above also applies on that host.
+
+| Act / context | Exact command | Writes / success / one next step | Emitted error or template → remedy |
+|---|---|---|---|
+| Connect selected remote deployment; `--name` supplies the root alias when the server ID is not a valid aweb alias; `--install-aw` explicitly authorizes host installation | `oats aweb connect <server-id> --soul <soul> [--install-aw] [--name <alias>] [--json]` | Executes `aw`, `invite`, `join`, `readiness` steps below. May install host CLI, mint one hosted invite and create/connect/record the remote per-team root. Success: intended remote team/root membership and all steps `ok`/`done`, `ready: true`; this is not live receive proof. Next: onboarding's remote staffing stage. | `E_TEAM_NOT_MEMBER` → join that team locally with an appropriate member invite or ask a member to connect the server. BYOT `E_INVITE_NOT_HOSTED` / `needs-human` → use the emitted controller request/add-member/fetch-cert flow with the team owner; no hosted fallback. |
+
+The `aw` step runs remote `setup --check-only --json`, optionally installing aw
+only when `--install-aw` was selected. The `invite` step uses this deployment's
+root for the host's default team; if the host is already a member, no invite is
+minted and join is skipped without another acceptance. Otherwise `join` passes
+the token on stdin to remote `setup --join <label> --invite-stdin`, then
+`readiness` rechecks host aw and membership. A missing/old host CLI without
+installation authorization reports `needs-human`: the operator may authorize the
+printed connect retry with `--install-aw`, retaining selected `--name`/`--soul`.
+An unmapped host default reports `E_TEAM_UNMAPPED`: correct its team declaration
+before retry. Route/join failures retain their step and error; reconcile the
+remote root before retry rather than assuming rollback.
+
+The invite token is never in argv, a file, a log or output **on this side**;
+it stays in memory and the routed join's stdin. On the host, native
+`aw id team accept-invite` exposes the token in its process list while the call
+runs. Do not paste it into messages, shell history or diagnostic output.
+
+### Install the aw prerequisite explicitly
+
+Released provider 1.21.0/1.21.1; selected D/S and explicit operator authorization
+to install the CLI on this host. This is an installation act, not a read-only
+check or permission inferred from onboarding.
+
+| Act / context | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
+|---|---|---|---|
+| Install missing, unreadable-version or below-floor aw; retain `--soul S` for outside-session dispatch | `oats aweb setup --install-aw [--aw-version <v>] --soul S` | Runs `npm install -g @awebai/aw@<v>` (default `^1.36.13`), rechecks the 1.36.13 floor, then continues ordinary setup. At/above floor, skips npm even with a version supplied. Success: usable aw and the selected setup's own success predicate. Next: follow that setup card's one next step. | `npm install -g <package> failed ...` (`E_AW_INSTALL` in check-only JSON) → operator resolves npm/access failure before retry; `npm install -g <package> ran, but ...` (`E_AW_FLOOR`) → resolve PATH/version so the selected aw meets the floor. |
+
+`<v>` accepts an exact version or `^`/`~` range; `--aw-version` requires
+`--install-aw`. This option does not promise an upgrade of an already-usable CLI
+or the separate aw 1.36.24 feature floor. Add `--check-only --json` to return the
+aw/default-team/member/root check after authorized installation, without ordinary
+setup; installation still writes. Without `--install-aw`, a missing/old CLI check
+reports `needs-human` with the explicit installation remedy.
 
 **Readiness messages:** no default is exactly `no teams configured: run \`oats
 aweb setup\``. An unmapped default is `the default team <label> has no provider id

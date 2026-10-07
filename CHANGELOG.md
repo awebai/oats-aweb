@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Documentation: retain released remote deployment connect and explicit aw
+installation procedures, including step/readback, failure and token-exposure
+boundaries, in the provider act cards.
+
 Documentation: add version-qualified provider act cards for LOCAL root setup,
 controller/hosted team creation, labelled join and tokenless resume, invitations,
 GLOBAL resident/custody/grant boundaries and receive verification. Preserve PR61's
