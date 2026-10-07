@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.22.2 — 2026-10-07
 
 Fixed (#66): hosted-account setup requires explicit `--name <alias>` with
 `--username` and passes it to native `aw init --new-account`. Missing/invalid
