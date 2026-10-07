@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.22.1 — 2026-10-07
+
+Compatibility note (#63): the general OATS >=0.30.0 floor remains for other
+behavior. Explicit wider-team LOCAL join additionally needs the selected same
+kernel's public `inspect --home` recorded soul provenance, then
+`inspect --soul --dir --json` with live teams/current `oats.aweb` root settings,
+and `OATS_TEAM_SCOPE` dispatch identifying the selected deployment. Missing or
+invalid results refuse before invite minting; no ambient soul/settings workaround.
+The pinned `bb2ba8c9` public fixture (OATS 0.42 source) is verified evidence, not
+an earliest-release claim. Older homes need the fixed provider composition;
+ordinary lifecycle retains captured settings.
 
 Documentation: retain released remote deployment connect and explicit aw
 installation procedures, including step/readback, failure and token-exposure

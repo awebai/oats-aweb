@@ -362,6 +362,16 @@ team, setup creates a real per-team root such as
 `settings.oats.aweb.roots[<team id>] = <root>` in `oats-local.yaml`. Minting for
 team `T` uses `roots[T]` when present, otherwise `root`.
 
+The general OATS >=0.30.0 compatibility floor applies to the remaining provider
+behavior; explicit wider-team LOCAL join additionally requires the selected same
+kernel to support `inspect --home` for recorded soul provenance, then
+`inspect --soul --dir --json` with live teams and current `oats.aweb` root settings,
+and to dispatch `OATS_TEAM_SCOPE` as the selected deployment. Missing or invalid
+results refuse before invite minting; ambient soul names or settings are no
+workaround. The pinned public fixture at `bb2ba8c9` (OATS 0.42 source) verifies
+these features, not the earliest compatible release. Older homes need the fixed
+provider composition; ordinary lifecycle keeps its captured settings.
+
 Explicit `oats aweb join` resolves current host-owned minting roots through the
 same kernel's public inspect API. It first validates the selected home's recorded
 soul, then reads that soul in the selected deployment, consuming only `root` and
