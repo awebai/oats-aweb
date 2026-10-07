@@ -179,9 +179,9 @@ For `blocked`/`incomplete`, inspect the retained target with
 `oats session inspect --home <home> --json`. Never automatically resend a key,
 replay spawn, replace or restart because of that result or `launched:false`.
 Start only after inspection proves the session gone; live prompt intervention
-needs separate explicit operator authorization. The released completion
-limitation tracked in [oats#754](https://github.com/awebai/oats/issues/754)
-can retain an active healthy session after one submitted Enter.
+needs separate explicit operator authorization. The released completion limitation
+can retain an active healthy session after one submitted Enter;
+[oats#754](https://github.com/awebai/oats/issues/754) remains open.
 
 **When woken:**
 

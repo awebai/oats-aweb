@@ -57,7 +57,7 @@ for the complete fixture and restoration rules.
 Released completion is narrower than successful startup: the tagged complete
 empty banners name Opus 5.5, API Usage Billing, auto mode and medium effort.
 A healthy subscription or task-filled pane may be retained blocked after Enter.
-The limitation is tracked in [oats#754](https://github.com/awebai/oats/issues/754);
+The limitation remains open in [oats#754](https://github.com/awebai/oats/issues/754);
 issue closure is not evidence of a released general fix. Interim
 [PR756](https://github.com/awebai/oats/pull/756), merged at
 `90ca5500ac0ca5ab3bc738823fd71e67bd591a60`, adds billing atoms only on qualified
