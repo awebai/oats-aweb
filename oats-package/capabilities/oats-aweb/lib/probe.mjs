@@ -144,5 +144,6 @@ export async function runProbe(argv, {env = process.env, signal, now, wall, chil
 }
 export function formatProbe(result, json) {
   if (json) return JSON.stringify(result);
-  return `${result.outcome} ${result.reason}; elapsed=${Math.round(result.timing.elapsedMs)}ms send=${result.timing.sendMs === null ? 'unknown' : Math.round(result.timing.sendMs) + 'ms'} reply=${result.timing.replyMs === null ? 'unknown' : Math.round(result.timing.replyMs) + 'ms'} request=${result.request.messageId ?? 'unknown'} conversation=${result.request.conversationId ?? 'unknown'} replyId=${result.reply?.messageId ?? 'unknown'}`;
+  const sendNote = result.reason === 'send-outcome-unknown' ? ` send outcome unknown; no retry; ${result.request.messageId || result.request.conversationId ? 'obtained IDs shown below' : 'recovery ID unavailable'};` : '';
+  return `${result.outcome} ${result.reason};${sendNote} elapsed=${Math.round(result.timing.elapsedMs)}ms send=${result.timing.sendMs === null ? 'unknown' : Math.round(result.timing.sendMs) + 'ms'} reply=${result.timing.replyMs === null ? 'unknown' : Math.round(result.timing.replyMs) + 'ms'} request=${result.request.messageId ?? 'unknown'} conversation=${result.request.conversationId ?? 'unknown'} replyId=${result.reply?.messageId ?? 'unknown'}`;
 }

@@ -59,3 +59,26 @@ test('large child output is killed without exposing content',async()=>{await ass
 test('real decryption error is projected without raw stderr',async()=>{await assert.rejects(runProbeChild(process.execPath,['-e','console.error("encrypted message requires local encryption private key secret-path");process.exit(1)'],{budget:new ProbeBudget(2),env:process.env,cwd:process.cwd()}),e=>e.reason==='decryption-failed'&&!e.message.includes('secret-path'));});
 test('CLI JSON/text/nonzero exit agree and emit no raw errors',async t=>{const {spawnSync}=await import('node:child_process');const f=fixture(t);const bin=new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb-probe.mjs',import.meta.url);const file=(await import('node:url')).fileURLToPath(bin);for(const json of [false,true]){const p=spawnSync(process.execPath,[file,'--home',f.home,...(json?['--json']:[])],{env:{...process.env,...f.deps.env},encoding:'utf8',timeout:5000});assert.equal(p.status,1,p.stderr);assert.equal(p.stderr,'');if(json){const r=JSON.parse(p.stdout);assert.equal(r.outcome,'FAIL');assert.equal(r.reason,'probe-cli-and-server-support-unqualified');}else assert.match(p.stdout,/^FAIL probe-cli-and-server-support-unqualified;/);assert(!p.stdout.includes('secret'));}});
 test('settled metadata projection binds exact selected service origin and both floors',async()=>{const {probeMetadataUrl,projectProbeSupport}=await import('../oats-package/capabilities/oats-aweb/lib/probe-support.mjs');const policy={origins:['https://hosted.example'],cliFloor:'9.2.0',serverFloor:'8.3.0'};const facts={awebUrl:'https://hosted.example/api',cliVersion:'9.2.0',metadata:{version:'0.1.0',build:{aweb_version:'8.3.0'}},observedUrl:'https://hosted.example/meta',policy};assert.equal(probeMetadataUrl(facts.awebUrl),facts.observedUrl);assert(projectProbeSupport(facts).supported);for(const delta of [{policy:null},{observedUrl:'https://other.example/meta'},{observedUrl:'https://hosted.example/api/v1/release'},{awebUrl:'https://unrecognized.example/api'},{metadata:{version:'99.0.0'}},{metadata:{build:{aweb_version:'8.2.99'}}},{metadata:{build:{aweb_version:'garbage'}}},{metadata:{build:{aweb_version:'8.3.0-rc.1'}}},{cliVersion:'9.1.99'}])assert.equal(projectProbeSupport({...facts,...delta}).supported,false);for(const url of ['https://name:secret@hosted.example/api','https://hosted.example/api?token=secret','file:///tmp/api','https://hosted.example/other'])assert.equal(probeMetadataUrl(url),null);});
+
+test('accepted attempted-send failures expose uncertainty without recovery IDs or raw diagnostics', async t => {
+  for (const failure of ['child-failed', 'child-timeout', 'cancelled', 'malformed']) {
+    const f = fixture(t, {onCall: ({args}) => {
+      if (!args.includes('send')) return;
+      if (failure === 'malformed') return Buffer.from('{"message_id":"partial-id"');
+      throw new ProbeError(failure);
+    }});
+    const result = await runProbe(f.args, f.deps);
+    const json = JSON.parse(formatProbe(result, true));
+    assert.equal(json.outcome, 'FAIL');
+    assert.equal(json.reason, 'send-outcome-unknown');
+    assert.equal(json.request.messageId, null);
+    assert.equal(json.request.conversationId, null);
+    assert.equal(sends(f).length, 1);
+    const text = formatProbe(result, false);
+    assert.match(text, /^FAIL send-outcome-unknown;/);
+    assert.match(text, /send outcome unknown; no retry; recovery ID unavailable/);
+    assert(!text.includes('partial-id'));
+    assert(!text.includes('<conversation>'));
+    assert(!Object.hasOwn(json, 'stderr'));
+  }
+});

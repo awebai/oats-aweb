@@ -24,9 +24,12 @@ origins, exact admission details and CLI/server floors must come from that
 release; none is invented here. Non-hosted/unrecognized services are refused
 until an equivalent observation is qualified. Unknown support must fail before send;
 a canary send cannot establish support. Never fall back to ordinary `mail send`.
-A server conversation mismatch or HTTP 422 must not be treated as evidence that
-no message was delivered and must never trigger retry. Exact error projection
-awaits the frozen upstream CLI error contract.
+The accepted attempted-send failure contract is `send-outcome-unknown`, with
+no retry, for every subprocess failure. This includes a server conversation
+mismatch, HTTP 422, timeout or lost response; none proves that no message was
+delivered. The CLI emits structured JSON only on success, so the probe does not
+parse stderr prose, expose raw errors or invent status/code fields. Typed error
+projections are a future follow-up, not a requirement for this delivery.
 
 The existing provider floor remains aw 1.36.13. aw 1.36.23 is a source reference
 for identity, mail projection and verification behavior, **not** a supported
@@ -57,7 +60,11 @@ contains a cryptographically random nonce of 192 bits; its body file is mode
 The root and target DID are pinned before send and checked again at completion.
 No target inbox, broad root inbox, unrelated conversation, ack or input command
 is called. A send error, timeout, cancellation or malformed response is
-`send-outcome-unknown`: sending is never retried.
+`send-outcome-unknown`: sending is never retried. Text says “send outcome
+unknown; no retry.” The current CLI failure path supplies no message or
+conversation ID: those JSON fields remain null and text says “recovery ID
+unavailable.” Exact-ID inspection can only be suggested when a real ID was
+obtained; no recovery ID or placeholder conversation is manufactured.
 
 An exact-ID read checks the sent message. Polling uses only the returned fresh
 conversation with `--limit 500`, once per second. This is an oldest-first
