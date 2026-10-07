@@ -96,7 +96,7 @@ test("channel: Claude and pi spawns are not registered with the broker and are b
     assert.match(doc.brief, surface, runtime);
     assert.match(doc.brief, /the host wake broker does not deliver to this home/, runtime);
     assert.doesNotMatch(doc.brief, /AWEB_DELIVERY=session/, runtime);
-    assert.deepEqual(doc.launch, runtime === "claude" ? { claude: CHANNEL_FLAG } : undefined, runtime);
+    assert.deepEqual(doc.launch, runtime === "claude" ? { claude: DEV_CHANNEL_FLAG } : undefined, runtime);
   }
 });
 
@@ -120,7 +120,7 @@ test("launch codex -> claude under channel: the broker registration is removed, 
   const r = fx.launch(meta, "claude");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(fx.registered(), undefined, "exactly one path: the broker no longer delivers to this home");
-  assert.deepEqual(r.doc.launch, { claude: CHANNEL_FLAG });
+  assert.deepEqual(r.doc.launch, { claude: DEV_CHANNEL_FLAG });
   assert.equal(r.doc.env?.AWEB_DELIVERY, undefined);
   assert.equal(r.doc.meta.runtime, "claude");
   assert.equal(r.doc.meta.delivery, "channel");
@@ -157,7 +157,7 @@ test("launch of a session-spawned home under channel settings: the setting wins 
   const r = fx.launch(meta, "claude", { delivery: "channel" });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(fx.registered(), undefined);
-  assert.deepEqual(r.doc.launch, { claude: CHANNEL_FLAG });
+  assert.deepEqual(r.doc.launch, { claude: DEV_CHANNEL_FLAG });
   assert.equal(r.doc.env?.AWEB_DELIVERY, undefined);
   assert.equal(r.doc.meta.delivery, "channel");
 });
@@ -398,14 +398,12 @@ test("readiness reports an outdated wake daemon for a codex channel home", (t) =
 });
 
 // ------------------------------------------- channel-dev-confirmation (1.21.1)
-// Claude Code stops at its development-channels confirmation before every
-// session that loads aweb-channel with --dangerously-load-development-channels
-// (awebai/oats-aweb#44): readiness and every hook answer that adds the flag
-// (the launch hook's, and the spawn hook's for the start a spawn performs) say so.
+// Development selection carries consent-boundary guidance through spawn,
+// launch and readiness; actual prompt outcomes belong to the kernel.
+const DEV_CONFIRMATION_MESSAGE = /Claude Code may stop at its development-channels confirmation .*only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer; the provider, broker and ordinary agents must never answer/;
+const DEV_CONFIRMATION = new RegExp(`channel-dev-confirmation — ${DEV_CONFIRMATION_MESSAGE.source}`);
 
-const DEV_CONFIRMATION = /channel-dev-confirmation — Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/;
-
-test("a Claude start under channel says it will wait at the development-channels confirmation, preview and real alike", (t) => {
+test("a development Claude start explains bounded kernel confirmation, preview and real alike", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: {claudeChannelMode:"development"} });
   const meta = fx.spawn().meta;
   const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
@@ -462,7 +460,7 @@ test("readiness warns channel-dev-confirmation for a home whose last start was C
       assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
     if (warns) {
-      assert.match(warning.message, /^Claude Code stops at its development-channels confirmation .*until someone answers it in the instance's terminal/);
+      assert.match(warning.message, DEV_CONFIRMATION_MESSAGE);
       assert.equal(result.status, "ready", "configured native route carries a connection uncertainty warning");
       assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
@@ -1052,16 +1050,27 @@ test('unchanged sanitized peer status warns about retained error and observation
   assert.deepEqual(status,before);
 });
 
-for(const mode of [undefined,'approved']) test(`approved selector emits the fixed approved argument for ${mode??'omission'}`,t=>{
+for(const mode of [undefined,'approved']) test(`selector emits the fixed argument and admission guidance for ${mode??'omitted development default'}`,t=>{
   const fx=fixture(t,{delivery:'channel',runtime:'claude',settings:mode===undefined?{}:{claudeChannelMode:mode}});
-  const doc=fx.spawn();
-  assert.deepEqual(doc.launch,{claude:'--channels plugin:aweb-channel@awebai-marketplace'});
-  assert.equal(doc.meta.claudeChannelMode,'approved');
-  assert.match(doc.warning,/claude-channel-enrollment-unverified/);
-  assert.match(doc.warning,/no channel wake/i);
-  assert.match(doc.warning,/without.*report/i);
+  const doc=fx.spawn(), expected=mode??'development';
+  assert.deepEqual(doc.launch,{claude:expected==='development'?DEV_CHANNEL_FLAG:CHANNEL_FLAG});
+  assert.equal(doc.meta.claudeChannelMode,expected);
+  const code=expected==='development'?'channel-dev-confirmation':'claude-channel-enrollment-unverified';
+  assert.match(doc.warning,new RegExp(code));
+  if(expected==='approved') {
+    assert.match(doc.warning,/currently not on the default approved list/);
+    assert.match(doc.warning,/approved mode registers no aweb channel unless applicable managed allowedChannelPlugins for this identity lists the plugin and marketplace/);
+    assert.match(doc.warning,/Installation or a trusted marketplace is not approval/);
+    assert.match(doc.warning,/no channel wake/i);
+    assert.match(doc.warning,/without.*report/i);
+  } else {
+    assert.match(doc.warning,/sole launch opt-in and defaults OFF/);
+    assert.match(doc.warning,/at most once; a folder-trust prompt blocks with a receipt and zero keys/);
+  }
   fx.record(doc.meta,'claude');
-  assert.ok(fx.readiness().warnings.some(w=>w.code==='claude-channel-enrollment-unverified'));
+  const warnings=fx.readiness().warnings;
+  assert.ok(warnings.some(w=>w.code===code));
+  assert.ok(warnings.some(w=>w.code==='native-receive-unproven'));
 });
 
 test('approved selector refuses explicit null before provider calls',t=>{

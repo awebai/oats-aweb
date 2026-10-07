@@ -594,8 +594,8 @@ function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
     assert.doesNotMatch(doc.warning,/channel-dev-confirmation/);
   } else {
     assert.match(doc.warning,/channel-dev-confirmation/);
-    assert.match(doc.warning,/deliberate local channel development only/);
-    assert.match(doc.warning,/never answer the prompt automatically or use it as an admission fallback/);
+    assert.match(doc.warning,/only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer/);
+    assert.match(doc.warning,/provider, broker and ordinary agents must never answer/);
     assert.doesNotMatch(doc.warning,/claude-channel-enrollment-unverified/);
   }
 }
@@ -603,7 +603,7 @@ function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
 for(const selection of [undefined,'approved','development']) test(`global grant Claude channel selector ${selection ?? 'omitted'} keeps grant locator through spawn and launch`,()=>{
   const base=mkdtempSync(join(tmpdir(),'oats-aweb-113-selector-'));
   try {
-    const mode=selection ?? 'approved';
+    const mode=selection ?? 'development';
     const selected={delivery:'channel',...(selection===undefined?{}:{claudeChannelMode:selection})};
     const {bin,root,home,custody,r}=spawnGrant(base,selected,{OATS_RUNTIME:'claude'});
     assert.equal(r.status,0,r.stdout+r.stderr);
@@ -633,7 +633,7 @@ for(const selection of [undefined,'approved','development']) test(`global grant 
 for(const selection of [undefined,'approved','development']) test(`retained root Claude channel selector ${selection ?? 'omitted'} keeps copied identity through spawn and launch`,()=>{
   const base=mkdtempSync(join(tmpdir(),'oats-aweb-113-retained-selector-'));
   try {
-    const mode=selection ?? 'approved',bin=fakeAw(base),{root,home}=deployment(base),source=join(base,'legacy','.aw');
+    const mode=selection ?? 'development',bin=fakeAw(base),{root,home}=deployment(base),source=join(base,'legacy','.aw');
     write(join(source,'signing.key'),'fixture-signing-key');
     write(join(source,'identity.yaml'),'alias: retained\ndid: did:key:zRetained\naddress: fixture.test/retained\n');
     write(join(source,'teams.yaml'),'active_team: t:example.test\n');

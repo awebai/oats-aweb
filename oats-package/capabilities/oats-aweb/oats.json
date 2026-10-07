@@ -142,8 +142,8 @@
     "claudeChannelMode": {
       "hostOnly": true,
       "values": ["approved", "development"],
-      "default": "approved",
-      "description": "Host-selected Claude/channel request, only in oats-local.yaml. Approved requests the fixed plugin through --channels without proving allowlist admission; development is explicit local channel development only, never an automatic fallback. Pi, Codex and session routes are unchanged."
+      "default": "development",
+      "description": "Host-selected Claude/channel request, only in oats-local.yaml. Development is the default for new compositions; it selects the fixed plugin argument, never launch consent. Approved is explicit and requires applicable managed allowedChannelPlugins or future approval; installation/trusted marketplace is not approval. No automatic fallback, migration or flip-back; a future default change requires an explicit reviewed release. Pi, Codex and session routes are unchanged."
     },
     "root": {
       "hostOnly": true,

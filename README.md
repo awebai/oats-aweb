@@ -169,28 +169,49 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   `aw wake register`.
 
   New Claude/channel compositions default to
-  `--channels plugin:aweb-channel@awebai-marketplace`. This selects the approved
-  channel mechanism; it does not establish effective plugin admission. Launch
-  and readiness report `claude-channel-enrollment-unverified`: Claude may run
-  with **no channel wake**, potentially without reporting that the channel was
-  not registered. Installation and a configured route are not connection proof.
+  `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
+  Development is selected to avoid a silent missing receiver: aweb-channel is
+  currently not on the default approved list. Explicit host-local
+  `claudeChannelMode: approved` selects
+  `--channels plugin:aweb-channel@awebai-marketplace`, which registers no aweb
+  channel unless applicable managed `allowedChannelPlugins` for this identity
+  lists the plugin and marketplace, or a future approval exists. Installation or
+  a trusted marketplace is not approval. Launch and readiness retain
+  `claude-channel-enrollment-unverified`: effective admission remains unverified,
+  and Claude may run with no channel wake, potentially without a diagnostic.
   Where broker delivery is authorized, an operator may select `delivery: session`
   for an unattended home; this must not override an explicit native-channel
-  requirement. No automatic fallback changes the route.
+  requirement.
 
-  Explicit host-local `claudeChannelMode: development` instead selects
-  `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
-  It is for deliberate local channel development only. Its
-  `channel-dev-confirmation` warning explains the terminal confirmation; nothing
-  answers that prompt automatically or uses development mode as an admission
-  fallback. Both modes contribute exactly one fixed plugin argument.
+  Both modes contribute exactly one fixed plugin argument;
+  `settings.oats.aweb.claudeChannelMode` selects argv, never consent. No automatic
+  migration, consent inference, approved-to-development fallback or flip-back
+  occurs. A future default change requires an explicit reviewed release.
+
+  Development selection may stop at Claude Code's confirmation. Only a
+  compatible kernel, during its own launch with explicit per-home consent and a
+  qualified exact fixture, may answer. The provider, broker and ordinary agents
+  must never answer. Host-only
+  `launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
+  is the sole launch opt-in and defaults OFF. The kernel may answer exactly one
+  qualified development confirmation, at most once. A folder-trust prompt blocks
+  with a receipt and zero keys; folder trust is outside this exception.
+  Older kernels still need operator attention. Opted-in unsupported fixtures,
+  versions or terminal geometry block per kernel behavior; consent does not guarantee unattended startup.
+
+  The `channel-dev-confirmation` warning describes this boundary, not an observed
+  answer. Consult the kernel launch result and durable receipt for actual
+  answered/blocked/uncertain status; provider mode, consent and readiness do not
+  establish it. Passing the prompt proves neither plugin installation, admission,
+  connection, message presentation nor model consumption. Admission warnings and
+  `native-receive-unproven` still apply.
 
   Readiness uses the captured mode or an exact retained provider launch
   contribution, including historical development arguments. Missing evidence
   produces `claude-channel-mode-unproven`; current settings do not rewrite a
   home's history. Malformed or conflicting supplied evidence is a problem.
-  Frozen homes keep their captured modules and arguments. This migration applies
-  to new compositions; it does not enroll the plugin or recover an existing
+  Frozen homes keep their captured modules and arguments. The default applies
+  only to new compositions; it does not enroll the plugin or recover an existing
   runtime. [Issue #44](https://github.com/awebai/oats-aweb/issues/44) remains open;
   [cjr adoption #673](https://github.com/awebai/oats/issues/673) is separate.
 
@@ -311,7 +332,7 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   Grant readiness uses the final recorded `identity.grant.home`, never the newest
   directory or the caller's `AWEB_IDENTITY_HOME`.
 
-- `claudeChannelMode`: `approved` (default) or `development`, **host-only** in
+- `claudeChannelMode`: `development` (default) or explicit `approved`, **host-only** in
   `oats-local.yaml` under `settings.oats.aweb`. Committed soul/workspace settings
   and spawn-provider overrides are rejected by the kernel. Explicit null, empty,
   wrong-type or unknown values fail before provider effects. This setting changes
