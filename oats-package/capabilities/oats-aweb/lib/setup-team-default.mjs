@@ -66,7 +66,7 @@ export function selectedTeamKernel(deployment, env = process.env) {
   return { read, add: (label, team) => invoke(['teams', 'add', label, `--team=${team}`]), setDefault: label => invoke(['teams', 'default', label]) };
 }
 
-export function teamConfigurationPlan(doc, label, team, deployment) {
+export function teamConfigurationPlan(doc, label, team, deployment, { preserveDefault = false } = {}) {
   const commands = [
     ['oats', 'teams', 'add', label, '--team', team, '--dir', deployment],
     ['oats', 'teams', 'default', label, '--dir', deployment],
@@ -76,18 +76,62 @@ export function teamConfigurationPlan(doc, label, team, deployment) {
   }
   const existing = doc.teams.find(row => row.label === label);
   if (existing && existing.team !== team) {
-    throw setupFailure('E_SETUP_TEAM_CONFLICT', 'selected label is already declared for a different or unmapped team; choose another --label or have its owner reconcile the declaration; no overwrite', { commands });
+    throw setupFailure('E_SETUP_TEAM_CONFLICT', 'selected label is already declared for a different or unmapped team; choose another label or have its owner reconcile the declaration; no overwrite', { commands });
   }
   // An unconfigured/unmapped default is what this act repairs. Unrelated
   // warnings are advisory; other failures are not reclassified as closed policy.
   if (doc.problems.some(p => p.label === label || (p.severity === 'failure' && !['E_TEAM_UNCONFIGURED', 'team-unmapped'].includes(p.code)))) {
-    throw setupFailure('E_SETUP_CONFIGURATION', 'selected kernel reports unresolved team configuration problems; nothing was bootstrapped', { commands });
+    throw setupFailure('E_SETUP_CONFIGURATION', 'selected kernel reports unresolved team configuration problems; no configuration write attempted at this step', { commands });
   }
   const mapped = !!existing;
+  if (preserveDefault && !mapped && doc.defaultTeam && doc.defaultTeam.from !== 'deployment') {
+    throw setupFailure('E_SETUP_DEFAULT_PRESERVE', 'mapping was not written because the deployment already has an effective default from the workspace; the supplied teams add command deliberately sets a local default over it', {
+      commands: [['oats', 'teams', 'add', label, '--team', team, '--dir', deployment]],
+      note: 'do not run this add as a harmless mapping-only step: it can override the effective workspace default',
+    });
+  }
   const isDefault = doc.defaultTeam?.label === label && doc.defaultTeam?.team === team;
   return { label, team, mapping: mapped ? 'reuse' : 'add', default: isDefault ? 'reuse' : 'set',
     commands: [...(mapped ? [] : [commands[0]]), ...(isDefault ? [] : [commands[1]])],
     note: 'teams add may also set the local default; readback determines whether the default command is still required' };
+}
+
+/** Apply a verified membership's configuration through the selected public CLI.
+ * The caller's observe callback owns partial-state reporting, including failed
+ * reads. No mutation is considered successful without its readback.
+ */
+export function applyTeamConfiguration({ kernel, label, team, deployment, observe, steps, preserveDefault = false }) {
+  let current = observe();
+  const currentPlan = teamConfigurationPlan(current, label, team, deployment, { preserveDefault });
+  if (currentPlan.mapping === 'add') {
+    let failure;
+    try { kernel.add(label, team); steps.push({ step: 'mapping', status: 'command-completed' }); }
+    catch (error) { failure = error; steps.push({ step: 'mapping', status: 'unconfirmed' }); }
+    try { current = observe(); } catch (error) { throw setupFailure('E_SETUP_READBACK', 'mapping readback failed; root retained, applied configuration is unverified', { cause: failure?.code || error.code }); }
+    if (failure) throw failure;
+    if (current.teams.find(row => row.label === label)?.team !== team) throw setupFailure('E_SETUP_READBACK', 'mapping command did not produce the requested canonical mapping; root retained');
+  } else steps.push({ step: 'mapping', status: 'reused' });
+  // Query immediately before deciding whether another write is appropriate.
+  // Public verbs do not provide a cross-command compare-and-set transaction.
+  if (preserveDefault) current = observe();
+  if (preserveDefault && current.defaultTeam) {
+    steps.push({ step: 'default', status: 'preserved' });
+    if (current.teams.find(row => row.label === label)?.team !== team) throw setupFailure('E_SETUP_READBACK', 'joined mapping changed; root retained');
+    return current;
+  }
+  if (current.defaultTeam?.label !== label || current.defaultTeam?.team !== team) {
+    // Revalidate after add, including policy changes and shared-label races.
+    teamConfigurationPlan(current, label, team, deployment, { preserveDefault });
+    let failure;
+    try { kernel.setDefault(label); steps.push({ step: 'default', status: 'command-completed' }); }
+    catch (error) { failure = error; steps.push({ step: 'default', status: 'unconfirmed' }); }
+    try { current = observe(); } catch (error) { throw setupFailure('E_SETUP_READBACK', 'default readback failed; root retained, applied configuration is unverified', { cause: failure?.code || error.code }); }
+    if (failure) throw failure;
+  } else steps.push({ step: 'default', status: 'observed', via: currentPlan.mapping === 'add' ? 'mapping-readback' : 'existing' });
+  if (current.teams.find(row => row.label === label)?.team !== team || current.defaultTeam?.label !== label || current.defaultTeam?.team !== team) {
+    throw setupFailure('E_SETUP_READBACK', 'configuration readback does not match requested mapping and default; root retained');
+  }
+  return current;
 }
 
 export async function setupUsernameDefault(options, { normalize, validTeam, ensureAw, run, env = process.env }) {
@@ -166,28 +210,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     const team = readMembership();
     if (hasIdentity) steps.push({ step: 'bootstrap', status: 'reused' });
     // Policy/mapping can change during native onboarding. Recheck before writes.
-    let current = observe();
-    const currentPlan = teamConfigurationPlan(current, label, team, deployment);
-    if (currentPlan.mapping === 'add') {
-      let failure;
-      try { kernel.add(label, team); steps.push({ step: 'mapping', status: 'command-completed' }); }
-      catch (error) { failure = error; steps.push({ step: 'mapping', status: 'unconfirmed' }); }
-      try { current = observe(); } catch (error) { throw setupFailure('E_SETUP_READBACK', 'mapping readback failed; root retained, applied configuration is unverified', { cause: failure?.code || error.code }); }
-      if (failure) throw failure;
-      if (observed.mappedTeam !== team) throw setupFailure('E_SETUP_READBACK', 'mapping command did not produce the requested canonical mapping; root retained');
-    } else steps.push({ step: 'mapping', status: 'reused' });
-    if (current.defaultTeam?.label !== label || current.defaultTeam?.team !== team) {
-      // Revalidate after add, including policy changes and shared-label races.
-      teamConfigurationPlan(current, label, team, deployment);
-      let failure;
-      try { kernel.setDefault(label); steps.push({ step: 'default', status: 'command-completed' }); }
-      catch (error) { failure = error; steps.push({ step: 'default', status: 'unconfirmed' }); }
-      try { current = observe(); } catch (error) { throw setupFailure('E_SETUP_READBACK', 'default readback failed; root retained, applied configuration is unverified', { cause: failure?.code || error.code }); }
-      if (failure) throw failure;
-    } else steps.push({ step: 'default', status: 'observed', via: currentPlan.mapping === 'add' ? 'mapping-readback' : 'existing' });
-    if (observed.mappedTeam !== team || current.defaultTeam?.label !== label || current.defaultTeam?.team !== team) {
-      throw setupFailure('E_SETUP_READBACK', 'configuration readback does not match requested mapping and default; root retained');
-    }
+    applyTeamConfiguration({ kernel, label, team, deployment, observe, steps });
     return { plan: false, label, team, root, steps, observed, membershipVerified: true };
   } catch (error) {
     if (!error.code?.startsWith('E_SETUP_')) error = setupFailure('E_SETUP_FAILED', 'username setup failed; details withheld');

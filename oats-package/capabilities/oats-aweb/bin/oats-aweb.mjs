@@ -51,6 +51,7 @@ import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/cap
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
+import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { resolveGrantTTL } from "../lib/grant-duration.mjs";
@@ -401,8 +402,59 @@ function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPA
   if (roots < 0) { roots = ensureYamlBlock(lines, aweb, awebEnd, 4, "roots"); awebEnd++; }
   const rootsEnd = blockEnd(lines, roots, 4);
   const key = yamlQuote(team), value = yamlQuote(rootDir), row = `      ${key}: ${value}`;
-  const existing = lines.findIndex((l, i) => i > roots && i < rootsEnd && l.trimStart().startsWith(`${key}:`));
-  if (existing >= 0) lines[existing] = row; else lines.splice(rootsEnd, 0, row);
+  // The public kernel serializer may wrap a scalar value and may choose a
+  // plain or single-quoted canonical-team key. Replace the entire scalar entry,
+  // not just its first line, so a tokenless resume remains valid YAML.
+  const keys = [key, team, "'" + team + "'"];
+  // Identify the key/delimiter before examining the value. Empty or unsupported
+  // tails must refuse, not disappear from duplicate detection.
+  const matches = lines.flatMap((line, index) => {
+    if (index <= roots || index >= rootsEnd || !line.startsWith("      ") || line.startsWith("       ")) return [];
+    const entry = line.slice(6);
+    for (const candidate of keys) {
+      if (!entry.startsWith(candidate)) continue;
+      const delimiter = /^[ \t]*:(.*)$/.exec(entry.slice(candidate.length));
+      if (delimiter) return [{ index, tail: delimiter[1] }];
+    }
+    return [];
+  });
+  if (matches.length > 1) unsupportedLocalYaml(file, "duplicate root key", team, rootDir);
+  if (matches.length) {
+    const { index: existing, tail } = matches[0];
+    if (tail && !/^[ \t]/.test(tail)) unsupportedLocalYaml(file, "unsupported root delimiter", team, rootDir);
+    const scalar = tail.trimStart();
+    let end = existing + 1, comment = "";
+    if (scalar.startsWith('"') || scalar.startsWith("'")) {
+      const quote = scalar[0];
+      let closed = false, escaped = false;
+      for (let i = existing; i < rootsEnd && !closed; i++) {
+        if (i > existing && (!lines[i].startsWith("       ") || !lines[i].trim() || lines[i].trimStart().startsWith("#"))) break;
+        const part = i === existing ? scalar.slice(1) : lines[i].trimStart();
+        for (let j = 0; j < part.length; j++) {
+          const char = part[j];
+          if (quote === '"' && escaped) { escaped = false; continue; }
+          if (quote === '"' && char === "\\") { escaped = true; continue; }
+          if (char !== quote) continue;
+          if (quote === "'" && part[j + 1] === "'") { j++; continue; }
+          const tail = part.slice(j + 1).trim();
+          if (tail && !tail.startsWith("#")) unsupportedLocalYaml(file, "ambiguous root scalar", team, rootDir);
+          comment = tail; closed = true; end = i + 1; break;
+        }
+        // A YAML backslash at end of line escapes the line break, not the
+        // first character on the next line.
+        escaped = false;
+      }
+      if (!closed) unsupportedLocalYaml(file, "unterminated or unsupported root scalar", team, rootDir);
+    } else {
+      if (!scalar || scalar.startsWith("#") || scalar === "null" || scalar === "~" || /^[|>&*!{[]/.test(scalar)) unsupportedLocalYaml(file, "unsupported root scalar", team, rootDir);
+      comment = scalar.match(/\s+(#.*)$/)?.[1] || "";
+    }
+    // Never consume another setting, nested mapping or comment as a scalar.
+    if (end < rootsEnd && lines[end].trim() && !lines[end].trimStart().startsWith("#") && lines[end].startsWith("       ")) {
+      unsupportedLocalYaml(file, "ambiguous root continuation", team, rootDir);
+    }
+    lines.splice(existing, end - existing, row + (comment ? " " + comment : ""));
+  } else lines.splice(rootsEnd, 0, row);
   atomicWrite(file, `${lines.join("\n")}\n`);
 }
 function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label)); }
@@ -673,10 +725,12 @@ function newestGrantHome() {
   return dirs[0]?.path || join(home, ".aweb-identity");
 }
 const priorGrantHome = (meta = {}) => typeof meta.identity?.grant?.home === "string" && meta.identity.grant.home ? meta.identity.grant.home : newestGrantHome();
+const localIdentityHome = () => join(home, ".aw");
 function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
   const { env: deliveryEnv, launch } = deliveryFor();
   const env = { ...deliveryEnv };
   if (meta.identity?.mode === "global" && meta.identity?.grant?.id) env.AWEB_IDENTITY_HOME = identityHome;
+  else if ((meta.identity?.mode || identityMode) === "local") env.AWEB_IDENTITY_HOME = localIdentityHome();
   return { ...(Object.keys(env).length ? { env } : {}), ...(launch ? { launch } : {}) };
 }
 function grantMintArgv({ team, scopes, ttl, grantHome, custodySocket }) {
@@ -983,7 +1037,7 @@ function retainedSeatSpawn(source, takeOver) {
     if (expectedAddress && !expectedAddress.endsWith(`/${alias}`)) throw new Error(`aw workspace status shows alias ${alias}, not the retained identity's address ${expectedAddress}; the seat is not the same identity`);
     writeFileSync(lockPath, JSON.stringify({ home, instance, alias, team, takenAt: new Date().toISOString(), host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n", { mode: 0o600 });
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
-    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: dest };
+    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) wakeRegister(home, dest);
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
@@ -1129,8 +1183,8 @@ function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requ
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`aw id team accept-invite returned no usable result for joined team ${label}`);
   const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : requestedAlias;
   const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : expectedTeam;
-  if (!team) throw new Error(`aw id team accept-invite returned no team_id for joined team ${label}`);
-  if (expectedTeam && team !== expectedTeam) throw new Error(`joined team ${team} differs from requested ${expectedTeam}`);
+  if (!team || !validAwebTeamId(team)) throw new Error(`aw id team accept-invite returned no valid team_id for joined team ${label}`);
+  if (expectedTeam && team !== expectedTeam) throw new Error(`joined team differs from requested ${expectedTeam}`);
   const joined = { label, team, identityHome, receive: "poll", since: new Date().toISOString(), alias };
   try {
     if (!joinedWorkspacePresent(identityHome)) {
@@ -1618,7 +1672,7 @@ if (event === "launch") {
     // Broker delivery: no channel flag, AWEB_DELIVERY=session in the launch
     // environment (declared in the manifest), and the truth about waking.
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
-    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: join(home, ".aw") };
+    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) wakeRegister(home, join(home, ".aw"));
     let meta = startedMeta({ team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: identityMeta({ mode: "local", alias, team: joined.team_id }) });
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
@@ -1923,6 +1977,7 @@ if (event === "launch") {
 } else if (event === "setup") {
   // Guided onboarding — idempotent, prints what it finds and can run one
   // existing aw primitive when the operator supplies the needed authority.
+  const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
   const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
   let setupDir, setupLabel, setupPlan = false;
@@ -2002,6 +2057,18 @@ if (event === "launch") {
     }
   }
 
+  let joinConfiguration;
+  if (joinLabel) {
+    try { joinConfiguration = prepareJoinConfiguration(joinLabel, selectedDeployment(process.env, setupDir), { validTeam: validAwebTeamId }); }
+    catch (error) {
+      const problem = { code: error.code || "E_SETUP_DEPLOYMENT", message: error.message, details: error.details };
+      if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: problem }));
+      else console.error(`oats aweb setup: ${problem.code}: ${problem.message}
+${JSON.stringify(problem.details || {})}`);
+      process.exit(1);
+    }
+  }
+
   if (installAw || checkOnly) {
     const aw = await ensureAw({ install: installAw, version: awVersion });
     if (checkOnly) {
@@ -2022,7 +2089,7 @@ if (event === "launch") {
   const teamId = defaultTeamId();
   const candidate = rootSettingCandidate(teamName);
   const scope = candidate?.root ? resolve(candidate.root) : process.cwd();
-  console.log(`aweb onboarding — messaging root: ${scope}${teamName ? `, team: ${teamName}` : ""}\n`);
+  if (!json) console.log(`aweb onboarding — messaging root: ${scope}${teamName ? `, team: ${teamName}` : ""}\n`);
   if (!isAbsolute(scope)) {
     console.log(`${candidate?.key || "settings.oats.aweb.root"} must be an absolute directory whose .aw is the aweb minting root.`);
     process.exit(0);
@@ -2064,7 +2131,7 @@ if (event === "launch") {
   const teamExistsError = (e) => e?.status === 409 || /\b409\b|\bconflict\b|\balready exists\b|\bexists\b/i.test(commandOutput(e));
   const configuredTeamForLabel = (label) => parseOatsTeams().find((t) => t.label === label && t.team)?.team || (label === defaultTeamLabel() ? defaultTeamId() : undefined);
   const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
-    const configured = configuredTeamForLabel(label) || expectedTeam;
+    const configured = joinConfiguration ? expectedTeam : expectedTeam || configuredTeamForLabel(label);
     const recorded = configured && settings.roots && Object.hasOwn(settings.roots, configured) ? settings.roots[configured] : undefined;
     if (recorded !== undefined && (typeof recorded !== "string" || !isAbsolute(recorded))) throw new Error(`configured root for ${label} must be an absolute directory`);
     const teamRoot = recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label);
@@ -2078,12 +2145,15 @@ if (event === "launch") {
       if (existsSync(join(idHome, "workspace.yaml"))) {
         // A join interrupted after the connect but before roots[team] was recorded: the root is
         // complete, so a root holding the expected team's membership is recorded as it is.
-        const want = expectedTeam || configuredTeamForLabel(label);
-        if (!want || acceptedTeamMembership(idHome, want) !== want) throw new Error(`team root ${teamRoot} already holds a connected aweb identity, but not for ${want || label}; choose a different label or remove the stale root deliberately`);
+        const wanted = configured;
+        const want = joinConfiguration
+          ? readJoinedLocalMembership(idHome, wanted, joinName, { run, validTeam: validAwebTeamId })
+          : wanted;
+        if (!want || (!joinConfiguration && acceptedTeamMembership(idHome, want) !== want)) throw new Error(`team root ${teamRoot} already holds a connected aweb identity, but not for ${want || label}; choose a different label or remove the stale root deliberately`);
         recordAwebRootSetting(want, teamRoot, { start: deployment });
         return { team: want, teamRoot };
       }
-      joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, resumeCommand });
+      joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, resumeCommand });
     } else {
       if (!token || typeof token !== "string") throw new Error(`--join ${label} needs --invite <token> unless ${teamRoot} already holds an accepted unconnected identity to resume`);
       const alias = setupAlias();
@@ -2092,7 +2162,7 @@ if (event === "launch") {
       try { mkdirSync(teamRoot); createdRoot = true; }
       catch (e) { if (e.code !== "EEXIST" || !statSync(teamRoot).isDirectory()) throw e; }
       try {
-        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
+        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
       } catch (e) {
         // A recorded root may contain operator data or be the deployment itself.
         // Roll back only our newly created, still-empty directory; retain any
@@ -2101,6 +2171,7 @@ if (event === "launch") {
         throw e;
       }
     }
+    if (joinConfiguration) readJoinedLocalMembership(idHome, joined.team, joinName, { run, validTeam: validAwebTeamId });
     recordAwebRootSetting(joined.team, teamRoot, { start: deployment });
     return { team: joined.team, teamRoot };
   };
@@ -2242,9 +2313,16 @@ if (event === "launch") {
       process.exit(0);
     }
     if (joinLabel) {
-      console.log(invite ? `Accepting invite for ${joinLabel} into a new per-team root (token withheld).` : `Resuming join for ${joinLabel} in its per-team root.`);
-      const accepted = acceptIntoTeamRoot(joinLabel, invite, undefined);
-      console.log(`✓ joined ${accepted.team} as ${joinLabel} in ${accepted.teamRoot}; recorded settings.oats.aweb.roots[${accepted.team}].`);
+      if (!json) console.log(invite ? `Accepting invite for ${joinLabel} into a new per-team root (token withheld).` : `Resuming join for ${joinLabel} in its per-team root.`);
+      const accepted = acceptIntoTeamRoot(joinLabel, invite, joinConfiguration.expectedTeam);
+      let configuration;
+      try { configuration = joinConfiguration.finish(accepted.team); }
+      catch (error) { error.details = { ...error.details, ...joinConfiguration.details(), root: accepted.teamRoot }; throw error; }
+      if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { ...accepted, ...configuration } }));
+      else {
+        console.log(`✓ joined ${accepted.team} as ${joinLabel} in ${accepted.teamRoot}; recorded settings.oats.aweb.roots[${accepted.team}].`);
+        console.log(JSON.stringify(configuration));
+      }
       process.exit(0);
     }
     if (hasRoot && !matchingTeam(teams) && !actions.length) { printVerdict(teams); process.exit(0); }
@@ -2259,7 +2337,8 @@ if (event === "launch") {
     printVerdict(teams);
     process.exit(0);
   } catch (e) {
-    console.error(`oats aweb setup: ${e.message || e}`);
+    if (joinConfiguration && json) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: e.code || "E_SETUP_FAILED", message: e.message, details: e.details || joinConfiguration.details() } }));
+    else console.error(`oats aweb setup: ${e.code ? e.code + ": " : ""}${e.message || e}${e.details ? "\n" + JSON.stringify(e.details) : ""}`);
     process.exit(1);
   }
 } else {

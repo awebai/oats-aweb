@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 import { joinFromCalls } from "./helpers/fake-aw-join-from.mjs";
-import { fakeKernelTeamConfig } from "./helpers/fake-kernel-team-config.mjs";
+import { fakeKernelTeamConfig, joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -45,6 +45,9 @@ function fakeOatsCli(t, { teams = TEAMS_0_36 } = {}) {
 }
 
 function run(args = [], env = {}, cwd = ROOT) {
+  if (args[0] === "setup" && args.includes("--join") && (env.OATS_TEAM_SCOPE || env.OATS_WORKSPACE)) {
+    env = joinKernelEnvironment(env, env.OATS_TEAM_SCOPE || env.OATS_WORKSPACE);
+  }
   return new Promise((done) => {
     const child = spawn(process.execPath, [HOOK, ...args], {
       cwd,

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -27,6 +28,9 @@ function tempDir(t) {
 }
 
 function run(args = [], env = {}, cwd = REPO, input) {
+  if (args[0] === "setup" && args.includes("--join") && (env.OATS_TEAM_SCOPE || env.OATS_WORKSPACE)) {
+    env = joinKernelEnvironment(env, env.OATS_TEAM_SCOPE || env.OATS_WORKSPACE);
+  }
   return new Promise((done) => {
     const child = spawn(process.execPath, [HOOK, ...args], { cwd, env: { ...process.env, ...env }, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
     let stdout = "", stderr = "";
@@ -277,6 +281,7 @@ const HOSTED_TOKEN = "aw_inv_SECRET-CONNECT-TOKEN-91c2";
  *  host's oats-local.yaml as the kernel would. Records each argv (never stdin). `unreachable`
  *  answers the kernel's ssh failure envelope instead. */
 function fakeKernel(t, { hostDir, hostEnv, unreachable = false }) {
+  hostEnv = joinKernelEnvironment(hostEnv, hostDir);
   const dir = tempDir(t);
   const calls = join(dir, "kernel-calls.jsonl");
   const cli = join(dir, "oats");
@@ -498,7 +503,7 @@ function interruptedHostRoot(hostDir, team) {
   const idHome = join(hostDir, ".aweb-roots", "joined", ".aw");
   mkdirSync(idHome, { recursive: true });
   writeFileSync(join(idHome, "identity.yaml"), "did: did:key:zFixture\n");
-  writeFileSync(join(idHome, "teams.json"), JSON.stringify({ active_team: team, memberships: [{ team_id: team }] }));
+  writeFileSync(join(idHome, "teams.json"), JSON.stringify({ active_team: team, memberships: [{ team_id: team, alias: SERVER, identity_scope: "local" }] }));
   writeFileSync(join(idHome, "workspace.yaml"), `team_id: ${team}\naweb_url: ${SERVICE}\nalias: ${SERVER}\n`);
   return join(hostDir, ".aweb-roots", "joined");
 }
@@ -523,7 +528,7 @@ test("setup --join still refuses a connected per-team root that holds another te
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
   const result = await run(["setup", "--join", "joined", "--invite-stdin", "--name", "host-alias"], deploymentEnv(root, { PATH: fake.path }), root, "SECRET-OTHER\n");
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /already holds a connected aweb identity, but not for joined:example\.invalid/);
+  assert.match(result.stderr, /E_SETUP_MEMBERSHIP.*exactly one matching LOCAL membership/);
   assert.doesNotMatch(readFileSync(join(root, "oats-local.yaml"), "utf8"), /roots/);
 });
 

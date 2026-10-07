@@ -1,11 +1,12 @@
+import { verifyPinnedAw } from './helpers/pinned-aw.mjs';
 // Opt-in real aw 1.36.23 contract check. No hosted account is created: every
 // endpoint is loopback and signup is deliberately refused before credentials
 // or certificates are issued. This proves argv/wire acceptance, not live setup.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash, generateKeyPairSync, sign, randomUUID } from 'node:crypto';
+import { generateKeyPairSync, sign, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,16 +30,13 @@ test('pinned real aw username contract accepts explicit root name and preserves 
     t.skip('requires explicit pinned real aw 1.36.23 executable'); return;
   }
   const binary = realpathSync(resolve(process.env.OATS_TEST_AW_1_36_23));
-  const scratch = mkdtempSync(join(tmpdir(), 'oats-username-native-'));
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'oats-username-native-')));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const home = join(scratch, 'home'), bin = join(scratch, 'bin');
   mkdirSync(home); mkdirSync(bin); symlinkSync(binary, join(bin, 'aw'));
   const env = { PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, XDG_CONFIG_HOME: join(home, 'config'), XDG_CACHE_HOME: join(home, 'cache'), TMPDIR: scratch };
   const version = spawnSync(binary, ['version'], { env, cwd: scratch, encoding: 'utf8' });
-  assert.equal(version.status, 0);
-  assert.match(version.stdout, /^aw 1\.36\.23\n/);
-  assert.match(version.stdout, /commit: 61c38162596d1af9085741d70d15900ff9894257/);
-  t.diagnostic(JSON.stringify({ binary, sha256: createHash('sha256').update(readFileSync(binary)).digest('hex'), version: version.stdout.trim() }));
+  t.diagnostic(JSON.stringify(verifyPinnedAw(binary, version)));
   const help = spawnSync(binary, ['init', '--help'], { env, cwd: scratch, encoding: 'utf8' });
   assert.equal(help.status, 0); assert.match(help.stdout, /--name string/); assert.match(help.stdout, /--new-account/);
   const calls = [];
@@ -114,6 +112,28 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   assert.equal(retainedKernel.read().defaultTeam.label, 'fixture-user');
   assert.equal(calls.length, 3, 'plan and resume never perform another signup or service call');
   assert.equal(readFileSync(join(retained, '.aw', 'team-certs', 'default__fixture-user.aweb.ai.pem'), 'utf8'), originalCert);
+  // #78 uses the same native certificate reader for an admitted, connected
+  // root whose label has not yet been recorded. No invite is redeemed here.
+  const joinDeployment = join(scratch, 'join-deployment');
+  const joinRoot = join(joinDeployment, '.aweb-roots', 'joined');
+  mkdirSync(joinRoot, { recursive: true }); cpSync(join(retained, '.aw'), join(joinRoot, '.aw'), { recursive: true });
+  writeFileSync(join(joinDeployment, 'oats-local.yaml'), 'schemaVersion: 2\nworkspace: fixture\n');
+  writeFileSync(join(joinRoot, '.aw', 'workspace.yaml'), `alias: fixture-root\naweb_url: ${endpoint}\n`);
+  const joinKernel = fakeKernelTeamConfig(join(scratch, 'join-kernel'), joinDeployment);
+  const joinEnv = { ...env, OATS_EVENT: 'setup', OATS_TEAM_SCOPE: joinDeployment, OATS_WORKSPACE: joinDeployment,
+    OATS_CLI_BIN: joinKernel.cli, OATS_WORKSPACE_NAME: 'fixture', OATS_SETTINGS: '{}', OATS_TEAMS: '[]' };
+  const probe = await run(binary, ['--identity-home', join(joinRoot, '.aw'), 'id', 'team', 'list', '--json'], { env, cwd: joinRoot });
+  assert.equal(probe.code, 0, probe.stdout + probe.stderr);
+  const joinArgs = [hook, 'setup', '--join', 'joined', '--name', 'fixture-root', '--json'];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await run(process.execPath, joinArgs, { env: joinEnv, cwd: joinDeployment });
+    assert.equal(result.code, 0, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).result.team, team);
+  }
+  assert.equal(joinKernel.read().defaultTeam.label, 'joined');
+  assert.equal(calls.length, 3, 'native joined membership resume has no service or redemption calls');
+  assert.equal(readFileSync(join(joinRoot, '.aw', 'team-certs', 'default__fixture-user.aweb.ai.pem'), 'utf8'), originalCert);
+  t.diagnostic('Generated admitted root: actual native LOCAL membership resumes labelled join and mapping/default without invite redemption; not live acceptance.');
   t.diagnostic('Generated retained LOCAL certificate: actual native membership alias/scope verified; plan no mutations and resume mapped/defaulted through fixture public kernel without another signup. Not a live hosted account.');
   t.diagnostic('Real pinned binary accepted provider argv and submitted explicit alias to controlled signup; refused signup created no root. Successful bootstrap/membership not exercised.');
 });

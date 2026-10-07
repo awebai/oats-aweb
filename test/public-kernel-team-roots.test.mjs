@@ -66,4 +66,33 @@ test('pinned public operator dispatch supplies deployment independently of neste
  r=run(['inspect','--soul','probe','--dir',dep,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);
  const doc=JSON.parse(r.stdout);assert.equal(doc.schemaVersion,1);assert.equal(doc.ok,true);assert.equal(doc.result.workspace.deployment,dep);assert.equal(doc.result.subject.kind,'soul');assert.notEqual(doc.result.subject.soul,'spoofed-ambient-soul');
  assert.equal(doc.result.capabilities.filter(c=>c.id==='oats.aweb').length,1);assert.equal(doc.result.capabilities.find(c=>c.id==='oats.aweb').settings.roots['joined:example.invalid'],join(dep,'.aweb-roots','joined'));
+ // Fresh no-default public configuration; keep a soul-only default to prove
+ // selected soul choice is not confused with the deployment default.
+ const wsPath=join(host,'oats-workspace.yaml');
+ writeFileSync(wsPath,readFileSync(wsPath,'utf8').replace('defaultTeam: default\n','')+
+   '\nsouls:\n  "*": { default: default }\n');
+ git('add','oats-workspace.yaml');git('commit','-qm','fixture deployment without default');
+ const joinDep=join(base,'join-deployment');mkdirSync(joinDep);
+ writeFileSync(join(joinDep,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${ref}\n`);
+ const joinArgs=['aweb','setup','--soul','probe','--dir',joinDep,'--join','fresh-local','--name','host','--service','https://service.invalid','--json'];
+ r=run([...joinArgs,'--invite','FIXTURE-TOKEN'],{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(JSON.parse(r.stdout).result.observed.defaultTeam.label,'fresh-local');
+ r=run(['teams','--dir',joinDep,'--json'],{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(JSON.parse(r.stdout).result.defaultTeam.from,'deployment');
+ assert.equal(JSON.parse(r.stdout).result.defaultTeam.team,'joined:example.invalid');
+ const acceptCount=fake.readCalls().filter(c=>c.args.includes('accept-invite')).length;
+ r=run(joinArgs,{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(fake.readCalls().filter(c=>c.args.includes('accept-invite')).length,acceptCount);
+ // Colon-tab is valid public YAML; resume must replace its existing root entry.
+ const joinedLocal=join(joinDep,'oats-local.yaml');
+ const spaced=readFileSync(joinedLocal,'utf8');
+ const tabbed=spaced.replace('"joined:example.invalid": ', '"joined:example.invalid":\t');
+ assert.notEqual(tabbed,spaced);writeFileSync(joinedLocal,tabbed);
+ r=run(['teams','--dir',joinDep,'--json'],{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ r=run(joinArgs,{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(readFileSync(joinedLocal,'utf8'),spaced,'resume preserves all neighboring public configuration');
+ r=run(['teams','--dir',joinDep,'--json'],{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(fake.readCalls().filter(c=>c.args.includes('accept-invite')).length,acceptCount);
+
+
 });
