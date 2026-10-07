@@ -188,23 +188,18 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   migration, consent inference, approved-to-development fallback or flip-back
   occurs. A future default change requires an explicit reviewed release.
 
-  Development selection may stop at Claude Code's confirmation. Only a
-  compatible kernel, during its own launch with explicit per-home consent and a
-  qualified exact fixture, may answer. The provider, broker and ordinary agents
-  must never answer. Host-only
-  `launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
-  is the sole launch opt-in and defaults OFF. The kernel may answer exactly one
-  qualified development confirmation, at most once. A folder-trust prompt blocks
-  with a receipt and zero keys; folder trust is outside this exception.
-  Older kernels still need operator attention. Opted-in unsupported fixtures,
-  versions or terminal geometry block per kernel behavior; consent does not guarantee unattended startup.
+  Development selection may stop at Claude Code's confirmation; nothing in this
+  provider answers it. For future support, a compatible kernel may answer it at
+  launch under explicit per-home consent recorded in the kernel's host-only
+  configuration. This does not claim that such support is available in the
+  installed kernel. See the oats-aweb skill's
+  [Channel selection and launch consent](oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md#4-how-messages-reach-you-delivery-and-wakes)
+  guidance for the boundaries and operator attention needed without that support.
 
-  The `channel-dev-confirmation` warning describes this boundary, not an observed
-  answer. Consult the kernel launch result and durable receipt for actual
-  answered/blocked/uncertain status; provider mode, consent and readiness do not
-  establish it. Passing the prompt proves neither plugin installation, admission,
-  connection, message presentation nor model consumption. Admission warnings and
-  `native-receive-unproven` still apply.
+  Provider warnings describe selection, never an observed answer. Actual prompt
+  outcomes belong to the kernel launch result and durable receipt, where
+  supported; provider mode, consent and readiness do not establish them. Passing
+  confirmation does not prove native receive; `native-receive-unproven` remains.
 
   Readiness uses the captured mode or an exact retained provider launch
   contribution, including historical development arguments. Missing evidence

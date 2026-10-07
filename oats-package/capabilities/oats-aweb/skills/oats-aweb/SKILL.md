@@ -146,6 +146,8 @@ the host wake broker wakes every runtime. A session is on one path, never both.
 | joined team with `receive: native` | the host wake broker presents that identity's mail/chat, either as a line with `aw --identity-home <path> …` commands or as the full event |
 | joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries |
 
+**Channel selection and launch consent**
+
 Claude/channel defaults to development for new compositions to avoid a silent
 missing receiver. Explicit approved mode registers no aweb channel by default:
 aweb-channel is currently not on the default approved list. Applicable managed
@@ -158,20 +160,24 @@ an explicit reviewed release. An operator may select supported session delivery
 where authorized for unattended use, but must preserve any explicit native-channel
 requirement. Source changes do not enroll a channel or recover the runtime.
 
-Development selection may stop at Claude Code's confirmation. Only a compatible
-kernel, during its own launch with explicit per-home consent and a qualified
-exact fixture, may answer; the provider, broker and ordinary agents must never
-answer.
-Host-only
-`launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
-is the sole launch opt-in and defaults OFF. The kernel may answer exactly one
-qualified development confirmation, at most once. A folder-trust prompt blocks
-with a receipt and zero keys; folder trust is outside this exception.
-`settings.oats.aweb.claudeChannelMode` selects argv, never consent. There is no
+Development selection may stop at Claude Code's confirmation; nothing in this
+provider answers it. The provider, broker and ordinary agents must never answer
+on the operator's behalf. For future launch support, a compatible kernel may
+answer it at launch under explicit per-home consent recorded in the kernel's
+host-only configuration. This describes a compatibility boundary, not an
+available provider feature or a configuration recipe.
+
+Where that kernel support exists, it is bounded to one qualified exact
+development-confirmation fixture, at most once during the kernel's own launch.
+Folder trust is outside the exception; a folder-trust prompt must block with a
+receipt and zero keys. Consent defaults off and must not be inferred from
+`settings.oats.aweb.claudeChannelMode`, which selects argv only. There is no
 automatic migration, consent inference or approved-to-development fallback.
-Older kernels need operator attention; opted-in unsupported fixtures, versions or
-terminal geometry block per kernel behavior, so consent does not guarantee
-unattended startup. Consult the kernel launch result and durable receipt for actual
+Kernels without this support still need operator attention; unsupported fixtures,
+versions or terminal geometry block per kernel behavior, so consent does not
+guarantee unattended startup.
+
+Consult the kernel launch result and durable receipt, where supported, for actual
 answered/blocked/uncertain status; provider mode, consent and readiness do not
 establish an answer. Passing the prompt proves neither plugin installation,
 admission, connection, message presentation nor model consumption;
@@ -261,7 +267,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
-| `channel-dev-confirmation` | selected or captured development mode may stop at confirmation; only a compatible kernel may answer during its own launch with explicit per-home consent and a qualified exact fixture (section 4) | operator: consult kernel launch result/durable receipt; older kernels need attention and unsupported opted-in fixtures block; provider, broker and ordinary agents never answer |
+| `channel-dev-confirmation` | selected or captured development mode may stop at confirmation; nothing in this provider answers it (section 4, Channel selection and launch consent) | operator: see section 4 for current boundaries and future compatible-kernel support |
 | `claude-channel-enrollment-unverified` | approved registers no aweb channel without applicable managed `allowedChannelPlugins` or future approval; installation/trusted marketplace is not approval (section 4) | operator: verify admission or choose authorized session delivery; preserve explicit native requirements |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |

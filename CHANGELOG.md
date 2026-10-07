@@ -54,8 +54,10 @@ currently not on the default approved list; approved registers no aweb channel
 unless applicable managed `allowedChannelPlugins` for this identity lists the
 plugin and marketplace, or a future approval exists. Installation/trusted
 marketplace is not approval. Development avoids that silent missing receiver but
-never grants launch consent: exact-home `awebDevelopmentChannel` remains OFF by
-default. No automatic fallback, frozen-home migration or flip-back occurs; a
+never grants launch consent; nothing in the provider answers the confirmation.
+A compatible kernel may answer it at launch under explicit per-home consent
+recorded in the kernel's host-only configuration. No automatic fallback,
+frozen-home migration or flip-back occurs; a
 future default change requires an explicit reviewed release. Fixed plugin
 arguments, Pi/Codex/session routing and captured-mode evidence rules are unchanged.
 Unknown historical mode still warns; contradictory evidence still fails.

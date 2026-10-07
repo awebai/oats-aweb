@@ -45,12 +45,11 @@ export function recordedRuntime(meta, harness) {
   return typeof meta?.runtime === 'string' ? meta.runtime : harness;
 }
 
-/** Development selection is not consent. Only a compatible kernel may answer
- * during its own launch with explicit per-home consent and an exact qualified
- * fixture; its result/receipt owns the outcome, not provider readiness. */
+/** Selection is not consent or a prompt-outcome receipt. Keep warnings brief;
+ * the skill explains provider boundaries and compatible-kernel support. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: 'Claude Code may stop at its development-channels confirmation ("Loading development channels"): only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer; the provider, broker and ordinary agents must never answer. Host-only launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel is the sole launch opt-in and defaults OFF. The kernel may answer exactly one qualified development confirmation, at most once; a folder-trust prompt blocks with a receipt and zero keys; settings.oats.aweb.claudeChannelMode only selects argv, never consent. Consult the kernel launch result and durable receipt for answered/blocked/uncertain status; provider mode, consent and readiness do not establish an answer. Older kernels need operator attention; opted-in unsupported fixture/version/geometry blocks per kernel behavior. Passing the prompt proves neither plugin installation, admission, connection, message presentation nor model consumption. No automatic migration, consent inference or approved-to-development fallback',
+  message: 'Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
 };
 
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
@@ -59,7 +58,7 @@ export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
 });
 const CHANNEL_ENROLLMENT_UNVERIFIED = {
   code: 'claude-channel-enrollment-unverified',
-  message: 'aweb-channel@awebai-marketplace is currently not on the default approved list; approved mode registers no aweb channel unless applicable managed allowedChannelPlugins for this identity lists the plugin and marketplace, or a future approval exists. Installation or a trusted marketplace is not approval. Effective admission remains unverified; Claude may run with no channel wake, potentially without Claude reporting that the channel was not registered. For unattended homes where broker delivery is authorized, an operator may select the supported delivery: session alternative; do not override an explicit native-channel requirement. No automatic fallback or flip-back occurs; a future default change requires an explicit reviewed release',
+  message: 'aweb-channel is currently not on the default approved list, so approved mode registers no aweb channel without applicable managed allowedChannelPlugins or future approval; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
 };
 
 /** Host selection is a requested mode, never an admission or connection receipt. */
