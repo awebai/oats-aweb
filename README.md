@@ -689,7 +689,9 @@ empty snapshot. Malformed optional inventory produces `E_GRANT_APP_INVENTORY`
 and unavailable metadata while preserving an otherwise-valid grant and its
 existing lifecycle. This informational check is not an authority gate.
 
-Comms describes the snapshot at spawn, not a dynamically refreshed grant. Read
+Comms describes the snapshot at spawn, not a dynamically refreshed grant.
+All inventory briefs/advisories show only app IDs, tool counts and skip codes;
+tool names, origins and digests stay out of instruction-bearing text. Read
 `oats inspect --home <home> --json` for the current recorded identity/grant.
 Launch preview's warning describes the retained snapshot; a pending renewal's
 inventory is unknown until its receipt. Preview never mints. Successful
@@ -715,7 +717,10 @@ is introduced.
 Implementation: `lib/grant-app-inventory.mjs` validates the optional pair as a
 whole before persistence/display, copies only recognized fields, and bounds it
 to 256 app entries, 1024 tools per app, 2048 characters per string and 64 KiB
-of serialized inventory. Unsupported/ambiguous display data becomes unavailable
+of serialized inventory. Tool names in the recorded inventory must match
+`^[A-Za-z0-9_][A-Za-z0-9_-]*$` without normalization. This is a deliberately
+narrower informational contract than the native tool validator, not an authority
+restriction. Unsupported/ambiguous display data becomes unavailable
 without changing native authority; it is never trimmed or expanded. Current
 receipt fixtures are byte copies of aw source873ed2bf; local substitute tests
 do not prove live grant or Folio authority.

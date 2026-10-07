@@ -486,7 +486,7 @@ resident. Host plugin bytes (`AW_HOME/plugins` or `HOME/.aw/plugins`) alone are
 not resident approval; never install/update/remove from a grant home. Only the
 next successful `renew: launch` mint's actual receipt establishes the worker's
 new snapshot; `renew: off` retains the old snapshot on restart. Comms is the
-at-spawn snapshot; `oats inspect --home <home> --json` shows the current recorded
+at-spawn snapshot (app IDs, tool counts and skip codes only); `oats inspect --home <home> --json` shows the current recorded
 grant. Preview requires selected-kernel warning projection (tested OATS 0.47.0
 `e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b`, not an earliest-release claim);
 older preview without it is unreported, not empty. Its warning labels retained

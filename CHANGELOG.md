@@ -1,14 +1,18 @@
 # Changelog
 
-## 1.23.1 — 2026-10-07
+## Unreleased
 
 Added (#76, planned 1.23.2): GLOBAL grant metadata records validated actual
 app snapshots from successful native mint receipts at spawn and renewal.
 Comms labels its immutable at-spawn snapshot; public inspect exposes current
 recorded metadata and preview warnings distinguish retained inventory from
 unknown pending renewal. Malformed optional inventory is unavailable with a
-fixed diagnostic, without invalidating a valid grant. No appTools setting,
+fixed diagnostic, without invalidating a valid grant. Brief/advisory text contains
+only app IDs, tool counts and skip codes; recorded tools require plain identifiers.
+No appTools setting,
 extra mint, live app acceptance or captured-home adoption is implied.
+
+## 1.23.1 — 2026-10-07
 
 Fixed (#78): first labelled LOCAL join records its verified canonical mapping
 and default through the selected public kernel. Setup is operator-serialized;

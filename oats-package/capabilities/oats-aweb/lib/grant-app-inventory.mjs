@@ -7,6 +7,9 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const text = value => typeof value === 'string' && value.length > 0 && value.length <= 2048 && value.trim() === value && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value);
 // Native validatePluginName permits ASCII case and underscores, but no leading hyphen.
 const appId = value => text(value) && /^[A-Za-z0-9_][A-Za-z0-9_-]*$/.test(value);
+// Deliberately narrower informational recording grammar than native tool names.
+// A rejected name makes metadata unavailable, never invalidates mint authority.
+const toolId = value => text(value) && /^[A-Za-z0-9_][A-Za-z0-9_-]*$/.test(value);
 const keys = (value, names) => object(value) && Object.keys(value).length === names.length && names.every(k => Object.hasOwn(value, k));
 const unavailable = malformed => ({ appInventoryStatus: 'unavailable', ...(malformed ? { appInventoryError: 'E_GRANT_APP_INVENTORY' } : {}) });
 function validOrigin(value) {
@@ -29,7 +32,7 @@ export function grantAppInventory(receipt) {
   if (Buffer.byteLength(JSON.stringify([receipt.apps, receipt.skipped_apps]), "utf8") > 65536) return unavailable(true);
   const seen = new Set(), apps = [], skipped_apps = [];
   for (const row of receipt.apps) {
-    if (!keys(row, ['app_id','origin','manifest_sha256','tools']) || !appId(row.app_id) || seen.has(row.app_id) || !validOrigin(row.origin) || typeof row.manifest_sha256 !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(row.manifest_sha256) || !Array.isArray(row.tools) || row.tools.length > 1024 || row.tools.some(t => !text(t)) || new Set(row.tools).size !== row.tools.length) return unavailable(true);
+    if (!keys(row, ['app_id','origin','manifest_sha256','tools']) || !appId(row.app_id) || seen.has(row.app_id) || !validOrigin(row.origin) || typeof row.manifest_sha256 !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(row.manifest_sha256) || !Array.isArray(row.tools) || row.tools.length > 1024 || row.tools.some(t => !toolId(t)) || new Set(row.tools).size !== row.tools.length) return unavailable(true);
     seen.add(row.app_id);
     apps.push({ app_id: row.app_id, origin: row.origin, manifest_sha256: row.manifest_sha256, tools: [...row.tools] });
   }
@@ -45,7 +48,7 @@ export function grantInventoryAdvisory(grant, { retained = false, pending = fals
   const label = retained ? 'Retained last-successful grant snapshot' : 'At-mint grant snapshot';
   const malformed = inventory.appInventoryError || grant?.appInventoryError === 'E_GRANT_APP_INVENTORY';
   const state = inventory.appInventoryStatus === 'known'
-    ? `delegated apps ${JSON.stringify(inventory.apps)}; skipped (not delegated) ${JSON.stringify(inventory.skipped_apps)}`
+    ? `delegated apps ${JSON.stringify(inventory.apps.map(({ app_id, tools }) => ({ app_id, tool_count: tools.length })))}; skipped (not delegated) ${JSON.stringify(inventory.skipped_apps)}`
     : `app inventory unavailable${malformed ? `; ${INVENTORY_ERROR}` : ' (legacy or unrecorded receipt)'}`;
-  return `${label} ${id}: ${state}. ${pending ? 'Pending re-mint inventory is unknown until its successful receipt. ' : ''}Inventory is not a readiness verdict; unavailable does not mean no app authority.`;
+  return `${label} ${id}: ${state}. ${pending ? 'Pending re-mint inventory is unknown until its successful receipt. ' : ''}Use oats inspect --home <home> --json for the full current recorded grant. Inventory is not a readiness verdict; unavailable does not mean no app authority.`;
 }

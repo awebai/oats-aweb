@@ -26,6 +26,7 @@ for (const old of [false,true]) test(`${old ? '0.42 omitted warning control' : '
  const home=join(fx.root,'probe','instances','inventory-probe');
  const record=readFileSync(join(home,'instance.json'),'utf8'),brief=readFileSync(join(home,'TASK.md'),'utf8');
  assert.match(brief,/At-mint grant snapshot/);
+ assert.match(brief,/"tool_count":2/);assert.doesNotMatch(brief,/manifest_sha256|https:\/\/notes.example|"create"|"list"/);
  r=fx.cli(['inspect','--home',home,'--json'],{env});assert.equal(r.status,0,r.stdout+r.stderr);
  assert.deepEqual(r.json().result.identity.grant.apps,receipt.apps);
  assert.equal(r.json().result.identity.grant.id,JSON.parse(record).capabilityMeta['oats.aweb'].identity.grant.id);
@@ -33,7 +34,11 @@ for (const old of [false,true]) test(`${old ? '0.42 omitted warning control' : '
  r=fx.cli(['launch-config','preview','--home',home,'--json'],{env});assert.equal(r.status,0,r.stdout+r.stderr);
  const preview=r.json();
  if(old) assert.equal(preview.result.warnings,undefined,'older public preview omits warnings, not empty inventory');
- else assert.match(JSON.stringify(preview.result.warnings),/Retained last-successful grant snapshot.*Pending re-mint inventory is unknown/);
+ else {
+  const warning=JSON.stringify(preview.result.warnings);
+  assert.match(warning,/Retained last-successful grant snapshot.*Pending re-mint inventory is unknown/);
+  assert.doesNotMatch(warning,/manifest_sha256|https:\/\/notes.example|\\"create\\"|\\"list\\"/);
+ }
  assert.equal(preview.result.hookMeta,undefined);assert.equal(preview.result.brief,undefined);
  assert.equal(readFileSync(join(base,'aw.log'),'utf8'),before);assert.equal(readFileSync(join(home,'instance.json'),'utf8'),record);assert.equal(readFileSync(join(home,'TASK.md'),'utf8'),brief);
 });
