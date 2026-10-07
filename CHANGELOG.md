@@ -5,10 +5,13 @@
 Documentation: superseded the unconditional never-answer development-channel
 guidance with the bounded OATS #708 kernel launch-only exception. Only a compatible
 kernel with explicit per-home consent and a qualified exact fixture may answer
-during its own launch; broker and ordinary agents never answer. Mode selection
-does not grant consent, and the kernel result/durable receipt owns actual prompt
+during its own launch, at most once; provider, broker and ordinary agents never
+answer. Folder-trust prompts block with a receipt and zero keys; trust is outside
+this exception. Mode selection does not grant consent, and the kernel
+result/durable receipt owns actual prompt
 status. Old kernels need operator attention and unsupported opted-in fixtures
-block. Admission and native-receive warnings remain unchanged. This is source-only
+block. Admission warnings remain present and native-receive warnings are unchanged.
+This is source-only
 guidance, not unattended admission or release adoption; issue #44 remains open
 for kernel, release and admission work.
 
@@ -23,20 +26,21 @@ live acceptance. The native contract is linked at landed source revision
 characterization are distinguished from pinned aw 1.36.23 behavior and coverage.
 Source landing does not establish a package release or installation.
 
-Changed: new Claude/channel compositions select the fixed approved `--channels`
-plugin argument by default. Host-only `settings.oats.aweb.claudeChannelMode` in
-`oats-local.yaml` permits explicit `development` for local channel development;
-invalid values fail before provider effects. Launch and readiness warn that
-approved admission is unverified and Claude may run with no channel wake, possibly
-without a diagnostic. An operator may choose authorized session delivery for an
-unattended home, without overriding an explicit native requirement. No automatic
-fallback occurs; provider selection never answers prompts. Pi, Codex and session
-routing are unchanged.
-Captured mode/exact launch evidence controls historical guidance; missing mode
-warns and contradictory evidence fails. Frozen homes are unchanged. Issue #44
-remains open; cjr adoption #673 is separate. No enrollment, install or release is
-performed. CI exercises the actual pinned generic hostOnly validator, including
-committed/spawn refusal and host-local controls.
+Changed: superseded the unreleased approved-default selection with development
+for new Claude/channel compositions (intended 1.22.0). Explicit `approved` remains
+available through host-only `settings.oats.aweb.claudeChannelMode`. aweb-channel is
+currently not on the default approved list; approved registers no aweb channel
+unless applicable managed `allowedChannelPlugins` for this identity lists the
+plugin and marketplace, or a future approval exists. Installation/trusted
+marketplace is not approval. Development avoids that silent missing receiver but
+never grants launch consent: exact-home `awebDevelopmentChannel` remains OFF by
+default. No automatic fallback, frozen-home migration or flip-back occurs; a
+future default change requires an explicit reviewed release. Fixed plugin
+arguments, Pi/Codex/session routing and captured-mode evidence rules are unchanged.
+Unknown historical mode still warns; contradictory evidence still fails.
+Manifest default-injection, host-only controls and warning tests cover the source
+change. Release, version bump and pins remain separate; no release or unattended
+admission is claimed. Issue #44 remains open; cjr adoption #673 is separate.
 
 Fixed: target-scoped home receive readiness (issue #34 / aweb-abny). A compatible
 daemon or joined stream registration alone no longer establishes a complete

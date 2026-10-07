@@ -32,18 +32,26 @@ it. Under the default `delivery: channel`, Claude Code is woken by the aweb
 channel plugin and pi by its aweb extension, both pushing into the session;
 Codex, which has no aweb channel, is woken by the host wake broker
 (`Notification delivery: external`). Under `delivery: session` the host wake
-broker wakes every runtime. One path per session, never both. New Claude/channel compositions select approved mode;
-admission is unverified, so Claude may run with no channel wake, potentially
-without a diagnostic. Frozen homes retain their captured mode. An operator may
-choose supported session delivery for unattended use where authorized, without
-overriding an explicit native-channel requirement. Never switch to development
-as an automatic fallback. Development selection may stop at confirmation; only a
-compatible kernel, during its own launch with explicit per-home consent and a
-qualified exact fixture, may answer. The broker and ordinary agents must never
-answer. Mode selection is not consent: host-only
+broker wakes every runtime. One path per session, never both.
+
+New Claude/channel compositions select development mode to avoid a silent missing receiver. Explicit approved mode registers no aweb
+channel unless applicable managed `allowedChannelPlugins` for this identity lists
+the plugin and marketplace, or a future approval exists: aweb-channel is currently
+not on the default approved list. Installation or a trusted marketplace is not
+approval. Effective admission remains unverified. Frozen homes retain their
+captured mode; no automatic flip-back occurs, and a future default change requires
+an explicit reviewed release. An operator may choose supported session delivery
+for unattended use where authorized, without overriding an explicit native-channel
+requirement. Never switch to development as an automatic fallback.
+
+Development selection may stop at confirmation; only a compatible kernel, during its own launch with explicit per-home consent and a
+qualified exact fixture, may answer. The provider, broker and ordinary agents
+must never answer. Mode selection is not consent: host-only
 `launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel`
-and `.workspaceTrust` are separate and default OFF. Consult the kernel launch
-result and durable receipt for actual answered/blocked/uncertain status, never
+is the sole launch opt-in and defaults OFF. The kernel may answer exactly one
+qualified development confirmation, at most once; a folder-trust prompt blocks
+with a receipt and zero keys. Folder trust is outside this exception.
+Consult the kernel launch result and durable receipt for actual answered/blocked/uncertain status, never
 infer it from provider mode, consent or readiness. Older kernels need operator
 attention; unsupported opted-in fixture/version/geometry blocks per kernel
 behavior. Passing the prompt proves neither plugin installation, admission,

@@ -43,9 +43,11 @@ for(const value of ['approved','development']) test(`real hostOnly accepts host-
   assert.equal(result.payloads['oats.aweb'].claudeChannelMode,value);
   assert.deepEqual(result.payloadOrigins['oats.aweb']['/claudeChannelMode'],{kind:'host',at:'oats-local.yaml#/settings/oats.aweb'});
 });
-test('real hostOnly omission keeps the provider approved default', {skip:!root},async()=>{
+test('real hostOnly omission keeps the provider development default', {skip:!root},async()=>{
   const {soul,discovery,options}=fixture();
   const result=await kernel.resolveSoul(discovery,soul,options);
-  assert.equal(manifest.settings.claudeChannelMode.default,'approved');
-  assert.equal(selectClaudeChannel(result.payloads['oats.aweb'].claudeChannelMode).mode,'approved');
+  assert.equal(manifest.settings.claudeChannelMode.default,'development');
+  assert.equal(result.payloads['oats.aweb'].claudeChannelMode,'development');
+  assert.equal(selectClaudeChannel().mode,'development');
+  assert.equal(selectClaudeChannel(result.payloads['oats.aweb'].claudeChannelMode).mode,'development');
 });

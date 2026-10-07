@@ -50,7 +50,7 @@ export function recordedRuntime(meta, harness) {
  * fixture; its result/receipt owns the outcome, not provider readiness. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: 'Claude Code may stop at its development-channels confirmation ("Loading development channels"): only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer; the broker and ordinary agents must never answer. Host-only launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel and .workspaceTrust are separate and default OFF; settings.oats.aweb.claudeChannelMode only selects argv, never consent. Consult the kernel launch result and durable receipt for answered/blocked/uncertain status; provider mode, consent and readiness do not establish an answer. Older kernels need operator attention; opted-in unsupported fixture/version/geometry blocks per kernel behavior. Passing the prompt proves neither plugin installation, admission, connection, message presentation nor model consumption. Development mode is for deliberate local channel development only; no automatic migration, consent inference or approved-to-development fallback',
+  message: 'Claude Code may stop at its development-channels confirmation ("Loading development channels"): only a compatible kernel, during its own launch with explicit per-home consent and a qualified exact fixture, may answer; the provider, broker and ordinary agents must never answer. Host-only launchPromptAnswers.homes[exact canonical absolute home].awebDevelopmentChannel is the sole launch opt-in and defaults OFF. The kernel may answer exactly one qualified development confirmation, at most once; a folder-trust prompt blocks with a receipt and zero keys; settings.oats.aweb.claudeChannelMode only selects argv, never consent. Consult the kernel launch result and durable receipt for answered/blocked/uncertain status; provider mode, consent and readiness do not establish an answer. Older kernels need operator attention; opted-in unsupported fixture/version/geometry blocks per kernel behavior. Passing the prompt proves neither plugin installation, admission, connection, message presentation nor model consumption. No automatic migration, consent inference or approved-to-development fallback',
 };
 
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
@@ -59,11 +59,11 @@ export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
 });
 const CHANNEL_ENROLLMENT_UNVERIFIED = {
   code: 'claude-channel-enrollment-unverified',
-  message: 'effective approved-channel admission for aweb-channel@awebai-marketplace has not been verified; Claude may run with no channel wake, potentially without Claude reporting that the channel was not registered. For unattended homes where broker delivery is authorized, an operator may select the supported delivery: session alternative; do not override an explicit native-channel requirement. Development mode is only for local channel development, never an automatic fallback',
+  message: 'aweb-channel@awebai-marketplace is currently not on the default approved list; approved mode registers no aweb channel unless applicable managed allowedChannelPlugins for this identity lists the plugin and marketplace, or a future approval exists. Installation or a trusted marketplace is not approval. Effective admission remains unverified; Claude may run with no channel wake, potentially without Claude reporting that the channel was not registered. For unattended homes where broker delivery is authorized, an operator may select the supported delivery: session alternative; do not override an explicit native-channel requirement. No automatic fallback or flip-back occurs; a future default change requires an explicit reviewed release',
 };
 
 /** Host selection is a requested mode, never an admission or connection receipt. */
-export function selectClaudeChannel(mode = 'approved') {
+export function selectClaudeChannel(mode = 'development') {
   if (mode !== 'approved' && mode !== 'development') throw new Error('settings.oats.aweb.claudeChannelMode must be approved or development; set it only in oats-local.yaml');
   return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode], warning: mode === 'approved' ? {...CHANNEL_ENROLLMENT_UNVERIFIED} : {...CHANNEL_DEV_CONFIRMATION}};
 }
