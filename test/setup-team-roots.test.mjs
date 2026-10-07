@@ -150,13 +150,13 @@ for (const residue of ['addition', 'partial']) test(`failed accept retains new r
  assert.equal(readFileSync(residue === 'addition' ? join(target, 'concurrent-data') : join(target, '.aw', 'identity.yaml'), 'utf8'), residue === 'addition' ? 'keep addition' : 'partial identity');
 });
 
-for (const quoting of ['double', 'single', 'plain']) test('root resume preserves scalar boundaries and neighbors: '+quoting,t=>{
+for (const quoting of ['double', 'single', 'plain']) for (const separator of [' ', '\t']) test('root resume preserves scalar boundaries and neighbors: '+quoting+JSON.stringify(separator),t=>{
  const f=fixture(t),target=join(f.deployment,'.aweb-roots','joined'),file=join(f.deployment,'oats-local.yaml');
  const first=f.run(['setup','--join','joined','--invite','FIXTURE','--name','host','--service','https://service.invalid']);
  assert.equal(first.status,0,first.stderr);
  const key=quoting==='double'?JSON.stringify(TEAM):quoting==='single'?"'"+TEAM+"'":TEAM;
  const scalar=quoting==='double'?'"wrapped/\\\n        path"':quoting==='single'?"'wrapped\n        path'":'/previous/path';
- writeFileSync(file,'schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      '+key+': '+scalar+' # root comment\n      # neighbor comment\n      "other:example.invalid": "/other/root"\n    claudeChannelMode: development\n  other.provider:\n    keep: true\n');
+ writeFileSync(file,'schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      '+key+':'+separator+scalar+' # root comment\n      # neighbor comment\n      "other:example.invalid": "/other/root"\n    claudeChannelMode: development\n  other.provider:\n    keep: true\n');
  const args=['setup','--join','joined','--name','host','--service','https://service.invalid'];
  for(let n=0;n<3;n++){
   const r=f.run(args);assert.equal(r.status,0,r.stderr);
@@ -167,10 +167,18 @@ for (const quoting of ['double', 'single', 'plain']) test('root resume preserves
  }
  assert.equal(f.fake.readCalls().filter(c=>c.args.includes('accept-invite')).length,1);
 });
-for(const scalar of ['"unterminated\n        value','"/root"\n        nested: invalid','"/root" trailing']) test('ambiguous root scalar refuses without erasing neighbors: '+scalar,t=>{
+for(const scalar of ['', '\t', '# comment only', 'null', '~', '"unterminated\n        value','"/root"\n        nested: invalid','"/root" trailing']) test('ambiguous root scalar refuses without erasing neighbors: '+scalar,t=>{
  const f=fixture(t),file=join(f.deployment,'oats-local.yaml');
  const text='schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      "joined:example.invalid": '+scalar+'\n      "other:example.invalid": "/other/root"\n';
  writeFileSync(file,text);
  const r=f.run(['setup','--join','joined','--invite','FIXTURE','--name','host','--service','https://service.invalid']);
  assert.equal(r.status,1);assert.match(r.stderr,/cannot safely update/);assert.equal(readFileSync(file,'utf8'),text);
+});
+
+for(const key of ['"joined:example.invalid"', "'joined:example.invalid'", 'joined:example.invalid']) test('duplicate root key with empty/tab tail refuses: '+key,t=>{
+ const f=fixture(t),file=join(f.deployment,'oats-local.yaml');
+ const text='schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      "joined:example.invalid": "/first"\n      '+key+':\t\n      "other:example.invalid": "/other"\n';
+ writeFileSync(file,text);
+ const r=f.run(['setup','--join','joined','--invite','FIXTURE','--name','host','--service','https://service.invalid']);
+ assert.equal(r.status,1);assert.match(r.stderr,/duplicate root key/);assert.equal(readFileSync(file,'utf8'),text);
 });

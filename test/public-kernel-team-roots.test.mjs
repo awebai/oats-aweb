@@ -83,5 +83,16 @@ test('pinned public operator dispatch supplies deployment independently of neste
  const acceptCount=fake.readCalls().filter(c=>c.args.includes('accept-invite')).length;
  r=run(joinArgs,{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
  assert.equal(fake.readCalls().filter(c=>c.args.includes('accept-invite')).length,acceptCount);
+ // Colon-tab is valid public YAML; resume must replace its existing root entry.
+ const joinedLocal=join(joinDep,'oats-local.yaml');
+ const spaced=readFileSync(joinedLocal,'utf8');
+ const tabbed=spaced.replace('"joined:example.invalid": ', '"joined:example.invalid":\t');
+ assert.notEqual(tabbed,spaced);writeFileSync(joinedLocal,tabbed);
+ r=run(['teams','--dir',joinDep,'--json'],{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ r=run(joinArgs,{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(readFileSync(joinedLocal,'utf8'),spaced,'resume preserves all neighboring public configuration');
+ r=run(['teams','--dir',joinDep,'--json'],{},joinDep);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.equal(fake.readCalls().filter(c=>c.args.includes('accept-invite')).length,acceptCount);
+
 
 });

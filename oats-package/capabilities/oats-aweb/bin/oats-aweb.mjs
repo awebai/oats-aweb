@@ -406,13 +406,23 @@ function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPA
   // plain or single-quoted canonical-team key. Replace the entire scalar entry,
   // not just its first line, so a tokenless resume remains valid YAML.
   const keys = [key, team, "'" + team + "'"];
-  const matches = lines.flatMap((l, i) => i > roots && i < rootsEnd &&
-    l.startsWith("      ") && !l.startsWith("       ") &&
-    keys.some(k => l.slice(6).startsWith(k + ": ")) ? [i] : []);
+  // Identify the key/delimiter before examining the value. Empty or unsupported
+  // tails must refuse, not disappear from duplicate detection.
+  const matches = lines.flatMap((line, index) => {
+    if (index <= roots || index >= rootsEnd || !line.startsWith("      ") || line.startsWith("       ")) return [];
+    const entry = line.slice(6);
+    for (const candidate of keys) {
+      if (!entry.startsWith(candidate)) continue;
+      const delimiter = /^[ \t]*:(.*)$/.exec(entry.slice(candidate.length));
+      if (delimiter) return [{ index, tail: delimiter[1] }];
+    }
+    return [];
+  });
   if (matches.length > 1) unsupportedLocalYaml(file, "duplicate root key", team, rootDir);
   if (matches.length) {
-    const existing = matches[0], prefix = keys.find(k => lines[existing].slice(6).startsWith(k + ": "));
-    const scalar = lines[existing].slice(6 + prefix.length + 2).trimStart();
+    const { index: existing, tail } = matches[0];
+    if (tail && !/^[ \t]/.test(tail)) unsupportedLocalYaml(file, "unsupported root delimiter", team, rootDir);
+    const scalar = tail.trimStart();
     let end = existing + 1, comment = "";
     if (scalar.startsWith('"') || scalar.startsWith("'")) {
       const quote = scalar[0];
@@ -436,7 +446,7 @@ function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPA
       }
       if (!closed) unsupportedLocalYaml(file, "unterminated or unsupported root scalar", team, rootDir);
     } else {
-      if (!scalar || /^[|>&*!{[]/.test(scalar)) unsupportedLocalYaml(file, "unsupported root scalar", team, rootDir);
+      if (!scalar || scalar.startsWith("#") || scalar === "null" || scalar === "~" || /^[|>&*!{[]/.test(scalar)) unsupportedLocalYaml(file, "unsupported root scalar", team, rootDir);
       comment = scalar.match(/\s+(#.*)$/)?.[1] || "";
     }
     // Never consume another setting, nested mapping or comment as a scalar.
