@@ -1,6 +1,6 @@
 # Username setup and deployment default
 
-Requires the unreleased #70 provider composition, selected LOCAL deployment D,
+Requires the provider 1.23.0 composition (#70), selected LOCAL deployment D,
 messaging soul S, explicit account username and root alias. Selected kernel must
 supply deployment scope and public `teams --dir D --json` (`teamsApi: 2`), add,
 default and readback. Verified public source is OATS 0.42 at `bb2ba8c9`; this is
