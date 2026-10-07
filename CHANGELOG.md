@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Documentation (#72): add the released kernel 0.44.0 exact-home operator consent
+recipe, narrow launch qualification, receipt interpretation and retained-session
+recovery. Preserve the released completion limitation tracked in oats#754;
+source progress or issue closure does not establish a released general fix or
+local adoption. No provider prompt automation or live qualification is added.
+
 Added (#71): `oats aweb invite [--label L] [--plan] [--json]` issues a LOCAL
 hosted member invite from the selected deployment team root. No recipient alias
 is accepted; the accepting side chooses its name. Plans read without minting or

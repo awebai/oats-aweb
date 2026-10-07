@@ -150,31 +150,38 @@ the host wake broker wakes every runtime. A session is on one path, never both.
 
 **Channel selection and launch consent**
 
-Claude/channel defaults to development for new compositions to avoid a silent
-missing receiver. Explicit approved mode registers no aweb channel by default:
-aweb-channel is currently not on the default approved list. Applicable managed
-`allowedChannelPlugins` for this identity must list the plugin and marketplace,
-or a future approval must exist. Installation or a trusted marketplace is not
-approval. Effective admission remains unverified and Claude may run with no
-channel wake, potentially without a diagnostic. Frozen homes retain their
-captured mode. There is no automatic flip-back; a future default change requires
-an explicit reviewed release. An operator may select supported session delivery
-where authorized for unattended use, but must preserve any explicit native-channel
-requirement. Source changes do not enroll a channel or recover the runtime.
+New Claude/channel compositions default to development; frozen homes retain
+their captured mode. Explicit approved mode needs applicable managed plugin
+admission; installation/trusted marketplace is not approval. Preserve explicit
+native requirements. Mode selects argv, never consent or receive readiness.
 
-Development selection may stop at Claude Code's confirmation. Current operation
-requires an authorized operator/human to handle that confirmation in the terminal;
-the provider, broker and ordinary agents must never answer it. Automated launch
-confirmation is pending kernel #708, release and qualification; source preparation
-is not installed support and supplies no current operator setting here.
-Folder trust is a separate authorization boundary: never answer a folder-trust
-prompt as development-channel consent or bypass it to reach another prompt.
-`settings.oats.aweb.claudeChannelMode` selects argv, never consent. There is no
-automatic migration, consent inference or approved-to-development fallback.
-Do not infer unattended startup or prompt completion from mode or readiness.
-Passing the prompt proves neither plugin installation, admission, connection,
-message presentation nor model consumption; `native-receive-unproven` and
-admission warnings still apply.
+**Exact-home operator opt-in:** first verify the selected kernel supports the
+released OATS 0.44.0 contract and the owner authorized this exact canonical home.
+Only then the authorized operator may put this in the HOST's `oats-local.yaml`:
+```yaml
+launchPromptAnswers:
+  homes:
+    /absolute/canonical/instance/home:
+      awebDevelopmentChannel: true
+```
+Absent/false is OFF; strict boolean, exact canonical home only. No wildcard,
+ancestor, soul, environment, spawn or captured-recipe inheritance; no migration.
+Provider/broker/ordinary agents never enable this setting or send prompt keys.
+`workspaceTrust` is refused; folder trust and API-key prompts stay separate.
+Only the qualified invocation-owned Claude 2.1.289 darwin-arm64 executable,
+110x35 frame and exact argv permit the kernel's one Enter. Before opting in or
+interpreting a result, read [Launch consent and retained recovery](references/launch-consent.md)
+for the digest, qualification, preview and receipt checks. Missing preview support
+is unreported/unsupported, never consent. Opt-in or completion proves no admission,
+connection, message presentation or model consumption.
+
+For `blocked`/`incomplete`, inspect the retained target with
+`oats session inspect --home <home> --json`. Never automatically resend a key,
+replay spawn, replace or restart because of that result or `launched:false`.
+Start only after inspection proves the session gone; live prompt intervention
+needs separate explicit operator authorization. The released completion limitation
+can retain an active healthy session after one submitted Enter;
+[oats#754](https://github.com/awebai/oats/issues/754) remains open.
 
 **When woken:**
 
@@ -215,7 +222,7 @@ messages; readiness itself is read-only. Success requires actual automatic
 presentation and a receiver-verified reply recovered by exact message ID, not
 `ready`, a configured channel or unread status. Next: onboarding records completion.
 `native-receive-unproven` / `claude-channel-enrollment-unverified` means native
-connection/admission remains unproven, not ready for this acceptance. Follow section 4's operator-confirmation boundary; never bypass a prompt or
+connection/admission remains unproven, not ready for this acceptance. Follow section 4's exact-home consent and retained-recovery boundary; never bypass a prompt or
 an explicit native requirement. Codex uses the broker; joined `receive: native`
 also means broker, distinct from Claude/Pi primary native delivery. After uncertain
 restart, recover exact IDs as above before retrying any effects.
@@ -279,7 +286,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
-| `channel-dev-confirmation` | selected or captured development mode may stop at confirmation; automated confirmation is pending kernel #708, release and qualification | authorized operator/human handles confirmation in the terminal (section 4); provider, broker and ordinary agents never answer; folder trust remains a separate boundary |
+| `channel-dev-confirmation` | development selection may require confirmation; mode is not consent | operator: section 4 exact-home opt-in only with selected kernel support and qualified launch; otherwise separately authorized human intervention; no provider/broker/ordinary-agent keys |
+| `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-enrollment-unverified` | approved registers no aweb channel without applicable managed `allowedChannelPlugins` or future approval; installation/trusted marketplace is not approval (section 4) | operator: verify admission or choose authorized session delivery; preserve explicit native requirements |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
@@ -326,7 +334,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Selected version | Supported boundary |
 |---|---|
 | Released provider 1.21.1, OATS >=0.30, aw >=1.36.13 | Labelled setup/join/resume, LOCAL instance join/leave, existing GLOBAL resident grant consumption. OATS >=0.38 supplies `localTeams` policy. |
-| Released provider 1.22.0 (PR61/#65) | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Current confirmation requires an authorized operator/human; automation awaits kernel #708, release and qualification (section 4). Verify the selected composition; a repository release is not an installation receipt. |
+| Released provider 1.22.0 (PR61/#65) | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Qualified automation is a separate selected-kernel contract with explicit exact-home operator consent (section 4); provider mode supplies none. Verify the selected composition; a repository release is not an installation receipt. |
 | Released provider 1.22.0 (#45/#52/#59, PR63) | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies are included. Older 1.21.1 compositions lack these fixes; verify the selected provider is 1.22.0 or later. |
 | Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
 | Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |

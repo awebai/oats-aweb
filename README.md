@@ -189,12 +189,14 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   occurs. A future default change requires an explicit reviewed release.
 
   Development selection may stop at Claude Code's confirmation; nothing in this
-  provider answers it. For future support, a compatible kernel may answer it at
-  launch under explicit per-home consent recorded in the kernel's host-only
-  configuration. This does not claim that such support is available in the
-  installed kernel. See the oats-aweb skill's
-  [Channel selection and launch consent](oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md#4-how-messages-reach-you-delivery-and-wakes)
-  guidance for the boundaries and operator attention needed without that support.
+  provider answers it. OATS 0.44.0 releases a narrowly qualified kernel controller
+  under explicit exact-home operator consent in host-local configuration. Verify
+  the selected kernel and exact executable/frame guards; a tag is not adoption.
+  See the skill's [Channel selection and launch consent](oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md#4-how-messages-reach-you-delivery-and-wakes)
+  recipe and [retained-result recovery](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/launch-consent.md).
+  A blocked result can retain an active session after Enter; inspect first, never
+  automatically resend input or relaunch. Neither opt-in nor completion proves
+  admission or receive readiness.
 
   Provider warnings describe selection, never an observed answer. Actual prompt
   outcomes belong to the kernel launch result and durable receipt, where
