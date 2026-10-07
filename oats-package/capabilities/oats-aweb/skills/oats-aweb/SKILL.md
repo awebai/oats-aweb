@@ -231,9 +231,9 @@ minting authority for its canonical T. Run from H, not the caller's worktree.
 | Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; root failure → section 8 LOCAL join. |
 | Leave | `oats aweb leave --labels L` | Releases membership/receive registration; success: joined entry is absent after confirmed release. Next: `oats aweb teams --json` readback. | `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop; policy change does not migrate this identity. |
 
-Before #52 is released/composed, a home can hold stale captured minting roots;
-report that prerequisite instead of borrowing another identity. The fixed explicit
-join queries current exact-team root authority; launch/retire still use captured
+Homes composed before provider 1.22.0 can hold stale captured minting roots;
+require the 1.22.0 fix to be composed instead of borrowing another identity.
+In 1.22.0, explicit join queries current exact-team root authority; launch/retire still use captured
 settings. Existing joined receipts do not require another acceptance. GLOBAL
 `E_TEAM_GLOBAL_MODE` means `joined teams need local per-team identities; this home
 acts as a resident identity through a session grant (identity.mode "global")`:
@@ -326,8 +326,8 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Selected version | Supported boundary |
 |---|---|
 | Released provider 1.21.1, OATS >=0.30, aw >=1.36.13 | Labelled setup/join/resume, LOCAL instance join/leave, existing GLOBAL resident grant consumption. OATS >=0.38 supplies `localTeams` policy. |
-| Provider source PR61 | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Current confirmation requires an authorized operator/human; automation awaits kernel #708, release and qualification (section 4). Source is not a release/pin receipt. |
-| Setup-root fixes #45/#52/#59, accepted source `a62daf1` / PR63 | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies require this change to be released/composed. Do not infer them from the package's unchanged 1.21.1 label. |
+| Released provider 1.22.0 (PR61/#65) | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Current confirmation requires an authorized operator/human; automation awaits kernel #708, release and qualification (section 4). Verify the selected composition; a repository release is not an installation receipt. |
+| Released provider 1.22.0 (#45/#52/#59, PR63) | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies are included. Older 1.21.1 compositions lack these fixes; verify the selected provider is 1.22.0 or later. |
 | Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
 | Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
@@ -337,7 +337,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 slots, never defaults to invent; an internal UUID is not `T`.
 
 Setup commands run **in D, outside an instance session**, with `--soul S`.
-The #45/#59 source also accepts `--dir D`; before that release, run in D and
+Provider 1.22.0 also accepts `--dir D`; on older provider versions, run in D and
 omit the forwarded `--dir` because the old provider parser rejects it. Supply
 name/service explicitly when the selected root cannot provide them. Keep the
 operator's protected child environment free of unrelated identity selectors and
@@ -347,7 +347,7 @@ Host-only settings under `settings.oats.aweb`: `root` is the default LOCAL
 minting parent; `roots[T]` overrides it; `residents.<name>` is a GLOBAL custody
 parent. `delivery` is `channel` (default) or `session`; Codex always uses the
 broker, Claude/Pi primary channels remain distinct from joined broker delivery.
-`claudeChannelMode` is development by default in PR61, or explicit approved,
+`claudeChannelMode` is development by default in 1.22.0, or explicit approved,
 set only in `oats-local.yaml`; no arbitrary arguments or plugin IDs.
 `join` selects eligible LOCAL labels at spawn; `identity` defaults to local.
 There is no `settings.oats.aweb.team`: the emitted refusal is
@@ -364,8 +364,8 @@ Next: use `/oats-teams` to correct the declaration.
 
 For created or joined LOCAL teams, one identity owns each separate `.aw`; never
 accept a second LOCAL team into an existing identity. Intended new root is
-`D/.aweb-roots/<normalized-label>`. Before #45 release, a nested/external default
-root is a placement blocker: select the fixed provider before effects. The fix
+`D/.aweb-roots/<normalized-label>`. On provider versions before 1.22.0, a nested/external default
+root is a placement blocker: select and compose 1.22.0 or later before effects. The fix
 uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
 place; no automatic move, deletion or fresh acceptance is part of setup.
@@ -396,7 +396,7 @@ use the labelled command above, never `aw team join` in an OATS-owned root.
 Provider bare `oats aweb setup --create L` is **unsupported**. Older source emits
 `creating an additional hosted team needs hosted team creation (aweb-abkh), not
 yet released in aw or aweb Cloud; use --namespace <domain> for a team you control,
-or ask the aweb team`. That release claim is stale: #59 corrects it; it does not
+or ask the aweb team`. That release claim is stale: provider 1.22.0 corrects it; it does not
 add a provider hosted-create wrapper. Next: use the native card only when its
 version/authority prerequisites are satisfied, otherwise report the missing prerequisite.
 
