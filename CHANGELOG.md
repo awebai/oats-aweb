@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.23.2 — 2026-10-07
 
-Added (#76, planned 1.23.2): GLOBAL grant metadata records validated actual
+Added (#76): GLOBAL grant metadata records validated actual
 app snapshots from successful native mint receipts at spawn and renewal.
 Comms labels its immutable at-spawn snapshot; public inspect exposes current
 recorded metadata and preview warnings distinguish retained inventory from

@@ -679,7 +679,7 @@ neighboring settings. Public dispatch tests cover first join followed by tokenle
 resume through actual kernel serialization. Focused setup tests cover neighboring
 roots/comments, partial failures, policy changes and explicit-default preservation.
 
-### GLOBAL grant app inventory (source-only #76, planned 1.23.2)
+### GLOBAL grant app inventory (provider 1.23.2, #76)
 
 The selected provider composition records the successful native mint's actual
 `apps` and `skipped_apps` under `identity.grant`, bound to that grant ID. Native
