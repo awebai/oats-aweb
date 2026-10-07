@@ -47,6 +47,37 @@ function native(args, root, env, issuance = false) {
     fail(issuance ? 'E_INVITE_NATIVE' : 'E_INVITE_MEMBERSHIP', issuance ? 'aw member invite failed; native output withheld; inspect selected root/service before a deliberate retry' : 'cannot read selected root membership; native output withheld');
   }
 }
+// Read-only native calls also get disposable user state: cwd supplies the
+// selected identity, HOME must never expose root-adjacent controller/config state.
+function isolatedNative(args, root, env, issuance = false) {
+  const home = mkdtempSync(join(tmpdir(), 'oats-invite-'));
+  try { return native(args, root, nativeEnv(env, home), issuance); }
+  finally { rmSync(home, { recursive: true, force: true }); }
+}
+const safeProblemCodes = new Set(['team-label-collision', 'team-unmapped', 'team-soul-unknown', 'E_TEAM_UNKNOWN', 'E_TEAM_UNCONFIGURED', 'E_WORKSPACE_SCHEMA']);
+function validateProblems(problems) {
+  for (const problem of problems) {
+    if (!object(problem) || typeof problem.code !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(problem.code) || !['warning', 'failure'].includes(problem.severity)
+      || (Object.hasOwn(problem, 'label') && (typeof problem.label !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(problem.label)))
+      || ['key', 'at', 'condition'].some(field => Object.hasOwn(problem, field) && typeof problem[field] !== 'string')
+      || (Object.hasOwn(problem, 'message') && typeof problem.message !== 'string')
+      || (['team-label-collision', 'team-unmapped'].includes(problem.code) && typeof problem.label !== 'string')
+      || (problem.code === 'team-soul-unknown' && (typeof problem.key !== 'string' || !problem.key || typeof problem.at !== 'string' || !problem.at))) {
+      fail('E_INVITE_TEAM_QUERY', 'selected kernel returned malformed team problems');
+    }
+  }
+}
+function selectedProblems(problems, label) {
+  for (const problem of problems) {
+    // Public teamsApi2 identifies team problems by label. The unlabelled
+    // team-soul-unknown warning concerns an unknown configuration key, not this
+    // successfully dispatched soul/team. Never interpret arbitrary prose.
+    if (problem.severity === 'failure' || problem.label === label) {
+      const code = safeProblemCodes.has(problem.code) ? problem.code : 'unrecognized-problem';
+      fail('E_INVITE_TEAM_QUERY', `selected kernel team problem ${code} prevents invitation; repair the selected configuration`);
+    }
+  }
+}
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
   let deployment;
@@ -57,12 +88,14 @@ export function issueInvite(argv, env = process.env) {
   let doc;
   try { doc = querySelectedKernel(['teams','--dir',deployment,'--json'], { env, cwd: deployment }); } catch { fail('E_INVITE_TEAM_QUERY', 'selected kernel team query unavailable'); }
   try {
-    if (doc?.schemaVersion !== 1 || doc.ok !== true || doc.result?.teamsApi !== 2 || realpathSync(doc.result.deployment) !== realpathSync(deployment) || !Array.isArray(doc.result.teams) || !Array.isArray(doc.result.problems) || doc.result.problems.length) throw new Error();
+    if (doc?.schemaVersion !== 1 || doc.ok !== true || doc.result?.teamsApi !== 2 || realpathSync(doc.result.deployment) !== realpathSync(deployment) || !Array.isArray(doc.result.teams) || !Array.isArray(doc.result.problems)) throw new Error();
   } catch { fail('E_INVITE_TEAM_QUERY', 'selected kernel team query is invalid or inconsistent'); }
+  validateProblems(doc.result.problems);
   const label = opts.label || env.OATS_DEFAULT_TEAM;
   if (!label) fail('E_INVITE_TEAM', 'no selected default team; choose a declared --label');
   const rows = doc.result.teams.filter(r => object(r) && r.label === label);
   if (rows.length !== 1) fail('E_INVITE_TEAM', 'selected label is unknown or ambiguous');
+  selectedProblems(doc.result.problems, label);
   const team = rows[0].team;
   if (!validTeam(team)) fail('E_INVITE_TEAM', 'selected label has no valid canonical aweb team');
   if (!opts.label && env.OATS_DEFAULT_TEAM_ID !== team) fail('E_INVITE_TEAM', 'selected default team does not match current kernel declarations');
@@ -70,17 +103,14 @@ export function issueInvite(argv, env = process.env) {
   let root;
   try { if (typeof raw !== 'string' || !isAbsolute(raw)) throw new Error(); root = realpathSync(raw); if (!statSync(join(root,'.aw')).isDirectory()) throw new Error(); } catch { fail('E_INVITE_ROOT', 'selected team root is missing, invalid or unreadable; repair its explicit root setting'); }
   let membership;
-  try { membership = JSON.parse(native(['team','list','--json'], root, nativeEnv(env,root))); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
+  try { membership = JSON.parse(isolatedNative(['team','list','--json'], root, env)); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
   if (!Array.isArray(membership?.memberships)) fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership');
   if (membership.memberships.filter(m => object(m) && m.team_id === team).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
   const result = { label, team, root, authority: 'native/server decides at issuance' };
   if (opts.plan) return { ...result, plan: true, command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
   // Fresh native user state prevents an invoking-home BYOT controller key or
   // cached principal from silently replacing selected-root hosted authority.
-  const nativeHome = mkdtempSync(join(tmpdir(),'oats-invite-'));
-  let rawResult;
-  try { rawResult = native(['team','invite','--team-id',team,'--member-local','--json'], root, nativeEnv(env,nativeHome), true); }
-  finally { rmSync(nativeHome,{recursive:true,force:true}); }
+  const rawResult = isolatedNative(['team','invite','--team-id',team,'--member-local','--json'], root, env, true);
   let minted;
   try { minted = JSON.parse(rawResult); } catch { fail('E_INVITE_OUTPUT', 'aw returned malformed invite output; issuance may have occurred; do not automatically retry'); }
   if (!object(minted) || minted.status !== 'created' || typeof minted.invite_id !== 'string' || !minted.invite_id.trim() || typeof minted.token !== 'string' || !/^aw_inv_[^\s\x00-\x1f\x7f]+$/.test(minted.token)) fail('E_INVITE_OUTPUT', 'aw returned an unsupported or malformed hosted invite; issuance may have occurred; do not automatically retry');

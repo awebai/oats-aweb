@@ -18,7 +18,7 @@ test('pinned public operator dispatch supplies deployment independently of neste
  const fake=fakeAwSetupPath(t),env={PATH:`${fake.path}:${dirname(process.execPath)}:/usr/bin:/bin`,HOME:privateHome,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',OATS_REMOTE_CACHE:join(base,'cache'),AW_NO_UPDATE_CHECK:'1',AW_FAKE_TEAM:'joined:example.invalid',OATS_AGENT:'spoofed-ambient-soul'};
  const git=(...args)=>execFileSync('git',['-C',host,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','-c','core.hooksPath=/dev/null',...args],{env,encoding:'utf8'}).trim();
  const ref=pathToFileURL(host).href;
- writeFileSync(join(host,'oats-workspace.yaml'),`schemaVersion: 2\nname: fixture\nmembers:\n  - ${ref}\nteams:\n  default: { team: 'default:example.invalid' }\n  joined: { team: 'joined:example.invalid' }\ndefaultTeam: default\nlocalTeams: true\ndefaults:\n  messaging:\n    oats.aweb: { from: local/${host} }\n`);
+ writeFileSync(join(host,'oats-workspace.yaml'),`schemaVersion: 2\nname: fixture\nmembers:\n  - ${ref}\nteams:\n  default: { team: 'default:example.invalid' }\n  joined: { team: 'joined:example.invalid' }\n  unrelated: {}\ndefaultTeam: default\nlocalTeams: true\ndefaults:\n  messaging:\n    oats.aweb: { from: local/${host} }\n`);
  writeFileSync(join(host,'oats-membership.yaml'),`schemaVersion: 2\nworkspace: ${ref}\n`);
  writeFileSync(join(host,'souls/probe/soul.yaml'),'schemaVersion: 2\nname: probe\ndescription: probe\nwork: directory\n');writeFileSync(join(host,'souls/probe/AGENTS.md'),'Fixture only.\n');
  cpSync(join(packageRoot,'capabilities','oats-aweb'),join(host,'capabilities','oats-aweb'),{recursive:true});
@@ -33,6 +33,9 @@ test('pinned public operator dispatch supplies deployment independently of neste
  const before=fake.readCalls().length;
  r=run(['aweb','setup','--soul','probe','--join','other','--invite','FIXTURE-TOKEN'],{OATS_WORKSPACE:root});
  assert.equal(r.status,1,r.stdout+r.stderr);assert.match(r.stderr,/deployment.*inconsistent/);assert.equal(fake.readCalls().length,before);
+ // Confirm the real public shape: an unmapped non-default label is a warning.
+ r=run(['teams','--dir',dep,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);
+ assert.ok(JSON.parse(r.stdout).result.problems.some(p=>p.code==='team-unmapped'&&p.severity==='warning'&&p.label==='unrelated'));
  // Public dispatch of invitation planning must read the selected root and never mint.
  const invitesBefore=fake.readCalls().filter(c=>c.args?.[0]==='team'&&c.args?.[1]==='invite').length;
  r=run(['aweb','invite','--soul','probe','--plan','--json']);

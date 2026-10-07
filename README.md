@@ -521,6 +521,10 @@ A token is not bound to the future alias. Issuance is never automatically retrie
 `E_INVITE_ARGUMENT`, `E_INVITE_DEPLOYMENT`, `E_INVITE_TEAM_QUERY`,
 `E_INVITE_TEAM`, `E_INVITE_ROOT` and `E_INVITE_MEMBERSHIP` refuse before issuance.
 Repair the selected input/context/root rather than substitute an ambient identity.
+Unrelated kernel warnings do not block invitation; all failure-severity problems
+and selected-label warnings do. Refusals name only known safe problem codes,
+never arbitrary diagnostic text. Membership reads and issuance both isolate
+native HOME; plans discard temporary state without changing the selected root.
 For pinned aw 1.36.23, only its anchored CLI-generated HTTP 401/403 prefix maps
 to `E_INVITE_DENIED`; details are statically withheld, never matched as role or
 body prose. Other statuses, transport and unknown native errors are

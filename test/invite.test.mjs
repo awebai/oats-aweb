@@ -2,10 +2,10 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,dirname} from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 const cap=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb',import.meta.url)),hook=join(cap,'bin/oats-aweb.mjs');
-function fixture(t,{native='success',member='team:fixture.aweb.ai',team='team:fixture.aweb.ai',settings,query='ok'}={}){
+function fixture(t,{native='success',member='team:fixture.aweb.ai',team='team:fixture.aweb.ai',settings,query='ok',problems=[]}={}){
  const dir=realpathSync(mkdtempSync(join(tmpdir(),'invite-test-')));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const dep=join(dir,'dep'),root=join(dir,'root'),foreign=join(dir,'foreign'),bin=join(dir,'bin'),calls=join(dir,'calls');for(const p of [dep,join(root,'.aw'),foreign,bin])mkdirSync(p,{recursive:true});writeFileSync(join(dep,'oats-local.yaml'),'schemaVersion: 2\nworkspace: local\n');writeFileSync(join(foreign,'sentinel'),'untouched');
- const kernel=join(bin,'kernel');writeFileSync(kernel,`#!${process.execPath}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({kind:'kernel',args:process.argv.slice(2),cwd:process.cwd()})+'\\n');console.log(JSON.stringify(${JSON.stringify({schemaVersion:1,ok:true,result:{teamsApi:2,deployment:query==='wrong'?root:dep,teams:[{label:'default',team},{label:'other',team:'other:fixture.aweb.ai'}],problems:[]}})}));`,{mode:0o755});
+ const kernel=join(bin,'kernel');writeFileSync(kernel,`#!${process.execPath}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({kind:'kernel',args:process.argv.slice(2),cwd:process.cwd()})+'\\n');console.log(JSON.stringify(${JSON.stringify({schemaVersion:1,ok:true,result:{teamsApi:2,deployment:query==='wrong'?root:dep,teams:[{label:'default',team},{label:'other',team:'other:fixture.aweb.ai'}],problems}})}));`,{mode:0o755});
  writeFileSync(join(bin,'aw'),`#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({kind:'aw',args,cwd:process.cwd(),env:process.env})+'\\n');if(args[1]==='list'){console.log(JSON.stringify({memberships:[{team_id:${JSON.stringify(member)}}]}));process.exit(0);}const mode=${JSON.stringify(native)};if(mode==='success')console.log(JSON.stringify({status:'created',invite_id:'synthetic',token:'aw_inv_SYNTHETIC'}));else if(mode==='malformed')console.log('aw_inv_SECRET_NOT_JSON');else if(mode==='byot')console.log(JSON.stringify({status:'created',invite_id:'x',token:'LOCAL_SECRET'}));else{console.error(mode==='lookalike'?'arbitrary body create hosted team invite: aweb: http 403: SECRET':mode==='transport'?'connect refused SECRET':'create hosted team invite: aweb: http '+mode+': SECRET');process.exit(1);}`,{mode:0o755});
  const env={...process.env,PATH:bin,OATS_EVENT:'invite',OATS_CLI_BIN:kernel,OATS_TEAM_SCOPE:dep,OATS_WORKSPACE:dep,OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:team,OATS_SETTINGS:JSON.stringify(settings||{root}),AWEB_IDENTITY_HOME:foreign,AWEB_URL:'https://poison.invalid',AWEB_API_KEY:'FOREIGN_SECRET',AWID_REGISTRY_URL:'https://poison.invalid',AWEB_TEAM_ID:'poison',HOME:foreign,HTTP_PROXY:'http://poison.invalid'};
  return {dir,dep,root,foreign,env,read:()=>existsSync(calls)?readFileSync(calls,'utf8').trim().split('\n').map(JSON.parse):[],run:(args=[],extra={})=>spawnSync(process.execPath,[hook,'invite',...args],{cwd:dep,env:{...env,...extra},encoding:'utf8'})};
@@ -54,4 +54,35 @@ test('canonical team validation preserves existing dotted names and refuses inva
   const f=fixture(t,{team,member:team}),r=f.run(['--json']);
   assert.equal(JSON.parse(r.stdout).error.code,'E_INVITE_TEAM');assert.equal(f.read().some(c=>c.kind==='aw'),false);
  }
+});
+
+test('unrelated labelled and unlabelled kernel warnings allow the selected invitation', t => {
+ for (const problem of [
+  {code:'team-unmapped',severity:'warning',label:'other',message:'SECRET_DIAGNOSTIC'},
+  {code:'team-label-collision',severity:'warning',label:'other'},
+  {code:'team-soul-unknown',severity:'warning',key:'unknown-soul',at:'fixture#/souls/unknown-soul'},
+ ]) {
+  const f=fixture(t,{problems:[problem]}),r=f.run(['--json']);assert.equal(r.status,0,r.stdout+r.stderr);
+  assert.equal(f.read().filter(c=>c.args[1]==='invite').length,1);assert.doesNotMatch(r.stdout+r.stderr,/SECRET_DIAGNOSTIC/);
+ }
+});
+test('kernel failures and selected-label warnings refuse before native calls with safe problem code', t => {
+ for (const problem of [
+  {code:'E_TEAM_UNKNOWN',severity:'failure',label:'other',message:'SECRET_DIAGNOSTIC'},
+  {code:'team-label-collision',severity:'warning',label:'default',message:'SECRET_DIAGNOSTIC'},
+ ]) {
+  const f=fixture(t,{problems:[problem]}),r=f.run(['--json']);assert.equal(r.status,1);
+  const error=JSON.parse(r.stdout).error;assert.equal(error.code,'E_INVITE_TEAM_QUERY');assert.ok(error.message.includes(problem.code));
+  assert.equal(f.read().some(c=>c.kind==='aw'),false);assert.doesNotMatch(r.stdout+r.stderr,/SECRET_DIAGNOSTIC/);
+ }
+});
+test('malformed kernel problem structures remain query failures', t => {
+ for(const problem of [null,{}, {code:'team-unmapped',severity:'warning'}, {code:'team-unmapped',severity:'warning',label:42}, {code:'x',severity:'unknown'}, {code:'team-soul-unknown',severity:'warning'}]) {
+  const f=fixture(t,{problems:[problem]}),r=f.run(['--json']);assert.equal(JSON.parse(r.stdout).error.code,'E_INVITE_TEAM_QUERY');assert.equal(f.read().some(c=>c.kind==='aw'),false);
+ }
+});
+test('membership reads and plan isolate and remove native HOME without root writes', t => {
+ const f=fixture(t),r=f.run(['--plan','--json']);assert.equal(r.status,0,r.stdout+r.stderr);
+ for(const call of f.read().filter(c=>c.kind==='aw')){assert.notEqual(call.env.HOME,f.root);assert.notEqual(call.env.HOME,f.foreign);assert.equal(existsSync(call.env.HOME),false);assert.equal(call.cwd,f.root);}
+ assert.deepEqual(readdirSync(join(f.root,'.aw')),[]);
 });
