@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.22.0 — 2026-10-07
 
 Documentation: superseded the unconditional never-answer development-channel
 guidance with the bounded OATS #708 kernel launch-only exception. Only a compatible
