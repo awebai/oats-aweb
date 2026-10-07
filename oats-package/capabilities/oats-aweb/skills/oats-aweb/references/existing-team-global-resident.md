@@ -134,8 +134,10 @@ routine step.
 If the selected plan needs a LOCAL minting root, use its distinct authority and
 explicit deployment/root scope. `oats aweb setup --soul <messaging-soul>` with an
 operator-supplied API key runs **plain `aw init`** at the selected setup root;
-it is not GLOBAL creation. Setup has no `--global`; its `--name` and `--service`
-options belong to the invite-join path. Validate the actual returned canonical
+it is not GLOBAL creation. Setup has no `--global`; `--service` stays join-only,
+and `--name` is supported for join and additionally required for `--username`
+with the #66 fix. Neither option configures API-key or GLOBAL initialization.
+Validate the actual returned canonical
 membership and local spawning authority before recording host roots/mappings.
 Do not create a new team merely because the existing team's mapping is missing.
 

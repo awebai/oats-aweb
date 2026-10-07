@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+Fixed (#66): hosted-account setup requires explicit `--name <alias>` with
+`--username` and passes it to native `aw init --new-account`. Missing/invalid
+names refuse before bootstrap writes or CLI installation; no alias is derived
+from a soul or ambient identity. Credential-bearing native failure output is
+withheld. The first-account procedure and native-contract regressions cover
+the required input; no live account creation is claimed.
+
 ## 1.22.1 — 2026-10-07
 
 Compatibility note (#63): the general OATS >=0.30.0 floor remains for other

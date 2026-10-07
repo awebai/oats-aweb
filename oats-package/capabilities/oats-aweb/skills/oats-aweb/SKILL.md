@@ -358,9 +358,9 @@ Next: use `/oats-teams` to correct the declaration.
 
 | Act / prerequisites | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
-| First hosted account, released provider 1.21.1; selected account name and empty LOCAL root | `oats aweb setup --soul S --username <selected-user>` | Runs `aw init --new-account`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
-| Existing hosted team's first LOCAL root, same versions; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | Plain `aw init`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
-| Additional controller-owned team, same versions; actual controller authority for owned namespace | `oats aweb setup --soul S --create L --namespace <owned-domain>` | Normalizes label, creates team, accepts/connects a per-team root, records `roots[T]`; success is returned canonical membership plus recorded root. Where `localTeams: true`, records local label; otherwise prints `teams:`/`defaultTeam:` to commit in `oats-workspace.yaml`, with eligibility in a `souls:` entry. Next: `/oats-teams` declaration/readback. | `could not tell whether this workspace allows local teams (...); nothing was created` → repair selected kernel/configuration read before retry. No invented controller authority. |
+| First hosted account, #66 fix required in selected provider; selected account name, explicit root alias and empty LOCAL root | `oats aweb setup --soul S --username <selected-user> --name <root-alias>` | Runs `aw init --new-account --username <selected-user> --name <root-alias>`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `--username requires --name <alias>; invalid alias: ...` → supply an explicit 1–64 character alias (letter/digit first, then letters/digits/`-`/`_`); no soul-derived default. Older provider versions cannot pass this pair; require the fix before effects. `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
+| Existing hosted team's first LOCAL root, released provider 1.21.1; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | Plain `aw init`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
+| Additional controller-owned team, released provider 1.21.1; actual controller authority for owned namespace | `oats aweb setup --soul S --create L --namespace <owned-domain>` | Normalizes label, creates team, accepts/connects a per-team root, records `roots[T]`; success is returned canonical membership plus recorded root. Where `localTeams: true`, records local label; otherwise prints `teams:`/`defaultTeam:` to commit in `oats-workspace.yaml`, with eligibility in a `souls:` entry. Next: `/oats-teams` declaration/readback. | `could not tell whether this workspace allows local teams (...); nothing was created` → repair selected kernel/configuration read before retry. No invented controller authority. |
 
 For created or joined LOCAL teams, one identity owns each separate `.aw`; never
 accept a second LOCAL team into an existing identity. Intended new root is
@@ -387,8 +387,9 @@ never paste it in history, logs or messages. Native accept currently receives it
 in argv for that call's duration. `--invite` and `--invite-stdin` cannot combine.
 Token-only refusal remains `--invite-stdin requires --join <label> so the team
 gets its own root` (or `--invite requires --join <label> ...`). Use labelled join;
-#56 is a future cutover. `--service/--name require --join <label>` means these
-are not fresh GLOBAL creation options. The old invite-only verdict is stale:
+#56 is a future cutover. `--service/--name require --join <label>` remains the
+refusal outside supported acts; #66 additionally permits explicit `--name` with
+LOCAL `--username`. These are not fresh GLOBAL creation options. The old invite-only verdict is stale:
 use the labelled command above, never `aw team join` in an OATS-owned root.
 
 ### Hosted team creation
