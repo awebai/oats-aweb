@@ -1,0 +1,42 @@
+// Optional display metadata from a successful native mint, never an authority
+// gate. Validate the pair atomically so an invalid row cannot imply a partial
+// delegation. Bounds limit persisted/output data, not native grant authority.
+export const INVENTORY_ERROR = 'E_GRANT_APP_INVENTORY: grant app inventory unavailable; native inventory was malformed';
+const codes = new Set(['app_missing', 'app_manifest_invalid', 'app_origin_mismatch', 'app_manifest_mismatch', 'app_origin_denied']);
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const text = value => typeof value === 'string' && value.length > 0 && value.length <= 2048 && value.trim() === value && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value);
+const keys = (value, names) => object(value) && Object.keys(value).length === names.length && names.every(k => Object.hasOwn(value, k));
+const unavailable = malformed => ({ appInventoryStatus: 'unavailable', ...(malformed ? { appInventoryError: 'E_GRANT_APP_INVENTORY' } : {}) });
+function validOrigin(value) {
+  if (!text(value)) return false;
+  try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) && !!u.hostname && !u.username && !u.password && !u.search && !u.hash; }
+  catch { return false; }
+}
+export function grantAppInventory(receipt) {
+  if (!object(receipt)) return unavailable(true);
+  const a = Object.hasOwn(receipt, 'apps'), s = Object.hasOwn(receipt, 'skipped_apps');
+  if (!a && !s) return unavailable(false);
+  if (!a || !s || !Array.isArray(receipt.apps) || !Array.isArray(receipt.skipped_apps) || receipt.apps.length + receipt.skipped_apps.length > 256) return unavailable(true);
+  if (Buffer.byteLength(JSON.stringify([receipt.apps, receipt.skipped_apps]), "utf8") > 65536) return unavailable(true);
+  const seen = new Set(), apps = [], skipped_apps = [];
+  for (const row of receipt.apps) {
+    if (!keys(row, ['app_id','origin','manifest_sha256','tools']) || !text(row.app_id) || seen.has(row.app_id) || !validOrigin(row.origin) || typeof row.manifest_sha256 !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(row.manifest_sha256) || !Array.isArray(row.tools) || row.tools.length > 1024 || row.tools.some(t => !text(t)) || new Set(row.tools).size !== row.tools.length) return unavailable(true);
+    seen.add(row.app_id);
+    apps.push({ app_id: row.app_id, origin: row.origin, manifest_sha256: row.manifest_sha256, tools: [...row.tools] });
+  }
+  for (const row of receipt.skipped_apps) {
+    if (!keys(row, ['app_id','code']) || !text(row.app_id) || seen.has(row.app_id) || !codes.has(row.code)) return unavailable(true);
+    seen.add(row.app_id); skipped_apps.push({ app_id: row.app_id, code: row.code });
+  }
+  return { appInventoryStatus: 'known', apps, skipped_apps };
+}
+export function grantInventoryAdvisory(grant, { retained = false, pending = false } = {}) {
+  const inventory = grantAppInventory(grant || {});
+  const id = text(grant?.id) ? JSON.stringify(grant.id) : '(unavailable)';
+  const label = retained ? 'Retained last-successful grant snapshot' : 'At-mint grant snapshot';
+  const malformed = inventory.appInventoryError || grant?.appInventoryError === 'E_GRANT_APP_INVENTORY';
+  const state = inventory.appInventoryStatus === 'known'
+    ? `delegated apps ${JSON.stringify(inventory.apps)}; skipped (not delegated) ${JSON.stringify(inventory.skipped_apps)}`
+    : `app inventory unavailable${malformed ? `; ${INVENTORY_ERROR}` : ' (legacy or unrecorded receipt)'}`;
+  return `${label} ${id}: ${state}. ${pending ? 'Pending re-mint inventory is unknown until its successful receipt. ' : ''}Inventory is not a readiness verdict; unavailable does not mean no app authority.`;
+}
