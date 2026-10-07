@@ -678,3 +678,49 @@ kernel-wrapped quoted paths; ambiguous continuations refuse rather than consumin
 neighboring settings. Public dispatch tests cover first join followed by tokenless
 resume through actual kernel serialization. Focused setup tests cover neighboring
 roots/comments, partial failures, policy changes and explicit-default preservation.
+
+### GLOBAL grant app inventory (source-only #76, planned 1.23.2)
+
+The selected provider composition records the successful native mint's actual
+`apps` and `skipped_apps` under `identity.grant`, bound to that grant ID. Native
+aw 1.36.26 supplies this receipt; earlier receipts without both fields have
+unavailable inventory, not an empty delegation. Valid empty arrays mean a known
+empty snapshot. Malformed optional inventory produces `E_GRANT_APP_INVENTORY`
+and unavailable metadata while preserving an otherwise-valid grant and its
+existing lifecycle. This informational check is not an authority gate.
+
+Comms describes the snapshot at spawn, not a dynamically refreshed grant.
+All inventory briefs/advisories show only app IDs, tool counts and skip codes;
+tool names, origins and digests stay out of instruction-bearing text. Read
+`oats inspect --home <home> --json` for the current recorded identity/grant.
+Launch preview's warning describes the retained snapshot; a pending renewal's
+inventory is unknown until its receipt. Preview never mints. Successful
+`renew: launch` records the new snapshot and emits an advisory; `renew: off`
+retains the old one, including on restart. Failed renewal retains the previous
+grant and snapshot under the existing recovery rules. No inventory implies
+receive readiness, live app acceptance or automatically updated captured homes.
+
+Preview requires selected-kernel warning projection: tested at OATS 0.47.0
+source `e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b`. OATS 0.42 source
+`bb2ba8c9a254edb745913b9c5a9d9b833fda932d` persists the spawn snapshot through
+inspect but omits preview warnings. Missing inventory in that older preview is
+unreported/unsupported, not empty or no authority. These samples do not establish
+the earliest supported release or change the package-wide floor.
+
+The tested newer public kernel exposes the preview advisory in warnings, not a new
+structured inventory field, and does not refresh spawn's Comms on renewal.
+Kernel [#773](https://github.com/awebai/oats/issues/773) tracks those projection
+limits. Provider code does not rewrite TASK or use environment/argv as a
+metadata channel. No appTools setting, extra mint, discovery or new native flag
+is introduced.
+
+Implementation: `lib/grant-app-inventory.mjs` validates the optional pair as a
+whole before persistence/display, copies only recognized fields, and bounds it
+to 256 app entries, 1024 tools per app, 2048 characters per string and 64 KiB
+of serialized inventory. Tool names in the recorded inventory must match
+`^[A-Za-z0-9_][A-Za-z0-9_-]*$` without normalization. This is a deliberately
+narrower informational contract than the native tool validator, not an authority
+restriction. Unsupported/ambiguous display data becomes unavailable
+without changing native authority; it is never trimmed or expanded. Current
+receipt fixtures are byte copies of aw source873ed2bf; local substitute tests
+do not prove live grant or Folio authority.
