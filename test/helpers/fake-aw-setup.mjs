@@ -66,6 +66,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_CREATE_MODE === "missing-token") { console.log(JSON.stringify({ team_id: team })); process.exit(0); }
   console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team, aweb_url: "https://app.aweb.ai/api" }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
+  if (process.env.AW_ACCEPT_FAIL) { console.error("fixture acceptance failure"); process.exit(17); }
   const team = process.env.AW_FAKE_TEAM || args[3].replace(/^TOKEN__/, "");
   writeTeams(team);
   console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", ...(process.env.AW_ACCEPT_OMIT_SERVICE ? {} : { aweb_url: "https://app.aweb.ai/api" }) }));

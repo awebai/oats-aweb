@@ -41,7 +41,7 @@
  * identity joined moments before the failure must still be deletable.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -2039,11 +2039,15 @@ if (event === "launch") {
       joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, resumeCommand });
     } else {
       if (!token || typeof token !== "string") throw new Error(`--join ${label} needs --invite <token> unless ${teamRoot} already holds an accepted unconnected identity to resume`);
-      mkdirSync(teamRoot, { recursive: true });
+      const alias = setupAlias();
+      const createdRoot = mkdirSync(teamRoot, { recursive: true }) !== undefined;
       try {
-        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias: setupAlias(), expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
+        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
       } catch (e) {
-        if (!existsSync(idHome)) { try { rmSync(teamRoot, { recursive: true, force: true }); } catch { /* best effort after failure before identity creation */ } }
+        // A recorded root may contain operator data or be the deployment itself.
+        // Roll back only our newly created, still-empty directory; retain any
+        // partial identity or concurrent content for explicit reconciliation.
+        if (createdRoot) { try { rmdirSync(teamRoot); } catch { /* nonempty or unavailable: retain it */ } }
         throw e;
       }
     }

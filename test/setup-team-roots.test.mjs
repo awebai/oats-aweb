@@ -110,3 +110,31 @@ test('GLOBAL error and operation error envelope remain intact',t=>{
  const f=joinFixture(t),r=f.run({OATS_OPERATION:'messaging:join',OATS_SETTINGS:JSON.stringify({identity:{mode:'global'}})});
  assert.equal(r.status,1);const doc=JSON.parse(r.stdout);assert.equal(doc.schemaVersion,1);assert.equal(doc.ok,false);assert.equal(doc.error.code,'E_TEAM_GLOBAL_MODE');assert.ok(!existsSync(f.q.calls));
 });
+
+for (const destination of ['existing-root', 'deployment']) {
+ for (const failure of ['alias', 'accept']) test(`failed ${failure} preserves pre-existing ${destination} and operator data`, t => {
+  const f = fixture(t);
+  const target = destination === 'deployment' ? f.deployment : join(f.base, 'operator-root');
+  mkdirSync(target, {recursive: true});
+  const sentinel = join(target, 'operator-data');
+  writeFileSync(sentinel, 'keep me');
+  const localBefore = readFileSync(join(f.deployment, 'oats-local.yaml'), 'utf8');
+  const r = f.run(['setup', '--join', 'joined', '--invite', 'SECRET', '--name', failure === 'alias' ? 'invalid alias' : 'host', '--service', 'https://service.invalid'], {
+   OATS_SETTINGS: JSON.stringify({root: f.root, roots: {[TEAM]: target}}),
+   ...(failure === 'accept' ? {AW_ACCEPT_FAIL: '1'} : {}),
+  });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, failure === 'alias' ? /aliases must match/ : /failed/);
+  assert.equal(readFileSync(sentinel, 'utf8'), 'keep me');
+  assert.equal(readFileSync(join(f.deployment, 'oats-local.yaml'), 'utf8'), localBefore);
+  assert.ok(existsSync(f.home));
+  assert.equal(f.fake.readCalls().filter(c => c.args.includes('accept-invite')).length, failure === 'accept' ? 1 : 0);
+  assert.doesNotMatch(r.stdout + r.stderr, /SECRET/);
+ });
+}
+for (const failure of ['alias', 'accept']) test(`failed ${failure} leaves no new team root`, t => {
+ const f = fixture(t);
+ const r = f.run(['setup', '--join', 'joined', '--invite', 'SECRET', '--name', failure === 'alias' ? 'invalid alias' : 'host', '--service', 'https://service.invalid'], failure === 'accept' ? {AW_ACCEPT_FAIL: '1'} : {});
+ assert.equal(r.status, 1);
+ assert.ok(!existsSync(join(f.deployment, '.aweb-roots', 'joined')));
+});

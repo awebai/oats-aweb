@@ -19,7 +19,9 @@ for kernel, release and admission work.
   under the default minting root. Missing, contradictory or unreadable deployment
   facts refuse before creation; only the selected deployment's local file is
   updated. Recorded nested roots remain usable without copying, deleting or
-  accepting another invite. An operator may plan a separate move after assessing
+  accepting another invite. Failed setup preserves pre-existing root directories
+  and their contents; rollback removes only a newly created empty target.
+  An operator may plan a separate move after assessing
   identity/workspace bindings and recovery; this release performs no migration
   and does not claim an unattended identity move is safe.
 - Explicit wider-team join reads current `root`/`roots` through same-kernel public
