@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 import { assertKernelOperationAnswer } from "./helpers/kernel-operation-envelope-rule.mjs";
 import { flagValue, joinFromCalls } from "./helpers/fake-aw-join-from.mjs";
+import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -34,7 +35,9 @@ function fixture(t, { key = HOSTED_KEY, settings = {}, delivery, runtime = "clau
   mkdirSync(home, { recursive: true });
   if (legacyRoot) { mkdirSync(join(ws, ".aw"), { recursive: true }); writeFileSync(join(ws, ".aw", "teams.yaml"), "active_team: legacy:example.test\n"); }
   const merged = { ...(delivery ? { delivery } : {}), ...settings };
+  writeFileSync(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const env = {
+    OATS_CLI_BIN: currentRootQuery(ws, { home, deployment: ws, settings: { root: ws, ...merged } }).cli,
     OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: key, OATS_WORKSPACE_NAME: "acme",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "legacy:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: teamsEnv, OATS_TEAMS_SOURCE: "live",
     OATS_RUNTIME: runtime, OATS_SETTINGS: JSON.stringify(merged),

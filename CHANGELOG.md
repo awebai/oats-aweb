@@ -15,6 +15,25 @@ This is source-only
 guidance, not unattended admission or release adoption; issue #44 remains open
 for kernel, release and admission work.
 
+- Setup creates new per-team roots under the kernel-selected deployment, not
+  under the default minting root. Missing, contradictory or unreadable deployment
+  facts refuse before creation; only the selected deployment's local file is
+  updated. Recorded nested roots remain usable without copying, deleting or
+  accepting another invite. An operator may plan a separate move after assessing
+  identity/workspace bindings and recovery; this release performs no migration
+  and does not claim an unattended identity move is safe.
+- Explicit wider-team join reads current `root`/`roots` through same-kernel public
+  inspect, verifies the recorded home/soul/deployment and exact-team membership,
+  and refuses unavailable or invalid authority before minting. Lifecycle hooks
+  retain captured settings; GLOBAL join stays unsupported.
+- Setup's missing-membership remedy now uses labelled `--join --invite-stdin`,
+  retaining deployment/soul and required name/service inputs. Token-only setup
+  is still refused; the future #56 envelope cutover is not installed.
+- Correct the stale hosted-creation diagnostic: provider bare `--create` remains
+  unsupported, while native aw 1.36.24 supports `id team create --hosted` (not
+  aw 1.36.23). Native JSON contains a secret invite; capture it privately. The
+  existing controller-owned `--namespace` route is unchanged.
+
 Documentation: added the shipped existing-team GLOBAL resident journey, linked
 from setup and resident guidance. It separates native fresh creation from reuse,
 plain LOCAL setup and provider grants; documents authority/output/custody and

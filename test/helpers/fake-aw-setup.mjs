@@ -23,6 +23,7 @@ export function fakeAwSetupPath(t, { activeTeam = "active:example.invalid" } = {
 const fs = require("node:fs");
 const path = require("node:path");
 const calls = ${JSON.stringify(calls)};
+if (process.env.AWEB_IDENTITY_HOME) { console.error("unexpected ambient identity home"); process.exit(94); }
 let args = process.argv.slice(2);
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }

@@ -367,6 +367,21 @@ team, setup creates a real per-team root such as
 `settings.oats.aweb.roots[<team id>] = <root>` in `oats-local.yaml`. Minting for
 team `T` uses `roots[T]` when present, otherwise `root`.
 
+Explicit `oats aweb join` resolves current host-owned minting roots through the
+same kernel's public inspect API. It first validates the selected home's recorded
+soul, then reads that soul in the selected deployment, consuming only `root` and
+`roots`. The exact team's explicit entry wins, including when invalid; otherwise
+a shared current root must prove membership in that team. Query, configuration,
+compatibility or membership failures refuse before an invite is minted. Captured
+module, identity and delivery settings remain unchanged; spawn, launch and retire
+do not use this current-root lookup.
+
+Setup selects the deployment from `OATS_TEAM_SCOPE`, with `OATS_WORKSPACE` as an
+older-dispatch fallback. Supplied deployment facts must agree and the selected
+directory must contain a readable `oats-local.yaml`. New team roots are siblings
+under that deployment's `.aweb-roots`, even when the minting root is nested or
+outside the deployment. Previously recorded roots retain their exact locations.
+
 ### Setup acts
 
 `oats aweb setup` handles the provider's deployment-root onboarding acts below;
@@ -390,8 +405,9 @@ Supported acts:
   requires the returned `team_id` and invite token, accepts the invite into a
   new per-team root, records `roots[<team id>]`, then records the local mapping
   with `OATS_CLI_BIN teams add <label> --team <id>`. Without `--namespace`,
-  setup refuses hosted additional-team creation until the hosted-team aweb
-  release exists. Before creating anything it reads `OATS_CLI_BIN teams --json`:
+  setup refuses hosted additional-team creation: the provider has no wrapper.
+  Native aw 1.36.24 supports `id team create --hosted`; aw 1.36.23 does not.
+  Native JSON contains an invite token and must be captured privately. Before creating anything it reads `OATS_CLI_BIN teams --json`:
   where `localTeams` is `false` (team model 3: the workspace does not allow
   local teams), it records no local mapping and prints the `teams:` entry, and
   `defaultTeam:` when the workspace has none, to commit in
@@ -468,3 +484,13 @@ the root is absent; to exercise it, provision the same source/dependency and run
 `OATS_HOST_ONLY_REQUIRED=1 OATS_HOST_ONLY_KERNEL_ROOT=/absolute/pinned/checkout node --test test/claude-channel-host-only.test.mjs`.
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
+
+### Isolated team-root verification
+
+`test/setup-team-roots.test.mjs` exercises placement, parser remedies and current
+join authority using controlled native and kernel JSON substitutes. The opt-in
+`test/public-kernel-team-roots.test.mjs` executes public dispatch and inspect from
+the same pinned kernel checkout used by the hostOnly gate. Run it with
+`OATS_HOST_ONLY_REQUIRED=1 OATS_HOST_ONLY_KERNEL_ROOT=/absolute/pinned/checkout`.
+It uses isolated local Git repositories and a fake aw; it does not verify live
+service behavior or perform host onboarding.

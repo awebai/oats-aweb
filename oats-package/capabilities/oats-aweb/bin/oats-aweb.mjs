@@ -8,7 +8,7 @@
  *   oats-aweb roster   list the aweb team's members — the cross-machine directory
  *                     of live instances (alias = instance name) and humans
  *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the
- *                     messaging root with aw init / aw team join, verify team
+ *                     messaging root with aw init / id team accept-invite, verify team
  *   oats-aweb connect  give a registered server's deployment membership in its
  *                     default team, through the kernel's --server capability route
  *
@@ -17,7 +17,8 @@
  *   OATS_INSTANCE  instance name (used as the aweb alias)
  *   OATS_HOME      instance home dir (cwd is also set to it)
  *   OATS_CONTEXT   resolution context dir (the soul's repo / agents root parent)
- *   OATS_WORKSPACE the agents root's parent — the team boundary
+ *   OATS_TEAM_SCOPE selected deployment directory (not the minting root)
+ *   OATS_WORKSPACE older deployment fact; when present it must agree
  *   OATS_SETTINGS  JSON of the provider's `settings:` block
  *   OATS_DEFAULT_TEAM/OATS_DEFAULT_TEAM_ID/OATS_DEFAULT_TEAM_FROM default team facts
  *   OATS_TEAMS     JSON rows {label, team, default, from} for mapped eligible teams
@@ -45,6 +46,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
+import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
@@ -326,16 +328,6 @@ function assertNotFlag(value, what) {
   if (String(value || "").startsWith("-")) throw new Error(`${what} must not start with '-'`);
 }
 const yamlQuote = (value) => JSON.stringify(String(value));
-function findOatsLocal(start = process.env.OATS_WORKSPACE || process.cwd()) {
-  let dir = resolve(start);
-  for (;;) {
-    const file = join(dir, "oats-local.yaml");
-    if (existsSync(file)) return file;
-    const parent = dirname(dir);
-    if (parent === dir) return join(resolve(start), "oats-local.yaml");
-    dir = parent;
-  }
-}
 function blockEnd(lines, start, indent) {
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) if (lines[i].trim() && !lines[i].startsWith(" ".repeat(indent + 1))) { end = i; break; }
@@ -370,7 +362,7 @@ function findBlockHeader(lines, start, end, indent, names) {
   return -1;
 }
 function assertAwebRootSettingRecordable(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
-  const file = findOatsLocal(start);
+  const file = join(start, "oats-local.yaml");
   if (!existsSync(file)) return;
   const lines = readFileSync(file, "utf8").split(/\r?\n/);
   let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
@@ -385,7 +377,7 @@ function assertAwebRootSettingRecordable(team, rootDir, { start = process.env.OA
   if (typeof roots === "object") unsupportedLocalYaml(file, `line ${roots.unsupported + 1} is not a block-style roots: mapping`, team, rootDir);
 }
 function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
-  const file = findOatsLocal(start);
+  const file = join(start, "oats-local.yaml");
   const existed = existsSync(file);
   const lines = existed ? readFileSync(file, "utf8").split(/\r?\n/) : ["schemaVersion: 2", "workspace: local"];
   while (lines.length && lines.at(-1) === "") lines.pop();
@@ -1167,11 +1159,11 @@ function teamsDocument(meta = readCapabilityMeta()) {
     at: new Date().toISOString(),
   };
 }
-function mintJoinedTeam(row, meta) {
+function mintJoinedTeam(row, meta, { current = false } = {}) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
   const identityHome = identityHomeForLabel(row.label);
-  const root = awebRootForTeam(row.team);
+  const root = current ? currentJoinRoot(row.team, home, { membership: (root, team) => teamIdsOf(readTeamsAt(root)).includes(team) }) : awebRootForTeam(row.team);
   if (!root) throw new Error(`${awebRootProblem(rootSettingCandidate(row.team))}, so team ${row.label} could not be joined`);
   const inv = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true }), "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
@@ -1396,7 +1388,7 @@ function runTeamsCommand(kind) {
     // leave deleted its home, and a join created a remote identity.
     try {
       for (const row of rows) {
-        const result = kind === "join" ? mintJoinedTeam(row, meta) : leaveJoinedTeam(row.label, meta);
+        const result = kind === "join" ? mintJoinedTeam(row, meta, { current: true }) : leaveJoinedTeam(row.label, meta);
         meta = result.meta;
         writeProviderTeamsState(meta);
         const boundedWarning = result.warning ? actionWarning(result.warning) : undefined;
@@ -1917,9 +1909,12 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
   const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
+  let setupDir;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === "--dir" && args[i + 1]) { setupDir = resolve(args[++i]); continue; }
+    if (arg.startsWith("--dir=") && arg.length > 6) { setupDir = resolve(arg.slice(6)); continue; }
     if (arg === "--username" && args[i + 1]) { username = args[++i]; continue; }
     if (arg.startsWith("--username=") && arg.length > "--username=".length) { username = arg.slice("--username=".length); continue; }
     if (arg === "--invite" && args[i + 1]) { invite = args[++i]; continue; }
@@ -1997,7 +1992,12 @@ if (event === "launch") {
     if (!alias || !AWEB_ALIAS_RE.test(alias)) throw new Error(`--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule`);
     return alias;
   };
-  const setupResumeCommand = (label) => `oats aweb setup --soul ${setupSoulArg()} --join ${label} --service <url>`;
+  const quoteArg = (value) => /^[A-Za-z0-9_./:-]+$/.test(value) ? value : "'" + String(value).replaceAll("'", "'\\''") + "'";
+  const setupContext = () => `--dir ${quoteArg(setupDir || process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || "<deployment>")} --soul ${quoteArg(setupSoulArg())}`;
+  const setupResumeCommand = (label) => `oats aweb setup ${setupContext()} --join ${quoteArg(label)} --service <url>`;
+  const setupInviteCommand = (label) => `oats aweb setup ${setupContext()} --join ${quoteArg(label || "<label>")} --invite-stdin --name <alias> --service <url>`;
+  let deployment;
+
   const setupServiceDocs = (teamRoot) => {
     const docs = [];
     if (joinService) docs.push({ aweb_url: joinService });
@@ -2012,17 +2012,20 @@ if (event === "launch") {
     addRoot(scope);
     return docs;
   };
-  const hostedCreateUnavailable = () => "creating an additional hosted team needs hosted team creation (aweb-abkh), not yet released in aw or aweb Cloud; use --namespace <domain> for a team you control, or ask the aweb team";
+  const hostedCreateUnavailable = () => "provider setup --create without --namespace is not supported; native aw 1.36.24 supports id team create --hosted (not available in aw 1.36.23). Follow the version-matched native owner procedure, keeping invite/private output out of logs and messages, then use provider setup --join <label> --invite-stdin with the appropriate invite; use --namespace <domain> for the existing controller-owned route";
   const candidateTeamId = (name) => `${name}:${createNamespace}`;
   const teamExistsError = (e) => e?.status === 409 || /\b409\b|\bconflict\b|\balready exists\b|\bexists\b/i.test(commandOutput(e));
   const configuredTeamForLabel = (label) => parseOatsTeams().find((t) => t.label === label && t.team)?.team || (label === defaultTeamLabel() ? defaultTeamId() : undefined);
   const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
-    const teamRoot = perTeamRoot(process.env.OATS_WORKSPACE || scope, label);
+    const configured = configuredTeamForLabel(label) || expectedTeam;
+    const recorded = configured && settings.roots && Object.hasOwn(settings.roots, configured) ? settings.roots[configured] : undefined;
+    if (recorded !== undefined && (typeof recorded !== "string" || !isAbsolute(recorded))) throw new Error(`configured root for ${label} must be an absolute directory`);
+    const teamRoot = recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label);
     const idHome = join(teamRoot, ".aw");
     const resumeCommand = setupResumeCommand(label);
     const docs = [...setupServiceDocs(teamRoot), ...serviceDocs];
     const recordTeam = expectedTeam || configuredTeamForLabel(label) || `<team for ${label}>`;
-    assertAwebRootSettingRecordable(recordTeam, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
+    assertAwebRootSettingRecordable(recordTeam, teamRoot, { start: deployment });
     let joined;
     if (existsSync(join(idHome, "identity.yaml"))) {
       if (existsSync(join(idHome, "workspace.yaml"))) {
@@ -2030,7 +2033,7 @@ if (event === "launch") {
         // complete, so a root holding the expected team's membership is recorded as it is.
         const want = expectedTeam || configuredTeamForLabel(label);
         if (!want || acceptedTeamMembership(idHome, want) !== want) throw new Error(`team root ${teamRoot} already holds a connected aweb identity, but not for ${want || label}; choose a different label or remove the stale root deliberately`);
-        recordAwebRootSetting(want, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
+        recordAwebRootSetting(want, teamRoot, { start: deployment });
         return { team: want, teamRoot };
       }
       joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: expectedTeam || configuredTeamForLabel(label), root: scope, cwd: teamRoot, serviceDocs: docs, resumeCommand });
@@ -2044,7 +2047,7 @@ if (event === "launch") {
         throw e;
       }
     }
-    recordAwebRootSetting(joined.team, teamRoot, { start: process.env.OATS_WORKSPACE || scope });
+    recordAwebRootSetting(joined.team, teamRoot, { start: deployment });
     return { team: joined.team, teamRoot };
   };
   const createTeam = (label) => {
@@ -2064,7 +2067,7 @@ if (event === "launch") {
       } catch (e) {
         if (!teamExistsError(e)) throw e;
         const teams = readTeams();
-        if (teamIdsOf(teams).some((tid) => String(tid) === expectedTeam)) { recordAwebRootSetting(expectedTeam, scope, { start: process.env.OATS_WORKSPACE || scope }); return { team: expectedTeam, teamRoot: scope, reused: true }; }
+        if (teamIdsOf(teams).some((tid) => String(tid) === expectedTeam)) { recordAwebRootSetting(expectedTeam, scope, { start: deployment }); return { team: expectedTeam, teamRoot: scope, reused: true }; }
         if (n === 20) throw new Error(`could not create a unique aweb team for ${JSON.stringify(label)} after suffixing through -20`);
       }
     }
@@ -2113,7 +2116,7 @@ if (event === "launch") {
     return !ids.has(t.team);
   });
   const printSharedMissing = (rows) => {
-    for (const row of rows) console.log(`team ${row.label} (${row.team}) is shared: ask its owner for an invite, then run \`oats aweb setup --soul ${setupSoulArg()} --join ${row.label} --invite <token>\``);
+    for (const row of rows) console.log(`team ${row.label} (${row.team}) is shared: ask its owner for an appropriate invite, then run \`${setupInviteCommand(row.label)}\``);
   };
   const printVerdict = (teams) => {
     const match = matchingTeam(teams);
@@ -2135,12 +2138,14 @@ if (event === "launch") {
     }
     console.log(`  Workspace initialized, but no membership matching "${want}".`);
     if (defaultTeamForUsername) adviseRecordDefault(`New hosted users create ${defaultTeamForUsername}`, defaultTeamForUsername, ", then re-run setup");
-    console.log("  Existing team path: ask a member for an invite token, then run `oats aweb setup --invite <token>` (uses `aw team join <token>` at the root).");
+    console.log(`  Existing team path: ask a member for an appropriate invite token, then run \`${setupInviteCommand(defaultTeamLabel())}\` (accepts into the selected per-team root; supply the token on stdin, never in logs or messages).`);
     console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
     console.log("  New hosted-account path: run `oats aweb setup --username <u>` (uses `aw init --new-account --username <u>` and creates default:<u>.aweb.ai).");
   };
 
   try {
+    if (createLabel && !createNamespace) throw new Error(hostedCreateUnavailable());
+    if (joinLabel || createLabel) deployment = selectedDeployment(process.env, setupDir);
     const hasRoot = existsSync(join(scope, ".aw"));
     let teams = hasRoot ? readTeams() : { memberships: [] };
     const unmappedDefault = !actions.length && defaultTeamLabel() && !defaultTeamId();

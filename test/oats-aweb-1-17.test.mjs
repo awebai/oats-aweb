@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 
@@ -124,6 +125,8 @@ test("joined team connect failure fails the join and records no unusable identit
 test("forwarded --soul is ignored by teams, join, leave, and roster operator commands", (t) => {
   const fake = fakeAw117(t);
   const fx = fixture(t);
+  writeFileSync(join(fx.ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  fx.env.OATS_CLI_BIN = currentRootQuery(fx.ws, { home: fx.home, deployment: fx.ws, settings: { root: fx.ws } }).cli;
   const spawned = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
   writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ instance: "dev-1", runtime: "claude", capabilityMeta: { "oats.aweb": spawned.meta } }));
 
