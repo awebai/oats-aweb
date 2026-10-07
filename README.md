@@ -404,8 +404,10 @@ Supported acts:
   omit the native required name; this correction must be released/composed first.
 - `oats aweb setup` with the selected team API key supplied only through the
   operator's protected child environment (`AWEB_API_KEY`): runs plain `aw init`
-  for that hosted team. No `setup --global` exists; `--name`/`--service` are
-  invite-join options. Do not place the key in a literal command or history.
+  for that hosted team. `--service` stays join-only; `--name` is supported for
+  join and additionally required for `--username`. Neither flag extends the
+  API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
+  place the key in a literal command or history.
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
   a customer-controlled namespace. It normalizes `<label>` to aweb's team-name
   rule, runs `aw id team create --name <normalized> --namespace <domain>`,
