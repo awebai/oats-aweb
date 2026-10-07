@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.23.1 — 2026-10-07
 
 Fixed (#78): first labelled LOCAL join records its verified canonical mapping
 and default through the selected public kernel. Setup is operator-serialized;

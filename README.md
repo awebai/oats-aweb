@@ -511,10 +511,10 @@ the root is absent; to exercise it, provision the same source/dependency and run
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
 
-### Labelled join configuration (unreleased #78/#82)
+### Labelled join configuration (provider 1.23.1, #78/#82)
 
 setup is an operator act: run one setup at a time per deployment.
-The selected provider composition must include these changes; existing captured
+The selected provider composition must include provider 1.23.1; existing captured
 homes do not adopt them automatically. Labelled join verifies exactly one LOCAL
 membership before recording its canonical team. The selected public kernel's
 teamsApi 2 query/add/default/readback features are required, as for username setup.
