@@ -74,7 +74,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
     console.error("fixture acceptance failure"); process.exit(17);
   }
   const team = process.env.AW_FAKE_TEAM || args[3].replace(/^TOKEN__/, "");
-  writeTeams(team);
+  writeTeams(team, { alias: flag("--name") || "root", identity_scope: "local" });
   console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", ...(process.env.AW_ACCEPT_OMIT_SERVICE ? {} : { aweb_url: "https://app.aweb.ai/api" }) }));
 } else if (args[0] === "whoami") {
   if (process.env.AW_WHOAMI_FAIL) { console.error("no identity"); process.exit(6); }

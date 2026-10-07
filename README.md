@@ -511,6 +511,38 @@ the root is absent; to exercise it, provision the same source/dependency and run
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
 
+### Labelled join configuration (unreleased #78/#82)
+
+setup is an operator act: run one setup at a time per deployment.
+The selected provider composition must include these changes; existing captured
+homes do not adopt them automatically. Labelled join verifies exactly one LOCAL
+membership before recording its canonical team. The selected public kernel's
+teamsApi 2 query/add/default/readback features are required, as for username setup.
+It records a missing label mapping and establishes a default only when no
+deployment or workspace default exists. A local default is preserved while
+adding a mapping; an exact existing shared/local mapping is reused.
+
+When the effective default comes from the workspace and the mapping is missing,
+setup retains the admitted root but returns `E_SETUP_DEFAULT_PRESERVE` without
+team writes. Its exact `oats teams add` remedy is an operator decision: that
+command also creates a local default, shadowing the workspace default. With a
+preserved different default, the result instead gives the exact optional
+`oats teams default` command to select the joined label.
+
+Closed policy, conflicting/unmapped declarations and invalid queries refuse
+before acceptance when knowable. Later policy/mapping changes or failed writes
+remain typed failures with observed partial state (or unavailable readback).
+Retain the root and retry the same labelled command without an invite; matching
+membership resumes without redemption. Setup rechecks before writes and reads
+back afterward, but public verbs are not an atomic transaction: do not change
+configuration concurrently. Soul-specific defaults do not establish a local
+default and may still control that soul's selection after deployment setup.
+
+LOCAL launch and no-effect preview now return the same explicit instance
+`<home>/.aw` identity selector as spawn. GLOBAL grant locators and delivery/joined
+metadata remain unchanged. This corrects a pre-existing omission, not a new
+1.23.0 regression.
+
 ### Member invitation (provider 1.23.0, #71)
 
 From the selected deployment, `oats aweb invite --soul S [--label L]
@@ -590,7 +622,9 @@ the selected messaging soul. These checks do not prove a timed operator journey.
 
 ### Username mapping/default verification
 
-The provider 1.23.0 (#70) flow lives in `lib/setup-team-default.mjs`: it uses the selected
+Username setup and labelled join share the configuration/readback adapter in
+`lib/setup-team-default.mjs`; `lib/setup-join-default.mjs` owns join membership and
+preserve-default policy. The provider 1.23.0 (#70) username flow uses the selected
 `OATS_CLI_BIN` with explicit deployment and sanitized kernel selectors for public
 `teams --json`, `teams add` and `teams default`. It accepts `teamsApi: 2`, including
 standalone `localTeams: null`; only explicit false/`local-teams-closed` is a policy
@@ -627,3 +661,20 @@ help check. The 60s..720h range is separately enforced by provider tests and
 qualified against native source `61c38162596d1af9085741d70d15900ff9894257`
 (`cmd/aw/id_grant.go`). These checks are not live custody, grant or expiry
 acceptance.
+
+
+For an isolated build of the exact native source pin, the same opt-in fixtures
+also require `OATS_TEST_AW_SOURCE_RECEIPT=/absolute/path/to/receipt.json`.
+The receipt must identify `kind: "exact-source-build"`, the exact source commit,
+`sourceClean: true`, binary path, SHA256 and matching version output. Only
+`1.36.23-source-fixture` at the pinned commit is accepted in this mode.
+Record the build command/toolchain/platform separately; this is exact-source
+contract evidence, not the historical published binary. Without that receipt,
+the original published-version checks remain mandatory. The receipt validator
+has wrong-version/source/hash/path controls. No fixture authorizes live requests.
+
+The root recorder preserves block-style YAML around a replaced scalar, including
+kernel-wrapped quoted paths; ambiguous continuations refuse rather than consuming
+neighboring settings. Public dispatch tests cover first join followed by tokenless
+resume through actual kernel serialization. Focused setup tests cover neighboring
+roots/comments, partial failures, policy changes and explicit-default preservation.

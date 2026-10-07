@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Fixed (#78): first labelled LOCAL join records its verified canonical mapping
+and default through the selected public kernel. Setup is operator-serialized;
+existing defaults are preserved, with an explicit no-write refusal when adding
+a mapping would shadow a workspace default. Partial failures retain the root
+and report observed state; tokenless retry verifies membership without another
+redemption. Root recording handles kernel-wrapped scalar paths on resume while
+preserving neighboring settings. No atomic configuration guarantee is added.
+
+Fixed (#82): LOCAL launch and no-effect preview return the explicit instance
+identity-home selector, matching spawn. GLOBAL grant locators and delivery/joined
+metadata are unchanged. The omission predates 1.23.0.
+
 ## 1.23.0 — 2026-10-07
 
 Changed: GLOBAL grants default to the aw maximum of 720h (30 days) and are

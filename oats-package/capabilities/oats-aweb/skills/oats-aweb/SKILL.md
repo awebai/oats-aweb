@@ -372,7 +372,7 @@ as did earlier versions; provider 1.23.0 users follow the reference above.
 | Act / prerequisites | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
 | First hosted account, provider 1.22.2 (#66); selected account name, explicit root alias and empty LOCAL root | `oats aweb setup --soul S --username <selected-user> --name <root-alias>` | Runs `aw init --new-account --username <selected-user> --name <root-alias>`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `--username requires --name <alias>; invalid alias: ...` → supply an explicit 1–64 character alias (letter/digit first, then letters/digits/`-`/`_`); no soul-derived default. Older provider versions cannot pass this pair; require the fix before effects. `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |
-| Existing hosted team's first LOCAL root, released provider 1.21.1; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | Plain `aw init`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
+| Existing hosted team's first LOCAL root, released provider 1.21.1; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | Plain `aw init`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback (the #78 composition above performs it automatically within its stated limits). | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
 | Additional controller-owned team, released provider 1.21.1; actual controller authority for owned namespace | `oats aweb setup --soul S --create L --namespace <owned-domain>` | Normalizes label, creates team, accepts/connects a per-team root, records `roots[T]`; success is returned canonical membership plus recorded root. Where `localTeams: true`, records local label; otherwise prints `teams:`/`defaultTeam:` to commit in `oats-workspace.yaml`, with eligibility in a `souls:` entry. Next: `/oats-teams` declaration/readback. | `could not tell whether this workspace allows local teams (...); nothing was created` → repair selected kernel/configuration read before retry. No invented controller authority. |
 
 For created or joined LOCAL teams, one identity owns each separate `.aw`; never
@@ -385,13 +385,30 @@ place; no automatic move, deletion or fresh acceptance is part of setup.
 
 ### LOCAL team join and resume
 
+setup is an operator act: run one setup at a time per deployment.
+With the unreleased #78 composition, this act also records the verified LOCAL
+label mapping and establishes a default when none exists, using the selected
+kernel's public teamsApi 2 query/add/default/readback contract. Existing local
+defaults are preserved; exact shared/local mappings are reused. A workspace
+default plus missing mapping returns `E_SETUP_DEFAULT_PRESERVE` with no team
+writes and the exact optional add command: running it deliberately creates a
+local default over the workspace default. A different preserved default has
+one optional selection command in the result. Soul defaults remain separate.
+
+Policy/conflict checks precede acceptance when knowable and repeat before
+configuration writes. These public verbs are not atomic; do not edit deployment
+configuration concurrently. On partial failure, preserve the root and use the
+same labelled command without an invite: verified retained membership resumes
+without another redemption. Read actual steps/observed state; unavailable
+readback is not success. Do not manually recreate a root to bypass the refusal.
+
 Released provider 1.21.1 supports labelled join and tokenless resume; the
 placement guard above applies. Prerequisites: selected LOCAL scope, D/S/L,
 appropriate member invite, root alias/service and required team policy from intake.
 
 | Act | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
-| Join | `oats aweb setup --soul S --join L --invite-stdin --name <root-alias> --service <selected-url>` | Reads first trimmed stdin line; accepts into the per-team `.aw`, connects workspace, records `roots[T]`. Success: matching canonical membership, connected root and recorded path. Next: `/oats-teams` mapping/default readback. | `--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule` → supply the selected alias. |
+| Join | `oats aweb setup --soul S --join L --invite-stdin --name <root-alias> --service <selected-url>` | Reads first trimmed stdin line; accepts into the per-team `.aw`, connects workspace, records `roots[T]`. Success: matching canonical membership, connected root and recorded path. Next: `/oats-teams` mapping/default readback (the #78 composition above performs it automatically within its stated limits). | `--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule` → supply the selected alias. |
 | Resume accepted but unconnected, or connected but unrecorded root | `oats aweb setup --soul S --join L --service <selected-url>` | Uses retained matching identity; connects or records it, without another redemption. Success: membership/connect/root record all agree. Next: provider check below after mapping. | `team root <path> already holds a connected aweb identity, but not for <team>` → stop and reconcile selected label/root; do not delete or buy another acceptance with a new token. |
 | Check selected default after mapping | `oats aweb setup --soul S --check-only --json` | Read-only `{aw, defaultTeam, member, root}`; success requires usable aw, intended default and `member: true` at intended root. Next: onboarding's staffing/completion stage. | `member: false` is a result, not an error code → reconcile selected root/team via the join card. |
 

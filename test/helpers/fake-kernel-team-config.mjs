@@ -23,9 +23,30 @@ if(args[1]==='add'||args[1]==='default'){
  if(doc.failure===verb+'-after')fail();
  console.log(JSON.stringify({schemaVersion:1,ok:true,result:{changed:true}}));
 }else{
+ if(doc.queryChanges){
+  doc.queryCount=(doc.queryCount||0)+1;
+  const change=doc.queryChanges[doc.queryCount];if(change)Object.assign(doc,change);
+  fs.writeFileSync(file,JSON.stringify(doc));
+ }
  if(doc.failure==='query'||doc.failure==='readback-'+doc.lastMutation)fail();
  console.log(JSON.stringify({schemaVersion:1,ok:true,result:doc}));
 }
 `);
   return { cli, state, read: () => JSON.parse(readFileSync(state, 'utf8')), set: value => writeFileSync(state, JSON.stringify(value)), calls: () => existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n').map(JSON.parse) : [] };
+}
+
+// Older direct-hook setup tests supply dispatch facts rather than running the
+// public dispatcher. Give those fixtures an explicit, stateful selected query.
+export function joinKernelEnvironment(env, deployment) {
+  if (env.OATS_CLI_BIN) return env;
+  const dir = join(deployment, '.fixture-kernel');
+  const cli = join(dir, 'kernel.mjs');
+  if (!existsSync(cli)) {
+    const teams = JSON.parse(env.OATS_TEAMS || '[]');
+    const label = env.OATS_DEFAULT_TEAM, team = env.OATS_DEFAULT_TEAM_ID;
+    if (label && !teams.some(r => r.label === label)) teams.push({ label, team: team || null, from: 'local' });
+    fakeKernelTeamConfig(dir, deployment, { teams,
+      defaultTeam: label ? { label, team: team || null, from: 'deployment' } : null });
+  }
+  return { ...env, OATS_CLI_BIN: cli };
 }

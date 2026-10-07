@@ -1,3 +1,4 @@
+import { verifyPinnedAw } from './helpers/pinned-aw.mjs';
 // Opt-in pinned binary, loopback only. Synthetic certificates and responses do
 // not establish live server authority or create a usable invitation.
 import test from 'node:test';
@@ -48,9 +49,7 @@ test('pinned real member invite: selected-root wire, token once, safe status ada
   symlinkSync(binary, join(bin, 'aw'));
   const isolated = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, XDG_CONFIG_HOME: join(home, '.config'), AW_NO_UPDATE_CHECK: '1' };
   const version = spawnSync(binary, ['version'], { env: isolated, cwd: scratch, encoding: 'utf8' });
-  assert.equal(version.status, 0); assert.match(version.stdout, /^aw 1\.36\.23\n/);
-  assert.match(version.stdout, /commit: 61c38162596d1af9085741d70d15900ff9894257/);
-  t.diagnostic(JSON.stringify({ binary, sha256: createHash('sha256').update(readFileSync(binary)).digest('hex'), version: version.stdout.trim() }));
+  t.diagnostic(JSON.stringify(verifyPinnedAw(binary, version)));
   const member = key(), signer = key(), team = 'fixture:example.invalid', alias = 'fixture-root';
   const cert = { version: 1, certificate_id: randomUUID(), team_id: team, team_did_key: signer.did, member_did_key: member.did, alias, identity_scope: 'local', issued_at: new Date().toISOString().replace(/\.\d+Z$/, 'Z') };
   cert.signature = sign(null, Buffer.from(JSON.stringify(Object.fromEntries(Object.keys(cert).sort().map(k => [k, cert[k]])))), signer.privateKey).toString('base64').replace(/=+$/, '');

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
 import { currentRootQuery } from './helpers/current-root-query.mjs';
 const hook=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs',import.meta.url));
@@ -17,6 +18,7 @@ function fixture(t, outside=false) {
  writeFileSync(join(root,'.aw','teams.json'),JSON.stringify({memberships:[{team_id:'default:example.invalid'}]}));
  const fake=fakeAwSetupPath(t), env=Object.fromEntries(Object.entries(process.env).filter(([k])=>! /^(OATS_|AWEB_)/.test(k)));
  Object.assign(env,{PATH:fake.path,OATS_HOME:home,OATS_INSTANCE:'dev-1',OATS_TEAM_SCOPE:deployment,OATS_WORKSPACE_NAME:'fixture',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:'default:example.invalid',OATS_TEAMS:JSON.stringify([{label:'default',team:'default:example.invalid',default:true},{label:'joined',team:TEAM,default:false}]),OATS_SETTINGS:JSON.stringify({root}),AW_FAKE_TEAM:TEAM,AWEB_IDENTITY_HOME:'/caller/identity'});
+ Object.assign(env,joinKernelEnvironment(env,deployment));
  const run=(args, extra={},input)=>spawnSync(process.execPath,[hook,...args],{cwd:deployment,env:{...env,...extra},input,encoding:'utf8',timeout:15000});
  return {base,deployment,root,home,fake,env,run};
 }
@@ -37,7 +39,7 @@ for(const variant of ['absent','contradictory','missing-local','wrong-dir']) tes
 });
 test('recorded nested root resumes without a second acceptance',t=>{
  const f=fixture(t), nested=join(f.root,'.aweb-roots','joined');mkdirSync(join(nested,'.aw'),{recursive:true});
- writeFileSync(join(nested,'.aw','identity.yaml'),'did: did:key:fixture\n');writeFileSync(join(nested,'.aw','teams.json'),JSON.stringify({memberships:[{team_id:TEAM}]}));
+ writeFileSync(join(nested,'.aw','identity.yaml'),'did: did:key:fixture\n');writeFileSync(join(nested,'.aw','teams.json'),JSON.stringify({memberships:[{team_id:TEAM,alias:"host",identity_scope:"local"}]}));
  const env={OATS_SETTINGS:JSON.stringify({root:f.root,roots:{[TEAM]:nested}})};
  for(let i=0;i<2;i++) {const r=f.run(['setup','--join','joined','--service','https://service.invalid'],env);assert.equal(r.status,0,r.stderr);}
  assert.equal(f.fake.readCalls().filter(c=>c.args.includes('accept-invite')).length,0);
@@ -58,7 +60,7 @@ test('hosted create diagnostic distinguishes native 1.36.24 from unsupported wra
  const f=fixture(t),r=f.run(['setup','--create','sibling']);assert.equal(r.status,1);assert.match(r.stderr,/provider setup --create without --namespace is not supported/);assert.match(r.stderr,/native aw 1\.36\.24 supports id team create --hosted/);assert.match(r.stderr,/not available in aw 1\.36\.23/);assert.doesNotMatch(r.stderr,/not yet released/);assert.ok(!f.fake.readCalls().some(c=>c.args.includes('create')));
 });
 function joinFixture(t,{settings,change=''}={}) {
- const f=fixture(t),current=join(f.base,'current-root');mkdirSync(join(current,'.aw'),{recursive:true});writeFileSync(join(current,'.aw','teams.json'),JSON.stringify({memberships:[{team_id:TEAM}]}));
+ const f=fixture(t),current=join(f.base,'current-root');mkdirSync(join(current,'.aw'),{recursive:true});writeFileSync(join(current,'.aw','teams.json'),JSON.stringify({memberships:[{team_id:TEAM,alias:"host",identity_scope:"local"}]}));
  const q=currentRootQuery(f.base,{home:f.home,deployment:f.deployment,settings:settings?settings(f,current):{roots:{[TEAM]:current}},change});
  const run=extra=>f.run(['join','--labels','joined','--json'],{OATS_CLI_BIN:q.cli,OATS_AGENT:'spoofed',OATS_SOUL_ID:'also-spoofed',...extra});
  return {...f,current,q,run};
@@ -146,4 +148,29 @@ for (const residue of ['addition', 'partial']) test(`failed accept retains new r
  });
  assert.equal(r.status, 1);
  assert.equal(readFileSync(residue === 'addition' ? join(target, 'concurrent-data') : join(target, '.aw', 'identity.yaml'), 'utf8'), residue === 'addition' ? 'keep addition' : 'partial identity');
+});
+
+for (const quoting of ['double', 'single', 'plain']) test('root resume preserves scalar boundaries and neighbors: '+quoting,t=>{
+ const f=fixture(t),target=join(f.deployment,'.aweb-roots','joined'),file=join(f.deployment,'oats-local.yaml');
+ const first=f.run(['setup','--join','joined','--invite','FIXTURE','--name','host','--service','https://service.invalid']);
+ assert.equal(first.status,0,first.stderr);
+ const key=quoting==='double'?JSON.stringify(TEAM):quoting==='single'?"'"+TEAM+"'":TEAM;
+ const scalar=quoting==='double'?'"wrapped/\\\n        path"':quoting==='single'?"'wrapped\n        path'":'/previous/path';
+ writeFileSync(file,'schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      '+key+': '+scalar+' # root comment\n      # neighbor comment\n      "other:example.invalid": "/other/root"\n    claudeChannelMode: development\n  other.provider:\n    keep: true\n');
+ const args=['setup','--join','joined','--name','host','--service','https://service.invalid'];
+ for(let n=0;n<3;n++){
+  const r=f.run(args);assert.equal(r.status,0,r.stderr);
+  const text=readFileSync(file,'utf8');
+  assert.match(text,/# root comment\n      # neighbor comment\n      "other:example.invalid": "\/other\/root"/);
+  assert.match(text,/    claudeChannelMode: development\n  other.provider:\n    keep: true/);
+  assert.ok(text.includes(JSON.stringify(target)));assert.doesNotMatch(text,/wrapped|        path/);
+ }
+ assert.equal(f.fake.readCalls().filter(c=>c.args.includes('accept-invite')).length,1);
+});
+for(const scalar of ['"unterminated\n        value','"/root"\n        nested: invalid','"/root" trailing']) test('ambiguous root scalar refuses without erasing neighbors: '+scalar,t=>{
+ const f=fixture(t),file=join(f.deployment,'oats-local.yaml');
+ const text='schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      "joined:example.invalid": '+scalar+'\n      "other:example.invalid": "/other/root"\n';
+ writeFileSync(file,text);
+ const r=f.run(['setup','--join','joined','--invite','FIXTURE','--name','host','--service','https://service.invalid']);
+ assert.equal(r.status,1);assert.match(r.stderr,/cannot safely update/);assert.equal(readFileSync(file,'utf8'),text);
 });

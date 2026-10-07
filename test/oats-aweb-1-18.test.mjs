@@ -1194,3 +1194,25 @@ for(const [name,aggregate,failed] of [
   if(!failed) assert.ok(result.warnings.some(w=>w.code==='claude-channel-mode-unproven'));
   assert.deepEqual(snapshot(home),before);
 });
+
+for (const [runtime, delivery] of [['claude', 'channel'], ['codex', 'channel'], ['claude', 'session']]) {
+  test(`LOCAL selector parity at spawn/preview/launch with joined metadata: ${runtime}/${delivery}`, t => {
+    const fx = fixture(t, { runtime, delivery });
+    const spawned = fx.spawn();
+    const expected = { AWEB_IDENTITY_HOME: join(fx.home, '.aw'), ...(runtime === 'codex' || delivery === 'session' ? { AWEB_DELIVERY: 'session' } : {}) };
+    assert.deepEqual(spawned.env, expected);
+    const before = snapshot(fx.home), calls = fx.fake.readCalls().length;
+    const preview = fx.launch(spawned.meta, runtime, { extra: { OATS_LAUNCH_PREVIEW: '1', AWEB_IDENTITY_HOME: '/foreign/identity' } });
+    assert.equal(preview.status, 0, preview.stdout + preview.stderr);
+    assert.deepEqual(preview.doc.env, expected);
+    assert.equal(preview.doc.meta, undefined);
+    assert.deepEqual(snapshot(fx.home), before);
+    assert.deepEqual(fx.fake.readCalls().slice(calls), []);
+    const launched = fx.launch(spawned.meta, runtime, { extra: { AWEB_IDENTITY_HOME: '/foreign/identity' } });
+    assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+    assert.deepEqual(launched.doc.env, expected);
+    assert.deepEqual(launched.doc.meta.identity, spawned.meta.identity);
+    assert.deepEqual(launched.doc.meta.joinedTeams, []);
+    assert.equal(launched.doc.meta.wakeJoined, false);
+  });
+}

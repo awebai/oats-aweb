@@ -1,9 +1,9 @@
+import { verifyPinnedAw } from './helpers/pinned-aw.mjs';
 // Read-only flag/help contract, not a mint, authority or expiry acceptance test.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { durationNanoseconds } from '../oats-package/capabilities/oats-aweb/lib/grant-duration.mjs';
@@ -20,10 +20,7 @@ test('pinned real aw duration flag grammar and stated grant limits (help only)',
     AW_NO_UPDATE_CHECK: '1', PATH: '/usr/bin:/bin', TMPDIR: home };
   const run = args => spawnSync(binary, args, { cwd: home, env, encoding: 'utf8', timeout: 10000 });
   const version = run(['version']);
-  assert.equal(version.status, 0);
-  assert.match(version.stdout, /^aw 1\.36\.23\n/);
-  assert.match(version.stdout, /commit: 61c38162596d1af9085741d70d15900ff9894257/);
-  t.diagnostic(JSON.stringify({ binary, sha256: createHash('sha256').update(readFileSync(binary)).digest('hex'), version: version.stdout.trim() }));
+  t.diagnostic(JSON.stringify(verifyPinnedAw(binary, version)));
   const cases = ['720h', '+720h', '720.h', '719h60m', '2592000000000µs', '2592000000000μs',
     '720h0.1ns', '720h1ns', '2592000.000000001s', '0.000000000000000000001h', '-60s',
     '-9223372036854775808ns', '9223372036854775808ns', '1h-1s', '1e3s', '30d', '.s', '60', ''];
