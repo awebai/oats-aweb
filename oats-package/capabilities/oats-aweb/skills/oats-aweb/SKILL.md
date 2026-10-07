@@ -356,6 +356,10 @@ Next: use `/oats-teams` to correct the declaration.
 
 ### First LOCAL root and controller-owned team
 
+For unreleased #70 automatic username mapping/default, plan and partial recovery,
+read [Username setup and deployment default](references/username-setup.md).
+The released first-account behavior below prints mapping advice instead.
+
 | Act / prerequisites | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
 | First hosted account, #66 fix required in selected provider; selected account name, explicit root alias and empty LOCAL root | `oats aweb setup --soul S --username <selected-user> --name <root-alias>` | Runs `aw init --new-account --username <selected-user> --name <root-alias>`; root identity/workspace and hosted account/team. Success: returned canonical membership matches selected account. Next: `/oats-teams` records mapping/default. | `--username requires --name <alias>; invalid alias: ...` → supply an explicit 1–64 character alias (letter/digit first, then letters/digits/`-`/`_`); no soul-derived default. Older provider versions cannot pass this pair; require the fix before effects. `choose exactly one onboarding authority (...)` → remove unrelated credential input from the protected child environment and use the authorized branch. |

@@ -14,6 +14,16 @@ also isolate native HOME and clean temporary state, including plans. Paired labe
 loopback/public dispatch regressions accompany the source change; no live
 issuance, timed journey or release qualification is claimed.
 
+Added (#70): hosted username setup selects a normalized default team label or
+explicit `--label`, verifies exactly one matching LOCAL membership and alias,
+then applies mapping/default through the selected public kernel and reads back
+the result. Exact mappings and retained roots resume without another signup;
+conflicts never overwrite shared declarations. `--plan` has no bootstrap,
+installation or configuration effects. Closed policy refuses before bootstrap;
+other failures remain typed errors. Partial writes preserve the root and report
+observed configuration, including a default implicitly set by `teams add`.
+This source change does not establish installed support or timed onboarding.
+
 ## 1.22.2 — 2026-10-07
 
 Fixed (#66): hosted-account setup requires explicit `--name <alias>` with

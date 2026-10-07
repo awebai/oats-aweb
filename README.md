@@ -398,10 +398,14 @@ From a deployment directory (outside an instance home), dispatch setup through a
 soul that uses the messaging provider, for example `oats aweb setup --soul <any soul with messaging>`; the provider consumes the kernel-forwarded `--soul` flag and does not use it as team policy.
 Supported acts:
 
-- `oats aweb setup --username <u> --name <alias>`: for a missing hosted root, runs
-  `aw init --new-account --username <u> --name <alias>` and reports the created default team. The root alias is required explicitly;
-  missing/invalid names refuse before bootstrap writes. Older provider versions
-  omit the native required name; this correction must be released/composed first.
+- `oats aweb setup --username <u> --name <alias> [--label L] [--plan] [--json]`:
+  unreleased #70 automatically records the LOCAL team mapping and deployment
+  default through the selected kernel after verifying the root membership.
+  Missing/invalid names refuse before effects; the explicit native name fix is
+  present in the 1.22.2 composition. Earlier behavior only printed mapping advice.
+  Use the [username setup procedure](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/username-setup.md)
+  for plan, policy, matching-root resume and partial-write recovery. This is not
+  an installation or timed onboarding claim.
 - `oats aweb setup` with the selected team API key supplied only through the
   operator's protected child environment (`AWEB_API_KEY`): runs plain `aw init`
   for that hosted team. `--service` stays join-only; `--name` is supported for
@@ -570,3 +574,24 @@ authority or usable tokens. Native JSON decoding/missing-token failures exit
 nonzero and remain `E_INVITE_NATIVE`; malformed exit-zero output is tested with
 a substitute. The public-kernel fixture also dispatches invite planning through
 the selected messaging soul. These checks do not prove a timed operator journey.
+
+### Username mapping/default verification
+
+The unreleased #70 flow lives in `lib/setup-team-default.mjs`: it uses the selected
+`OATS_CLI_BIN` with explicit deployment and sanitized kernel selectors for public
+`teams --json`, `teams add` and `teams default`. It accepts `teamsApi: 2`, including
+standalone `localTeams: null`; only explicit false/`local-teams-closed` is a policy
+refusal. This act needs those public query/mutation/readback features and selected
+deployment dispatch. The pinned OATS 0.42 source
+`bb2ba8c9a254edb745913b9c5a9d9b833fda932d` is exercised evidence, not proof of an
+earliest compatible release. The general package floor remains unchanged.
+
+`test/setup-default.test.mjs` covers preflight, retained membership and injected
+partial failures. The stateful public-CLI substitute is in
+`test/helpers/fake-kernel-team-config.mjs`; the public-kernel fixture separately
+executes real team mutations only in disposable deployments. The pinned username
+native test also reads a generated retained certificate through actual aw and
+resumes mapping without signup. Its deliberately refused loopback signup still
+does not prove successful hosted account creation. Neither fixture is a timed
+M3 operator journey. Run the existing full suite with the explicit public/native
+test variables above; no service install or customer operation is part of testing.
