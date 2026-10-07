@@ -25,7 +25,7 @@ test('pinned public operator dispatch supplies deployment independently of neste
  git('init','-q');git('add','.');git('commit','-qm','isolated fixture');
  writeFileSync(join(dep,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    root: ${root}\n`);
  writeFileSync(join(root,'.aw','teams.json'),'{"memberships":[{"team_id":"default:example.invalid"}]}');
- const run=(args,extra={})=>spawnSync(process.execPath,[join(kernel,'bin/oats.mjs'),...args],{cwd:dep,env:{...env,...extra},encoding:'utf8',timeout:30000});
+ const run=(args,extra={},cwd=dep)=>spawnSync(process.execPath,[join(kernel,'bin/oats.mjs'),...args],{cwd,env:{...env,...extra},encoding:'utf8',timeout:30000});
  let r=run(['aweb','setup','--soul','probe','--join','joined','--invite','FIXTURE-TOKEN','--name','host','--service','https://service.invalid']);
  assert.equal(r.status,0,r.stdout+r.stderr);assert.ok(existsSync(join(dep,'.aweb-roots','joined','.aw','workspace.yaml')));assert.ok(!existsSync(join(root,'.aweb-roots')));
  assert.match(readFileSync(join(dep,'oats-local.yaml'),'utf8'),/"joined:example.invalid"/);
@@ -46,12 +46,12 @@ test('pinned public operator dispatch supplies deployment independently of neste
  const fresh=join(base,'fresh-deployment'),freshRoot=join(fresh,'root');mkdirSync(fresh);
  writeFileSync(join(fresh,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    root: ${freshRoot}\n`);
  const setupArgs=['aweb','setup','--soul','probe','--dir',fresh,'--username','alice','--name','root-1','--json'];
- r=run([...setupArgs,'--plan']);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(JSON.parse(r.stdout).result.plan,true);assert.equal(existsSync(freshRoot),false);
- r=run(setupArgs);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(JSON.parse(r.stdout).result.team,'default:alice.aweb.ai');
+ r=run([...setupArgs,'--plan'],{},fresh);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(JSON.parse(r.stdout).result.plan,true);assert.equal(existsSync(freshRoot),false);
+ r=run(setupArgs,{},fresh);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(JSON.parse(r.stdout).result.team,'default:alice.aweb.ai');
  r=run(['teams','--dir',fresh,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);const configured=JSON.parse(r.stdout).result;
  assert.equal(configured.defaultTeam.label,'alice');assert.equal(configured.defaultTeam.team,'default:alice.aweb.ai');
  const initializations=fake.readCalls().filter(c=>c.args[0]==='init').length;
- r=run(setupArgs);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(fake.readCalls().filter(c=>c.args[0]==='init').length,initializations);
+ r=run(setupArgs,{},fresh);assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(fake.readCalls().filter(c=>c.args[0]==='init').length,initializations);
  // The actual public JSON seam, without trusting ambient OATS_AGENT.
  r=run(['inspect','--soul','probe','--dir',dep,'--json']);assert.equal(r.status,0,r.stdout+r.stderr);
  const doc=JSON.parse(r.stdout);assert.equal(doc.schemaVersion,1);assert.equal(doc.ok,true);assert.equal(doc.result.workspace.deployment,dep);assert.equal(doc.result.subject.kind,'soul');assert.notEqual(doc.result.subject.soul,'spoofed-ambient-soul');

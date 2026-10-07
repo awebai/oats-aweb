@@ -12,10 +12,11 @@ function fixture(t, state={}) {
  const dir=realpathSync(mkdtempSync(join(tmpdir(),'setup-default-')));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const dep=join(dir,'deployment'),root=join(dir,'root');mkdirSync(dep);writeFileSync(join(dep,'oats-local.yaml'),'schemaVersion: 2\nworkspace: fixture\n');
  const kernel=fakeKernelTeamConfig(join(dir,'kernel'),dep,state),aw=fakeAwSetupPath(t);
+ const installs=join(dir,'installs');writeFileSync(join(aw.path.split(':')[0],'npm'),`#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(installs)},'attempt\\n');process.exit(98);`,{mode:0o755});
  const env={...process.env,PATH:aw.path,OATS_EVENT:'setup',OATS_TEAM_SCOPE:dep,OATS_WORKSPACE:dep,OATS_WORKSPACE_NAME:'fixture',OATS_SETTINGS:JSON.stringify({root}),OATS_CLI_BIN:kernel.cli,AWEB_API_KEY:'',OATS_AGENT:'poison',OATS_HOME:'/foreign/home',AWEB_IDENTITY_HOME:'/foreign/identity'};
  const run=(args=[],extra={})=>spawnSync(process.execPath,[hook,'setup','--username','alice','--name','root-1','--json',...args],{cwd:dep,env:{...env,...extra},encoding:'utf8'});
  const member=facts=>{mkdirSync(join(root,'.aw'),{recursive:true});writeFileSync(join(root,'.aw','teams.json'),JSON.stringify({memberships:facts}));writeFileSync(join(root,'.aw','sentinel'),'preserve');};
- return {dir,dep,root,kernel,aw,run,member};
+ return {dir,dep,root,kernel,aw,run,member,installs};
 }
 const row={team_id:'default:alice.aweb.ai',alias:'root-1',identity_scope:'local'};
 const answer=r=>{assert.equal(r.status,0,r.stdout+r.stderr);return JSON.parse(r.stdout).result;};
@@ -59,4 +60,38 @@ test('malformed/unsupported/query failures are configuration errors, not closed 
 });
 test('explicit label overrides normalized username without rewriting native account input',t=>{
  const f=fixture(t),r=answer(f.run(['--label','chosen.label']));assert.equal(r.label,'chosen.label');assert.deepEqual(f.aw.readCalls().find(c=>c.args[0]==='init').args,['init','--new-account','--username','alice','--name','root-1']);
+});
+test('malformed settings, invalid explicit root and conflicting deployment refuse without effects',t=>{
+ for(const settings of ['null','not-json','[]',JSON.stringify({roots:[]}),JSON.stringify({root:'relative'}),JSON.stringify({identity:{mode:'global'}})]) {
+  const f=fixture(t),r=f.run(['--install-aw'],{OATS_SETTINGS:settings});assert.equal(r.status,1);assert.match(JSON.parse(r.stdout).error.code,/^E_SETUP_/);assert.equal(existsSync(f.root),false);assert.deepEqual(f.aw.readCalls(),[]);
+ }
+ const f=fixture(t);assert.equal(JSON.parse(f.run(['--dir',f.dir]).stdout).error.code,'E_SETUP_DEPLOYMENT');assert.deepEqual(f.aw.readCalls(),[]);
+});
+test('invalid account or label options refuse before native/bootstrap effects',t=>{
+ const f=fixture(t);for(const args of [['--label','Bad Label'],['--username= bad'],['--username=--bad']]) {
+  const r=f.run(args);assert.equal(r.status,1);assert.equal(JSON.parse(r.stdout).error.code,'E_SETUP_ARGUMENT');
+ }
+ assert.deepEqual(f.aw.readCalls(),[]);assert.equal(existsSync(f.root),false);
+});
+test('unrelated warnings permit setup while selected-label warning is a typed configuration refusal',t=>{
+ const f=fixture(t,{problems:[{code:'team-soul-unknown',severity:'warning',key:'unknown',at:'fixture'}]});answer(f.run());
+ const g=fixture(t,{teams:[{label:'alice',team:row.team_id,from:'shared'}],problems:[{code:'team-label-collision',severity:'warning',label:'alice'}]});
+ assert.equal(JSON.parse(g.run().stdout).error.code,'E_SETUP_CONFIGURATION');assert.deepEqual(g.aw.readCalls(),[]);assert.equal(existsSync(g.root),false);
+});
+test('plan verifies an existing root and changes neither membership nor kernel configuration',t=>{
+ const f=fixture(t);f.member([row]);const before=readFileSync(join(f.root,'.aw','teams.json'),'utf8'),state=f.kernel.read();
+ const r=answer(f.run(['--plan']));assert.equal(r.bootstrap,'reuse');assert.equal(r.team,row.team_id);
+ assert.equal(readFileSync(join(f.root,'.aw','teams.json'),'utf8'),before);assert.deepEqual(f.kernel.read(),state);assert.equal(f.aw.readCalls().some(c=>c.args[0]==='init'),false);
+});
+
+test('closed and conflicting policy cannot trigger even explicitly requested missing-floor installation',t=>{
+ for(const state of [{localTeams:false},{teams:[{label:'alice',team:'other:example.invalid'}]}]) {
+  const f=fixture(t,state),r=f.run(['--install-aw'],{AW_FAKE_VERSION:'0.0.1'});
+  assert.match(JSON.parse(r.stdout).error.code,/E_SETUP_(POLICY|TEAM_CONFLICT)/);assert.equal(existsSync(f.installs),false);assert.equal(existsSync(f.root),false);
+ }
+});
+test('post-signup membership mismatch preserves root and retry never signs up again',t=>{
+ const f=fixture(t),extra={AW_LIST_TEAMS:JSON.stringify({memberships:[{...row,alias:'unexpected'}]})};
+ for(let i=0;i<2;i++){const r=f.run([],extra);assert.equal(JSON.parse(r.stdout).error.code,'E_SETUP_MEMBERSHIP');}
+ assert.ok(existsSync(join(f.root,'.aw')));assert.equal(f.aw.readCalls().filter(c=>c.args[0]==='init').length,1);assert.equal(f.kernel.calls().some(c=>['add','default'].includes(c.args[1])),false);
 });

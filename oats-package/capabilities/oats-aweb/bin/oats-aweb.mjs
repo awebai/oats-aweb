@@ -248,6 +248,8 @@ const isClassicEnvironment = () => !!process.env.OATS_TEAM_SCOPE && !hasWorkspac
 // channel uses it by default. See deliveryFor.
 let settings = {};
 try { settings = JSON.parse(process.env.OATS_SETTINGS || "{}"); } catch { settings = {}; }
+// Username setup validates the raw settings document in its typed preflight.
+if (settings === null && event === 'setup' && process.argv.slice(3).some(arg => arg === '--username' || arg.startsWith('--username='))) settings = {};
 const TEAM_SETTING_MESSAGE = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
 const hasStaleTeamSetting = settings && typeof settings === "object" && !Array.isArray(settings) && Object.hasOwn(settings, "team");
 if (hasStaleTeamSetting && ["spawn", "launch", "setup", "connect", "teams", "join", "leave", "roster"].includes(event)) fatal(TEAM_SETTING_MESSAGE);
@@ -1971,7 +1973,7 @@ if (event === "launch") {
   if (username) {
     const json = process.argv.includes('--json');
     try {
-      const result = await setupUsernameDefault({ username, name: joinName, label: setupLabel, plan: setupPlan, dir: setupDir, installAw, awVersion }, { normalize: normalizeAwebTeamName, ensureAw, run });
+      const result = await setupUsernameDefault({ username, name: joinName, label: setupLabel, plan: setupPlan, dir: setupDir, installAw, awVersion }, { normalize: normalizeAwebTeamName, validTeam: validAwebTeamId, ensureAw, run });
       if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result }));
       else if (result.plan) {
         console.log(`Plan: label ${result.label}, predicted team ${result.predictedTeam}, root ${result.root}; bootstrap ${result.bootstrap}. No effects.`);
@@ -2017,7 +2019,6 @@ if (event === "launch") {
   }
 
   const want = teamId || teamName;
-  const defaultTeamForUsername = username ? `default:${username}.aweb.ai` : undefined;
   const readTeams = () => readTeamsAt(scope);
   const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => String(tid) === want || String(tid).startsWith(`${want}:`)) : undefined;
   const rootAlias = () => {
@@ -2176,11 +2177,9 @@ if (event === "launch") {
       console.log(`  no team: ${teamConfigRemedy()}`);
       const active = teams.active_team || teamIdsOf(teams)[0];
       if (active) adviseRecordDefault(`This root is a member of ${active}`, active);
-      else if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; map the workspace team to that id if this is the intended team.`);
       return;
     }
     console.log(`  Workspace initialized, but no membership matching "${want}".`);
-    if (defaultTeamForUsername) adviseRecordDefault(`New hosted users create ${defaultTeamForUsername}`, defaultTeamForUsername, ", then re-run setup");
     console.log(`  Existing team path: ask a member for an appropriate invite token, then run \`${setupInviteCommand(defaultTeamLabel())}\` (accepts into the selected per-team root; supply the token on stdin, never in logs or messages).`);
     console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
     console.log("  New hosted-account path: run `oats aweb setup --username <u> --name <alias>` (uses `aw init --new-account --username <u> --name <alias>` and creates default:<u>.aweb.ai).");
@@ -2241,10 +2240,7 @@ if (event === "launch") {
     if (hasRoot && !matchingTeam(teams) && !actions.length) { printVerdict(teams); process.exit(0); }
     if (!hasRoot || !matchingTeam(teams)) {
       if (actions.length) mkdirSync(scope, { recursive: true });
-      if (username) {
-        console.log(`Running aw init --new-account --username <u> --name <alias> at ${scope} (username withheld from repeated logs).`);
-        run(["aw", "init", "--new-account", "--username", username, "--name", joinName], scope, 120000, { secretSafe: true, secrets: [username], unsetEnv: ["AWEB_API_KEY"] });
-      } else if (apiKey) {
+      if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
         run(["aw", "init"], scope, 120000, { secretSafe: true });
       }

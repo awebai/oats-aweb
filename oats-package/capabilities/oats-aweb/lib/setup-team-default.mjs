@@ -32,7 +32,8 @@ export function selectedTeamKernel(deployment, env = process.env) {
       if (envelope?.schemaVersion === 1 && envelope.ok === false && envelope.error?.code === 'E_WORKSPACE_SCHEMA' && envelope.error?.details?.reason === 'local-teams-closed') {
         throw setupFailure('E_SETUP_POLICY', 'local-teams-closed: selected workspace forbids local team writes');
       }
-      throw setupFailure('E_SETUP_KERNEL', 'selected kernel command failed; output withheld');
+      const safeCode = ['E_TEAM_EXISTS', 'E_TEAM_UNKNOWN', 'E_WORKSPACE_SCHEMA', 'E_LOCAL_CHANGED', 'E_BAD_ARGS'].includes(envelope?.error?.code) ? ` (${envelope.error.code})` : '';
+      throw setupFailure('E_SETUP_KERNEL', `selected kernel command failed${safeCode}; output withheld`);
     }
     if (!object(envelope.result)) throw setupFailure('E_SETUP_KERNEL', 'selected kernel returned an invalid result');
     return envelope.result;
@@ -43,6 +44,12 @@ export function selectedTeamKernel(deployment, env = process.env) {
     try { sameDeployment = realpathSync(doc.deployment) === realpathSync(deployment); } catch { /* invalid locator */ }
     if (doc.teamsApi !== 2 || !sameDeployment || ![true, false, null].includes(doc.localTeams) || !Array.isArray(doc.teams) || !Array.isArray(doc.problems) || !(doc.defaultTeam === null || object(doc.defaultTeam))) {
       throw setupFailure('E_SETUP_QUERY', 'selected kernel teams schema or deployment is invalid');
+    }
+    for (const problem of doc.problems) {
+      if (!object(problem) || typeof problem.code !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(problem.code) || !['warning', 'failure'].includes(problem.severity)
+        || (Object.hasOwn(problem, 'label') && (typeof problem.label !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(problem.label)))) {
+        throw setupFailure('E_SETUP_QUERY', 'selected kernel returned malformed team problems');
+      }
     }
     const labels = new Set();
     for (const row of doc.teams) {
@@ -71,9 +78,9 @@ export function teamConfigurationPlan(doc, label, team, deployment) {
   if (existing && existing.team !== team) {
     throw setupFailure('E_SETUP_TEAM_CONFLICT', 'selected label is already declared for a different or unmapped team; choose another --label or have its owner reconcile the declaration; no overwrite', { commands });
   }
-  // An unconfigured default is exactly what this act repairs. Unknown/malformed
-  // problems remain failures, never silently reclassified as closed policy.
-  if (doc.problems.some(p => !object(p) || !['E_TEAM_UNCONFIGURED', 'team-unmapped'].includes(p.code))) {
+  // An unconfigured/unmapped default is what this act repairs. Unrelated
+  // warnings are advisory; other failures are not reclassified as closed policy.
+  if (doc.problems.some(p => p.label === label || (p.severity === 'failure' && !['E_TEAM_UNCONFIGURED', 'team-unmapped'].includes(p.code)))) {
     throw setupFailure('E_SETUP_CONFIGURATION', 'selected kernel reports unresolved team configuration problems; nothing was bootstrapped', { commands });
   }
   const mapped = !!existing;
@@ -83,14 +90,14 @@ export function teamConfigurationPlan(doc, label, team, deployment) {
     note: 'teams add may also set the local default; readback determines whether the default command is still required' };
 }
 
-export async function setupUsernameDefault(options, { normalize, ensureAw, run, env = process.env }) {
+export async function setupUsernameDefault(options, { normalize, validTeam, ensureAw, run, env = process.env }) {
   const { username, name, label: explicitLabel, plan = false, dir, installAw, awVersion } = options;
   const steps = [];
-  let root, label, predictedTeam, kernel, observed;
+  let root, label, predictedTeam, deployment, kernel, observed;
   const observe = () => {
     observed = undefined;
     const doc = kernel.read();
-    observed = { mappedTeam: doc.teams.find(row => row.label === label)?.team ?? null, defaultTeam: doc.defaultTeam };
+    observed = { mappedTeam: doc.teams.find(row => row.label === label)?.team ?? null, defaultTeam: doc.defaultTeam === null ? null : { label: doc.defaultTeam.label, team: doc.defaultTeam.team } };
     return doc;
   };
   try {
@@ -104,7 +111,6 @@ export async function setupUsernameDefault(options, { normalize, ensureAw, run, 
     // Only the label is normalized. The requested account identity is unchanged;
     // native onboarding remains responsible for username availability/format.
     predictedTeam = `default:${username}.aweb.ai`;
-    let deployment;
     try { deployment = selectedDeployment(env, dir); } catch {
       throw setupFailure('E_SETUP_DEPLOYMENT', 'selected deployment is missing, unreadable or inconsistent');
     }
@@ -112,7 +118,7 @@ export async function setupUsernameDefault(options, { normalize, ensureAw, run, 
     try { settings = JSON.parse(env.OATS_SETTINGS || '{}'); } catch {
       throw setupFailure('E_SETUP_ROOT', 'selected provider settings are malformed');
     }
-    if (!object(settings) || (Object.hasOwn(settings, 'roots') && !object(settings.roots))) throw setupFailure('E_SETUP_ROOT', 'selected provider root settings are invalid');
+    if (!object(settings) || (Object.hasOwn(settings, 'identity') && !object(settings.identity)) || (Object.hasOwn(settings, 'roots') && !object(settings.roots))) throw setupFailure('E_SETUP_ROOT', 'selected provider root settings are invalid');
     if (settings.identity?.mode && settings.identity.mode !== 'local') throw setupFailure('E_SETUP_ARGUMENT', 'username account setup requires LOCAL identity mode');
     const raw = object(settings.roots) && Object.hasOwn(settings.roots, predictedTeam) ? settings.roots[predictedTeam] : Object.hasOwn(settings, 'root') ? settings.root : deployment;
     if (typeof raw !== 'string' || !isAbsolute(raw)) throw setupFailure('E_SETUP_ROOT', 'selected account root must be absolute; invalid explicit root cannot fall back');
@@ -125,13 +131,16 @@ export async function setupUsernameDefault(options, { normalize, ensureAw, run, 
     const usableAw = aw.status === 'ok' || aw.status === 'done';
     const hasIdentity = existsSync(join(root, '.aw'));
     const readMembership = () => {
+      try { if (!statSync(join(root, '.aw')).isDirectory()) throw new Error(); } catch {
+        throw setupFailure('E_SETUP_MEMBERSHIP', 'selected root has no readable identity directory; root retained, no repeated signup');
+      }
       let doc;
       try { doc = JSON.parse(run(['aw', 'team', 'list', '--json'], root, 45000, { secretSafe: true, unsetEnv: ['AWEB_API_KEY', 'AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'] })); } catch {
         throw setupFailure('E_SETUP_MEMBERSHIP', 'selected root membership is unavailable or malformed; root retained, no repeated signup');
       }
       if (!Array.isArray(doc?.memberships) || doc.memberships.length !== 1) throw setupFailure('E_SETUP_MEMBERSHIP', 'expected exactly one LOCAL root membership; root retained, no repeated signup');
       const member = doc.memberships[0];
-      if (!object(member) || member.team_id !== predictedTeam || member.alias !== name || member.identity_scope !== 'local') {
+      if (!object(member) || member.team_id !== predictedTeam || !validTeam(member.team_id) || member.alias !== name || member.identity_scope !== 'local') {
         throw setupFailure('E_SETUP_MEMBERSHIP', 'root account, alias or LOCAL scope does not match requested inputs; root retained, no repeated signup');
       }
       return member.team_id;
@@ -142,8 +151,7 @@ export async function setupUsernameDefault(options, { normalize, ensureAw, run, 
       return { plan: true, label, predictedTeam, team, root, aw, bootstrap: hasIdentity ? 'reuse' : 'required', configuration };
     }
     if (!usableAw) throw setupFailure('E_SETUP_AW', 'aw is missing, below the required floor, or installation failed; check the explicit --install-aw prerequisite');
-    if (hasIdentity) steps.push({ step: 'bootstrap', status: 'reused' });
-    else {
+    if (!hasIdentity) {
       mkdirSync(root, { recursive: true });
       try {
         run(['aw', 'init', '--new-account', '--username', username, '--name', name], root, 120000, {
@@ -153,9 +161,10 @@ export async function setupUsernameDefault(options, { normalize, ensureAw, run, 
         steps.push({ step: 'bootstrap', status: 'unconfirmed' });
         throw setupFailure('E_SETUP_NATIVE', `aw init failed${Number.isInteger(error.status) ? ` (exit ${error.status})` : ''}; output withheld because it handles credentials; root retained`);
       }
-      steps.push({ step: 'bootstrap', status: 'completed' });
+      steps.push({ step: 'bootstrap', status: 'command-completed' });
     }
     const team = readMembership();
+    if (hasIdentity) steps.push({ step: 'bootstrap', status: 'reused' });
     // Policy/mapping can change during native onboarding. Recheck before writes.
     let current = observe();
     const currentPlan = teamConfigurationPlan(current, label, team, deployment);
@@ -182,6 +191,9 @@ export async function setupUsernameDefault(options, { normalize, ensureAw, run, 
     return { plan: false, label, team, root, steps, observed, membershipVerified: true };
   } catch (error) {
     if (!error.code?.startsWith('E_SETUP_')) error = setupFailure('E_SETUP_FAILED', 'username setup failed; details withheld');
+    if (error.code === 'E_SETUP_POLICY' && !error.details.commands && label && predictedTeam && deployment) {
+      error.details.commands = [['oats', 'teams', 'add', label, '--team', predictedTeam, '--dir', deployment], ['oats', 'teams', 'default', label, '--dir', deployment]];
+    }
     error.details = { ...error.details, ...(root ? { root } : {}), ...(label ? { label } : {}), steps, ...(observed ? { observed } : {}) };
     throw error;
   }
