@@ -1,9 +1,10 @@
 # A GLOBAL resident in an existing hosted team
 
-This is a procedure for an authorized operator preparing an OATS worker that
-acts as a resident identity. It grants no authority to execute the templates.
-Select and review each effect under the deployment's own operation process;
-ordinary worker messaging authority is insufficient for provisioning or custody.
+Use this card after `/oats-onboarding` selects fresh versus retained GLOBAL,
+authorized owner, R, resident name, team credential authority, service/registry,
+scopes/TTL and receive policy. That intake authorizes routine selected steps;
+do not ask again for each command. Missing required facts are named blockers.
+Worker messaging authority alone does not authorize provisioning or custody.
 
 The native [hosted GLOBAL bootstrap contract](https://github.com/awebai/aweb/blob/4e477ad74dabf5a944898e9d6f3f6d169c7f5ff6/docs/hosted-global-bootstrap.md)
 owns CLI authority, init, outputs, diagnostics and recovery. It is published at
@@ -12,6 +13,23 @@ does not establish a package release or installation: its HTTP diagnostics and
 representative recovery/capture fixtures are not aw 1.36.23 behavior or coverage.
 The checkpoints below use the pinned sources listed at the end; they are OATS
 integration requirements, not a second native contract.
+
+## Card and supported versions
+
+| Stage | Context, command and writes | Success / one next step | Error or unavailable evidence → remedy |
+|---|---|---|---|
+| Fresh bootstrap | Selected aw 1.36.24; init syntax also present in the pinned 1.36.23 contract below. Owner-selected empty R and protected team credential. `aw init --global --name <resident> --aweb-url <selected-service> --awid-registry <selected-registry> --do-not-touch-agents-md --json` in R. Writes GLOBAL identity, AWID/hosted state and workspace. | Validate connected/global/canonical team and identity fields below. Next: resident diagnostics. | Nonzero or malformed success → retain private streams/exit and reconcile same context; no automatic retry/remint. |
+| Reuse | Existing retained R, same authority; skip init. aw 1.36.24: `aw --identity-home R/.aw doctor identity --offline --json`, then `aw --identity-home R/.aw doctor registry --online --json`. Read-only. | Required identity/registry checks pass; skipped/missing is not success. Next: custody checkpoint. | External `doctor local` is not allowlisted in 1.36.24: `command "aw doctor local" is not yet identity-home-aware; refusing to use an external identity home ...` → native owner supplies missing required local-category evidence; these two categories do not cover it silently. |
+| Custody | Owner-selected host/user and retained R; aw 1.36.24 `aw --identity-home R/.aw custody serve`, then `aw --identity-home R/.aw custody status --json` in another owner terminal. Serve is a long-running signing service; status is read-only. | Required socket/team/signing/E2E checks below pass. Next: host configuration of `residents.<resident> = R`. | `custody preflight failed for <resident>: status=<state>; custody service is not running; start aw custody serve for <resident>` or required check absent/false → owner repairs the selected service; no worker daemon startup or identity replacement. |
+| Grant seat | Released provider 1.21.1 consumes configured resident; approved scopes/TTL and kernel preview/apply via `/oats-onboarding`, not a manual native grant mint. Writes scoped worker grant and captured locators. | Successful scaffold, intended grant/home/team/scopes and custody attachment. Next: start and receive verification in `/oats-aweb` §4. | `grant_expired`, `grant_revoked`, `grant_subject_inactive`, `grant_issuer_revoked`, `grant_freshness_unavailable` → stop worker messaging; owner uses the already-authorized supported lifecycle, not in-seat repair. |
+
+Fresh bootstrap proceeds to the same diagnostic commands as reuse. The native
+external-home allowlist correction is version-qualified to aw 1.36.24 source
+`32fe2d795780a8ba90260c631d84f5d5c6fc0190`; a global help flag is not admission proof.
+Provider #58's planned registration wrapper is unavailable here; until service
+manager integration its contract is one onboarding command plus one printed host
+step, not daemon autostart. No command for that future wrapper is invented.
+LOCAL minting-root or `spawn-authority` diagnostics are never a GLOBAL launch gate.
 
 ## Choose the journey and fix the context
 
@@ -61,13 +79,9 @@ protected wrapper. The native contract owns the detailed diagnostic controls.
 
 ## Fresh creation, then validation
 
-For a reviewed **fresh** resident parent, the supported existing-team template is:
-
-```text
-aw init --global --name <resident> --aweb-url <selected-service> --awid-registry <selected-registry> --do-not-touch-agents-md --json
-```
-
-Run the selected `aw` executable with cwd equal to the intended resident parent.
+For the selected **fresh** resident parent, use the fresh-bootstrap command in
+the card above. Run the selected `aw` executable with cwd equal to the intended
+resident parent.
 The authorized operator supplies the selected team key as `AWEB_API_KEY` only in
 the protected isolated child environment. No literal key assignment belongs in
 this template. No canonical team/address, `--byod`, new account, namespace query
@@ -97,20 +111,23 @@ Validate the retained result against the selected authority before progressing:
 
 Read templates below are for the **resident root**, under its authorized owner,
 with the provisioning key absent and the selected registry/service context
-verified. Online reads need their own permitted diagnostic scope:
+verified. Online reads use the intake-selected diagnostic scope:
 
 ```text
-aw --identity-home <resident-parent>/.aw doctor local --offline --json
 aw --identity-home <resident-parent>/.aw doctor identity --offline --json
 aw --identity-home <resident-parent>/.aw doctor registry --online --json
 ```
 
+For aw 1.36.24, external `doctor local` is unsupported; if its evidence is
+required, report that missing native-owner prerequisite. Never clear the selected
+identity home or switch to an ambient identity to bypass the guard.
 `identity` is the local identity category; `registry` is the actual category for
 online AWID checks. Do not invent `doctor awid`. Relevant checks include
 `identity.local.signing_key_matches_did`, `identity.local.stable_id_expected`,
 `awid.did.current_key_matches_local`, `awid.address.matches_local_stable_id` and
-`awid.address.delivery_origin`. A diagnostic failure does not authorize its
-suggested repair, encryption-key setup, reset or replacement.
+`awid.address.delivery_origin`. A diagnostic failure names the required owner
+repair; it does not turn an unselected reset or replacement into an authorized
+routine step.
 
 ## Separate provider configuration and resident custody
 
@@ -183,7 +200,7 @@ must not be relabelled as a running worker. Inspect its actual captured receipt
 and warnings; do not use generic retries to manufacture acceptance. Kernel spawn
 idempotency does not confer exactly-once semantics on native identity creation.
 
-After a separately authorized operation, validate these distinct outcomes:
+After the selected authorized operation, validate these distinct outcomes:
 
 1. Captured module commit, settings/origins, resident identity and final grant
    locator/scopes/expiry/attachment match the reviewed plan.
@@ -215,8 +232,9 @@ backup; no backup/copy/restore/remint workaround is prescribed.
 
 Preserve evidence and material that actually remain. Do not retry, remint, revoke,
 reset, delete, clean up or start elsewhere from status alone. A same-context
-continuation is an individually reviewed operation with current predecessor
-facts and explicit authority, not a loop. A source/config rollback cannot restore
+continuation needs current predecessor facts and an authorized native recovery
+procedure. An uncertain outcome is a named reconciliation blocker, not a loop
+or a requirement to repeat the original intake. A source/config rollback cannot restore
 a deleted key or undo unknown remote effects. Any preservation-contract change
 belongs to the existing identity author/reviewer before implementation.
 

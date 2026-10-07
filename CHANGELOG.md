@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+Documentation: retain released remote deployment connect and explicit aw
+installation procedures, including step/readback, failure and token-exposure
+boundaries, in the provider act cards.
+
+Documentation: add version-qualified provider act cards for LOCAL root setup,
+controller/hosted team creation, labelled join and tokenless resume, invitations,
+GLOBAL resident/custody/grant boundaries and receive verification. Preserve provider 1.22.0
+Claude development default and explicit-approved distinctions. Current development
+confirmation requires an authorized operator/human; automation is pending kernel
+#708, release and qualification. Remove unreleased consent-setting guidance. Native aw 1.36.24
+hosted creation is distinct from the unsupported provider wrapper; secret-bearing
+JSON requires private capture. External-home invite/removal and doctor-local
+forms remain unavailable, while supported acceptance/diagnostic categories are
+named. Dashboard team and organization invitations remain distinct from agent
+membership. Onboarding owns intake/completion and teams owns policy; one intake
+covers routine steps. Setup-root fixes and the development default are qualified against released
+1.22.0, without implying installation into older homes. No
+#56 token-only, #58 registration or #60 GLOBAL wider-team procedure is advertised
+as installed. No live rehearsal, release, install or vendored-skill edit.
+
+Documentation: automated development-channel confirmation remains pending OATS
+#708, release and qualification. Current operation requires an authorized
+operator/human to handle confirmation; provider, broker and ordinary agents never
+answer. Folder trust remains a separate authorization boundary, and mode selection
+never grants consent. Source preparation is not installed automation or unattended
+admission. Admission and native-receive warnings remain unchanged; issue #44
+remains open for kernel, release and admission work.
+
 ## 1.22.0 — 2026-10-07
 
 Documentation: superseded the unconditional never-answer development-channel
