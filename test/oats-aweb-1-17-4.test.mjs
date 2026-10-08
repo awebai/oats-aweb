@@ -144,7 +144,7 @@ function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, cl
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
 const DEV_CONFIRMATION_WARNING = `oats-aweb: channel-dev-confirmation — Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 (Channel selection and launch consent).`;
-const APPROVED_WARNING = `oats-aweb: claude-channel-enrollment-unverified — approved mode: Claude registers aweb-channel only if the host's managed policy admits it (channelsEnabled and allowedChannelPlugins); this start does not check that policy; see the oats-aweb skill, section 4 (Channel selection and launch consent).`;
+const APPROVED_WARNING = `oats-aweb: claude-channel-enrollment-unverified — approved mode: Claude registers aweb-channel only if the host's managed policy admits it (channelsEnabled and allowedChannelPlugins); this start does not check that policy, oats readiness --home reads the machine file; see the oats-aweb skill, section 4 (Channel selection and launch consent).`;
 
 test("spawn output is pinned byte for byte for the same inputs", (t) => {
   for (const [delivery, runtime] of [["session", "claude"], ["channel", "claude"], ["channel", "pi"], ["channel", "codex"]]) {
