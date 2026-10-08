@@ -480,7 +480,7 @@ grants remain requested upstream (#80), not delivered here. Existing captured
 provider modules/settings do not change automatically when this version ships.
 LOCAL identities are unchanged; there is no timer or background renewal.
 
-For a composition containing #76 (planned provider 1.23.2), install an app from
+With the provider 1.23.2 composition (#76), install an app from
 the selected LOCAL or GLOBAL resident home: installation approves it for that
 resident. Host plugin bytes (`AW_HOME/plugins` or `HOME/.aw/plugins`) alone are
 not resident approval; never install/update/remove from a grant home. Only the
