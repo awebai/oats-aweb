@@ -386,7 +386,7 @@ team, setup creates a real per-team root such as
 `settings.oats.aweb.roots[<team id>] = <root>` in `oats-local.yaml`. Minting for
 team `T` uses `roots[T]` when present, otherwise `root`.
 
-The general OATS >=0.30.0 compatibility floor applies to the remaining provider
+The general OATS >=0.42.0 compatibility floor applies to the remaining provider
 behavior; explicit wider-team LOCAL join additionally requires the selected same
 kernel to support `inspect --home` for recorded soul provenance, then
 `inspect --soul --dir --json` with live teams and current `oats.aweb` root settings,
@@ -596,7 +596,7 @@ the selected kernel to dispatch `OATS_TEAM_SCOPE` and expose public
 deployment, declarations and problems. The public fixture pins OATS 0.42 source
 `bb2ba8c9a254edb745913b9c5a9d9b833fda932d`; it does not establish the earliest
 compatible release. Unsupported/malformed query schemas refuse before minting.
-The package-wide OATS >=0.30.0 floor stays unchanged for other behavior.
+The package-wide OATS >=0.42.0 floor applies to other behavior.
 This source feature needs a
 future provider release/composition and is not installed by this documentation.
 

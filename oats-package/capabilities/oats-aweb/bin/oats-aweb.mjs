@@ -1147,6 +1147,13 @@ function serviceForJoinedTeam(root, label, accepted, ...docs) {
 function releaseReceiptStatus(doc) {
   return doc && typeof doc === "object" && doc.alias_released === true ? "released" : undefined;
 }
+// The one refusal that hands a joined membership to the team's controller: aw
+// refuses an external-home self-release on a team that is not hosted, its
+// stderr line ending "(reason: team_not_hosted)" (aw 1.36.23), or answers
+// alias_released_reason "team_not_hosted". It is read from aw's own stderr or
+// JSON field only, never from a message this hook builds (those carry paths
+// and labels): it decides whether retire may let the member key go.
+const TEAM_NOT_HOSTED_REFUSAL_RE = /\(reason: team_not_hosted\)\s*$/m;
 function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
@@ -1155,9 +1162,15 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
     receipt = parseAwJson(run(awWithIdentity(entry.identityHome, ["workspace", "delete", alias, "--json"]), cwd, 60000), "aw workspace delete");
     released = releaseReceiptStatus(receipt);
   } catch (e) {
-    throw new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
+    const error = new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
+    if (TEAM_NOT_HOSTED_REFUSAL_RE.test(String(e?.stderr ?? ""))) error.nativeReason = "team_not_hosted";
+    throw error;
   }
-  if (!released) throw new Error(`failed to leave team ${entry.label}; workspace delete did not report alias_released: true; kept ${entry.identityHome} so cleanup can be retried: ${JSON.stringify(receipt)}`);
+  if (!released) {
+    const error = new Error(`failed to leave team ${entry.label}; workspace delete did not report alias_released: true; kept ${entry.identityHome} so cleanup can be retried: ${JSON.stringify(receipt)}`);
+    if (receipt?.alias_released_reason === "team_not_hosted") error.nativeReason = "team_not_hosted";
+    throw error;
+  }
   try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
   return { released, receipt };
 }
@@ -1425,9 +1438,13 @@ function certificateIdForJoinedTeam(row) {
   }
   return { certificateId: null, certificateIdError: fromFile.error || listError || `aw id team list --json returned no membership for ${row.team}`, ...registry };
 }
+/** `error` is a structured reason string (the default identity's
+ *  alias_released_reason) or a cleanupJoinedIdentity error, whose nativeReason
+ *  alone says team_not_hosted: its message text never does. */
 function failedLeaveDisposition(row, error) {
   const text = String(error?.message || error || "");
-  const reason = /team_not_hosted/i.test(text) ? "team_not_hosted" : actionWarning(text);
+  const notHosted = typeof error === "string" ? error === "team_not_hosted" : error?.nativeReason === "team_not_hosted";
+  const reason = notHosted ? "team_not_hosted" : actionWarning(text);
   const data = { label: row.label, team: row.team, alias: row.alias || instance || null, ...certificateIdForJoinedTeam(row), at: new Date().toISOString(), reason, ...(reason === "team_not_hosted" ? { cleanup: "controller" } : {}) };
   const teamName = String(row.team || "").split(":")[0] || row.team;
   const namespace = String(row.team || "").includes(":") ? String(row.team).split(":").slice(1).join(":") : "<namespace>";
@@ -1774,7 +1791,7 @@ if (event === "launch") {
     let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
     const released = doc?.alias_released === true;
     const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
-    if (!released && /team_not_hosted/i.test(reason)) {
+    if (!released && reason === "team_not_hosted") {
       const failed = failedLeaveDisposition({ label: "default", team: meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId(), alias: meta.alias, identityHome: join(home, ".aw") }, reason);
       retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
       rememberControllerCleanup({ ...failed.data, label: "default" });

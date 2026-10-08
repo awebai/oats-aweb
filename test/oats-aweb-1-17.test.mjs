@@ -16,8 +16,8 @@ const BINDING = join(CAPABILITY, "bin", "oats-aweb-binding.mjs");
 const TEAM_SETTING_MESSAGE = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
 const AWEB_TEAM_ID_MESSAGE = "aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)";
 
-function tempDir(t) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-117-")));
+function tempDir(t, prefix = "oats-aweb-117-") {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -40,7 +40,7 @@ if (args[0] === "team" && args[1] === "invite") { emit({ token: "TOKEN__" + flag
 if (args[0] === "team" && args[1] === "join") { const team = args[2].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = args[3].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); const certDir = path.join(home(), "team-certs"); fs.mkdirSync(certDir, { recursive: true }); if (!process.env.FAKE_CERT_OMIT) { const certTeam = process.env.FAKE_CERT_OTHER_TEAM || team; fs.writeFileSync(path.join(certDir, team.replace(/:/g, "__") + ".pem"), JSON.stringify({ version: 1, certificate_id: "cert-shared-123", team_id: certTeam, alias })); } emit({ status: "accepted", team_id: team, alias, aweb_url: "https://service.example.test/api" }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "connect") { if (process.env.FAKE_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); } const team = flag("--team"), service = flag("--service"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: connected\\nteam_id: " + team + "\\naweb_url: " + service + "\\n"); emit({ status: "connected", team_id: team, aweb_url: service }); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_REFUSE_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_REFUSE_FOR)) { console.error("Error: delete workspace " + args[2] + ": 503 Service Unavailable: team controller unavailable"); process.exit(1); } if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home: team_not_hosted"); process.exit(7); } if (process.env.FAKE_DEFAULT_TEAM_NOT_HOSTED && !identityHome) { emit({ alias_released: false, alias_released_reason: "team_not_hosted" }); process.exit(0); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_REFUSE_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_REFUSE_FOR)) { console.error("Error: delete workspace " + args[2] + ": 503 Service Unavailable: team controller unavailable"); process.exit(1); } if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home for principal " + identityHome + "; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)"); process.exit(2); } if (process.env.FAKE_DEFAULT_TEAM_NOT_HOSTED && !identityHome) { emit({ alias_released: false, alias_released_reason: "team_not_hosted" }); process.exit(0); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }] }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "list") { const team = process.env.FAKE_LIST_OTHER_TEAM ? "other:example.test" : (String(identityHome || "").includes(".aweb-identity-shared") ? "shared:example.test" : "default:example.test"); emit({ memberships: [{ team_id: team, registry_origin: "https://api.awid.ai" }] }); process.exit(0); }
 if (args[0] === "wake" && ["register", "deregister"].includes(args[1])) { console.log("ok"); process.exit(0); }
@@ -52,8 +52,8 @@ console.error("unexpected aw " + args.join(" ")); process.exit(93);
   return { path: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, calls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
 }
 
-function fixture(t, { settings = {}, defaultFrom = "deployment" } = {}) {
-  const ws = tempDir(t), home = join(ws, "agents", "dev", "instances", "dev-1");
+function fixture(t, { settings = {}, defaultFrom = "deployment", prefix } = {}) {
+  const ws = tempDir(t, prefix), home = join(ws, "agents", "dev", "instances", "dev-1");
   mkdirSync(join(ws, ".aw"), { recursive: true });
   write(join(ws, ".aw", "teams.yaml"), "active_team: wrong-active:example.test\n");
   mkdirSync(home, { recursive: true });
@@ -236,6 +236,27 @@ test("a joined leave that needs its key keeps retire nonzero until a retry leave
   assert.equal(existsSync(joinedHome), false);
   assert.equal(selfDeletes(), 1);
   assert.equal(fake.calls().filter((c) => c.identityHome === joinedHome && c.args[0] === "workspace" && c.args[1] === "delete").length, 3);
+});
+
+test("only aw's own team_not_hosted refusal hands a joined leave to the controller, never a path that contains the words", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { settings: { join: "shared" }, prefix: "team_not_hosted-" });
+  assert.match(fx.home, /team_not_hosted/, "fixture premise: the words are in an ancestor of every identity home");
+  const spawned = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  const retire = (extra) => runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(spawned.meta), ...extra } });
+  // An ordinary refusal: the home and its key stay.
+  let r = retire({ FAKE_DELETE_REFUSE_FOR: "shared" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  let doc = JSON.parse(r.stdout);
+  assert.equal(doc.meta.reason, "joined-team-leave-failed");
+  assert.equal(doc.meta.pendingControllerCleanup, undefined);
+  assert.doesNotMatch(doc.warning, /cleanup failed: team_not_hosted/);
+  // aw's own refusal, its stderr naming the same path: controller cleanup, exit 0.
+  r = retire({ FAKE_DELETE_FAIL_FOR: "shared" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  doc = JSON.parse(r.stdout);
+  assert.equal(doc.meta.retired, true);
+  assert.deepEqual(doc.meta.pendingControllerCleanup.map((c) => c.label), ["shared"]);
 });
 
 test("a retained seat whose joined leave needs its key keeps retire nonzero", (t) => {

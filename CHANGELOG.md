@@ -66,7 +66,10 @@ its own reason. `aliasReusable` and `aliasReason` still describe the default
 identity. On the retry the default-retire marker stops a second self-delete,
 the leave runs again with its key, and a successful leave exits 0. A
 `team_not_hosted` leave failure keeps exit 0 with its warning and controller
-command.
+command. `team_not_hosted` is now recognized only from aw itself: its refusal
+line ending `(reason: team_not_hosted)` or `alias_released_reason`, never from
+text anywhere in the error (which carries the identity home's path), so a path
+or label containing the words no longer passes for a controller refusal.
 
 ## 1.23.2 — 2026-10-07
 

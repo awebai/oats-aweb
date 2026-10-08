@@ -21,9 +21,9 @@ if (process.env.OATS_HOST_ONLY_REQUIRED === '1') assert.ok(kernel, 'required dis
 // A deployment whose `probe` soul (work: directory) activates oats.aweb from a
 // local git member, minting from a root for the default team and from a second
 // root for the eligible team `joined`.
-function deployment(t, fakeEnv = {}) {
+function deployment(t, { prefix = 'public-disposable-home-' } = {}) {
   assert.equal(execFileSync('git', ['-C', kernel, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), 'bb2ba8c9a254edb745913b9c5a9d9b833fda932d');
-  const base = realpathSync(mkdtempSync(join(tmpdir(), 'public-disposable-home-')));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const host = join(base, 'source'), dep = join(base, 'deployment'), privateHome = join(base, 'home');
   const root = join(dep, '.aweb-roots', 'default'), joinedRoot = join(dep, '.aweb-roots', 'joined');
@@ -31,7 +31,7 @@ function deployment(t, fakeEnv = {}) {
   const fake = fakeAwSetupPath(t);
   // An inert harness for the spawn preflight; --no-launch never runs it.
   writeFileSync(join(fake.path, 'codex'), '#!/bin/sh\necho unexpected-harness-launch >&2\nexit 99\n', { mode: 0o755 });
-  const env = { PATH: `${fake.path}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: privateHome, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', OATS_REMOTE_CACHE: join(base, 'cache'), AW_NO_UPDATE_CHECK: '1', AW_FAKE_KEYS: '1', AW_FAKE_TEAM: 'joined:example.invalid', ...fakeEnv };
+  const env = { PATH: `${fake.path}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: privateHome, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', OATS_REMOTE_CACHE: join(base, 'cache'), AW_NO_UPDATE_CHECK: '1', AW_FAKE_KEYS: '1', AW_FAKE_TEAM: 'joined:example.invalid' };
   const git = (...args) => execFileSync('git', ['-C', host, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], { env, encoding: 'utf8' }).trim();
   const ref = pathToFileURL(host).href;
   writeFileSync(join(host, 'oats-workspace.yaml'), `schemaVersion: 2\nname: fixture\nmembers:\n  - ${ref}\nteams:\n  default: { team: 'default:example.invalid' }\n  joined: { team: 'joined:example.invalid' }\ndefaultTeam: default\nlocalTeams: true\nsouls:\n  "*": { teams: [joined] }\ndefaults:\n  messaging:\n    oats.aweb: { from: local/${host} }\n`);
@@ -140,8 +140,10 @@ test('a refused self-delete keeps the home with its keys for the retry, and the 
 
 // Amendment 1: the key a failed joined-team leave needs is never in recovery,
 // so retire must not let the kernel remove the home that holds it.
-test('a failed joined-team leave keeps the home with its key; the retry leaves the team without a second self-delete', { skip: !kernel && 'requires pinned bb2ba8c public kernel checkout', timeout: 180000 }, (t) => {
-  const f = deployment(t);
+// The second prefix puts "team_not_hosted" in an ancestor of every identity
+// home: a path is not aw's refusal, and the key must still stay.
+for (const prefix of ['public-disposable-home-', 'team_not_hosted-']) test(`a failed joined-team leave keeps the home with its key; the retry leaves the team without a second self-delete (${prefix})`, { skip: !kernel && 'requires pinned bb2ba8c public kernel checkout', timeout: 180000 }, (t) => {
+  const f = deployment(t, { prefix });
   const home = spawnProbe(f, 'leave-probe');
   const deletes = () => f.fake.readCalls().filter((c) => c.args[0] === 'workspace' && c.args[1] === 'delete');
   const joinedHome = join(home, '.aweb-identity-joined');
