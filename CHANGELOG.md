@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Docs: the oats-aweb skill's section 4 documents the approved Claude channel
+route as the recommended unattended setup. `claudeChannelMode: approved` passes
+`--channels plugin:aweb-channel@awebai-marketplace` (no development prompt), and
+Claude admits the plugin when the host's managed policy sets `channelsEnabled`
+and lists it in `allowedChannelPlugins`. On hosts without server-managed settings
+or MDM that is a root-owned `managed-settings.json` a human admin writes once.
+Host steps, banner verification, failure remedies and the precedence caveat are
+in the skill; development mode with the kernel's exact-home consent remains the
+fallback, qualified only for Claude 2.1.289 darwin-arm64. The default stays
+development, and no provider behaviour changes.
+
 ## 1.23.2 — 2026-10-07
 
 Added (#76): GLOBAL grant metadata records validated actual

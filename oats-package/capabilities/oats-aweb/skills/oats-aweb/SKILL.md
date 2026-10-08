@@ -150,10 +150,61 @@ the host wake broker wakes every runtime. A session is on one path, never both.
 
 **Channel selection and launch consent**
 
-New Claude/channel compositions default to development; frozen homes retain
-their captured mode. Explicit approved mode needs applicable managed plugin
-admission; installation/trusted marketplace is not approval. Preserve explicit
-native requirements. Mode selects argv, never consent or receive readiness.
+Host-only `settings.oats.aweb.claudeChannelMode` in `oats-local.yaml` picks one
+fixed Claude argument: argv, never consent, admission or receive. New
+compositions default to `development`; a home keeps the mode captured at spawn.
+There is no automatic fallback, flip-back or migration between modes.
+
+*Approved route (recommended for unattended Claude; version-independent).*
+`approved` passes `--channels plugin:aweb-channel@awebai-marketplace`, so Claude
+shows no development prompt. aweb-channel is not on Anthropic's default channel
+allowlist: Claude admits it when the managed policy lists it in
+`allowedChannelPlugins`, and API-key and Team/Enterprise accounts also need
+`channelsEnabled: true` there, so write both keys. On hosts without
+server-managed settings or MDM (Pro/Max and API-key accounts), that policy is a
+root-owned machine file. Host steps, once per machine:
+
+1. A human admin writes, as root (OATS never writes it):
+   - Linux: `/etc/claude-code/managed-settings.json`
+   - macOS: `/Library/Application Support/ClaudeCode/managed-settings.json`
+   ```json
+   {"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}
+   ```
+   Merge these keys into an existing file. Setting `allowedChannelPlugins`
+   replaces Anthropic's default channel allowlist on that host (on 2026-10-08:
+   discord, telegram, fakechat and imessage from `claude-plugins-official`); list
+   any of those this host still uses.
+2. `oats-local.yaml`: `settings.oats.aweb.claudeChannelMode: approved`, with
+   `delivery: channel` (the default).
+3. Install and enable `aweb-channel@awebai-marketplace` in the Claude config
+   directory the launch uses (the launch config's `CLAUDE_CONFIG_DIR`): with that
+   `CLAUDE_CONFIG_DIR`, `claude plugin marketplace add awebai/claude-plugins`,
+   `claude plugin install aweb-channel@awebai-marketplace`, then check
+   `claude plugin list` shows it enabled.
+4. Respawn existing homes: they keep their captured mode until respawned.
+
+Verify each approved home: the startup banner's channels notice names
+`plugin:aweb-channel@awebai-marketplace` with no allowlist or policy warning
+under it, and no development prompt appears. A clean banner is still not
+receive: run the nonce exchange in "Receive verification and recovery" below.
+
+| Startup shows | Remedy |
+|---|---|
+| "not on the approved channels allowlist" | the effective policy does not list aweb-channel: admin fixes step 1, or the higher source below |
+| "blocked by org policy" | `channelsEnabled` is not `true` in the effective policy: admin adds it |
+| a warning that the plugin is not installed | step 3 in the launch's `CLAUDE_CONFIG_DIR` |
+| the development-channels prompt | the home runs in development mode (the file does not suppress that prompt): set approved and respawn |
+
+**Precedence:** Claude reads the first managed source present: server-managed
+settings (Team/Enterprise admin console), then MDM (`com.anthropic.claudecode`),
+then the file. Where a higher source exists the file is ignored: the admin sets
+both keys in that source instead.
+
+*Development fallback.* `development` passes
+`--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
+and needs no managed policy, but Claude may stop at its development-channels
+confirmation; nothing in this provider answers it. The only automation is the
+kernel's exact-home consent, qualified only for Claude 2.1.289 darwin-arm64:
 
 **Exact-home operator opt-in:** first verify the selected kernel supports the
 released OATS 0.44.0 contract and the owner authorized this exact canonical home.
@@ -182,6 +233,10 @@ Start only after inspection proves the session gone; live prompt intervention
 needs separate explicit operator authorization. The released completion limitation
 can retain an active healthy session after one submitted Enter;
 [oats#754](https://github.com/awebai/oats/issues/754) remains open.
+
+Where broker delivery is authorized, an operator may choose `delivery: session`
+for an unattended home instead, without overriding an explicit native-channel
+requirement.
 
 **When woken:**
 
@@ -222,8 +277,10 @@ messages; readiness itself is read-only. Success requires actual automatic
 presentation and a receiver-verified reply recovered by exact message ID, not
 `ready`, a configured channel or unread status. Next: onboarding records completion.
 `native-receive-unproven` / `claude-channel-enrollment-unverified` means native
-connection/admission remains unproven, not ready for this acceptance. Follow section 4's exact-home consent and retained-recovery boundary; never bypass a prompt or
-an explicit native requirement. Codex uses the broker; joined `receive: native`
+connection/admission remains unproven, not ready for this acceptance. For Claude,
+section 4's approved route (or, as fallback, its exact-home consent and
+retained-recovery boundary) comes first; never bypass a prompt or an explicit
+native requirement. Codex uses the broker; joined `receive: native`
 also means broker, distinct from Claude/Pi primary native delivery. After uncertain
 restart, recover exact IDs as above before retrying any effects.
 
@@ -286,9 +343,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
-| `channel-dev-confirmation` | development selection may require confirmation; mode is not consent | operator: section 4 exact-home opt-in only with selected kernel support and qualified launch; otherwise separately authorized human intervention; no provider/broker/ordinary-agent keys |
+| `channel-dev-confirmation` | the home runs in development mode, so Claude may stop at its development-channels confirmation; mode is not consent | operator: move the host to section 4's approved route and respawn; as fallback, section 4's exact-home opt-in (qualified only for Claude 2.1.289 darwin-arm64) or separately authorized human intervention; no provider/broker/ordinary-agent keys |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
-| `claude-channel-enrollment-unverified` | approved registers no aweb channel without applicable managed `allowedChannelPlugins` or future approval; installation/trusted marketplace is not approval (section 4) | operator: verify admission or choose authorized session delivery; preserve explicit native requirements |
+| `claude-channel-enrollment-unverified` | approved mode: Claude registers aweb-channel only if the host's managed policy admits it, and this check did not establish that | admin: section 4 host step 1 (or the higher managed source); then verify the banner and the nonce exchange |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
@@ -355,8 +412,9 @@ Host-only settings under `settings.oats.aweb`: `root` is the default LOCAL
 minting parent; `roots[T]` overrides it; `residents.<name>` is a GLOBAL custody
 parent. `delivery` is `channel` (default) or `session`; Codex always uses the
 broker, Claude/Pi primary channels remain distinct from joined broker delivery.
-`claudeChannelMode` is development by default in 1.22.0, or explicit approved,
-set only in `oats-local.yaml`; no arbitrary arguments or plugin IDs.
+`claudeChannelMode` is development by default in 1.22.0, or explicit approved
+(the recommended route once the host's managed policy admits the plugin, section
+4), set only in `oats-local.yaml`; no arbitrary arguments or plugin IDs.
 `join` selects eligible LOCAL labels at spawn; `identity` defaults to local.
 There is no `settings.oats.aweb.team`: the emitted refusal is
 `teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams`.
