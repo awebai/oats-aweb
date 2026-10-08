@@ -125,7 +125,7 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  assert.deepEqual(phases,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});
  assert.deepEqual(keys,['responsibleHuman','privateTeam','wider']);
  assert.equal(reasons.length,30);assert.equal(new Set(reasons).size,30);assert.ok(reasons.every(reason=>typeof reason==='string'&&reason.length>0));
- assert.equal(m.compatibility.oats,'>=0.30.0');
+ assert.equal(m.compatibility.oats,'>=0.42.0');
  for(const key of ['root','roots','residents'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
  assert.equal(Object.hasOwn(m,'helperInjection'),false);
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));

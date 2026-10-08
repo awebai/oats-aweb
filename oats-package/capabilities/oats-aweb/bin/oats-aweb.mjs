@@ -1705,6 +1705,15 @@ if (event === "launch") {
   const rememberControllerCleanup = (data) => {
     if (data?.cleanup === "controller") pendingControllerCleanup.push({ label: data.label, team: data.team, alias: data.alias, certificateId: data.certificateId, ...(data.command ? { command: data.command } : {}) });
   };
+  // A joined team whose leave failed for any reason but team_not_hosted (whose
+  // controller cleanup needs no member key) can only be left with the key in
+  // its .aweb-identity-<label>. That entry is never copied to recovery, so a
+  // clean exit would let the kernel remove the last copy of the key: every way
+  // out below the joined-team loop exits nonzero instead, and the kernel keeps
+  // the home for a retry. The retry reads .oats-aweb from the home: its
+  // teams.json still lists the team, and its default-retire marker stops a
+  // second self-delete of the default identity.
+  const failedLeaves = [];
   const retiredMeta = (fields = {}) => ({ ...fields, ...(pendingControllerCleanup.length ? { pendingControllerCleanup } : {}) });
   if (hasStaleTeamSetting) retireWarnings.push(TEAM_SETTING_MESSAGE);
   // A retained seat: release the lock and leave the identity alone. Never
@@ -1716,12 +1725,17 @@ if (event === "launch") {
   const deregistration = brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
   const finish = async (o, code) => {
     if (deregistration && !(await deregistration)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n");
+    if (failedLeaves.length) {
+      const incomplete = o.meta.retired === false && o.meta.reason !== "nothing-to-delete";
+      o = { ...o, meta: { ...o.meta, ...(incomplete ? {} : { retired: false, reason: "joined-team-leave-failed" }), failedLeaves } };
+      code = 1;
+    }
     out(o, code);
   };
   if (meta.identity?.mode === "global" && !meta.retained) globalGrantRetire(meta);
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
-    catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); }
+    catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
   }
   // A native (channel/pi) home registered with the broker only for its joined
   // teams; a broker home was deregistered above.

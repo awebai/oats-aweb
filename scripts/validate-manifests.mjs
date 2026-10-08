@@ -35,13 +35,19 @@ function validateSchema(value, schema, at, rootSchema = schema, references = [])
     if (!target || typeof target !== "object" || Array.isArray(target)) { report(at, "unresolved schema reference"); return; }
     validateSchema(value, target, at, rootSchema, [...references, ref]);
   }
-  if (schema.oneOf) {
-    const matches = schema.oneOf.filter((alternative) => {
-      const start = errors.length;
-      validateSchema(value, alternative, at, rootSchema, references);
-      return errors.splice(start).length === 0;
-    }).length;
-    if (matches !== 1) report(at, "must match exactly one schema alternative");
+  // oneOf, anyOf and not evaluate each subschema in full, then splice its
+  // errors back out: only whether it validated counts. A `not` is a whole
+  // subschema (the kernel-owned refusal in retirement.disposable.home is a
+  // `not` over an `anyOf`), never only its pattern.
+  const validates = (subschema) => {
+    const start = errors.length;
+    validateSchema(value, subschema, at, rootSchema, references);
+    return errors.splice(start).length === 0;
+  };
+  if (schema.oneOf && schema.oneOf.filter(validates).length !== 1) report(at, "must match exactly one schema alternative");
+  if (schema.anyOf && !schema.anyOf.some(validates)) report(at, "must match at least one schema alternative");
+  if (schema.not && validates(schema.not)) {
+    report(at, schema.not.description ? `must not match: ${schema.not.description}` : schema.not.pattern ? `must not match ${schema.not.pattern}` : "must not match the excluded schema");
   }
   if ("const" in schema && !Object.is(schema.const, value)) report(at, `must equal ${JSON.stringify(schema.const)}`);
   if (schema.enum && !schema.enum.some((item) => Object.is(item, value))) report(at, `must be one of ${schema.enum.join(", ")}`);
@@ -51,7 +57,6 @@ function validateSchema(value, schema, at, rootSchema = schema, references = [])
     if (schema.minLength !== undefined && value.length < schema.minLength) report(at, `must contain at least ${schema.minLength} character(s)`);
     if (schema.maxLength !== undefined && value.length > schema.maxLength) report(at, `must contain at most ${schema.maxLength} character(s)`);
     if (schema.pattern && !(new RegExp(schema.pattern)).test(value)) report(at, `must match ${schema.pattern}`);
-    if (schema.not?.pattern && (new RegExp(schema.not.pattern)).test(value)) report(at, `must not match ${schema.not.pattern}`);
   }
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) report(at, `must contain at least ${schema.minItems} item(s)`);

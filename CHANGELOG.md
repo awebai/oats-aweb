@@ -30,6 +30,44 @@ and nothing when the file admits the plugin, so admitted hosts no longer see
 not proof: server-managed settings or MDM override it, and only the nonce
 exchange proves receive. No environment variable moves the path.
 
+Fixed: retire's recovery copy no longer keeps the instance's aweb private
+keys. The capability declares `retirement.disposable.home`: `.aw` (the local
+identity, or the retained seat's copy of a standing identity), `.aweb-identity`
+(the global grant home; the prefix form does not match the bare name),
+`.aweb-identity-*` (joined-team and stamped grant homes) and `.oats-aweb`
+(provider state: `teams.json` and the default-retire marker; declaring it also
+stops the retire hook's own marker write from forcing an `after-hooks/home/`
+copy). All four are provider state, not the instance's work. The kernel leaves
+them in the home until it removes the home, retire hooks see them, an
+incomplete cleanup keeps the home with them, and a retry reads them from the
+home, never from recovery. `recovery.json` and the retire result's
+`workRecovery.notCopied` name each excluded entry with owner `oats.aweb`. The
+OATS floor rises from `>=0.30.0` to `>=0.42.0`: kernels 0.30–0.41 accept the
+declaration but do nothing with `home`, so they would keep copying keys while
+the package says otherwise; 0.42.0 is the first that excludes declared home
+entries. Homes spawned before this version are still copied whole at retire,
+because the kernel records the declaration at spawn. A failed spawn's
+preservation (directory mode) is the exception: it copies the whole home, keys
+included. `oats retire --force` past an incomplete aweb cleanup now leaves no
+copy of the key; the outstanding membership is cleaned up by the team's
+controller or owner (the emitted controller command, or member removal in the
+hosted dashboard).
+
+Changed: retire exits nonzero when a joined-team leave fails for any reason but
+`team_not_hosted` (whose controller cleanup needs no member key), on every way
+out after the joined-team loop: a completed self-delete, the completed
+default-retire marker on a retry, and a retained seat. The kernel then keeps
+the home, and with it the `.aweb-identity-<label>` key that alone can leave the
+team. The meta keeps what it reported before (`joinedTeams` still lists the
+team, `pendingControllerCleanup`, the warning) and adds `retired: false`,
+`reason: "joined-team-leave-failed"` and `failedLeaves` (the labels); an
+already incomplete result (`self-delete-failed`, `no-local-identity-key`) keeps
+its own reason. `aliasReusable` and `aliasReason` still describe the default
+identity. On the retry the default-retire marker stops a second self-delete,
+the leave runs again with its key, and a successful leave exits 0. A
+`team_not_hosted` leave failure keeps exit 0 with its warning and controller
+command.
+
 ## 1.23.2 — 2026-10-07
 
 Added (#76): GLOBAL grant metadata records validated actual

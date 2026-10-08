@@ -83,3 +83,20 @@ test("validator rejects extra capability enumerations", (t) => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /must enumerate exactly one capability directory \(found 2\)/);
 });
+
+// retirement.disposable.home: the schema's shape pattern, and its `not` over an
+// `anyOf` of kernel-owned names, are both enforced (the kernel refuses the same
+// entries at load: lib/capability-contract.mjs disposableHomeRootProblem).
+test('retirement.disposable.home accepts the provider entries and refuses kernel-owned or malformed ones', t => {
+  const f = bindingFixture(t), declared = ['.aw', '.aweb-identity', '.aweb-identity-*', '.oats-aweb'];
+  assert.deepEqual(f.manifest.retirement.disposable.home, declared);
+  for (const entry of declared) {
+    f.manifest.retirement = { disposable: { home: [entry] } };
+    const r = f.run(); assert.equal(r.status, 0, `${entry}: ${r.stderr}`);
+  }
+  for (const [entry, why] of [['.oats', /kernel owns/], ['.claude', /kernel owns/], ['.oats-events.jsonl', /kernel owns/], ['.oats-foo-*', /kernel owns/], ['.aw/keys', /must match/], ['notes', /must match/], ['.a*', /must match/]]) {
+    f.manifest.retirement = { disposable: { home: [entry] } };
+    const r = f.run(); assert.equal(r.status, 1, `${entry} must be refused`);
+    assert.match(r.stderr, /retirement\.disposable\.home\[0\]/, entry); assert.match(r.stderr, why, `${entry}: ${r.stderr}`);
+  }
+});

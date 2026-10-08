@@ -1,7 +1,17 @@
 // The aw CLI as `oats aweb setup` drives it: init, team join/invite/list, id team
 // create/accept-invite/list, whoami and workspace connect/status/delete, with its
 // state in the .aw under the cwd (or --identity-home). Every call is recorded in
-// calls.jsonl beside the bin directory.
+// calls.jsonl beside the bin directory; a workspace delete also records whether
+// its identity's signing.key existed when it was called.
+//
+// Opt-in behaviour, selected by env:
+//   AW_FAKE_KEYS      every identity it writes holds the private key files real
+//                     aw writes (signing.key, encryption-keys/<id>.x25519.key)
+//   AW_DELETE_FAIL    workspace delete is refused before it touches anything, as
+//                     aw 1.36.23 refuses one: text on stderr, exit 1, no JSON on
+//                     stdout even under --json
+//   AW_DELETE_FAIL_FOR the same refusal, only for the joined identity home
+//                     .aweb-identity-<label>
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,11 +38,14 @@ let args = process.argv.slice(2);
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
 if (args[0] === "version") { console.log("aw " + (process.env.AW_FAKE_VERSION || "1.36.13")); process.exit(0); }
-fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY }) + "\\n");
-(${joinFromFake})(args);
 const awDir = identityHome || path.join(process.cwd(), ".aw");
+const deleting = args[0] === "workspace" && args[1] === "delete";
+fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY, ...(deleting ? { signingKey: fs.existsSync(path.join(awDir, "signing.key")) } : {}) }) + "\\n");
+const writeKeys = (dir) => { if (!process.env.AW_FAKE_KEYS) return; fs.mkdirSync(path.join(dir, "encryption-keys"), { recursive: true }); fs.writeFileSync(path.join(dir, "signing.key"), "FIXTURE-PRIVATE-SIGNING-KEY\\n"); fs.writeFileSync(path.join(dir, "encryption-keys", "fixture.x25519.key"), "FIXTURE-PRIVATE-X25519-KEY\\n"); };
+if (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) process.on("exit", (code) => { if (code === 0) writeKeys(awDir); });
+(${joinFromFake})(args);
 const teamsFile = path.join(awDir, "teams.json");
-const writeTeams = (team, facts = {}) => { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team, ...facts }] })); };
+const writeTeams = (team, facts = {}) => { fs.mkdirSync(awDir, { recursive: true }); writeKeys(awDir); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team, ...facts }] })); };
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_LIST_TEAMS) console.log(process.env.AW_LIST_TEAMS);
@@ -79,7 +92,8 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
 } else if (args[0] === "whoami") {
   if (process.env.AW_WHOAMI_FAIL) { console.error("no identity"); process.exit(6); }
   console.log(JSON.stringify({ alias: "fixture", did: "did:key:zFixture" }));
-} else if (args[0] === "workspace" && args[1] === "delete") {
+} else if (deleting) {
+  if (process.env.AW_DELETE_FAIL || (process.env.AW_DELETE_FAIL_FOR && path.basename(awDir) === ".aweb-identity-" + process.env.AW_DELETE_FAIL_FOR)) { console.error("Error: delete workspace " + args[2] + ": 503 Service Unavailable: team controller unavailable"); process.exit(1); }
   fs.rmSync(awDir, { recursive: true, force: true });
   console.log(JSON.stringify({ alias_released: true, alias_released_reason: "released" }));
 } else if (args[0] === "workspace" && args[1] === "connect") {

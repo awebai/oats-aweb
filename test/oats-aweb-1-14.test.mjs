@@ -124,8 +124,8 @@ test("manifest declares 1.17 floor, no provider team setting, commands and home 
   assert.equal(dist.version, "1.23.2");
   assert.equal(manifest.version, "1.23.2");
   assert.equal(manifest.settings.team, undefined);
-  assert.equal(dist.compatibility.oats, ">=0.30.0");
-  assert.equal(manifest.compatibility.oats, ">=0.30.0");
+  assert.equal(dist.compatibility.oats, ">=0.42.0");
+  assert.equal(manifest.compatibility.oats, ">=0.42.0");
   assert.ok(manifest.settings.join.description.includes("comma-separated eligible team labels"));
   assert.equal(manifest.commands.teams, "bin/oats-aweb.mjs teams");
   assert.equal(manifest.commands.join, "bin/oats-aweb.mjs join");

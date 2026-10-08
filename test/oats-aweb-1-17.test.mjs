@@ -40,7 +40,7 @@ if (args[0] === "team" && args[1] === "invite") { emit({ token: "TOKEN__" + flag
 if (args[0] === "team" && args[1] === "join") { const team = args[2].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\n"); emit({ alias, team_id: team }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") { const team = args[3].replace(/^TOKEN__/, ""), alias = flag("--name"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "identity.yaml"), "alias: " + alias + "\\nteam_id: " + team + "\\n"); const certDir = path.join(home(), "team-certs"); fs.mkdirSync(certDir, { recursive: true }); if (!process.env.FAKE_CERT_OMIT) { const certTeam = process.env.FAKE_CERT_OTHER_TEAM || team; fs.writeFileSync(path.join(certDir, team.replace(/:/g, "__") + ".pem"), JSON.stringify({ version: 1, certificate_id: "cert-shared-123", team_id: certTeam, alias })); } emit({ status: "accepted", team_id: team, alias, aweb_url: "https://service.example.test/api" }); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "connect") { if (process.env.FAKE_CONNECT_FAIL) { console.error("connect refused by fixture"); process.exit(11); } const team = flag("--team"), service = flag("--service"); fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "workspace.yaml"), "alias: connected\\nteam_id: " + team + "\\naweb_url: " + service + "\\n"); emit({ status: "connected", team_id: team, aweb_url: service }); process.exit(0); }
-if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home: team_not_hosted"); process.exit(7); } if (process.env.FAKE_DEFAULT_TEAM_NOT_HOSTED && !identityHome) { emit({ alias_released: false, alias_released_reason: "team_not_hosted" }); process.exit(0); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
+if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELETE_REFUSE_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_REFUSE_FOR)) { console.error("Error: delete workspace " + args[2] + ": 503 Service Unavailable: team controller unavailable"); process.exit(1); } if (process.env.FAKE_DELETE_FAIL_FOR && String(identityHome || "").endsWith(".aweb-identity-" + process.env.FAKE_DELETE_FAIL_FOR)) { console.error("refusing aw workspace delete through external identity home: team_not_hosted"); process.exit(7); } if (process.env.FAKE_DEFAULT_TEAM_NOT_HOSTED && !identityHome) { emit({ alias_released: false, alias_released_reason: "team_not_hosted" }); process.exit(0); } fs.rmSync(home(), { recursive: true, force: true }); emit({ alias_released: true, alias_released_reason: "released" }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }] }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "list") { const team = process.env.FAKE_LIST_OTHER_TEAM ? "other:example.test" : (String(identityHome || "").includes(".aweb-identity-shared") ? "shared:example.test" : "default:example.test"); emit({ memberships: [{ team_id: team, registry_origin: "https://api.awid.ai" }] }); process.exit(0); }
 if (args[0] === "wake" && ["register", "deregister"].includes(args[1])) { console.log("ok"); process.exit(0); }
@@ -190,7 +190,72 @@ test("retire reports controller cleanup for joined BYOT teams", (t) => {
   assert.match(doc.warning, /joined team shared cleanup failed: team_not_hosted/);
   assert.match(doc.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --registry https:\/\/api\.awid\.ai --json/);
   assert.doesNotMatch(doc.warning, /kept .* retry/);
+  assert.equal(doc.meta.retired, true, "controller cleanup needs no member key: the home may go");
+  assert.equal(doc.meta.failedLeaves, undefined);
   assert.deepEqual(doc.meta.pendingControllerCleanup, [{ label: "shared", team: "shared:example.test", alias: "dev-1", certificateId: "cert-shared-123", command: "aw id team remove-member --namespace example.test --team shared --cert-id cert-shared-123 --registry https://api.awid.ai --json" }]);
+});
+
+// Amendment 1 to the disposable-home fix: .aweb-identity-<label> is never
+// copied to recovery, so a joined team that can only be left with its member
+// key keeps retire nonzero (the kernel keeps the home) on every way out.
+test("a joined leave that needs its key keeps retire nonzero until a retry leaves, without a second self-delete", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { settings: { join: "shared" } });
+  const spawned = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  const joinedHome = join(fx.home, ".aweb-identity-shared");
+  const selfDeletes = () => fake.calls().filter((c) => c.args[0] === "workspace" && c.args[1] === "delete" && !c.identityHome && c.cwd === fx.home).length;
+  const retire = (extra = {}) => runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(spawned.meta), ...extra } });
+  // The self-delete succeeds and the leave fails: the success branch.
+  let r = retire({ FAKE_DELETE_REFUSE_FOR: "shared" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  let doc = JSON.parse(r.stdout);
+  assert.equal(doc.meta.retired, false);
+  assert.equal(doc.meta.reason, "joined-team-leave-failed");
+  assert.deepEqual(doc.meta.failedLeaves, ["shared"]);
+  assert.equal(doc.meta.aliasReusable, true, "the default identity's own facts are kept");
+  assert.deepEqual(doc.meta.joinedTeams.map((j) => j.label), ["shared"], "the team is still recorded as joined");
+  assert.equal(doc.meta.pendingControllerCleanup, undefined, "a hosted team has no controller cleanup");
+  assert.match(doc.warning, /joined team shared cleanup failed/);
+  assert.equal(existsSync(join(joinedHome, "identity.yaml")), true, "the joined identity stays for the retry");
+  assert.equal(existsSync(join(fx.home, ".oats-aweb", "default-retire.json")), true);
+  assert.equal(selfDeletes(), 1);
+  // A retry that fails again: the completed-default-retire marker branch.
+  r = retire({ FAKE_DELETE_REFUSE_FOR: "shared" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  doc = JSON.parse(r.stdout);
+  assert.equal(doc.meta.reason, "joined-team-leave-failed");
+  assert.deepEqual(doc.meta.failedLeaves, ["shared"]);
+  assert.equal(selfDeletes(), 1, "the marker stops a second self-delete");
+  // A retry whose leave succeeds completes.
+  r = retire();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  doc = JSON.parse(r.stdout);
+  assert.equal(doc.meta.retired, true);
+  assert.equal(doc.meta.failedLeaves, undefined);
+  assert.deepEqual(doc.meta.joinedTeams, []);
+  assert.equal(existsSync(joinedHome), false);
+  assert.equal(selfDeletes(), 1);
+  assert.equal(fake.calls().filter((c) => c.identityHome === joinedHome && c.args[0] === "workspace" && c.args[1] === "delete").length, 3);
+});
+
+test("a retained seat whose joined leave needs its key keeps retire nonzero", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t);
+  const joinedHome = join(fx.home, ".aweb-identity-shared"), lock = join(fx.ws, "seat.lock");
+  write(join(joinedHome, "identity.yaml"), "alias: dev-1\nteam_id: shared:example.test\n");
+  write(lock, "{}");
+  const meta = { retained: true, alias: "dev-1", lock, source: join(fx.ws, ".aw"), team: "default:example.test", joinedTeams: [{ label: "shared", team: "shared:example.test", identityHome: joinedHome, alias: "dev-1", receive: "poll", since: "2026-10-08T00:00:00.000Z" }] };
+  const r = runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(meta), FAKE_DELETE_REFUSE_FOR: "shared" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const doc = JSON.parse(r.stdout);
+  assert.equal(doc.meta.retained, true);
+  assert.equal(doc.meta.identityReleased, true);
+  assert.equal(doc.meta.retired, false);
+  assert.equal(doc.meta.reason, "joined-team-leave-failed");
+  assert.deepEqual(doc.meta.failedLeaves, ["shared"]);
+  assert.equal(existsSync(join(joinedHome, "identity.yaml")), true);
+  assert.equal(existsSync(lock), false, "the seat lock is still released");
+  assert.equal(fake.calls().some((c) => !c.identityHome && c.args[0] === "workspace" && c.args[1] === "delete"), false, "a retained seat never self-deletes");
 });
 
 test("retire reports controller cleanup for a BYOT default identity", (t) => {

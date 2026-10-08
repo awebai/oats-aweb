@@ -3,7 +3,7 @@
   "version": "1.23.2",
   "description": "Official OATS messaging integration for team-scoped aweb identities, mail, chat, and roster discovery.",
   "compatibility": {
-    "oats": ">=0.30.0"
+    "oats": ">=0.42.0"
   },
   "capabilities": [
     "capabilities/oats-aweb"
