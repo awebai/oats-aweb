@@ -13,6 +13,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
+import { launchChannelWarning } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 // An approved home's readiness reports the host's managed policy: admitted, not admitted or unknown.
@@ -1063,22 +1064,28 @@ for(const mode of [undefined,'approved']) test(`selector emits the fixed argumen
   const doc=fx.spawn(), expected=mode??'development';
   assert.deepEqual(doc.launch,{claude:expected==='development'?DEV_CHANNEL_FLAG:CHANNEL_FLAG});
   assert.equal(doc.meta.claudeChannelMode,expected);
-  const code=expected==='development'?'channel-dev-confirmation':'claude-channel-enrollment-unverified';
-  assert.match(doc.warning,new RegExp(code));
+  const DEV_CODE='channel-dev-confirmation';
+  const verdict=launchChannelWarning('approved');
   if(expected==='approved') {
-    assert.match(doc.warning,/Claude registers aweb-channel only if the host's managed policy admits it/);
-    assert.match(doc.warning,/this start does not check that policy/);
-    assert.match(doc.warning,/oats readiness --home reads the machine file/);
+    // The launch warns this host's machine-policy verdict, and nothing when the file admits.
+    if(verdict) assert.ok(doc.warning.includes(`oats-aweb: ${verdict.code} — ${verdict.message}`),doc.warning);
+    else assert.doesNotMatch(doc.warning||'',/claude-channel-/);
+    assert.doesNotMatch(doc.warning||'',/channel-dev-confirmation/);
   } else {
+    assert.match(doc.warning,new RegExp(DEV_CODE));
     assert.match(doc.warning,/nothing in this provider answers it/);
+    assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
   }
-  assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
-  assert.doesNotMatch(doc.warning,/launchPromptAnswers|awebDevelopmentChannel/);
+  assert.doesNotMatch(doc.warning||'',/launchPromptAnswers|awebDevelopmentChannel/);
   fx.record(doc.meta,'claude');
   const warnings=fx.readiness().warnings;
   // Readiness reads this host's real managed-settings file, so any policy verdict is valid here.
-  if(expected==='approved') assertOnePolicyVerdict(warnings);
-  else assert.ok(warnings.some(w=>w.code===code),JSON.stringify(warnings));
+  if(expected==='approved') {
+    assertOnePolicyVerdict(warnings);
+    // Launch and readiness give one verdict; launch is silent only when it is admitted.
+    assert.ok(warnings.some(w=>w.code===(verdict?.code ?? 'claude-channel-policy-admitted')),JSON.stringify(warnings));
+  }
+  else assert.ok(warnings.some(w=>w.code===DEV_CODE),JSON.stringify(warnings));
   assert.ok(warnings.some(w=>w.code==='native-receive-unproven'));
 });
 

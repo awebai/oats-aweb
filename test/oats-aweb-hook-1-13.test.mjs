@@ -10,6 +10,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
+import { launchChannelWarning } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
+const APPROVED_LAUNCH = launchChannelWarning("approved");
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
@@ -505,12 +507,13 @@ function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
   assert.deepEqual(doc.launch.claude.split(' '), [flag,'plugin:aweb-channel@awebai-marketplace'], 'one fixed-plugin contribution, never concatenated modes');
   if(preview) assert.equal(doc.meta,undefined,'preview records nothing');
   else assert.equal(doc.meta.claudeChannelMode,mode,'metadata records selected mode, not admission');
-  assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
   if(mode==='approved') {
-    assert.match(doc.warning,/claude-channel-enrollment-unverified/);
-    assert.match(doc.warning,/Claude registers aweb-channel only if the host's managed policy admits it/);
-    assert.doesNotMatch(doc.warning,/channel-dev-confirmation/);
+    // The launch reads this host's real managed-settings file; it stays silent only when the file admits.
+    if(APPROVED_LAUNCH) assert.ok(doc.warning.includes(`oats-aweb: ${APPROVED_LAUNCH.code} — ${APPROVED_LAUNCH.message}`),doc.warning);
+    else assert.doesNotMatch(doc.warning||'',/claude-channel-/);
+    assert.doesNotMatch(doc.warning||'',/channel-dev-confirmation/);
   } else {
+    assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
     assert.match(doc.warning,/channel-dev-confirmation/);
     assert.match(doc.warning,/nothing in this provider answers it/);
     assert.doesNotMatch(doc.warning,/claude-channel-enrollment-unverified/);

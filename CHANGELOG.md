@@ -11,9 +11,8 @@ or MDM that is a root-owned `managed-settings.json` a human admin writes once.
 Host steps, the startup check, failure remedies and the precedence caveat are
 in the skill; development mode with the kernel's exact-home consent remains the
 fallback, qualified only for Claude 2.1.289 darwin-arm64. The default stays
-development. The approved launch warning keeps its code,
-`claude-channel-enrollment-unverified`, with wording that no longer cites a
-future approval.
+development. The approved launch warning no longer cites a future approval;
+see Added for the verdict it now warns.
 
 Added: readiness of a home whose captured `claudeChannelMode` is approved reads
 the machine managed-settings file (`/etc/claude-code` on Linux,
@@ -22,9 +21,12 @@ then `managed-settings.d/*.json`) read-only and warns one verdict:
 `claude-channel-policy-admitted` (`channelsEnabled` true and the
 `aweb-channel@awebai-marketplace` entry), `claude-channel-policy-not-admitted`
 (naming the missing key or the wrong marketplace), `claude-channel-policy-malformed`
-(a file is not a JSON object; Claude Code refuses to start until it is repaired) or
+(a file is not a JSON object; per code.claude.com/docs/en/managed-settings.md, Claude Code refuses
+to start while a managed-settings file cannot be parsed) or
 `claude-channel-enrollment-unverified` (absent, unreadable or an unsupported
-platform; the launch warning keeps this code). The file is evidence,
+platform). An approved launch reads the same file and warns the same verdict,
+and nothing when the file admits the plugin, so admitted hosts no longer see
+`claude-channel-enrollment-unverified` at every start. The file is evidence,
 not proof: server-managed settings or MDM override it, and only the nonce
 exchange proves receive. No environment variable moves the path.
 

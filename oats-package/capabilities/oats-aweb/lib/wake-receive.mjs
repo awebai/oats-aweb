@@ -57,15 +57,20 @@ export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
   approved: '--channels plugin:aweb-channel@awebai-marketplace',
   development: '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace',
 });
-const CHANNEL_ENROLLMENT_UNVERIFIED = {
-  code: 'claude-channel-enrollment-unverified',
-  message: 'approved mode: Claude registers aweb-channel only if the host\'s managed policy admits it (channelsEnabled and allowedChannelPlugins); this start does not check that policy, oats readiness --home reads the machine file; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
-};
-
 /** Host selection is a requested mode, never an admission or connection receipt. */
 export function selectClaudeChannel(mode = 'development') {
   if (mode !== 'approved' && mode !== 'development') throw new Error('settings.oats.aweb.claudeChannelMode must be approved or development; set it only in oats-local.yaml');
-  return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode], warning: mode === 'approved' ? {...CHANNEL_ENROLLMENT_UNVERIFIED} : {...CHANNEL_DEV_CONFIRMATION}};
+  return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode]};
+}
+
+/** What a Claude start discloses for its mode: development always warns of the
+ *  confirmation; approved warns readiness's machine-policy verdict, and nothing
+ *  when the file admits the plugin (readiness still reports that evidence).
+ *  `policy` ({root, platform}) is for tests only; production passes none. */
+export function launchChannelWarning(mode, policy) {
+  if (mode !== 'approved') return {...CHANNEL_DEV_CONFIRMATION};
+  const verdict = approvedChannelPolicyWarning(policy);
+  return verdict.code === 'claude-channel-policy-admitted' ? undefined : verdict;
 }
 
 /** Recognize only the provider's literal bare selector pairs in an aggregate.
@@ -110,7 +115,7 @@ function capturedClaudeChannel(meta, hooks, policy) {
   const aggregateModes = aggregateClaudeModes(combined);
   if (aggregateModes.length > 1 || (mode !== undefined && aggregateModes.some(value => value !== mode))) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
   if (mode === undefined) return {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'};
-  return mode === 'approved' ? approvedChannelPolicyWarning(policy) : selectClaudeChannel(mode).warning;
+  return mode === 'approved' ? approvedChannelPolicyWarning(policy) : {...CHANNEL_DEV_CONFIRMATION};
 }
 
 /** external-session | native-channel | native-pi. */

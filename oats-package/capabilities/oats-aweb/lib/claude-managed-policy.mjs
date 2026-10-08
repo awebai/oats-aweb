@@ -82,7 +82,7 @@ export function approvedChannelPolicyWarning(options) {
   const caveat = 'server-managed settings or MDM, if present, take precedence over this file and are not visible to this check; only the nonce exchange proves receive (oats-aweb skill, section 4)';
   if (policy.state === 'admitted') return {code: 'claude-channel-policy-admitted', message: `the machine managed-settings file (${policy.sources.join(', ')}) sets channelsEnabled and lists aweb-channel@awebai-marketplace in allowedChannelPlugins; this is evidence, not proof: ${caveat}`};
   if (policy.state === 'not-admitted') return {code: 'claude-channel-policy-not-admitted', message: `the machine managed-settings file (${policy.sources.join(', ')}) does not set up the approved route: ${policy.missing.join('; ')}; an admin fixes it as in section 4 host step 1; ${caveat}`};
-  if (policy.state === 'malformed') return {code: 'claude-channel-policy-malformed', message: `approved mode: a machine managed-settings file is malformed: ${policy.reason}; Claude Code refuses to start while it is, so an admin repairs it (section 4 host step 1)`};
+  if (policy.state === 'malformed') return {code: 'claude-channel-policy-malformed', message: `approved mode: a machine managed-settings file is malformed: ${policy.reason}; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed, so an admin repairs it (section 4 host step 1)`};
   const remedy = policy.platform === false ? 'section 4 names machine files for Linux and macOS only' : 'an admin writes it as in section 4 host step 1';
   return {code: 'claude-channel-enrollment-unverified', message: `approved mode: whether the host admits aweb-channel is unknown: ${policy.reason}; ${remedy}; ${caveat}`};
 }

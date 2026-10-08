@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { approvedChannelPolicyWarning, readClaudeManagedPolicy } from "../oats-package/capabilities/oats-aweb/lib/claude-managed-policy.mjs";
-import { expectedReceive } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
+import { expectedReceive, launchChannelWarning } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ADMITS = { channelsEnabled: true, allowedChannelPlugins: [{ plugin: "aweb-channel", marketplace: "awebai-marketplace" }] };
@@ -111,7 +111,7 @@ for (const [name, content, reason] of [
   assert.match(policy.reason, reason);
   const warning = approvedChannelPolicyWarning({ root, platform: "linux" });
   assert.equal(warning.code, "claude-channel-policy-malformed");
-  assert.match(warning.message, /Claude Code refuses to start while it is, so an admin repairs it/);
+  assert.match(warning.message, /refuses to start while a managed-settings file cannot be parsed, so an admin repairs it/);
 });
 
 test("unknown: a FIFO in the file's place is not read", { skip: spawnSync("mkfifo", ["--help"]).error ? "no mkfifo" : false }, t => {
@@ -206,4 +206,42 @@ test("a development home's readiness does not read the policy", t => {
   const result = expectedReceive(home, { policy: { root: policyRoot(t, { "managed-settings.json": ADMITS }), platform: "linux" } });
   assert.ok(result.warnings.some(w => w.code === "channel-dev-confirmation"));
   assert.ok(!result.warnings.some(w => w.code.startsWith("claude-channel-policy-")));
+});
+
+for (const [name, files, code] of [
+  ["admitted: silent", { "managed-settings.json": ADMITS }, undefined],
+  ["not admitted", { "managed-settings.json": { channelsEnabled: true } }, "claude-channel-policy-not-admitted"],
+  ["malformed", { "managed-settings.json": "{" }, "claude-channel-policy-malformed"],
+  ["unknown", {}, "claude-channel-enrollment-unverified"],
+]) test(`the approved launch warning uses the readiness verdict: ${name}`, t => {
+  const root = policyRoot(t, files);
+  const warning = launchChannelWarning("approved", { root, platform: "linux" });
+  assert.equal(warning?.code, code);
+  if (code) assert.deepEqual(warning, approvedChannelPolicyWarning({ root, platform: "linux" }), "one verdict for launch and readiness");
+});
+
+test("the development launch warning never reads the policy", t => {
+  const root = policyRoot(t, { "managed-settings.json": ADMITS });
+  assert.equal(launchChannelWarning("development", { root, platform: "linux" }).code, "channel-dev-confirmation");
+  assert.equal(launchChannelWarning(undefined).code, "channel-dev-confirmation");
+});
+
+test("verdict messages are pinned in full", t => {
+  const root = tempRoot(t), dir = join(root, DIRS.linux);
+  const caveat = "server-managed settings or MDM, if present, take precedence over this file and are not visible to this check; only the nonce exchange proves receive (oats-aweb skill, section 4)";
+  assert.deepEqual(approvedChannelPolicyWarning({ root, platform: "linux" }), {
+    code: "claude-channel-enrollment-unverified",
+    message: `approved mode: whether the host admits aweb-channel is unknown: no managed-settings file at ${join(dir, "managed-settings.json")} or ${join(dir, "managed-settings.d")}/*.json; an admin writes it as in section 4 host step 1; ${caveat}`,
+  });
+  const notAdmitted = policyRoot(t, { "managed-settings.json": { channelsEnabled: true } });
+  const file = join(notAdmitted, DIRS.linux, "managed-settings.json");
+  assert.deepEqual(approvedChannelPolicyWarning({ root: notAdmitted, platform: "linux" }), {
+    code: "claude-channel-policy-not-admitted",
+    message: `the machine managed-settings file (${file}) does not set up the approved route: allowedChannelPlugins is absent; an admin fixes it as in section 4 host step 1; ${caveat}`,
+  });
+  const admitted = policyRoot(t, { "managed-settings.json": ADMITS });
+  assert.deepEqual(approvedChannelPolicyWarning({ root: admitted, platform: "linux" }), {
+    code: "claude-channel-policy-admitted",
+    message: `the machine managed-settings file (${join(admitted, DIRS.linux, "managed-settings.json")}) sets channelsEnabled and lists aweb-channel@awebai-marketplace in allowedChannelPlugins; this is evidence, not proof: ${caveat}`,
+  });
 });
