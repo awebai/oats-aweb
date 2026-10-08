@@ -180,8 +180,15 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   once (`/etc/claude-code/managed-settings.json` on Linux,
   `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS).
   The skill's section 4 has the host steps, verification and failure remedies.
-  Without that policy the channel does not register, and launch warns
-  `claude-channel-enrollment-unverified`. Where broker delivery is authorized, an operator may select `delivery: session`
+  Without that policy the channel does not register. Launch warns
+  `claude-channel-enrollment-unverified`; readiness reads the machine file
+  read-only and warns `claude-channel-policy-admitted`,
+  `claude-channel-policy-not-admitted` (naming the missing key) or
+  `claude-channel-policy-malformed` (Claude Code refuses to start until it is
+  repaired) or `claude-channel-enrollment-unverified` (absent, unreadable or an
+  unsupported platform). The
+  file is evidence, not proof: server-managed settings or MDM override it, and
+  only the nonce exchange proves receive. Where broker delivery is authorized, an operator may select `delivery: session`
   for an unattended home; this must not override an explicit native-channel
   requirement.
 

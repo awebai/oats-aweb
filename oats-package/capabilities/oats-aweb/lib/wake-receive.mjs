@@ -12,6 +12,7 @@
 // an external-session home like any session home (brokerDelivers).
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {approvedChannelPolicyWarning} from './claude-managed-policy.mjs';
 
 const JOINED_EVENT_CLASSES = ['mail', 'chat'];
 // Observation age is advisory; readiness does not certify recent observation.
@@ -58,7 +59,7 @@ export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
 });
 const CHANNEL_ENROLLMENT_UNVERIFIED = {
   code: 'claude-channel-enrollment-unverified',
-  message: 'approved mode: Claude registers aweb-channel only if the host\'s managed policy admits it (channelsEnabled and allowedChannelPlugins); this start does not check that policy; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
+  message: 'approved mode: Claude registers aweb-channel only if the host\'s managed policy admits it (channelsEnabled and allowedChannelPlugins); this start does not check that policy, oats readiness --home reads the machine file; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
 };
 
 /** Host selection is a requested mode, never an admission or connection receipt. */
@@ -85,8 +86,9 @@ function aggregateClaudeModes(combined) {
 }
 
 /** Only exact provider contributions identify historical mode. The combined
- * hook argument is a fallback for old records without per-provider receipts. */
-function capturedClaudeChannel(meta, hooks) {
+ * hook argument is a fallback for old records without per-provider receipts.
+ * An approved home's warning reads the machine managed-settings evidence. */
+function capturedClaudeChannel(meta, hooks, policy) {
   const recorded = meta.claudeChannelMode;
   if (recorded !== undefined) selectClaudeChannel(recorded);
   const combined = hooks?.launch?.claude;
@@ -107,7 +109,8 @@ function capturedClaudeChannel(meta, hooks) {
   const mode = recorded ?? contributed;
   const aggregateModes = aggregateClaudeModes(combined);
   if (aggregateModes.length > 1 || (mode !== undefined && aggregateModes.some(value => value !== mode))) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
-  return mode === undefined ? {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'} : selectClaudeChannel(mode).warning;
+  if (mode === undefined) return {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'};
+  return mode === 'approved' ? approvedChannelPolicyWarning(policy) : selectClaudeChannel(mode).warning;
 }
 
 /** external-session | native-channel | native-pi. */
@@ -201,8 +204,9 @@ function receiveRecord(home) {
 }
 
 /** Preserve valid retained facts even when a legacy record lacks ownership.
- * Old producers lacked delivery/runtime and kept joins only in metadata. */
-export function expectedReceive(home, {delivery = 'channel'} = {}) {
+ * Old producers lacked delivery/runtime and kept joins only in metadata.
+ * `policy` ({root}) relocates the managed-settings read for tests only. */
+export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
   const captured = receiveRecord(home);
   const fail = message => ({problems: [problem('receive-record-unavailable', message)], warnings: []});
   if (captured.error) return fail(captured.error);
@@ -248,7 +252,7 @@ export function expectedReceive(home, {delivery = 'channel'} = {}) {
   const native = meta.delivery === 'channel' && runtime !== undefined && !primaryBroker;
   if (meta.claudeChannelMode !== undefined && (meta.delivery !== 'channel' || runtime !== 'claude')) return fail('captured Claude channel mode contradicts delivery/runtime');
   if (native && runtime === 'claude') {
-    try { warnings.push(capturedClaudeChannel(meta, captured.hooks)); }
+    try { warnings.push(capturedClaudeChannel(meta, captured.hooks, policy)); }
     catch (error) { return fail(error.message); }
   }
   const bindings = joined.map(j => ({identity_home: j.identityHome, label: j.label, team: j.team, controls: false, event_classes: ['mail', 'chat']}));

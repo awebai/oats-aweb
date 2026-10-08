@@ -15,6 +15,19 @@ development. The approved launch warning keeps its code,
 `claude-channel-enrollment-unverified`, with wording that no longer cites a
 future approval.
 
+Added: readiness of a home whose captured `claudeChannelMode` is approved reads
+the machine managed-settings file (`/etc/claude-code` on Linux,
+`/Library/Application Support/ClaudeCode` on macOS: `managed-settings.json`,
+then `managed-settings.d/*.json`) read-only and warns one verdict:
+`claude-channel-policy-admitted` (`channelsEnabled` true and the
+`aweb-channel@awebai-marketplace` entry), `claude-channel-policy-not-admitted`
+(naming the missing key or the wrong marketplace), `claude-channel-policy-malformed`
+(a file is not a JSON object; Claude Code refuses to start until it is repaired) or
+`claude-channel-enrollment-unverified` (absent, unreadable or an unsupported
+platform; the launch warning keeps this code). The file is evidence,
+not proof: server-managed settings or MDM override it, and only the nonce
+exchange proves receive. No environment variable moves the path.
+
 ## 1.23.2 — 2026-10-07
 
 Added (#76): GLOBAL grant metadata records validated actual

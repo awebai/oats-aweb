@@ -15,6 +15,14 @@ import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
+// An approved home's readiness reports the host's managed policy: admitted, not admitted or unknown.
+const APPROVED_POLICY_CODES = ["claude-channel-policy-admitted", "claude-channel-policy-not-admitted", "claude-channel-policy-malformed", "claude-channel-enrollment-unverified"];
+/** Exactly one policy verdict, carrying the honesty caveat or the repair remedy. */
+function assertOnePolicyVerdict(warnings) {
+  const verdicts = warnings.filter(w => APPROVED_POLICY_CODES.includes(w.code));
+  assert.equal(verdicts.length, 1, JSON.stringify(warnings));
+  assert.match(verdicts[0].message, verdicts[0].code === "claude-channel-policy-malformed" ? /an admin repairs it/ : /only the nonce exchange proves receive/);
+}
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
 const BINDING = join(CAPABILITY, "bin", "oats-aweb-binding.mjs");
@@ -1060,6 +1068,7 @@ for(const mode of [undefined,'approved']) test(`selector emits the fixed argumen
   if(expected==='approved') {
     assert.match(doc.warning,/Claude registers aweb-channel only if the host's managed policy admits it/);
     assert.match(doc.warning,/this start does not check that policy/);
+    assert.match(doc.warning,/oats readiness --home reads the machine file/);
   } else {
     assert.match(doc.warning,/nothing in this provider answers it/);
   }
@@ -1067,7 +1076,9 @@ for(const mode of [undefined,'approved']) test(`selector emits the fixed argumen
   assert.doesNotMatch(doc.warning,/launchPromptAnswers|awebDevelopmentChannel/);
   fx.record(doc.meta,'claude');
   const warnings=fx.readiness().warnings;
-  assert.ok(warnings.some(w=>w.code===code));
+  // Readiness reads this host's real managed-settings file, so any policy verdict is valid here.
+  if(expected==='approved') assertOnePolicyVerdict(warnings);
+  else assert.ok(warnings.some(w=>w.code===code),JSON.stringify(warnings));
   assert.ok(warnings.some(w=>w.code==='native-receive-unproven'));
 });
 
@@ -1144,7 +1155,8 @@ for(const [name,mode,hooks,code] of [
   const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
   const result=fx.readiness();
   assert.equal(result.status,code==='receive-record-unavailable'?'unavailable':'ready',JSON.stringify(result));
-  assert.ok([...result.problems,...result.warnings].some(w=>w.code===code),JSON.stringify(result));
+  if(code==='claude-channel-enrollment-unverified') assertOnePolicyVerdict(result.warnings);
+  else assert.ok([...result.problems,...result.warnings].some(w=>w.code===code),JSON.stringify(result));
   if(result.status==='ready') assert.ok(result.warnings.some(w=>w.code==='native-receive-unproven'));
   assert.equal(fx.fake.readCalls().slice(calls).filter(c=>c.args[0]==='wake').length,0);
   assert.deepEqual(snapshot(fx.home),before);
@@ -1172,7 +1184,7 @@ for(const mode of ['approved','development']) for(const evidence of ['both','met
     writeFileSync(join(home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[]}));
     const hooks={launch:{claude:aggregate},...(receipts?{contributions:[{capability:'oats.aweb',launch:{claude:own}},{capability:'fixture.logging',launch:{claude:'--verbose'}}]}:{})};
     writeFileSync(join(home,'instance.json'),JSON.stringify({launch:{harness:'claude',hooks},capabilityMeta:{'oats.aweb':{delivery:'channel',runtime:'claude',...(evidence==='receipt'?{}:{claudeChannelMode:mode})}}}));
-    const before=snapshot(home),result=expectedReceive(home);
+    const before=snapshot(home),result=expectedReceive(home,{policy:{root:tempDir(t),platform:'linux'}});
     assert.equal(result.problems[0]?.code,failed?'receive-record-unavailable':undefined,JSON.stringify(result));
     if(!failed) assert.ok(result.warnings.some(w=>w.code===(mode==='approved'?'claude-channel-enrollment-unverified':'channel-dev-confirmation')));
     assert.deepEqual(snapshot(home),before);
