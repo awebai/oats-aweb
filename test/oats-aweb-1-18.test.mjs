@@ -1058,8 +1058,8 @@ for(const mode of [undefined,'approved']) test(`selector emits the fixed argumen
   const code=expected==='development'?'channel-dev-confirmation':'claude-channel-enrollment-unverified';
   assert.match(doc.warning,new RegExp(code));
   if(expected==='approved') {
-    assert.match(doc.warning,/currently not on the default approved list/);
-    assert.match(doc.warning,/approved mode registers no aweb channel without applicable managed allowedChannelPlugins or future approval/);
+    assert.match(doc.warning,/Claude registers aweb-channel only if the host's managed policy admits it/);
+    assert.match(doc.warning,/this start does not check that policy/);
   } else {
     assert.match(doc.warning,/nothing in this provider answers it/);
   }

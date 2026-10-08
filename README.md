@@ -170,16 +170,18 @@ Host-owned settings live under `settings.oats.aweb` (normally in
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
-  Development is selected to avoid a silent missing receiver: aweb-channel is
-  currently not on the default approved list. Explicit host-local
-  `claudeChannelMode: approved` selects
-  `--channels plugin:aweb-channel@awebai-marketplace`, which registers no aweb
-  channel unless applicable managed `allowedChannelPlugins` for this identity
-  lists the plugin and marketplace, or a future approval exists. Installation or
-  a trusted marketplace is not approval. Launch and readiness retain
-  `claude-channel-enrollment-unverified`: effective admission remains unverified,
-  and Claude may run with no channel wake, potentially without a diagnostic.
-  Where broker delivery is authorized, an operator may select `delivery: session`
+  aweb-channel is not on Anthropic's default channel allowlist. The recommended
+  unattended route is explicit host-local `claudeChannelMode: approved`, which
+  selects `--channels plugin:aweb-channel@awebai-marketplace` (no development
+  prompt). Claude admits the plugin when its managed policy sets
+  `channelsEnabled: true` and lists `{plugin: "aweb-channel", marketplace:
+  "awebai-marketplace"}` in `allowedChannelPlugins`; on hosts without
+  server-managed settings or MDM that is a root-owned file a human admin writes
+  once (`/etc/claude-code/managed-settings.json` on Linux,
+  `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS).
+  The skill's section 4 has the host steps, verification and failure remedies.
+  Without that policy the channel does not register, and launch warns
+  `claude-channel-enrollment-unverified`. Where broker delivery is authorized, an operator may select `delivery: session`
   for an unattended home; this must not override an explicit native-channel
   requirement.
 
