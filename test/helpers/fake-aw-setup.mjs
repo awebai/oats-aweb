@@ -12,6 +12,7 @@
 //                     stdout even under --json
 //   AW_DELETE_FAIL_FOR the same refusal, only for the joined identity home
 //                     .aweb-identity-<label>
+//   AW_DELETE_FAIL_SUFFIX text appended to that refusal's diagnostic
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -93,7 +94,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_WHOAMI_FAIL) { console.error("no identity"); process.exit(6); }
   console.log(JSON.stringify({ alias: "fixture", did: "did:key:zFixture" }));
 } else if (deleting) {
-  if (process.env.AW_DELETE_FAIL || (process.env.AW_DELETE_FAIL_FOR && path.basename(awDir) === ".aweb-identity-" + process.env.AW_DELETE_FAIL_FOR)) { console.error("Error: delete workspace " + args[2] + ": 503 Service Unavailable: team controller unavailable"); process.exit(1); }
+  if (process.env.AW_DELETE_FAIL || (process.env.AW_DELETE_FAIL_FOR && path.basename(awDir) === ".aweb-identity-" + process.env.AW_DELETE_FAIL_FOR)) { console.error("Error: delete workspace " + args[2] + ": 503 Service Unavailable: team controller unavailable" + (process.env.AW_DELETE_FAIL_SUFFIX || "")); process.exit(1); }
   fs.rmSync(awDir, { recursive: true, force: true });
   console.log(JSON.stringify({ alias_released: true, alias_released_reason: "released" }));
 } else if (args[0] === "workspace" && args[1] === "connect") {

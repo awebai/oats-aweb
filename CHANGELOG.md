@@ -66,10 +66,12 @@ its own reason. `aliasReusable` and `aliasReason` still describe the default
 identity. On the retry the default-retire marker stops a second self-delete,
 the leave runs again with its key, and a successful leave exits 0. A
 `team_not_hosted` leave failure keeps exit 0 with its warning and controller
-command. `team_not_hosted` is now recognized only from aw itself: its refusal
-line ending `(reason: team_not_hosted)` or `alias_released_reason`, never from
-text anywhere in the error (which carries the identity home's path), so a path
-or label containing the words no longer passes for a controller refusal.
+command. `team_not_hosted` is now recognized only as aw states it: its whole
+external-home refusal (exit 2, the one stderr line naming this identity home as
+the principal and ending `(reason: team_not_hosted)`) or
+`alias_released_reason`. Text elsewhere in an error (the identity home's path,
+an HTTP error's prose) no longer passes for a controller refusal; an
+unrecognized refusal keeps the home and its key.
 
 ## 1.23.2 — 2026-10-07
 

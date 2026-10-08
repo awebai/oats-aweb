@@ -1148,12 +1148,20 @@ function releaseReceiptStatus(doc) {
   return doc && typeof doc === "object" && doc.alias_released === true ? "released" : undefined;
 }
 // The one refusal that hands a joined membership to the team's controller: aw
-// refuses an external-home self-release on a team that is not hosted, its
-// stderr line ending "(reason: team_not_hosted)" (aw 1.36.23), or answers
-// alias_released_reason "team_not_hosted". It is read from aw's own stderr or
-// JSON field only, never from a message this hook builds (those carry paths
-// and labels): it decides whether retire may let the member key go.
-const TEAM_NOT_HOSTED_REFUSAL_RE = /\(reason: team_not_hosted\)\s*$/m;
+// refusing an external-home self-release on a team that is not hosted, or
+// answering alias_released_reason "team_not_hosted". It decides whether retire
+// may let the member key go, so it is recognized only as aw states it: the
+// whole refusal aw 1.36.23 prints (exit 2, one stderr line, the principal
+// being the identity home it was given), or that JSON field. Never a part of
+// stderr (an HTTP error's prose may end the same way) and never a message
+// this hook builds (those carry paths and labels). Anything else keeps the key.
+function teamNotHostedRefusal(e, identityHome) {
+  if (e?.status !== 2) return false;
+  const stderr = String(e?.stderr ?? "").trim();
+  const principals = new Set([identityHome]);
+  try { principals.add(realpathSync(identityHome)); } catch { /* the given path is the one aw names */ }
+  return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
+}
 function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
@@ -1163,7 +1171,7 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
     released = releaseReceiptStatus(receipt);
   } catch (e) {
     const error = new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
-    if (TEAM_NOT_HOSTED_REFUSAL_RE.test(String(e?.stderr ?? ""))) error.nativeReason = "team_not_hosted";
+    if (teamNotHostedRefusal(e, entry.identityHome)) error.nativeReason = "team_not_hosted";
     throw error;
   }
   if (!released) {

@@ -140,14 +140,15 @@ test('a refused self-delete keeps the home with its keys for the retry, and the 
 
 // Amendment 1: the key a failed joined-team leave needs is never in recovery,
 // so retire must not let the kernel remove the home that holds it.
-// The second prefix puts "team_not_hosted" in an ancestor of every identity
-// home: a path is not aw's refusal, and the key must still stay.
-for (const prefix of ['public-disposable-home-', 'team_not_hosted-']) test(`a failed joined-team leave keeps the home with its key; the retry leaves the team without a second self-delete (${prefix})`, { skip: !kernel && 'requires pinned bb2ba8c public kernel checkout', timeout: 180000 }, (t) => {
+// The variants put "team_not_hosted" in an ancestor of every identity home, or
+// at the end of the HTTP error's prose: neither is aw's own refusal, and the
+// key must still stay.
+for (const [variant, prefix, suffix] of [['plain', 'public-disposable-home-', ''], ['path', 'team_not_hosted-', ''], ['prose', 'public-disposable-home-', ' (reason: team_not_hosted)']]) test(`a failed joined-team leave keeps the home with its key; the retry leaves the team without a second self-delete (${variant})`, { skip: !kernel && 'requires pinned bb2ba8c public kernel checkout', timeout: 180000 }, (t) => {
   const f = deployment(t, { prefix });
   const home = spawnProbe(f, 'leave-probe');
   const deletes = () => f.fake.readCalls().filter((c) => c.args[0] === 'workspace' && c.args[1] === 'delete');
   const joinedHome = join(home, '.aweb-identity-joined');
-  let r = f.oats(['retire', 'leave-probe'], { AW_DELETE_FAIL_FOR: 'joined' });
+  let r = f.oats(['retire', 'leave-probe'], { AW_DELETE_FAIL_FOR: 'joined', AW_DELETE_FAIL_SUFFIX: suffix });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   let retired = JSON.parse(r.stdout);
   assert.equal(retired.retainedHome, home, 'the home is kept for the retry');
