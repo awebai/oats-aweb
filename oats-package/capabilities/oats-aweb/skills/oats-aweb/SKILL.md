@@ -170,29 +170,38 @@ root-owned machine file. Host steps, once per machine:
    ```json
    {"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}
    ```
-   Merge these keys into an existing file. Setting `allowedChannelPlugins`
-   replaces Anthropic's default channel allowlist on that host (on 2026-10-08:
-   discord, telegram, fakechat and imessage from `claude-plugins-official`); list
-   any of those this host still uses.
+   Merge these keys into an existing file, or put them in their own drop-in,
+   `managed-settings.d/50-aweb.json` beside it (Claude merges the file first,
+   then the drop-ins alphabetically; lists combine). Setting
+   `allowedChannelPlugins` replaces Anthropic's default channel allowlist on that
+   host (on 2026-10-08: discord, telegram, fakechat and imessage from
+   `claude-plugins-official`); list any of those this host still uses.
 2. `oats-local.yaml`: `settings.oats.aweb.claudeChannelMode: approved`, with
    `delivery: channel` (the default).
 3. Install and enable `aweb-channel@awebai-marketplace` in the Claude config
-   directory the launch uses (the launch config's `CLAUDE_CONFIG_DIR`): with that
-   `CLAUDE_CONFIG_DIR`, `claude plugin marketplace add awebai/claude-plugins`,
+   the launch uses: the launch config's `env.CLAUDE_CONFIG_DIR` in
+   `oats-local.yaml` when it sets one, else the launching user's default. With
+   that `CLAUDE_CONFIG_DIR`: `claude plugin marketplace add awebai/claude-plugins`,
    `claude plugin install aweb-channel@awebai-marketplace`, then check
    `claude plugin list` shows it enabled.
 4. Respawn existing homes: they keep their captured mode until respawned.
 
-Verify each approved home: the startup banner's channels notice names
-`plugin:aweb-channel@awebai-marketplace` with no allowlist or policy warning
-under it, and no development prompt appears. A clean banner is still not
-receive: run the nonce exchange in "Receive verification and recovery" below.
+Verify each approved home in its pane. On Claude 2.1.293 darwin-arm64
+(2026-10-08) the admitted banner read, wrapped over two rows:
+`Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace
+inject directly in this session · restart without --channels to stop`. No
+development prompt appears, and the scrollback contains none of "Loading
+development channels", "not on the approved channels allowlist", "not on your
+org's approved channels list", "blocked by org policy" or "plugin not installed".
+That is still not receive: run the nonce exchange in "Receive verification and
+recovery" below; an admitted channel presents mail in the pane as
+`← aweb-channel: …`.
 
 | Startup shows | Remedy |
 |---|---|
-| "not on the approved channels allowlist" | the effective policy does not list aweb-channel: admin fixes step 1, or the higher source below |
+| "not on the approved channels allowlist" or "not on your org's approved channels list" | the effective policy does not list aweb-channel: admin fixes step 1, or the higher source below |
 | "blocked by org policy" | `channelsEnabled` is not `true` in the effective policy: admin adds it |
-| a warning that the plugin is not installed | step 3 in the launch's `CLAUDE_CONFIG_DIR` |
+| "plugin not installed", or `claude plugin list` (with the launch's `CLAUDE_CONFIG_DIR`) does not show aweb-channel enabled | step 3 |
 | the development-channels prompt | the home runs in development mode (the file does not suppress that prompt): set approved and respawn |
 
 **Precedence:** Claude reads the first managed source present: server-managed
@@ -345,7 +354,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
 | `channel-dev-confirmation` | the home runs in development mode, so Claude may stop at its development-channels confirmation; mode is not consent | operator: move the host to section 4's approved route and respawn; as fallback, section 4's exact-home opt-in (qualified only for Claude 2.1.289 darwin-arm64) or separately authorized human intervention; no provider/broker/ordinary-agent keys |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
-| `claude-channel-enrollment-unverified` | approved mode: Claude registers aweb-channel only if the host's managed policy admits it, and this check did not establish that | admin: section 4 host step 1 (or the higher managed source); then verify the banner and the nonce exchange |
+| `claude-channel-enrollment-unverified` | approved mode: Claude registers aweb-channel only if the host's managed policy admits it, and this check did not establish that | admin: section 4 host step 1 (or the higher managed source); then section 4's startup check and the nonce exchange |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |

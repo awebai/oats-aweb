@@ -8,10 +8,12 @@ route as the recommended unattended setup. `claudeChannelMode: approved` passes
 Claude admits the plugin when the host's managed policy sets `channelsEnabled`
 and lists it in `allowedChannelPlugins`. On hosts without server-managed settings
 or MDM that is a root-owned `managed-settings.json` a human admin writes once.
-Host steps, banner verification, failure remedies and the precedence caveat are
+Host steps, the startup check, failure remedies and the precedence caveat are
 in the skill; development mode with the kernel's exact-home consent remains the
 fallback, qualified only for Claude 2.1.289 darwin-arm64. The default stays
-development, and no provider behaviour changes.
+development. The approved launch warning keeps its code,
+`claude-channel-enrollment-unverified`, with wording that no longer cites a
+future approval.
 
 ## 1.23.2 — 2026-10-07
 

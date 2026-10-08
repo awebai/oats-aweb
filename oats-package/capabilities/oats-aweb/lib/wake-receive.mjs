@@ -58,7 +58,7 @@ export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
 });
 const CHANNEL_ENROLLMENT_UNVERIFIED = {
   code: 'claude-channel-enrollment-unverified',
-  message: 'aweb-channel is currently not on the default approved list, so approved mode registers no aweb channel without applicable managed allowedChannelPlugins or future approval; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
+  message: 'approved mode: Claude registers aweb-channel only if the host\'s managed policy admits it (channelsEnabled and allowedChannelPlugins); this start does not check that policy; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
 };
 
 /** Host selection is a requested mode, never an admission or connection receipt. */

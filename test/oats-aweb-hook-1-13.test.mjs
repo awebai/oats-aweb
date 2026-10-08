@@ -508,7 +508,7 @@ function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
   assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
   if(mode==='approved') {
     assert.match(doc.warning,/claude-channel-enrollment-unverified/);
-    assert.match(doc.warning,/approved mode registers no aweb channel without applicable managed allowedChannelPlugins or future approval/);
+    assert.match(doc.warning,/Claude registers aweb-channel only if the host's managed policy admits it/);
     assert.doesNotMatch(doc.warning,/channel-dev-confirmation/);
   } else {
     assert.match(doc.warning,/channel-dev-confirmation/);
