@@ -635,6 +635,20 @@ yet: its owner runs oats aweb setup, then commits the id, or choose another defa
 workspace doesn't allow local teams`. Next: `/oats-teams` owns mapping/default
 policy. Plain setup creates nothing for that unmapped committed/shared default.
 
+### What retire's recovery keeps
+
+Provider 1.24.0 on OATS >=0.42.0 declares `.aw`, `.aweb-identity`,
+`.aweb-identity-*` and `.oats-aweb` as provider home state: retire never copies
+them to recovery (`recovery.json` `notCopied` names them, owner `oats.aweb`).
+They stay in the home until the kernel removes it, so retire hooks see them, and
+an incomplete cleanup keeps the home with them; a retry reads them from the home,
+never from recovery. A joined-team leave that needs its member key (any failure
+but `team_not_hosted`) makes retire exit nonzero, so the home and that key stay.
+After `oats retire --force` no copy of the key remains: the team's controller or
+owner removes the membership. Exceptions: a failed spawn's preservation (directory
+mode) copies the whole home, keys included, and homes spawned before 1.24.0 are
+copied whole.
+
 ## Gotchas
 
 - `aw mail inbox` shows **unread** only; session-delivery recovery uses `aw mail show --message-id <id> --json` or paginated `aw mail inbox --show-all --json` with `--cursor`, not read state or `--conversation-id`.
