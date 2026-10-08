@@ -180,17 +180,19 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   once (`/etc/claude-code/managed-settings.json` on Linux,
   `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS).
   The skill's section 4 has the host steps, verification and failure remedies.
-  Without that policy the channel does not register. Launch warns
-  `claude-channel-enrollment-unverified`; readiness reads the machine file
-  read-only and warns `claude-channel-policy-admitted`,
-  `claude-channel-policy-not-admitted` (naming the missing key) or
-  `claude-channel-policy-malformed` (Claude Code refuses to start until it is
-  repaired) or `claude-channel-enrollment-unverified` (absent, unreadable or an
-  unsupported platform). The
-  file is evidence, not proof: server-managed settings or MDM override it, and
-  only the nonce exchange proves receive. Where broker delivery is authorized, an operator may select `delivery: session`
-  for an unattended home; this must not override an explicit native-channel
-  requirement.
+  Without that policy the channel does not register. Readiness reads the
+  machine file read-only and warns one verdict: `claude-channel-policy-admitted`,
+  `claude-channel-policy-not-admitted` (naming the missing key),
+  `claude-channel-policy-malformed` (Claude Code documents that it refuses to
+  start while a managed-settings file is unparseable, in
+  code.claude.com/docs/en/managed-settings.md) or
+  `claude-channel-enrollment-unverified` (absent, unreadable or an unsupported
+  platform). An approved launch warns the same
+  verdict, and nothing when the file admits the plugin. The file is evidence,
+  not proof: server-managed settings or MDM override it, and only the nonce
+  exchange proves receive. Where broker delivery is authorized, an operator may
+  select `delivery: session` for an unattended home; this must not override an
+  explicit native-channel requirement.
 
   Both modes contribute exactly one fixed plugin argument;
   `settings.oats.aweb.claudeChannelMode` selects argv, never consent. No automatic

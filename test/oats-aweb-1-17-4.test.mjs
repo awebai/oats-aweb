@@ -12,6 +12,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
+import { launchChannelWarning } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
@@ -144,7 +145,10 @@ function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, cl
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
 const DEV_CONFIRMATION_WARNING = `oats-aweb: channel-dev-confirmation — Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 (Channel selection and launch consent).`;
-const APPROVED_WARNING = `oats-aweb: claude-channel-enrollment-unverified — approved mode: Claude registers aweb-channel only if the host's managed policy admits it (channelsEnabled and allowedChannelPlugins); this start does not check that policy, oats readiness --home reads the machine file; see the oats-aweb skill, section 4 (Channel selection and launch consent).`;
+// The hook reads this host's real managed-settings file, so the approved launch
+// warning is whatever verdict this host yields (none when the file admits).
+const APPROVED_LAUNCH = launchChannelWarning("approved");
+const APPROVED_WARNING = APPROVED_LAUNCH && `oats-aweb: ${APPROVED_LAUNCH.code} — ${APPROVED_LAUNCH.message}`;
 
 test("spawn output is pinned byte for byte for the same inputs", (t) => {
   for (const [delivery, runtime] of [["session", "claude"], ["channel", "claude"], ["channel", "pi"], ["channel", "codex"]]) {

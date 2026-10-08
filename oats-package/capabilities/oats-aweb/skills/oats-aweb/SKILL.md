@@ -197,9 +197,12 @@ That is still not receive: run the nonce exchange in "Receive verification and
 recovery" below; an admitted channel presents mail in the pane as
 `← aweb-channel: …`.
 
-After the startup check, `oats readiness --home H --json` (provider later than
-1.23.2) reads the machine file read-only and warns `claude-channel-policy-admitted`
-when it admits the plugin; that is evidence about the file, not receive.
+With a provider later than 1.23.2, an approved spawn or launch reads the machine
+file read-only and warns nothing when it admits the plugin, or one of the
+`claude-channel-policy-*` / `claude-channel-enrollment-unverified` verdicts in
+section 7's table when it does not; `oats readiness --home H --json` reports the same verdict,
+`claude-channel-policy-admitted` included. That is evidence about the file, not
+receive.
 
 | Startup shows | Remedy |
 |---|---|
@@ -359,10 +362,10 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
 | `channel-dev-confirmation` | the home runs in development mode, so Claude may stop at its development-channels confirmation; mode is not consent | operator: move the host to section 4's approved route and respawn; as fallback, section 4's exact-home opt-in (qualified only for Claude 2.1.289 darwin-arm64) or separately authorized human intervention; no provider/broker/ordinary-agent keys |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
-| `claude-channel-policy-admitted` | approved mode: the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
+| `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
 | `claude-channel-policy-not-admitted` | approved mode: the machine file exists but does not set up the route as section 4 writes it; the message names the missing key (`channelsEnabled`, the entry, or the wrong marketplace). A missing `channelsEnabled` blocks API-key and Team/Enterprise accounts, not Pro/Max | admin: section 4 host step 1 |
-| `claude-channel-enrollment-unverified` | approved mode, admission not established. Readiness: no machine file, unreadable, or an unsupported platform. Launch always warns this: it does not read the policy | admin: section 4 host step 1 (or the higher managed source); then section 4's startup check and the nonce exchange |
-| `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code refuses to start while it is malformed | admin: repair the file the message names |
+| `claude-channel-enrollment-unverified` | approved mode, admission not established. No machine file, unreadable, or an unsupported platform (launch and readiness; providers up to 1.23.2 warned this at every approved launch without reading the policy) | admin: section 4 host step 1 (or the higher managed source); then section 4's startup check and the nonce exchange |
+| `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
