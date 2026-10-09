@@ -9,7 +9,9 @@
 - Probe-only admission checks aw >=1.36.28 and the exact selected hosted
   service `/meta` build.aweb_version >=1.27.12 with bounded unauthenticated
   observation, explicit-root config checks and no legacy fallback. The general
-  provider aw floor stays 1.36.13. No live acceptance is claimed.
+  provider aw floor stays 1.36.13. The selected-service guarantee holds modulo
+  redirects issued by the selected origin; metadata itself never follows redirects.
+  No live acceptance is claimed.
   See `docs/probe.md` for proof limits, JSON timing semantics and separate live
   acceptance requirements.
 

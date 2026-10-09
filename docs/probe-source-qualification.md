@@ -131,9 +131,13 @@ The origin statement above covers candidate construction and path rebasing.
 It does **not** claim native HTTP clients prohibit redirects: the recovery
 heartbeat client (`helpers.go:761`) and configured clients (`:864` onward)
 have no explicit `CheckRedirect` policy. The provider's own `/meta` transport
-does prohibit redirects. A hard guarantee about all native redirect destinations
-requires separate upstream qualification; same-origin candidate construction
-alone does not prove it.
+does prohibit redirects. The controlling integration disposition accepts the narrower trust assumption:
+**selected-service guarantee holds modulo redirects issued by the selected
+origin**. Redirects issued by the recognized hosted origin are trusted as its
+decision; destination versions are not independently qualified by this probe.
+This does not add arbitrary configured origins or waive unknown/non-hosted
+refusal. A future native same-origin redirect fix requires its own declared
+release/floor before removing the caveat; no fixed version or flag is invented.
 
 Additional pure fixture:
 [probe57_rebase_test.go](../test/fixtures/probe/probe57_rebase_test.go).

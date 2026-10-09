@@ -743,4 +743,5 @@ reports a verified nonce round trip when qualified CLI **and** server support
 are available. It is an explicit send action, never a readiness/lifecycle check.
 Admission requires aw >=1.36.28 and the exact selected hosted service `/meta`
 `build.aweb_version` >=1.27.12; unavailable support refuses before sending.
-The general aw floor remains 1.36.13; there is no legacy fallback. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).
+The general aw floor remains 1.36.13; there is no legacy fallback. The
+selected-service guarantee holds modulo redirects issued by the selected origin. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).
