@@ -15,14 +15,16 @@ the general provider aw floor remains 1.36.13. The recognized origin is
 `https://app.aweb.ai`. No flag or environment variable bypasses admission.
 
 The accepted trust assumption is: **selected-service guarantee holds modulo
-redirects issued by the selected origin**. Native mail requests trust redirects
-issued by that recognized hosted origin as its decision. This is not an
-independent version qualification of every redirect destination. The provider's
-own `/meta` request still refuses redirects; unknown or non-hosted configured
-origins still refuse before send. Additional recognized origins need an
-owner-approved metadata contract. A future native same-origin redirect policy
-may remove this caveat at its declared released version; no such floor or flag
-is assumed here.
+redirects issued by the selected origin**, scoped only to native unauthenticated
+heartbeat discovery during API-path recovery. That heartbeat GET can follow
+redirects and carries no principal headers; its final destination is not
+independently origin-pinned. Authenticated signed mail/API requests already
+refuse redirects through the native `DoNoRedirectWithTimeout` wrapper. The
+provider's own `/meta` request also refuses redirects. This caveat neither
+forwards the signed mail body/auth to a redirect destination nor admits arbitrary
+configured services. Additional recognized origins still need an owner-approved
+metadata contract. Future heartbeat redirect hardening has no declared released
+floor; no new native flag or fixed version is assumed here.
 
 The executable is resolved once from absolute PATH entries, observed through
 `aw version` with update checks disabled, and reused by absolute real path.

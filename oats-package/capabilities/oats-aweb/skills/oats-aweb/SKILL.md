@@ -679,9 +679,9 @@ selected hosted origin `/meta` observation with build.aweb_version >=1.27.12.
 Only https://app.aweb.ai is qualified; missing/unsupported versions or ambiguous
 identity-home service config refuse. No bypass or legacy fallback exists. The
 ordinary provider aw floor stays 1.36.13. The selected-service guarantee holds
-modulo redirects issued by the selected origin; this trusts its native-mail
-redirect decisions, not arbitrary configured services. Metadata itself never
-follows redirects. Timeout is finite,
+modulo redirects issued by the selected origin for unauthenticated heartbeat
+discovery only. Authenticated signed mail and metadata refuse redirects; arbitrary
+configured services remain unsupported. Timeout is finite,
 positive, defaults to 60 seconds and is capped at 300 seconds including child
 processes and diagnostics. JSON is one schemaVersion1 document, exit0 only for
 PASS. Public pane/readiness/version gaps remain unknown; no raw body or nonce

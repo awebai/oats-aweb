@@ -128,16 +128,47 @@ All locations below use public aw commit
   still reports `send-outcome-unknown`, without a provider retry.
 
 The origin statement above covers candidate construction and path rebasing.
-It does **not** claim native HTTP clients prohibit redirects: the recovery
-heartbeat client (`helpers.go:761`) and configured clients (`:864` onward)
-have no explicit `CheckRedirect` policy. The provider's own `/meta` transport
-does prohibit redirects. The controlling integration disposition accepts the narrower trust assumption:
-**selected-service guarantee holds modulo redirects issued by the selected
-origin**. Redirects issued by the recognized hosted origin are trusted as its
-decision; destination versions are not independently qualified by this probe.
-This does not add arbitrary configured origins or waive unknown/non-hosted
-refusal. A future native same-origin redirect fix requires its own declared
-release/floor before removing the caveat; no fixed version or flag is invented.
+Actual authenticated mail has an additional boundary:
+`awid/mail.go:160` calls `Post`; `awid/client.go:1436` calls
+`DoNoRedirectWithTimeout`; `awid/http_transport.go:86–101` clones the supplied
+client and sets `CheckRedirect` to `http.ErrUseLastResponse`, overriding any
+injected redirect policy. Fallback calls `RoundTrip` directly, which does not
+follow HTTP redirects. Thus the absence of `CheckRedirect` on the configured
+client does **not** mean authenticated mail follows redirects.
+
+Only the unauthenticated recovery heartbeat (`helpers.go:753–776`) uses its
+own `http.Client.Do` without that wrapper. Its constructor attaches no principal
+headers. The controlling disposition `60287d1a`, **as corrected by
+`daea7f2d-23b8-4cdf-837c-b08d5fbae7bf`**, accepts this heartbeat-only trust
+assumption: **selected-service guarantee holds modulo redirects issued by the
+selected origin**. Do not claim that all heartbeat destinations are origin-pinned.
+The provider's `/meta` request refuses redirects. Unknown/non-hosted configured
+services still refuse; future heartbeat hardening (`aweb-abqk`, P3) has no
+qualified released version.
+
+The reviewer's [generic-client reproduction](../test/fixtures/probe/generic-client-redirect.go)
+uses a custom in-process RoundTripper and direct `http.Client.Do`: it observes
+two POST hops with identical synthetic bytes, from app.aweb.ai to
+unqualified.example, with zero network calls. This is valid generic Go client
+evidence **only**. It bypasses `Post`/`DoNoRedirectWithTimeout`; the reviewer
+withdrew its use as evidence that production mail redirects. It does not prove
+nonce-body or authentication forwarding by the actual mail path.
+
+The [actual-mail fixture](../test/fixtures/probe/probe57_mail_redirect_test.go)
+calls released `Client.SendMessage` with a locally generated signing identity,
+fresh conversation ID and injected in-process transport returning 307. It checks
+one authenticated signed POST, no destination hop and no invocation of a
+permissive injected redirect policy. No network request is made. Copy it into
+the pinned source's `awid/` and run:
+
+```sh
+go test ./awid -run '^(TestProbe57ActualMailRejectsRedirect|TestTrustRequestsDoNotFollowRedirects)$' -count=1 -v
+```
+
+Observed: both tests PASS (1.164s package time). The upstream
+`http_redirect_test.go:97` suite also passes its authenticated API/SSE and
+other trust-request cases using isolated local servers. This qualifies the
+production call path, not a live hosted send.
 
 Additional pure fixture:
 [probe57_rebase_test.go](../test/fixtures/probe/probe57_rebase_test.go).
