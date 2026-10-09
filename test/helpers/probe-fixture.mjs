@@ -3,13 +3,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {ProbeError} from '../../oats-package/capabilities/oats-aweb/lib/probe-runtime.mjs';
+export const LOCAL_CAPTURE = JSON.parse(readFileSync(new URL('../fixtures/probe/local-member-capture.json', import.meta.url), 'utf8'));
 export const NONCE = '0123456789abcdef0123456789abcdef';
 export const ROOT_DID = 'did:key:z6Mksender';
 export const TARGET_DID = 'did:key:z6Mktarget';
 export const AT = '2026-10-07T01:00:00Z';
 export function message(id = 'reply-1', from = TARGET_DID, to = ROOT_DID, body = `Reply ${NONCE}`) {
-  const m = {message_id: id, conversation_id: 'conversation-1', from_did: from, to_did: to, body, created_at: AT, read_at: null, verification_status: 'verified', content_mode: 'legacy_plaintext_v1', message_version: 1};
-  m.signed_payload = JSON.stringify({type: 'mail', body, message_id: id, conversation_id: m.conversation_id, from_did: from, to_did: to});
+  const m = {...structuredClone(LOCAL_CAPTURE.mail.messages[0]), message_id: id, conversation_id: 'conversation-1', from_did: from, to_did: to, body, created_at: AT, read_at: null, verification_status: 'verified', content_mode: 'legacy_plaintext_v1', message_version: 1};
+  m.signed_payload = JSON.stringify({...JSON.parse(LOCAL_CAPTURE.mail.messages[0].signed_payload), type: 'mail', body, message_id: id, conversation_id: m.conversation_id, from_did: from, to_did: to});
   return m;
 }
 export function encryptedMessage() {
@@ -50,10 +51,19 @@ export function fixture(t, {reply = message(), onCall, delay = 0, readAt = null}
         if (a[0] === 'session') return output(kernel({home, state: 'unknown', present: true}));
         if (a[0] === 'readiness') return output(kernel({readinessApi: 2, subject: {home, kind: 'instance'}, at: AT, summary: {required: 1, ready: true, pass: 1, fail: 0, unknown: 0}}));
       }
-      const identityHome = args[1], a = args.slice(4, -1), isRoot = identityHome === join(root, '.aw'), alias = isRoot ? 'root' : 'worker-1';
-      assert.equal(args[0], '--identity-home'); assert.equal(args[2], '--team'); assert.equal(args[3], primary.team);
-      if (a[0] === 'whoami') return output({alias, did: isRoot ? ROOT_DID : TARGET_DID, custody: 'self', identity_scope: 'local'});
-      if (a[0] === 'id') return output({active_team: primary.team, memberships: [{team_id: primary.team, alias, active: true, identity_scope: 'local'}]});
+      const identityHome = args[1], hasTeam = args[2] === '--team';
+      const a = args.slice(hasTeam ? 4 : 2, -1), isRoot = identityHome === join(root, '.aw'), alias = isRoot ? 'root' : 'worker-1';
+      assert.equal(args[0], '--identity-home');
+      assert.equal(hasTeam, a[0] === 'whoami' || a[0] === 'mail', 'native --team is bound only on admitted command families');
+      if (hasTeam) assert.equal(args[3], primary.team);
+      if (a[0] === 'whoami') return output({...LOCAL_CAPTURE.whoami, alias, name: alias, address: `test.example/${alias}`, did: isRoot ? ROOT_DID : TARGET_DID});
+      if (a[0] === 'id') {
+        assert.deepEqual(a, ['id', 'team', 'list']);
+        const teams = structuredClone(LOCAL_CAPTURE.teams);
+        teams.active_team = primary.team;
+        Object.assign(teams.memberships[0], {team_id: primary.team, alias, name: alias});
+        return output(teams);
+      }
       assert(isRoot, 'mail must only use root identity');
       if (a[1] === 'send') {
         assert(a.includes('--new-conversation'));
@@ -62,7 +72,7 @@ export function fixture(t, {reply = message(), onCall, delay = 0, readAt = null}
         request = message('request-1', ROOT_DID, TARGET_DID, readFileSync(file, 'utf8').trimEnd()); request.read_at = readAt;
         return output({message_id: 'request-1', conversation_id: 'conversation-1', status: 'delivered', delivered_at: AT});
       }
-      if (a[1] === 'show' && a[2] === '--message-id') return output({messages: [a[3] === 'request-1' ? request : reply], has_more: false});
+      if (a[1] === 'show' && a[2] === '--message-id') return output({...LOCAL_CAPTURE.mail, messages: [a[3] === 'request-1' ? request : reply]});
       if (a[1] === 'show' && a[2] === '--conversation-id') { poll++; return output({messages: [request, ...(reply && poll > delay ? [reply] : [])], has_more: false}); }
       throw new ProbeError('unexpected-test-command');
     }};

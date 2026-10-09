@@ -89,7 +89,11 @@ including retained seats recorded as global. A consistently captured local
 retained identity can qualify under the same checks; the configured root is
 not asserted to be its historical minter.
 
-Subprocesses use argv, explicit identity home and team, a sanitized environment
+Subprocesses use argv and explicit identity home. `--team` is passed to mail
+and whoami, where the released CLI binds it; `id team list` receives no team
+flag and its returned active team/single membership must match the capture.
+A LOCAL member may omit whoami custody; a present value must be exactly `self`.
+Absent custody does not relax DID, scope, grant or membership checks. They use a sanitized environment
 and an owned neutral temporary cwd. This prevents aw's `.env.aweb` overload
 from restoring ambient service/identity selectors. The one-line challenge
 contains a cryptographically random nonce of 192 bits; its body file is mode
@@ -203,7 +207,7 @@ captured authority; `probe-proof.mjs` binds the CLI's verified projections;
 the selected native config; `probe-support.mjs` owns dual release admission; `probe.mjs` sequences the one send and observation.
 Tests inject process/clock dependencies at the module boundary, not through
 production command flags or environment. Run `npm test` for provider regression
-coverage; `node --test test/probe.test.mjs test/probe-support.test.mjs` runs the focused
+coverage; `node --test test/probe.test.mjs test/probe-support.test.mjs test/probe-identity.test.mjs` runs the focused
 offline proof, gate, identity, config-drift and deadline suite.
 
 Live acceptance is separate and has **not** been performed. It needs an

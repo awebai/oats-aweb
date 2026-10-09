@@ -1,7 +1,8 @@
 # Probe source qualification
 
 This receipt covers source and isolated fixtures, not installed binaries,
-Cloud deployment, live mail or disposable-pair acceptance.
+Cloud deployment, live probe or disposable-pair acceptance. Authorized read-only
+LOCAL-member output captures are separately identified below.
 
 ## Pins and admission authority
 
@@ -183,3 +184,67 @@ HTTP request: it verifies that the same-origin path rebase preserves exact
 serialized bytes, IDs, fresh flag and a locally generated Ed25519 signature.
 The other two upstream fixtures cover the 404 predicate and no mutating
 transport-error replay. No hosted observation is implied.
+
+## LOCAL member command/output capture
+
+Read-only capture on 2026-10-09 used the author's existing authorized LOCAL
+member identity, not a provisioned test identity. File-presence checks observed
+`workspace.yaml`, `teams.yaml` and `signing.key`, with no `identity.yaml`;
+no key/config contents were copied. The installed executable reported:
+
+```text
+aw 1.36.27
+  commit: ef1ebd163b22553d9e4273356f2c6e67cf86ec63 (github.com/awebai/aw)
+  built:  2026-10-08T06:48:09Z
+```
+
+These are read-shape captures at 1.36.27, not a 1.36.28 installed/send-support
+claim. The probe's send floor remains 1.36.28. Exact commands, with locators
+redacted, all exited 0:
+
+```sh
+AW_NO_UPDATE_CHECK=1 aw version
+aw --identity-home <own-home>/.aw --team <own-team> whoami --json
+aw --identity-home <own-home>/.aw id team list --json
+aw --identity-home <own-home>/.aw --team <own-team> mail show --message-id <already-delivered-id> --json
+```
+
+The last command read only the known maintainer-return message already addressed
+to this author. No general inbox, test send, acknowledgement, provisioning,
+installation or provider/config mutation was performed. Native verification may
+update its existing trust cache as documented above. This is not a round-trip
+or deployment-adoption acceptance run.
+
+[local-member-capture.json](../test/fixtures/probe/local-member-capture.json)
+retains captured field presence and JSON types, including absent `custody`,
+`stable_id` and `grant_id`; whoami `inbound_configurable: false`; one active
+membership; exact mail `has_more: false`, string `read_at` and null `thread_id`.
+The captured message was verified legacy plaintext v1 with a string signed
+payload. Identifiers, aliases/addresses, timestamps, subject/body and signature
+have been replaced with synthetic values; the parsed signed payload was likewise
+redacted before serialization. No raw mail, private config or keys are committed.
+The signature is deliberately non-cryptographic: this fixture exercises the
+provider's consumption of CLI verification, not signature verification itself.
+Encrypted fixtures remain the separately qualified source-derived models;
+no encrypted-message capture was made under this authority.
+
+The shared fake now derives whoami/team-list/exact-mail fields from this capture.
+Request/reply roles, nonces and IDs are deliberately simulated, and test scenarios
+can override `read_at` to null for unread mail. It rejects `--team` on team-list
+and requires it on mail/whoami. Corrected cases independently exercise initial
+and final identity reads, absent/self/non-self custody and retained scope/DID/
+grant/single-membership refusals.
+
+Released 1.36.28 source corroboration (public `f639b06d`):
+
+- `cmd/aw/root.go:157–177` binds team selection to mail and whoami (`introspectCmd`),
+  not `id`/`teamListCmd`; `:213–218` defines that command-scoped flag.
+- `cmd/aw/id_team.go:451–455` and `:1301` define team-list/runTeamList; its output
+  (`:179–191`) exposes `active_team` and membership records for validation.
+- `cmd/aw/introspect.go:21` declares custody with `omitempty`; `:46–53` copies
+  `sel.Custody`. `awconfig/selection.go:227–243` fills it only when an optional
+  standalone identity supplies custody. Normal certificate-backed LOCAL members
+  can therefore omit it without being non-self-custodial.
+- `awid/mail.go:716` normalizes the exact-message response through the existing
+  signed/encrypted proof path. The authorized plaintext capture confirms the
+  envelope/field presence consumed by the fake; it does not qualify new live sends.

@@ -56,7 +56,9 @@ export function validateProbeInspect(envelope, target) {
   if (d.identity?.mode !== 'local' || d.identity.alias !== target.alias || d.identity.team !== target.team || d.identity.provider !== 'oats.aweb' || d.instance.harness !== target.harness) refuse('contradictory-inspection');
 }
 export function validateProbeIdentity(who, teams, alias, team) {
-  if (who?.identity_scope !== 'local' || who?.stable_id || who?.grant_id || who?.custody !== 'self' || !/^did:key:z[1-9A-HJ-NP-Za-km-z]+$/.test(who?.did || '') || who.did.length > 128) refuse('unsupported-identity');
+  // LOCAL member homes can omit identity.yaml and therefore whoami custody.
+  // A present custody claim must still be self; absence is not a global fallback.
+  if (who?.identity_scope !== 'local' || who?.stable_id || who?.grant_id || (Object.hasOwn(who, 'custody') && who.custody !== 'self') || !/^did:key:z[1-9A-HJ-NP-Za-km-z]+$/.test(who?.did || '') || who.did.length > 128) refuse('unsupported-identity');
   if (alias !== null && who.alias !== alias) refuse('identity-changed');
   const memberships = teams?.memberships;
   if (teams?.active_team !== team || !Array.isArray(memberships) || memberships.length !== 1 || memberships[0]?.team_id !== team || memberships[0]?.alias !== who.alias || memberships[0]?.active !== true || memberships[0]?.identity_scope !== 'local') refuse('contradictory-membership');

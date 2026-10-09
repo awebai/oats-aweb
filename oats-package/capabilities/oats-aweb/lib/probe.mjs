@@ -58,7 +58,9 @@ export async function runProbe(argv, {env = process.env, signal, now, wall, chil
     if (!qualified || qualified.cli !== true || qualified.server !== true || !canonicalArgument(qualified.awBinary)) refuse('probe-cli-and-server-support-unqualified');
     const aw = async (identityHome, args, capMs = 10000) => {
       qualified.revalidate?.();
-      return parseProbeJson(await execute(qualified.awBinary, ['--identity-home', identityHome, '--team', target.team, ...args, '--json'], capMs));
+      // --team is command-scoped in aw, not a persistent root flag.
+      const teamArgs = args[0] === 'mail' || args[0] === 'whoami' ? ['--team', target.team] : [];
+      return parseProbeJson(await execute(qualified.awBinary, ['--identity-home', identityHome, ...teamArgs, ...args, '--json'], capMs));
     };
     if (typeof qualified.awVersion === 'string' && /^\d+\.\d+\.\d+$/.test(qualified.awVersion)) result.diagnostics.versions.aw = version(qualified.awVersion, 'qualified-probe-aw-binary', budget.wall());
     const inspected = await kernel(['inspect', '--home', target.home, '--json']);
