@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.24.0 — 2026-10-08
+## 1.24.0 — 2026-10-09
 
 Docs (#87): the oats-aweb skill's section 4 documents the approved Claude channel
 route as the recommended unattended setup. `claudeChannelMode: approved` passes
