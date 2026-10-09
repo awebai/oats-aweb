@@ -181,6 +181,12 @@ test("declared commands and hooks have no npm package imports", () => {
     if (entrypoint === "bin/oats-aweb.mjs") {
       assert.match(source, /execFileSync/);
       assert.match(source, /aw team|aw workspace|aw id team/);
+    } else if (entrypoint === "bin/oats-aweb-probe.mjs") {
+      assert.match(source, /runProbe/);
+      const runtime = readFileSync(join(CAPABILITY, "lib/probe-runtime.mjs"), "utf8");
+      assert.match(runtime, /spawn\(command, args/);
+      assert.match(runtime, /shell: false/);
+      assert.doesNotMatch(runtime, /\bexecSync\b|node_modules/);
     } else {
       // The binding entrypoint delegates bounded JSON transport, not native aw.
       assert.equal(entrypoint, "bin/oats-aweb-binding.mjs");

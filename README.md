@@ -735,3 +735,14 @@ restriction. Unsupported/ambiguous display data becomes unavailable
 without changing native authority; it is never trimmed or expanded. Current
 receipt fixtures are byte copies of aw source873ed2bf; local substitute tests
 do not prove live grant or Folio authority.
+
+## Explicit round-trip probe
+
+`oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
+reports a verified nonce round trip when qualified CLI **and** server support
+are available. It is an explicit send action, never a readiness/lifecycle check.
+Admission requires aw >=1.36.28 and the exact selected hosted service `/meta`
+`build.aweb_version` >=1.27.12; unavailable support refuses before sending.
+The general aw floor remains 1.36.13; there is no legacy fallback. The
+selected-service guarantee holds modulo redirects issued by the selected origin
+for unauthenticated heartbeat discovery only; signed mail and metadata refuse redirects. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).

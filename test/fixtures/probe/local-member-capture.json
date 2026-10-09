@@ -1,0 +1,53 @@
+{
+  "whoami": {
+    "address": "test.example/worker-1",
+    "alias": "worker-1",
+    "did": "did:key:z6Mktarget",
+    "domain": "test.example",
+    "identity_scope": "local",
+    "inbound_configurable": false,
+    "inbound_mode": "open",
+    "inbound_mode_label": "All",
+    "name": "worker-1"
+  },
+  "teams": {
+    "active_team": "aweb:test.example",
+    "memberships": [
+      {
+        "active": true,
+        "alias": "worker-1",
+        "identity_scope": "local",
+        "issued_at": "2026-10-07T01:00:00Z",
+        "name": "worker-1",
+        "team_id": "aweb:test.example"
+      }
+    ]
+  },
+  "mail": {
+    "has_more": false,
+    "messages": [
+      {
+        "body": "Reply 0123456789abcdef0123456789abcdef",
+        "content_mode": "legacy_plaintext_v1",
+        "conversation_id": "conversation-1",
+        "created_at": "2026-10-07T01:00:00Z",
+        "from_address": "test.example/worker-1",
+        "from_agent_id": "synthetic-agent",
+        "from_alias": "worker-1",
+        "from_did": "did:key:z6Mktarget",
+        "message_id": "reply-1",
+        "message_version": 1,
+        "priority": "normal",
+        "read_at": "2026-10-07T01:00:00Z",
+        "signature": "synthetic-signature-not-cryptographic",
+        "signed_payload": "{\"body\":\"Reply 0123456789abcdef0123456789abcdef\",\"conversation_id\":\"conversation-1\",\"from\":\"synthetic-string\",\"from_did\":\"did:key:z6Mktarget\",\"message_id\":\"reply-1\",\"subject\":\"Synthetic fixture\",\"timestamp\":\"2026-10-07T01:00:00Z\",\"to\":\"synthetic-string\",\"to_did\":\"did:key:z6Mksender\",\"type\":\"mail\"}",
+        "subject": "Synthetic fixture",
+        "thread_id": null,
+        "to_address": "test.example/root",
+        "to_alias": "root",
+        "to_did": "did:key:z6Mksender",
+        "verification_status": "verified"
+      }
+    ]
+  }
+}

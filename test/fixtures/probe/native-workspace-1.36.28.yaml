@@ -1,0 +1,9 @@
+aweb_url: https://app.aweb.ai/api
+memberships:
+    - team_id: aweb:test.example
+      alias: worker-1
+      workspace_id: workspace-fixture
+      cert_path: team-certs/aweb__test.example.pem
+      joined_at: "2026-10-09T00:00:00Z"
+human_name: Probe fixture
+agent_type: agent

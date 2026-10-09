@@ -662,3 +662,28 @@ copied whole.
   report its output to your human instead of re-onboarding yourself.
 - Provider setup, invitations and custody use the selected act in section 8; do not
   substitute bare hosted create, token-only join or an external-home policy bypass.
+
+## Explicit operator probe
+
+`oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]` is an
+explicit send action to test one signed nonce reply. Never call it automatically
+from readiness, onboarding or lifecycle checks. It accepts only a consistent
+captured local primary identity and explicit root; global seats report
+`global probe not yet implemented`. Plaintext and decrypted encrypted replies
+need exact identity/thread/nonce proof and an exact-ID re-read. No key setup,
+ack, terminal input or retry of an uncertain send occurs. PASS proves one
+observed round trip, not model presentation, isolated model time or future wakes.
+
+Before sending, admission requires aw >=1.36.28 and an unauthenticated exact
+selected hosted origin `/meta` observation with build.aweb_version >=1.27.12.
+Only https://app.aweb.ai is qualified; missing/unsupported versions or ambiguous
+identity-home service config refuse. No bypass or legacy fallback exists. The
+ordinary provider aw floor stays 1.36.13. The selected-service guarantee holds
+modulo redirects issued by the selected origin for unauthenticated heartbeat
+discovery only. Authenticated signed mail and metadata refuse redirects; arbitrary
+configured services remain unsupported. Timeout is finite,
+positive, defaults to 60 seconds and is capped at 300 seconds including child
+processes and diagnostics. JSON is one schemaVersion1 document, exit0 only for
+PASS. Public pane/readiness/version gaps remain unknown; no raw body or nonce
+is output. Full schema and disposable live-acceptance requirements are in the
+provider repository's `docs/probe.md`.

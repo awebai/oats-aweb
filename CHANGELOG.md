@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Add explicit `aweb probe --home` command and offline round-trip implementation:
+  one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
+  deadlines and public diagnostic projections. No lifecycle/readiness probe,
+  identity provisioning, terminal input or uncertain-send retry.
+- Probe-only admission checks aw >=1.36.28 and the exact selected hosted
+  service `/meta` build.aweb_version >=1.27.12 with bounded unauthenticated
+  observation, explicit-root config checks and no legacy fallback. The general
+  provider aw floor stays 1.36.13. The selected-service guarantee holds modulo
+  redirects issued by the selected origin for unauthenticated heartbeat discovery
+  only; signed mail and metadata refuse redirects.
+  No live acceptance is claimed.
+  See `docs/probe.md` for proof limits, JSON timing semantics and separate live
+  acceptance requirements.
+
+
 ## 1.24.0 — 2026-10-09
 
 Docs (#87): the oats-aweb skill's section 4 documents the approved Claude channel
