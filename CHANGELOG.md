@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.24.0 — 2026-10-09
 
-Docs: the oats-aweb skill's section 4 documents the approved Claude channel
+Docs (#87): the oats-aweb skill's section 4 documents the approved Claude channel
 route as the recommended unattended setup. `claudeChannelMode: approved` passes
 `--channels plugin:aweb-channel@awebai-marketplace` (no development prompt), and
 Claude admits the plugin when the host's managed policy sets `channelsEnabled`
@@ -14,7 +14,7 @@ fallback, qualified only for Claude 2.1.289 darwin-arm64. The default stays
 development. The approved launch warning no longer cites a future approval;
 see Added for the verdict it now warns.
 
-Added: readiness of a home whose captured `claudeChannelMode` is approved reads
+Added (#88, #89): readiness of a home whose captured `claudeChannelMode` is approved reads
 the machine managed-settings file (`/etc/claude-code` on Linux,
 `/Library/Application Support/ClaudeCode` on macOS: `managed-settings.json`,
 then `managed-settings.d/*.json`) read-only and warns one verdict:
@@ -30,7 +30,7 @@ and nothing when the file admits the plugin, so admitted hosts no longer see
 not proof: server-managed settings or MDM override it, and only the nonce
 exchange proves receive. No environment variable moves the path.
 
-Fixed: retire's recovery copy no longer keeps the instance's aweb private
+Fixed (#91): retire's recovery copy no longer keeps the instance's aweb private
 keys. The capability declares `retirement.disposable.home`: `.aw` (the local
 identity, or the retained seat's copy of a standing identity), `.aweb-identity`
 (the global grant home; the prefix form does not match the bare name),
@@ -53,7 +53,7 @@ copy of the key; the outstanding membership is cleaned up by the team's
 controller or owner (the emitted controller command, or member removal in the
 hosted dashboard).
 
-Changed: retire exits nonzero when a joined-team leave fails for any reason but
+Changed (#91): retire exits nonzero when a joined-team leave fails for any reason but
 `team_not_hosted` (whose controller cleanup needs no member key), on every way
 out after the joined-team loop: a completed self-delete, the completed
 default-retire marker on a retry, and a retained seat. The kernel then keeps

@@ -197,7 +197,7 @@ That is still not receive: run the nonce exchange in "Receive verification and
 recovery" below; an admitted channel presents mail in the pane as
 `← aweb-channel: …`.
 
-With a provider later than 1.23.2, an approved spawn or launch reads the machine
+With provider 1.24.0 (#88, #89), an approved spawn or launch reads the machine
 file read-only and warns nothing when it admits the plugin, or one of the
 `claude-channel-policy-*` / `claude-channel-enrollment-unverified` verdicts in
 section 7's table when it does not; `oats readiness --home H --json` reports the same verdict,
@@ -414,6 +414,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Released provider 1.22.0 (PR61/#65) | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Qualified automation is a separate selected-kernel contract with explicit exact-home operator consent (section 4); provider mode supplies none. Verify the selected composition; a repository release is not an installation receipt. |
 | Released provider 1.22.0 (#45/#52/#59, PR63) | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies are included. Older 1.21.1 compositions lack these fixes; verify the selected provider is 1.22.0 or later. |
 | Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
+| Released provider 1.24.0 (#87–#89, #91), OATS >=0.42 | Approved Claude channel route documented in section 4, and approved spawn, launch and readiness read the machine managed-settings policy (section 7 verdicts). Retire's recovery copy holds no provider home state ("What retire's recovery keeps" below); homes spawned on earlier providers are copied whole. |
 | Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
