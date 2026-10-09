@@ -52,11 +52,14 @@ export async function runProbe(argv, {env = process.env, signal, now, wall, chil
     try { const d = projectPane(await kernel(['session', 'inspect', '--home', target.home, '--json'], diagnosticCap), target.home, budget.wall()); if (d) result.diagnostics.pane = d; } catch { budget.check(); }
     try { const d = projectReadiness(await kernel(['readiness', '--home', target.home, '--json'], diagnosticCap), target.home); if (d) result.diagnostics.readiness = d; } catch { budget.check(); }
     // No send is reachable until BOTH released CLI and service contracts are
-    // qualified. Current production gate is deliberately unresolved/closed.
-    const qualified = await support({execute, target, budget});
+    // qualified. Admission observes the selected service, not a fleet-wide release claim.
+    const qualified = await support({execute, target, budget, path: cleanEnv.PATH});
     budget.check();
     if (!qualified || qualified.cli !== true || qualified.server !== true || !canonicalArgument(qualified.awBinary)) refuse('probe-cli-and-server-support-unqualified');
-    const aw = async (identityHome, args, capMs = 10000) => parseProbeJson(await execute(qualified.awBinary, ['--identity-home', identityHome, '--team', target.team, ...args, '--json'], capMs));
+    const aw = async (identityHome, args, capMs = 10000) => {
+      qualified.revalidate?.();
+      return parseProbeJson(await execute(qualified.awBinary, ['--identity-home', identityHome, '--team', target.team, ...args, '--json'], capMs));
+    };
     if (typeof qualified.awVersion === 'string' && /^\d+\.\d+\.\d+$/.test(qualified.awVersion)) result.diagnostics.versions.aw = version(qualified.awVersion, 'qualified-probe-aw-binary', budget.wall());
     const inspected = await kernel(['inspect', '--home', target.home, '--json']);
     validateProbeInspect(inspected, target);
@@ -72,10 +75,11 @@ export async function runProbe(argv, {env = process.env, signal, now, wall, chil
     const bodyFile = join(temporary, 'challenge.txt');
     writeFileSync(bodyFile, `Reply in this same mail thread with the exact nonce token ${challenge}.\n`, {mode: 0o600, flag: 'wx'});
     const subject = `OATS round-trip probe ${challenge}`;
+    qualified.revalidate?.();
     budget.check(); sendStart = budget.now(); result.request.sendStartedAt = budget.wall();
     let sent;
     try {
-      // The proposed primitive skips ALL auto-thread discovery. Never fall back
+      // The released primitive skips ALL auto-thread discovery. Never fall back
       // to legacy send, and never retry any uncertain send outcome.
       sent = await aw(target.rootHome, ['mail', 'send', '--new-conversation', '--to', target.alias, '--subject', subject, '--body-file', bodyFile]);
       if (!probeId(sent?.message_id) || !probeId(sent?.conversation_id)) refuse('invalid-send-response');
@@ -104,7 +108,7 @@ export async function runProbe(argv, {env = process.env, signal, now, wall, chil
       } catch (e) {
         budget.check();
         readFailed = true;
-        if (e.reason === 'decryption-failed') throw e;
+        if (['decryption-failed', 'selected-service-config-changed', 'selected-service-config-unavailable', 'probe-cli-changed'].includes(e.reason)) throw e;
         if (e.reason === 'invalid-json' || e.reason === 'invalid-conversation' || e.reason === 'output-too-large') throw e;
       }
       if (page) {

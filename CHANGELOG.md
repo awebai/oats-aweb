@@ -6,8 +6,10 @@
   one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
   deadlines and public diagnostic projections. No lifecycle/readiness probe,
   identity provisioning, terminal input or uncertain-send retry.
-- Production sending remains closed pending qualified published CLI and Cloud
-  fresh-conversation support; no provider floor increase or legacy fallback.
+- Probe-only admission checks aw >=1.36.28 and the exact selected hosted
+  service `/meta` build.aweb_version >=1.27.12 with bounded unauthenticated
+  observation, explicit-root config checks and no legacy fallback. The general
+  provider aw floor stays 1.36.13. No live acceptance is claimed.
   See `docs/probe.md` for proof limits, JSON timing semantics and separate live
   acceptance requirements.
 

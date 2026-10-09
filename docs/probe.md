@@ -9,21 +9,45 @@ key, team, plugin or permission and types into no terminal.
 
 ## Release admission
 
-The production send gate is closed: the fresh-conversation CLI primitive and
-Cloud behavior do not yet have qualified released support observations. The
-command returns `FAIL probe-cli-and-server-support-unqualified` before sending.
-There is no flag or environment bypass. Offline tests inject an admission
-result for the proposed `aw mail send --new-conversation` primitive. Before
-opening the gate, qualify **both** the published CLI floor and documented
-read-only server support observation. The settled server contract is a GET of
-`/meta` at the scheme/host origin of the exact selected `aweb_url` used to send
-(for example, `https://app.aweb.ai/api` becomes `https://app.aweb.ai/meta`),
-never a different origin or `/api/v1/release`, comparing
-`build.aweb_version` to the release owner's declared server floor. Recognized
-origins, exact admission details and CLI/server floors must come from that
-release; none is invented here. Non-hosted/unrecognized services are refused
-until an equivalent observation is qualified. Unknown support must fail before send;
-a canary send cannot establish support. Never fall back to ordinary `mail send`.
+At execution, the probe requires **aw >= 1.36.28** and the selected hosted
+service's **`build.aweb_version >= 1.27.12`**. These are probe-only floors;
+the general provider aw floor remains 1.36.13. The recognized origin is
+`https://app.aweb.ai`. No flag or environment variable bypasses admission.
+
+The executable is resolved once from absolute PATH entries, observed through
+`aw version` with update checks disabled, and reused by absolute real path.
+The anchored `aw X.Y.Z` text line must identify a stable release; malformed,
+missing, prerelease or below-floor versions refuse. Changes to that file's
+identity/size/timestamps invalidate qualification.
+
+Both explicit identity homes must contain native-format `workspace.yaml`
+records with the same exact `aweb_url`. The bounded reader accepts the released
+native-generated block mapping and membership list, single-line plain or quoted
+scalars, and standalone comments. It refuses duplicate keys, flow mappings,
+multiline scalars, aliases, tags, merges, document markers, unknown fields,
+symlinks and files over 64 KiB. This intentionally conservative reader is not a
+general YAML parser. Unsupported forms return `selected-service-config-unavailable`;
+no config is rewritten or inherited from another home. Config bytes are checked
+again after metadata and before every identity/mail command. Mismatched services
+return `selected-service-mismatch`; drift returns `selected-service-config-changed`.
+Do not change identity configuration concurrently with a probe: these checks
+are observations, not a lock against another process changing files inside an
+aw invocation.
+
+A single unauthenticated HTTPS GET reads `/meta` at the scheme/host origin of
+that exact selected URL (`https://app.aweb.ai/api` becomes
+`https://app.aweb.ai/meta`). Root paths and `/api` with optional trailing slash
+are accepted; credentials, query strings, fragments, alternate ports/origins,
+encoded or other paths are refused. The request sends no inherited credentials,
+follows no redirects, and shares the total deadline/cancellation with a 5-second
+cap and a 64-KiB body limit. Only `build.aweb_version` qualifies the service,
+never the static top-level `version`. Missing, malformed, below-floor or
+unavailable metadata and unrecognized origins fail before send with
+`fresh-conversation support unknown/unsupported on <origin>` (or `unknown origin`
+for invalid URLs). A canary send cannot establish support. There is no legacy
+send fallback. Published releases do not establish the current Cloud version:
+this observation is required for each invocation.
+
 The accepted attempted-send failure contract is `send-outcome-unknown`, with
 no retry, for every subprocess failure. This includes a server conversation
 mismatch, HTTP 422, timeout or lost response; none proves that no message was
@@ -31,13 +55,14 @@ delivered. The CLI emits structured JSON only on success, so the probe does not
 parse stderr prose, expose raw errors or invent status/code fields. Typed error
 projections are a future follow-up, not a requirement for this delivery.
 
-The existing provider floor remains aw 1.36.13. aw 1.36.23 is a source reference
-for identity, mail projection and verification behavior, **not** a supported
-probe send version. Its ordinary send can reuse a conversation and read the
-broad inbox during discovery. A unique subject does not ensure freshness.
-Upstream CLI/server tests and release acceptance must establish that the new
-primitive skips discovery and creates a fresh conversation. Provider fakes
-cannot certify those upstream properties.
+Released source/binary qualification and the native-generated config fixture
+are documented in [the source receipt](probe-source-qualification.md). Upstream
+fresh-conversation tests establish no conversation/inbox discovery and no
+uncertain-send retry in the qualified native implementation; provider fakes
+alone cannot establish those properties. Native service-path recovery can probe
+same-origin API paths and persist a corrected workspace URL; a subsequent probe
+command observes that as config drift and refuses. Ordinary trust-cache and
+communication-log side effects of aw remain native behavior.
 
 ## Selection and proof
 
@@ -162,11 +187,12 @@ Diagnostic shapes:
 
 `probe-runtime.mjs` owns bounded process execution; `probe-target.mjs` validates
 captured authority; `probe-proof.mjs` binds the CLI's verified projections;
-`probe-diagnostics.mjs` projects public observations; `probe-support.mjs` owns
-dual release admission; `probe.mjs` sequences the one send and observation.
+`probe-diagnostics.mjs` projects public observations; `probe-service.mjs` reads
+the selected native config; `probe-support.mjs` owns dual release admission; `probe.mjs` sequences the one send and observation.
 Tests inject process/clock dependencies at the module boundary, not through
 production command flags or environment. Run `npm test` for provider regression
-coverage; `node --test test/probe.test.mjs` runs the focused offline suite.
+coverage; `node --test test/probe.test.mjs test/probe-support.test.mjs` runs the focused
+offline proof, gate, identity, config-drift and deadline suite.
 
 Live acceptance is separate and has **not** been performed. It needs an
 operator-designated disposable deployment, explicit captured local root sender,
@@ -175,7 +201,7 @@ case, and operator consent to send a nonce challenge, allow its receiver to
 reply, and inspect only that conversation. The operator must also authorize
 fixture creation/retirement and any intentional stopped-receiver scenario.
 
-After CLI and Cloud support are released and independently qualified:
+After the selected Cloud deployment meets admission and the disposable pair is authorized:
 
 1. The designated operator provisions the disposable lifecycle fixture and
    records the exact deployed CLI, service guarantee and kernel/provider versions.

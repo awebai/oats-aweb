@@ -674,10 +674,11 @@ need exact identity/thread/nonce proof and an exact-ID re-read. No key setup,
 ack, terminal input or retry of an uncertain send occurs. PASS proves one
 observed round trip, not model presentation, isolated model time or future wakes.
 
-The production gate is closed until both fresh-conversation CLI and Cloud
-support are released and qualified; it returns
-`probe-cli-and-server-support-unqualified` before sending. There is no bypass or
-legacy fallback. The ordinary provider aw floor is unchanged. Timeout is finite,
+Before sending, admission requires aw >=1.36.28 and an unauthenticated exact
+selected hosted origin `/meta` observation with build.aweb_version >=1.27.12.
+Only https://app.aweb.ai is qualified; missing/unsupported versions or ambiguous
+identity-home service config refuse. No bypass or legacy fallback exists. The
+ordinary provider aw floor stays 1.36.13. Timeout is finite,
 positive, defaults to 60 seconds and is capped at 300 seconds including child
 processes and diagnostics. JSON is one schemaVersion1 document, exit0 only for
 PASS. Public pane/readiness/version gaps remain unknown; no raw body or nonce
