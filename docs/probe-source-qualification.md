@@ -90,3 +90,61 @@ Provider tests combine generated YAML with unsupported forms, service mismatch,
 config/executable drift, preflight composition, both floors and metadata
 byte/deadline/cancellation bounds. HTTP transport is faked; no hosted `/meta`
 request is made. These tests do not authorize a live probe.
+
+## Path-recovery boundary and signature preservation
+
+All locations below use public aw commit
+`f639b06d45092181a3aa705f959b2d77cb073277`.
+
+- `cmd/aw/mail.go:474–480` allocates the fresh UUID before target resolution;
+  fresh mode bypasses auto-thread lookup and the expired-conversation retry.
+  `awid/mail.go:94–103` preserves a supplied conversation ID;
+  `:134–166` signs that conversation/body/message ID before the HTTP POST.
+  `cmd/aw/mail_new_conversation_test.go:147–166` checks fresh IDs, verifies the
+  Ed25519 signature and checks the signed conversation/body/message ID. The
+  wire `new_conversation` flag does not change the signature format.
+- `awid/client.go:1361–1380` marshals the payload once and uses a bytes reader.
+  `cmd/aw/helpers.go:1071–1095` clones the request, reconstructs its body with
+  `GetBody`, and changes URL/Host, not the serialized signed payload or IDs.
+- `helpers.go:1102–1117` permits recovery after a concrete HTTP 404. With a
+  transport error, only GET/HEAD/OPTIONS qualify: POST never qualifies. This is
+  native path recovery, not a provider retry or a new mail conversation.
+- `helpers.go:781–833` constructs recovery candidates by changing path suffixes
+  of the selected base: `/api` and root for the provider's admitted URL forms.
+  Scheme/host are preserved by construction; `rebaseRequestURL` itself is a
+  general helper, not a separate origin allowlist. Recovery's discovery is
+  `GET <candidate>/v1/agents/heartbeat` (`:753–776`), not conversations, inbox,
+  target messages or unrelated threads. A non-404, non-HTML response identifies
+  a candidate; this is not a mail-delivery proof.
+- `helpers.go:1041–1046` calls persistence after the recovered RoundTrip returns
+  without a transport error, before returning its response to the CLI. This
+  includes HTTP error responses. `:854–860` supplies the selected workspace
+  persistence callback; `:974–991` loads that workspace, changes its URL and
+  saves it. Persistence errors are debug-logged, not promoted to send failures.
+  The provider rechecks config bytes after metadata, before every native
+  identity/mail command and immediately before entering its send attempt.
+  A persisted repair during identity reads therefore refuses before send;
+  repair during send is observed before the next exact-ID read. A failed send
+  still reports `send-outcome-unknown`, without a provider retry.
+
+The origin statement above covers candidate construction and path rebasing.
+It does **not** claim native HTTP clients prohibit redirects: the recovery
+heartbeat client (`helpers.go:761`) and configured clients (`:864` onward)
+have no explicit `CheckRedirect` policy. The provider's own `/meta` transport
+does prohibit redirects. A hard guarantee about all native redirect destinations
+requires separate upstream qualification; same-origin candidate construction
+alone does not prove it.
+
+Additional pure fixture:
+[probe57_rebase_test.go](../test/fixtures/probe/probe57_rebase_test.go).
+Copy it into the pinned source's `cmd/aw/` and run:
+
+```sh
+go test ./cmd/aw -run '^(TestProbe57PathRebasePreservesSignedRequest|TestShouldRetryBaseURLRequestNeverReplaysMutatingTransportErrors|TestBaseURLFallbackDoesNotReplayMutatingTransportError)$' -count=1 -v
+```
+
+Observed: all three PASS (0.341s package time). The new fixture performs no
+HTTP request: it verifies that the same-origin path rebase preserves exact
+serialized bytes, IDs, fresh flag and a locally generated Ed25519 signature.
+The other two upstream fixtures cover the 404 predicate and no mutating
+transport-error replay. No hosted observation is implied.
