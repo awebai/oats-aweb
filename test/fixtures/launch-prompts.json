@@ -1,0 +1,30 @@
+{
+  "source": {
+    "kernel": "awebai/oats ae9308b27510",
+    "writer": "lib/core.mjs record() writes instance.json launchPrompts (and deletes it when a start has no outcome); the outcome object is finish() in lib/launch-prompts.mjs: {status, answers, reason, receipt}",
+    "notEngaged": "the 0.52.0 kernel (oats#886) writes {status: 'not-engaged', startId, at} for a start that does not engage its controller; shape from the root's ruling 971b5c28, to be refreshed from the kernel branch's writer when it lands"
+  },
+  "completed": {
+    "status": "completed",
+    "answers": [],
+    "reason": "recognized launch boundary",
+    "receipt": [{"ok": true, "results": [{"ok": true, "path": ".oats-events.jsonl"}]}]
+  },
+  "blocked": {
+    "status": "blocked",
+    "answers": [],
+    "reason": "blocked: unexpected prompt",
+    "receipt": [{"ok": true, "results": [{"ok": true, "path": ".oats-events.jsonl"}]}]
+  },
+  "incomplete": {
+    "status": "incomplete",
+    "answers": [],
+    "reason": "launch prompt audit failed",
+    "receipt": [{"ok": false, "results": [{"ok": false}]}]
+  },
+  "notEngaged": {
+    "status": "not-engaged",
+    "startId": "start-fixture",
+    "at": "2026-10-10T12:00:00.000Z"
+  }
+}

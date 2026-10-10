@@ -69,7 +69,7 @@ function fixture(t, { delivery, runtime = "claude", settings = {}, daemon = true
   const wakeCalls = () => fake.readCalls().filter((c) => c.args[0] === "wake").map((c) => c.args[1]);
   /** The kernel's record of the home's last start: the harness it launched
    *  and the meta this provider returned. */
-  const record = (meta, harness) => writeFileSync(join(home, "instance.json"), JSON.stringify({ harness, launch: { harness }, capabilityMeta: { "oats.aweb": meta } }));
+  const record = (meta, harness, { launchPrompts } = {}) => writeFileSync(join(home, "instance.json"), JSON.stringify({ harness, launch: { harness }, capabilityMeta: { "oats.aweb": meta }, ...(launchPrompts !== undefined ? { launchPrompts } : {}) }));
   /** The binding readiness check for this home, as the kernel asks it. */
   const readiness = ({ extra = {}, targetHome = home } = {}) => {
     const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: merged, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: env.OATS_WORKSPACE_KEY, deployment: ws, soul: "dev", team: "default", instance: "dev-1", home: targetHome } } };
@@ -420,13 +420,15 @@ test("an outdated wake daemon over otherwise healthy broker evidence is ready, w
   assert.equal(result.warnings.some((w) => w.code === "joined-team-receive"), false);
 });
 
-// ------------------------------------------- channel-dev-confirmation (1.21.1)
-// Development selection carries consent-boundary guidance through spawn,
-// launch and readiness; actual prompt outcomes belong to the kernel.
-const DEV_CONFIRMATION_MESSAGE = /Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 \(Channel selection and launch consent\)\./;
+// ------------------------------------------- channel-dev-confirmation (1.27.0)
+// Development selection states the kernel's decision at spawn and launch; at
+// readiness only the kernel's recorded outcome (launchPrompts.status) quiets it.
+const DEV_CONFIRMATION_MESSAGE = /Claude's development-channel prompt: OATS confirms this prompt at launch; `delivery: session` or `claudeChannelMode: approved` stop it\./;
+// The shapes the kernel writes to instance.json launchPrompts (sources in the file).
+const LAUNCH_PROMPTS = JSON.parse(readFileSync(join(REPO, "test", "fixtures", "launch-prompts.json"), "utf8"));
 const DEV_CONFIRMATION = new RegExp(`channel-dev-confirmation — ${DEV_CONFIRMATION_MESSAGE.source}`);
 
-test("a development Claude start points to launch consent guidance, preview and real alike", (t) => {
+test("a development Claude start states the kernel's confirmation, preview and real alike", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: {claudeChannelMode:"development"} });
   const meta = fx.spawn().meta;
   const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
@@ -487,6 +489,38 @@ test("readiness warns channel-dev-confirmation for a home whose last start was C
       assert.equal(result.status, "ready", "configured native route carries a connection uncertainty warning");
       assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
+  }
+});
+
+test("readiness is quiet only when the kernel recorded a completed launch prompt", (t) => {
+  for (const [name, launchPrompts, warns] of [
+    ["completed", LAUNCH_PROMPTS.completed, false],
+    ["blocked", LAUNCH_PROMPTS.blocked, true],
+    ["incomplete", LAUNCH_PROMPTS.incomplete, true],
+    ["not-engaged", LAUNCH_PROMPTS.notEngaged, true],
+    ["missing record", undefined, true],
+    ["unknown status", { ...LAUNCH_PROMPTS.completed, status: "answered-later" }, true],
+    ["malformed record", "completed", true],
+  ]) {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { claudeChannelMode: "development" } });
+    fx.record(fx.spawn().meta, "claude", { launchPrompts });
+    const result = fx.readiness();
+    assert.equal(result.status, "ready", `${name}: ${JSON.stringify(result)}`);
+    const warning = (result.warnings || []).find((w) => w.code === "channel-dev-confirmation");
+    assert.equal(!!warning, warns, `${name}: ${JSON.stringify(result)}`);
+    if (warns) assert.match(warning.message, DEV_CONFIRMATION_MESSAGE);
+    // The provider never explains a block: the kernel's launch-prompt item does.
+    assert.doesNotMatch(JSON.stringify(result), /unexpected prompt|audit failed|blocked:/, name);
+  }
+});
+
+test("a completed launch prompt does not quiet the approved, session or non-Claude routes", (t) => {
+  for (const [delivery, runtime, settings] of [["channel", "claude", { claudeChannelMode: "approved" }], ["session", "claude", {}], ["channel", "codex", {}], ["channel", "pi", {}]]) {
+    const fx = fixture(t, { delivery, runtime, settings });
+    fx.record(fx.spawn().meta, runtime, { launchPrompts: LAUNCH_PROMPTS.completed });
+    const result = fx.readiness();
+    assert.equal((result.warnings || []).some((w) => w.code === "channel-dev-confirmation"), false, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
+    if (settings.claudeChannelMode === "approved") assertOnePolicyVerdict(result.warnings);
   }
 });
 
@@ -1088,8 +1122,7 @@ for(const mode of [undefined,'approved']) test(`selector emits the fixed argumen
     assert.doesNotMatch(doc.warning||'',/channel-dev-confirmation/);
   } else {
     assert.match(doc.warning,new RegExp(DEV_CODE));
-    assert.match(doc.warning,/nothing in this provider answers it/);
-    assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
+    assert.match(doc.warning,DEV_CONFIRMATION);
   }
   assert.doesNotMatch(doc.warning||'',/launchPromptAnswers|awebDevelopmentChannel/);
   fx.record(doc.meta,'claude');

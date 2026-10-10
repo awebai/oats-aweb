@@ -144,7 +144,7 @@ function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, cl
   const warning = warnings.length ? { warning: warnings.join(" | ") } : {};
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
-const DEV_CONFIRMATION_WARNING = `oats-aweb: channel-dev-confirmation — Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 (Channel selection and launch consent).`;
+const DEV_CONFIRMATION_WARNING = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `delivery: session` or `claudeChannelMode: approved` stop it.";
 // The hook reads this host's real managed-settings file, so the approved launch
 // warning is whatever verdict this host yields (none when the file admits).
 const APPROVED_LAUNCH = launchChannelWarning("approved");
