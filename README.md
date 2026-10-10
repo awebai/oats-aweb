@@ -821,6 +821,34 @@ neighboring settings. Public dispatch tests cover first join followed by tokenle
 resume through actual kernel serialization. Focused setup tests cover neighboring
 roots/comments, partial failures, policy changes and explicit-default preservation.
 
+### Resident create verification
+
+`oats aweb resident create` lives in `lib/resident.mjs` (stages, key handling,
+verify, record) and `lib/custody-unit.mjs` (the launchd and systemd units);
+the shared `oats-local.yaml` writer is `lib/local-settings.mjs`. Its contract,
+envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md).
+
+- `node --test test/resident-create.test.mjs test/custody-unit.test.mjs
+  test/resident-docs.test.mjs test/resident-cloud-captures.test.mjs` runs the
+  unit tests. Their fake aw (`test/helpers/fake-aw-resident.mjs`) replays only
+  real captures from `test/fixtures/resident`, and fake launchctl, systemctl and
+  loginctl record their calls under a temporary HOME. The prompt tests drive a
+  real pseudo-terminal through `python3`. `test/resident-docs.test.mjs` fails
+  when an envelope in the doc differs from the command's real output.
+- `test/resident-journey.test.mjs` runs real aw against aweb's local stack. Bring
+  the stack up from an aweb checkout with `docker compose -f
+  docker-compose.e2e.yml up -d --build --wait postgres redis awid aweb`, then set
+  `OATS_RESIDENT_JOURNEY_AW` (an aw 1.36.33 executable),
+  `OATS_RESIDENT_JOURNEY_AWEB_URL=http://127.0.0.1:18000` and
+  `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`. Its adopt journey
+  loads a real custody unit for a random test namespace (launchd on macOS,
+  systemd --user on Linux, which needs lingering and `XDG_RUNTIME_DIR`) and
+  removes it afterwards. CI's `resident-journey` job runs it with
+  `OATS_RESIDENT_JOURNEY_REQUIRED=1`.
+- When aw's output contract changes, refresh the fixtures with
+  `test/fixtures/resident/capture.sh <aw> <scratch dir>` against the same stack,
+  and update its README's version, commit and date.
+
 ### GLOBAL grant app inventory (provider 1.23.2, #76)
 
 The selected provider composition records the successful native mint's actual
