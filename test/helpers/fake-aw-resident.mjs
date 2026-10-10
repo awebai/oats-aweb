@@ -38,8 +38,9 @@ ${body}`;
  * Writes the fakes into <base>/bin and returns helpers.
  * init: what `aw init` does — "connected" (a complete identity),
  *   "partial-404" (leaves a partial, aw's 404 answer), "mismatch" (aw's
- *   registry refusal; the partial stays as it was), "nothing" (aw fails and
- *   leaves nothing), "echo-key" (a hostile aw that prints its AWEB_API_KEY on
+ *   registry refusal; the partial stays as it was), "nothing" (aw refuses
+ *   AWID_REGISTRY_URL=local and leaves nothing), "rejected" (aw's refusal of a
+ *   quarantined partial), "echo-key" (a hostile aw that prints its AWEB_API_KEY on
  *   both streams and fails, leaving nothing).
  * linger: "yes" | "no" (loginctl's answer).
  * custody: "ready" (running after the unit loads), "missing-ops" (running
@@ -49,7 +50,7 @@ export function fakeResidentAw(base, { init = "connected", linger = "yes", custo
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
   const fixtures = {};
-  for (const name of ["init-certificate-connect", "init-apikey-workspace-init-404", "init-apikey-registry-mismatch", "whoami", "doctor-identity-offline", "doctor-registry-online", "custody-status-not-running", "custody-status-running"]) fixtures[name] = fixture(name);
+  for (const name of ["init-certificate-connect", "init-apikey-workspace-init-404", "init-apikey-registry-mismatch", "init-apikey-registry-local", "init-apikey-rejected", "whoami", "doctor-identity-offline", "doctor-registry-online", "custody-status-not-running", "custody-status-running"]) fixtures[name] = fixture(name);
   const running = JSON.parse(fixtures["custody-status-running"].stdout);
   const missingOps = { ...fixtures["custody-status-running"], stdout: JSON.stringify({ ...running, ops: running.ops.filter((op) => op !== "grant_never_ttl.v1" && op !== "mail_reply_continuation.v1") }, null, 2) + "\n" };
   const state = JSON.stringify({ base, init, linger, custody, fixtures, missingOps, version: AW_VERSION_OUTPUT });
@@ -62,7 +63,8 @@ if (argv[0] === "init") {
   if (state.init === "connected") { if (fs.existsSync(path.join(dotAw, "partial-init.yaml"))) fs.rmSync(path.join(dotAw, "partial-init.yaml")); mark("identity.yaml", "signing.key", "workspace.yaml"); replay(f["init-certificate-connect"]); }
   if (state.init === "partial-404") { mark("partial-init.yaml"); replay(f["init-apikey-workspace-init-404"]); }
   if (state.init === "mismatch") replay(f["init-apikey-registry-mismatch"]);
-  if (state.init === "nothing") { process.stderr.write("init failed before any state was written\\n"); process.exit(1); }
+  if (state.init === "rejected") replay(f["init-apikey-rejected"]);
+  if (state.init === "nothing") replay(f["init-apikey-registry-local"]);
   if (state.init === "echo-key") { const k = process.env.AWEB_API_KEY || ""; process.stdout.write("key " + k + "\\n"); process.stderr.write("rejected key " + k + "\\n"); process.exit(1); }
 }
 if (argv[0] === "whoami") replay(f["whoami"]);

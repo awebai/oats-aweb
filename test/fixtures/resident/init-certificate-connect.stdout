@@ -1,11 +1,11 @@
 {
-  "address": "fixture-26163.test/carol",
+  "address": "fixture-6400.test/carol",
   "alias": "carol",
   "aweb_url": "http://127.0.0.1:18000",
   "identity_scope": "global",
   "name": "carol",
-  "stable_id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
+  "stable_id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
   "status": "connected",
-  "team_id": "default:fixture-26163.test",
-  "workspace_id": "597a262f-95af-45ae-8087-e3ba25a66090"
+  "team_id": "default:fixture-6400.test",
+  "workspace_id": "f6dd8eda-443a-4ce0-b647-40b2620dfa61"
 }

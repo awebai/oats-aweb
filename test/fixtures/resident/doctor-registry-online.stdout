@@ -16,7 +16,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "did_aw": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
+        "did_aw": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
         "registry_url": "http://127.0.0.1:18010"
       },
       "id": "awid.did.resolve",
@@ -28,7 +28,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD"
+        "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6"
       },
       "id": "awid.did.current_key_matches_local",
       "message": "awid current did:key matches local identity did.",
@@ -39,7 +39,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI"
+        "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE"
       },
       "id": "awid.did.encryption_key_matches_local",
       "message": "awid published E2E encryption key matches the local identity.",
@@ -50,7 +50,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "current_did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD",
+        "current_did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6",
         "entry_count": 1
       },
       "id": "awid.did.log_verifies",
@@ -62,7 +62,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "address": "fixture-26163.test/carol"
+        "address": "fixture-6400.test/carol"
       },
       "id": "awid.address.resolve",
       "message": "Global address resolves under caller authority.",
@@ -73,7 +73,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "did_aw": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL"
+        "did_aw": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY"
       },
       "id": "awid.address.matches_local_stable_id",
       "message": "Registered address did:aw matches local stable_id.",
@@ -84,7 +84,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD"
+        "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6"
       },
       "id": "awid.address.current_key_matches_local",
       "message": "Registered address current did:key matches local identity did.",
@@ -95,7 +95,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "address": "fixture-26163.test/carol",
+        "address": "fixture-6400.test/carol",
         "delivery_origin": ""
       },
       "id": "awid.address.delivery_origin",
@@ -108,7 +108,7 @@
       "authoritative": false,
       "authority": "caller",
       "detail": {
-        "address": "fixture-26163.test/carol"
+        "address": "fixture-6400.test/carol"
       },
       "id": "awid.address.reverse_listing",
       "message": "Reverse address listing includes the local address.",
@@ -116,7 +116,7 @@
       "status": "ok"
     }
   ],
-  "generated_at": "2026-10-10T16:41:29Z",
+  "generated_at": "2026-10-10T16:44:14Z",
   "mode": "online",
   "redactions": [
     {
@@ -139,9 +139,9 @@
     "identity_path": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
     "identity_scope": "global",
     "name": "carol",
-    "team_id": "default:fixture-26163.test",
+    "team_id": "default:fixture-6400.test",
     "working_dir": "/private/tmp/oats-resident-capture/complete",
-    "workspace_id": "597a262f-95af-45ae-8087-e3ba25a66090"
+    "workspace_id": "f6dd8eda-443a-4ce0-b647-40b2620dfa61"
   },
   "version": "doctor.v1"
 }

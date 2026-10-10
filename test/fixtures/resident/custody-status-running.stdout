@@ -1,11 +1,11 @@
 {
   "status": "running",
-  "service_id": "b785bfee-f5a1-4e7d-aa94-013ce87ed5fa",
+  "service_id": "e5ffa10e-3a88-4246-920a-32603be0a785",
   "socket_path": "/private/tmp/oats-resident-capture/complete/.aw/run/custody.sock",
   "resident": {
-    "did_aw": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
-    "did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD",
-    "address": "fixture-26163.test/carol",
+    "did_aw": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
+    "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6",
+    "address": "fixture-6400.test/carol",
     "alias": "carol"
   },
   "teams": [
@@ -14,11 +14,11 @@
       "certificate_present": true,
       "grant_status_endpoint_ready": true,
       "ready": true,
-      "team_id": "default:fixture-26163.test"
+      "team_id": "default:fixture-6400.test"
     }
   ],
   "keys": {
-    "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI",
+    "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE",
     "encryption_ready": true,
     "signing_ready": true
   },
@@ -32,7 +32,7 @@
     "mail_reply_continuation.v1"
   ],
   "freshness": {
-    "last_checked_at": "2026-10-10T16:41:30Z",
+    "last_checked_at": "2026-10-10T16:44:15Z",
     "max_cache_age_seconds": 30,
     "source": "identity-grants"
   }

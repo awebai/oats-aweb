@@ -33,7 +33,10 @@ capture doctor-identity-offline-partial "$S/partial" doctor identity --offline -
 mkdir -p "$S/rejected/.aw" && chmod 700 "$S/rejected/.aw"
 : > "$S/rejected/.aw/partial-init.yaml.20261010T000000.000000000Z.1.rejected" && chmod 600 "$S/rejected/.aw/"*.rejected
 (cd "$S/rejected" && env -i PATH="$(dirname "$AW"):/usr/bin:/bin" HOME="$S/home" AWEB_URL="$AWEB_URL" AWID_REGISTRY_URL="$AWID" AWEB_API_KEY="$KEY" AW_NO_UPDATE_CHECK=1 NO_COLOR=1 "$AW" init --global --name alice --do-not-touch-agents-md --json > "$OUT/init-apikey-rejected.stdout" 2> "$OUT/init-apikey-rejected.stderr"; echo $? > "$OUT/init-apikey-rejected.exit")
-# An init that fails before it writes anything: a malformed AWEB_URL.
+# An init that fails before it writes anything: AWID_REGISTRY_URL=local.
+mkdir -p "$S/empty"
+(cd "$S/empty" && env -i PATH="$(dirname "$AW"):/usr/bin:/bin" HOME="$S/home" AWEB_URL="$AWEB_URL" AWID_REGISTRY_URL=local AWEB_API_KEY="$KEY" AW_NO_UPDATE_CHECK=1 NO_COLOR=1 "$AW" init --global --name alice --do-not-touch-agents-md --json > "$OUT/init-apikey-registry-local.stdout" 2> "$OUT/init-apikey-registry-local.stderr"; echo $? > "$OUT/init-apikey-registry-local.exit"; find . -mindepth 1 | sort > "$S/empty.left")
+# A malformed AWEB_URL: aw saves the partial and registers before it fails.
 mkdir -p "$S/nothing"
 (cd "$S/nothing" && env -i PATH="$(dirname "$AW"):/usr/bin:/bin" HOME="$S/home" AWEB_URL="not a url" AWID_REGISTRY_URL="$AWID" AWEB_API_KEY="$KEY" AW_NO_UPDATE_CHECK=1 NO_COLOR=1 "$AW" init --global --name alice --do-not-touch-agents-md --json > "$OUT/init-apikey-bad-url.stdout" 2> "$OUT/init-apikey-bad-url.stderr"; echo $? > "$OUT/init-apikey-bad-url.exit"; find . -mindepth 1 | sort > "$S/nothing.left")
 

@@ -39,7 +39,7 @@
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
+        "id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
         "type": "did"
       }
     },
@@ -47,14 +47,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD"
+        "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6"
       },
       "id": "identity.local.did_key_format",
       "message": "Identity did:key is syntactically valid.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
+        "id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
         "type": "did"
       }
     },
@@ -62,14 +62,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD"
+        "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6"
       },
       "id": "identity.local.signing_key_matches_did",
       "message": "Local signing key matches identity did.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD",
+        "id": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6",
         "type": "did"
       }
     },
@@ -77,7 +77,7 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI"
+        "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE"
       },
       "id": "identity.e2ee.encryption_state",
       "message": "Local E2E encryption key state has an active key.",
@@ -93,15 +93,15 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI"
+        "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE"
       },
       "id": "identity.e2ee.private_key",
       "message": "Local E2E encryption private key matches the active key id.",
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.x25519.key",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.x25519.key",
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.x25519.key",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.x25519.key",
         "type": "local_path"
       }
     },
@@ -109,15 +109,15 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI"
+        "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE"
       },
       "id": "identity.e2ee.assertion",
       "message": "Local E2E encryption-key assertion verifies under the identity signing key.",
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.assertion.json",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.assertion.json",
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.assertion.json",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.assertion.json",
         "type": "local_path"
       }
     },
@@ -125,7 +125,7 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "published_at": "2026-10-10T16:41:29Z"
+        "published_at": "2026-10-10T16:44:14Z"
       },
       "id": "identity.e2ee.assertion_published",
       "message": "Local E2E encryption-key assertion was recorded as published.",
@@ -142,14 +142,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "stable_id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL"
+        "stable_id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY"
       },
       "id": "identity.local.stable_id_expected",
       "message": "Global identity stable_id is present.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
+        "id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
         "type": "did"
       }
     },
@@ -157,14 +157,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "address": "fixture-26163.test/carol"
+        "address": "fixture-6400.test/carol"
       },
       "id": "identity.local.address_expected",
       "message": "Global identity address is present.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "fixture-26163.test/carol",
+        "id": "fixture-6400.test/carol",
         "type": "address"
       }
     },
@@ -181,7 +181,7 @@
       "status": "ok"
     }
   ],
-  "generated_at": "2026-10-10T16:41:29Z",
+  "generated_at": "2026-10-10T16:44:14Z",
   "mode": "offline",
   "redactions": [
     {
@@ -204,9 +204,9 @@
     "identity_path": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
     "identity_scope": "global",
     "name": "carol",
-    "team_id": "default:fixture-26163.test",
+    "team_id": "default:fixture-6400.test",
     "working_dir": "/private/tmp/oats-resident-capture/complete",
-    "workspace_id": "597a262f-95af-45ae-8087-e3ba25a66090"
+    "workspace_id": "f6dd8eda-443a-4ce0-b647-40b2620dfa61"
   },
   "version": "doctor.v1"
 }
