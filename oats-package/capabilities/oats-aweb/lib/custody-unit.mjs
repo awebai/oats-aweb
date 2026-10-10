@@ -173,13 +173,15 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
     if (changed && loaded.ok) managed(env, "launchctl", ["bootout", target]);
     if (changed || !loaded.ok) managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path]);
   } else {
+    // Enabled by its path, the user's manager links the file into its own
+    // configuration wherever the file is; by name, it looks only there.
     const service = `${label}.service`;
     if (changed) {
       managed(env, "systemctl", ["--user", "daemon-reload"]);
-      managed(env, "systemctl", ["--user", "enable", "--now", service]);
+      managed(env, "systemctl", ["--user", "enable", "--now", path]);
       if (existing !== undefined) managed(env, "systemctl", ["--user", "restart", service]);
     } else if (!manage(env, "systemctl", ["--user", "is-active", service]).ok) {
-      managed(env, "systemctl", ["--user", "enable", "--now", service]);
+      managed(env, "systemctl", ["--user", "enable", "--now", path]);
     }
   }
   return { manager, label, path, changed };

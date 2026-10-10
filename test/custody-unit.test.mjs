@@ -99,8 +99,11 @@ WantedBy=default.target
   if (onPath("systemd-analyze")) {
     const file = join(dir, `${LABEL}.service`);
     writeFileSync(file, text.replace("/usr/local/bin/aw", "/bin/true").replace("/srv/res %%d/R", "/"));
-    const verify = spawnSync("systemd-analyze", ["verify", "--user", file], { encoding: "utf8" });
-    assert.doesNotMatch(verify.stderr, /Invalid|Failed to|bad-setting/i, verify.stderr);
+    // A user unit is verified against a user manager, which needs a runtime directory.
+    const runtime = join(dir, "runtime"); mkdirSync(runtime, { mode: 0o700 });
+    const verify = spawnSync("systemd-analyze", ["verify", "--user", file], { encoding: "utf8", env: { ...process.env, XDG_RUNTIME_DIR: runtime } });
+    assert.equal(verify.status, 0, verify.stderr);
+    assert.equal(verify.stderr, "", "no warning about any setting");
   }
   assert.equal(unitPath({ platform: "linux", home: "/home/a" }, LABEL), `/home/a/.config/systemd/user/${LABEL}.service`);
   assert.equal(unitPath({ platform: "linux", home: "/home/a", xdgConfigHome: "/cfg" }, LABEL), `/cfg/systemd/user/${LABEL}.service`);
@@ -157,7 +160,8 @@ test("ensureCustodyUnit installs once, is idempotent, and refuses a unit of its 
   const darwin = fake.calls().filter((c) => c.cmd === "launchctl").map((c) => c.argv.join(" "));
   assert.deepEqual(darwin.slice(0, 2), [`print gui/501/${LABEL}`, `bootstrap gui/501 ${unitPath({ platform: "darwin", home }, LABEL)}`]);
   const linux = fake.calls().filter((c) => c.cmd === "systemctl").map((c) => c.argv.join(" "));
-  assert.deepEqual(linux.slice(0, 2), ["--user daemon-reload", `--user enable --now ${LABEL}.service`]);
+  // By its path: the user's manager links a unit file from wherever it is.
+  assert.deepEqual(linux.slice(0, 2), ["--user daemon-reload", `--user enable --now ${unitPath({ platform: "linux", home }, LABEL)}`]);
 });
 
 test("systemctl and loginctl reach the user's manager through its bus variables; the unit itself gets PATH and HOME only", (t) => {

@@ -33,3 +33,53 @@ jobs:
         run: node --test test/claude-channel-host-only.test.mjs test/public-kernel-team-roots.test.mjs test/public-kernel-disposable-home.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"
+
+  # oats aweb resident create against aweb's local stack (postgres, redis, awid
+  # and the OSS aweb server, built from aweb at a pinned commit) with the
+  # released aw: registration at awid, same-DID resume, the key's absence on a
+  # failure, and adopting a resident with a real systemd --user custody unit.
+  # aweb Cloud's workspaces/init is not in that stack: a complete create is the
+  # joint E2E's (docs/resident-create.md).
+  resident-journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AWEB_STACK_COMMIT: 1d7ee6bb3519a3c940ebeb12afc86d921dc13e27
+      AW_VERSION: 1.36.33
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check out aweb's local stack at the pinned commit
+        shell: bash
+        run: |
+          git clone --no-checkout https://github.com/awebai/aweb.git "$RUNNER_TEMP/aweb"
+          git -C "$RUNNER_TEMP/aweb" checkout --detach "$AWEB_STACK_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/aweb" rev-parse HEAD)" = "$AWEB_STACK_COMMIT"
+      - name: Start postgres, redis, awid and aweb
+        working-directory: ${{ runner.temp }}/aweb
+        run: docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis awid aweb
+      - name: Install the released aw in an isolated prefix
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/aw" --no-audit --no-fund "@awebai/aw@$AW_VERSION"
+          "$RUNNER_TEMP/aw/node_modules/.bin/aw" version
+      - name: Give the runner a systemd user manager
+        shell: bash
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          for _ in $(seq 1 30); do test -S "/run/user/$(id -u)/bus" && break; sleep 1; done
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - name: Real-stack resident create journeys
+        env:
+          OATS_RESIDENT_JOURNEY_REQUIRED: '1'
+          OATS_RESIDENT_JOURNEY_AW: ${{ runner.temp }}/aw/node_modules/.bin/aw
+          OATS_RESIDENT_JOURNEY_AWEB_URL: http://127.0.0.1:18000
+          OATS_RESIDENT_JOURNEY_AWID_URL: http://127.0.0.1:18010
+        run: node --test test/resident-journey.test.mjs
+      - name: Stack logs
+        if: failure()
+        working-directory: ${{ runner.temp }}/aweb
+        run: docker compose -f docker-compose.e2e.yml logs --tail 200 awid aweb
