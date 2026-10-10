@@ -8,7 +8,7 @@ test("Go duration syntax and component nanosecond truncation at grant limits", (
     "2592000000000μs", "2592000000000000ns", "60s", "1m", ".016666666666667h"]) {
     assert.equal(resolveGrantTTL(ttl), ttl);
   }
-  for (const omitted of [undefined, null, ""]) assert.equal(resolveGrantTTL(omitted), "720h");
+  for (const omitted of [undefined, null, ""]) assert.equal(resolveGrantTTL(omitted), "never");
   assert.equal(durationNanoseconds("1.5h2m3.000000001s"), 5523000000001n);
   assert.equal(durationNanoseconds("0.6ns0.6ns"), 0n);
   assert.equal(durationNanoseconds("-0"), 0n);

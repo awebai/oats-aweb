@@ -109,3 +109,19 @@ test('soul-only or missing provenance cannot masquerade as a local default',t=>{
   assert.equal(error(f.run(['--invite-stdin'])).code,'E_SETUP_QUERY');assert.deepEqual(f.aw.readCalls(),[]);
  }
 });
+// oats-aweb#96: on a workspace that forbids local team writes, a second
+// committed team joins under another default with no write: the join preserves
+// that default, so the default command is not needed.
+test('closed workspace: a committed second team joins under a different default with no team write',t=>{
+ const d={label:'prior',team:'prior:example.invalid',from:'workspace'};
+ const f=fixture(t,{localTeams:false,teams:[{...d,from:'shared'},{label:'joined',team,from:'shared'}],defaultTeam:d});
+ const result=answer(f.run(['--invite-stdin']));
+ assert.equal(result.team,team);assert.deepEqual(f.mutations(),[]);assert.deepEqual(f.kernel.read().defaultTeam,d);
+ assert.equal(f.aw.readCalls().filter(c=>c.args.includes('accept-invite')).length,1);
+ assert.deepEqual(result.remaining,[['oats','teams','default','joined','--dir',f.dep]]);
+});
+test('closed workspace: an unmapped label still refuses before acceptance even with a default to preserve',t=>{
+ const d={label:'prior',team:'prior:example.invalid',from:'workspace'};
+ const f=fixture(t,{localTeams:false,teams:[{...d,from:'shared'}],defaultTeam:d}),err=error(f.run(['--invite-stdin']));
+ assert.equal(err.code,'E_SETUP_POLICY');assert.deepEqual(f.aw.readCalls(),[]);assert.deepEqual(f.mutations(),[]);
+});

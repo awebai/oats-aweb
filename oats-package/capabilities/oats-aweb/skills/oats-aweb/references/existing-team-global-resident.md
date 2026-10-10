@@ -150,18 +150,21 @@ a root's current active team is not a substitute. Host-only
 
 For resident consumption, the provider reads `identity.mode: global`,
 `identity.resident`, `identity.scopes` (explicit nonempty list, or the selected
-`profile` defaults), `identity.ttl` (default `720h` in provider 1.23.0),
+`profile` defaults), `identity.ttl` (default `never` from provider 1.25.0:
+the grant ends only when revoked; `720h` in providers 1.23.0 to 1.24.x),
 `identity.renew` (`launch` by default or explicit `off`) and `identity.e2ee` (required unless explicitly
 false). Profiles are `normal` or `reviewer`; choose scopes/TTL under the owner's
 least-authority decision, not by copying another worker's grant.
-Do not configure shorter TTLs for customer seats. Explicit shorter durations
-remain supported, using native Go duration syntax from 60s through 720h
-(30 days); invalid/over-limit values refuse with `E_GRANT_TTL` before effects.
-Actual launches re-mint by default, previews do not. Explicit `renew: off`
-and failed renewals leave a finite grant: running beyond its expiry without a
-successful re-mint can still expire. Non-expiring grants are requested upstream
-in oats-aweb#80 and are not provided here. No background renewal runs, and old
-homes retain their captured composition/settings until explicitly recomposed.
+A never-grant is bounded by its scopes and by revocation, at retire or by the
+resident's owner. An explicit duration remains supported, using native Go
+duration syntax from 60s through 720h (30 days), for example
+`identity: { ttl: 720h }`; any other value refuses with `E_GRANT_TTL` before
+effects. Actual launches re-mint by default, previews do not; a renewal keeps
+the seat's duration, and a grant minted before 1.25.0 renews at 720h. Explicit
+`renew: off` and failed renewals leave the existing grant: a grant with a
+duration can still expire if it is not re-minted in time. No background renewal
+runs, and old homes retain their captured composition/settings until explicitly
+recomposed.
 
 Assign one host/user/resident root to the selected custody service. Starting that
 service is a separate authorized host operation, not a worker action. Before

@@ -63,7 +63,7 @@ function fakeAw(t, { certificates, presence, presenceFails = false, certificates
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(join(dir, "calls.jsonl"))}, JSON.stringify({ args, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
-if (args[0] === "version") { console.log("aw 1.36.23"); process.exit(0); }
+if (args[0] === "version") { console.log("aw 1.36.32"); process.exit(0); }
 if (args.slice(0, 3).join(" ") === "id team members") {
   if (${JSON.stringify(certificatesFail)}) { console.error("list team members for aweb:juan.aweb.ai: registry unavailable"); process.exit(1); }
   fs.writeSync(1, fs.readFileSync(${JSON.stringify(join(dir, "certs.json"))}, "utf8")); process.exit(0); }

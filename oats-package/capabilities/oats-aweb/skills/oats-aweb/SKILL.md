@@ -359,7 +359,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
-| `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
+| `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
+| `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.32); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
 | `channel-dev-confirmation` | the home runs in development mode, so Claude may stop at its development-channels confirmation; mode is not consent | operator: move the host to section 4's approved route and respawn; as fallback, section 4's exact-home opt-in (qualified only for Claude 2.1.289 darwin-arm64) or separately authorized human intervention; no provider/broker/ordinary-agent keys |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
@@ -367,7 +368,12 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-enrollment-unverified` | approved mode, admission not established. No machine file, unreadable, or an unsupported platform (launch and readiness; providers up to 1.23.2 warned this at every approved launch without reading the policy) | admin: section 4 host step 1 (or the higher managed source); then section 4's startup check and the nonce exchange |
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
-| `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
+| `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. A never-ttl grant seat needs its custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs `mail_reply_continuation.v1`. "required custody operations are missing: <op>" for either means the custody runs code older than aw 1.36.32. "custody status could not be read" means it could not be asked | human; for a missing op, restart the custody on aw 1.36.32 or later (upgrade aw, restart the custody service and the wake daemon, then `oats sync`) |
+| `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
+| `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
+| `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
+| `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
+| `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
 **Errors from `oats aweb join|leave|roster`:**
@@ -390,7 +396,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - *A grant condition* (`grant_expired`, `grant_revoked`, …) in resident-grant
   mode: stop messaging and report the exact condition. With `renew: off` the
   grant expires at its TTL; the remedy is `renew: launch` plus a restart, or a
-  respawn.
+  respawn. Readiness reports an expiry ahead of time as `grant-expiring`, then
+  `grant-expired` (table above).
 - *Nothing arrives:* compare your `Comms:` line with section 4, run the inbox
   commands once, and report a readiness warning rather than looping.
 - A flag looks wrong: run `aw <command> --help`; never guess flags.
@@ -415,6 +422,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Released provider 1.22.0 (#45/#52/#59, PR63) | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies are included. Older 1.21.1 compositions lack these fixes; verify the selected provider is 1.22.0 or later. |
 | Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
 | Released provider 1.24.0 (#87–#89, #91), OATS >=0.42 | Approved Claude channel route documented in section 4, and approved spawn, launch and readiness read the machine managed-settings policy (section 7 verdicts). Retire's recovery copy holds no provider home state ("What retire's recovery keeps" below); homes spawned on earlier providers are copied whole. |
+| Released provider 1.25.0, OATS >=0.42, aw >=1.36.32 | New grant seats never expire (`identity.ttl: never`; `identity: { ttl: 720h }` keeps a duration). Upgrade aw, restart every custody service and the wake daemon, then sync ("Upgrading a host to provider 1.25.0" below). One aw client floor, 1.36.32; the probe uses it too. Grant seats require the custody ops `grant_never_ttl.v1` (never ttl) and `mail_reply_continuation.v1` (E2EE). Seat-labelled grants are swept from the custody's grant list at every start and retire. `wake-daemon-outdated` is a warning. Readiness shows a grant's lifetime and unrevoked grants. |
 | Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
@@ -546,18 +554,51 @@ certificates remain owner-pending; no recipe is inferred from a past customer cl
 
 ### GLOBAL residents and grant seats
 
-With provider 1.23.0 in the selected composition, GLOBAL grants default to
-`identity.ttl: 720h` (30 days, aw's maximum) and `identity.renew: launch`.
-Every actual launch attempts a fresh grant; preview never mints. Do not
-configure shorter TTLs for customer seats. Explicit shorter Go durations from
-60s through 720h remain supported; invalid/over-limit TTLs refuse before effects
-with `E_GRANT_TTL`, including retained-grant paths. Explicit `renew: off`
-retains the existing finite grant. Renewal failures preserve the previous grant
-under the existing recovery rules and do not extend its expiry. A continuously
-running seat can expire after 720h without a successful re-mint; non-expiring
-grants remain requested upstream (#80), not delivered here. Existing captured
-provider modules/settings do not change automatically when this version ships.
-LOCAL identities are unchanged; there is no timer or background renewal.
+From provider 1.25.0, a new GLOBAL seat's grant **never expires**
+(`identity.ttl: never`, the default, #80): it ends only when revoked. What
+bounds it is its scopes, revocation at retire, and revocation by the
+resident's owner; a revoked grant's next request is refused at once, and an open
+notification stream ends within about 30 seconds. To keep a duration, set
+`identity.ttl` to a Go duration from 60s to 720h, for example
+`identity: { ttl: 720h }`; anything else refuses before effects with
+`E_GRANT_TTL`, including retained-grant paths. `identity.renew: launch` (the
+default) re-mints at every actual launch; preview never mints. A renewal keeps
+the seat's duration: the captured `identity.ttl`, else the ttl the renewed grant
+recorded, else 720h for a grant minted before 1.25.0, so an existing seat never
+silently stops expiring. Explicit `renew: off` retains the existing grant.
+Renewal failures preserve the previous grant under the existing recovery rules.
+Existing captured provider modules/settings do not change automatically when
+this version ships. LOCAL identities are unchanged; there is no timer or
+background renewal.
+
+Every mint passes its ttl explicitly (`--ttl=never` or the duration) and records
+it, and the renew mode, as `identity.grant.ttl` and `identity.grant.renew`; a
+never-grant records `expiresAt: "never"`. A never seat's custody must list
+`grant_never_ttl.v1`. Every mint is labelled `oats:<instance>:<seat>` (a random
+seat id kept in `identity.seat`, and written to the home's `.oats-aweb/seat.json`
+before the first mint so a retire finds it even after a killed hook), and the
+custody's grant list is the source of
+truth: every real start and retire revokes this seat's other active grants (at
+retire, all of them), including one minted before a crash; other labels are never
+touched. A failed revoke names how long the grant stays valid ("until revoked"
+for a never-grant) and the exact command, `aw id grant revoke <id>` run in the
+resident's custody directory; readiness warns `grant-revoke-pending`, or
+`grant-revoke-unchecked` when the list cannot be read. A failed renewal keeps the
+previous grant and starts on it; only a failed first mint at spawn fails. A
+retire exits nonzero while a grant stays unrevoked or the list is unread.
+
+`oats readiness --home H --json` reads the grant recorded at the seat's last
+mint, asking neither aw nor custody. A never-grant gets no lifetime diagnostic
+(the agent's brief says it never expires); for a grant with a duration, `grant-expiring` within 7 days of its expiry,
+`grant-expired` once it has passed, and `grant-expiry-unknown` when the record
+has no readable expiry (section 7). The remedy follows the recorded renew mode
+and the captured `identity.ttl`: `renew: launch` restarts the seat
+(`oats session restart --home <home>`); a seat that captured an `identity.ttl`
+duration is renewed for another such duration by that restart, and stops
+expiring only once identity.ttl is removed and it is respawned; `renew: off`,
+where a restart keeps the grant, respawns it. A grant minted before 1.25.0
+records no renew mode, and the message adds "if its identity.renew is off,
+respawn it instead".
 
 With the provider 1.23.2 composition (#76), install an app from
 the selected LOCAL or GLOBAL resident home: installation approves it for that
@@ -584,7 +625,7 @@ not automatic daemon startup. Wider-team grant extension remains unsupported #60
 
 ### Connecting a deployment on another machine
 
-Released provider 1.21.0/1.21.1; aw floor 1.36.13. Prerequisites: the operator
+Released provider 1.21.0/1.21.1; the provider aw floor applies (1.36.32 since provider 1.25.0). Prerequisites: the operator
 has completed `oats server connect`, selected the registered server and its mapped
 hosted default team, and has local invite authority for that team. Run from the
 local deployment D, outside an instance session; the selected kernel routes
@@ -620,7 +661,7 @@ check or permission inferred from onboarding.
 
 | Act / context | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
-| Install missing, unreadable-version or below-floor aw; retain `--soul S` for outside-session dispatch | `oats aweb setup --install-aw [--aw-version <v>] --soul S` | Runs `npm install -g @awebai/aw@<v>` (default `^1.36.13`), rechecks the 1.36.13 floor, then continues ordinary setup. At/above floor, skips npm even with a version supplied. Success: usable aw and the selected setup's own success predicate. Next: follow that setup card's one next step. | `npm install -g <package> failed ...` (`E_AW_INSTALL` in check-only JSON) → operator resolves npm/access failure before retry; `npm install -g <package> ran, but ...` (`E_AW_FLOOR`) → resolve PATH/version so the selected aw meets the floor. |
+| Install missing, unreadable-version or below-floor aw; retain `--soul S` for outside-session dispatch | `oats aweb setup --install-aw [--aw-version <v>] --soul S` | Runs `npm install -g @awebai/aw@<v>` (default `^1.36.32`), rechecks the 1.36.32 floor, then continues ordinary setup. At/above floor, skips npm even with a version supplied. Success: usable aw and the selected setup's own success predicate. Next: follow that setup card's one next step. | `npm install -g <package> failed ...` (`E_AW_INSTALL` in check-only JSON) → operator resolves npm/access failure before retry; `npm install -g <package> ran, but ...` (`E_AW_FLOOR`) → resolve PATH/version so the selected aw meets the floor. |
 
 `<v>` accepts an exact version or `^`/`~` range; `--aw-version` requires
 `--install-aw`. This option does not promise an upgrade of an already-usable CLI
@@ -635,6 +676,44 @@ yet: its owner runs oats aweb setup, then commits the id, or choose another defa
 \`oats teams default <label>\`, or \`defaultTeam:\` in oats-workspace.yaml when the
 workspace doesn't allow local teams`. Next: `/oats-teams` owns mapping/default
 policy. Plain setup creates nothing for that unmapped committed/shared default.
+
+### Upgrading a host to provider 1.25.0 (aw 1.36.32 floor)
+
+1. **New grant seats never expire.** A GLOBAL seat spawned on 1.25.0 gets a
+   grant that ends only when revoked.
+2. **One setting keeps a duration:** `identity.ttl`, for example
+   `identity: { ttl: 720h }`. Existing seats keep theirs at renewal.
+3. **What bounds a grant now:** its scopes, revocation at retire, and revocation
+   by the resident's owner.
+4. **Order on every host, done by a person: upgrade aw to 1.36.32 or later,
+   restart every resident custody service and the host wake daemon, then
+   `oats sync` to provider 1.25.0.** A running custody or daemon keeps its old
+   code, and its old ops, until it restarts. In the other order a grant seat
+   fails readiness and spawn with "required custody operations are missing:
+   <op>; restart the custody on aw 1.36.32 or later (upgrade aw, restart the
+   custody service and the wake daemon, then oats sync)", and readiness warns
+   `wake-daemon-outdated` (section 7).
+
+Every path that refuses an older aw says the same thing: `aw <installed> is
+older than required 1.36.32; upgrade with \`npm i -g @awebai/aw@latest\` (or
+\`npm i -g @awebai/aw@1.36.32\`)`. aw 1.36.31 lets an agent reply to a sender
+outside its team roster (a dashboard human in aweb Cloud's agent chat); aw
+1.36.32 mints grants that never expire.
+
+A LOCAL seat needs aw >= 1.36.32. A grant seat needs the worker's aw **and** the
+running resident custody at >= 1.36.32: readiness and the mint preflight
+require the custody to list `grant_never_ttl.v1` for a never-ttl seat and
+`mail_reply_continuation.v1` for an E2EE seat (the default). These are op
+probes, not version checks. A seat with an explicit duration does not need the
+never op; a seat with `identity.e2ee: false` does not need the reply op and
+cannot send the encrypted reply to such a sender.
+
+- Custody re-reads the source message to reply, so the grant needs `mail.read`
+  with `mail.send`. The NORMAL profile has both; a send-only custom grant fails
+  closed with `grant_scope_denied`.
+- A late reply to a human whose key in the original message has expired fails
+  by design ("source sender key is missing, expired or invalid; ask them to send
+  a new message"): ask them to send a new message.
 
 ### What retire's recovery keeps
 
@@ -674,11 +753,12 @@ need exact identity/thread/nonce proof and an exact-ID re-read. No key setup,
 ack, terminal input or retry of an uncertain send occurs. PASS proves one
 observed round trip, not model presentation, isolated model time or future wakes.
 
-Before sending, admission requires aw >=1.36.28 and an unauthenticated exact
+Before sending, admission requires the provider aw floor (1.36.32; the probe was
+source-qualified at aw 1.36.28) and an unauthenticated exact
 selected hosted origin `/meta` observation with build.aweb_version >=1.27.12.
 Only https://app.aweb.ai is qualified; missing/unsupported versions or ambiguous
 identity-home service config refuse. No bypass or legacy fallback exists. The
-ordinary provider aw floor stays 1.36.13. The selected-service guarantee holds
+selected-service guarantee holds
 modulo redirects issued by the selected origin for unauthenticated heartbeat
 discovery only. Authenticated signed mail and metadata refuse redirects; arbitrary
 configured services remain unsupported. Timeout is finite,

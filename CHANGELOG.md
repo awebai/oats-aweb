@@ -1,34 +1,156 @@
 # Changelog
 
-## Unreleased
+## 1.25.0 — 2026-10-10
 
-- Forward port of 1.24.1 (released from release/1.24, oats-aweb#95): `oats aweb
-  setup --join <label>` and username setup on a workspace that forbids local
-  team writes (`local-teams-closed`) refuse only when the plan needs a team
-  write. A label the workspace commits to the predicted or joined team, already
-  the default, needs none: the join records its minting root
-  (`roots[<team>]`), and username setup proceeds to the account bootstrap,
-  without touching the team configuration. An unmapped label on a closed
-  workspace still refuses before any aw call. On a closed workspace a
-  conflicting mapping or another configuration failure is reported as that
-  (`E_SETUP_TEAM_CONFLICT`, `E_SETUP_CONFIGURATION`) rather than as
-  `E_SETUP_POLICY`; both still refuse before any write. Known limit: a closed
-  workspace that commits the label but defaults to a different label still
-  refuses, though the join would only preserve that default.
+**New grant seats never expire.** A GLOBAL seat spawned on this release gets a
+grant that ends only when revoked (oats-aweb#80).
+
+**One setting keeps a duration:** `identity.ttl`, for example
+`identity: { ttl: 720h }` (`never`, or a Go duration from 60s to 720h).
+
+**What bounds a grant now:** its scopes, revocation at retire, and revocation by
+the resident's owner. A revoked grant's next request is refused at once; an open
+notification stream ends within about 30 seconds.
+
+**Host order, before syncing to this release:** upgrade aw to 1.36.32 or later,
+restart every resident custody service and the host wake daemon, then
+`oats sync`. A running custody or daemon keeps its old code until it is
+restarted, so a custody started before the upgrade fails a grant seat's
+readiness and spawn (below), and an old daemon is reported as a warning.
+
+- `identity.ttl` defaults to `never` for a new mint at spawn. A renewal keeps the
+  seat's duration: the captured `identity.ttl`, else the ttl the renewed grant
+  recorded, else 720h for a grant minted before this release, so an existing
+  seat never silently stops expiring. Every mint passes its ttl explicitly
+  (`--ttl=never` or the duration), though aw's own default is now never, and
+  records it and the renew mode (`identity.grant.ttl`, `identity.grant.renew`).
+- A minted grant's `expires_at` must answer its request: the string `"never"`
+  for a never-grant (recorded as `expiresAt: "never"`), a timestamp for a
+  duration. Anything else fails the mint closed: the grant is revoked and
+  nothing is kept. A renewal now also revokes a new grant whose receipt fails
+  validation. When the aweb service refuses a never mint (a server without
+  never-grants answers 422, or 404 before the grants endpoint), aw mints
+  nothing: the error carries aw's message, nothing is kept, nothing is revoked
+  and nothing is retried with a duration. A named "not supported yet" message
+  waits on an aw-side diagnostic (oats-aweb#97).
+- The aw floor is 1.36.32, the one client floor (`AW_MIN`): spawn, commands,
+  `setup --check-only`, readiness and the probe refuse an older aw with one
+  message naming the installed version, the floor and
+  `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.32`).
+  `setup --install-aw` installs `^1.36.32` by default. aw 1.36.31 lets an agent
+  reply to a sender outside its team roster (a dashboard human in aweb Cloud's
+  agent chat); aw 1.36.32 mints grants that never expire. Hosts on aw 1.36.28
+  to 1.36.31 lose the probe, whose CLI floor was 1.36.28.
+- Grant seats probe their running custody's ops (`aw custody status --json`),
+  never its version. A never seat requires `grant_never_ttl.v1`; an E2EE seat
+  (the default) requires `mail_reply_continuation.v1`, beside its E2EE ops. When
+  either is missing, readiness reports the `custody` problem and the spawn and
+  renewal mint preflight fail before any mint, with "required custody
+  operations are missing: <ops>; restart the custody on aw 1.36.32 or later
+  (upgrade aw, restart the custody service and the wake daemon, then oats
+  sync)". A seat with an explicit duration does not require the never op. A
+  seat with `identity.e2ee: false` does not require the reply op and cannot send
+  the encrypted reply to such a sender. A custody status that cannot be read
+  says "custody status could not be read: …", never that an op is missing.
+- Revocation is the only end of a never-grant, and no grant is left unrevoked
+  silently. Every mint carries a label unique to its seat,
+  `oats:<instance>:<seat>`, where `<seat>` is random at spawn and kept in the
+  identity meta (`identity.seat`); a name reused after a retire, or repeated
+  across deployments under one resident, is a different seat. The seat is also
+  written to the home (`.oats-aweb/seat.json`: seat, instance, resident, team;
+  no keys) before the first mint, so a hook killed between the mint and its
+  answer, which leaves the kernel no meta, still leaves a retire what it needs to
+  find the grant: a retire whose meta carries no seat reads that record. The custody's
+  grant list (`aw id grant list --team <team> --json`) is the source of truth:
+  at every real start and at retire, this seat's active grants other than the
+  current one (at retire, all of them) are revoked, so a grant minted before a
+  crash or left by a failed revoke is found and ended. Labels of any other
+  form, including the bare `oats:<instance>` of earlier releases, are never
+  touched. Readiness warns `grant-revoke-pending` for each such grant, from the
+  list. Wherever a revoke fails, the message names the grant, how long it stays
+  valid ("until revoked", or "until <expiry> unless revoked" for a duration)
+  and the exact command, `aw id grant revoke <id>` run in the resident's
+  custody directory. When the list cannot be read, a start proceeds and says
+  "could not check for orphaned grants", readiness warns
+  `grant-revoke-unchecked`, and a retire does not succeed.
+  - A renewal whose fresh grant fails a step (team mismatch, custody
+    attachment, wake registration, a receipt that fails validation) keeps the
+    previous grant and starts on it; a fresh grant it cannot revoke is named and
+    swept at the next start. Only the first mint at spawn, with no grant to fall
+    back on, fails. The renewal's three silent "expires by TTL if revoke fails"
+    catches are gone. For a failed spawn the returned meta carries the grant id
+    and seat to the kernel's rollback retire.
+  - The previous grant after a successful renewal does not fail the start; it
+    is named and swept at the next start.
+  - Behaviour change: retire exits nonzero while any grant of the seat stays
+    unrevoked, or when it could not read the list, for every grant; the kernel
+    then keeps the home and the meta for the retry. Its message lists each
+    grant with its revoke command, which is what `oats retire --force` prints,
+    and replaces "it still expires at …".
+- `wake-daemon-outdated` is now a readiness warning, not a problem: a running
+  wake daemon below the floor still receives, readiness goes on to assess the
+  target, and the remedy is "upgrade aw, then restart the host wake daemon".
+  `wake-daemon-not-running` and `wake-daemon-version-unknown` stay problems.
+  This supersedes the decision that a daemon below the floor is a readiness
+  problem.
+- A renewing launch (`renew: launch`) now reports the custody preflight's
+  warnings (`e2ee-disabled`), as spawn does.
+- Replies need `mail.read` with `mail.send`, because custody re-reads the source
+  message; the NORMAL grant profile has both, and a send-only custom grant fails
+  closed (`grant_scope_denied`). A late reply to a human whose key in the
+  original message has expired fails by design: ask them to send a new message.
+- Grant lifetime in readiness, from the grant recorded at a grant seat's last
+  mint (no aw or custody call). A never-grant, the healthy default, gets no
+  lifetime diagnostic (readiness has no informational channel: the kernel
+  accepts only status, problems and warnings, and Desktop and doctor count
+  warnings); the agent's brief says it never expires, and its "never" is never
+  read as a date. A grant
+  with a duration gets `grant-expiring` (warning) within 7 days of expiry,
+  `grant-expired` (problem) at or after it, and `grant-expiry-unknown` (warning)
+  when the record has no readable expiry. Each names the recorded instant and
+  that seat's remedy: under `renew: launch`, "restart the seat to renew it
+  (`oats session restart --home <home>`)"; for a seat that captured an
+  `identity.ttl` duration, "a restart renews it for another <ttl> (…); to stop
+  it expiring, remove identity.ttl and respawn"; under `renew: off`, where a
+  restart keeps the grant, "respawn the seat (or set `renew: launch` and
+  respawn)". A grant minted before this release records no renew mode, so its
+  remedy adds "if its identity.renew is off, respawn it instead". LOCAL seats
+  are unaffected.
+- `oats aweb setup --join <label>` on a workspace that forbids local team
+  writes joins a second committed team under a different default with no team
+  write: the join preserves that default, so the default command is not needed
+  (oats-aweb#96, the known limit of 1.24.1). An unmapped label on a closed
+  workspace still refuses before acceptance.
 - Add explicit `aweb probe --home` command and offline round-trip implementation:
   one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
   deadlines and public diagnostic projections. No lifecycle/readiness probe,
   identity provisioning, terminal input or uncertain-send retry.
-- Probe-only admission checks aw >=1.36.28 and the exact selected hosted
-  service `/meta` build.aweb_version >=1.27.12 with bounded unauthenticated
-  observation, explicit-root config checks and no legacy fallback. The general
-  provider aw floor stays 1.36.13. The selected-service guarantee holds modulo
+- Probe admission checks the provider aw floor (above; the probe was
+  source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
+  build.aweb_version >=1.27.12, a probe-only server floor, with bounded
+  unauthenticated observation, explicit-root config checks and no legacy
+  fallback. The selected-service guarantee holds modulo
   redirects issued by the selected origin for unauthenticated heartbeat discovery
   only; signed mail and metadata refuse redirects.
   No live acceptance is claimed.
   See `docs/probe.md` for proof limits, JSON timing semantics and separate live
   acceptance requirements.
 
+## 1.24.1 — 2026-10-10
+
+Fixed: `oats aweb setup --join <label>` on a workspace that forbids local team
+writes (`local-teams-closed`) refused even when the workspace itself commits
+that label to the joined team and it is already the default, so the join needed
+no team write at all. Setup now refuses on a closed workspace only when its plan
+would actually write a mapping or a default; a committed, already-default team
+joins and records its minting root (`roots[<team>]`) without touching the team
+configuration. An unmapped label on a closed workspace still refuses before any
+aw call, as before. On a closed workspace a conflicting mapping or another
+configuration failure is now reported as that (`E_SETUP_TEAM_CONFLICT`,
+`E_SETUP_CONFIGURATION`) rather than as `E_SETUP_POLICY`; both still refuse
+before any write. Known limit: a closed workspace that commits the joined label
+but defaults to a different label still refuses, though the join would only
+preserve that default.
 
 ## 1.24.0 — 2026-10-09
 

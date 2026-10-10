@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.24.0",
+  "version": "1.25.0",
   "compatibility": {
     "oats": ">=0.42.0"
   },
@@ -11,7 +11,7 @@
   "requires": [
     {
       "command": "aw",
-      "why": "aw >= 1.36.13: identity minting at spawn, self-delete at retire, live receive registration, onboarding, and all agent messaging",
+      "why": "aw >= 1.36.32: identity minting at spawn, self-delete at retire, live receive registration, onboarding, all agent messaging, replies to senders outside the team roster, and grants that never expire",
       "install": "https://aweb.ai/docs (aw CLI)"
     },
     {
@@ -159,7 +159,7 @@
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (Go duration, 60s to 720h, default 720h), e2ee (default true), renew (off|launch, default launch)."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (never, or a Go duration from 60s to 720h; default never), e2ee (default true), renew (off|launch, default launch)."
     },
     "residents": {
       "hostOnly": true,

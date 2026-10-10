@@ -184,11 +184,11 @@ test("custody preflight requires team grant-status endpoint when reported, allow
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("real aw 1.36.13 custody preflight reports needs-configuration instead of faking a pass", (t) => {
+test("real aw at the floor: custody preflight reports needs-configuration instead of faking a pass", (t) => {
   const realAw = process.env.AW_REAL_CLI_BIN;
-  if (!realAw) { t.skip("set AW_REAL_CLI_BIN to a real aw 1.36.13+ binary to exercise native custody status"); return; }
+  if (!realAw) { t.skip("set AW_REAL_CLI_BIN to a real aw 1.36.32+ binary to exercise native custody status"); return; }
   const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
-  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.13")) { t.skip(`real aw is not 1.36.13+: ${version.stdout || version.stderr}`); return; }
+  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.32")) { t.skip(`real aw is not 1.36.32+: ${version.stdout || version.stderr}`); return; }
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-real-"));
   try {
     const { root, home } = deployment(base); const custody = resident(base);
@@ -216,14 +216,14 @@ test("real aw fixture: unattached grant home reports the released custody locato
 test("custody preflight requires e2ee operations by default; identity.e2ee false needs signing only and briefs a warning", () => {
   let base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, {}, { FAKE_CUSTODY_OPS: "sign_plain_message.v1,status.v1", FAKE_ENCRYPTION_READY: "0" });
+    const { r } = spawnGrant(base, {}, { FAKE_CUSTODY_OPS: "status.v1,sign_plain_message.v1,sign_app_request.v1,grant_never_ttl.v1", FAKE_ENCRYPTION_READY: "0" });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, /create_e2ee_envelope\.v1/);
     assert.match(r.doc.warning, /start aw custody serve for merlin/);
   } finally { rmSync(base, { recursive: true, force: true }); }
   base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, { identity: { e2ee: false } }, { FAKE_CUSTODY_OPS: "sign_plain_message.v1,status.v1", FAKE_ENCRYPTION_READY: "0" });
+    const { r } = spawnGrant(base, { identity: { e2ee: false } }, { FAKE_CUSTODY_OPS: "status.v1,sign_plain_message.v1,sign_app_request.v1,grant_never_ttl.v1", FAKE_ENCRYPTION_READY: "0" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.doc.brief, /E2E encryption is disabled/);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -234,13 +234,13 @@ test("single aw floor refuses older aw before grant mint and always passes --tea
   try {
     const { home, r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.12" });
     assert.notEqual(r.status, 0);
-    assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.13/);
+    assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.32/);
     assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
     assert.equal(existsSync(join(home, ".aweb-identity")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
   base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.13" });
+    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.32" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint").argv;
     assert.equal(argvValue(mint, "--team"), "t:example.test");
@@ -315,8 +315,19 @@ test("readiness checks the recorded final grant locator, never newest directory"
     record(newHome);
     checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.doc.result.status, "needs-configuration");
-    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.13");
+    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.32");
   } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("a grant minted under renew: off records it; an invalid renew mode is not recorded", () => {
+  for (const [renew, recorded] of [["off", "off"], ["launch", "launch"], ["sometimes", undefined]]) {
+    const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+    try {
+      const { r } = spawnGrant(base, { identity: { renew } });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.equal(r.doc.meta.identity.grant.renew, recorded, renew);
+    } finally { rmSync(base, { recursive: true, force: true }); }
+  }
 });
 
 test("launch with renewal off preserves the existing grant locator and session delivery env", () => {
@@ -597,7 +608,12 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
         OATS_SETTINGS: JSON.stringify(settings(custody, ttl === undefined ? {} : { ttl })) };
       const spawned = runHook(bin, "spawn", env);
       assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-      assert.equal(argvValue(logLines(base).find(l => l.argv.slice(0, 3).join(" ") === "id grant mint").argv, "--ttl"), ttl || "720h");
+      const spawnMint = logLines(base).find(l => l.argv.slice(0, 3).join(" ") === "id grant mint").argv;
+      assert.equal(argvValue(spawnMint, "--ttl"), ttl || "never");
+      // aweb will read an omitted --ttl as a never-expiring grant: every mint names one.
+      assert.deepEqual(spawnMint.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "never"}`]);
+      assert.equal(spawned.doc.meta.identity.grant.ttl, ttl || "never", "the grant records the ttl it was minted with");
+      assert.equal(spawned.doc.meta.identity.grant.renew, "launch", "the grant records the renew mode it was minted under");
       write(join(base, "aw.log"), "");
       const launchEnv = { ...env, OATS_META: JSON.stringify(spawned.doc.meta) };
       const preview = runHook(bin, "launch", { ...launchEnv, OATS_LAUNCH_PREVIEW: "1" });
@@ -608,8 +624,11 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
       assert.equal(renewed.status, 0, renewed.stdout + renewed.stderr);
       const mints = logLines(base).filter(l => l.argv.slice(0, 3).join(" ") === "id grant mint");
       assert.equal(mints.length, 1, "omitted renewal setting must re-mint");
-      assert.equal(argvValue(mints[0].argv, "--ttl"), ttl || "720h");
+      assert.equal(argvValue(mints[0].argv, "--ttl"), ttl || "never");
+      assert.deepEqual(mints[0].argv.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "never"}`], "the renew: launch re-mint names its ttl too");
       assert.notEqual(renewed.doc.meta.identity.grant.home, spawned.doc.meta.identity.grant.home);
+      assert.equal(renewed.doc.meta.identity.grant.ttl, ttl || "never");
+      assert.equal(renewed.doc.meta.identity.grant.renew, "launch");
     } finally { rmSync(base, { recursive: true, force: true }); }
   }
 });

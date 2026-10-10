@@ -267,6 +267,19 @@ export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
   return {problems: [], warnings, runtimeDelivery, runtime, primary, primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0};
 }
 
+/** Milliseconds since the epoch of an RFC 3339 timestamp as aw writes them,
+ *  or NaN for anything else, including impossible calendar dates. */
+export function parseTimestamp(value) {
+  const match = typeof value === 'string' && /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.exec(value);
+  if (!match) return NaN;
+  const [, year, month, day, hour, minute, second] = match.map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  // Date.parse normalizes impossible calendar dates such as February 30.
+  if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || hour > 23 || minute > 59 || second > 59) return NaN;
+  return Date.parse(value);
+}
+
 /** Released aw status is a transport observation. Worker telemetry is absent at
  * the CLI floor; that is unknown, not permission to invent a healthy worker.
  * No generation/start witness is required or inferred from historical inputs. */
@@ -278,7 +291,10 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   if (status.daemon_version_state !== 'reported' || typeof status.daemon_version !== 'string' || !/^\d+\.\d+\.\d+$/.test(status.daemon_version || '')) return fail('wake-daemon-version-unknown', 'host wake daemon compatibility is unproven');
   const version = status.daemon_version.split('.').map(Number), floor = minimumVersion.split('.').map(Number);
   const difference = version.map((n, i) => n - floor[i]).find(n => n !== 0);
-  if (difference < 0) return fail('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}`);
+  // A daemon below the floor still receives; the floor exists for replies to
+  // senders outside the roster, so it is reported as a warning, and every
+  // later check (and its fail) still carries that warning.
+  if (difference < 0) warnings.push(problem('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}: upgrade aw, then restart the host wake daemon`));
   const rows = status.instances.filter(row => samePath(row?.home, home));
   if (rows.length !== 1) return fail('wake-target-missing', 'canonical home must have exactly one broker target row');
   const row = rows[0];
@@ -347,18 +363,8 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
       (core.readiness_waiting !== undefined && !['', 'inspect_start', 'inspect_done', 'inspect_error'].includes(core.readiness_waiting))) return fail('wake-status-unavailable', 'broker observation status is malformed');
   if (core.readiness_waiting === 'inspect_error' || states.some(state => ['shell', 'stopped', 'not-launched'].includes(state))) return fail('receive-inspection-unproven', 'broker reports a failed inspection or an unusable endpoint');
   if (states.every(Boolean) && states[0] !== states[1]) return fail('wake-status-unavailable', 'broker observation states contradict each other');
-  const timestamp = value => {
-    const match = typeof value === 'string' && /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.exec(value);
-    if (!match) return NaN;
-    const [, year, month, day, hour, minute, second] = match.map(Number);
-    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    // Date.parse normalizes impossible calendar dates such as February 30.
-    if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || hour > 23 || minute > 59 || second > 59) return NaN;
-    return Date.parse(value);
-  };
-  const updated = status.updated_at === undefined ? undefined : timestamp(status.updated_at);
-  const inspected = row.last_inspect_at === undefined ? undefined : timestamp(row.last_inspect_at);
+  const updated = status.updated_at === undefined ? undefined : parseTimestamp(status.updated_at);
+  const inspected = row.last_inspect_at === undefined ? undefined : parseTimestamp(row.last_inspect_at);
   if (updated !== undefined && (!Number.isFinite(updated) || updated > now)) return fail('wake-status-stale', 'supplied broker status timestamp is invalid or future');
   if (inspected !== undefined && (!Number.isFinite(inspected) || inspected > now || (updated !== undefined && inspected > updated))) return fail('receive-inspection-unproven', 'supplied broker inspection timestamp is invalid, future or later than the snapshot');
   // Released aw retains nonempty LastError across child status updates, while

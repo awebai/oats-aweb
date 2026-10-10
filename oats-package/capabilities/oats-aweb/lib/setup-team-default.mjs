@@ -85,7 +85,9 @@ export function teamConfigurationPlan(doc, label, team, deployment, { preserveDe
   }
   const mapped = !!existing;
   const isDefault = doc.defaultTeam?.label === label && doc.defaultTeam?.team === team;
-  const needed = [...(mapped ? [] : [commands[0]]), ...(isDefault ? [] : [commands[1]])];
+  // A join that preserves an existing default never sets it (applyTeamConfiguration).
+  const keepsDefault = preserveDefault && !!doc.defaultTeam;
+  const needed = [...(mapped ? [] : [commands[0]]), ...(isDefault || keepsDefault ? [] : [commands[1]])];
   if (closed && needed.length) {
     throw setupFailure('E_SETUP_POLICY', 'local-teams-closed: selected workspace forbids local team writes; operator must reconcile policy before using the manual commands', { commands });
   }

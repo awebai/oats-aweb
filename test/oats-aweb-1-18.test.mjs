@@ -399,11 +399,24 @@ test("readiness requires the wake daemon for a home the broker delivers to, by i
   }
 });
 
-test("readiness reports an outdated wake daemon for a codex channel home", (t) => {
+test("readiness warns on an outdated wake daemon for a codex channel home and still assesses its target", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "codex", daemonVersion: "1.36.6" });
   fx.record(fx.spawn().meta, "codex");
   const result = fx.readiness();
-  assert.ok([...result.problems, ...(result.warnings || [])].some((p) => /wake-daemon-outdated/.test(p.code)), JSON.stringify(result));
+  assert.equal(result.problems.some((p) => p.code === "wake-daemon-outdated"), false, JSON.stringify(result));
+  assert.match(result.warnings.find((w) => w.code === "wake-daemon-outdated").message, /running 1\.36\.6; required 1\.36\.32: upgrade aw, then restart the host wake daemon/);
+  assert.deepEqual(result.problems.map((p) => p.code), ["wake-worker-unavailable"], "the target row is assessed past the version");
+});
+
+test("an outdated wake daemon over otherwise healthy broker evidence is ready, with joined teams still live", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: {join: "alpha"} });
+  fx.record(fx.spawn().meta, "codex");
+  fx.fake.setStatus({ ...transportStatus(fx), daemon_version: "1.36.29" });
+  const result = fx.readiness();
+  assert.equal(result.status, "ready", JSON.stringify(result));
+  assert.ok(result.warnings.some((w) => w.code === "wake-daemon-outdated"), JSON.stringify(result));
+  assert.ok(result.warnings.some((w) => w.code === "joined-team-receive"), "a warning does not make joined teams poll-only");
+  assert.equal(result.warnings.some((w) => w.code === "joined-team-poll-only"), false);
 });
 
 // ------------------------------------------- channel-dev-confirmation (1.21.1)
@@ -494,7 +507,7 @@ for (const runtime of ["codex", "claude"]) test(`target readiness rejects daemon
   const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
   fx.record(fx.spawn().meta, runtime);
   const reg = fx.registered();
-  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.21", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "streaming" })) }] });
+  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.32", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "streaming" })) }] });
   assert.equal(fx.readiness().status, "unavailable");
 });
 
