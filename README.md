@@ -540,8 +540,8 @@ command also creates a local default, shadowing the workspace default. With a
 preserved different default, the result instead gives the exact optional
 `oats teams default` command to select the joined label.
 
-Closed policy, conflicting/unmapped declarations and invalid queries refuse
-before acceptance when knowable. Later policy/mapping changes or failed writes
+Closed policy when the plan needs a team write, conflicting/unmapped
+declarations and invalid queries refuse before acceptance when knowable. Later policy/mapping changes or failed writes
 remain typed failures with observed partial state (or unavailable readback).
 Retain the root and retry the same labelled command without an invite; matching
 membership resumes without redemption. Setup rechecks before writes and reads
@@ -639,7 +639,7 @@ preserve-default policy. The provider 1.23.0 (#70) username flow uses the select
 `OATS_CLI_BIN` with explicit deployment and sanitized kernel selectors for public
 `teams --json`, `teams add` and `teams default`. It accepts `teamsApi: 2`, including
 standalone `localTeams: null`; only explicit false/`local-teams-closed` is a policy
-refusal. This act needs those public query/mutation/readback features and selected
+refusal, and only when the plan needs a team write. This act needs those public query/mutation/readback features and selected
 deployment dispatch. The pinned OATS 0.42 source
 `bb2ba8c9a254edb745913b9c5a9d9b833fda932d` is exercised evidence, not proof of an
 earliest compatible release. The general package floor remains unchanged.

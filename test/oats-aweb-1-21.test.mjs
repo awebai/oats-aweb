@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
+import { fakeKernelTeamConfig, joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -557,4 +557,50 @@ test("connect's unmapped-team and readiness remedies keep their commands in back
   assert.equal(readiness.status, "needs-human");
   assert.equal(readiness.remedy, "on altair-aweb: `oats aweb setup --soul dev`");
   assertCommandsInBackticks(readiness.remedy);
+});
+
+// ---------------------------------------------------------------------------
+// setup --join on a workspace that forbids local team writes (local-teams-closed)
+
+test("setup --join on a closed workspace whose committed team is already the default joins without any team write", async (t) => {
+  const TOKEN = "SECRET-CLOSED-JOIN-TOKEN";
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const committed = { label: "joined", team: TEAM, from: "workspace" };
+  const kernel = fakeKernelTeamConfig(join(root, ".fixture-kernel"), root, { localTeams: false, teams: [committed], defaultTeam: { label: "joined", team: TEAM, from: "workspace" } });
+  const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
+  const result = await run(["setup", "--join", "joined", "--invite-stdin", "--service", "https://owner.example/api", "--name", "host-alias"],
+    deploymentEnv(root, { PATH: fake.path, OATS_CLI_BIN: kernel.cli, OATS_DEFAULT_TEAM_FROM: "workspace" }), root, `${TOKEN}\n`);
+  assert.equal(result.code, 0, result.stderr);
+  assert.ok(fake.readCalls().some((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite"), "the invite was redeemed");
+  assert.deepEqual(kernel.calls().filter((c) => c.args[1] === "add" || c.args[1] === "default"), [], "no local team write on a closed workspace");
+  assert.equal(kernel.read().lastMutation, undefined);
+  assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
+  assert.doesNotMatch(result.stdout + result.stderr, /SECRET-CLOSED-JOIN-TOKEN/);
+});
+
+test("setup --join on a closed workspace still refuses before any aw call when the label is not mapped there", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const kernel = fakeKernelTeamConfig(join(root, ".fixture-kernel"), root, { localTeams: false, teams: [], defaultTeam: null });
+  const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
+  const result = await run(["setup", "--join", "joined", "--invite-stdin", "--service", "https://owner.example/api", "--name", "host-alias"],
+    deploymentEnv(root, { PATH: fake.path, OATS_CLI_BIN: kernel.cli, OATS_TEAMS: "[]" }), root, "SECRET-UNMAPPED\n");
+  assert.equal(result.code, 1, result.stdout);
+  assert.match(result.stderr, /E_SETUP_POLICY.*local-teams-closed/);
+  assert.deepEqual(fake.readCalls().filter((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite"), [], "no invite redeemed");
+  assert.equal(existsSync(join(root, ".aweb-roots")), false);
+});
+
+test("setup --join treats a workspace the kernel reports closed through its problems the same way: no team write when none is needed", async (t) => {
+  const root = tempDir(t);
+  writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const kernel = fakeKernelTeamConfig(join(root, ".fixture-kernel"), root, { localTeams: true, problems: [{ condition: "local-teams-closed", severity: "failure", code: "E_WORKSPACE_SCHEMA" }],
+    teams: [{ label: "joined", team: TEAM, from: "workspace" }], defaultTeam: { label: "joined", team: TEAM, from: "workspace" } });
+  const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
+  const result = await run(["setup", "--join", "joined", "--invite-stdin", "--service", "https://owner.example/api", "--name", "host-alias"],
+    deploymentEnv(root, { PATH: fake.path, OATS_CLI_BIN: kernel.cli, OATS_DEFAULT_TEAM_FROM: "workspace" }), root, "SECRET-PROBLEM-CLOSED\n");
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(kernel.calls().filter((c) => c.args[1] === "add" || c.args[1] === "default"), []);
+  assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
 });
