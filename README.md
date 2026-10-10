@@ -5,6 +5,42 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.25.0 — replies to senders outside the roster
+
+aw 1.36.30 lets an agent reply to a sender who is not on its team roster, such
+as a dashboard human in aweb Cloud's agent chat. A self-custodial (LOCAL) seat
+needs aw >= 1.36.30. A grant seat needs both the worker's aw and the running
+resident custody service at >= 1.36.30; otherwise the reply fails with
+`recipient_binding_unavailable`.
+
+- **One client floor, 1.36.30.** Spawn, commands, `setup --check-only`,
+  readiness and the probe refuse an older aw with one message naming the
+  installed version, the floor and `npm i -g @awebai/aw@latest` (or the exact
+  version). `setup --install-aw` installs `^1.36.30` by default.
+- **Upgrade a host in this order:** upgrade aw, restart the host wake daemon and
+  the resident custody services, then `oats sync` to provider 1.25.0. In the
+  other order, readiness warns after the sync until the restarts happen.
+- **`wake-daemon-outdated` is a warning.** A running wake daemon below the floor
+  still receives, so readiness reports it with the remedy "upgrade aw, then
+  restart the host wake daemon" and goes on to assess the target. A daemon that
+  is not running or reports no version is still a problem.
+- **`custody-reply-continuation-unproven` (grant seats only).** A custody service
+  started before an aw upgrade keeps running its old code, and an aw 1.36.30
+  custody reports the same `aw custody status --json` as older ones, so the
+  provider cannot tell whether the running custody can continue such a reply.
+  This is a warning, not a detected fault; its remedy is "restart the custody
+  service after upgrading aw". Readiness, grant spawn and a renewing launch
+  (`renew: launch`) report it; a launch preview and `renew: off` do not ask
+  custody, so they do not. It goes to the operator, not the agent's brief. It
+  disappears once custody reports the `mail_reply_continuation.v1` op (aw
+  1.36.31); this release does not require that op.
+- **Grant scopes.** Custody re-reads the source message to reply, so a reply
+  needs `mail.read` as well as `mail.send`. The NORMAL grant profile carries
+  both; a send-only custom grant fails closed with `grant_scope_denied`.
+- **Late replies.** A reply to a human whose key in the original message has
+  expired fails by design ("source sender key is missing, expired or invalid;
+  ask them to send a new message"): ask them to send a new message.
+
 ## 1.21.0 — connect a deployment on another machine
 
 After `oats server connect` has created the workspace's deployment on another
@@ -45,7 +81,7 @@ The join half works on its own when someone else mints the invite:
   (the first line, trimmed) and behaves exactly as `--invite <token>`. The two
   flags cannot be combined.
 - `oats aweb setup --install-aw [--aw-version <v>]` runs
-  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.13`)
+  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.30`)
   where aw is missing or below the floor, re-checks the floor, then continues.
 - `oats aweb setup --check-only --json` answers, as one line:
 
@@ -275,12 +311,13 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   a harness-native connection or readiness attestation.
 
   Broker readiness reads one `aw wake status --json` snapshot. It checks the
-  canonical target, compatible running daemon, active/unpaused target, complete
+  canonical target, a running daemon that reports its version, active/unpaused target, complete
   captured identity set and its delivery/ownership/event/control policy,
   admitted streams in the released `streaming` phase, running worker, and
   target/worker/binding errors. Missing required daemon, worker or stream
-  evidence is a problem. The aw floor stays 1.36.13; its status lacks worker
-  evidence, so that shape cannot establish the required broker prerequisites.
+  evidence is a problem. A running daemon below the aw floor is the
+  `wake-daemon-outdated` warning, and the target is still assessed; a daemon
+  whose status lacks worker evidence cannot establish the broker prerequisites.
 
   Observation age, absent optional inspection evidence and an inspection in
   progress warn without making otherwise satisfied prerequisites unavailable.
@@ -479,8 +516,14 @@ owner removes the member.
 
 ### aw floor
 
-All 1.17 paths require `aw >= 1.36.13`. Older or unreadable `aw` is a readiness
-problem and a required spawn-hook failure. The floor is read from the first line
+Every path requires `aw >= 1.36.30` (`AW_MIN` in `lib/binding-wire.mjs`, the one
+client floor; the probe uses it too). A missing, older or unreadable `aw` is a
+readiness problem, a refused command and a required spawn-hook failure, all with
+one message naming the installed version, the floor and the install command,
+for example `aw 1.36.27 is older than required 1.36.30; upgrade with
+\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.30\`)`. The host
+wake daemon and a resident's custody service run their own code; readiness
+reports them as warnings (see 1.25.0 above). The floor is read from the first line
 of `aw version`; the reader stops there instead of waiting for aw's update
 check. Every aw command a hook runs has `AW_NO_UPDATE_CHECK=1`.
 
@@ -742,8 +785,9 @@ do not prove live grant or Folio authority.
 `oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
 reports a verified nonce round trip when qualified CLI **and** server support
 are available. It is an explicit send action, never a readiness/lifecycle check.
-Admission requires aw >=1.36.28 and the exact selected hosted service `/meta`
+Admission requires the provider aw floor (1.36.30; the probe was
+source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
 `build.aweb_version` >=1.27.12; unavailable support refuses before sending.
-The general aw floor remains 1.36.13; there is no legacy fallback. The
+There is no legacy fallback. The
 selected-service guarantee holds modulo redirects issued by the selected origin
 for unauthenticated heartbeat discovery only; signed mail and metadata refuse redirects. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).

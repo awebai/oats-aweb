@@ -359,7 +359,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
 | `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
-| `wake-daemon-not-running` / `-outdated` / `-version-unknown` | host wake broker is down or older than 1.36.13 | human: upgrade aw, restart the host wake daemon |
+| `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
+| `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.30); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
 | `channel-dev-confirmation` | the home runs in development mode, so Claude may stop at its development-channels confirmation; mode is not consent | operator: move the host to section 4's approved route and respawn; as fallback, section 4's exact-home opt-in (qualified only for Claude 2.1.289 darwin-arm64) or separately authorized human intervention; no provider/broker/ordinary-agent keys |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
@@ -368,6 +369,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
+| `custody-reply-continuation-unproven` (warning, grant seats only) | readiness cannot tell whether the running custody service can continue a reply to a sender outside the team roster; this is not a detected fault. Readiness, grant spawn and a renewing launch report it; a launch preview and `renew: off` ask custody nothing, so they don't. It clears when custody reports `mail_reply_continuation.v1` (aw 1.36.31) | human: restart the custody service after upgrading aw |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
 **Errors from `oats aweb join|leave|roster`:**
@@ -584,7 +586,7 @@ not automatic daemon startup. Wider-team grant extension remains unsupported #60
 
 ### Connecting a deployment on another machine
 
-Released provider 1.21.0/1.21.1; aw floor 1.36.13. Prerequisites: the operator
+Released provider 1.21.0/1.21.1; the provider aw floor applies (1.36.30 since provider 1.25.0). Prerequisites: the operator
 has completed `oats server connect`, selected the registered server and its mapped
 hosted default team, and has local invite authority for that team. Run from the
 local deployment D, outside an instance session; the selected kernel routes
@@ -620,7 +622,7 @@ check or permission inferred from onboarding.
 
 | Act / context | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
-| Install missing, unreadable-version or below-floor aw; retain `--soul S` for outside-session dispatch | `oats aweb setup --install-aw [--aw-version <v>] --soul S` | Runs `npm install -g @awebai/aw@<v>` (default `^1.36.13`), rechecks the 1.36.13 floor, then continues ordinary setup. At/above floor, skips npm even with a version supplied. Success: usable aw and the selected setup's own success predicate. Next: follow that setup card's one next step. | `npm install -g <package> failed ...` (`E_AW_INSTALL` in check-only JSON) → operator resolves npm/access failure before retry; `npm install -g <package> ran, but ...` (`E_AW_FLOOR`) → resolve PATH/version so the selected aw meets the floor. |
+| Install missing, unreadable-version or below-floor aw; retain `--soul S` for outside-session dispatch | `oats aweb setup --install-aw [--aw-version <v>] --soul S` | Runs `npm install -g @awebai/aw@<v>` (default `^1.36.30`), rechecks the 1.36.30 floor, then continues ordinary setup. At/above floor, skips npm even with a version supplied. Success: usable aw and the selected setup's own success predicate. Next: follow that setup card's one next step. | `npm install -g <package> failed ...` (`E_AW_INSTALL` in check-only JSON) → operator resolves npm/access failure before retry; `npm install -g <package> ran, but ...` (`E_AW_FLOOR`) → resolve PATH/version so the selected aw meets the floor. |
 
 `<v>` accepts an exact version or `^`/`~` range; `--aw-version` requires
 `--install-aw`. This option does not promise an upgrade of an already-usable CLI
@@ -628,6 +630,33 @@ or the separate aw 1.36.24 feature floor. Add `--check-only --json` to return th
 aw/default-team/member/root check after authorized installation, without ordinary
 setup; installation still writes. Without `--install-aw`, a missing/old CLI check
 reports `needs-human` with the explicit installation remedy.
+
+### Upgrading a host to the aw 1.36.30 floor (provider 1.25.0)
+
+aw 1.36.30 lets an agent reply to a sender outside its team roster (a dashboard
+human in aweb Cloud's agent chat). Every path that refuses an older aw says the
+same thing: `aw <installed> is older than required 1.36.30; upgrade with
+\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.30\`)`.
+
+Order on a host: **upgrade aw first, then restart the host wake daemon and each
+resident custody service, then `oats sync` to provider 1.25.0.** A running
+daemon or custody keeps its old code until it restarts. In the other order,
+readiness reports `wake-daemon-outdated` and, on grant seats,
+`custody-reply-continuation-unproven` (section 7) after the sync. Neither blocks
+a spawn.
+
+A LOCAL seat needs aw >= 1.36.30. A grant seat needs the worker's aw **and** the
+running resident custody at >= 1.36.30; otherwise such a reply fails with
+`recipient_binding_unavailable`. An aw 1.36.30 custody reports the same status
+as older custody, so readiness cannot tell which one is running; the warning
+stays until custody reports `mail_reply_continuation.v1` (aw 1.36.31).
+
+- Custody re-reads the source message to reply, so the grant needs `mail.read`
+  with `mail.send`. The NORMAL profile has both; a send-only custom grant fails
+  closed with `grant_scope_denied`.
+- A late reply to a human whose key in the original message has expired fails
+  by design ("source sender key is missing, expired or invalid; ask them to send
+  a new message"): ask them to send a new message.
 
 **Readiness messages:** no default is exactly `no teams configured: run \`oats
 aweb setup\``. An unmapped default is `the default team <label> has no provider id
@@ -674,11 +703,12 @@ need exact identity/thread/nonce proof and an exact-ID re-read. No key setup,
 ack, terminal input or retry of an uncertain send occurs. PASS proves one
 observed round trip, not model presentation, isolated model time or future wakes.
 
-Before sending, admission requires aw >=1.36.28 and an unauthenticated exact
+Before sending, admission requires the provider aw floor (1.36.30; the probe was
+source-qualified at aw 1.36.28) and an unauthenticated exact
 selected hosted origin `/meta` observation with build.aweb_version >=1.27.12.
 Only https://app.aweb.ai is qualified; missing/unsupported versions or ambiguous
 identity-home service config refuse. No bypass or legacy fallback exists. The
-ordinary provider aw floor stays 1.36.13. The selected-service guarantee holds
+selected-service guarantee holds
 modulo redirects issued by the selected origin for unauthenticated heartbeat
 discovery only. Authenticated signed mail and metadata refuse redirects; arbitrary
 configured services remain unsupported. Timeout is finite,

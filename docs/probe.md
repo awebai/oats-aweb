@@ -9,9 +9,11 @@ key, team, plugin or permission and types into no terminal.
 
 ## Release admission
 
-At execution, the probe requires **aw >= 1.36.28** and the selected hosted
-service's **`build.aweb_version >= 1.27.12`**. These are probe-only floors;
-the general provider aw floor remains 1.36.13. The recognized origin is
+At execution, the probe requires the provider's single aw floor, **aw >=
+1.36.30** (`AW_MIN`), and the selected hosted service's **`build.aweb_version
+>= 1.27.12`**, a probe-only server floor. The probe was source-qualified at aw
+1.36.28 ([source qualification](probe-source-qualification.md)), below the
+floor. The recognized origin is
 `https://app.aweb.ai`. No flag or environment variable bypasses admission.
 
 The accepted trust assumption is: **selected-service guarantee holds modulo

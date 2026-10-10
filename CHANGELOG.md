@@ -19,15 +19,46 @@
   one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
   deadlines and public diagnostic projections. No lifecycle/readiness probe,
   identity provisioning, terminal input or uncertain-send retry.
-- Probe-only admission checks aw >=1.36.28 and the exact selected hosted
-  service `/meta` build.aweb_version >=1.27.12 with bounded unauthenticated
-  observation, explicit-root config checks and no legacy fallback. The general
-  provider aw floor stays 1.36.13. The selected-service guarantee holds modulo
+- Probe admission checks the provider aw floor (see below; the probe was
+  source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
+  build.aweb_version >=1.27.12, a probe-only server floor, with bounded
+  unauthenticated observation, explicit-root config checks and no legacy
+  fallback. The selected-service guarantee holds modulo
   redirects issued by the selected origin for unauthenticated heartbeat discovery
   only; signed mail and metadata refuse redirects.
   No live acceptance is claimed.
   See `docs/probe.md` for proof limits, JSON timing semantics and separate live
   acceptance requirements.
+- The aw floor is 1.36.30: aw 1.36.30 lets an agent reply to a sender outside
+  its team roster (a dashboard human in aweb Cloud's agent chat). It is the one
+  client floor (`AW_MIN`): spawn, commands, `setup --check-only`, readiness and
+  the probe refuse an older aw with one message naming the installed version,
+  the floor and `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.30`).
+  `setup --install-aw` installs `^1.36.30` by default. Hosts on aw 1.36.28 or
+  1.36.29 lose the probe, whose CLI floor was 1.36.28.
+- Upgrade a host in this order: upgrade aw, restart the host wake daemon and the
+  resident custody services, then `oats sync` to this release. In the other
+  order, readiness warns after the sync.
+- `wake-daemon-outdated` is now a readiness warning, not a problem: a running
+  wake daemon below the floor still receives, readiness goes on to assess the
+  target, and the remedy is "upgrade aw, then restart the host wake daemon".
+  `wake-daemon-not-running` and `wake-daemon-version-unknown` stay problems.
+  This supersedes the decision that a daemon below the floor is a readiness
+  problem.
+- New warning `custody-reply-continuation-unproven` on grant seats only:
+  readiness cannot tell whether the running custody service can continue a
+  reply to a sender outside the roster, because an aw 1.36.30 custody reports
+  the same status as older custody. It is not a detected fault; the remedy is
+  "restart the custody service after upgrading aw". Readiness, grant spawn and a
+  renewing launch report it (preview and `renew: off` ask custody nothing); it
+  goes to the operator's hook warning, never the agent's brief. It clears when
+  custody reports `mail_reply_continuation.v1` (aw 1.36.31), which is not
+  required here. Custody preflight warnings now carry codes, and the hook
+  prints them as `oats-aweb: <code> — <message>`.
+- Replies need `mail.read` with `mail.send`, because custody re-reads the source
+  message; the NORMAL grant profile has both, and a send-only custom grant fails
+  closed (`grant_scope_denied`). A late reply to a human whose key in the
+  original message has expired fails by design: ask them to send a new message.
 
 
 ## 1.24.0 — 2026-10-09
