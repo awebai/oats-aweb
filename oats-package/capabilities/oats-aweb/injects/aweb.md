@@ -74,7 +74,7 @@ reconcile STATE and task records against exact delivered ids: use
 `aw mail inbox --show-all --json` with `--cursor`. Read state is not completion,
 and `--conversation-id` is not a recovery check.
 
-Some instances act as a resident identity through an expiring session grant
+Some instances act as a resident identity through a session grant
 (TASK.md says so). Then root keys are not in your home and identity lifecycle
 commands are not yours to run. At session start in a grant seat, run `aw whoami`,
 then `aw mail inbox` and `aw chat pending`; do not run `aw workspace status` or

@@ -1,0 +1,283 @@
+// oats.aweb 1.25: grants never expire by default (oats-aweb#80). `identity.ttl`
+// is `never` unless set to a duration (60s to 720h), every mint passes it
+// explicitly, a never seat's custody must list grant_never_ttl.v1, revocation is
+// the only end of a never-grant, and readiness says it never expires.
+//
+// aw 1.36.32 shapes (df6bb193): `--ttl` takes "never" or 60s..720h (real binary,
+// `aw id grant mint --help`); a never-grant's mint JSON and grant.yaml carry
+// `expires_at: "never"` and custody always lists grant_never_ttl.v1 (source,
+// cmd/aw/id_grant.go and custody.go:306). An aweb server without never-grants
+// refuses the mint with HTTP 422 (404 before the grants endpoint): aw exits 1
+// with the error on stderr and mints nothing (observed by the abph owner).
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fakeAw } from "./helpers/fake-aw-grant.mjs";
+import { DEFAULT_GRANT_TTL, resolveGrantTTL } from "../oats-package/capabilities/oats-aweb/lib/grant-duration.mjs";
+import { custodyPreflight } from "../oats-package/capabilities/oats-aweb/lib/grant-custody.mjs";
+import { grantExpiryAssessment } from "../oats-package/capabilities/oats-aweb/lib/grant-expiry.mjs";
+
+const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
+const TEAM = "t:example.test";
+const NEVER_OP = "grant_never_ttl.v1";
+const ALL_OPS = ["status.v1", "sign_plain_message.v1", "sign_app_request.v1", NEVER_OP, "create_e2ee_envelope.v1", "unwrap_e2ee_message.v1", "mail_reply_continuation.v1"];
+const WITHOUT = (...ops) => ALL_OPS.filter(op => !ops.includes(op)).join(",");
+const RESTART = "restart the custody on aw 1.36.32 or later (upgrade aw, restart the custody service and the wake daemon, then oats sync)";
+const HTTP_422 = 'mint identity grant: aweb 422: {"detail":[{"type":"int_parsing","loc":["body","ttl_seconds"],"msg":"Input should be a valid integer, unable to parse string as an integer","input":"never"}]}';
+const HTTP_404 = 'mint identity grant: aweb 404: {"detail":"Not Found"}';
+
+function tempDir(t) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-never-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
+const teamEnv = { OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]) };
+function seat(t) {
+  const base = tempDir(t), bin = fakeAw(base);
+  const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
+  const home = join(root, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
+  const custody = join(base, "custody", "merlin"); write(join(custody, ".aw", "identity.yaml"), "alias: resident-alias\n");
+  const settings = (identity = {}) => ({ identity: { mode: "global", resident: "merlin", ...identity }, residents: { merlin: custody } });
+  const hook = (event, env = {}) => {
+    const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...teamEnv, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, ...env } });
+    let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
+    return { ...r, doc };
+  };
+  const spawn = (identity, env = {}) => hook("spawn", { OATS_SETTINGS: JSON.stringify(settings(identity)), ...env });
+  const launch = (meta, identity, env = {}) => hook("launch", { OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify(settings(identity)), ...env });
+  const retire = (meta, env = {}) => hook("retire", { OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify(settings()), ...env });
+  const calls = () => existsSync(join(base, "aw.log")) ? readFileSync(join(base, "aw.log"), "utf8").trim().split("\n").filter(Boolean).map(l => JSON.parse(l).argv) : [];
+  const readiness = (identity, env = {}) => {
+    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { root, delivery: "session", ...settings(identity) }, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: root, deployment: root, soul: "dev", home } } };
+    const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...teamEnv, ...env } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return JSON.parse(r.stdout).result;
+  };
+  return { base, home, custody, spawn, launch, retire, calls, readiness };
+}
+const mints = (calls) => calls.filter(a => a.slice(0, 3).join(" ") === "id grant mint");
+const revokes = (calls) => calls.filter(a => a.slice(0, 3).join(" ") === "id grant revoke");
+
+// ------------------------------------------------------------------ the ttl
+
+test("identity.ttl defaults to never, accepts exactly `never` or a 60s..720h duration, and names both forms when refused", () => {
+  assert.equal(DEFAULT_GRANT_TTL, "never");
+  for (const unset of [undefined, null, ""]) assert.equal(resolveGrantTTL(unset), "never");
+  assert.equal(resolveGrantTTL("never"), "never");
+  assert.equal(resolveGrantTTL("720h"), "720h");
+  assert.equal(resolveGrantTTL("24h"), "24h");
+  for (const bad of ["Never", "NEVER", " never", "never ", "nevermore", "721h", "0"]) {
+    assert.throws(() => resolveGrantTTL(bad), /^Error: E_GRANT_TTL: identity\.ttl must be never or a Go duration between 60s and 720h/, bad);
+  }
+});
+
+test("every mint passes its ttl explicitly: --ttl=never by default, the duration when one is set", (t) => {
+  for (const [identity, flag] of [[{}, "--ttl=never"], [{ ttl: "never" }, "--ttl=never"], [{ ttl: "24h" }, "--ttl=24h"]]) {
+    const s = seat(t);
+    const spawned = s.spawn(identity);
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    assert.deepEqual(mints(s.calls())[0].filter(a => a.startsWith("--ttl")), [flag]);
+    const launched = s.launch(spawned.doc.meta, identity);
+    assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+    assert.deepEqual(mints(s.calls())[1].filter(a => a.startsWith("--ttl")), [flag], "the renewing launch states it too");
+  }
+});
+
+test("a never-grant is recorded as never, and the brief says it never expires", (t) => {
+  const s = seat(t);
+  const r = s.spawn({});
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.meta.identity.grant.ttl, "never");
+  assert.equal(r.doc.meta.identity.grant.expiresAt, "never");
+  assert.match(r.doc.brief, /; never expires \(it ends only when revoked\)\./);
+  assert.doesNotMatch(r.doc.brief, /expires: never/);
+  const finite = seat(t).spawn({ ttl: "24h" });
+  assert.match(finite.doc.brief, /; expires: 2026-09-24T07:00:00Z\./);
+});
+
+// ------------------------------------------------- mint receipt validation
+
+test("a minted expiry must match the request: anything else fails closed, revokes and keeps nothing", (t) => {
+  for (const [identity, expires] of [[{}, "2027-01-01T00:00:00Z"], [{}, ""], [{}, "soon"], [{}, "2026-02-30T00:00:00Z"], [{ ttl: "24h" }, "never"], [{ ttl: "24h" }, "soon"]]) {
+    const s = seat(t);
+    const r = s.spawn(identity, { FAKE_MINT_EXPIRES: expires });
+    assert.notEqual(r.status, 0, `${JSON.stringify(identity)} ${expires}`);
+    assert.match(r.doc.warning, /expires_at/);
+    assert.deepEqual(revokes(s.calls()).map(a => a[3]), ["grant-spawn"], `revoked: ${JSON.stringify(identity)} ${expires}`);
+    assert.equal(existsSync(join(s.home, ".aweb-identity")), false, "nothing kept");
+  }
+});
+
+test("a renewal whose minted expiry does not match revokes the new grant and keeps the old one", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  const launched = s.launch(spawned.doc.meta, {}, { FAKE_MINT_EXPIRES: "2027-01-01T00:00:00Z" });
+  assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+  assert.equal(launched.doc.meta.identity.grant.id, "grant-spawn", "the previous grant is kept");
+  const renewed = mints(s.calls())[1].find(a => a.startsWith("--out=")).slice("--out=".length);
+  const newId = "grant-" + renewed.split(".aweb-identity-")[1];
+  assert.deepEqual(revokes(s.calls()).map(a => a[3]), [newId]);
+  assert.equal(existsSync(renewed), false);
+  assert.match(launched.doc.warning, /keeping previous grant grant-spawn/);
+});
+
+// ------------------------------------------ an aweb server without never-grants
+
+test("a server that refuses a never mint fails closed: aw's error shown, nothing kept, no revoke, no 720h retry", (t) => {
+  for (const stderr of [HTTP_422, HTTP_404]) {
+    const s = seat(t);
+    const r = s.spawn({}, { FAKE_MINT_STDERR: stderr });
+    assert.notEqual(r.status, 0);
+    assert.ok(r.doc.warning.includes(stderr.slice(0, 120)), r.doc.warning);
+    assert.doesNotMatch(r.doc.warning, /--ttl|--out|--custody-socket|revoke/);
+    assert.deepEqual(mints(s.calls()).map(a => a.filter(x => x.startsWith("--ttl"))), [["--ttl=never"]], "one mint, never retried with a duration");
+    assert.deepEqual(revokes(s.calls()), [], "no grant id, so no revoke");
+    assert.equal(existsSync(join(s.home, ".aweb-identity")), false, "nothing kept");
+
+    const s2 = seat(t);
+    const spawned = s2.spawn({});
+    const launched = s2.launch(spawned.doc.meta, {}, { FAKE_MINT_STDERR: stderr });
+    assert.equal(launched.status, 0);
+    assert.equal(launched.doc.meta.identity.grant.id, "grant-spawn");
+    assert.ok(launched.doc.warning.includes(stderr.slice(0, 120)), launched.doc.warning);
+    assert.deepEqual(mints(s2.calls()).slice(1).map(a => a.filter(x => x.startsWith("--ttl"))), [["--ttl=never"]]);
+    assert.deepEqual(revokes(s2.calls()), []);
+  }
+});
+
+// ------------------------------------------------ the custody op for never seats
+
+const preflight = (ops, ttl) => custodyPreflight({ custody: "/custody", resident: "merlin", team: TEAM, ttl, fatalOnError: false,
+  runAw: () => JSON.stringify({ status: "running", teams: [{ team_id: TEAM, ready: true, certificate_present: true }], keys: { signing_ready: true, encryption_ready: true }, ops, errors: [] }) });
+
+test("a never seat requires grant_never_ttl.v1; a finite seat does not; one remedy, never a ttl", () => {
+  assert.doesNotThrow(() => preflight(ALL_OPS, "never"));
+  const refused = () => preflight(WITHOUT(NEVER_OP).split(","), "never");
+  assert.throws(refused, { message: `custody preflight failed for merlin: status=running; required custody operations are missing: ${NEVER_OP}; ${RESTART}` });
+  assert.doesNotThrow(() => preflight(WITHOUT(NEVER_OP).split(","), "24h"));
+  assert.throws(() => preflight(WITHOUT(NEVER_OP, "mail_reply_continuation.v1").split(","), "never"),
+    { message: `custody preflight failed for merlin: status=running; required custody operations are missing: mail_reply_continuation.v1, ${NEVER_OP}; ${RESTART}` });
+  try { refused(); } catch (error) {
+    assert.doesNotMatch(error.message, /identity\.ttl|\bttl\b|\b\d+(?:h|m|s)\b|duration/i, "never suggests a finite ttl");
+  }
+});
+
+test("spawn refuses a never seat on a custody without the op before any mint; a finite seat mints", (t) => {
+  const s = seat(t);
+  const r = s.spawn({}, { FAKE_CUSTODY_OPS: WITHOUT(NEVER_OP) });
+  assert.notEqual(r.status, 0);
+  assert.equal(r.doc.warning, `oats-aweb: custody preflight failed for merlin: status=running; required custody operations are missing: ${NEVER_OP}; ${RESTART}`);
+  assert.deepEqual(mints(s.calls()), []);
+  const finite = seat(t);
+  assert.equal(finite.spawn({ ttl: "24h" }, { FAKE_CUSTODY_OPS: WITHOUT(NEVER_OP) }).status, 0);
+});
+
+test("readiness: a never seat without the op is the custody problem; with it, or a finite seat without it, is not", (t) => {
+  const s = seat(t);
+  const custody = (result) => result.problems.filter(p => p.code === "custody").map(p => p.message);
+  assert.deepEqual(custody(s.readiness({}, { FAKE_CUSTODY_OPS: WITHOUT(NEVER_OP) })), [`custody preflight failed for merlin: status=running; required custody operations are missing: ${NEVER_OP}; ${RESTART}`]);
+  assert.deepEqual(custody(s.readiness({ ttl: "never" }, { FAKE_CUSTODY_OPS: WITHOUT(NEVER_OP) })).length, 1);
+  assert.deepEqual(custody(s.readiness({})), []);
+  assert.deepEqual(custody(s.readiness({ ttl: "24h" }, { FAKE_CUSTODY_OPS: WITHOUT(NEVER_OP) })), []);
+  assert.match(s.readiness({ ttl: "1d" }).problems.map(p => p.message).join(" "), /E_GRANT_TTL/, "an invalid ttl is reported, not guessed");
+});
+
+// --------------------------------------------- revocation is the only end
+
+const STAYS = (id, custody) => `grant ${id} stays valid until revoked: run \`aw id grant revoke ${id}\` in ${custody}`;
+
+test("retire: a never-grant that was not revoked stays valid, says how to revoke it, and a retry can", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  const failed = s.retire(spawned.doc.meta, { FAKE_REVOKE_FAIL: "1" });
+  assert.equal(failed.status, 1);
+  assert.match(failed.doc.warning, new RegExp(STAYS("grant-spawn", s.custody).replace(/[.*+?^${}()|[\]\\`]/g, "\\$&")));
+  assert.doesNotMatch(failed.doc.warning, /expires/);
+  assert.equal(failed.doc.meta.retired, false);
+  const retried = s.retire(failed.doc.meta);
+  assert.equal(retried.status, 0, retried.stdout + retried.stderr);
+  assert.deepEqual(retried.doc.meta, { retired: true, identityRevoked: true, grant: "grant-spawn" });
+  // A finite grant that survives a retire is a live credential until it lapses:
+  // the retire fails too, and a retry from its meta can revoke it.
+  const finite = seat(t);
+  const finiteSpawn = finite.spawn({ ttl: "24h" });
+  const finiteFailed = finite.retire(finiteSpawn.doc.meta, { FAKE_REVOKE_FAIL: "1" });
+  assert.equal(finiteFailed.status, 1);
+  assert.equal(finiteFailed.doc.meta.reason, "grant-revoke-failed");
+  assert.ok(finiteFailed.doc.warning.endsWith(`grant grant-spawn stays valid until 2026-09-24T07:00:00Z unless revoked: run \`aw id grant revoke grant-spawn\` in ${finite.custody}`), finiteFailed.doc.warning);
+  assert.deepEqual(finite.retire(finiteFailed.doc.meta).doc.meta, { retired: true, identityRevoked: true, grant: "grant-spawn" });
+});
+
+test("renewal: a previous never-grant that was not revoked stays valid and says how to revoke it", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  const launched = s.launch(spawned.doc.meta, {}, { FAKE_REVOKE_FAIL: "grant-spawn" });
+  assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+  assert.notEqual(launched.doc.meta.identity.grant.id, "grant-spawn");
+  assert.ok(launched.doc.warning.includes(`previous ${STAYS("grant-spawn", s.custody)}`), launched.doc.warning);
+  assert.doesNotMatch(launched.doc.warning, /still expires/);
+});
+
+test("renewal: a new never-grant whose attachment fails and cannot be revoked says it stays valid", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  const launched = s.launch(spawned.doc.meta, {}, { FAKE_VERIFY_ERROR: "custody socket refused", FAKE_REVOKE_FAIL: "1" });
+  assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+  assert.equal(launched.doc.meta.identity.grant.id, "grant-spawn");
+  const renewed = mints(s.calls())[1].find(a => a.startsWith("--out=")).split(".aweb-identity-")[1];
+  assert.ok(launched.doc.warning.includes(STAYS(`grant-${renewed}`, s.custody)), launched.doc.warning);
+});
+
+test("spawn: a never-grant whose team mismatches and cannot be revoked says it stays valid, and keeps it for retire", (t) => {
+  const s = seat(t);
+  const r = s.spawn({}, { FAKE_GRANT_TEAM: "other:example.test", FAKE_REVOKE_FAIL: "1" });
+  assert.notEqual(r.status, 0);
+  assert.ok(r.doc.warning.includes(STAYS("grant-spawn", s.custody)), r.doc.warning);
+  assert.equal(r.doc.meta.identity.grant.id, "grant-spawn", "retire compensation can still revoke it");
+});
+
+// ------------------------------------------------------------ readiness
+
+test("readiness says a never-grant never expires, and never parses its expiry as a date", () => {
+  const identity = (grant) => ({ mode: "global", resident: "merlin", grant: { id: "grant-1", scopes: ["mail.read"], ...grant } });
+  const now = Date.parse("2026-10-10T02:00:00Z");
+  for (const grant of [{ expiresAt: "never", ttl: "never", renew: "launch" }, { expiresAt: "never" }]) {
+    assert.deepEqual(grantExpiryAssessment(identity(grant), { home: "/h", now }), { problems: [], warnings: [{ code: "grant-never-expires", message: "grant grant-1 never expires: it ends only when revoked (at retire, or by the resident's owner)" }] });
+  }
+});
+
+test("the expiry remedy: a never or unrecorded ttl restarts, an explicit duration respawns", () => {
+  const now = Date.parse("2026-10-10T02:00:00Z"), at = "2026-10-10T01:00:00Z";
+  const remedy = (grant) => grantExpiryAssessment({ mode: "global", grant: { id: "g", expiresAt: at, renew: "launch", ...grant } }, { home: "/h", now }).problems[0].message.slice(`grant g expired at ${at}: `.length);
+  assert.equal(remedy({ ttl: "never" }), "restart the seat to renew it (`oats session restart --home /h`)");
+  assert.equal(remedy({}), "restart the seat to renew it (`oats session restart --home /h`)");
+  for (const ttl of ["720h", "24h"]) assert.equal(remedy({ ttl }), `respawn the seat: it captured identity.ttl ${ttl}, which a restart would mint again`);
+});
+
+// ------------------------------------------------- the real aw, read-only
+
+test("real aw at the floor parses the --ttl forms OATS passes", (t) => {
+  const realAw = process.env.AW_REAL_CLI_BIN;
+  if (!realAw) { t.skip("set AW_REAL_CLI_BIN to a real aw 1.36.32+ (native or the npm JS shim) to check the mint flags"); return; }
+  const dir = tempDir(t), home = join(dir, "home"); mkdirSync(home);
+  // An empty, uninitialized directory: aw parses the flags, then stops before
+  // any network call because there is no identity here.
+  const aw = (args) => spawnSync(realAw, args, { cwd: dir, encoding: "utf8", timeout: 20000, env: { PATH: `${dirname(realAw)}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, AW_NO_UPDATE_CHECK: "1" } });
+  const help = aw(["id", "grant", "mint", "--help"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /--ttl string\s+Grant duration: never \(revocation-only\) or a duration from 60s to 720h/);
+  const mint = (ttl) => aw(["id", "grant", "mint", "--team=t:example.invalid", "--scope=mail.read", `--ttl=${ttl}`, `--out=${join(dir, "out-" + ttl)}`, "--json"]);
+  for (const ttl of ["never", "720h", "24h"]) {
+    const r = mint(ttl);
+    assert.doesNotMatch(r.stderr, /invalid argument/, `${ttl} parses: ${r.stderr}`);
+    assert.match(r.stderr, /not initialized for aw/, ttl);
+  }
+  for (const [ttl, why] of [["721h", /grant duration must be 60s to 720h or never/], ["Never", /invalid duration/]]) {
+    assert.match(mint(ttl).stderr, new RegExp(`invalid argument "${ttl}" for "--ttl" flag: .*${why.source}`), ttl);
+  }
+});

@@ -27,7 +27,7 @@ const UNRECORDED = "restart the seat to renew it (`oats session restart --home /
 const iso = (ms) => new Date(ms).toISOString();
 /** A recorded grant identity. Grants minted from 1.25.0 record their ttl and
  *  renew mode; `null` leaves one out, as a grant minted before 1.25.0 does. */
-const grantIdentity = (expiresAt, { ttl = "720h", renew = "launch" } = {}) => ({ mode: "global", alias: "resident-alias", team: TEAM, resident: "merlin", grant: { id: "grant-1", ...(expiresAt === undefined ? {} : { expiresAt }), ...(ttl === null ? {} : { ttl }), ...(renew === null ? {} : { renew }), scopes: ["mail.read"], home: `${HOME}/.aweb-identity` } });
+const grantIdentity = (expiresAt, { ttl = null, renew = "launch" } = {}) => ({ mode: "global", alias: "resident-alias", team: TEAM, resident: "merlin", grant: { id: "grant-1", ...(expiresAt === undefined ? {} : { expiresAt }), ...(ttl === null ? {} : { ttl }), ...(renew === null ? {} : { renew }), scopes: ["mail.read"], home: `${HOME}/.aweb-identity` } });
 const assess = (identity, now = NOW) => grantExpiryAssessment(identity, { home: HOME, now });
 
 test("a grant expiring in 6 days 23 hours is the grant-expiring warning naming the instant and the remedy", () => {
@@ -38,9 +38,9 @@ test("a grant expiring in 6 days 23 hours is the grant-expiring warning naming t
 test("each seat gets its own remedy from the renew mode and ttl its grant recorded", () => {
   const at = iso(NOW - 1000), soon = iso(NOW + DAY);
   const remedy = (options) => assess(grantIdentity(at, options)).problems[0].message.slice(`grant grant-1 expired at ${at}: `.length);
-  for (const ttl of ["720h", "43200m", "garbage"]) assert.equal(remedy({ ttl, renew: "launch" }), REMEDY, `renew launch, ttl ${ttl}`);
-  assert.equal(remedy({ ttl: null, renew: "launch" }), REMEDY, "renew launch, no ttl recorded");
+  for (const ttl of [null, "never", "garbage"]) assert.equal(remedy({ ttl, renew: "launch" }), REMEDY, `renew launch, ttl ${ttl}`);
   assert.equal(remedy({ ttl: "24h", renew: "launch" }), RESPAWN);
+  assert.equal(remedy({ ttl: "720h", renew: "launch" }), "respawn the seat: it captured identity.ttl 720h, which a restart would mint again", "any recorded duration");
   for (const ttl of ["720h", "24h", null]) assert.equal(remedy({ ttl, renew: "off" }), RENEW_OFF, `renew off, ttl ${ttl}`);
   assert.equal(remedy({ ttl: null, renew: null }), UNRECORDED, "minted before 1.25.0");
   assert.equal(assess(grantIdentity(soon, { ttl: "24h", renew: "launch" })).warnings[0].message, `grant grant-1 expires at ${soon}, within 7 days: ${RESPAWN}`);
@@ -135,10 +135,10 @@ test("a LOCAL seat's readiness has no grant expiry diagnostics", (t) => {
 
 // ------------------------------------------------ the grant duration defaults
 
-test("1.25.0 grant seats default to a 720h ttl renewed at every launch, as the manifest says", () => {
-  assert.equal(DEFAULT_GRANT_TTL, "720h");
+test("1.25.0 grant seats default to a never-expiring grant renewed at every launch, as the manifest says", () => {
+  assert.equal(DEFAULT_GRANT_TTL, "never");
   const manifest = JSON.parse(readFileSync(new URL("../oats-package/capabilities/oats-aweb/oats.json", import.meta.url), "utf8"));
   const description = manifest.settings.identity.description;
-  assert.match(description, /ttl \(Go duration, 60s to 720h, default 720h\)/);
+  assert.match(description, /ttl \(never, or a Go duration from 60s to 720h; default never\)/);
   assert.match(description, /renew \(off\|launch, default launch\)/);
 });

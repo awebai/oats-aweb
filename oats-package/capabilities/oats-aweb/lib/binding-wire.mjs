@@ -6,6 +6,7 @@ import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
 import { grantExpiryAssessment } from './grant-expiry.mjs';
+import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -284,7 +285,11 @@ async function workspaceReadinessPhase(req) {
     else if(typeof custody!=='string' || !isAbsolute(custody) || !existsSync(join(custody,'.aw','identity.yaml'))) problems.push({code:'custody',message:`identity.mode "global" resident ${JSON.stringify(resident)} is not resolvable; set oats-local.yaml settings.oats.aweb.residents.${resident} to an absolute custody directory whose .aw/identity.yaml exists`});
     else if(details.team) {
       try {
-        const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,fatalOnError:false,runAw:localAw});
+        // A never-grant in use, or the next mint's ttl (a renewal keeps the seat's
+        // duration; a new seat's default is never), decides the custody's ops.
+        const recorded=ctx.home?recordedStart(ctx.home).meta?.identity?.grant:undefined;
+        const next=recorded?.id?renewalGrantTTL(identity.ttl,recorded.ttl):resolveGrantTTL(identity.ttl);
+        const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,ttl:recorded?.expiresAt==='never'?'never':next,fatalOnError:false,runAw:localAw});
         for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
       }
       catch(e) {problems.push({code:'custody',message:e.message});}

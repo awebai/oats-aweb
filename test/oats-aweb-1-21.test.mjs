@@ -18,7 +18,7 @@ import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
-const AW_MIN = "1.36.31";
+const AW_MIN = "1.36.32";
 const TEAM = "joined:example.invalid";
 
 function tempDir(t) {
@@ -122,7 +122,7 @@ test("setup --invite-stdin with nothing on stdin refuses before accepting", asyn
 // setup --install-aw and setup --check-only
 
 /** A bin directory holding a fake `npm` and, when `aw` names a version, a fake `aw` reporting
- *  it. A successful `npm install -g @awebai/aw@…` (re)writes the fake aw at 1.36.31, or copies
+ *  it. A successful `npm install -g @awebai/aw@…` (re)writes the fake aw at 1.36.32, or copies
  *  the aw script at `installs`. */
 function fakeNpmPath(t, { aw = undefined, installs = undefined } = {}) {
   const dir = tempDir(t);
@@ -142,7 +142,7 @@ console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 const fs = require("node:fs");
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");
 if (process.env.NPM_FAIL) { console.error("npm ERR! 404 Not Found - GET https://registry.npmjs.org/@awebai%2faw"); process.exit(3); }
-if (!process.env.NPM_INSTALLS_OLD) fs.writeFileSync(${JSON.stringify(versionFile)}, "1.36.31\\n");
+if (!process.env.NPM_INSTALLS_OLD) fs.writeFileSync(${JSON.stringify(versionFile)}, "1.36.32\\n");
 else fs.writeFileSync(${JSON.stringify(versionFile)}, "1.30.0\\n");
 fs.writeFileSync(${JSON.stringify(join(bin, "aw"))}, ${installs ? `fs.readFileSync(${JSON.stringify(installs)}, "utf8")` : JSON.stringify(awScript)}, { mode: 0o755 });
 console.log("added 1 package");
@@ -168,8 +168,8 @@ test("setup --install-aw with aw missing installs aw at AW_MIN's release line, r
   assert.deepEqual(npm.readCalls(), [["install", "-g", `@awebai/aw@^${AW_MIN}`]]);
   const doc = checkOnly(result.stdout);
   assert.equal(doc.aw.status, "done");
-  assert.equal(doc.aw.version, "1.36.31");
-  assert.match(doc.aw.detail, /installed aw 1\.36\.31 \(was missing\)/);
+  assert.equal(doc.aw.version, "1.36.32");
+  assert.match(doc.aw.detail, /installed aw 1\.36\.32 \(was missing\)/);
   assert.deepEqual(doc.defaultTeam, { label: "joined", team: TEAM });
   assert.equal(doc.member, false);
 });
@@ -177,21 +177,21 @@ test("setup --install-aw with aw missing installs aw at AW_MIN's release line, r
 test("setup --install-aw below the floor installs, and --aw-version picks the version", async (t) => {
   const root = tempDir(t);
   const npm = fakeNpmPath(t, { aw: "1.30.0" });
-  const result = await run(["setup", "--check-only", "--install-aw", "--aw-version", "1.36.31", "--json"], deploymentEnv(root, { PATH: npm.path }), root);
+  const result = await run(["setup", "--check-only", "--install-aw", "--aw-version", "1.36.32", "--json"], deploymentEnv(root, { PATH: npm.path }), root);
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(npm.readCalls(), [["install", "-g", "@awebai/aw@1.36.31"]]);
+  assert.deepEqual(npm.readCalls(), [["install", "-g", "@awebai/aw@1.36.32"]]);
   const doc = checkOnly(result.stdout);
   assert.equal(doc.aw.status, "done");
-  assert.match(doc.aw.detail, /installed aw 1\.36\.31 \(was 1\.30\.0\)/);
+  assert.match(doc.aw.detail, /installed aw 1\.36\.32 \(was 1\.30\.0\)/);
 });
 
 test("setup --install-aw at or above the floor does not run npm", async (t) => {
   const root = tempDir(t);
-  const npm = fakeNpmPath(t, { aw: "1.36.31" });
+  const npm = fakeNpmPath(t, { aw: "1.36.32" });
   const result = await run(["setup", "--check-only", "--install-aw", "--json"], deploymentEnv(root, { PATH: npm.path }), root);
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(npm.readCalls(), []);
-  assert.deepEqual(checkOnly(result.stdout).aw, { status: "ok", version: "1.36.31" });
+  assert.deepEqual(checkOnly(result.stdout).aw, { status: "ok", version: "1.36.32" });
 });
 
 test("setup --install-aw relays npm's failure with its exit status", async (t) => {
@@ -202,10 +202,10 @@ test("setup --install-aw relays npm's failure with its exit status", async (t) =
   const doc = checkOnly(checked.stdout);
   assert.equal(doc.aw.status, "failed");
   assert.equal(doc.aw.code, "E_AW_INSTALL");
-  assert.match(doc.aw.detail, /npm install -g @awebai\/aw@\^1\.36\.31 failed \(exit 3\): npm ERR! 404 Not Found/);
+  assert.match(doc.aw.detail, /npm install -g @awebai\/aw@\^1\.36\.32 failed \(exit 3\): npm ERR! 404 Not Found/);
   const plain = await run(["setup", "--install-aw"], deploymentEnv(root, { PATH: npm.path, NPM_FAIL: "1" }), root);
   assert.equal(plain.code, 1);
-  assert.match(plain.stderr, /oats aweb setup: npm install -g @awebai\/aw@\^1\.36\.31 failed \(exit 3\): npm ERR! 404 Not Found/);
+  assert.match(plain.stderr, /oats aweb setup: npm install -g @awebai\/aw@\^1\.36\.32 failed \(exit 3\): npm ERR! 404 Not Found/);
 });
 
 test("setup --install-aw whose install still leaves aw below the floor fails", async (t) => {
@@ -216,7 +216,28 @@ test("setup --install-aw whose install still leaves aw below the floor fails", a
   const doc = checkOnly(result.stdout);
   assert.equal(doc.aw.status, "failed");
   assert.equal(doc.aw.code, "E_AW_FLOOR");
-  assert.match(doc.aw.detail, /aw 1\.30\.0 is older than required 1\.36\.31/);
+  assert.match(doc.aw.detail, /aw 1\.30\.0 is older than required 1\.36\.32/);
+});
+
+// The npm @awebai/aw package's bin/aw is a JS shim (#!/usr/bin/env node) that its
+// postinstall replaces with the native binary. Where that does not happen and the
+// platform package is missing, the shim prints this and exits 1 (aw 1.36.32 bin/aw).
+test("setup --install-aw that leaves a shim without its platform package fails with E_AW_FLOOR, never a pass", async (t) => {
+  const root = tempDir(t);
+  const shim = join(tempDir(t), "aw-shim");
+  writeFileSync(shim, `#!${process.execPath}
+console.error("Error: Could not find the aw binary for darwin arm64.");
+console.error("The platform-specific package may not have been installed.");
+console.error("Try: npm install @awebai/aw --force");
+process.exit(1);
+`, { mode: 0o755 });
+  const npm = fakeNpmPath(t, { installs: shim });
+  const result = await run(["setup", "--check-only", "--install-aw", "--json"], deploymentEnv(root, { PATH: npm.path }), root);
+  assert.equal(result.code, 1);
+  const doc = checkOnly(result.stdout);
+  assert.equal(doc.aw.status, "failed");
+  assert.equal(doc.aw.code, "E_AW_FLOOR");
+  assert.equal(doc.aw.detail, "npm install -g @awebai/aw@^1.36.32 ran, but aw version could not be read; install aw >= 1.36.32 with `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.32`)");
 });
 
 test("setup --install-aw without --check-only continues into the ordinary setup", async (t) => {
@@ -225,7 +246,7 @@ test("setup --install-aw without --check-only continues into the ordinary setup"
   const localTeam = JSON.stringify([{ label: "joined", team: TEAM, default: true, from: "local" }]);
   const result = await run(["setup", "--install-aw"], deploymentEnv(root, { PATH: npm.path, OATS_TEAMS: localTeam }), root);
   assert.equal(result.code, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /installed aw 1\.36\.31 \(was missing\)/);
+  assert.match(result.stdout, /installed aw 1\.36\.32 \(was missing\)/);
   assert.match(result.stdout, /aweb onboarding — messaging root/);
   assert.match(result.stdout, /No aweb workspace at the messaging root yet/);
 });
@@ -240,7 +261,7 @@ test("setup without --install-aw keeps today's message when aw is missing; --che
   assert.equal(checked.code, 0, checked.stderr);
   const doc = checkOnly(checked.stdout);
   assert.equal(doc.aw.status, "needs-human");
-  assert.match(doc.aw.detail, /aw CLI not on PATH; install aw >= 1\.36\.31/);
+  assert.match(doc.aw.detail, /aw CLI not on PATH; install aw >= 1\.36\.32/);
   assert.match(doc.aw.remedy, /`oats aweb setup --install-aw`/);
   assertCommandsInBackticks(doc.aw.remedy);
   assert.equal(doc.member, null);
@@ -252,13 +273,13 @@ test("setup --check-only reports membership of the default team from its root", 
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
   const before = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path }), root);
   assert.equal(before.code, 0, before.stderr);
-  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.31" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null });
+  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.32" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null });
   const teamRoot = join(root, ".aweb-roots", "joined");
   mkdirSync(join(teamRoot, ".aw"), { recursive: true });
   writeFileSync(join(teamRoot, ".aw", "teams.json"), JSON.stringify({ active_team: TEAM, memberships: [{ team_id: TEAM }] }));
   const after = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root, roots: { [TEAM]: teamRoot } }) }), root);
   assert.equal(after.code, 0, after.stderr);
-  assert.deepEqual(checkOnly(after.stdout), { aw: { status: "ok", version: "1.36.31" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot });
+  assert.deepEqual(checkOnly(after.stdout), { aw: { status: "ok", version: "1.36.32" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot });
 });
 
 test("setup --check-only cannot be combined with an onboarding action", async (t) => {
@@ -357,7 +378,7 @@ test("connect on a fresh host installs aw, mints a hosted invite, joins through 
   assert.deepEqual(doc.result, {
     server: SERVER, team: { label: "joined", team: TEAM }, ready: true,
     steps: [
-      { step: "aw", status: "done", detail: "installed aw 1.36.31 (was missing)" },
+      { step: "aw", status: "done", detail: "installed aw 1.36.32 (was missing)" },
       { step: "invite", status: "done" },
       { step: "join", status: "done", detail: `root ${teamRoot}` },
       { step: "readiness", status: "ok" },
@@ -386,7 +407,7 @@ test("connect with the host already a member mints nothing", async (t) => {
   assert.equal(result.code, 0, result.stdout + result.stderr);
   const doc = envelope(result.stdout);
   assert.deepEqual(doc.result.steps, [
-    { step: "aw", status: "ok", detail: "aw 1.36.31" },
+    { step: "aw", status: "ok", detail: "aw 1.36.32" },
     { step: "invite", status: "ok", detail: "already a member; no invite minted" },
     { step: "join", status: "ok", detail: `root ${join(fx.hostDir, ".aweb-roots", "joined")}` },
     { step: "readiness", status: "ok" },
@@ -480,7 +501,7 @@ test("connect prints its steps for a human without --json", async (t) => {
   const result = await fx.connect([SERVER]);
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /^oats aweb connect altair-aweb: team joined \(joined:example\.invalid\)$/m);
-  assert.match(result.stdout, /^  aw: ok — aw 1\.36\.31$/m);
+  assert.match(result.stdout, /^  aw: ok — aw 1\.36\.32$/m);
   assert.match(result.stdout, /^  invite: ok — already a member; no invite minted$/m);
   assert.match(result.stdout, /^ready: yes$/m);
 });

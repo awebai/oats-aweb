@@ -5,31 +5,56 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.25.0 — replies to senders outside the roster
+## 1.25.0 — grants that never expire; replies to senders outside the roster
 
-**Host order, before syncing to 1.25.0:** upgrade aw to 1.36.31 or later,
-restart every resident custody service and the host wake daemon, then
-`oats sync`. A running custody or daemon keeps its old code until it restarts.
+- **New grant seats never expire.** A GLOBAL seat spawned on 1.25.0 gets a
+  grant that ends only when it is revoked (oats-aweb#80).
+- **One setting keeps a duration:** `identity.ttl`, for example
+  `identity: { ttl: 720h }` in the seat's settings (`never`, or a Go duration
+  from 60s to 720h). A renewal keeps the seat's duration: the captured
+  `identity.ttl`, else the ttl the renewed grant recorded, else 720h for a grant
+  minted before 1.25.0, so an existing seat never silently stops expiring.
+- **What bounds a grant now:** its scopes, revocation at retire, and revocation
+  by the resident's owner. A revoked grant's next request is refused at once;
+  an open notification stream ends within about 30 seconds.
+- **Host order, before syncing to 1.25.0:** upgrade aw to 1.36.32 or later,
+  restart every resident custody service and the host wake daemon, then
+  `oats sync`. A running custody or daemon keeps its old code until it restarts.
 
-aw 1.36.31 lets an agent reply to a sender who is not on its team roster, such
-as a dashboard human in aweb Cloud's agent chat. A self-custodial (LOCAL) seat
-needs aw >= 1.36.31. A grant seat needs the worker's aw and the running resident
-custody at >= 1.36.31.
+The rest:
 
-- **One client floor, 1.36.31** (`AW_MIN` in `lib/aw-floor.mjs`). Spawn,
+- **One client floor, 1.36.32** (`AW_MIN` in `lib/aw-floor.mjs`). Spawn,
   commands, `setup --check-only`, readiness and the probe refuse an older aw
   with one message naming the installed version, the floor and
   `npm i -g @awebai/aw@latest` (or the exact version). `setup --install-aw`
-  installs `^1.36.31` by default.
-- **E2EE grant seats require `mail_reply_continuation.v1`.** A custody on aw
-  1.36.31 or later lists that op beside its E2EE ops in `aw custody status
-  --json`. For an E2EE grant seat (the default) a custody that does not list it
-  fails readiness and the mint preflight with "required custody operations are
-  missing: mail_reply_continuation.v1; restart the custody on aw 1.36.31 or
-  later". This is an op probe, not a version check. A seat with
-  `identity.e2ee: false` does not require the op, and cannot send the encrypted
-  reply to such a sender. When the custody status cannot be read, the message
-  says "custody status could not be read: …", never that an op is missing.
+  installs `^1.36.32` by default. aw 1.36.31 lets an agent reply to a sender
+  who is not on its team roster, such as a dashboard human in aweb Cloud's agent
+  chat; aw 1.36.32 mints grants that never expire.
+- **Every mint states its ttl** (`--ttl=never` or the duration), though aw's own
+  default is now never. A minted grant's `expires_at` must answer its request:
+  the string `"never"` for a never-grant, a timestamp for a duration. Anything
+  else fails the mint closed: the grant is revoked and nothing is kept. When the
+  aweb service refuses a never mint (a server without never-grants answers 422,
+  or 404 before the grants endpoint), aw mints nothing: the error shows aw's
+  message, nothing is kept and nothing is retried with a duration.
+- **Custody ops, probed from `aw custody status --json`.** A never seat needs its
+  custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs
+  `mail_reply_continuation.v1`, listed beside the E2EE ops. When one is
+  missing, readiness and the mint preflight say "required custody operations
+  are missing: …; restart the custody on aw 1.36.32 or later (upgrade aw,
+  restart the custody service and the wake daemon, then oats sync)". It is an
+  op probe, not a version check. A seat with an explicit duration does not need
+  the never op; one with `identity.e2ee: false` does not need the reply op and
+  cannot send the encrypted reply to a sender outside the roster. When the
+  custody status cannot be read, the message says "custody status could not
+  be read: …", never that an op is missing.
+- **Revocation is the only end of a never-grant.** Wherever a revoke fails
+  (retire, the previous grant after a renewal, a grant spawn or renewal does
+  not keep), the message names the grant, how long it stays valid ("until
+  revoked", or "until <expiry> unless revoked" for a duration) and the exact
+  command, `aw id grant revoke <id>` run in the resident's custody directory.
+  A retire whose revoke fails exits nonzero for every grant and keeps the
+  grant's identity in its meta, so a retry can revoke it.
 - **`wake-daemon-outdated` is a warning.** A running wake daemon below the floor
   still receives, so readiness reports it with the remedy "upgrade aw, then
   restart the host wake daemon" and goes on to assess the target. A daemon that
@@ -40,23 +65,21 @@ custody at >= 1.36.31.
 - **Late replies.** A reply to a human whose key in the original message has
   expired fails by design ("source sender key is missing, expired or invalid;
   ask them to send a new message"): ask them to send a new message.
-- **Grant expiry is visible.** Readiness reads a grant seat's recorded grant
-  (`identity.grant.expiresAt`, as aw reported it at the last mint) and asks
-  neither aw nor custody: `grant-expiring` (warning) within 7 days of expiry,
+- **Grant lifetime in readiness.** Readiness reads a grant seat's recorded grant
+  and asks neither aw nor custody. A never-grant gets the informational
+  `grant-never-expires`; its `"never"` is never read as a date. A grant with a
+  duration gets `grant-expiring` (warning) within 7 days of expiry,
   `grant-expired` (problem; messaging unavailable) at or after it, and
   `grant-expiry-unknown` (warning) when no expiry can be read, never a guessed
   one. Each names the instant as recorded and that seat's remedy, from the ttl
-  and renew mode its grant was minted with (recorded as `identity.grant.ttl`
-  and `identity.grant.renew` from this release): with `renew: launch` and the
-  default ttl, "restart the seat to renew it (`oats session restart --home
-  <home>`)"; with an explicit non-default ttl, which a restart would mint
-  again, "respawn the seat"; with `renew: off`, where a restart keeps the grant,
-  "respawn the seat (or set `renew: launch` and respawn)". A grant minted
-  before 1.25.0 records neither and gets: restart, or respawn if its renew is
-  off or its ttl short. LOCAL seats get none of these. Grants still default to
-  `identity.ttl: 720h` and `identity.renew: launch`, and every mint passes an
-  explicit `--ttl`. Non-expiring grants are not available yet: aw and the aweb
-  server cap a grant at 30 days (oats-aweb#80).
+  and renew mode the grant was minted with (`identity.grant.ttl`,
+  `identity.grant.renew`): with `renew: launch` and a never or unrecorded ttl,
+  "restart the seat to renew it (`oats session restart --home <home>`)"; with a
+  duration, which a restart would mint again, "respawn the seat"; with
+  `renew: off`, where a restart keeps the grant, "respawn the seat (or set
+  `renew: launch` and respawn)". A grant minted before 1.25.0 records neither
+  and gets: restart, or respawn if its renew is off or its ttl short. LOCAL
+  seats get none of these.
 
 ## 1.21.0 — connect a deployment on another machine
 
@@ -98,7 +121,7 @@ The join half works on its own when someone else mints the invite:
   (the first line, trimmed) and behaves exactly as `--invite <token>`. The two
   flags cannot be combined.
 - `oats aweb setup --install-aw [--aw-version <v>]` runs
-  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.31`)
+  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.32`)
   where aw is missing or below the floor, re-checks the floor, then continues.
 - `oats aweb setup --check-only --json` answers, as one line:
 
@@ -411,15 +434,16 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   GLOBAL creation in an existing hosted team versus resident reuse, follow the
   [existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md).
   Global spawn consumes a provisioned resident; it does not create one.
-  GLOBAL grants default to `identity.ttl: 720h` (30 days, the native maximum)
-  and `identity.renew: launch`: each actual launch re-mints, while preview
-  makes no changes. Explicit `renew: off` retains the finite grant; explicit
-  shorter valid TTLs remain supported. Durations must use Go syntax and fall
-  between 60s and 720h; `E_GRANT_TTL` refuses invalid/out-of-range values
-  before grant or launch effects, including retained-grant paths.
-  Do not configure shorter TTLs for customer seats. A seat running beyond its
-  expiry without a successful re-mint can still expire; non-expiring grants
-  are requested upstream in [#80](https://github.com/awebai/oats-aweb/issues/80).
+  A new GLOBAL seat's grant never expires (`identity.ttl: never`, the default
+  from 1.25.0, [#80](https://github.com/awebai/oats-aweb/issues/80)), with
+  `identity.renew: launch`: each actual launch re-mints, while preview makes
+  no changes. A renewal keeps the seat's duration (its captured ttl, else the
+  ttl the grant recorded, else 720h for a grant minted before 1.25.0).
+  `identity.ttl` may instead set a Go duration from 60s to 720h;
+  `E_GRANT_TTL` refuses anything else before grant or launch effects,
+  including retained-grant paths. Explicit `renew: off` retains the existing
+  grant. What bounds a never-grant is its scopes and revocation, at retire or
+  by the resident's owner.
   Existing homes retain their captured provider/settings until explicitly
   recomposed; publishing this version does not update them automatically.
 
@@ -533,12 +557,12 @@ owner removes the member.
 
 ### aw floor
 
-Every path requires `aw >= 1.36.31` (`AW_MIN` in `lib/aw-floor.mjs`, the one
+Every path requires `aw >= 1.36.32` (`AW_MIN` in `lib/aw-floor.mjs`, the one
 client floor; the probe and grant seats' custody use it too). A missing, older or unreadable `aw` is a
 readiness problem, a refused command and a required spawn-hook failure, all with
 one message naming the installed version, the floor and the install command,
-for example `aw 1.36.30 is older than required 1.36.31; upgrade with
-\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.31\`)`. The host
+for example `aw 1.36.31 is older than required 1.36.32; upgrade with
+\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.32\`)`. The host
 wake daemon and a resident's custody service run their own code until they
 restart (see 1.25.0 above). The floor is read from the first line
 of `aw version`; the reader stops there instead of waiting for aw's update
@@ -729,10 +753,13 @@ failure/preview controls. With `OATS_TEST_AW_1_36_23` pointing at the pinned
 1.36.23 executable, `test/grant-duration-native.test.mjs` checks version, help
 and duration flag parsing in an isolated home. It always passes `--help`:
 no mint executes, and syntactically valid out-of-range values can pass this
-help check. The 60s..720h range is separately enforced by provider tests and
+help check. The 60s..720h range and `never` are separately enforced by provider tests and
 qualified against native source `61c38162596d1af9085741d70d15900ff9894257`
 (`cmd/aw/id_grant.go`). These checks are not live custody, grant or expiry
-acceptance.
+acceptance. With `AW_REAL_CLI_BIN` pointing at a real aw 1.36.32 or later,
+native or the npm JS shim, `test/never-grant.test.mjs` checks that it parses
+`--ttl=never` and the durations OATS passes, in an empty directory where aw
+stops before any network call.
 
 
 For an isolated build of the exact native source pin, the same opt-in fixtures
@@ -802,7 +829,7 @@ do not prove live grant or Folio authority.
 `oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
 reports a verified nonce round trip when qualified CLI **and** server support
 are available. It is an explicit send action, never a readiness/lifecycle check.
-Admission requires the provider aw floor (1.36.31; the probe was
+Admission requires the provider aw floor (1.36.32; the probe was
 source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
 `build.aweb_version` >=1.27.12; unavailable support refuses before sending.
 There is no legacy fallback. The
