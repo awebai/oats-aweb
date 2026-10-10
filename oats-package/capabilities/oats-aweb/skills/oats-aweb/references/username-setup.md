@@ -20,12 +20,12 @@ inferred from a soul. Explicit label is a lowercase kernel label. The root alias
 is always explicit and follows the existing 1–64 character aweb rule.
 
 Closed policy, when the plan needs a team write, and known label conflicts
-refuse before native bootstrap or CLI installation. A closed workspace whose
-committed default already names the label for the predicted team needs no
-team write and proceeds. Their two manual reconciliation commands are returned as argv:
+refuse before native bootstrap or CLI installation. Their two manual
+reconciliation commands are returned as argv:
 `oats teams add L --team T --dir D` and `oats teams default L --dir D`.
 These commands cannot bypass shared declarations or closed policy; its owner
-must resolve that first. Setup never edits shared files, imports private kernel
+must resolve that first. A closed workspace whose committed default already
+names the label for the predicted team needs no team write and proceeds. Setup never edits shared files, imports private kernel
 code or silently overwrites a mapping. `E_SETUP_ARGUMENT`, `E_SETUP_DEPLOYMENT`,
 `E_SETUP_ROOT`, `E_SETUP_QUERY` and `E_SETUP_CONFIGURATION` require repairing
 inputs/context, not relabelling every failure as policy closure.
