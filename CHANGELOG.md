@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+**Host order, before syncing to this release:** upgrade aw to 1.36.31 or later
+on the host, restart every resident custody service and the host wake daemon,
+then `oats sync`. A running custody or daemon keeps its old code until it is
+restarted, so a custody started before the upgrade fails a grant seat's
+readiness and spawn (below), and an old daemon is reported as a warning.
+
+- The aw floor is 1.36.31: aw 1.36.31 lets an agent reply to a sender outside
+  its team roster (a dashboard human in aweb Cloud's agent chat). It is the one
+  client floor (`AW_MIN`): spawn, commands, `setup --check-only`, readiness and
+  the probe refuse an older aw with one message naming the installed version,
+  the floor and `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.31`).
+  `setup --install-aw` installs `^1.36.31` by default. Hosts on aw 1.36.28 to
+  1.36.30 lose the probe, whose CLI floor was 1.36.28.
+- E2EE grant seats (the default) require the running custody to report the
+  `mail_reply_continuation.v1` op, beside its E2EE ops. A custody that does not
+  report it fails readiness (`custody` problem) and the spawn and renewal mint
+  preflight with "required custody operations are missing:
+  mail_reply_continuation.v1; restart the custody on aw 1.36.31 or later". It is
+  an op probe, not a version check. A seat with `identity.e2ee: false` does not
+  require it and cannot send the encrypted reply to such a sender. A custody
+  status that cannot be read says "custody status could not be read: …", never
+  that an op is missing.
+- `wake-daemon-outdated` is now a readiness warning, not a problem: a running
+  wake daemon below the floor still receives, readiness goes on to assess the
+  target, and the remedy is "upgrade aw, then restart the host wake daemon".
+  `wake-daemon-not-running` and `wake-daemon-version-unknown` stay problems.
+  This supersedes the decision that a daemon below the floor is a readiness
+  problem.
+- A renewing launch (`renew: launch`) now reports the custody preflight's
+  warnings (`e2ee-disabled`), as spawn does.
+- Replies need `mail.read` with `mail.send`, because custody re-reads the source
+  message; the NORMAL grant profile has both, and a send-only custom grant fails
+  closed (`grant_scope_denied`). A late reply to a human whose key in the
+  original message has expired fails by design: ask them to send a new message.
+- Grant expiry is visible in readiness, from the grant recorded at a grant
+  seat's last mint (no aw or custody call): `grant-expiring` (warning) within 7
+  days of expiry, `grant-expired` (problem) at or after it, and
+  `grant-expiry-unknown` (warning) when the record has no readable expiry. Each
+  names the recorded instant and that seat's remedy: "restart the seat to renew
+  it (`oats session restart --home <home>`)", or "respawn the seat" when its
+  grant was minted with an explicit non-default `identity.ttl`, which a restart
+  would mint again. Grants now record that ttl (`identity.grant.ttl`); one minted
+  before this release records none and gets the restart remedy. LOCAL seats are
+  unaffected.
+- Grant seats still default to `identity.ttl: 720h` and `identity.renew:
+  launch`, and every mint (spawn and renewing launch) passes an explicit
+  `--ttl`; tests now pin both. Non-expiring grants are not available yet: aw and
+  the aweb server cap a grant at 30 days (oats-aweb#80).
 - Forward port of 1.24.1 (released from release/1.24, oats-aweb#95): `oats aweb
   setup --join <label>` and username setup on a workspace that forbids local
   team writes (`local-teams-closed`) refuse only when the plan needs a team
@@ -19,7 +67,7 @@
   one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
   deadlines and public diagnostic projections. No lifecycle/readiness probe,
   identity provisioning, terminal input or uncertain-send retry.
-- Probe admission checks the provider aw floor (see below; the probe was
+- Probe admission checks the provider aw floor (above; the probe was
   source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
   build.aweb_version >=1.27.12, a probe-only server floor, with bounded
   unauthenticated observation, explicit-root config checks and no legacy
@@ -29,48 +77,6 @@
   No live acceptance is claimed.
   See `docs/probe.md` for proof limits, JSON timing semantics and separate live
   acceptance requirements.
-- The aw floor is 1.36.30: aw 1.36.30 lets an agent reply to a sender outside
-  its team roster (a dashboard human in aweb Cloud's agent chat). It is the one
-  client floor (`AW_MIN`): spawn, commands, `setup --check-only`, readiness and
-  the probe refuse an older aw with one message naming the installed version,
-  the floor and `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.30`).
-  `setup --install-aw` installs `^1.36.30` by default. Hosts on aw 1.36.28 or
-  1.36.29 lose the probe, whose CLI floor was 1.36.28.
-- Upgrade a host in this order: upgrade aw, restart the host wake daemon and the
-  resident custody services, then `oats sync` to this release. In the other
-  order, readiness warns after the sync.
-- `wake-daemon-outdated` is now a readiness warning, not a problem: a running
-  wake daemon below the floor still receives, readiness goes on to assess the
-  target, and the remedy is "upgrade aw, then restart the host wake daemon".
-  `wake-daemon-not-running` and `wake-daemon-version-unknown` stay problems.
-  This supersedes the decision that a daemon below the floor is a readiness
-  problem.
-- New warning `custody-reply-continuation-unproven` on grant seats only:
-  readiness cannot tell whether the running custody service can continue a
-  reply to a sender outside the roster, because an aw 1.36.30 custody reports
-  the same status as older custody. It is not a detected fault; the remedy is
-  "restart the custody service after upgrading aw". Readiness, grant spawn and a
-  renewing launch report it (preview and `renew: off` ask custody nothing); it
-  goes to the operator's hook warning, never the agent's brief. It clears when
-  custody reports `mail_reply_continuation.v1` (aw 1.36.31), which is not
-  required here. Custody preflight warnings now carry codes, and the hook
-  prints them as `oats-aweb: <code> — <message>`.
-- Replies need `mail.read` with `mail.send`, because custody re-reads the source
-  message; the NORMAL grant profile has both, and a send-only custom grant fails
-  closed (`grant_scope_denied`). A late reply to a human whose key in the
-  original message has expired fails by design: ask them to send a new message.
-- Grant expiry is visible in readiness, from the grant recorded at a grant
-  seat's last start (no aw or custody call): `grant-expiring` (warning) within 7
-  days of expiry, `grant-expired` (problem) at or after it, and
-  `grant-expiry-unknown` (warning) when the record has no readable expiry. Each
-  names the recorded instant and the remedy: restart the seat (`oats session
-  restart --home <home>`) to re-mint; a home captured with a short ttl needs a
-  respawn. LOCAL seats are unaffected.
-- Grant seats still default to `identity.ttl: 720h` and `identity.renew:
-  launch`, and every mint (spawn and renewing launch) passes an explicit
-  `--ttl`; tests now pin both. Non-expiring grants are not available yet: aw and
-  the aweb server cap a grant at 30 days (oats-aweb#80).
-
 
 ## 1.24.0 — 2026-10-09
 

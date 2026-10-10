@@ -169,7 +169,8 @@ function workspaceReadinessContext(value) {
   return value;
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
-export const AW_MIN = '1.36.30';
+export { AW_MIN } from './aw-floor.mjs';
+import { AW_MIN } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
@@ -284,7 +285,7 @@ async function workspaceReadinessPhase(req) {
     else if(details.team) {
       try {
         const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,fatalOnError:false,runAw:localAw});
-        warnings.push(...preflight.warnings);
+        for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
       }
       catch(e) {problems.push({code:'custody',message:e.message});}
     }

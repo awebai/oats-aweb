@@ -7,50 +7,52 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
 
 ## 1.25.0 — replies to senders outside the roster
 
-aw 1.36.30 lets an agent reply to a sender who is not on its team roster, such
-as a dashboard human in aweb Cloud's agent chat. A self-custodial (LOCAL) seat
-needs aw >= 1.36.30. A grant seat needs both the worker's aw and the running
-resident custody service at >= 1.36.30; otherwise the reply fails with
-`recipient_binding_unavailable`.
+**Host order, before syncing to 1.25.0:** upgrade aw to 1.36.31 or later,
+restart every resident custody service and the host wake daemon, then
+`oats sync`. A running custody or daemon keeps its old code until it restarts.
 
-- **One client floor, 1.36.30.** Spawn, commands, `setup --check-only`,
-  readiness and the probe refuse an older aw with one message naming the
-  installed version, the floor and `npm i -g @awebai/aw@latest` (or the exact
-  version). `setup --install-aw` installs `^1.36.30` by default.
-- **Upgrade a host in this order:** upgrade aw, restart the host wake daemon and
-  the resident custody services, then `oats sync` to provider 1.25.0. In the
-  other order, readiness warns after the sync until the restarts happen.
+aw 1.36.31 lets an agent reply to a sender who is not on its team roster, such
+as a dashboard human in aweb Cloud's agent chat. A self-custodial (LOCAL) seat
+needs aw >= 1.36.31. A grant seat needs the worker's aw and the running resident
+custody at >= 1.36.31.
+
+- **One client floor, 1.36.31** (`AW_MIN` in `lib/aw-floor.mjs`). Spawn,
+  commands, `setup --check-only`, readiness and the probe refuse an older aw
+  with one message naming the installed version, the floor and
+  `npm i -g @awebai/aw@latest` (or the exact version). `setup --install-aw`
+  installs `^1.36.31` by default.
+- **E2EE grant seats require `mail_reply_continuation.v1`.** A custody on aw
+  1.36.31 or later lists that op beside its E2EE ops in `aw custody status
+  --json`. For an E2EE grant seat (the default) a custody that does not list it
+  fails readiness and the mint preflight with "required custody operations are
+  missing: mail_reply_continuation.v1; restart the custody on aw 1.36.31 or
+  later". This is an op probe, not a version check. A seat with
+  `identity.e2ee: false` does not require the op, and cannot send the encrypted
+  reply to such a sender. When the custody status cannot be read, the message
+  says "custody status could not be read: …", never that an op is missing.
 - **`wake-daemon-outdated` is a warning.** A running wake daemon below the floor
   still receives, so readiness reports it with the remedy "upgrade aw, then
   restart the host wake daemon" and goes on to assess the target. A daemon that
   is not running or reports no version is still a problem.
-- **`custody-reply-continuation-unproven` (grant seats only).** A custody service
-  started before an aw upgrade keeps running its old code, and an aw 1.36.30
-  custody reports the same `aw custody status --json` as older ones, so the
-  provider cannot tell whether the running custody can continue such a reply.
-  This is a warning, not a detected fault; its remedy is "restart the custody
-  service after upgrading aw". Readiness, grant spawn and a renewing launch
-  (`renew: launch`) report it; a launch preview and `renew: off` do not ask
-  custody, so they do not. It goes to the operator, not the agent's brief. It
-  disappears once custody reports the `mail_reply_continuation.v1` op (aw
-  1.36.31); this release does not require that op.
 - **Grant scopes.** Custody re-reads the source message to reply, so a reply
   needs `mail.read` as well as `mail.send`. The NORMAL grant profile carries
   both; a send-only custom grant fails closed with `grant_scope_denied`.
+- **Late replies.** A reply to a human whose key in the original message has
+  expired fails by design ("source sender key is missing, expired or invalid;
+  ask them to send a new message"): ask them to send a new message.
 - **Grant expiry is visible.** Readiness reads a grant seat's recorded grant
   (`identity.grant.expiresAt`, as aw reported it at the last mint) and asks
   neither aw nor custody: `grant-expiring` (warning) within 7 days of expiry,
   `grant-expired` (problem; messaging unavailable) at or after it, and
   `grant-expiry-unknown` (warning) when no expiry can be read, never a guessed
-  one. Each names the instant as recorded and the remedy: restart the seat
-  (`oats session restart --home <home>`) to re-mint; a home captured with a
-  short ttl needs a respawn. LOCAL seats get none of these.
-  Grants still default to `identity.ttl: 720h` and `identity.renew: launch`,
-  and every mint passes an explicit `--ttl`. Non-expiring grants are not
-  available yet: aw and the aweb server cap a grant at 30 days (oats-aweb#80).
-- **Late replies.** A reply to a human whose key in the original message has
-  expired fails by design ("source sender key is missing, expired or invalid;
-  ask them to send a new message"): ask them to send a new message.
+  one. Each names the instant as recorded and that seat's remedy: "restart the
+  seat to renew it (`oats session restart --home <home>`)", or "respawn the
+  seat" when its grant was minted with an explicit non-default `identity.ttl`
+  (recorded as `identity.grant.ttl` from this release), which a restart would
+  mint again. LOCAL seats get none of these. Grants still default to
+  `identity.ttl: 720h` and `identity.renew: launch`, and every mint passes an
+  explicit `--ttl`. Non-expiring grants are not available yet: aw and the aweb
+  server cap a grant at 30 days (oats-aweb#80).
 
 ## 1.21.0 — connect a deployment on another machine
 
@@ -92,7 +94,7 @@ The join half works on its own when someone else mints the invite:
   (the first line, trimmed) and behaves exactly as `--invite <token>`. The two
   flags cannot be combined.
 - `oats aweb setup --install-aw [--aw-version <v>]` runs
-  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.30`)
+  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.31`)
   where aw is missing or below the floor, re-checks the floor, then continues.
 - `oats aweb setup --check-only --json` answers, as one line:
 
@@ -527,14 +529,14 @@ owner removes the member.
 
 ### aw floor
 
-Every path requires `aw >= 1.36.30` (`AW_MIN` in `lib/binding-wire.mjs`, the one
-client floor; the probe uses it too). A missing, older or unreadable `aw` is a
+Every path requires `aw >= 1.36.31` (`AW_MIN` in `lib/aw-floor.mjs`, the one
+client floor; the probe and grant seats' custody use it too). A missing, older or unreadable `aw` is a
 readiness problem, a refused command and a required spawn-hook failure, all with
 one message naming the installed version, the floor and the install command,
-for example `aw 1.36.27 is older than required 1.36.30; upgrade with
-\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.30\`)`. The host
-wake daemon and a resident's custody service run their own code; readiness
-reports them as warnings (see 1.25.0 above). The floor is read from the first line
+for example `aw 1.36.30 is older than required 1.36.31; upgrade with
+\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.31\`)`. The host
+wake daemon and a resident's custody service run their own code until they
+restart (see 1.25.0 above). The floor is read from the first line
 of `aw version`; the reader stops there instead of waiting for aw's update
 check. Every aw command a hook runs has `AW_NO_UPDATE_CHECK=1`.
 
@@ -796,7 +798,7 @@ do not prove live grant or Folio authority.
 `oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
 reports a verified nonce round trip when qualified CLI **and** server support
 are available. It is an explicit send action, never a readiness/lifecycle check.
-Admission requires the provider aw floor (1.36.30; the probe was
+Admission requires the provider aw floor (1.36.31; the probe was
 source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
 `build.aweb_version` >=1.27.12; unavailable support refuses before sending.
 There is no legacy fallback. The

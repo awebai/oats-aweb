@@ -20,14 +20,25 @@ const TEAM = "t:example.test";
 const HOUR = 3600000, DAY = 24 * HOUR;
 const NOW = Date.parse("2026-10-10T02:00:00Z");
 const HOME = "/abs/agents/dev/instances/seat";
-const REMEDY = "restart the seat (`oats session restart --home /abs/agents/dev/instances/seat`) to re-mint; a home captured with a short ttl needs a respawn";
+const REMEDY = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`)";
+const RESPAWN = "respawn the seat: it captured identity.ttl 24h, which a restart would mint again";
 const iso = (ms) => new Date(ms).toISOString();
-const grantIdentity = (expiresAt) => ({ mode: "global", alias: "resident-alias", team: TEAM, resident: "merlin", grant: { id: "grant-1", ...(expiresAt === undefined ? {} : { expiresAt }), scopes: ["mail.read"], home: `${HOME}/.aweb-identity` } });
+const grantIdentity = (expiresAt, ttl) => ({ mode: "global", alias: "resident-alias", team: TEAM, resident: "merlin", grant: { id: "grant-1", ...(expiresAt === undefined ? {} : { expiresAt }), ...(ttl === undefined ? {} : { ttl }), scopes: ["mail.read"], home: `${HOME}/.aweb-identity` } });
 const assess = (identity, now = NOW) => grantExpiryAssessment(identity, { home: HOME, now });
 
 test("a grant expiring in 6 days 23 hours is the grant-expiring warning naming the instant and the remedy", () => {
   const at = iso(NOW + 6 * DAY + 23 * HOUR);
   assert.deepEqual(assess(grantIdentity(at)), { problems: [], warnings: [{ code: "grant-expiring", message: `grant grant-1 expires at ${at}, within 7 days: ${REMEDY}` }] });
+});
+
+test("the remedy restarts a seat minted with the default ttl, or none recorded, and respawns one minted with a short ttl", () => {
+  const at = iso(NOW - 1000);
+  for (const ttl of [undefined, "720h", "43200m", "garbage"]) {
+    assert.equal(assess(grantIdentity(at, ttl)).problems[0].message, `grant grant-1 expired at ${at}: ${REMEDY}`, String(ttl));
+  }
+  assert.equal(assess(grantIdentity(at, "24h")).problems[0].message, `grant grant-1 expired at ${at}: ${RESPAWN}`);
+  const soon = iso(NOW + DAY);
+  assert.equal(assess(grantIdentity(soon, "24h")).warnings[0].message, `grant grant-1 expires at ${soon}, within 7 days: ${RESPAWN}`);
 });
 
 test("a grant expiring in 7 days and 1 hour is silent", () => {
@@ -49,7 +60,7 @@ test("a missing or unreadable expiresAt is the grant-expiry-unknown warning and 
   for (const [value, shown] of [[undefined, "absent"], ["unknown", '"unknown"'], ["2026-02-30T00:00:00Z", '"2026-02-30T00:00:00Z"'], [1760000000, "1760000000"]]) {
     const assessed = assess(grantIdentity(value));
     assert.deepEqual(assessed.problems, [], String(value));
-    assert.deepEqual(assessed.warnings, [{ code: "grant-expiry-unknown", message: `grant grant-1 has no readable expiry (recorded expiresAt: ${shown}); readiness cannot tell when it expires: ${REMEDY}` }]);
+    assert.deepEqual(assessed.warnings, [{ code: "grant-expiry-unknown", message: `grant grant-1 has no readable expiry (recorded expiresAt: ${shown}), so readiness does not know when it expires: ${REMEDY}` }]);
   }
 });
 
@@ -90,7 +101,7 @@ test("grant-seat readiness reports an expiring grant as a warning naming this ho
   const { home, result } = readinessFor(t, grantIdentity(at), globalSettings);
   const warning = result.warnings.find((w) => w.code === "grant-expiring");
   assert.ok(warning, JSON.stringify(result));
-  assert.equal(warning.message, `grant grant-1 expires at ${at}, within 7 days: restart the seat (\`oats session restart --home ${home}\`) to re-mint; a home captured with a short ttl needs a respawn`);
+  assert.equal(warning.message, `grant grant-1 expires at ${at}, within 7 days: restart the seat to renew it (\`oats session restart --home ${home}\`)`);
   assert.equal(codes(result.problems).includes("grant-expired"), false);
 });
 

@@ -186,9 +186,9 @@ test("custody preflight requires team grant-status endpoint when reported, allow
 
 test("real aw at the floor: custody preflight reports needs-configuration instead of faking a pass", (t) => {
   const realAw = process.env.AW_REAL_CLI_BIN;
-  if (!realAw) { t.skip("set AW_REAL_CLI_BIN to a real aw 1.36.30+ binary to exercise native custody status"); return; }
+  if (!realAw) { t.skip("set AW_REAL_CLI_BIN to a real aw 1.36.31+ binary to exercise native custody status"); return; }
   const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
-  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.30")) { t.skip(`real aw is not 1.36.30+: ${version.stdout || version.stderr}`); return; }
+  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.31")) { t.skip(`real aw is not 1.36.31+: ${version.stdout || version.stderr}`); return; }
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-real-"));
   try {
     const { root, home } = deployment(base); const custody = resident(base);
@@ -234,13 +234,13 @@ test("single aw floor refuses older aw before grant mint and always passes --tea
   try {
     const { home, r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.12" });
     assert.notEqual(r.status, 0);
-    assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.30/);
+    assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.31/);
     assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
     assert.equal(existsSync(join(home, ".aweb-identity")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
   base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.30" });
+    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.31" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint").argv;
     assert.equal(argvValue(mint, "--team"), "t:example.test");
@@ -315,7 +315,7 @@ test("readiness checks the recorded final grant locator, never newest directory"
     record(newHome);
     checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.doc.result.status, "needs-configuration");
-    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.30");
+    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.31");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -601,6 +601,7 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
       assert.equal(argvValue(spawnMint, "--ttl"), ttl || "720h");
       // aweb will read an omitted --ttl as a never-expiring grant: every mint names one.
       assert.deepEqual(spawnMint.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "720h"}`]);
+      assert.equal(spawned.doc.meta.identity.grant.ttl, ttl || "720h", "the grant records the ttl it was minted with");
       write(join(base, "aw.log"), "");
       const launchEnv = { ...env, OATS_META: JSON.stringify(spawned.doc.meta) };
       const preview = runHook(bin, "launch", { ...launchEnv, OATS_LAUNCH_PREVIEW: "1" });
@@ -614,6 +615,7 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
       assert.equal(argvValue(mints[0].argv, "--ttl"), ttl || "720h");
       assert.deepEqual(mints[0].argv.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "720h"}`], "the renew: launch re-mint names its ttl too");
       assert.notEqual(renewed.doc.meta.identity.grant.home, spawned.doc.meta.identity.grant.home);
+      assert.equal(renewed.doc.meta.identity.grant.ttl, ttl || "720h");
     } finally { rmSync(base, { recursive: true, force: true }); }
   }
 });

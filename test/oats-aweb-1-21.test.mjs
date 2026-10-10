@@ -18,7 +18,7 @@ import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
-const AW_MIN = "1.36.30";
+const AW_MIN = "1.36.31";
 const TEAM = "joined:example.invalid";
 
 function tempDir(t) {
@@ -187,11 +187,11 @@ test("setup --install-aw below the floor installs, and --aw-version picks the ve
 
 test("setup --install-aw at or above the floor does not run npm", async (t) => {
   const root = tempDir(t);
-  const npm = fakeNpmPath(t, { aw: "1.36.30" });
+  const npm = fakeNpmPath(t, { aw: "1.36.31" });
   const result = await run(["setup", "--check-only", "--install-aw", "--json"], deploymentEnv(root, { PATH: npm.path }), root);
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(npm.readCalls(), []);
-  assert.deepEqual(checkOnly(result.stdout).aw, { status: "ok", version: "1.36.30" });
+  assert.deepEqual(checkOnly(result.stdout).aw, { status: "ok", version: "1.36.31" });
 });
 
 test("setup --install-aw relays npm's failure with its exit status", async (t) => {
@@ -202,10 +202,10 @@ test("setup --install-aw relays npm's failure with its exit status", async (t) =
   const doc = checkOnly(checked.stdout);
   assert.equal(doc.aw.status, "failed");
   assert.equal(doc.aw.code, "E_AW_INSTALL");
-  assert.match(doc.aw.detail, /npm install -g @awebai\/aw@\^1\.36\.30 failed \(exit 3\): npm ERR! 404 Not Found/);
+  assert.match(doc.aw.detail, /npm install -g @awebai\/aw@\^1\.36\.31 failed \(exit 3\): npm ERR! 404 Not Found/);
   const plain = await run(["setup", "--install-aw"], deploymentEnv(root, { PATH: npm.path, NPM_FAIL: "1" }), root);
   assert.equal(plain.code, 1);
-  assert.match(plain.stderr, /oats aweb setup: npm install -g @awebai\/aw@\^1\.36\.30 failed \(exit 3\): npm ERR! 404 Not Found/);
+  assert.match(plain.stderr, /oats aweb setup: npm install -g @awebai\/aw@\^1\.36\.31 failed \(exit 3\): npm ERR! 404 Not Found/);
 });
 
 test("setup --install-aw whose install still leaves aw below the floor fails", async (t) => {
@@ -216,7 +216,7 @@ test("setup --install-aw whose install still leaves aw below the floor fails", a
   const doc = checkOnly(result.stdout);
   assert.equal(doc.aw.status, "failed");
   assert.equal(doc.aw.code, "E_AW_FLOOR");
-  assert.match(doc.aw.detail, /aw 1\.30\.0 is older than required 1\.36\.30/);
+  assert.match(doc.aw.detail, /aw 1\.30\.0 is older than required 1\.36\.31/);
 });
 
 test("setup --install-aw without --check-only continues into the ordinary setup", async (t) => {
@@ -240,7 +240,7 @@ test("setup without --install-aw keeps today's message when aw is missing; --che
   assert.equal(checked.code, 0, checked.stderr);
   const doc = checkOnly(checked.stdout);
   assert.equal(doc.aw.status, "needs-human");
-  assert.match(doc.aw.detail, /aw CLI not on PATH; install aw >= 1\.36\.30/);
+  assert.match(doc.aw.detail, /aw CLI not on PATH; install aw >= 1\.36\.31/);
   assert.match(doc.aw.remedy, /`oats aweb setup --install-aw`/);
   assertCommandsInBackticks(doc.aw.remedy);
   assert.equal(doc.member, null);
@@ -252,13 +252,13 @@ test("setup --check-only reports membership of the default team from its root", 
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
   const before = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path }), root);
   assert.equal(before.code, 0, before.stderr);
-  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.30" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null });
+  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.31" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null });
   const teamRoot = join(root, ".aweb-roots", "joined");
   mkdirSync(join(teamRoot, ".aw"), { recursive: true });
   writeFileSync(join(teamRoot, ".aw", "teams.json"), JSON.stringify({ active_team: TEAM, memberships: [{ team_id: TEAM }] }));
   const after = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root, roots: { [TEAM]: teamRoot } }) }), root);
   assert.equal(after.code, 0, after.stderr);
-  assert.deepEqual(checkOnly(after.stdout), { aw: { status: "ok", version: "1.36.30" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot });
+  assert.deepEqual(checkOnly(after.stdout), { aw: { status: "ok", version: "1.36.31" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot });
 });
 
 test("setup --check-only cannot be combined with an onboarding action", async (t) => {
@@ -357,7 +357,7 @@ test("connect on a fresh host installs aw, mints a hosted invite, joins through 
   assert.deepEqual(doc.result, {
     server: SERVER, team: { label: "joined", team: TEAM }, ready: true,
     steps: [
-      { step: "aw", status: "done", detail: "installed aw 1.36.30 (was missing)" },
+      { step: "aw", status: "done", detail: "installed aw 1.36.31 (was missing)" },
       { step: "invite", status: "done" },
       { step: "join", status: "done", detail: `root ${teamRoot}` },
       { step: "readiness", status: "ok" },
@@ -386,7 +386,7 @@ test("connect with the host already a member mints nothing", async (t) => {
   assert.equal(result.code, 0, result.stdout + result.stderr);
   const doc = envelope(result.stdout);
   assert.deepEqual(doc.result.steps, [
-    { step: "aw", status: "ok", detail: "aw 1.36.30" },
+    { step: "aw", status: "ok", detail: "aw 1.36.31" },
     { step: "invite", status: "ok", detail: "already a member; no invite minted" },
     { step: "join", status: "ok", detail: `root ${join(fx.hostDir, ".aweb-roots", "joined")}` },
     { step: "readiness", status: "ok" },
@@ -480,7 +480,7 @@ test("connect prints its steps for a human without --json", async (t) => {
   const result = await fx.connect([SERVER]);
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /^oats aweb connect altair-aweb: team joined \(joined:example\.invalid\)$/m);
-  assert.match(result.stdout, /^  aw: ok — aw 1\.36\.30$/m);
+  assert.match(result.stdout, /^  aw: ok — aw 1\.36\.31$/m);
   assert.match(result.stdout, /^  invite: ok — already a member; no invite minted$/m);
   assert.match(result.stdout, /^ready: yes$/m);
 });

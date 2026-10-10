@@ -38,7 +38,7 @@ if (process.env.AWEB_IDENTITY_HOME) { console.error("unexpected ambient identity
 let args = process.argv.slice(2);
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
-if (args[0] === "version") { console.log("aw " + (process.env.AW_FAKE_VERSION || "1.36.30")); process.exit(0); }
+if (args[0] === "version") { console.log("aw " + (process.env.AW_FAKE_VERSION || "1.36.31")); process.exit(0); }
 const awDir = identityHome || path.join(process.cwd(), ".aw");
 const deleting = args[0] === "workspace" && args[1] === "delete";
 fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY, ...(deleting ? { signingKey: fs.existsSync(path.join(awDir, "signing.key")) } : {}) }) + "\\n");

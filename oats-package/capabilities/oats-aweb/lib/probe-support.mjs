@@ -5,7 +5,7 @@ import {join, delimiter} from 'node:path';
 import {request as httpsRequest} from 'node:https';
 import {refuse, parseProbeJson, canonicalArgument} from './probe-runtime.mjs';
 import {readWorkspaceService} from './probe-service.mjs';
-import {AW_MIN} from './binding-wire.mjs';
+import {AW_MIN} from './aw-floor.mjs';
 
 // Maintainer declaration: oats-aweb#57, issuecomment-6077900224. The origins and
 // server floor are probe only; the CLI floor is the provider's single aw floor.

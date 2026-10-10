@@ -744,8 +744,6 @@ function checkedRenewMode() {
   if (mode !== "off" && mode !== "launch") fatal(`identity.renew must be "off" or "launch" (got ${JSON.stringify(identitySettings.renew)})`);
   return mode;
 }
-/** A custody preflight warning as one line of hook `warning`. */
-const custodyWarningLine = (w) => `oats-aweb: ${w.code} — ${w.message}`;
 function globalGrantRenew(oldMeta) {
   const ttl = identityMode === "global" || oldMeta.identity?.mode === "global" ? checkedGrantTTL() : undefined;
   if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), ...(oldMeta.identity?.mode === "global" ? { warning: grantInventoryAdvisory(oldMeta.identity.grant, { retained: true }) } : {}) });
@@ -774,7 +772,7 @@ function globalGrantRenew(oldMeta) {
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
   const recovered = recoverGrantHome(grantHome);
   const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
-  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
+  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, ttl, scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
   if (mintedTeam !== team) {
     try { revokeGrant(custody, grantId); } catch { /* minted mismatch expires by TTL if revoke fails */ }
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -798,7 +796,7 @@ function globalGrantRenew(oldMeta) {
   let warning;
   try { revokeGrant(custody, oldMeta.identity.grant.id); }
   catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept and the previous grant still expires at ${oldMeta.identity.grant.expiresAt || "its TTL"}`; }
-  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings.map(custodyWarningLine), grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
+  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
 function globalGrantSpawn() {
   const ttl = checkedGrantTTL();
@@ -831,7 +829,7 @@ function globalGrantSpawn() {
     const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome);
     const recovered = recoverGrantHome(grantHome);
     const alias = recovered.subjectAlias || mintedAlias || resident;
-    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome, ...grantAppInventory(minted) } }) });
+    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, ttl, scopes, home: grantHome, ...grantAppInventory(minted) } }) });
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
       catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed: ${e.message || e}`); }
@@ -850,10 +848,8 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
       }
     }
-    const warnings = [...teamWarnings, ...preflight.warnings.map(custodyWarningLine), ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
-    // The agent is told only what changes its own session; custody remedies are the operator's.
-    const e2eeWarnings = preflight.warnings.filter((w) => w.code === "e2ee-disabled");
-    const e2eeBrief = e2eeWarnings.length ? ` Warning: ${e2eeWarnings.map((w) => w.message).join(" ")}` : "";
+    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
+    const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     out({
       meta,
       env,

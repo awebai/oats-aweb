@@ -1,18 +1,17 @@
-// oats.aweb 1.25: the single aw client floor is 1.36.30, the version that lets
+// oats.aweb 1.25: the single aw client floor is 1.36.31, the version that lets
 // an agent reply to a sender outside its team roster. Every path that refuses
 // below the floor uses one wording; a host wake daemon below the floor is a
-// readiness warning, not a problem; and a grant seat's readiness warns that a
-// running custody service cannot be shown to continue such replies until its
-// status reports `mail_reply_continuation.v1`.
+// readiness warning, not a problem; and an E2EE grant seat (the default)
+// requires its running custody to report `mail_reply_continuation.v1`.
 //
-// Fake aw shapes follow the real aw 1.36.30 (npm @awebai/aw@1.36.30, commit
-// ee55192): `aw version` prints "aw 1.36.30" then commit/built lines; `aw wake
-// status --json` reports daemon_running, daemon_version_state and
-// daemon_version; `aw custody status --json` reports status, teams, keys and
-// ops, where a 1.36.30 custody's ops are status.v1, sign_plain_message.v1,
-// sign_app_request.v1 and, with E2EE keys, create_e2ee_envelope.v1 and
-// unwrap_e2ee_message.v1. The ops with `mail_reply_continuation.v1` model aw
-// 1.36.31, which is synthetic here.
+// Fake aw shapes: `aw version` ("aw 1.36.31" then commit/built lines) and the
+// not-running `aw custody status --json` shape come from the real npm
+// @awebai/aw-darwin-arm64@1.36.31 binary (commit 2f77ffdb). A running custody's
+// ops are derived from the aw source at 2f77ffdb (cmd/aw/custody.go:294-296):
+// status.v1, sign_plain_message.v1, sign_app_request.v1 and, only with E2EE keys,
+// create_e2ee_envelope.v1, unwrap_e2ee_message.v1 and mail_reply_continuation.v1.
+// `aw wake status --json` fields (daemon_running, daemon_version_state,
+// daemon_version) are from the aw 1.36.30 binary and source (wake/status.go).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -28,11 +27,12 @@ import { PROBE_RELEASE_SUPPORT } from "../oats-package/capabilities/oats-aweb/li
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
 const TEAM = "t:example.test";
-const INSTALL = "`npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.30`)";
-const OLD_AW = "aw 1.36.29 is older than required 1.36.30; upgrade with " + INSTALL;
-const OPS_1_36_30 = ["status.v1", "sign_plain_message.v1", "sign_app_request.v1", "create_e2ee_envelope.v1", "unwrap_e2ee_message.v1"];
-const OPS_WITH_CONTINUATION = [...OPS_1_36_30, "mail_reply_continuation.v1"];
-const CONTINUATION = "custody-reply-continuation-unproven";
+const INSTALL = "`npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.31`)";
+const OLD_AW = "aw 1.36.30 is older than required 1.36.31; upgrade with " + INSTALL;
+const SIGNING_OPS = ["status.v1", "sign_plain_message.v1", "sign_app_request.v1"];
+const OPS_1_36_31 = [...SIGNING_OPS, "create_e2ee_envelope.v1", "unwrap_e2ee_message.v1", "mail_reply_continuation.v1"];
+const OPS_BEFORE_1_36_31 = OPS_1_36_31.filter(op => op !== "mail_reply_continuation.v1");
+const CONTINUATION_REMEDY = "required custody operations are missing: mail_reply_continuation.v1; restart the custody on aw 1.36.31 or later";
 
 function tempDir(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-125-")));
@@ -69,17 +69,17 @@ function readiness(bin, settings, context, env = {}) {
 
 // ------------------------------------------------------------------ the floor
 
-test("one client floor: AW_MIN is 1.36.30, and the probe and the manifest use it", () => {
-  assert.equal(AW_MIN, "1.36.30");
+test("one client floor: AW_MIN is 1.36.31, and the probe and the manifest use it", () => {
+  assert.equal(AW_MIN, "1.36.31");
   assert.equal(PROBE_RELEASE_SUPPORT.cliFloor, AW_MIN);
   const manifest = JSON.parse(readFileSync(new URL("../oats-package/capabilities/oats-aweb/oats.json", import.meta.url), "utf8"));
-  assert.match(manifest.requires.find(r => r.command === "aw").why, /^aw >= 1\.36\.30: .*replies to senders outside the team roster$/);
+  assert.match(manifest.requires.find(r => r.command === "aw").why, /^aw >= 1\.36\.31: .*replies to senders outside the team roster$/);
 });
 
 test("readiness refuses aw below the floor naming the installed version, the floor and the install command", (t) => {
   const base = tempDir(t);
   const bin = fakeAw(base); const { root, home } = deployment(base);
-  const result = readiness(bin, { root, delivery: "session" }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { FAKE_AW_VERSION: "1.36.29" });
+  const result = readiness(bin, { root, delivery: "session" }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { FAKE_AW_VERSION: "1.36.30" });
   assert.equal(result.status, "needs-configuration");
   assert.deepEqual(result.problems.filter(p => /older than required/.test(p.message)), [{ code: "needs-configuration", message: OLD_AW }]);
 });
@@ -87,7 +87,7 @@ test("readiness refuses aw below the floor naming the installed version, the flo
 test("spawn refuses aw below the floor with the same wording, before minting anything", (t) => {
   const base = tempDir(t);
   const bin = fakeAw(base); const { root, home } = deployment(base);
-  const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ root }), FAKE_AW_VERSION: "1.36.29" });
+  const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ root }), FAKE_AW_VERSION: "1.36.30" });
   assert.notEqual(r.status, 0);
   assert.equal(r.doc.warning, `oats-aweb: ${OLD_AW}, so no identity could be minted and this instance would not meet the messaging contract`);
 });
@@ -95,7 +95,7 @@ test("spawn refuses aw below the floor with the same wording, before minting any
 test("commands refuse aw below the floor with the same wording", (t) => {
   const base = tempDir(t);
   const bin = fakeAw(base); const { root } = deployment(base);
-  const r = runCommand(bin, ["roster"], { OATS_WORKSPACE: root, FAKE_AW_VERSION: "1.36.29" });
+  const r = runCommand(bin, ["roster"], { OATS_WORKSPACE: root, FAKE_AW_VERSION: "1.36.30" });
   assert.equal(r.status, 1);
   assert.equal(r.stderr.trim(), `oats aweb roster: ${OLD_AW}`);
 });
@@ -103,7 +103,7 @@ test("commands refuse aw below the floor with the same wording", (t) => {
 test("setup --check-only reports aw below the floor with the same wording", (t) => {
   const base = tempDir(t);
   const bin = fakeAw(base); const { root } = deployment(base);
-  const r = runCommand(bin, ["setup", "--check-only", "--json"], { OATS_WORKSPACE: root, OATS_TEAM_SCOPE: root, FAKE_AW_VERSION: "1.36.29" });
+  const r = runCommand(bin, ["setup", "--check-only", "--json"], { OATS_WORKSPACE: root, OATS_TEAM_SCOPE: root, FAKE_AW_VERSION: "1.36.30" });
   const doc = JSON.parse(r.stdout.trim().split("\n").at(-1));
   assert.equal(doc.aw.status, "needs-human");
   assert.equal(doc.aw.detail, OLD_AW);
@@ -115,10 +115,10 @@ test("a missing or unreadable aw names the floor and the install command", (t) =
   const empty = join(base, "empty-bin"); mkdirSync(empty);
   const context = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
   let result = readiness(empty, { root, delivery: "session" }, context, { PATH: empty });
-  assert.ok(result.problems.some(p => p.message === `aw CLI not on PATH; install aw >= 1.36.30 with ${INSTALL}`), JSON.stringify(result));
+  assert.ok(result.problems.some(p => p.message === `aw CLI not on PATH; install aw >= 1.36.31 with ${INSTALL}`), JSON.stringify(result));
   const unreadable = join(base, "unreadable-bin"); write(join(unreadable, "aw"), "#!/bin/sh\nexit 42\n"); spawnSync("chmod", ["755", join(unreadable, "aw")]);
   result = readiness(unreadable, { root, delivery: "session" }, context);
-  assert.ok(result.problems.some(p => p.message === `aw version could not be read; install aw >= 1.36.30 with ${INSTALL}`), JSON.stringify(result));
+  assert.ok(result.problems.some(p => p.message === `aw version could not be read; install aw >= 1.36.31 with ${INSTALL}`), JSON.stringify(result));
 });
 
 // ------------------------------------------------------- the host wake daemon
@@ -127,10 +127,10 @@ const reported = (version, extra = {}) => ({ daemon_running: true, daemon_versio
 const expected = { home: "/nonexistent/home", runtimeDelivery: "external-session", bindings: [] };
 
 test("a wake daemon below the floor is the wake-daemon-outdated warning, and the target row is still assessed", () => {
-  const assessed = targetReceiveAssessment(reported("1.36.29"), expected, { minimumVersion: AW_MIN });
-  assert.deepEqual(assessed.warnings, [{ code: "wake-daemon-outdated", message: "host wake daemon is running 1.36.29; required 1.36.30: upgrade aw, then restart the host wake daemon" }]);
+  const assessed = targetReceiveAssessment(reported("1.36.30"), expected, { minimumVersion: AW_MIN });
+  assert.deepEqual(assessed.warnings, [{ code: "wake-daemon-outdated", message: "host wake daemon is running 1.36.30; required 1.36.31: upgrade aw, then restart the host wake daemon" }]);
   assert.deepEqual(assessed.problems.map(p => p.code), ["wake-target-missing"], "assessment continues past the version to the target row");
-  assert.deepEqual(targetReceiveAssessment(reported("1.36.30"), expected, { minimumVersion: AW_MIN }).warnings, []);
+  assert.deepEqual(targetReceiveAssessment(reported("1.36.31"), expected, { minimumVersion: AW_MIN }).warnings, []);
 });
 
 test("a wake daemon that is not running or reports no version is still a problem", () => {
@@ -144,83 +144,87 @@ test("a wake daemon that is not running or reports no version is still a problem
   }
 });
 
-// ---------------------------------------- custody reply continuation (grants)
+// ------------------------------- custody reply continuation (E2EE grant seats)
 
-/** custodyPreflight against one `aw custody status --json` document. */
-function preflightWith(ops) {
-  const status = { status: "running", socket_path: "/run/custody.sock", teams: [{ team_id: TEAM, ready: true, certificate_present: true }], keys: { signing_ready: true, encryption_ready: true }, ops, errors: [] };
-  return custodyPreflight({ custody: "/custody", resident: "merlin", team: TEAM, runAw: () => JSON.stringify(status), fatalOnError: false });
+/** custodyPreflight against one running `aw custody status --json` document. */
+function preflightWith(ops, { e2eeRequired = true, encryptionReady = true } = {}) {
+  const status = { status: "running", socket_path: "/run/custody.sock", teams: [{ team_id: TEAM, ready: true, certificate_present: true }], keys: { signing_ready: true, encryption_ready: encryptionReady }, ops, errors: [] };
+  return custodyPreflight({ custody: "/custody", resident: "merlin", team: TEAM, e2eeRequired, runAw: () => JSON.stringify(status), fatalOnError: false });
 }
 
-test("custody preflight warns when the running custody does not report mail_reply_continuation.v1, and only then", () => {
-  const warned = preflightWith(OPS_1_36_30).warnings;
-  assert.deepEqual(warned.map(w => w.code), [CONTINUATION]);
-  assert.match(warned[0].message, /cannot tell/);
-  assert.match(warned[0].message, /not a detected fault/);
-  assert.match(warned[0].message, /restart the custody service after upgrading aw/);
-  assert.deepEqual(preflightWith(OPS_WITH_CONTINUATION).warnings, []);
+test("an E2EE grant seat requires mail_reply_continuation.v1 from its running custody", () => {
+  assert.deepEqual(preflightWith(OPS_1_36_31).warnings, []);
+  assert.throws(() => preflightWith(OPS_BEFORE_1_36_31), { message: `custody preflight failed for merlin: status=running; ${CONTINUATION_REMEDY}` });
 });
 
-test("the continuation op is not required: a custody without it still passes preflight", () => {
-  assert.doesNotThrow(() => preflightWith(OPS_1_36_30));
-});
-
-test("grant-seat readiness carries the continuation warning; a 1.36.31 custody clears it", (t) => {
-  const base = tempDir(t);
-  const bin = fakeAw(base); const { root, home } = deployment(base);
-  const context = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
-  let result = readiness(bin, { root, ...globalSettings(join(base, "custody", "merlin")) }, context, { FAKE_AW_VERSION: "1.36.30", FAKE_CUSTODY_OPS: OPS_1_36_30.join(",") });
-  const warning = result.warnings.find(w => w.code === CONTINUATION);
-  assert.ok(warning, JSON.stringify(result));
-  assert.equal(result.problems.some(p => p.code === CONTINUATION), false, "a warning, never a problem");
-  result = readiness(bin, { root, ...globalSettings(join(base, "custody", "merlin")) }, context, { FAKE_AW_VERSION: "1.36.30", FAKE_CUSTODY_OPS: OPS_WITH_CONTINUATION.join(",") });
-  assert.equal(result.warnings.some(w => w.code === CONTINUATION), false, JSON.stringify(result));
-});
-
-test("a self-custodial (LOCAL) seat never gets the continuation warning and never asks custody", (t) => {
-  const base = tempDir(t);
-  const bin = fakeAw(base); const { root, home } = deployment(base);
-  const result = readiness(bin, { root, delivery: "session" }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { FAKE_AW_VERSION: "1.36.30", FAKE_CUSTODY_OPS: OPS_1_36_30.join(",") });
-  assert.equal(result.warnings.some(w => w.code === CONTINUATION), false, JSON.stringify(result));
-});
-
-test("grant spawn reports the continuation warning to the operator, never in the agent's brief", (t) => {
-  const base = tempDir(t);
-  const bin = fakeAw(base); const { root, home, custody } = deployment(base);
-  let r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(globalSettings(custody)), FAKE_AW_VERSION: "1.36.30", FAKE_CUSTODY_OPS: OPS_1_36_30.join(",") });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.doc.warning, new RegExp(`oats-aweb: ${CONTINUATION} — .*restart the custody service after upgrading aw`));
-  assert.doesNotMatch(r.doc.brief, new RegExp(CONTINUATION));
-  assert.doesNotMatch(r.doc.brief, /restart the custody service/);
-  rmSync(join(home, ".aweb-identity"), { recursive: true, force: true });
-  r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(globalSettings(custody)), FAKE_AW_VERSION: "1.36.30", FAKE_CUSTODY_OPS: OPS_WITH_CONTINUATION.join(",") });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.doesNotMatch(r.doc.warning || "", new RegExp(CONTINUATION));
-});
-
-test("e2ee-disabled still reaches the brief alongside the continuation warning", (t) => {
-  const base = tempDir(t);
-  const bin = fakeAw(base); const { root, home, custody } = deployment(base);
-  const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(globalSettings(custody, { e2ee: false })), FAKE_AW_VERSION: "1.36.30", FAKE_CUSTODY_OPS: "status.v1,sign_plain_message.v1,sign_app_request.v1", FAKE_ENCRYPTION_READY: "0" });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.doc.brief, / Warning: E2E encryption is disabled for this grant/);
-  assert.doesNotMatch(r.doc.brief, new RegExp(CONTINUATION));
-  assert.match(r.doc.warning, /E2E encryption is disabled/);
-  assert.match(r.doc.warning, new RegExp(CONTINUATION));
-});
-
-test("a renewing launch reports the continuation warning; preview and renew: off ask custody nothing", (t) => {
-  const base = tempDir(t);
-  const bin = fakeAw(base); const { root, home, custody } = deployment(base);
-  mkdirSync(join(home, ".aweb-identity"), { recursive: true });
-  const old = { delivery: "channel", identity: { mode: "global", alias: "resident-alias", team: TEAM, resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"], home: join(home, ".aweb-identity") } } };
-  const env = (identity, extra = {}) => ({ OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(globalSettings(custody, identity)), FAKE_AW_VERSION: "1.36.30", FAKE_CUSTODY_OPS: OPS_1_36_30.join(","), ...extra });
-  let r = runHook(bin, "launch", env({ renew: "launch" }));
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.doc.warning, new RegExp(`oats-aweb: ${CONTINUATION} — `));
-  for (const [identity, extra] of [[{ renew: "launch" }, { OATS_LAUNCH_PREVIEW: "1" }], [{ renew: "off" }, {}]]) {
-    r = runHook(bin, "launch", env(identity, extra));
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.doesNotMatch(r.doc.warning || "", new RegExp(CONTINUATION));
+test("a custody whose status cannot be read says so, and never that it lacks the op", () => {
+  const preflight = (runAw) => custodyPreflight({ custody: "/custody", resident: "merlin", team: TEAM, runAw, fatalOnError: false });
+  for (const [runAw, why] of [
+    [() => { throw new Error("aw custody status failed (exit 1)"); }, "custody status could not be read: aw custody status failed (exit 1)"],
+    [() => "custody socket not reachable", "custody status could not be read: aw custody status returned no JSON result"],
+    [() => "[]", "custody status could not be read: aw custody status returned no status object"],
+    [() => JSON.stringify({ status: "running", teams: [{ team_id: TEAM, ready: true, certificate_present: true }], keys: { signing_ready: true, encryption_ready: true } }), "custody status could not be read: it lists no ops"],
+  ]) {
+    assert.throws(() => preflight(runAw), (error) => error.message.includes(why) && !error.message.includes("mail_reply_continuation.v1") && !/operations are missing/.test(error.message), why);
   }
+  // Real aw 1.36.31 (npm darwin-arm64, 2f77ffdb) with no custody running: ops is null.
+  const notRunning = { status: "not_running", socket_path: "/x/.aw/run/custody.sock", resident: {}, teams: null, keys: null, ops: null, freshness: null, errors: ["custody_unavailable"] };
+  assert.throws(() => preflight(() => JSON.stringify(notRunning)), (error) => /status=not_running error=custody_unavailable; custody service is not running/.test(error.message) && !error.message.includes("mail_reply_continuation.v1"));
+});
+
+test("a custody missing its E2EE ops as well keeps the serve remedy; only a missing continuation op asks for a restart on the floor", () => {
+  assert.throws(() => preflightWith(SIGNING_OPS), { message: "custody preflight failed for merlin: status=running; required custody operations are missing: unwrap_e2ee_message.v1, create_e2ee_envelope.v1, mail_reply_continuation.v1; start aw custody serve for merlin" });
+});
+
+test("an e2ee: false seat on a custody without encryption keys or the op stays ready", () => {
+  const preflight = preflightWith(SIGNING_OPS, { e2eeRequired: false, encryptionReady: false });
+  assert.deepEqual(preflight.warnings, ["E2E encryption is disabled for this grant and custody encryption is not ready; encrypted mail/chat will not be available in this session."]);
+});
+
+test("grant-seat readiness: the op present is ready, absent is the custody problem with the restart remedy", (t) => {
+  const base = tempDir(t);
+  const bin = fakeAw(base); const { root, home, custody } = deployment(base);
+  const context = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
+  let result = readiness(bin, { root, ...globalSettings(custody) }, context, { FAKE_CUSTODY_OPS: OPS_1_36_31.join(",") });
+  assert.equal(result.problems.some(p => p.code === "custody"), false, JSON.stringify(result));
+  result = readiness(bin, { root, ...globalSettings(custody) }, context, { FAKE_CUSTODY_OPS: OPS_BEFORE_1_36_31.join(",") });
+  assert.equal(result.status, "needs-configuration");
+  assert.deepEqual(result.problems.filter(p => p.code === "custody"), [{ code: "custody", message: `custody preflight failed for merlin: status=running; ${CONTINUATION_REMEDY}` }]);
+  result = readiness(bin, { root, ...globalSettings(custody, { e2ee: false }) }, context, { FAKE_CUSTODY_OPS: SIGNING_OPS.join(","), FAKE_ENCRYPTION_READY: "0" });
+  assert.equal(result.problems.some(p => p.code === "custody"), false, "e2ee: false does not require the op");
+  assert.ok(result.warnings.some(w => w.code === "e2ee-disabled"), JSON.stringify(result));
+});
+
+test("a LOCAL seat never asks custody, whatever its ops", (t) => {
+  const base = tempDir(t);
+  const bin = fakeAw(base); const { root, home } = deployment(base);
+  const result = readiness(bin, { root, delivery: "session" }, { kind: "workspace", workspace: root, deployment: root, soul: "dev", home }, { FAKE_CUSTODY_OPS: OPS_BEFORE_1_36_31.join(",") });
+  assert.equal(result.problems.some(p => p.code === "custody"), false, JSON.stringify(result));
+  assert.equal(readFileSync(join(base, "aw.log"), "utf8").split("\n").filter(Boolean).some(l => JSON.parse(l).argv.slice(0, 2).join(" ") === "custody status"), false);
+});
+
+test("grant spawn: the op present mints; absent fails preflight before any mint, with the restart remedy", (t) => {
+  const base = tempDir(t);
+  const bin = fakeAw(base); const { root, home, custody } = deployment(base);
+  const env = (ops) => ({ OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(globalSettings(custody)), FAKE_CUSTODY_OPS: ops.join(",") });
+  let r = runHook(bin, "spawn", env(OPS_BEFORE_1_36_31));
+  assert.notEqual(r.status, 0);
+  assert.equal(r.doc.warning, `oats-aweb: custody preflight failed for merlin: status=running; ${CONTINUATION_REMEDY}`);
+  assert.equal(readFileSync(join(base, "aw.log"), "utf8").includes('"mint"'), false, "nothing is minted");
+  r = runHook(bin, "spawn", env(OPS_1_36_31));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.doc.meta.identity.grant.id);
+});
+
+test("the agent's brief keeps e2ee-disabled, and a renewing launch surfaces the preflight warnings", (t) => {
+  const base = tempDir(t);
+  const bin = fakeAw(base); const { root, home, custody } = deployment(base);
+  const e2eeOff = { OATS_SETTINGS: JSON.stringify(globalSettings(custody, { e2ee: false })), FAKE_CUSTODY_OPS: SIGNING_OPS.join(","), FAKE_ENCRYPTION_READY: "0" };
+  const spawned = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, ...e2eeOff });
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  assert.match(spawned.doc.brief, / Warning: E2E encryption is disabled for this grant/);
+  const launched = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(spawned.doc.meta), ...e2eeOff });
+  assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+  assert.notEqual(launched.doc.meta.identity.grant.id, spawned.doc.meta.identity.grant.id, "the launch renewed the grant");
+  assert.match(launched.doc.warning, /E2E encryption is disabled for this grant/);
 });

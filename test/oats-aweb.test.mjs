@@ -27,7 +27,7 @@ function fakePath(t, body = "exit 97") {
   const bin = join(tempDir(t), "bin");
   mkdirSync(bin);
   const aw = join(bin, "aw");
-  writeFileSync(aw, `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.30"; exit 0; fi\n${body}\n`);
+  writeFileSync(aw, `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.31"; exit 0; fi\n${body}\n`);
   chmodSync(aw, 0o755);
   return bin;
 }
@@ -881,7 +881,7 @@ test("alias conflict remedy names --name and --purpose", async (t) => {
   mkdirSync(home);
   const fake = fakeAwSetupPath(t);
   const aw = join(fake.path, "aw");
-  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "version") { console.log("aw 1.36.30"); process.exit(0); }\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nif (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
+  writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "version") { console.log("aw 1.36.31"); process.exit(0); }\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nif (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) { console.error("alias already exists"); process.exit(7); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;

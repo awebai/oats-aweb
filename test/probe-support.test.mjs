@@ -17,10 +17,10 @@ function configured(t, options = {}) {
   for (const home of [join(f.root, '.aw'), join(f.home, '.aw')]) writeFileSync(join(home, 'workspace.yaml'), native);
   const binary = join(f.deployment, 'aw'); writeFileSync(binary, 'offline executable fixture', {mode: 0o700});
   const requests = [];
-  f.deps.support = args => qualifyProbeSupport({...args, resolveAw: () => binary, observe: async (u, budget) => {budget.check();requests.push(u);return metadata;}, execute: async (cmd, argv, cap) => argv[0] === 'version' ? Buffer.from('aw 1.36.30\n  commit: ee55192a4f4714b2a2939db8469acc0adfc75543 (github.com/awebai/aw)\n  built:  2026-10-10T01:00:54Z\n') : args.execute(cmd, argv, cap)});
+  f.deps.support = args => qualifyProbeSupport({...args, resolveAw: () => binary, observe: async (u, budget) => {budget.check();requests.push(u);return metadata;}, execute: async (cmd, argv, cap) => argv[0] === 'version' ? Buffer.from('aw 1.36.31\n  commit: 2f77ffdb36e4ec48e08389d859afbd1f5c24f69f (github.com/awebai/aw)\n  built:  2026-10-10T01:59:43Z\n') : args.execute(cmd, argv, cap)});
   return {...f, binary, requests};
 }
-test('released floors: probe-only origins and server floor, and the provider aw floor', () => assert.deepEqual(PROBE_RELEASE_SUPPORT, {origins:['https://app.aweb.ai'],cliFloor:'1.36.30',serverFloor:'1.27.12'}));
+test('released floors: probe-only origins and server floor, and the provider aw floor', () => assert.deepEqual(PROBE_RELEASE_SUPPORT, {origins:['https://app.aweb.ai'],cliFloor:'1.36.31',serverFloor:'1.27.12'}));
 test('native-generated service projection and qualified scalar variants', () => {
   assert.equal(projectWorkspaceService(native), url);
   for (const v of [url, `"${url}"`, `'${url}'`]) assert.equal(projectWorkspaceService(native.replace(url,v)),url);
@@ -44,7 +44,7 @@ test('executable selection ignores relative/empty PATH entries and pins real pat
 });
 test('actual admission composes with full offline reply proof',async t=>{
   const f=configured(t),r=await runProbe(f.args,f.deps);assert.equal(r.outcome,'PASS',r.reason);
-  assert.deepEqual(f.requests,[meta]);assert.equal(r.diagnostics.versions.aw.version,'1.36.30');
+  assert.deepEqual(f.requests,[meta]);assert.equal(r.diagnostics.versions.aw.version,'1.36.31');
   assert.equal(f.calls.filter(c=>c.args.includes('send')).length,1);
 });
 for(const [name,delta,expected] of [
@@ -70,14 +70,14 @@ for(const [name,delta,expected] of [
  const f=configured(t);let reads=0,versions=0;
  if(delta.url)for(const home of [f.root,f.home])writeFileSync(join(home,'.aw','workspace.yaml'),native.replace(url,JSON.stringify(delta.url)));
  if(delta.targetUrl)writeFileSync(join(f.home,'.aw','workspace.yaml'),native.replace(url,delta.targetUrl));
- f.deps.support=args=>qualifyProbeSupport({...args,resolveAw:()=>f.binary,execute:async()=>{versions++;if(delta.versionError)throw Error('secret');return Buffer.from(delta.version??'aw 1.36.30\n');},observe:async()=>{reads++;if(delta.metaError)throw Error('secret');return delta.metadata??metadata;}});
+ f.deps.support=args=>qualifyProbeSupport({...args,resolveAw:()=>f.binary,execute:async()=>{versions++;if(delta.versionError)throw Error('secret');return Buffer.from(delta.version??'aw 1.36.31\n');},observe:async()=>{reads++;if(delta.metaError)throw Error('secret');return delta.metadata??metadata;}});
  const r=await runProbe(f.args,f.deps);assert.equal(r.outcome,'FAIL');if(expected)assert.equal(r.reason,expected);else assert.match(r.reason,/^fresh-conversation support unknown\/unsupported on /);
  assert.equal(f.calls.filter(c=>c.args.includes('send')).length,0);assert(!JSON.stringify(r).includes('secret'));
  if(delta.version||delta.versionError||delta.url||delta.targetUrl)assert.equal(reads,0);
  if(delta.url||delta.targetUrl)assert.equal(versions,0);
 });
 for(const which of ['root','target','binary']) test(`drift ${which} after metadata refuses before send`,async t=>{
- const f=configured(t);f.deps.support=args=>qualifyProbeSupport({...args,resolveAw:()=>f.binary,execute:async()=>Buffer.from('aw 1.36.30\n'),observe:async()=>{
+ const f=configured(t);f.deps.support=args=>qualifyProbeSupport({...args,resolveAw:()=>f.binary,execute:async()=>Buffer.from('aw 1.36.31\n'),observe:async()=>{
   if(which==='binary')writeFileSync(f.binary,'changed executable');else writeFileSync(join(which==='root'?f.root:f.home,'.aw','workspace.yaml'),native+'# changed\n');return metadata;
  }});
  const r=await runProbe(f.args,f.deps);assert.equal(r.reason,which==='binary'?'probe-cli-changed':'selected-service-config-changed');assert.equal(f.calls.filter(c=>c.args.includes('send')).length,0);
@@ -106,7 +106,7 @@ test('metadata deadline and cancellation destroy the request',async()=>{
 test('metadata expiration/cancellation remain total-budget reasons and cannot send',async t=>{
  for(const cancel of [false,true]){
   const f=configured(t),c=new AbortController();f.deps.signal=c.signal;
-  f.deps.support=args=>qualifyProbeSupport({...args,resolveAw:()=>f.binary,execute:async()=>Buffer.from('aw 1.36.30\n'),observe:async()=>{if(cancel)c.abort();else args.budget.deadline=0;throw Error('secret');}});
+  f.deps.support=args=>qualifyProbeSupport({...args,resolveAw:()=>f.binary,execute:async()=>Buffer.from('aw 1.36.31\n'),observe:async()=>{if(cancel)c.abort();else args.budget.deadline=0;throw Error('secret');}});
   const r=await runProbe(f.args,f.deps);assert.equal(r.reason,cancel?'cancelled':'timeout');assert.equal(f.calls.filter(c=>c.args.includes('send')).length,0);
  }
 });
