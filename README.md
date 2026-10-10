@@ -50,7 +50,9 @@ The rest:
   be read: …", never that an op is missing.
 - **No grant is left unrevoked silently.** Revocation is the only end of a
   never-grant. Every mint is labelled `oats:<instance>:<seat>`, with a random
-  seat id kept in `identity.seat`, and the custody's grant list is the source of
+  seat id kept in `identity.seat` and written to the home
+  (`.oats-aweb/seat.json`) before the first mint, so a hook killed after the
+  mint still leaves a retire the seat; the custody's grant list is the source of
   truth: every real start and every retire revokes this seat's other active
   grants (at retire, all of them), including one minted before a crash. Other
   labels, including pre-1.25.0 `oats:<instance>`, are never touched. A failed

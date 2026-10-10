@@ -56,7 +56,11 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   silently. Every mint carries a label unique to its seat,
   `oats:<instance>:<seat>`, where `<seat>` is random at spawn and kept in the
   identity meta (`identity.seat`); a name reused after a retire, or repeated
-  across deployments under one resident, is a different seat. The custody's
+  across deployments under one resident, is a different seat. The seat is also
+  written to the home (`.oats-aweb/seat.json`: seat, instance, resident, team;
+  no keys) before the first mint, so a hook killed between the mint and its
+  answer, which leaves the kernel no meta, still leaves a retire what it needs to
+  find the grant: a retire whose meta carries no seat reads that record. The custody's
   grant list (`aw id grant list --team <team> --json`) is the source of truth:
   at every real start and at retire, this seat's active grants other than the
   current one (at retire, all of them) are revoked, so a grant minted before a

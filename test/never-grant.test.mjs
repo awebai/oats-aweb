@@ -340,6 +340,49 @@ test("spawn: a mint that fails after the server created the grant returns the se
   }
 });
 
+// A hook killed between the mint and its answer leaves the kernel no meta at all
+// (Ctrl-C, the kernel ending the hook, a crash): the seat must already be on disk.
+const seatRecord = (s) => JSON.parse(readFileSync(join(s.home, ".oats-aweb", "seat.json"), "utf8"));
+
+test("the seat is written to the home before the first mint, and a retire with no meta finds and revokes the grant", (t) => {
+  const s = seat(t);
+  const r = s.spawn({}, { FAKE_MINT_FAIL_AFTER_REGISTER: "killed" });
+  assert.notEqual(r.status, 0);
+  const record = seatRecord(s);
+  assert.match(record.seat, /^[0-9a-f]{16}$/);
+  assert.deepEqual({ instance: record.instance, resident: record.resident, team: record.team }, { instance: "probe", resident: "merlin", team: TEAM });
+  assert.equal(grantsOf(s).find(g => g.grant_id === "grant-spawn").label, `oats:probe:${record.seat}`, "the record names the label the mint used");
+  assert.deepEqual(active(s), ["grant-spawn"]);
+  // The kernel's retire after a killed hook: no meta.
+  const retired = s.retire({});
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(active(s), [], "found by the seat record's label and revoked");
+});
+
+test("a retire that finds the seat record but cannot read the grant list exits nonzero", (t) => {
+  const s = seat(t);
+  s.spawn({}, { FAKE_MINT_FAIL_AFTER_REGISTER: "killed" });
+  const retired = s.retire({}, { FAKE_GRANT_LIST_FAIL: "custody unreachable" });
+  assert.equal(retired.status, 1);
+  assert.equal(retired.doc.meta.reason, "grant-list-failed");
+  assert.match(retired.doc.warning, /could not check for orphaned grants/);
+});
+
+test("a renewal that gives a pre-seat meta its first seat id writes it before the mint", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  const { seat: _, ...identity } = spawned.doc.meta.identity;
+  const preSeat = { ...spawned.doc.meta, identity };
+  rmSync(join(s.home, ".oats-aweb", "seat.json"), { force: true });
+  const launched = s.launch(preSeat, {}, { FAKE_MINT_FAIL_AFTER_REGISTER: "killed" });
+  assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+  const record = seatRecord(s);
+  const fresh = grantsOf(s).find(g => g.grant_id !== "grant-spawn" && g.status === "active");
+  assert.equal(fresh.label, `oats:probe:${record.seat}`, "the renewal's grant carries the persisted seat");
+  assert.equal(s.retire(preSeat).status, 0);
+  assert.equal(active(s).includes(fresh.grant_id), false, "a retire from the pre-seat meta revokes it through the record");
+});
+
 test("spawn: a never-grant whose attachment or wake registration fails and cannot be revoked fails, named, with its seat in the meta", (t) => {
   for (const [env, settings] of [[{ FAKE_VERIFY_ERROR: "custody socket refused" }, {}], [{ FAKE_WAKE_REGISTER_FAIL: "1" }, { delivery: "session" }]]) {
     const s = seat(t);

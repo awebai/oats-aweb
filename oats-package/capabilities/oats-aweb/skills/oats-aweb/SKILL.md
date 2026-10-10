@@ -575,7 +575,9 @@ Every mint passes its ttl explicitly (`--ttl=never` or the duration) and records
 it, and the renew mode, as `identity.grant.ttl` and `identity.grant.renew`; a
 never-grant records `expiresAt: "never"`. A never seat's custody must list
 `grant_never_ttl.v1`. Every mint is labelled `oats:<instance>:<seat>` (a random
-seat id kept in `identity.seat`), and the custody's grant list is the source of
+seat id kept in `identity.seat`, and written to the home's `.oats-aweb/seat.json`
+before the first mint so a retire finds it even after a killed hook), and the
+custody's grant list is the source of
 truth: every real start and retire revokes this seat's other active grants (at
 retire, all of them), including one minted before a crash; other labels are never
 touched. A failed revoke names how long the grant stays valid ("until revoked"

@@ -763,9 +763,39 @@ function residentCustodyOf(name) {
   const custody = name ? residents[name] : undefined;
   return typeof custody === "string" && isAbsolute(custody) && existsSync(join(custody, ".aw", "identity.yaml")) ? custody : undefined;
 }
+/** The seat's record in the home's provider state: {seat, instance, resident,
+ *  team}, no keys. It is written before the first mint for a seat, so a hook
+ *  killed between the mint and its answer (which leaves the kernel no meta)
+ *  still leaves what a retire or a start needs to find the grant by its label.
+ *  .oats-aweb stays in the home until the home is removed, and the kernel runs
+ *  the retire hook (its spawn rollback included) before it removes the home. */
+const seatRecordFile = () => join(providerStateDir(), "seat.json");
+function persistSeat(record) {
+  mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
+  const tmp = `${seatRecordFile()}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(record) + "\n", { mode: 0o600 });
+  renameSync(tmp, seatRecordFile());
+}
+/** The recorded seat, undefined when there is none; an unreadable record
+ *  throws, so a retire says so instead of passing over a grant it may hide. */
+function recordedSeat() {
+  if (!existsSync(seatRecordFile())) return undefined;
+  const record = JSON.parse(readFileSync(seatRecordFile(), "utf8"));
+  if (!record || typeof record.seat !== "string" || !/^[0-9a-f]{16}$/.test(record.seat)) throw new Error(`${seatRecordFile()} is malformed`);
+  return record;
+}
+/** The meta with the recorded seat filled in where it carries none. */
+function withRecordedSeat(meta, record) {
+  if (!record || meta.identity?.seat) return meta;
+  const identity = meta.identity || {};
+  return { ...meta, identity: { ...identity, mode: "global", seat: record.seat, resident: identity.resident || record.resident, team: identity.team || record.team } };
+}
 /** At every real start: revoke this seat's grants other than the one it runs
  *  on (a mint before a crash, a revoke that failed). A start never fails on it. */
 function sweepAtStart(meta) {
+  let record;
+  try { record = recordedSeat(); } catch (e) { outNotes.push(`could not check for orphaned grants: the seat record is unreadable (${String(e.message || e).slice(0, 200)})`); }
+  meta = withRecordedSeat(meta, record);
   const seat = meta.identity?.seat;
   if (!seat) return;
   const custody = residentCustodyOf(String(identitySettings.resident || meta.identity.resident || ""));
@@ -801,7 +831,9 @@ function globalGrantRenew(oldMeta) {
   const ttl = renewalGrantTTL(identitySettings.ttl, oldMeta.identity.grant.ttl);
   // A seat keeps its id; one whose meta predates seat ids gets one now, kept
   // in every meta this start returns, so its new grants can be found.
-  const seat = oldMeta.identity.seat || newSeatId();
+  let seatRecord;
+  try { seatRecord = recordedSeat(); } catch { /* an unreadable record is replaced below */ }
+  const seat = oldMeta.identity.seat || seatRecord?.seat || newSeatId();
   if (!oldMeta.identity.seat) oldMeta = { ...oldMeta, identity: { ...oldMeta.identity, seat } };
   const oldHome = priorGrantHome(oldMeta);
   let preflight;
@@ -818,6 +850,8 @@ function globalGrantRenew(oldMeta) {
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
     out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: ${why}; keeping previous grant ${oldMeta.identity.grant.id}${unrevoked}` });
   };
+  // Durable before the mint: a hook killed after it still leaves the seat.
+  if (seatRecord?.seat !== seat) persistSeat({ seat, instance, resident, team });
   let raw, parsed;
   // A failed mint call printed no receipt, so there is no grant to revoke.
   try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
@@ -871,6 +905,8 @@ function globalGrantSpawn() {
   const cleanup = () => { try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ } };
   // The error text is bounded; what to do about a grant that survives is not cut.
   const failAfterMint = (message, survives = "") => { cleanup(); out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(message).slice(0, 300)}${survives}` }, 1); };
+  // Durable before the mint: a hook killed after it still leaves the seat.
+  persistSeat({ seat, instance, resident, team });
   // A failed mint call printed no receipt, so there is no grant to revoke.
   let raw;
   try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
@@ -1820,7 +1856,14 @@ if (event === "launch") {
     }
     out(o, code);
   };
-  if (meta.identity?.mode === "global" && !meta.retained) globalGrantRetire(meta);
+  // A grant seat, or a home whose seat record outlived its meta (a hook killed
+  // after the mint, before it answered), retires through the grant path.
+  if (!meta.retained) {
+    let seatRecord;
+    try { seatRecord = recordedSeat(); }
+    catch (e) { out({ meta: { retired: false, reason: "grant-list-failed" }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${String(e.message || e).slice(0, 200)}); this seat may hold grants that stay valid` }, 1); }
+    if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
+  }
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
     catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
