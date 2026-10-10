@@ -93,6 +93,57 @@ test("no TTY and no key refuses at once, before aw init", (t) => {
   assert.equal(existsSync(s.root), false);
 });
 
+// Runs the command on a real pseudo-terminal, types `input` after the prompt,
+// and returns everything the terminal showed.
+const PTY_DRIVER = `
+import base64, os, pty, select, sys, time
+argv, typed = sys.argv[2:], sys.argv[1].encode()
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(argv[0], argv)
+shown, sent, deadline = b"", False, time.time() + 30
+while time.time() < deadline:
+    r, _, _ = select.select([fd], [], [], 0.2)
+    if fd in r:
+        try: chunk = os.read(fd, 4096)
+        except OSError: break
+        if not chunk: break
+        shown += chunk
+    if not sent and b"(input hidden): " in shown:
+        os.write(fd, typed); sent = True
+_, status = os.waitpid(pid, 0)
+print(base64.b64encode(shown).decode()); print(os.waitstatus_to_exitcode(status))
+`;
+function onTerminal(s, args, typed, env) {
+  const r = spawnSync("python3", ["-I", "-c", PTY_DRIVER, typed, process.execPath, HOOK, "resident", ...args], { env, encoding: "utf8", timeout: 60000 });
+  assert.equal(r.status, 0, r.stderr);
+  const [shown, code] = r.stdout.trim().split("\n");
+  return { shown: Buffer.from(shown, "base64").toString("utf8"), code: Number(code) };
+}
+
+test("with no key in the environment, a terminal prompt reads it without echo and hands it to the init child", (t) => {
+  if (spawnSync("python3", ["-c", "import pty"]).status !== 0) { t.skip("python3 with pty is required to drive a terminal"); return; }
+  const s = setup(t);
+  const env = { ...s.env }; delete env.AWEB_API_KEY;
+  const { shown, code } = onTerminal(s, ["create", NAME], `${KEY}\r`, env);
+  assert.equal(code, 0, shown);
+  assert.match(shown, /aweb API key \(input hidden\): /);
+  assert.ok(!shown.includes(KEY), shown);
+  assert.match(shown, new RegExp(`PASS resident ${CAPTURED.address}`));
+  assert.equal(initCalls(s.fake)[0].env.AWEB_API_KEY, KEY);
+  assert.deepEqual(keyHits(s.base), []);
+});
+
+test("an empty answer at the prompt refuses without running init", (t) => {
+  if (spawnSync("python3", ["-c", "import pty"]).status !== 0) { t.skip("python3 with pty is required to drive a terminal"); return; }
+  const s = setup(t);
+  const env = { ...s.env }; delete env.AWEB_API_KEY;
+  const { shown, code } = onTerminal(s, ["create", NAME], "\r", env);
+  assert.equal(code, 1);
+  assert.match(shown, /FAIL key: no API key was entered/);
+  assert.deepEqual(initCalls(s.fake), []);
+});
+
 test("AWEB_URL is required for an init", (t) => {
   const s = setup(t);
   const r = s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_URL"] });

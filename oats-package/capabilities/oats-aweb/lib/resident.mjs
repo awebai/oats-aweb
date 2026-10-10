@@ -124,11 +124,12 @@ function promptHidden(stdin, stderr) {
         value += ch;
       }
     };
-    stderr.write("aweb API key (input hidden): ");
+    // Echo goes off before the prompt shows, so nothing typed after it is echoed.
     stdin.setEncoding("utf8");
     stdin.setRawMode(true);
     stdin.on("data", onData);
     stdin.resume();
+    stderr.write("aweb API key (input hidden): ");
   });
 }
 
