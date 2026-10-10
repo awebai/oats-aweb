@@ -1,0 +1,150 @@
+{
+  "checks": [
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "mode": "offline",
+        "version": "doctor.v1"
+      },
+      "id": "doctor.contract.v1",
+      "message": "Doctor output contract is available.",
+      "source": "local",
+      "status": "info"
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "state": "missing"
+      },
+      "id": "identity.local.context",
+      "message": "No identity.yaml was found.",
+      "next_step": "Run `aw init` or `aw id create` when a global identity is expected.",
+      "source": "local",
+      "status": "info",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "reason": "no_identity_context"
+      },
+      "id": "identity.local.identity_scope",
+      "message": "Identity class is unavailable because no identity context was found.",
+      "source": "local",
+      "status": "info",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "reason": "no_identity_context"
+      },
+      "id": "identity.local.did_key_format",
+      "message": "Identity did:key is unavailable because no identity context was found.",
+      "source": "local",
+      "status": "info",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "reason": "no_identity_context"
+      },
+      "id": "identity.local.signing_key_matches_did",
+      "message": "Signing key comparison is unavailable because no identity context was found.",
+      "source": "local",
+      "status": "info",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/partial/.aw/signing.key",
+        "id": "/private/tmp/oats-resident-capture/partial/.aw/signing.key",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "reason": "no_identity_context"
+      },
+      "id": "identity.local.stable_id_expected",
+      "message": "Stable ID expectation is unavailable because no identity context was found.",
+      "source": "local",
+      "status": "info",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "reason": "no_identity_context"
+      },
+      "id": "identity.local.address_expected",
+      "message": "Address expectation is unavailable because no identity context was found.",
+      "source": "local",
+      "status": "info",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "reason": "no_identity_context"
+      },
+      "id": "identity.local.registry_url_source",
+      "message": "Registry URL source is unavailable because no identity context was found.",
+      "source": "local",
+      "status": "info",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "type": "local_path"
+      }
+    }
+  ],
+  "generated_at": "2026-10-10T16:38:39Z",
+  "mode": "offline",
+  "redactions": [
+    {
+      "field": "signing_key",
+      "reason": "secret_key_material"
+    },
+    {
+      "field": "api_key",
+      "reason": "credential"
+    },
+    {
+      "field": "team_certificate.signature",
+      "reason": "credential_signature"
+    }
+  ],
+  "status": "ok",
+  "subject": {
+    "working_dir": "/private/tmp/oats-resident-capture/partial"
+  },
+  "version": "doctor.v1"
+}

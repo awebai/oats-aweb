@@ -1,0 +1,212 @@
+{
+  "checks": [
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "mode": "offline",
+        "version": "doctor.v1"
+      },
+      "id": "doctor.contract.v1",
+      "message": "Doctor output contract is available.",
+      "source": "local",
+      "status": "info"
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "source": ".aw/identity.yaml"
+      },
+      "id": "identity.local.context",
+      "message": "Global identity.yaml parsed successfully.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "identity_scope": "global"
+      },
+      "id": "identity.local.identity_scope",
+      "message": "Identity is global.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z",
+        "type": "did"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "did_key": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx"
+      },
+      "id": "identity.local.did_key_format",
+      "message": "Identity did:key is syntactically valid.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z",
+        "type": "did"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "did_key": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx"
+      },
+      "id": "identity.local.signing_key_matches_did",
+      "message": "Local signing key matches identity did.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "id": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx",
+        "type": "did"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "encryption_key_id": "sha256:+OLILdo7razlfYmtdowSE0Q93w1LCz3S/UmNDMTaVmY"
+      },
+      "id": "identity.e2ee.encryption_state",
+      "message": "Local E2E encryption key state has an active key.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "encryption_key_id": "sha256:+OLILdo7razlfYmtdowSE0Q93w1LCz3S/UmNDMTaVmY"
+      },
+      "id": "identity.e2ee.private_key",
+      "message": "Local E2E encryption private key matches the active key id.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.x25519.key",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.x25519.key",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "encryption_key_id": "sha256:+OLILdo7razlfYmtdowSE0Q93w1LCz3S/UmNDMTaVmY"
+      },
+      "id": "identity.e2ee.assertion",
+      "message": "Local E2E encryption-key assertion verifies under the identity signing key.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.assertion.json",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.assertion.json",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "published_at": "2026-10-10T16:38:45Z"
+      },
+      "id": "identity.e2ee.assertion_published",
+      "message": "Local E2E encryption-key assertion was recorded as published.",
+      "next_step": "Confirm against the registry with `aw check --online` if in doubt.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
+        "type": "local_path"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "stable_id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z"
+      },
+      "id": "identity.local.stable_id_expected",
+      "message": "Global identity stable_id is present.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z",
+        "type": "did"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "address": "fixture-12941.test/carol"
+      },
+      "id": "identity.local.address_expected",
+      "message": "Global identity address is present.",
+      "source": "local",
+      "status": "ok",
+      "target": {
+        "id": "fixture-12941.test/carol",
+        "type": "address"
+      }
+    },
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "registry_url": "http://127.0.0.1:18010",
+        "source": "AWID_REGISTRY_URL"
+      },
+      "id": "identity.local.registry_url_source",
+      "message": "Explicit awid registry URL is available.",
+      "source": "local",
+      "status": "ok"
+    }
+  ],
+  "generated_at": "2026-10-10T16:38:45Z",
+  "mode": "offline",
+  "redactions": [
+    {
+      "field": "signing_key",
+      "reason": "secret_key_material"
+    },
+    {
+      "field": "api_key",
+      "reason": "credential"
+    },
+    {
+      "field": "team_certificate.signature",
+      "reason": "credential_signature"
+    }
+  ],
+  "status": "ok",
+  "subject": {
+    "alias": "carol",
+    "aweb_url": "http://127.0.0.1:18000",
+    "identity_path": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
+    "identity_scope": "global",
+    "name": "carol",
+    "team_id": "default:fixture-12941.test",
+    "working_dir": "/private/tmp/oats-resident-capture/complete",
+    "workspace_id": "d03de292-b752-4d89-b749-914263359510"
+  },
+  "version": "doctor.v1"
+}

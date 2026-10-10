@@ -1,0 +1,2 @@
+workspace init target was not found or the team was deleted (404): category=hosted_http_failure status=404 error_code=unknown request_id=unknown (response body omitted; remote effects unknown)
+rerun the same command in this directory; do not delete .aw/partial-init.yaml

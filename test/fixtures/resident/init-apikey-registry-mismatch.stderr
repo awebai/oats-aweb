@@ -1,0 +1,1 @@
+partial API-key init state at /private/tmp/oats-resident-capture/partial/.aw/partial-init.yaml was created for a different bootstrap context (registry_url "http://127.0.0.1:18010" != "http://localhost:18010"); retry the original command or remove the file explicitly

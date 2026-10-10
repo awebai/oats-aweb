@@ -1,0 +1,147 @@
+{
+  "checks": [
+    {
+      "authoritative": true,
+      "authority": "caller",
+      "detail": {
+        "mode": "online",
+        "version": "doctor.v1"
+      },
+      "id": "doctor.contract.v1",
+      "message": "Doctor output contract is available.",
+      "source": "local",
+      "status": "info"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "did_aw": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z",
+        "registry_url": "http://127.0.0.1:18010"
+      },
+      "id": "awid.did.resolve",
+      "message": "Global did:aw resolves at awid.",
+      "source": "awid",
+      "status": "ok"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "did_key": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx"
+      },
+      "id": "awid.did.current_key_matches_local",
+      "message": "awid current did:key matches local identity did.",
+      "source": "awid",
+      "status": "ok"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "encryption_key_id": "sha256:+OLILdo7razlfYmtdowSE0Q93w1LCz3S/UmNDMTaVmY"
+      },
+      "id": "awid.did.encryption_key_matches_local",
+      "message": "awid published E2E encryption key matches the local identity.",
+      "source": "awid",
+      "status": "ok"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "current_did_key": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx",
+        "entry_count": 1
+      },
+      "id": "awid.did.log_verifies",
+      "message": "DID audit log verifies.",
+      "source": "awid",
+      "status": "ok"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "address": "fixture-12941.test/carol"
+      },
+      "id": "awid.address.resolve",
+      "message": "Global address resolves under caller authority.",
+      "source": "awid",
+      "status": "ok"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "did_aw": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z"
+      },
+      "id": "awid.address.matches_local_stable_id",
+      "message": "Registered address did:aw matches local stable_id.",
+      "source": "awid",
+      "status": "ok"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "did_key": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx"
+      },
+      "id": "awid.address.current_key_matches_local",
+      "message": "Registered address current did:key matches local identity did.",
+      "source": "awid",
+      "status": "ok"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "address": "fixture-12941.test/carol",
+        "delivery_origin": ""
+      },
+      "id": "awid.address.delivery_origin",
+      "message": "Registered address does not inherit a federated delivery origin.",
+      "next_step": "Set the namespace default_delivery_origin before expecting other aweb servers to start mail or chat with this address.",
+      "source": "awid",
+      "status": "warn"
+    },
+    {
+      "authoritative": false,
+      "authority": "caller",
+      "detail": {
+        "address": "fixture-12941.test/carol"
+      },
+      "id": "awid.address.reverse_listing",
+      "message": "Reverse address listing includes the local address.",
+      "source": "awid",
+      "status": "ok"
+    }
+  ],
+  "generated_at": "2026-10-10T16:38:45Z",
+  "mode": "online",
+  "redactions": [
+    {
+      "field": "signing_key",
+      "reason": "secret_key_material"
+    },
+    {
+      "field": "api_key",
+      "reason": "credential"
+    },
+    {
+      "field": "team_certificate.signature",
+      "reason": "credential_signature"
+    }
+  ],
+  "status": "warn",
+  "subject": {
+    "alias": "carol",
+    "aweb_url": "http://127.0.0.1:18000",
+    "identity_path": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
+    "identity_scope": "global",
+    "name": "carol",
+    "team_id": "default:fixture-12941.test",
+    "working_dir": "/private/tmp/oats-resident-capture/complete",
+    "workspace_id": "d03de292-b752-4d89-b749-914263359510"
+  },
+  "version": "doctor.v1"
+}
