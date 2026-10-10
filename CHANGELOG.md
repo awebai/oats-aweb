@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.26.0 — 2026-10-10
+
+**`oats aweb resident create <name>`** makes a GLOBAL resident identity in an
+existing hosted team, serves it, and records it, from the aweb dashboard's
+line: `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name>`
+(aweb-abqy.3). See [docs/resident-create.md](docs/resident-create.md).
+
+- **Preflight, with no remote effect.** The aw floor; what the resident's
+  directory R holds (`<deployment>/.aweb-residents/<name>`, or `--root`):
+  empty creates, a partial init continues, a complete global identity is
+  verified and adopted, a quarantined partial goes to aw for its own refusal,
+  anything else is refused naming what is there. Also refused: a resident
+  already recorded at another R, a custody unit of this name serving another
+  directory, and on Linux a user without systemd lingering (with the exact
+  `loginctl enable-linger <user>`).
+- **One init run.** Exactly `aw init --global --name <name>
+  --do-not-touch-agents-md --json` in R, once, in an environment built from
+  nothing: `PATH`, `HOME`, `AWEB_URL`, `AWEB_API_KEY`, `AW_NO_UPDATE_CHECK=1`,
+  and `AWID_REGISTRY_URL` only when set. A failure is aw's own text; when aw
+  leaves nothing to continue, the message says so and names the capture to send
+  to aweb. aw's streams and exit are kept under `R/.oats-resident` (0700/0600),
+  with the key redacted.
+- **The key** comes from `AWEB_API_KEY`, or a terminal prompt that does not
+  echo; with neither the command refuses at once. No flag takes a key. It is in
+  no other child's environment (the floor check's `aw version` included), no
+  argv, unit, setting, capture or output.
+- **Verify.** aw's answer must be a connected global identity named `<name>`
+  in a canonical team, with a stable id and an address. Every
+  `aw doctor identity --offline` check must be `ok`, since aw answers `ok`
+  overall with every check `info` when there is no identity. A failing
+  `aw doctor registry --online` is a warning.
+- **Custody.** A per-user unit `ai.aweb.custody.<namespace>.<name>` runs
+  `aw custody serve` in R with `PATH` and `HOME` only: a launchd agent on macOS,
+  a systemd --user unit (enabled by its path) on Linux, the hand step
+  elsewhere. Then it waits for the running custody to be ready, the ops
+  `mail_reply_continuation.v1` and `grant_never_ttl.v1` included.
+- **Record.** `settings.oats.aweb.residents.<name>: R` in `oats-local.yaml`;
+  `--team-label <label>` maps the label to the resident's team (`oats teams
+  add`, or the lines to commit when the workspace allows no local teams).
+- **Outcomes:** `PASS resident <address> team <id> custody running`, then the
+  `oats spawn … --provider oats.aweb identity.mode=global --provider oats.aweb
+  identity.resident=<name>` step; `FAIL <stage>: <message>`; `--json` answers
+  one JSON-v1 envelope with a stable code per failing stage; `--plan` changes
+  nothing.
+- **Single aw floor 1.36.33** (`AW_MIN`); `setup --install-aw` installs
+  `^1.36.33` by default. Upgrade aw on the host, restart the wake daemon and
+  every resident custody service, then `oats sync`.
+- CI runs real-stack journeys against aweb's local stack with the released aw:
+  registration, same-DID resume, the key's absence on a failure, and adopting a
+  resident with a real systemd --user unit. A complete create is proven by the
+  joint E2E against aweb Cloud.
+
 ## 1.25.1 — 2026-10-10
 
 - Readiness no longer reports `joined-team-receive`: a joined team that
