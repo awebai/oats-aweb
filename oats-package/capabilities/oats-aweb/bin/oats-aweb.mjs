@@ -57,6 +57,7 @@ import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parse
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { parseTimestamp } from "../lib/wake-receive.mjs";
+import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
@@ -97,14 +98,12 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env
     // the diagnosis anyone gets.
     const scrub = (t) => secrets.filter(Boolean).reduce((acc, sec) => acc.split(sec).join("<redacted>"), String(t ?? ""));
     const where = [argv[0], argv[1], argv[2]].filter((a) => a && !secrets.includes(a) && !a.startsWith("-")).join(" ");
-    // A child that never exited (killed at the timeout, a signal, a spawn error)
-    // has no status: the outcome says why, which is not its output, so even a
-    // secretSafe command reports it.
-    const outcome = e.status != null ? `failed (exit ${e.status})`
-      : e.code === "ETIMEDOUT" ? `timed out after ${Math.round(timeout / 1000)} s`
-      : `failed: ${e.code || e.signal || "no exit status"}`;
+    // The outcome says how the child ended (a timeout or signal included), which
+    // is not its output, so even a secretSafe command reports it.
+    const outcome = childOutcome(e, timeout);
     const output = secretSafe ? "" : scrub(e.stderr).trim();
     const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
+    err.outcome = outcome;
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
     err.stderr = scrub(e.stderr).trim();
@@ -480,7 +479,7 @@ async function ensureAw({ install, version }) {
   try { run(["npm", "install", "-g", pkg], process.cwd(), 300000); }
   catch (e) {
     const why = String(e.stderr || e.message || "").replace(/\s+/g, " ").trim().slice(0, 500);
-    return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}` };
+    return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} ${e.outcome || "failed"}${why ? `: ${why}` : ""}` };
   }
   const after = await awFloorMessage();
   if (after) return { status: "failed", code: "E_AW_FLOOR", detail: `npm install -g ${pkg} ran, but ${after}` };
@@ -1970,7 +1969,7 @@ if (event === "launch") {
     let doc;
     try { doc = parseAwJson(run(argv, root, 60000), what); }
     catch (e) {
-      const why = e.status === undefined ? e.message : `${what} failed (exit ${e.status})${e.stderr ? `: ${e.stderr}` : ""}`;
+      const why = e.status == null ? e.message : `${what} ${e.outcome}${e.stderr ? `: ${e.stderr}` : ""}`;
       problems.push({ source, message: String(why || e).replace(/\s+/g, " ").trim().slice(0, 300) });
       return undefined;
     }
@@ -2123,7 +2122,7 @@ if (event === "launch") {
   const joinArgv = routedArgv(["setup", "--join", team.label, "--invite-stdin", "--name", alias, ...(service ? ["--service", service] : [])]);
   let joinFailure;
   try { run(joinArgv, process.cwd(), JOIN_TIMEOUT_MS + 120000, { input: `${token}\n`, secrets: [token] }); }
-  catch (e) { joinFailure = `oats aweb setup --join ${team.label} on ${serverId} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${e.stderr ? `: ${oneLine(e.stderr)}` : ""}`; }
+  catch (e) { joinFailure = `oats aweb setup --join ${team.label} on ${serverId} ${e.outcome || "failed"}${e.stderr ? `: ${oneLine(e.stderr)}` : ""}`; }
   finally { token = undefined; }
   if (joinFailure) fail("join", "E_JOIN_FAILED", joinFailure);
 

@@ -326,6 +326,16 @@ test("a grant list that hangs at a start gives the could-not-check note within t
   assert.ok(took < 20000, `the start waited ${took} ms for the list (bound 10 s plus the renewal)`);
 });
 
+test("readiness whose grant list is cut off at its 5 s cap says it timed out, never (exit null)", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  s.record(spawned.doc.meta);
+  const unchecked = s.readiness({}, { FAKE_GRANT_LIST_SLEEP_MS: "20000" }).warnings.find(w => w.code === "grant-revoke-unchecked");
+  assert.ok(unchecked, "the list was cut off");
+  assert.match(unchecked.message, /could not check for orphaned grants \(aw id grant timed out after [1-5] s\)/);
+  assert.doesNotMatch(unchecked.message, /exit null/);
+});
+
 test("retire revokes every active grant of the seat, and a failure lists each grant with its revoke command (what --force prints)", (t) => {
   const s = seat(t);
   const spawned = s.spawn({});
