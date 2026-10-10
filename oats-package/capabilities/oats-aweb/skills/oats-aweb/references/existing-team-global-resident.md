@@ -1,5 +1,33 @@
 # A GLOBAL resident in an existing hosted team
 
+## The one command (provider 1.26.0, aw >=1.36.33)
+
+In an OATS deployment, run the aweb dashboard's line:
+
+```text
+AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label <label>] [--plan] [--json]
+```
+
+It does every step of this card that OATS can: the preflight of the resident
+parent R (`<deployment>/.aweb-residents/<name>`, or `--root`), exactly one
+`aw init --global --name <name> --do-not-touch-agents-md --json` in R with the
+key only in that child's environment, the validation of its result, the
+offline identity diagnostic (every check must be `ok`) and the online registry
+diagnostic (a failure there is a warning only, since publication can lag; read
+it against the online checks below), a per-user custody unit (launchd on
+macOS, systemd --user on Linux) that runs `aw custody serve` in R, the custody
+readiness check, and
+`settings.oats.aweb.residents.<name>`. A complete identity already in R is
+verified and adopted, not re-created; a partial init is continued with the same
+DID; a quarantined partial is refused with aw's own message. With no
+`AWEB_API_KEY` it asks for the key on the terminal without echo. Its stages,
+`--json` envelopes and custody unit controls are in the package's
+`docs/resident-create.md`.
+
+The rest of this card is what the command checks, and the plain-aw path, which
+plain-aw users keep: they run the dashboard's plain `aw init --global` line
+and start custody themselves.
+
 Use this card after `/oats-onboarding` selects fresh versus retained GLOBAL,
 authorized owner, R, resident name, team credential authority, service/registry,
 scopes/TTL and receive policy. That intake authorizes routine selected steps;
@@ -26,9 +54,9 @@ integration requirements, not a second native contract.
 Fresh bootstrap proceeds to the same diagnostic commands as reuse. The native
 external-home allowlist correction is version-qualified to aw 1.36.24 source
 `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; a global help flag is not admission proof.
-Provider #58's planned registration wrapper is unavailable here; until service
-manager integration its contract is one onboarding command plus one printed host
-step, not daemon autostart. No command for that future wrapper is invented.
+From provider 1.26.0, `oats aweb resident create` is the one onboarding
+command, and it installs the per-user custody service itself; elsewhere than
+macOS and Linux it prints the host step.
 LOCAL minting-root or `spawn-authority` diagnostics are never a GLOBAL launch gate.
 
 ## Choose the journey and fix the context

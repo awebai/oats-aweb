@@ -5,6 +5,37 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.26.0 — one command for a GLOBAL resident
+
+- **`oats aweb resident create <name>`** makes a GLOBAL resident identity in an
+  existing hosted team from the aweb dashboard's line:
+
+  ```
+  AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]
+  ```
+
+  It runs exactly one `aw init --global` in the resident's directory
+  (`<deployment>/.aweb-residents/<name>` by default) and verifies the identity.
+  It then installs a per-user custody unit, a launchd agent on macOS or a
+  systemd --user unit on Linux, that runs `aw custody serve` there, waits for
+  that custody to be ready, and records `settings.oats.aweb.residents.<name>`.
+  The next step it prints spawns a grant seat on the resident.
+- **The key.** It is read from `AWEB_API_KEY`, or, with no key in the
+  environment, from a terminal prompt that does not echo. With neither, the
+  command refuses at once. It is in the environment of the init run only (built
+  from nothing: `PATH`, `HOME`, `AWEB_URL`, the key, `AW_NO_UPDATE_CHECK`, and
+  `AWID_REGISTRY_URL` when set), and in no argv, unit, setting, capture or
+  output. No flag takes a key.
+- **Re-runs.** After a failure, a rerun continues aw's own partial init, so the
+  DID is the same. After success, a rerun only verifies. A quarantined partial
+  is refused with aw's own message, and R is never deleted.
+- **Customer-held (BYOT) teams** are aw's to refuse: its message passes through.
+- **One client floor, 1.36.33** (`AW_MIN`). `setup --install-aw` installs
+  `^1.36.33` by default.
+- The whole contract, every `--json` envelope, the custody unit's controls and
+  what CI proves against what only the joint E2E proves:
+  [docs/resident-create.md](docs/resident-create.md).
+
 ## 1.25.0 — grants that never expire; replies to senders outside the roster
 
 - **New grant seats never expire.** A GLOBAL seat spawned on 1.25.0 gets a
@@ -131,7 +162,7 @@ The join half works on its own when someone else mints the invite:
   (the first line, trimmed) and behaves exactly as `--invite <token>`. The two
   flags cannot be combined.
 - `oats aweb setup --install-aw [--aw-version <v>]` runs
-  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.32`)
+  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.33`)
   where aw is missing or below the floor, re-checks the floor, then continues.
 - `oats aweb setup --check-only --json` answers, as one line:
 
@@ -439,11 +470,13 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   Each mapped directory owns its own `.aw` identity for exactly that team.
 - `residents`: map of resident name to absolute custody directory for
   `identity.mode: global`; host-only because it points at custody material.
+  `oats aweb resident create <name>` records its resident here.
 - `join`: comma-separated eligible labels to join at spawn.
 - `identity`: local by default; `global` uses a named resident grant. For fresh
   GLOBAL creation in an existing hosted team versus resident reuse, follow the
   [existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md).
-  Global spawn consumes a provisioned resident; it does not create one.
+  Global spawn consumes a provisioned resident; it does not create one:
+  `oats aweb resident create` does.
   A new GLOBAL seat's grant never expires (`identity.ttl: never`, the default
   from 1.25.0, [#80](https://github.com/awebai/oats-aweb/issues/80)), with
   `identity.renew: launch`: each actual launch re-mints, while preview makes
@@ -567,12 +600,12 @@ owner removes the member.
 
 ### aw floor
 
-Every path requires `aw >= 1.36.32` (`AW_MIN` in `lib/aw-floor.mjs`, the one
+Every path requires `aw >= 1.36.33` (`AW_MIN` in `lib/aw-floor.mjs`, the one
 client floor; the probe and grant seats' custody use it too). A missing, older or unreadable `aw` is a
 readiness problem, a refused command and a required spawn-hook failure, all with
 one message naming the installed version, the floor and the install command,
-for example `aw 1.36.31 is older than required 1.36.32; upgrade with
-\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.32\`)`. The host
+for example `aw 1.36.31 is older than required 1.36.33; upgrade with
+\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@1.36.33\`)`. The host
 wake daemon and a resident's custody service run their own code until they
 restart (see 1.25.0 above). The floor is read from the first line
 of `aw version`; the reader stops there instead of waiting for aw's update
@@ -839,7 +872,7 @@ do not prove live grant or Folio authority.
 `oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
 reports a verified nonce round trip when qualified CLI **and** server support
 are available. It is an explicit send action, never a readiness/lifecycle check.
-Admission requires the provider aw floor (1.36.32; the probe was
+Admission requires the provider aw floor (1.36.33; the probe was
 source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
 `build.aweb_version` >=1.27.12; unavailable support refuses before sending.
 There is no legacy fallback. The

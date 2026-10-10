@@ -589,10 +589,21 @@ What each acceptance item exercises here:
 | 1. the dashboard line runs verbatim in a fresh deployment | the env form above; the key also works from the prompt |
 | 2. custody serves the resident; a seat spawn mints a grant | the custody unit and its readiness check |
 | 3. the seat sends and receives verified mail | none (the seat's grant and custody) |
-| 4. kill during init, rerun, same DID | init continues aw's own `.aw/partial-init.yaml`; OATS has no fault hook |
+| 4. kill during init, rerun, same DID | init continues aw's own `.aw/partial-init.yaml`; OATS has no fault hook (the kill point is below) |
 | 5. rerun after success: no change, no new key | the pure verify (`already-exists`) |
 | 6. the key in no file or environment | the key rules above |
 | 7. the plain command still works | none (the dashboard's) |
+
+**The kill point (item 4).** aw writes `.aw/partial-init.yaml` before it
+registers the identity at awid, and both happen before it posts to aweb's
+workspace init. The E2E kills the init after the registration is observed at
+awid and before the workspace-init POST completes. A partial may hold a
+registered or a not-yet-registered DID: either way the rerun is the same
+command, and aw continues it. OATS adds no registration check of its own. A
+partial can also survive a later hosted, certificate or connect failure, and
+the same rerun applies. When aweb answers with a different identity, aw removes
+the partial or quarantines it as `.rejected`, and its text, with no rerun, is
+the answer.
 
 ## What CI covers, and what only the E2E covers
 
