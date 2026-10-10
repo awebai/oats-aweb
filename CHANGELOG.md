@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Forward port of 1.24.1 (released from release/1.24, oats-aweb#95): `oats aweb
+  setup --join <label>` and username setup on a workspace that forbids local
+  team writes (`local-teams-closed`) refuse only when the plan needs a team
+  write. A label the workspace commits to the predicted or joined team, already
+  the default, needs none: the join records its minting root
+  (`roots[<team>]`), and username setup proceeds to the account bootstrap,
+  without touching the team configuration. An unmapped label on a closed
+  workspace still refuses before any aw call. On a closed workspace a
+  conflicting mapping or another configuration failure is reported as that
+  (`E_SETUP_TEAM_CONFLICT`, `E_SETUP_CONFIGURATION`) rather than as
+  `E_SETUP_POLICY`; both still refuse before any write. Known limit: a closed
+  workspace that commits the label but defaults to a different label still
+  refuses, though the join would only preserve that default.
 - Add explicit `aweb probe --home` command and offline round-trip implementation:
   one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
   deadlines and public diagnostic projections. No lifecycle/readiness probe,
