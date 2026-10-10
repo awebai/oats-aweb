@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.25.1 — 2026-10-10
+
+- Readiness no longer reports `joined-team-receive`: a joined team that
+  receives live needs no action (awebai/oats#881). Its receive mode stays in
+  the spawn brief and in `oats aweb teams --json` (`joined[].receive`).
+- A start waits at most 10 seconds (aw's own client timeout) for the custody's
+  grant list before it says it could not check for orphaned grants; retire
+  keeps 30 seconds, readiness 5.
+- An aw call that never exits is reported by how it ended, "timed out after
+  <n> s" or its error code or signal, instead of "(exit null)": in the hook's
+  errors, the roster's source errors, the routed join, the `--install-aw` npm
+  detail and readiness (including `grant-revoke-unchecked` after its 5 s cap).
+
 ## 1.25.0 — 2026-10-10
 
 **New grant seats never expire.** A GLOBAL seat spawned on this release gets a

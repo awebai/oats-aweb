@@ -415,8 +415,9 @@ test("an outdated wake daemon over otherwise healthy broker evidence is ready, w
   const result = fx.readiness();
   assert.equal(result.status, "ready", JSON.stringify(result));
   assert.ok(result.warnings.some((w) => w.code === "wake-daemon-outdated"), JSON.stringify(result));
-  assert.ok(result.warnings.some((w) => w.code === "joined-team-receive"), "a warning does not make joined teams poll-only");
-  assert.equal(result.warnings.some((w) => w.code === "joined-team-poll-only"), false);
+  // A joined team that receives live needs no action, so readiness says nothing about it (awebai/oats#881).
+  assert.equal(result.warnings.some((w) => w.code === "joined-team-poll-only"), false, "a warning does not make joined teams poll-only");
+  assert.equal(result.warnings.some((w) => w.code === "joined-team-receive"), false);
 });
 
 // ------------------------------------------- channel-dev-confirmation (1.21.1)
@@ -543,7 +544,8 @@ test("synthetic released unknown-nonshell streaming evidence passes Codex route 
   assert.equal(result.status, "ready", JSON.stringify(result));
   assert.deepEqual(snapshot(fx.home), before);
   assert.deepEqual(fx.fake.readCalls().slice(calls).map(c => c.args), [["version"], ["wake", "status", "--json"]]);
-  assert.match(result.warnings.find(w => w.code === "joined-team-receive").message, /observable broker route prerequisites/);
+  assert.equal(result.warnings.some(w => w.code === "joined-team-poll-only"), false, "the joined team passes the broker route prerequisites");
+  assert.equal(result.warnings.some(w => w.code === "joined-team-receive"), false);
 });
 
 const defects = [
@@ -856,7 +858,7 @@ test('legacy absent disk state preserves captured known joins and tolerates othe
   const result=fx.readiness();
   assert.equal(result.status,'ready',JSON.stringify(result));
   assert.ok(result.warnings.some(w=>w.code==='receive-ownership-unproven'));
-  assert.ok(result.warnings.some(w=>w.code==='joined-team-receive'));
+  assert.equal(result.warnings.some(w=>w.code==='joined-team-poll-only'),false);assert.equal(result.warnings.some(w=>w.code==='joined-team-receive'),false);
   status.instances[0].receive_identities.find(r=>r.label==='alpha').stream_admitted=false;
   fx.fake.setStatus(status);
   assert.equal(fx.readiness().status,'unavailable','missing optional disk file does not erase captured joined failure');

@@ -105,6 +105,7 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "revoke") {
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "list") {
   if (process.env.FAKE_GRANT_LIST_FAIL) { console.error(process.env.FAKE_GRANT_LIST_FAIL); process.exit(1); }
+  if (process.env.FAKE_GRANT_LIST_SLEEP_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_GRANT_LIST_SLEEP_MS));
   const team = val("--team");
   console.log(j({ grants: grants().filter(g => !team || g.team_id === team) })); process.exit(0);
 }

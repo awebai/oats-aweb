@@ -57,6 +57,7 @@ import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parse
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { parseTimestamp } from "../lib/wake-receive.mjs";
+import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
@@ -97,8 +98,12 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env
     // the diagnosis anyone gets.
     const scrub = (t) => secrets.filter(Boolean).reduce((acc, sec) => acc.split(sec).join("<redacted>"), String(t ?? ""));
     const where = [argv[0], argv[1], argv[2]].filter((a) => a && !secrets.includes(a) && !a.startsWith("-")).join(" ");
-    const why = secretSafe ? "" : (scrub(e.stderr).trim() || (e.status === undefined ? String(e.code || "failed") : ""));
-    const err = new Error(`${where} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
+    // The outcome says how the child ended (a timeout or signal included), which
+    // is not its output, so even a secretSafe command reports it.
+    const outcome = childOutcome(e, timeout);
+    const output = secretSafe ? "" : scrub(e.stderr).trim();
+    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
+    err.outcome = outcome;
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
     err.stderr = scrub(e.stderr).trim();
@@ -474,7 +479,7 @@ async function ensureAw({ install, version }) {
   try { run(["npm", "install", "-g", pkg], process.cwd(), 300000); }
   catch (e) {
     const why = String(e.stderr || e.message || "").replace(/\s+/g, " ").trim().slice(0, 500);
-    return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}` };
+    return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} ${e.outcome || "failed"}${why ? `: ${why}` : ""}` };
   }
   const after = await awFloorMessage();
   if (after) return { status: "failed", code: "E_AW_FLOOR", detail: `npm install -g ${pkg} ran, but ${after}` };
@@ -755,8 +760,11 @@ function revokeOrNote(custody, grant) {
   try { revokeGrant(custody, grant.id); return ""; }
   catch (e) { return unrevokedNote(custody, grant, e); }
 }
-/** `aw id grant list` for the sweep, run in the resident's custody root. */
-const grantLister = (custody) => (argv) => run(argv, custody, 30000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+/** `aw id grant list` for the sweep, run in the resident's custody root. A start
+ *  waits at most aw's own 10 s client timeout for it, so an outage delays a start
+ *  by no more than that before it says it could not check; a retire waits longer. */
+const START_GRANT_LIST_TIMEOUT_MS = 10000, RETIRE_GRANT_LIST_TIMEOUT_MS = 30000;
+const grantLister = (custody, timeout) => (argv) => run(argv, custody, timeout, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
 /** The resident's custody root, or undefined when it cannot be resolved. */
 function residentCustodyOf(name) {
   const residents = settings.residents && typeof settings.residents === "object" && !Array.isArray(settings.residents) ? settings.residents : {};
@@ -801,7 +809,7 @@ function sweepAtStart(meta) {
   const custody = residentCustodyOf(String(identitySettings.resident || meta.identity.resident || ""));
   const team = meta.identity.team || defaultTeamId();
   if (!custody || !team) { outNotes.push("could not check for orphaned grants: the resident's custody or the team is not resolvable; this seat may hold grants that stay valid"); return; }
-  const swept = sweepSeatGrants({ list: grantLister(custody), revoke: (id) => revokeGrant(custody, id), custody, team, label: seatGrantLabel(instance, seat), keep: meta.identity.grant?.id });
+  const swept = sweepSeatGrants({ list: grantLister(custody, START_GRANT_LIST_TIMEOUT_MS), revoke: (id) => revokeGrant(custody, id), custody, team, label: seatGrantLabel(instance, seat), keep: meta.identity.grant?.id });
   if (!swept.checked) { outNotes.push(`could not check for orphaned grants (${swept.error}); this seat may hold grants that stay valid`); return; }
   for (const g of swept.revoked) outNotes.push(`revoked orphaned grant ${g.grant}`);
   for (const g of swept.remaining) outNotes.push(`orphaned grant ${g.grant} was not revoked (${g.error}), so ${unrevokedGrant(g)}`);
@@ -973,7 +981,7 @@ function globalGrantRetire(meta) {
   // Every active grant of this seat goes, the current one included; the
   // custody's list also finds a grant minted before a crash.
   const label = seat ? seatGrantLabel(instance, seat) : undefined;
-  const swept = seat ? sweepSeatGrants({ list: grantLister(custody), revoke: (grant) => revokeGrant(custody, grant), custody, team, label })
+  const swept = seat ? sweepSeatGrants({ list: grantLister(custody, RETIRE_GRANT_LIST_TIMEOUT_MS), revoke: (grant) => revokeGrant(custody, grant), custody, team, label })
     : { checked: false, revoked: [], remaining: [], grants: [], error: "this seat records no seat id" };
   const unrevoked = [...swept.remaining];
   // The sweep covers a current grant that carries this seat's label. One from
@@ -1961,7 +1969,7 @@ if (event === "launch") {
     let doc;
     try { doc = parseAwJson(run(argv, root, 60000), what); }
     catch (e) {
-      const why = e.status === undefined ? e.message : `${what} failed (exit ${e.status})${e.stderr ? `: ${e.stderr}` : ""}`;
+      const why = e.status == null ? e.message : `${what} ${e.outcome}${e.stderr ? `: ${e.stderr}` : ""}`;
       problems.push({ source, message: String(why || e).replace(/\s+/g, " ").trim().slice(0, 300) });
       return undefined;
     }
@@ -2114,7 +2122,7 @@ if (event === "launch") {
   const joinArgv = routedArgv(["setup", "--join", team.label, "--invite-stdin", "--name", alias, ...(service ? ["--service", service] : [])]);
   let joinFailure;
   try { run(joinArgv, process.cwd(), JOIN_TIMEOUT_MS + 120000, { input: `${token}\n`, secrets: [token] }); }
-  catch (e) { joinFailure = `oats aweb setup --join ${team.label} on ${serverId} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${e.stderr ? `: ${oneLine(e.stderr)}` : ""}`; }
+  catch (e) { joinFailure = `oats aweb setup --join ${team.label} on ${serverId} ${e.outcome || "failed"}${e.stderr ? `: ${oneLine(e.stderr)}` : ""}`; }
   finally { token = undefined; }
   if (joinFailure) fail("join", "E_JOIN_FAILED", joinFailure);
 

@@ -357,7 +357,6 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | Code | Meaning | Who fixes it |
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
-| `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
 | `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.32); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
@@ -423,6 +422,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
 | Released provider 1.24.0 (#87–#89, #91), OATS >=0.42 | Approved Claude channel route documented in section 4, and approved spawn, launch and readiness read the machine managed-settings policy (section 7 verdicts). Retire's recovery copy holds no provider home state ("What retire's recovery keeps" below); homes spawned on earlier providers are copied whole. |
 | Released provider 1.25.0, OATS >=0.42, aw >=1.36.32 | New grant seats never expire (`identity.ttl: never`; `identity: { ttl: 720h }` keeps a duration). Upgrade aw, restart every custody service and the wake daemon, then sync ("Upgrading a host to provider 1.25.0" below). One aw client floor, 1.36.32; the probe uses it too. Grant seats require the custody ops `grant_never_ttl.v1` (never ttl) and `mail_reply_continuation.v1` (E2EE). Seat-labelled grants are swept from the custody's grant list at every start and retire. `wake-daemon-outdated` is a warning. Readiness shows a grant's lifetime and unrevoked grants. |
+| Released provider 1.25.1, OATS >=0.42, aw >=1.36.32 | Readiness warns only about what someone must act on: no `joined-team-receive` for a joined team that receives live. A start waits at most 10 s for the custody grant list; an aw call that never exits is reported as timed out or by its code or signal. |
 | Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
