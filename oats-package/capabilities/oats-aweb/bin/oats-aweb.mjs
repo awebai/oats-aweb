@@ -42,6 +42,8 @@
  */
 import { inviteMain } from '../lib/invite.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'invite') process.exit(inviteMain(process.argv.slice(3)));
+import { residentMain } from '../lib/resident.mjs';
+if ((process.env.OATS_EVENT || process.argv[2]) === 'resident') process.exit(await residentMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
@@ -53,6 +55,7 @@ import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
+import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
@@ -341,128 +344,8 @@ const flagEq = (name, value) => `${name}=${String(value)}`;
 function assertNotFlag(value, what) {
   if (String(value || "").startsWith("-")) throw new Error(`${what} must not start with '-'`);
 }
-const yamlQuote = (value) => JSON.stringify(String(value));
-function blockEnd(lines, start, indent) {
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) if (lines[i].trim() && !lines[i].startsWith(" ".repeat(indent + 1))) { end = i; break; }
-  return end;
-}
-function ensureYamlBlock(lines, parentStart, parentEnd, indent, header) {
-  const row = `${" ".repeat(indent)}${header}:`;
-  for (let i = parentStart + 1; i < parentEnd; i++) if (lines[i].trimEnd() === row) return i;
-  lines.splice(parentEnd, 0, row);
-  return parentEnd;
-}
-function atomicWrite(file, text) {
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = join(dirname(file), `.${basenameForTemp(file)}.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(tmp, text, { mode: 0o600 });
-  renameSync(tmp, file);
-}
-function basenameForTemp(file) { return file.split(/[\\/]/).pop() || "oats-local.yaml"; }
-function unsupportedLocalYaml(file, detail, team, rootDir) {
-  throw new Error(`${file}: cannot safely update settings.oats.aweb.roots automatically (${detail}); add this line by hand under block-style settings.oats.aweb.roots: ${yamlQuote(team)}: ${yamlQuote(rootDir)}`);
-}
-function findBlockHeader(lines, start, end, indent, names) {
-  const pad = " ".repeat(indent);
-  for (let i = start; i < end; i++) {
-    const line = lines[i];
-    if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    if (!line.startsWith(pad) || line.startsWith(pad + " ")) continue;
-    const trimmed = line.slice(indent).trimEnd();
-    for (const name of names) if (trimmed === `${name}:`) return i;
-    for (const name of names) if (trimmed.startsWith(`${name}:`)) return { unsupported: i, line };
-  }
-  return -1;
-}
-function assertAwebRootSettingRecordable(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
-  const file = join(start, "oats-local.yaml");
-  if (!existsSync(file)) return;
-  const lines = readFileSync(file, "utf8").split(/\r?\n/);
-  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
-  if (typeof settings === "object") unsupportedLocalYaml(file, `line ${settings.unsupported + 1} is not a block-style settings: mapping`, team, rootDir);
-  if (settings < 0) return;
-  const settingsEnd = blockEnd(lines, settings, 0);
-  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
-  if (typeof aweb === "object") unsupportedLocalYaml(file, `line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`, team, rootDir);
-  if (aweb < 0) return;
-  const awebEnd = blockEnd(lines, aweb, 2);
-  const roots = findBlockHeader(lines, aweb + 1, awebEnd, 4, ["roots"]);
-  if (typeof roots === "object") unsupportedLocalYaml(file, `line ${roots.unsupported + 1} is not a block-style roots: mapping`, team, rootDir);
-}
-function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
-  const file = join(start, "oats-local.yaml");
-  const existed = existsSync(file);
-  const lines = existed ? readFileSync(file, "utf8").split(/\r?\n/) : ["schemaVersion: 2", "workspace: local"];
-  while (lines.length && lines.at(-1) === "") lines.pop();
-  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
-  if (typeof settings === "object") unsupportedLocalYaml(file, `line ${settings.unsupported + 1} is not a block-style settings: mapping`, team, rootDir);
-  if (settings < 0) { lines.push("settings:"); settings = lines.length - 1; }
-  let settingsEnd = blockEnd(lines, settings, 0);
-  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
-  if (typeof aweb === "object") unsupportedLocalYaml(file, `line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`, team, rootDir);
-  if (aweb < 0) { aweb = ensureYamlBlock(lines, settings, settingsEnd, 2, "oats.aweb"); settingsEnd++; }
-  let awebEnd = blockEnd(lines, aweb, 2);
-  let roots = findBlockHeader(lines, aweb + 1, awebEnd, 4, ["roots"]);
-  if (typeof roots === "object") unsupportedLocalYaml(file, `line ${roots.unsupported + 1} is not a block-style roots: mapping`, team, rootDir);
-  if (roots < 0) { roots = ensureYamlBlock(lines, aweb, awebEnd, 4, "roots"); awebEnd++; }
-  const rootsEnd = blockEnd(lines, roots, 4);
-  const key = yamlQuote(team), value = yamlQuote(rootDir), row = `      ${key}: ${value}`;
-  // The public kernel serializer may wrap a scalar value and may choose a
-  // plain or single-quoted canonical-team key. Replace the entire scalar entry,
-  // not just its first line, so a tokenless resume remains valid YAML.
-  const keys = [key, team, "'" + team + "'"];
-  // Identify the key/delimiter before examining the value. Empty or unsupported
-  // tails must refuse, not disappear from duplicate detection.
-  const matches = lines.flatMap((line, index) => {
-    if (index <= roots || index >= rootsEnd || !line.startsWith("      ") || line.startsWith("       ")) return [];
-    const entry = line.slice(6);
-    for (const candidate of keys) {
-      if (!entry.startsWith(candidate)) continue;
-      const delimiter = /^[ \t]*:(.*)$/.exec(entry.slice(candidate.length));
-      if (delimiter) return [{ index, tail: delimiter[1] }];
-    }
-    return [];
-  });
-  if (matches.length > 1) unsupportedLocalYaml(file, "duplicate root key", team, rootDir);
-  if (matches.length) {
-    const { index: existing, tail } = matches[0];
-    if (tail && !/^[ \t]/.test(tail)) unsupportedLocalYaml(file, "unsupported root delimiter", team, rootDir);
-    const scalar = tail.trimStart();
-    let end = existing + 1, comment = "";
-    if (scalar.startsWith('"') || scalar.startsWith("'")) {
-      const quote = scalar[0];
-      let closed = false, escaped = false;
-      for (let i = existing; i < rootsEnd && !closed; i++) {
-        if (i > existing && (!lines[i].startsWith("       ") || !lines[i].trim() || lines[i].trimStart().startsWith("#"))) break;
-        const part = i === existing ? scalar.slice(1) : lines[i].trimStart();
-        for (let j = 0; j < part.length; j++) {
-          const char = part[j];
-          if (quote === '"' && escaped) { escaped = false; continue; }
-          if (quote === '"' && char === "\\") { escaped = true; continue; }
-          if (char !== quote) continue;
-          if (quote === "'" && part[j + 1] === "'") { j++; continue; }
-          const tail = part.slice(j + 1).trim();
-          if (tail && !tail.startsWith("#")) unsupportedLocalYaml(file, "ambiguous root scalar", team, rootDir);
-          comment = tail; closed = true; end = i + 1; break;
-        }
-        // A YAML backslash at end of line escapes the line break, not the
-        // first character on the next line.
-        escaped = false;
-      }
-      if (!closed) unsupportedLocalYaml(file, "unterminated or unsupported root scalar", team, rootDir);
-    } else {
-      if (!scalar || scalar.startsWith("#") || scalar === "null" || scalar === "~" || /^[|>&*!{[]/.test(scalar)) unsupportedLocalYaml(file, "unsupported root scalar", team, rootDir);
-      comment = scalar.match(/\s+(#.*)$/)?.[1] || "";
-    }
-    // Never consume another setting, nested mapping or comment as a scalar.
-    if (end < rootsEnd && lines[end].trim() && !lines[end].trimStart().startsWith("#") && lines[end].startsWith("       ")) {
-      unsupportedLocalYaml(file, "ambiguous root continuation", team, rootDir);
-    }
-    lines.splice(existing, end - existing, row + (comment ? " " + comment : ""));
-  } else lines.splice(rootsEnd, 0, row);
-  atomicWrite(file, `${lines.join("\n")}\n`);
-}
+const assertAwebRootSettingRecordable = (team, rootDir, options) => assertAwebSettingRecordable("roots", team, rootDir, options);
+const recordAwebRootSetting = (team, rootDir, options) => recordAwebSetting("roots", team, rootDir, options);
 function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label)); }
 
 /** What `npm install -g @awebai/aw@<spec>` may be given: an exact version, or a ^/~ range. */

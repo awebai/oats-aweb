@@ -359,7 +359,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
-| `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.32); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
+| `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
 | `channel-dev-confirmation` | the home runs in development mode, so Claude may stop at its development-channels confirmation; mode is not consent | operator: move the host to section 4's approved route and respawn; as fallback, section 4's exact-home opt-in (qualified only for Claude 2.1.289 darwin-arm64) or separately authorized human intervention; no provider/broker/ordinary-agent keys |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
@@ -367,7 +367,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-enrollment-unverified` | approved mode, admission not established. No machine file, unreadable, or an unsupported platform (launch and readiness; providers up to 1.23.2 warned this at every approved launch without reading the policy) | admin: section 4 host step 1 (or the higher managed source); then section 4's startup check and the nonce exchange |
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
-| `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. A never-ttl grant seat needs its custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs `mail_reply_continuation.v1`. "required custody operations are missing: <op>" for either means the custody runs code older than aw 1.36.32. "custody status could not be read" means it could not be asked | human; for a missing op, restart the custody on aw 1.36.32 or later (upgrade aw, restart the custody service and the wake daemon, then `oats sync`) |
+| `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. A never-ttl grant seat needs its custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs `mail_reply_continuation.v1`. "required custody operations are missing: <op>" for either means the custody runs code older than aw 1.36.32, where those ops arrived; the remedy names the client floor, 1.36.33. "custody status could not be read" means it could not be asked | human; for a missing op, restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then `oats sync`) |
 | `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
 | `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
 | `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
@@ -423,7 +423,8 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Released provider 1.24.0 (#87–#89, #91), OATS >=0.42 | Approved Claude channel route documented in section 4, and approved spawn, launch and readiness read the machine managed-settings policy (section 7 verdicts). Retire's recovery copy holds no provider home state ("What retire's recovery keeps" below); homes spawned on earlier providers are copied whole. |
 | Released provider 1.25.0, OATS >=0.42, aw >=1.36.32 | New grant seats never expire (`identity.ttl: never`; `identity: { ttl: 720h }` keeps a duration). Upgrade aw, restart every custody service and the wake daemon, then sync ("Upgrading a host to provider 1.25.0" below). One aw client floor, 1.36.32; the probe uses it too. Grant seats require the custody ops `grant_never_ttl.v1` (never ttl) and `mail_reply_continuation.v1` (E2EE). Seat-labelled grants are swept from the custody's grant list at every start and retire. `wake-daemon-outdated` is a warning. Readiness shows a grant's lifetime and unrevoked grants. |
 | Released provider 1.25.1, OATS >=0.42, aw >=1.36.32 | Readiness warns only about what someone must act on: no `joined-team-receive` for a joined team that receives live. A start waits at most 10 s for the custody grant list; an aw call that never exits is reported as timed out or by its code or signal. |
-| Future provider #56 / #58 / #60 | Token-only setup, resident registration wrapper and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
+| Released provider 1.26.0, OATS >=0.42, aw >=1.36.33 | `oats aweb resident create <name>` creates or adopts a GLOBAL resident in an existing hosted team from the dashboard's API key, installs its per-user custody unit and records `residents.<name>` ("GLOBAL residents and grant seats" below). One aw client floor, 1.36.33. |
+| Future provider #56 / #60 | Token-only setup and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
 `T` = canonical `name:namespace` team ID, `H` = selected instance home,
@@ -614,18 +615,33 @@ inventory and pending renewal unknown;
 unavailable inventory is not no authority or readiness. This grants no automatic
 installation/relaunch permission and does not expand LOCAL app access.
 
+**Create or adopt a resident: one command** (provider 1.26.0, aw >=1.36.33).
+Run the dashboard's line in D:
+
+```text
+AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label <label>] [--plan] [--json]
+```
+
+| Act | Writes / success / one next step | Error → remedy |
+|---|---|---|
+| Create, continue or adopt resident `<name>` in R (`D/.aweb-residents/<name>`, or `--root`) | One `aw init --global` run whose environment is built from nothing, the key in it only; a per-user custody unit `ai.aweb.custody.<namespace>.<name>` (launchd on macOS, systemd --user on Linux) running `aw custody serve` in R; `settings.oats.aweb.residents.<name>`. Success: `PASS resident <address> team <id> custody running`. Next: `oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=<name>` (the seat's default team must be the resident's: `--team-label` maps it). | `FAIL <stage>: …`: an init failure is aw's own text, "rerun" only when aw kept a partial; `E_RESIDENT_LINGER` → an admin runs `loginctl enable-linger <user>`; `E_RESIDENT_UNIT_CONFLICT` → remove the named unit or choose another name; `E_RESIDENT_CUSTODY_RUNNING` (the resident's custody already runs, started by hand or another supervisor) → `aw custody stop` in R or stop that supervisor, then rerun. |
+
+With no `AWEB_API_KEY` it asks for the key on the terminal without echo; with
+no key and no terminal it refuses. A rerun after a failure continues aw's
+partial (the same DID); a rerun after success only verifies. Its stages,
+envelopes, unit controls and what CI proves are in the package's
+`docs/resident-create.md`. Plain-aw users keep the dashboard's plain command.
+
 Read [A GLOBAL resident in an existing hosted team](references/existing-team-global-resident.md)
-for the fresh/reuse card, versioned commands, protected output, diagnostic and
-custody checkpoints. Setup has no `--global`; GLOBAL spawn consumes a provisioned
-resident and creates a scoped worker grant. Worker home has no root key; it is
-not keyless. LOCAL root/spawn-authority diagnostics are never a GLOBAL gate.
-#58's future registration path is not installed here; it is intended to expose
-one onboarding command plus one printed host step until service-manager integration,
-not automatic daemon startup. Wider-team grant extension remains unsupported #60.
+for what the command checks, the plain-aw path and the custody checkpoints.
+Setup has no `--global`; GLOBAL spawn consumes a provisioned resident and
+creates a scoped worker grant. Worker home has no root key; it is not keyless.
+LOCAL root/spawn-authority diagnostics are never a GLOBAL gate. Wider-team
+grant extension remains unsupported #60.
 
 ### Connecting a deployment on another machine
 
-Released provider 1.21.0/1.21.1; the provider aw floor applies (1.36.32 since provider 1.25.0). Prerequisites: the operator
+Released provider 1.21.0/1.21.1; the provider aw floor applies (1.36.33 since provider 1.26.0). Prerequisites: the operator
 has completed `oats server connect`, selected the registered server and its mapped
 hosted default team, and has local invite authority for that team. Run from the
 local deployment D, outside an instance session; the selected kernel routes
@@ -661,7 +677,7 @@ check or permission inferred from onboarding.
 
 | Act / context | Exact command in D | Writes / success / one next step | Emitted error or template → remedy |
 |---|---|---|---|
-| Install missing, unreadable-version or below-floor aw; retain `--soul S` for outside-session dispatch | `oats aweb setup --install-aw [--aw-version <v>] --soul S` | Runs `npm install -g @awebai/aw@<v>` (default `^1.36.32`), rechecks the 1.36.32 floor, then continues ordinary setup. At/above floor, skips npm even with a version supplied. Success: usable aw and the selected setup's own success predicate. Next: follow that setup card's one next step. | `npm install -g <package> failed ...` (`E_AW_INSTALL` in check-only JSON) → operator resolves npm/access failure before retry; `npm install -g <package> ran, but ...` (`E_AW_FLOOR`) → resolve PATH/version so the selected aw meets the floor. |
+| Install missing, unreadable-version or below-floor aw; retain `--soul S` for outside-session dispatch | `oats aweb setup --install-aw [--aw-version <v>] --soul S` | Runs `npm install -g @awebai/aw@<v>` (default `^1.36.33`), rechecks the 1.36.33 floor, then continues ordinary setup. At/above floor, skips npm even with a version supplied. Success: usable aw and the selected setup's own success predicate. Next: follow that setup card's one next step. | `npm install -g <package> failed ...` (`E_AW_INSTALL` in check-only JSON) → operator resolves npm/access failure before retry; `npm install -g <package> ran, but ...` (`E_AW_FLOOR`) → resolve PATH/version so the selected aw meets the floor. |
 
 `<v>` accepts an exact version or `^`/`~` range; `--aw-version` requires
 `--install-aw`. This option does not promise an upgrade of an already-usable CLI
@@ -677,6 +693,14 @@ yet: its owner runs oats aweb setup, then commits the id, or choose another defa
 workspace doesn't allow local teams`. Next: `/oats-teams` owns mapping/default
 policy. Plain setup creates nothing for that unmapped committed/shared default.
 
+### Upgrading a host to provider 1.26.0 (aw 1.36.33 floor)
+
+Upgrade aw to 1.36.33 or later on the host, restart the host wake daemon (aw
+1.36.33 writes its status atomically only once restarted) and every resident
+custody service, then `oats sync` to provider 1.26.0. Below the floor, every
+path refuses with the wording below. Provider 1.26.0 adds
+`oats aweb resident create` ("GLOBAL residents and grant seats" above).
+
 ### Upgrading a host to provider 1.25.0 (aw 1.36.32 floor)
 
 1. **New grant seats never expire.** A GLOBAL seat spawned on 1.25.0 gets a
@@ -690,18 +714,19 @@ policy. Plain setup creates nothing for that unmapped committed/shared default.
    `oats sync` to provider 1.25.0.** A running custody or daemon keeps its old
    code, and its old ops, until it restarts. In the other order a grant seat
    fails readiness and spawn with "required custody operations are missing:
-   <op>; restart the custody on aw 1.36.32 or later (upgrade aw, restart the
+   <op>; restart the custody on aw 1.36.33 or later (upgrade aw, restart the
    custody service and the wake daemon, then oats sync)", and readiness warns
    `wake-daemon-outdated` (section 7).
 
 Every path that refuses an older aw says the same thing: `aw <installed> is
-older than required 1.36.32; upgrade with \`npm i -g @awebai/aw@latest\` (or
-\`npm i -g @awebai/aw@1.36.32\`)`. aw 1.36.31 lets an agent reply to a sender
-outside its team roster (a dashboard human in aweb Cloud's agent chat); aw
-1.36.32 mints grants that never expire.
+older than required 1.36.33; upgrade with \`npm i -g @awebai/aw@latest\` (or
+\`npm i -g @awebai/aw@1.36.33\`)` (1.36.33 from provider 1.26.0). aw 1.36.31
+lets an agent reply to a sender outside its team roster (a dashboard human in
+aweb Cloud's agent chat); aw 1.36.32 mints grants that never expire.
 
-A LOCAL seat needs aw >= 1.36.32. A grant seat needs the worker's aw **and** the
-running resident custody at >= 1.36.32: readiness and the mint preflight
+A LOCAL seat needs the aw floor. A grant seat needs the worker's aw **and** a
+running resident custody with the ops aw 1.36.32 brought (the client floor
+itself is 1.36.33): readiness and the mint preflight
 require the custody to list `grant_never_ttl.v1` for a never-ttl seat and
 `mail_reply_continuation.v1` for an E2EE seat (the default). These are op
 probes, not version checks. A seat with an explicit duration does not need the
@@ -753,7 +778,7 @@ need exact identity/thread/nonce proof and an exact-ID re-read. No key setup,
 ack, terminal input or retry of an uncertain send occurs. PASS proves one
 observed round trip, not model presentation, isolated model time or future wakes.
 
-Before sending, admission requires the provider aw floor (1.36.32; the probe was
+Before sending, admission requires the provider aw floor (1.36.33; the probe was
 source-qualified at aw 1.36.28) and an unauthenticated exact
 selected hosted origin `/meta` observation with build.aweb_version >=1.27.12.
 Only https://app.aweb.ai is qualified; missing/unsupported versions or ambiguous

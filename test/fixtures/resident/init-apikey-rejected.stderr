@@ -1,0 +1,1 @@
+partial_init_reconciliation_required: rejected signing material at /private/tmp/oats-resident-capture/rejected/.aw/partial-init.yaml.20261010T000000.000000000Z.1.rejected; use a different directory for a new identity or obtain operator reconciliation; rejected material is never restored automatically

@@ -5,7 +5,7 @@
 // readiness warning, not a problem; and an E2EE grant seat (the default)
 // requires its running custody to report `mail_reply_continuation.v1`.
 //
-// Fake aw shapes: `aw version` ("aw 1.36.32" then commit/built lines) comes from
+// Fake aw shapes: `aw version` (the version line, then commit/built lines) follows
 // the real npm @awebai/aw@1.36.32 (commit df6bb193), and the not-running
 // `aw custody status --json` shape from the real aw 1.36.31 binary (2f77ffdb).
 // A running custody's ops are derived from the aw source at df6bb193
@@ -29,13 +29,13 @@ import { PROBE_RELEASE_SUPPORT } from "../oats-package/capabilities/oats-aweb/li
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
 const TEAM = "t:example.test";
-const INSTALL = "`npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.32`)";
-const OLD_AW = "aw 1.36.31 is older than required 1.36.32; upgrade with " + INSTALL;
+const INSTALL = "`npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.33`)";
+const OLD_AW = "aw 1.36.31 is older than required 1.36.33; upgrade with " + INSTALL;
 // A 1.36.32 custody without encryption keys lists only these.
 const SIGNING_OPS = ["status.v1", "sign_plain_message.v1", "sign_app_request.v1", "grant_never_ttl.v1"];
 const OPS_1_36_32 = [...SIGNING_OPS, "create_e2ee_envelope.v1", "unwrap_e2ee_message.v1", "mail_reply_continuation.v1"];
 const OPS_WITHOUT_CONTINUATION = OPS_1_36_32.filter(op => op !== "mail_reply_continuation.v1");
-const CONTINUATION_REMEDY = "required custody operations are missing: mail_reply_continuation.v1; restart the custody on aw 1.36.32 or later (upgrade aw, restart the custody service and the wake daemon, then oats sync)";
+const CONTINUATION_REMEDY = "required custody operations are missing: mail_reply_continuation.v1; restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then oats sync)";
 
 function tempDir(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-125-")));
@@ -72,11 +72,11 @@ function readiness(bin, settings, context, env = {}) {
 
 // ------------------------------------------------------------------ the floor
 
-test("one client floor: AW_MIN is 1.36.32, and the probe and the manifest use it", () => {
-  assert.equal(AW_MIN, "1.36.32");
+test("one client floor: AW_MIN is 1.36.33, and the probe and the manifest use it", () => {
+  assert.equal(AW_MIN, "1.36.33");
   assert.equal(PROBE_RELEASE_SUPPORT.cliFloor, AW_MIN);
   const manifest = JSON.parse(readFileSync(new URL("../oats-package/capabilities/oats-aweb/oats.json", import.meta.url), "utf8"));
-  assert.match(manifest.requires.find(r => r.command === "aw").why, /^aw >= 1\.36\.32: .*replies to senders outside the team roster, and grants that never expire$/);
+  assert.match(manifest.requires.find(r => r.command === "aw").why, /^aw >= 1\.36\.33: .*replies to senders outside the team roster, grants that never expire, and resident creation with oats aweb resident create$/);
 });
 
 test("readiness refuses aw below the floor naming the installed version, the floor and the install command", (t) => {
@@ -118,10 +118,10 @@ test("a missing or unreadable aw names the floor and the install command", (t) =
   const empty = join(base, "empty-bin"); mkdirSync(empty);
   const context = { kind: "workspace", workspace: root, deployment: root, soul: "dev", home };
   let result = readiness(empty, { root, delivery: "session" }, context, { PATH: empty });
-  assert.ok(result.problems.some(p => p.message === `aw CLI not on PATH; install aw >= 1.36.32 with ${INSTALL}`), JSON.stringify(result));
+  assert.ok(result.problems.some(p => p.message === `aw CLI not on PATH; install aw >= 1.36.33 with ${INSTALL}`), JSON.stringify(result));
   const unreadable = join(base, "unreadable-bin"); write(join(unreadable, "aw"), "#!/bin/sh\nexit 42\n"); spawnSync("chmod", ["755", join(unreadable, "aw")]);
   result = readiness(unreadable, { root, delivery: "session" }, context);
-  assert.ok(result.problems.some(p => p.message === `aw version could not be read; install aw >= 1.36.32 with ${INSTALL}`), JSON.stringify(result));
+  assert.ok(result.problems.some(p => p.message === `aw version could not be read; install aw >= 1.36.33 with ${INSTALL}`), JSON.stringify(result));
 });
 
 // ------------------------------------------------------- the host wake daemon
@@ -131,9 +131,9 @@ const expected = { home: "/nonexistent/home", runtimeDelivery: "external-session
 
 test("a wake daemon below the floor is the wake-daemon-outdated warning, and the target row is still assessed", () => {
   const assessed = targetReceiveAssessment(reported("1.36.31"), expected, { minimumVersion: AW_MIN });
-  assert.deepEqual(assessed.warnings, [{ code: "wake-daemon-outdated", message: "host wake daemon is running 1.36.31; required 1.36.32: upgrade aw, then restart the host wake daemon" }]);
+  assert.deepEqual(assessed.warnings, [{ code: "wake-daemon-outdated", message: "host wake daemon is running 1.36.31; required 1.36.33: upgrade aw, then restart the host wake daemon" }]);
   assert.deepEqual(assessed.problems.map(p => p.code), ["wake-target-missing"], "assessment continues past the version to the target row");
-  assert.deepEqual(targetReceiveAssessment(reported("1.36.32"), expected, { minimumVersion: AW_MIN }).warnings, []);
+  assert.deepEqual(targetReceiveAssessment(reported("1.36.33"), expected, { minimumVersion: AW_MIN }).warnings, []);
 });
 
 test("a wake daemon that is not running or reports no version is still a problem", () => {

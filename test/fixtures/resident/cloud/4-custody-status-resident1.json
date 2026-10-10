@@ -1,0 +1,39 @@
+{
+  "status": "running",
+  "service_id": "2fc3ee2b-1030-471a-955e-9222e468e1c9",
+  "socket_path": "/private/tmp/chatwalk/abqy3/r1/cwd/.aw/run/custody.sock",
+  "resident": {
+    "did_aw": "did:aw:3u52PeUJ7mCp1nJfgANEtcKmUK3N",
+    "did_key": "<redacted>",
+    "address": "juan.dev.aweb.test/resident1",
+    "alias": "resident1"
+  },
+  "teams": [
+    {
+      "certificate_loadable": true,
+      "certificate_present": true,
+      "grant_status_endpoint_ready": true,
+      "ready": true,
+      "team_id": "default:juan.dev.aweb.test"
+    }
+  ],
+  "keys":<redacted>
+    "encryption_key_id": "<redacted>",
+    "encryption_ready": true,
+    "signing_ready":<redacted>
+  },
+  "ops": [
+    "status.v1",
+    "sign_plain_message.v1",
+    "sign_app_request.v1",
+    "grant_never_ttl.v1",
+    "create_e2ee_envelope.v1",
+    "unwrap_e2ee_message.v1",
+    "mail_reply_continuation.v1"
+  ],
+  "freshness": {
+    "last_checked_at": "2026-10-10T17:34:13Z",
+    "max_cache_age_seconds": 30,
+    "source": "identity-grants"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "address": "fixture-6400.test/carol",
+  "alias": "carol",
+  "custody": "self",
+  "did": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6",
+  "domain": "fixture-6400.test",
+  "identity_scope": "global",
+  "inbound_configurable": true,
+  "inbound_mode": "open",
+  "inbound_mode_label": "All",
+  "name": "carol",
+  "stable_id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY"
+}

@@ -1,0 +1,11 @@
+version: 1
+did_key: <redacted>
+stable_id: did:aw:GuYiHXyKNuvga8T9Vp1kpkqasiy
+signing_key_b64: <redacted>
+name: resident2
+aweb_url: http://localhost:18001
+registry_url: http://localhost:28910
+human_name: Resident Two
+agent_type: agent
+api_key_fingerprint: <redacted>
+created_at: "2026-10-10T17:32:31Z"

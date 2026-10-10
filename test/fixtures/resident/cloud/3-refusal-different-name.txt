@@ -1,0 +1,1 @@
+partial API-key init state at /private/tmp/chatwalk/abqy3/r2/cwd/.aw/partial-init.yaml was created for a different bootstrap context (name "resident2" != "resident2b"); retry the original command or remove the file explicitly

@@ -9,7 +9,7 @@ LOCAL-member output captures are separately identified below.
 The [maintainer declaration](https://github.com/awebai/oats-aweb/issues/57#issuecomment-6077900224)
 sets probe-only CLI 1.36.28 and server 1.27.12. The probe was source-qualified
 at aw 1.36.28, recorded below. From provider 1.25.0 the probe's CLI floor is the
-provider's single aw floor (1.36.32), which is above it; the server floor stays
+provider's single aw floor (1.36.33 from provider 1.26.0), which is above it; the server floor stays
 1.27.12. The qualified hosted origin is `https://app.aweb.ai`; its current
 version must be observed at execution.
 
@@ -201,8 +201,8 @@ aw 1.36.27
 ```
 
 These are read-shape captures at 1.36.27, not a 1.36.28 installed/send-support
-claim. The probe's send floor was 1.36.28 and is the provider aw floor (1.36.32)
-from provider 1.25.0. Exact commands, with locators
+claim. The probe's send floor was 1.36.28 and is the provider aw floor from
+provider 1.25.0 (1.36.33 from provider 1.26.0). Exact commands, with locators
 redacted, all exited 0:
 
 ```sh

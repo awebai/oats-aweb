@@ -1,0 +1,11 @@
+{
+  "address": "juan.dev.aweb.test/resident1",
+  "alias": "resident1",
+  "aweb_url": "http://localhost:18001/api",
+  "identity_scope": "global",
+  "name": "resident1",
+  "stable_id": "did:aw:3u52PeUJ7mCp1nJfgANEtcKmUK3N",
+  "status": "connected",
+  "team_id": "default:juan.dev.aweb.test",
+  "workspace_id": "e40209ce-93a8-43e7-89f9-b742ed4a6f60"
+}

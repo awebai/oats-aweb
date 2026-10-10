@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.25.1",
+  "version": "1.26.0",
   "compatibility": {
     "oats": ">=0.42.0"
   },
@@ -11,7 +11,7 @@
   "requires": [
     {
       "command": "aw",
-      "why": "aw >= 1.36.32: identity minting at spawn, self-delete at retire, live receive registration, onboarding, all agent messaging, replies to senders outside the team roster, and grants that never expire",
+      "why": "aw >= 1.36.33: identity minting at spawn, self-delete at retire, live receive registration, onboarding, all agent messaging, replies to senders outside the team roster, grants that never expire, and resident creation with oats aweb resident create",
       "install": "https://aweb.ai/docs (aw CLI)"
     },
     {
@@ -75,6 +75,7 @@
     "join": "bin/oats-aweb.mjs join",
     "leave": "bin/oats-aweb.mjs leave",
     "invite": "bin/oats-aweb.mjs invite",
+    "resident": "bin/oats-aweb.mjs resident",
     "probe": "bin/oats-aweb-probe.mjs"
   },
   "binding": {

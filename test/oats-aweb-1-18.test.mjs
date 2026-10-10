@@ -404,7 +404,7 @@ test("readiness warns on an outdated wake daemon for a codex channel home and st
   fx.record(fx.spawn().meta, "codex");
   const result = fx.readiness();
   assert.equal(result.problems.some((p) => p.code === "wake-daemon-outdated"), false, JSON.stringify(result));
-  assert.match(result.warnings.find((w) => w.code === "wake-daemon-outdated").message, /running 1\.36\.6; required 1\.36\.32: upgrade aw, then restart the host wake daemon/);
+  assert.match(result.warnings.find((w) => w.code === "wake-daemon-outdated").message, /running 1\.36\.6; required 1\.36\.33: upgrade aw, then restart the host wake daemon/);
   assert.deepEqual(result.problems.map((p) => p.code), ["wake-worker-unavailable"], "the target row is assessed past the version");
 });
 
@@ -508,7 +508,7 @@ for (const runtime of ["codex", "claude"]) test(`target readiness rejects daemon
   const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
   fx.record(fx.spawn().meta, runtime);
   const reg = fx.registered();
-  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.32", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "streaming" })) }] });
+  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.33", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "streaming" })) }] });
   assert.equal(fx.readiness().status, "unavailable");
 });
 

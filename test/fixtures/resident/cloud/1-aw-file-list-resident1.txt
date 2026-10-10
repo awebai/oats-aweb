@@ -1,0 +1,15 @@
+.aw
+.aw/context
+.aw/encryption-keys
+.aw/encryption-keys/sha256-<redacted>.assertion.json
+.aw/encryption-keys/sha256-<redacted>.x25519.key
+.aw/encryption.yaml
+.aw/encryption.yaml.lock
+.aw/identity.yaml
+.aw/run
+.aw/run/custody.sock
+.aw/signing.key
+.aw/team-certs
+.aw/team-certs/default__juan.dev.aweb.test.pem
+.aw/teams.yaml
+.aw/workspace.yaml

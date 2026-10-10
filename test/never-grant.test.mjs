@@ -26,7 +26,7 @@ const TEAM = "t:example.test";
 const NEVER_OP = "grant_never_ttl.v1";
 const ALL_OPS = ["status.v1", "sign_plain_message.v1", "sign_app_request.v1", NEVER_OP, "create_e2ee_envelope.v1", "unwrap_e2ee_message.v1", "mail_reply_continuation.v1"];
 const WITHOUT = (...ops) => ALL_OPS.filter(op => !ops.includes(op)).join(",");
-const RESTART = "restart the custody on aw 1.36.32 or later (upgrade aw, restart the custody service and the wake daemon, then oats sync)";
+const RESTART = "restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then oats sync)";
 const HTTP_422 = 'mint identity grant: aweb 422: {"detail":[{"type":"int_parsing","loc":["body","ttl_seconds"],"msg":"Input should be a valid integer, unable to parse string as an integer","input":"never"}]}';
 const HTTP_404 = 'mint identity grant: aweb 404: {"detail":"Not Found"}';
 

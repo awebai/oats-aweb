@@ -1,0 +1,2 @@
+POST /api/v1/workspaces/init returned 409: category=hosted_http_failure status=409 error_code=unknown <redacted> (response body omitted; remote effects unknown)
+rerun the same command in this directory; do not delete .aw/partial-init.yaml
