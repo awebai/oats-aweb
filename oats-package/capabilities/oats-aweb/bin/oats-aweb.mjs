@@ -861,6 +861,10 @@ function globalGrantSpawn() {
   if (existsSync(grantHome)) fatal(`${grantHome} already exists; refusing to overwrite an existing aweb session grant home`);
   const scopes = grantScopes();
   const seat = newSeatId();
+  // Once aw has been asked to mint, a grant with this seat's label may exist on
+  // the server even when no receipt arrives: every failure from here returns
+  // the seat, so the kernel's rollback retire sweeps the custody's list for it.
+  const seatMeta = () => startedMeta({ identity: identityMeta({ mode: "global", alias: resident, team, resident, seat }) });
   const preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), ttl, runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal });
   const custodySocket = requirePreflightCustodySocket(preflight);
   let meta;
@@ -870,7 +874,7 @@ function globalGrantSpawn() {
   // A failed mint call printed no receipt, so there is no grant to revoke.
   let raw;
   try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
-  catch (e) { cleanup(); fatal(`identity grant minting failed: ${e.message || e}`); }
+  catch (e) { cleanup(); fatal(`identity grant minting failed: ${e.message || e}`, seatMeta()); }
   try {
     let minted;
     try { minted = parseMintedGrant(raw, grantHome, ttl).minted; }
@@ -883,6 +887,7 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml`, unrevokedNote(custody, grant, revokeError)); }
       }
       cleanup();
+      meta = seatMeta();
       throw parseError;
     }
     const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome, ttl);
@@ -920,7 +925,7 @@ function globalGrantSpawn() {
     // The returned meta lets retire's compensation revoke a grant that survives.
     const survives = meta?.identity?.grant?.id ? revokeOrNote(custody, meta.identity.grant) : "";
     cleanup();
-    out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
+    out({ meta: meta || seatMeta(), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
   }
 }
 function globalGrantRetire(meta) {
@@ -931,12 +936,15 @@ function globalGrantRetire(meta) {
   const team = meta.identity?.team || defaultTeamId();
   // Every active grant of this seat goes, the current one included; the
   // custody's list also finds a grant minted before a crash.
-  const swept = seat ? sweepSeatGrants({ list: grantLister(custody), revoke: (grant) => revokeGrant(custody, grant), custody, team, label: seatGrantLabel(instance, seat) })
+  const label = seat ? seatGrantLabel(instance, seat) : undefined;
+  const swept = seat ? sweepSeatGrants({ list: grantLister(custody), revoke: (grant) => revokeGrant(custody, grant), custody, team, label })
     : { checked: false, revoked: [], remaining: [], grants: [], error: "this seat records no seat id" };
   const unrevoked = [...swept.remaining];
-  // The current grant, unless the sweep handled it or the list shows it is no longer active.
+  // The sweep covers a current grant that carries this seat's label. One from
+  // before seat labels, or one the list could not show, is revoked here unless
+  // the list says it is no longer active.
   const listed = swept.grants.find((g) => g.grant_id === id);
-  if (id && !swept.revoked.some((g) => g.grant === id) && !swept.remaining.some((g) => g.grant === id) && !(listed && listed.status !== "active")) {
+  if (id && !(listed && (listed.label === label || listed.status !== "active"))) {
     try { revokeGrant(custody, id); }
     catch (e) { unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, error: String(e.message || e).slice(0, 200) }); }
   }

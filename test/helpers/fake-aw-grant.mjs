@@ -84,8 +84,13 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "mint") {
   const subjectAlias = process.env.FAKE_GRANT_SUBJECT_ALIAS === "missing" ? null : (process.env.FAKE_GRANT_SUBJECT_ALIAS || "resident-alias");
   // aw 1.36.32 renders a never-grant's expiry as the string "never" (mint JSON and grant.yaml).
   const expires = process.env.FAKE_MINT_EXPIRES !== undefined ? process.env.FAKE_MINT_EXPIRES : (val("--ttl") === "never" ? "never" : "2026-09-24T07:00:00Z");
+  // A grant created on the server whose receipt is unreadable and whose grant home was never written.
+  if (process.env.FAKE_MINT_GARBAGE) { saveGrants([{ grant_id: grant, team_id: team, label: val("--label") || "", status: "active", expires_at: expires }, ...grants()]); console.log("minted, but no receipt"); process.exit(0); }
   fs.writeFileSync(path.join(out, "grant.yaml"), "version: 1\\ngrant_id: " + grant + "\\nteam_id: " + team + "\\nexpires_at: " + expires + "\\n" + (subjectAlias ? "subject:\\n  alias: " + subjectAlias + "\\n" : "") + (written ? "custody:\\n  socket_path: " + written + "\\n" : ""));
   saveGrants([{ grant_id: grant, team_id: team, label: val("--label") || "", status: "active", expires_at: expires }, ...grants()]);
+  // aw creates the grant on the server first, then writes the grant home: a
+  // failure there (or a timeout) exits 1 with the grant already live.
+  if (process.env.FAKE_MINT_FAIL_AFTER_REGISTER) { console.error(process.env.FAKE_MINT_FAIL_AFTER_REGISTER); process.exit(1); }
   const reply = { grant_id: grant, expires_at: expires, team_id: team, address: "oats.aweb.ai/resident-alias", out };
   if (process.env.FAKE_MINT_ALIAS !== "missing") reply.alias = process.env.FAKE_MINT_ALIAS || "resident-alias";
   if (process.env.FAKE_APP_INVENTORY) Object.assign(reply, JSON.parse(process.env.FAKE_APP_INVENTORY));

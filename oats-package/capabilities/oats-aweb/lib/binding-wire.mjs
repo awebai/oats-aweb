@@ -308,7 +308,7 @@ async function workspaceReadinessPhase(req) {
   }
   const receiveProblems=[];
   if(ctx.home) {
-    const expiry=grantExpiryAssessment(recordedStart(ctx.home).meta?.identity,{home:ctx.home,now});
+    const expiry=grantExpiryAssessment(recordedStart(ctx.home).meta?.identity,{home:ctx.home,now,configuredTtl:obj(req.settings.identity)?req.settings.identity.ttl:undefined});
     receiveProblems.push(...expiry.problems);warnings.push(...expiry.warnings);
   }
   // Preserve prerequisite diagnostics; receive evidence is meaningful only

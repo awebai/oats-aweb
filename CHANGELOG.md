@@ -101,18 +101,13 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   with a duration gets `grant-expiring` (warning) within 7 days of expiry,
   `grant-expired` (problem) at or after it, and `grant-expiry-unknown` (warning)
   when the record has no readable expiry. Each names the recorded instant and
-  that seat's remedy: `renew: launch` with a never or unrecorded ttl gets
-  "restart the seat to renew it (`oats session restart --home <home>`)"; a
-  duration, which a restart would mint again, gets "respawn the seat";
-  `renew: off`, where a restart keeps the grant, gets "respawn the seat (or set
-  `renew: launch` and respawn)". A grant minted before this release records
-  neither and gets a remedy true for both. LOCAL seats are unaffected.
-  neither and gets a remedy true for both: restart, or respawn if renew is off
-  or the ttl is short. LOCAL seats are unaffected.
-- Grant seats still default to `identity.ttl: 720h` and `identity.renew:
-  launch`, and every mint (spawn and renewing launch) passes an explicit
-  `--ttl`; tests now pin both. Non-expiring grants are not available yet: aw and
-  the aweb server cap a grant at 30 days (oats-aweb#80).
+  that seat's remedy: under `renew: launch`, "restart the seat to renew it
+  (`oats session restart --home <home>`)", unless the seat captured an
+  `identity.ttl` duration, which a restart would mint again: then "respawn the
+  seat"; under `renew: off`, where a restart keeps the grant, "respawn the seat
+  (or set `renew: launch` and respawn)". A grant minted before this release
+  records no renew mode and gets a remedy true for both: restart, or respawn if
+  renew is off or the ttl is short. LOCAL seats are unaffected.
 - `oats aweb setup --join <label>` on a workspace that forbids local team
   writes joins a second committed team under a different default with no team
   write: the join preserves that default, so the default command is not needed

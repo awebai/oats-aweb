@@ -327,6 +327,19 @@ test("retire revokes every active grant of the seat, and a failure lists each gr
   assert.deepEqual(active(s), []);
 });
 
+test("spawn: a mint that fails after the server created the grant returns the seat, and the rollback retire revokes the grant", (t) => {
+  for (const env of [{ FAKE_MINT_FAIL_AFTER_REGISTER: "write grant home: disk full" }, { FAKE_MINT_GARBAGE: "1" }]) {
+    const s = seat(t);
+    const r = s.spawn({}, env);
+    assert.notEqual(r.status, 0, JSON.stringify(env));
+    assert.match(r.doc.meta?.identity?.seat || "", /^[0-9a-f]{16}$/, "the seat reaches the kernel's rollback retire");
+    assert.deepEqual(active(s), ["grant-spawn"], "the grant is live on the server");
+    const rollback = s.retire(r.doc.meta);
+    assert.equal(rollback.status, 0, rollback.stdout + rollback.stderr);
+    assert.deepEqual(active(s), [], "the rollback retire found it by its label and revoked it");
+  }
+});
+
 test("spawn: a never-grant whose attachment or wake registration fails and cannot be revoked fails, named, with its seat in the meta", (t) => {
   for (const [env, settings] of [[{ FAKE_VERIFY_ERROR: "custody socket refused" }, {}], [{ FAKE_WAKE_REGISTER_FAIL: "1" }, { delivery: "session" }]]) {
     const s = seat(t);
@@ -356,12 +369,14 @@ test("readiness says a never-grant never expires, and never parses its expiry as
   }
 });
 
-test("the expiry remedy: a never or unrecorded ttl restarts, an explicit duration respawns", () => {
+test("the expiry remedy: a captured duration respawns; never, unset, or a recorded fallback 720h restarts", () => {
   const now = Date.parse("2026-10-10T02:00:00Z"), at = "2026-10-10T01:00:00Z";
-  const remedy = (grant) => grantExpiryAssessment({ mode: "global", grant: { id: "g", expiresAt: at, renew: "launch", ...grant } }, { home: "/h", now }).problems[0].message.slice(`grant g expired at ${at}: `.length);
-  assert.equal(remedy({ ttl: "never" }), "restart the seat to renew it (`oats session restart --home /h`)");
-  assert.equal(remedy({}), "restart the seat to renew it (`oats session restart --home /h`)");
-  for (const ttl of ["720h", "24h"]) assert.equal(remedy({ ttl }), `respawn the seat: it captured identity.ttl ${ttl}, which a restart would mint again`);
+  const remedy = (grant, configuredTtl) => grantExpiryAssessment({ mode: "global", grant: { id: "g", expiresAt: at, renew: "launch", ...grant } }, { home: "/h", now, configuredTtl }).problems[0].message.slice(`grant g expired at ${at}: `.length);
+  const restart = "restart the seat to renew it (`oats session restart --home /h`)";
+  assert.equal(remedy({ ttl: "never" }, undefined), restart);
+  assert.equal(remedy({}, "never"), restart);
+  assert.equal(remedy({ ttl: "720h" }, undefined), restart, "a pre-1.25.0 seat renewed at the fallback");
+  for (const ttl of ["720h", "24h"]) assert.equal(remedy({ ttl }, ttl), `respawn the seat: it captured identity.ttl ${ttl}, which a restart would mint again`);
 });
 
 // ------------------------------------------------- the real aw, read-only

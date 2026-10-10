@@ -77,15 +77,15 @@ The rest:
   duration gets `grant-expiring` (warning) within 7 days of expiry,
   `grant-expired` (problem; messaging unavailable) at or after it, and
   `grant-expiry-unknown` (warning) when no expiry can be read, never a guessed
-  one. Each names the instant as recorded and that seat's remedy, from the ttl
-  and renew mode the grant was minted with (`identity.grant.ttl`,
-  `identity.grant.renew`): with `renew: launch` and a never or unrecorded ttl,
-  "restart the seat to renew it (`oats session restart --home <home>`)"; with a
-  duration, which a restart would mint again, "respawn the seat"; with
-  `renew: off`, where a restart keeps the grant, "respawn the seat (or set
-  `renew: launch` and respawn)". A grant minted before 1.25.0 records neither
-  and gets: restart, or respawn if its renew is off or its ttl short. LOCAL
-  seats get none of these.
+  one. Each names the instant as recorded and that seat's remedy, from the
+  renew mode the grant recorded (`identity.grant.renew`) and the
+  `identity.ttl` the seat captured: under `renew: launch`, "restart the seat
+  to renew it (`oats session restart --home <home>`)", unless the seat captured
+  an `identity.ttl` duration, which a restart would mint again: then "respawn
+  the seat"; under `renew: off`, where a restart keeps the grant, "respawn the
+  seat (or set `renew: launch` and respawn)". A grant minted before 1.25.0
+  records no renew mode and gets: restart, or respawn if its renew is off or its
+  ttl short. LOCAL seats get none of these.
 
 ## 1.21.0 — connect a deployment on another machine
 

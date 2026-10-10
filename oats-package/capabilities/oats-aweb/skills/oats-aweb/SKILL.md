@@ -369,9 +369,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. A never-ttl grant seat needs its custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs `mail_reply_continuation.v1`. "required custody operations are missing: <op>" for either means the custody runs code older than aw 1.36.32. "custody status could not be read" means it could not be asked | human; for a missing op, restart the custody on aw 1.36.32 or later (upgrade aw, restart the custody service and the wake daemon, then `oats sync`) |
-| `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
-| `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
-| `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
+| `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or the seat captured an `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
+| `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or the seat captured an `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
+| `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or the seat captured an `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
 | `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
 | `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
 | `grant-never-expires` (informational, never-grant seats) | the seat's grant never expires: it ends only when revoked, at retire or by the resident's owner | nobody |
@@ -589,12 +589,13 @@ retire exits nonzero while a grant stays unrevoked or the list is unread.
 mint, asking neither aw nor custody: `grant-never-expires` for a never-grant;
 for a grant with a duration, `grant-expiring` within 7 days of its expiry,
 `grant-expired` once it has passed, and `grant-expiry-unknown` when the record
-has no readable expiry (section 7). The remedy follows the recorded ttl and renew
-mode: `renew: launch` with a never or unrecorded ttl restarts the seat
-(`oats session restart --home <home>`); a duration, which a restart would mint
-again, and `renew: off`, where a restart keeps the grant, respawn it. A grant
-minted before 1.25.0 records neither, and the message says to restart, or
-respawn if renew is off or the ttl short.
+has no readable expiry (section 7). The remedy follows the recorded renew mode
+and the captured `identity.ttl`: `renew: launch` restarts the seat
+(`oats session restart --home <home>`), unless the seat captured an
+`identity.ttl` duration, which a restart would mint again; that, and
+`renew: off`, where a restart keeps the grant, respawn it. A grant minted before
+1.25.0 records no renew mode, and the message says to restart, or respawn if
+renew is off or the ttl short.
 
 With the provider 1.23.2 composition (#76), install an app from
 the selected LOCAL or GLOBAL resident home: installation approves it for that
@@ -665,6 +666,13 @@ or the separate aw 1.36.24 feature floor. Add `--check-only --json` to return th
 aw/default-team/member/root check after authorized installation, without ordinary
 setup; installation still writes. Without `--install-aw`, a missing/old CLI check
 reports `needs-human` with the explicit installation remedy.
+
+**Readiness messages:** no default is exactly `no teams configured: run \`oats
+aweb setup\``. An unmapped default is `the default team <label> has no provider id
+yet: its owner runs oats aweb setup, then commits the id, or choose another default:
+\`oats teams default <label>\`, or \`defaultTeam:\` in oats-workspace.yaml when the
+workspace doesn't allow local teams`. Next: `/oats-teams` owns mapping/default
+policy. Plain setup creates nothing for that unmapped committed/shared default.
 
 ### Upgrading a host to provider 1.25.0 (aw 1.36.32 floor)
 
