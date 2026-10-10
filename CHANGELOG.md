@@ -2,6 +2,11 @@
 
 ## 1.26.0 — 2026-10-10
 
+**Host order, before syncing to this release:** upgrade aw to 1.36.33 or later,
+restart every resident custody service and the host wake daemon, then
+`oats sync`. A running custody or daemon keeps its old code until it is
+restarted.
+
 **`oats aweb resident create <name>`** makes a GLOBAL resident identity in an
 existing hosted team, serves it, and records it, from the aweb dashboard's
 line: `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name>`
@@ -13,7 +18,9 @@ line: `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name>`
   verified and adopted, a quarantined partial goes to aw for its own refusal,
   anything else is refused naming what is there. Also refused: a resident
   already recorded at another R, a custody unit of this name serving another
-  directory, and on Linux a user without systemd lingering (with the exact
+  directory, a complete identity whose custody already runs but not from this
+  command's unit (`E_RESIDENT_CUSTODY_RUNNING`: stop it, then rerun), and on
+  Linux a user without systemd lingering (with the exact
   `loginctl enable-linger <user>`).
 - **One init run.** Exactly `aw init --global --name <name>
   --do-not-touch-agents-md --json` in R, once, in an environment built from

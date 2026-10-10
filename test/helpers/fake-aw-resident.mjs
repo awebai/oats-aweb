@@ -44,7 +44,8 @@ ${body}`;
  *   both streams and fails, leaving nothing).
  * linger: "yes" | "no" (loginctl's answer).
  * custody: "ready" (running after the unit loads), "missing-ops" (running
- *   without the floor ops), "never" (never starts).
+ *   without the floor ops), "never" (never starts), "elsewhere" (already
+ *   running, started by hand or by another supervisor, with no unit of ours).
  */
 export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true } = {}) {
   const bin = join(base, "bin");
@@ -71,6 +72,7 @@ if (argv[0] === "whoami") replay(f["whoami"]);
 if (argv[0] === "doctor" && argv[1] === "identity") replay(f["doctor-identity-offline"]);
 if (argv[0] === "doctor" && argv[1] === "registry") replay(f["doctor-registry-online"]);
 if (argv[0] === "custody" && argv[1] === "status") {
+  if (state.custody === "elsewhere") replay(f["custody-status-running"]);
   if (!flag("unit-loaded") || state.custody === "never") replay(f["custody-status-not-running"]);
   replay(state.custody === "missing-ops" ? state.missingOps : f["custody-status-running"]);
 }

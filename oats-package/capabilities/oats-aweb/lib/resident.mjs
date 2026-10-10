@@ -18,7 +18,7 @@ import { parseAwJson } from "./grant-custody.mjs";
 import { assertAwebSettingRecordable, recordAwebSetting } from "./local-settings.mjs";
 import { selectedTeamKernel } from "./setup-team-default.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
-import { conflictMessage, custodyLabel, ensureCustodyUnit, handStep, lingerProblem, residentUnits, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
+import { conflictMessage, custodyLabel, ensureCustodyUnit, handStep, lingerProblem, ownUnitServes, residentUnits, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
 
 export const RESIDENT_USAGE = "usage: AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]";
 const ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -282,9 +282,21 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
     catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
     if (opts.teamLabel && needsInit(state)) preflightTeamLabel(deployment, env, opts.teamLabel);
+    // A complete identity may already be served by a custody someone started
+    // by hand or under another supervisor. A unit started beside it would
+    // restart in a loop (aw refuses a second server on a socket that answers),
+    // while that other custody answered the readiness check.
+    const known = state === "adopt" ? expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami", "preflight"), name, []) : undefined;
+    if (known && manager) {
+      const label = custodyLabel(known.address, name);
+      let running = false;
+      try { running = parseAwJson(read(["custody", "status", "--json"]), "aw custody status")?.status === "running"; } catch { /* unreadable is not running here */ }
+      if (running && !ownUnitServes({ platform, label, root, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME, uid: process.getuid(), env })) {
+        throw failure("E_RESIDENT_CUSTODY_RUNNING", "preflight", `custody for ${name} is already running in ${root}, and not from this command's unit ${label}: run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`);
+      }
+    }
 
     if (opts.plan) {
-      const known = state === "adopt" ? expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami", "preflight"), name, []) : undefined;
       const label = known ? custodyLabel(known.address, name) : `ai.aweb.custody.<domain of the returned address>.${name}`;
       return {
         outcome: "plan", name, root, state,
@@ -329,7 +341,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
       identity = checkInitAnswer(answer, name);
     } else {
-      identity = expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami"), name, []);
+      identity = known;
     }
 
     // ---- verify, with the key absent

@@ -66,6 +66,7 @@ const cases = {
     run: (s) => s.run(["create", NAME, "--json"]),
   },
   custody: { fake: { custody: "missing-ops" }, run: (s) => s.run(["create", NAME, "--json"]) },
+  "custody-running": { fake: { custody: "elsewhere" }, prepare: complete, run: (s) => s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }) },
 };
 
 for (const [name, c] of Object.entries(cases)) {

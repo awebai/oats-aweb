@@ -478,3 +478,32 @@ test("the command opens no file under .aw: it lists names and reruns aw, whose f
   }
   assert.equal(adopted.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }).doc.result.outcome, "adopted");
 });
+
+test("a custody already running with no unit of ours is refused before any effect, in a run and in --plan", (t) => {
+  // A resident started by hand or by another supervisor: a unit started beside
+  // it would restart in a loop against its socket, while that custody answers.
+  const s = setup(t, { custody: "elsewhere" });
+  mkdirSync(join(s.root, ".aw"), { recursive: true });
+  for (const f of ["identity.yaml", "signing.key", "workspace.yaml"]) writeFileSync(join(s.root, ".aw", f), "");
+  const message = `custody for ${NAME} is already running in ${s.root}, and not from this command's unit ${LABEL}: run \`aw custody stop\` in ${s.root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
+  for (const args of [["create", NAME, "--json"], ["create", NAME, "--plan", "--json"]]) {
+    const r = s.run(args, {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.equal(r.doc.error.code, "E_RESIDENT_CUSTODY_RUNNING");
+    assert.equal(r.doc.error.details.stage, "preflight");
+    assert.equal(r.doc.error.message, message);
+  }
+  assert.equal(existsSync(s.unitPath), false);
+  const started = s.fake.calls().filter((c) => ["launchctl", "systemctl"].includes(c.cmd) && !["print", "is-active", "show-environment"].includes(c.argv[0] === "--user" ? c.argv[1] : c.argv[0]));
+  assert.deepEqual(started, [], "no bootstrap, load or enable");
+  assert.doesNotMatch(s.localYaml(), /residents/);
+});
+
+test("a custody served by this command's own unit is re-ensured, not refused", (t) => {
+  const s = setup(t);
+  assert.equal(s.run(["create", NAME]).status, 0);
+  assert.ok(s.fake.loaded());
+  const r = s.run(["create", NAME, "--json"], { OATS_SETTINGS: JSON.stringify({ residents: { [NAME]: s.root } }) }, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.result.outcome, "already-exists");
+});

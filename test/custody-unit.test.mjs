@@ -112,6 +112,13 @@ WantedBy=default.target
   assert.throws(() => renderUnit({ platform: "linux", label: LABEL, aw: "/a\nb", root: "/r", path: "/p", home: "/h", address: "x/alice" }), /contains a control character/);
 });
 
+test("systemd: a $ in ExecStart is escaped as $$; Environment= keeps it, since systemd does not expand $ there", () => {
+  const text = renderUnit({ platform: "linux", label: LABEL, aw: "/opt/a$b/aw", root: "/srv/r$x", path: "/opt/a$b:/usr/bin", home: "/home/$me", address: "juan.aweb.ai/alice" });
+  assert.match(text, /^ExecStart="\/opt\/a\$\$b\/aw" custody serve$/m);
+  assert.match(text, /^Environment="PATH=\/opt\/a\$b:\/usr\/bin" "HOME=\/home\/\$me"$/m);
+  assert.match(text, /^WorkingDirectory=\/srv\/r\$x$/m);
+});
+
 test("residentUnits finds every unit of a name, with the directory it serves", (t) => {
   const home = base(t);
   for (const platform of ["darwin", "linux"]) {

@@ -48,7 +48,9 @@ export function unitPath(where, label) {
 
 const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 const unXml = (s) => String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
-/** systemd expands % specifiers in every setting used here. */
+/** systemd expands % specifiers in every setting used here. It also expands
+ *  $ variables in ExecStart= (written $$ for a literal $), but not in
+ *  Environment= values, where $ has no special meaning (systemd.exec(5)). */
 const systemdValue = (s) => String(s).replace(/%/g, "%%");
 const systemdQuoted = (s) => `"${systemdValue(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
@@ -97,7 +99,7 @@ Description=aweb custody for resident ${systemdValue(address)}
 Type=simple
 WorkingDirectory=${systemdValue(root)}
 Environment=${systemdQuoted(`PATH=${path}`)} ${systemdQuoted(`HOME=${home}`)}
-ExecStart=${systemdQuoted(aw)} custody serve
+ExecStart=${systemdQuoted(aw).split("$").join("$$")} custody serve
 Restart=on-failure
 RestartSec=5
 
@@ -204,6 +206,20 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
     }
   }
   return { manager, label, path, changed };
+}
+
+/** Whether this command's own unit serves R now: its file at the expected
+ *  path for the label, serving R, and loaded by the user's manager. */
+export function ownUnitServes({ platform, label, root, home, xdgConfigHome, uid, env }) {
+  const manager = unitManager(platform);
+  if (!manager) return false;
+  const path = unitPath({ platform, home, xdgConfigHome }, label);
+  let served;
+  try { served = servedRoot(platform, readFileSync(path, "utf8")); } catch { return false; }
+  if (!served || !samePath(served, root)) return false;
+  return manager === "launchd"
+    ? manage(env, "launchctl", ["print", `gui/${uid}/${label}`]).ok
+    : manage(env, "systemctl", ["--user", "is-active", `${label}.service`]).ok;
 }
 
 /** What an operator runs where OATS writes no unit. */

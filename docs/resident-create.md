@@ -12,8 +12,10 @@ aw 1.36.33 or later (the provider's single floor).
 AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]
 ```
 
-This is the line the aweb dashboard gives, with the team's key. Run it in the
-OATS deployment (or pass `--dir`).
+This is the line the aweb dashboard gives, with the team's key. Run it from
+the OATS deployment directory (or pass `--dir`). Run inside an instance home,
+the kernel hands the command that home's recorded settings instead of the
+deployment's.
 
 - `AWEB_API_KEY` is the team's provisioning key. When it is not in the
   environment and the command runs on a terminal, it asks for the key without
@@ -42,7 +44,7 @@ OATS deployment (or pass `--dir`).
 | arguments | Parses the command line. | None. |
 | deployment | Finds the deployment and its `oats-local.yaml`. | None. |
 | aw | `aw version` must be 1.36.33 or later. | None. |
-| preflight | Reads R and the custody units; on Linux, `loginctl show-user <user> --property=Linger`; with `--team-label` before an init, the kernel's teams. | None, local or remote. |
+| preflight | Reads R and the custody units; on Linux, `loginctl show-user <user> --property=Linger`; with `--team-label` before an init, the kernel's teams; for a complete identity, `aw whoami --json` and `aw custody status --json` in R. | None, local or remote. |
 | key | Takes the key from `AWEB_API_KEY`, or the prompt. | None. |
 | init | Exactly `aw init --global --name <name> --do-not-touch-agents-md --json` in R, once. | aw registers the identity at awid and asks aweb to create it in the key's team. |
 | verify | `aw whoami --json` (adopting only), `aw doctor identity --offline --json` and `aw doctor registry --online --json` in R. | None. |
@@ -59,6 +61,7 @@ decides from what R holds:
 | `.aw/partial-init.yaml` (an earlier init that failed part way) | init continues it: aw reuses the saved key, so the DID is the same |
 | `.aw/partial-init.yaml.<time>.<n>.rejected` (aw quarantined the key) | init runs once, and aw refuses with its own reconciliation message; there is no rerun |
 | a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or a pure verify when it is already recorded |
+| a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 
 **Verify** fails unless aw init's answer shows `status: connected`,
@@ -119,8 +122,12 @@ a rerun from another shell finds the unit unchanged and leaves it running. Its l
 where `<namespace>` is the address's (`juan.aweb.ai` for
 `juan.aweb.ai/alice`). It never serves a grant home and copies no keys.
 
-The unit is idempotent: a re-run leaves an unchanged unit as it is and loads it
-if it is not running. R reached through a symlink is the same directory. A unit of that label that serves another directory is
+A custody that already serves R, started by hand or by another supervisor, is
+refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): aw refuses a second
+server on a socket that answers, so a unit started beside it would restart in
+a loop while the other custody answered. Stop it (`aw custody stop` in R, or
+stop whatever supervises it), then rerun. The unit is idempotent: a re-run
+leaves an unchanged unit as it is and loads it if it is not running. R reached through a symlink is the same directory. A unit of that label that serves another directory is
 refused, naming both, and so is any `ai.aweb.custody.*.<name>` unit that
 serves another directory, before any init.
 
@@ -184,6 +191,7 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_ROOT` | preflight | R holds something else, or the name is recorded at another R |
 | `E_RESIDENT_UNIT_CONFLICT` | preflight, custody | a custody unit of this name serves another directory |
 | `E_RESIDENT_LINGER` | preflight | Linux user without systemd lingering |
+| `E_RESIDENT_CUSTODY_RUNNING` | preflight | a custody already serves R, and not from this command's unit |
 | `E_RESIDENT_RECORD` | preflight, record | `oats-local.yaml` cannot be updated safely |
 | `E_RESIDENT_KEY` | key | no key and no terminal, an empty answer, or a malformed key |
 | `E_RESIDENT_INIT` | init | aw init failed; aw's text |
@@ -545,6 +553,24 @@ An offline identity check that is not ok (here, no identity at all):
         "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
         "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
       ]
+    }
+  }
+}
+```
+
+A custody already running, started by hand, when adopting:
+
+<!-- envelope: custody-running -->
+```json
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_RESIDENT_CUSTODY_RUNNING",
+    "message": "custody for carol is already running in /srv/deploy/.aweb-residents/carol, and not from this command's unit ai.aweb.custody.acme.aweb.ai.carol: run `aw custody stop` in /srv/deploy/.aweb-residents/carol (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it",
+    "details": {
+      "stage": "preflight",
+      "root": "/srv/deploy/.aweb-residents/carol"
     }
   }
 }
