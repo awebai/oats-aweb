@@ -4,42 +4,14 @@
 // aw 1.36.33 captures (test/fixtures/resident); see helpers/fake-aw-resident.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { CAPTURED, fakeResidentAw, fixture } from "./helpers/fake-aw-resident.mjs";
+import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
+import { AWEB_URL, HOOK, KEY, LABEL, NAME, initCalls, setup } from "./helpers/resident-harness.mjs";
 import { fakeKernelTeamConfig } from "./helpers/fake-kernel-team-config.mjs";
 
-const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
-const KEY = "aw_sk_unit_KEYVALUE_5f3c9e";
-const NAME = CAPTURED.name;
-const DOMAIN = CAPTURED.address.split("/")[0];
-const LABEL = `ai.aweb.custody.${DOMAIN}.${NAME}`;
-const AWEB_URL = "http://127.0.0.1:18000";
-
-function setup(t, fakeOptions = {}, { localYaml = "schemaVersion: 2\nworkspace: local\n" } = {}) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-resident-")));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
-  const deployment = join(base, "deploy"), home = join(base, "home");
-  mkdirSync(deployment); mkdirSync(home);
-  writeFileSync(join(deployment, "oats-local.yaml"), localYaml);
-  const fake = fakeResidentAw(base, fakeOptions);
-  const env = { PATH: `${fake.bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, OATS_TEAM_SCOPE: deployment, OATS_SETTINGS: "{}", AWEB_URL, AWEB_API_KEY: KEY };
-  const root = join(deployment, ".aweb-residents", NAME);
-  const run = (args = [], extraEnv = {}, { unset = [] } = {}) => {
-    const runEnv = { ...env, ...extraEnv };
-    for (const k of unset) delete runEnv[k];
-    const started = Date.now();
-    const r = spawnSync(process.execPath, [HOOK, "resident", ...args], { env: runEnv, cwd: deployment, encoding: "utf8", input: "", timeout: 60000 });
-    let doc; try { doc = JSON.parse(r.stdout.trim().split("\n").at(-1)); } catch { doc = undefined; }
-    return { ...r, doc, ms: Date.now() - started };
-  };
-  const unitPath = process.platform === "darwin" ? join(home, "Library", "LaunchAgents", `${LABEL}.plist`) : join(home, ".config", "systemd", "user", `${LABEL}.service`);
-  return { base, deployment, home, root, env, fake, run, unitPath, localYaml: () => readFileSync(join(deployment, "oats-local.yaml"), "utf8") };
-}
-const initCalls = (fake) => fake.calls().filter((c) => c.cmd === "aw" && c.argv[0] === "init");
 function filesUnder(dir) {
   const out = [];
   const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = join(d, e.name); if (e.isDirectory()) walk(p); else if (e.isFile()) out.push(p); } };
