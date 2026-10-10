@@ -374,7 +374,6 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or the seat captured an `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
 | `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
 | `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
-| `grant-never-expires` (informational, never-grant seats) | the seat's grant never expires: it ends only when revoked, at retire or by the resident's owner | nobody |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
 **Errors from `oats aweb join|leave|roster`:**
@@ -588,8 +587,8 @@ previous grant and starts on it; only a failed first mint at spawn fails. A
 retire exits nonzero while a grant stays unrevoked or the list is unread.
 
 `oats readiness --home H --json` reads the grant recorded at the seat's last
-mint, asking neither aw nor custody: `grant-never-expires` for a never-grant;
-for a grant with a duration, `grant-expiring` within 7 days of its expiry,
+mint, asking neither aw nor custody. A never-grant gets no lifetime diagnostic
+(the agent's brief says it never expires); for a grant with a duration, `grant-expiring` within 7 days of its expiry,
 `grant-expired` once it has passed, and `grant-expiry-unknown` when the record
 has no readable expiry (section 7). The remedy follows the recorded renew mode
 and the captured `identity.ttl`: `renew: launch` restarts the seat

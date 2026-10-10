@@ -74,8 +74,9 @@ The rest:
   expired fails by design ("source sender key is missing, expired or invalid;
   ask them to send a new message"): ask them to send a new message.
 - **Grant lifetime in readiness.** Readiness reads a grant seat's recorded grant
-  and asks neither aw nor custody. A never-grant gets the informational
-  `grant-never-expires`; its `"never"` is never read as a date. A grant with a
+  and asks neither aw nor custody. A never-grant, the healthy default, gets no
+  lifetime diagnostic (readiness has no informational channel; the brief says it
+  never expires), and its `"never"` is never read as a date. A grant with a
   duration gets `grant-expiring` (warning) within 7 days of expiry,
   `grant-expired` (problem; messaging unavailable) at or after it, and
   `grant-expiry-unknown` (warning) when no expiry can be read, never a guessed

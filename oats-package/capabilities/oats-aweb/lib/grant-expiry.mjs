@@ -30,15 +30,16 @@ export function grantExpiryRemedy(home, grant, configuredTtl) {
 
 const shown = value => value === undefined ? 'absent' : JSON.stringify(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 80);
 
-/** {problems, warnings} for the recorded `identity`: `grant-never-expires`
- *  (informational) for a never-grant, whose expiry is never read as a date;
- *  `grant-expired` at or after an expiry, `grant-expiring` within 7 days of
- *  it, and `grant-expiry-unknown` when none can be read. Nothing for a seat
- *  without a grant. */
+/** {problems, warnings} for the recorded `identity`: `grant-expired` at or
+ *  after an expiry, `grant-expiring` within 7 days of it, and
+ *  `grant-expiry-unknown` when none can be read. Nothing for a never-grant,
+ *  whose expiry is never read as a date (the healthy default: readiness has no
+ *  informational channel, so the brief says it never expires), and nothing for
+ *  a seat without a grant. */
 export function grantExpiryAssessment(identity, {home, now, configuredTtl}) {
   const grant = identity?.mode === 'global' ? identity.grant : undefined;
   if (!grant || typeof grant !== 'object' || typeof grant.id !== 'string') return {problems: [], warnings: []};
-  if (grant.expiresAt === 'never') return {problems: [], warnings: [{code: 'grant-never-expires', message: `grant ${grant.id} never expires: it ends only when revoked (at retire, or by the resident's owner)`}]};
+  if (grant.expiresAt === 'never') return {problems: [], warnings: []};
   const remedy = grantExpiryRemedy(home, grant, configuredTtl), expiresAt = grant.expiresAt, at = parseTimestamp(expiresAt);
   if (Number.isNaN(at)) return {problems: [], warnings: [{code: 'grant-expiry-unknown', message: `grant ${grant.id} has no readable expiry (recorded expiresAt: ${shown(expiresAt)}), so readiness does not know when it expires: ${remedy}`}]};
   if (at <= now) return {problems: [{code: 'grant-expired', message: `grant ${grant.id} expired at ${expiresAt}: ${remedy}`}], warnings: []};

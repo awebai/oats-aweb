@@ -100,8 +100,11 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   closed (`grant_scope_denied`). A late reply to a human whose key in the
   original message has expired fails by design: ask them to send a new message.
 - Grant lifetime in readiness, from the grant recorded at a grant seat's last
-  mint (no aw or custody call). A never-grant gets the informational
-  `grant-never-expires`, and the agent's brief says it never expires. A grant
+  mint (no aw or custody call). A never-grant, the healthy default, gets no
+  lifetime diagnostic (readiness has no informational channel: the kernel
+  accepts only status, problems and warnings, and Desktop and doctor count
+  warnings); the agent's brief says it never expires, and its "never" is never
+  read as a date. A grant
   with a duration gets `grant-expiring` (warning) within 7 days of expiry,
   `grant-expired` (problem) at or after it, and `grant-expiry-unknown` (warning)
   when the record has no readable expiry. Each names the recorded instant and

@@ -404,11 +404,13 @@ test("spawn: a never-grant whose team mismatches and cannot be revoked says it s
 
 // ------------------------------------------------------------ readiness
 
-test("readiness says a never-grant never expires, and never parses its expiry as a date", () => {
+test("readiness gives a never-grant no lifetime diagnostic and never parses its expiry as a date", () => {
   const identity = (grant) => ({ mode: "global", resident: "merlin", grant: { id: "grant-1", scopes: ["mail.read"], ...grant } });
-  const now = Date.parse("2026-10-10T02:00:00Z");
-  for (const grant of [{ expiresAt: "never", ttl: "never", renew: "launch" }, { expiresAt: "never" }]) {
-    assert.deepEqual(grantExpiryAssessment(identity(grant), { home: "/h", now }), { problems: [], warnings: [{ code: "grant-never-expires", message: "grant grant-1 never expires: it ends only when revoked (at retire, or by the resident's owner)" }] });
+  // At any instant, far past or far future, a never-grant is neither expiring, expired nor unknown.
+  for (const now of [Date.parse("2026-10-10T02:00:00Z"), Date.parse("2126-10-10T02:00:00Z"), 0]) {
+    for (const grant of [{ expiresAt: "never", ttl: "never", renew: "launch" }, { expiresAt: "never" }, { expiresAt: "never", ttl: "720h", renew: "off" }]) {
+      assert.deepEqual(grantExpiryAssessment(identity(grant), { home: "/h", now, configuredTtl: "24h" }), { problems: [], warnings: [] });
+    }
   }
 });
 
