@@ -1,0 +1,14 @@
+Doctor: ok
+Mode:   online
+Path:   /private/tmp/chatwalk/abqy3/r1/cwd
+Checks:
+  [info] doctor.contract.v1 — Doctor output contract is available.
+  [ok] awid.did.resolve — Global did:aw resolves at awid.
+  [ok] awid.did.current_key_matches_local — awid current did:key matches local identity did.
+  [ok] awid.did.encryption_key_matches_local — awid published E2E encryption key matches the local identity.
+  [ok] awid.did.log_verifies — DID audit log verifies.
+  [ok] awid.address.resolve — Global address resolves under caller authority.
+  [ok] awid.address.matches_local_stable_id — Registered address did:aw matches local stable_id.
+  [ok] awid.address.current_key_matches_local — Registered address current did:key matches local identity did.
+  [ok] awid.address.delivery_origin — Registered address has a federated delivery origin.
+  [ok] awid.address.reverse_listing — Reverse address listing includes the local address.

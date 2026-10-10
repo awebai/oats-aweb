@@ -1,0 +1,16 @@
+Doctor: ok
+Mode:   offline
+Path:   /private/tmp/chatwalk/abqy3/r1/cwd
+Checks:
+  [info] doctor.contract.v1 — Doctor output contract is available.
+  [ok] identity.local.context — Global identity.yaml parsed successfully.
+  [ok] identity.local.identity_scope — Identity is global.
+  [ok] identity.local.did_key_format — Identity did:key is syntactically valid.
+  [ok] identity.local.signing_key_matches_did — Local signing key matches identity did.
+  [ok] identity.e2ee.encryption_state — Local E2E encryption key state has an active key.
+  [ok] identity.e2ee.private_key — Local E2E encryption private key matches the active key id.
+  [ok] identity.e2ee.assertion — Local E2E encryption-key assertion verifies under the identity signing key.
+  [ok] identity.e2ee.assertion_published — Local E2E encryption-key assertion was recorded as published.
+  [ok] identity.local.stable_id_expected — Global identity stable_id is present.
+  [ok] identity.local.address_expected — Global identity address is present.
+  [ok] identity.local.registry_url_source — Explicit awid registry URL is available.

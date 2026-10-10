@@ -622,9 +622,10 @@ the answer.
 | aw's refusal when `AWID_REGISTRY_URL` changes, passed through unchanged | CI: the same journeys |
 | Adopting a complete identity, a real custody unit (systemd --user on Linux, launchd on macOS) until custody is ready, and a pure-verify rerun | CI: the same journeys (macOS when run locally) |
 | The child environment, argv, the prompt, refusals, the unit files, the custody op checks, the envelopes | Unit tests replaying real aw 1.36.33 captures (`test/resident-create.test.mjs`, `test/custody-unit.test.mjs`, `test/resident-docs.test.mjs`) |
+| The hosted init's success answer, the trees a success and a killed run leave, and two hosted refusals that keep the partial (a different `--name`; a name taken since, aweb's 409) | Unit tests replaying aweb's captures from its local Cloud preview (`test/resident-cloud-captures.test.mjs`) |
 | A complete create from the API key | Only the joint E2E: aweb Cloud's `/api/v1/workspaces/init` is not in the OSS stack |
 | Continuing a partial to a complete identity | Only the joint E2E |
-| A quarantined (`.rejected`) partial made by aw | Only the joint E2E (unit tests replay aw's real refusal of one) |
+| A quarantined (`.rejected`) partial made by aw | No stack: aw makes one only when aweb answers with a different identity than it registered, which no honest server does. Unit tests replay aw's real refusal of a quarantine file |
 | A customer-held (BYOT) team's refusal | Only the joint E2E, once aw's preflight is released |
 | A seat spawned on the resident, and mail | Only the joint E2E |
 

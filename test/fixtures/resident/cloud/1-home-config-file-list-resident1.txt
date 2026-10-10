@@ -1,0 +1,4 @@
+.config
+.config/aw
+.config/aw/workspaces.yaml
+.config/aw/workspaces.yaml.lock

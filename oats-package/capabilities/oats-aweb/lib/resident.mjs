@@ -171,6 +171,10 @@ function expectFields(what, doc, name, fields) {
   return { address: doc.address, stableId: doc.stable_id, ...(fields.includes("team_id") ? { team: doc.team_id } : {}) };
 }
 
+/** aw init's answer: a connected global identity named `name` in a canonical
+ *  team, with a stable id and an address. */
+export const checkInitAnswer = (doc, name) => expectFields("aw init", doc, name, ["status", "team_id"]);
+
 /** Every offline identity check must be ok: with no identity at all, aw's
  *  doctor answers status ok with each check `info`. */
 function identityDoctor(doc, name) {
@@ -312,7 +316,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       let answer;
       try { answer = parseAwJson(stdoutText, "aw init"); }
       catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
-      identity = expectFields("aw init", answer, name, ["status", "team_id"]);
+      identity = checkInitAnswer(answer, name);
     } else {
       identity = expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami"), name, []);
     }
