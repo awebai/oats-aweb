@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.25.1 — 2026-10-10
 
 - Readiness no longer reports `joined-team-receive`: a joined team that
   receives live needs no action (awebai/oats#881). Its receive mode stays in
