@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -413,4 +413,28 @@ test("--team-label already mapped to another team is refused at the record stage
   assert.equal(r.status, 1);
   assert.equal(r.doc.error.code, "E_RESIDENT_TEAM_LABEL");
   assert.equal(r.doc.error.message, `team label residents already maps to default:other.example, not ${CAPTURED.team}; choose another --team-label`);
+});
+
+test("Linux without systemd lingering stops before any init with the exact admin command", (t) => {
+  if (process.platform !== "linux") { t.skip("lingering is systemd's, on Linux"); return; }
+  const s = setup(t, { linger: "no" });
+  const user = userInfo().username;
+  const r = s.run(["create", NAME, "--json"]);
+  assert.equal(r.status, 1);
+  assert.equal(r.doc.error.code, "E_RESIDENT_LINGER");
+  assert.equal(r.doc.error.message, `systemd lingering is off for ${user}, so the custody unit would stop when ${user} logs out: an administrator runs \`loginctl enable-linger ${user}\`, then rerun`);
+  assert.deepEqual(initCalls(s.fake), []);
+  assert.equal(existsSync(s.root), false);
+});
+
+test("--plan on a complete identity names the exact unit and needs no key", (t) => {
+  const s = setup(t);
+  mkdirSync(join(s.root, ".aw"), { recursive: true });
+  for (const f of ["identity.yaml", "signing.key", "workspace.yaml"]) writeFileSync(join(s.root, ".aw", f), "");
+  const r = s.run(["create", NAME, "--plan"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.split("\n")[0], `Plan for resident ${NAME} in ${s.root} (adopt). Nothing was changed.`);
+  assert.ok(r.stdout.includes(`unit ${LABEL} at ${s.unitPath}`), r.stdout);
+  assert.doesNotMatch(r.stdout, /init:/);
+  assert.equal(existsSync(s.unitPath), false);
 });
