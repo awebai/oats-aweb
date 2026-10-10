@@ -853,11 +853,15 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   docker-compose.e2e.yml up -d --build --wait postgres redis awid aweb`, then set
   `OATS_RESIDENT_JOURNEY_AW` (an aw 1.36.33 executable),
   `OATS_RESIDENT_JOURNEY_AWEB_URL=http://127.0.0.1:18000` and
-  `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`. Its adopt journey
-  loads a real custody unit for a random test namespace (launchd on macOS,
-  systemd --user on Linux, which needs lingering and `XDG_RUNTIME_DIR`) and
-  removes it afterwards. CI's `resident-journey` job runs it with
-  `OATS_RESIDENT_JOURNEY_REQUIRED=1`.
+  `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`, and
+  `OATS_RESIDENT_JOURNEY_KERNEL` (a checkout of an OATS kernel with
+  `teams-conditional-default`, its dependencies installed with `npm ci`). Its
+  adopt journeys load a real custody unit for a random test namespace (launchd
+  on macOS, systemd --user on Linux, which needs lingering and
+  `XDG_RUNTIME_DIR`) and remove it afterwards. The last three run the printed
+  next steps through that kernel in a fixture workspace: the spawn mints a real
+  grant at the resident's custody, and the retire revokes it. CI's
+  `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`.
 - When aw's output contract changes, refresh the fixtures with
   `test/fixtures/resident/capture.sh <aw> <scratch dir>` against the same stack,
   and update its README's version, commit and date.
