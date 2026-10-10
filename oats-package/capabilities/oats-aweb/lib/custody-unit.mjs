@@ -208,18 +208,40 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
   return { manager, label, path, changed };
 }
 
-/** Whether this command's own unit serves R now: its file at the expected
- *  path for the label, serving R, and loaded by the user's manager. */
-export function ownUnitServes({ platform, label, root, home, xdgConfigHome, uid, env }) {
+/** The pid of a unit's running process, or undefined when it is not running.
+ *  Loaded is not running: a KeepAlive or Restart= unit that keeps exiting is
+ *  loaded (launchd "spawn scheduled", systemd activating/auto-restart). */
+function runningPid(manager, env, uid, label) {
+  if (manager === "launchd") {
+    const r = manage(env, "launchctl", ["print", `gui/${uid}/${label}`]);
+    // The job's own state and pid are its top-level (one-tab) lines.
+    if (!r.ok || !/^\tstate = running$/m.test(r.stdout)) return undefined;
+    return Number(/^\tpid = (\d+)$/m.exec(r.stdout)?.[1]) || undefined;
+  }
+  const r = manage(env, "systemctl", ["--user", "show", "-p", "ActiveState,SubState,MainPID", `${label}.service`]);
+  if (!r.ok) return undefined;
+  const value = (key) => new RegExp(`^${key}=(.*)$`, "m").exec(r.stdout)?.[1];
+  if (value("ActiveState") !== "active" || value("SubState") !== "running") return undefined;
+  return Number(value("MainPID")) || undefined;
+}
+
+/** Whether this command's own unit is what serves R: its file at the
+ *  expected path for the label, serving R, its process running, and that
+ *  process the one that owns the custody socket. {serves, why}. */
+export function ownUnitServes({ platform, label, root, home, xdgConfigHome, uid, env, socketPath }) {
   const manager = unitManager(platform);
-  if (!manager) return false;
+  if (!manager) return { serves: false, why: "no unit of this command on this platform" };
   const path = unitPath({ platform, home, xdgConfigHome }, label);
   let served;
-  try { served = servedRoot(platform, readFileSync(path, "utf8")); } catch { return false; }
-  if (!served || !samePath(served, root)) return false;
-  return manager === "launchd"
-    ? manage(env, "launchctl", ["print", `gui/${uid}/${label}`]).ok
-    : manage(env, "systemctl", ["--user", "is-active", `${label}.service`]).ok;
+  try { served = servedRoot(platform, readFileSync(path, "utf8")); } catch { return { serves: false, why: "no unit of this command serves it" }; }
+  if (!served || !samePath(served, root)) return { serves: false, why: "no unit of this command serves it" };
+  const pid = runningPid(manager, env, uid, label);
+  if (!pid) return { serves: false, why: "its process is not running" };
+  const owners = manage(env, "lsof", ["-t", socketPath]);
+  if (owners.missing) return { serves: false, why: "lsof is not available to tell which process owns the custody socket" };
+  const pids = owners.ok ? owners.stdout.split(/\s+/).filter(Boolean).map(Number) : [];
+  if (pids.includes(pid)) return { serves: true };
+  return { serves: false, why: pids.length ? `another process (${pids.join(", ")}) owns the custody socket` : "no process was found owning the custody socket" };
 }
 
 /** What an operator runs where OATS writes no unit. */

@@ -126,7 +126,12 @@ A custody that already serves R, started by hand or by another supervisor, is
 refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): aw refuses a second
 server on a socket that answers, so a unit started beside it would restart in
 a loop while the other custody answered. Stop it (`aw custody stop` in R, or
-stop whatever supervises it), then rerun. The unit is idempotent: a re-run
+stop whatever supervises it), then rerun. This command's own unit counts as
+what serves R only when its process is running (launchd's `state = running`
+with a pid; systemd's `active`/`running` with a main pid) and that process owns
+the custody socket, as `lsof -t <socket>` reports. A unit that is merely loaded,
+restarting against another custody, does not count; without `lsof` the command
+cannot tell, and refuses. The unit is idempotent: a re-run
 leaves an unchanged unit as it is and loads it if it is not running. R reached through a symlink is the same directory. A unit of that label that serves another directory is
 refused, naming both, and so is any `ai.aweb.custody.*.<name>` unit that
 serves another directory, before any init.

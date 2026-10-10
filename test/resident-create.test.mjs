@@ -499,6 +499,21 @@ test("a custody already running with no unit of ours is refused before any effec
   assert.doesNotMatch(s.localYaml(), /residents/);
 });
 
+test("our unit loaded but restarting beside another custody is refused, not taken for the server", (t) => {
+  const s = setup(t, { custody: "crashloop" });
+  mkdirSync(join(s.root, ".aw"), { recursive: true });
+  for (const f of ["identity.yaml", "signing.key", "workspace.yaml"]) writeFileSync(join(s.root, ".aw", f), "");
+  mkdirSync(dirname(s.unitPath), { recursive: true });
+  writeFileSync(s.unitPath, process.platform === "darwin" ? `<plist><dict><key>WorkingDirectory</key><string>${s.root}</string></dict></plist>\n` : `[Service]\nWorkingDirectory=${s.root}\n`);
+  writeFileSync(join(s.base, "unit-loaded"), "");
+  const before = readFileSync(s.unitPath, "utf8");
+  const r = s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.error.code, "E_RESIDENT_CUSTODY_RUNNING");
+  assert.match(r.doc.error.message, /its process is not running/);
+  assert.equal(readFileSync(s.unitPath, "utf8"), before);
+});
+
 test("a custody served by this command's own unit is re-ensured, not refused", (t) => {
   const s = setup(t);
   assert.equal(s.run(["create", NAME]).status, 0);

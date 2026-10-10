@@ -289,10 +289,16 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     const known = state === "adopt" ? expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami", "preflight"), name, []) : undefined;
     if (known && manager) {
       const label = custodyLabel(known.address, name);
-      let running = false;
-      try { running = parseAwJson(read(["custody", "status", "--json"]), "aw custody status")?.status === "running"; } catch { /* unreadable is not running here */ }
-      if (running && !ownUnitServes({ platform, label, root, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME, uid: process.getuid(), env })) {
-        throw failure("E_RESIDENT_CUSTODY_RUNNING", "preflight", `custody for ${name} is already running in ${root}, and not from this command's unit ${label}: run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`);
+      let status;
+      try { status = parseAwJson(read(["custody", "status", "--json"]), "aw custody status"); } catch { /* unreadable is not running here */ }
+      if (status?.status === "running") {
+        const own = ownUnitServes({ platform, label, root, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME, uid: process.getuid(), env, socketPath: String(status.socket_path || "") });
+        if (!own.serves) {
+          const step = `run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
+          throw failure("E_RESIDENT_CUSTODY_RUNNING", "preflight", own.why === "no unit of this command serves it"
+            ? `custody for ${name} is already running in ${root}, and not from this command's unit ${label}: ${step}`
+            : `custody for ${name} is already running in ${root}, and this command's unit ${label} is not what serves it (${own.why}): ${step}`);
+        }
       }
     }
 

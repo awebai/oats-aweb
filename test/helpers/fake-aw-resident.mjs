@@ -45,9 +45,15 @@ ${body}`;
  * linger: "yes" | "no" (loginctl's answer).
  * custody: "ready" (running after the unit loads), "missing-ops" (running
  *   without the floor ops), "never" (never starts), "elsewhere" (already
- *   running, started by hand or by another supervisor, with no unit of ours).
+ *   running, started by hand or by another supervisor, with no unit of ours),
+ *   "crashloop" (that other custody runs, and our unit is loaded but
+ *   restarting against it: launchd's "spawn scheduled", systemd's
+ *   activating/auto-restart).
+ * Our unit's process is pid 4242 and owns the custody socket (fake lsof);
+ * another custody is pid 999.
+ * lsof: false leaves the fake lsof out, as on a host without it.
  */
-export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true } = {}) {
+export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true } = {}) {
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
   const fixtures = {};
@@ -72,14 +78,18 @@ if (argv[0] === "whoami") replay(f["whoami"]);
 if (argv[0] === "doctor" && argv[1] === "identity") replay(f["doctor-identity-offline"]);
 if (argv[0] === "doctor" && argv[1] === "registry") replay(f["doctor-registry-online"]);
 if (argv[0] === "custody" && argv[1] === "status") {
-  if (state.custody === "elsewhere") replay(f["custody-status-running"]);
+  if (state.custody === "elsewhere" || state.custody === "crashloop") replay(f["custody-status-running"]);
   if (!flag("unit-loaded") || state.custody === "never") replay(f["custody-status-not-running"]);
   replay(state.custody === "missing-ops" ? state.missingOps : f["custody-status-running"]);
 }
 process.stderr.write("fake aw: unexpected " + argv.join(" ") + "\\n"); process.exit(97);
 `);
   write("launchctl", `
-if (argv[0] === "print") process.exit(flag("unit-loaded") ? 0 : 113);
+if (argv[0] === "print") {
+  if (!flag("unit-loaded")) process.exit(113);
+  process.stdout.write(state.custody === "crashloop" ? "gui/501/x = {\\n\\tstate = spawn scheduled\\n\\tlast exit code = 1\\n}\\n" : "gui/501/x = {\\n\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tstate = active\\n\\t}\\n}\\n");
+  process.exit(0);
+}
 if (argv[0] === "bootstrap") { touch("unit-loaded"); process.exit(0); }
 if (argv[0] === "bootout") { try { fs.rmSync(path.join(state.base, "unit-loaded")); } catch {} process.exit(0); }
 process.exit(97);
@@ -90,11 +100,22 @@ if (argv[1] === "show-environment") process.exit(0);
 if (argv[1] === "daemon-reload") process.exit(0);
 if (argv[1] === "enable" || argv[1] === "restart") { touch("unit-loaded"); process.exit(0); }
 if (argv[1] === "is-active") process.exit(flag("unit-loaded") ? 0 : 3);
+if (argv[1] === "show") {
+  const running = flag("unit-loaded") && state.custody !== "crashloop";
+  process.stdout.write(running ? "ActiveState=active\\nSubState=running\\nMainPID=4242\\n" : "ActiveState=activating\\nSubState=auto-restart\\nMainPID=0\\n");
+  process.exit(0);
+}
 process.exit(97);
 `);
   write("loginctl", `
 if (argv[0] === "show-user") { process.stdout.write("Linger=" + state.linger + "\\n"); process.exit(0); }
 process.exit(97);
+`);
+  if (lsof) write("lsof", `
+if (argv[0] !== "-t") process.exit(97);
+if (state.custody === "elsewhere" || state.custody === "crashloop") { process.stdout.write("999\\n"); process.exit(0); }
+if (flag("unit-loaded")) { process.stdout.write("4242\\n"); process.exit(0); }
+process.exit(1);
 `);
   return {
     bin,

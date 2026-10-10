@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { custodyLabel, ensureCustodyUnit, lingerProblem, renderUnit, residentUnits, unitManager, unitPath, unitSearchPath, waitForCustody } from "../oats-package/capabilities/oats-aweb/lib/custody-unit.mjs";
+import { custodyLabel, ensureCustodyUnit, lingerProblem, ownUnitServes, renderUnit, residentUnits, unitManager, unitPath, unitSearchPath, waitForCustody } from "../oats-package/capabilities/oats-aweb/lib/custody-unit.mjs";
 import { fakeResidentAw } from "./helpers/fake-aw-resident.mjs";
 
 const LABEL = "ai.aweb.custody.juan.aweb.ai.alice";
@@ -218,6 +218,30 @@ test("a rerun from another PATH, or through a symlink to R, leaves a running uni
     }
     assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv[0] === "--user" ? c.argv[1] : c.argv[0]).filter((v) => !["print", "is-active"].includes(v)), [], "no bootout, bootstrap, enable or restart");
     rmSync(join(dir, "unit-loaded"), { force: true });
+  }
+});
+
+test("ownUnitServes: our unit's own process must be running and own the custody socket", (t) => {
+  // Loaded is not enough: a KeepAlive unit restarting against another custody
+  // is loaded (launchd "spawn scheduled", systemd activating/auto-restart).
+  const dir = base(t);
+  const home = join(dir, "home"); mkdirSync(home);
+  const root = join(dir, "r", "alice"); mkdirSync(root, { recursive: true });
+  for (const platform of ["darwin", "linux"]) {
+    const check = (fakeOptions) => {
+      const at = join(dir, `${platform}-${fakeOptions.custody}-${fakeOptions.lsof === false ? "nolsof" : "lsof"}`);
+      const fake = fakeResidentAw(at, { aw: false, ...fakeOptions });
+      const env = { PATH: fake.bin, HOME: home };
+      const file = unitPath({ platform, home }, LABEL);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, renderUnit({ platform, label: LABEL, aw: "/bin/aw", root, path: "/bin", home, address: "juan.aweb.ai/alice" }));
+      writeFileSync(join(at, "unit-loaded"), "");
+      return ownUnitServes({ platform, label: LABEL, root, home, uid: 501, env, socketPath: "/tmp/custody.sock" });
+    };
+    assert.deepEqual(check({ custody: "ready" }), { serves: true }, platform);
+    assert.deepEqual(check({ custody: "crashloop" }), { serves: false, why: "its process is not running" }, platform);
+    assert.deepEqual(check({ custody: "elsewhere" }), { serves: false, why: "another process (999) owns the custody socket" }, platform);
+    assert.deepEqual(check({ custody: "ready", lsof: false }), { serves: false, why: "lsof is not available to tell which process owns the custody socket" }, platform);
   }
 });
 
