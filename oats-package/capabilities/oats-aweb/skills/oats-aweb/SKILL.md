@@ -369,6 +369,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue | human |
+| `grant-expiring` (warning, grant seats only) | the grant recorded at the seat's last start expires within 7 days; the message names the instant as recorded | human: restart the seat (`oats session restart --home <home>`) to re-mint; a home captured with a short ttl needs a respawn |
+| `grant-expired` (grant seats only) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: restart the seat (`oats session restart --home <home>`) to re-mint; a home captured with a short ttl needs a respawn |
+| `grant-expiry-unknown` (warning, grant seats only) | the recorded grant has no readable expiry; readiness does not guess one | human: restart the seat (`oats session restart --home <home>`) to re-mint; a home captured with a short ttl needs a respawn |
 | `custody-reply-continuation-unproven` (warning, grant seats only) | readiness cannot tell whether the running custody service can continue a reply to a sender outside the team roster; this is not a detected fault. Readiness, grant spawn and a renewing launch report it; a launch preview and `renew: off` ask custody nothing, so they don't. It clears when custody reports `mail_reply_continuation.v1` (aw 1.36.31) | human: restart the custody service after upgrading aw |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
@@ -392,7 +395,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 - *A grant condition* (`grant_expired`, `grant_revoked`, …) in resident-grant
   mode: stop messaging and report the exact condition. With `renew: off` the
   grant expires at its TTL; the remedy is `renew: launch` plus a restart, or a
-  respawn.
+  respawn. Readiness reports an expiry ahead of time as `grant-expiring`, then
+  `grant-expired` (table above).
 - *Nothing arrives:* compare your `Comms:` line with section 4, run the inbox
   commands once, and report a readiness warning rather than looping.
 - A flag looks wrong: run `aw <command> --help`; never guess flags.
@@ -560,6 +564,12 @@ running seat can expire after 720h without a successful re-mint; non-expiring
 grants remain requested upstream (#80), not delivered here. Existing captured
 provider modules/settings do not change automatically when this version ships.
 LOCAL identities are unchanged; there is no timer or background renewal.
+
+From provider 1.25.0, `oats readiness --home H --json` shows a grant seat's
+expiry from the grant recorded at its last start, asking neither aw nor custody:
+`grant-expiring` within 7 days of it, `grant-expired` once it has passed, and
+`grant-expiry-unknown` when the record has no readable expiry (section 7). Every
+mint passes an explicit `--ttl` (720h unless configured).
 
 With the provider 1.23.2 composition (#76), install an app from
 the selected LOCAL or GLOBAL resident home: installation approves it for that

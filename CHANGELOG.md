@@ -59,6 +59,17 @@
   message; the NORMAL grant profile has both, and a send-only custom grant fails
   closed (`grant_scope_denied`). A late reply to a human whose key in the
   original message has expired fails by design: ask them to send a new message.
+- Grant expiry is visible in readiness, from the grant recorded at a grant
+  seat's last start (no aw or custody call): `grant-expiring` (warning) within 7
+  days of expiry, `grant-expired` (problem) at or after it, and
+  `grant-expiry-unknown` (warning) when the record has no readable expiry. Each
+  names the recorded instant and the remedy: restart the seat (`oats session
+  restart --home <home>`) to re-mint; a home captured with a short ttl needs a
+  respawn. LOCAL seats are unaffected.
+- Grant seats still default to `identity.ttl: 720h` and `identity.renew:
+  launch`, and every mint (spawn and renewing launch) passes an explicit
+  `--ttl`; tests now pin both. Non-expiring grants are not available yet: aw and
+  the aweb server cap a grant at 30 days (oats-aweb#80).
 
 
 ## 1.24.0 — 2026-10-09

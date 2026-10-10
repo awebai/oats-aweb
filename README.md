@@ -37,6 +37,17 @@ resident custody service at >= 1.36.30; otherwise the reply fails with
 - **Grant scopes.** Custody re-reads the source message to reply, so a reply
   needs `mail.read` as well as `mail.send`. The NORMAL grant profile carries
   both; a send-only custom grant fails closed with `grant_scope_denied`.
+- **Grant expiry is visible.** Readiness reads a grant seat's recorded grant
+  (`identity.grant.expiresAt`, as aw reported it at the last mint) and asks
+  neither aw nor custody: `grant-expiring` (warning) within 7 days of expiry,
+  `grant-expired` (problem; messaging unavailable) at or after it, and
+  `grant-expiry-unknown` (warning) when no expiry can be read, never a guessed
+  one. Each names the instant as recorded and the remedy: restart the seat
+  (`oats session restart --home <home>`) to re-mint; a home captured with a
+  short ttl needs a respawn. LOCAL seats get none of these.
+  Grants still default to `identity.ttl: 720h` and `identity.renew: launch`,
+  and every mint passes an explicit `--ttl`. Non-expiring grants are not
+  available yet: aw and the aweb server cap a grant at 30 days (oats-aweb#80).
 - **Late replies.** A reply to a human whose key in the original message has
   expired fails by design ("source sender key is missing, expired or invalid;
   ask them to send a new message"): ask them to send a new message.

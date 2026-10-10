@@ -597,7 +597,10 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
         OATS_SETTINGS: JSON.stringify(settings(custody, ttl === undefined ? {} : { ttl })) };
       const spawned = runHook(bin, "spawn", env);
       assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-      assert.equal(argvValue(logLines(base).find(l => l.argv.slice(0, 3).join(" ") === "id grant mint").argv, "--ttl"), ttl || "720h");
+      const spawnMint = logLines(base).find(l => l.argv.slice(0, 3).join(" ") === "id grant mint").argv;
+      assert.equal(argvValue(spawnMint, "--ttl"), ttl || "720h");
+      // aweb will read an omitted --ttl as a never-expiring grant: every mint names one.
+      assert.deepEqual(spawnMint.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "720h"}`]);
       write(join(base, "aw.log"), "");
       const launchEnv = { ...env, OATS_META: JSON.stringify(spawned.doc.meta) };
       const preview = runHook(bin, "launch", { ...launchEnv, OATS_LAUNCH_PREVIEW: "1" });
@@ -609,6 +612,7 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
       const mints = logLines(base).filter(l => l.argv.slice(0, 3).join(" ") === "id grant mint");
       assert.equal(mints.length, 1, "omitted renewal setting must re-mint");
       assert.equal(argvValue(mints[0].argv, "--ttl"), ttl || "720h");
+      assert.deepEqual(mints[0].argv.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "720h"}`], "the renew: launch re-mint names its ttl too");
       assert.notEqual(renewed.doc.meta.identity.grant.home, spawned.doc.meta.identity.grant.home);
     } finally { rmSync(base, { recursive: true, force: true }); }
   }

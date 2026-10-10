@@ -5,6 +5,7 @@ import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
+import { grantExpiryAssessment } from './grant-expiry.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -266,7 +267,8 @@ const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/
 export async function awFloorMessage(){if(!onPath('aw'))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion();if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
 async function awFloorProblem(){const message=await awFloorMessage();return message?{code:'needs-configuration',message}:null;}
 async function workspaceReadinessPhase(req) {
-  const deadline=Date.now()+28000;
+  // One clock for every time-based judgement in this answer.
+  const now=Date.now(),deadline=now+28000;
   const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
@@ -288,6 +290,10 @@ async function workspaceReadinessPhase(req) {
     }
   }
   const receiveProblems=[];
+  if(ctx.home) {
+    const expiry=grantExpiryAssessment(recordedStart(ctx.home).meta?.identity,{home:ctx.home,now});
+    receiveProblems.push(...expiry.problems);warnings.push(...expiry.warnings);
+  }
   // Preserve prerequisite diagnostics; receive evidence is meaningful only
   // after configuration and custody checks succeed.
   if(ctx.home && !problems.length) {
@@ -299,7 +305,7 @@ async function workspaceReadinessPhase(req) {
       if(expected.brokerRequired) {
         let status;
         try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
-        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN});
+        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN,now});
         const targetProblems=target.problems;
         warnings.push(...target.warnings);
         receiveProblems.push(...targetProblems);
