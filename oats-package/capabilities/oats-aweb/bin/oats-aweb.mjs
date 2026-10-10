@@ -755,8 +755,11 @@ function revokeOrNote(custody, grant) {
   try { revokeGrant(custody, grant.id); return ""; }
   catch (e) { return unrevokedNote(custody, grant, e); }
 }
-/** `aw id grant list` for the sweep, run in the resident's custody root. */
-const grantLister = (custody) => (argv) => run(argv, custody, 30000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+/** `aw id grant list` for the sweep, run in the resident's custody root. A start
+ *  waits at most aw's own 10 s client timeout for it, so an outage delays a start
+ *  by no more than that before it says it could not check; a retire waits longer. */
+const START_GRANT_LIST_TIMEOUT_MS = 10000, RETIRE_GRANT_LIST_TIMEOUT_MS = 30000;
+const grantLister = (custody, timeout) => (argv) => run(argv, custody, timeout, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
 /** The resident's custody root, or undefined when it cannot be resolved. */
 function residentCustodyOf(name) {
   const residents = settings.residents && typeof settings.residents === "object" && !Array.isArray(settings.residents) ? settings.residents : {};
@@ -801,7 +804,7 @@ function sweepAtStart(meta) {
   const custody = residentCustodyOf(String(identitySettings.resident || meta.identity.resident || ""));
   const team = meta.identity.team || defaultTeamId();
   if (!custody || !team) { outNotes.push("could not check for orphaned grants: the resident's custody or the team is not resolvable; this seat may hold grants that stay valid"); return; }
-  const swept = sweepSeatGrants({ list: grantLister(custody), revoke: (id) => revokeGrant(custody, id), custody, team, label: seatGrantLabel(instance, seat), keep: meta.identity.grant?.id });
+  const swept = sweepSeatGrants({ list: grantLister(custody, START_GRANT_LIST_TIMEOUT_MS), revoke: (id) => revokeGrant(custody, id), custody, team, label: seatGrantLabel(instance, seat), keep: meta.identity.grant?.id });
   if (!swept.checked) { outNotes.push(`could not check for orphaned grants (${swept.error}); this seat may hold grants that stay valid`); return; }
   for (const g of swept.revoked) outNotes.push(`revoked orphaned grant ${g.grant}`);
   for (const g of swept.remaining) outNotes.push(`orphaned grant ${g.grant} was not revoked (${g.error}), so ${unrevokedGrant(g)}`);
@@ -973,7 +976,7 @@ function globalGrantRetire(meta) {
   // Every active grant of this seat goes, the current one included; the
   // custody's list also finds a grant minted before a crash.
   const label = seat ? seatGrantLabel(instance, seat) : undefined;
-  const swept = seat ? sweepSeatGrants({ list: grantLister(custody), revoke: (grant) => revokeGrant(custody, grant), custody, team, label })
+  const swept = seat ? sweepSeatGrants({ list: grantLister(custody, RETIRE_GRANT_LIST_TIMEOUT_MS), revoke: (grant) => revokeGrant(custody, grant), custody, team, label })
     : { checked: false, revoked: [], remaining: [], grants: [], error: "this seat records no seat id" };
   const unrevoked = [...swept.remaining];
   // The sweep covers a current grant that carries this seat's label. One from
