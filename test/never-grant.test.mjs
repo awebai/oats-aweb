@@ -368,6 +368,21 @@ test("a retire that finds the seat record but cannot read the grant list exits n
   assert.match(retired.doc.warning, /could not check for orphaned grants/);
 });
 
+test("an unreadable seat record blocks a retire only when the meta carries no seat", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  writeFileSync(join(s.home, ".oats-aweb", "seat.json"), "{truncated");
+  const blind = s.retire({});
+  assert.equal(blind.status, 1);
+  assert.equal(blind.doc.meta.reason, "seat-record-unreadable");
+  assert.match(blind.doc.warning, /could not check for orphaned grants: the seat record is unreadable/);
+  assert.deepEqual(active(s), ["grant-spawn"], "nothing to go on: the grant is named nowhere, so the retire fails");
+  const retired = s.retire(spawned.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.match(retired.doc.warning, /the seat record is unreadable .*retired from the seat in the meta/);
+  assert.deepEqual(active(s), [], "the meta's seat and grant are enough to revoke");
+});
+
 test("a renewal that gives a pre-seat meta its first seat id writes it before the mint", (t) => {
   const s = seat(t);
   const spawned = s.spawn({});

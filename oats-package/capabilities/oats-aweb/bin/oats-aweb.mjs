@@ -1861,7 +1861,12 @@ if (event === "launch") {
   if (!meta.retained) {
     let seatRecord;
     try { seatRecord = recordedSeat(); }
-    catch (e) { out({ meta: { retired: false, reason: "grant-list-failed" }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${String(e.message || e).slice(0, 200)}); this seat may hold grants that stay valid` }, 1); }
+    catch (e) {
+      const why = String(e.message || e).slice(0, 200);
+      // With no seat in the meta either, nothing names this seat's grants.
+      if (!meta.identity?.seat) out({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${why}); this seat may hold grants that stay valid` }, 1);
+      outNotes.push(`the seat record is unreadable (${why}); retired from the seat in the meta`);
+    }
     if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
   }
   for (const joined of joinedTeamsOf(meta)) {
