@@ -200,7 +200,7 @@ function registryWarnings(read) {
   return failing.length ? failing.map((c) => `${what}: ${c.id} is ${c.status} (this can be publication lag)`) : [`${what}: status is ${doc?.status ?? "unknown"} (this can be publication lag)`];
 }
 
-const NEXT = (name) => `spawn a seat on this resident: give its soul the oats.aweb settings identity: { mode: global, resident: ${name} }, then oats spawn <soul>.`;
+const NEXT = (name) => `spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=${name}`;
 const commitLines = (label, team) => ["This workspace does not allow local teams; commit the team in oats-workspace.yaml:", "    teams:", `      ${JSON.stringify(label)}: { team: ${JSON.stringify(team)} }`];
 
 /** Maps the team label to the resident's team through the selected kernel. */
@@ -229,131 +229,139 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
   try { settings = JSON.parse(env.OATS_SETTINGS || "{}"); } catch { settings = {}; }
   const residents = object(settings) && object(settings.residents) ? settings.residents : {};
   const root = opts.root ? resolve(opts.root) : join(deployment, ".aweb-residents", name);
-  const localYaml = join(deployment, "oats-local.yaml");
-  const recorded = typeof residents[name] === "string" ? residents[name] : undefined;
-  if (recorded !== undefined && !samePath(recorded, root)) throw failure("E_RESIDENT_ROOT", "preflight", `settings.oats.aweb.residents.${name} already records ${recorded}, not ${root}: pass --root ${recorded} to verify that resident, or choose another name`);
+  // Every failure from here on names the resident's directory, and the
+  // captures of the init run when there was one.
+  const captures = [];
+  try {
+    const localYaml = join(deployment, "oats-local.yaml");
+    const recorded = typeof residents[name] === "string" ? residents[name] : undefined;
+    if (recorded !== undefined && !samePath(recorded, root)) throw failure("E_RESIDENT_ROOT", "preflight", `settings.oats.aweb.residents.${name} already records ${recorded}, not ${root}: pass --root ${recorded} to verify that resident, or choose another name`);
 
-  // Every aw child but init runs with PATH and HOME only: no key, no identity selector.
-  const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1" };
-  const floor = await awFloorMessage({ env: readEnv });
-  if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
-  const aw = onPath("aw", env.PATH);
-  if (!aw) throw failure("E_RESIDENT_AW_FLOOR", "aw", "aw is not on PATH");
-  const read = (args) => {
-    const r = spawnSync(aw, args, { cwd: root, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
-    if (r.status !== 0) throw new Error(`aw ${args.slice(0, 2).join(" ")} ${r.error ? `failed: ${r.error.code}` : `exited ${r.status}`}${r.stderr ? `: ${String(r.stderr).trim().slice(0, 300)}` : ""}`);
-    return r.stdout;
-  };
-  const readJson = (args, what, stage = "verify") => {
-    try { return parseAwJson(read(args), what); }
-    catch (e) { throw failure("E_RESIDENT_VERIFY", stage, `${what}: ${e.message}`); }
-  };
-
-  // ---- preflight: nothing here has a remote effect
-  const where = { platform, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
-  const { state, rejected } = rootState(root);
-  if (needsInit(state) && !(typeof env.AWEB_URL === "string" && env.AWEB_URL.trim())) throw failure("E_RESIDENT_ARGUMENT", "preflight", `AWEB_URL is not set: copy the dashboard line, AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
-  const manager = unitManager(platform);
-  if (manager) {
-    const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
-    if (conflict) throw failure("E_RESIDENT_UNIT_CONFLICT", "preflight", conflictMessage(conflict, root));
-  }
-  const linger = lingerProblem({ platform, user: userInfo().username, env });
-  if (linger) throw failure("E_RESIDENT_LINGER", "preflight", linger);
-  try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
-  catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
-
-  if (opts.plan) {
-    const known = state === "adopt" ? expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami", "preflight"), name, []) : undefined;
-    const label = known ? custodyLabel(known.address, name) : `ai.aweb.custody.<domain of the returned address>.${name}`;
-    return {
-      outcome: "plan", name, root, state,
-      ...(rejected ? { rejected } : {}),
-      init: needsInit(state) ? { argv: ["aw", ...INIT_ARGS(name)], cwd: root, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] } : null,
-      verify: ["aw whoami --json", "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment PATH and HOME only)`),
-      custody: manager
-        ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
-        : { manager: null, handStep: handStep(root, name) },
-      record: `settings.oats.aweb.residents.${name}: ${root} in ${localYaml}`,
-      ...(opts.teamLabel ? { teamLabel: `${opts.teamLabel} → the returned team, with oats teams add where the workspace allows local teams` } : {}),
+    // Every aw child but init runs with PATH and HOME only: no key, no identity selector.
+    const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1" };
+    const floor = await awFloorMessage({ env: readEnv });
+    if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
+    const aw = onPath("aw", env.PATH);
+    if (!aw) throw failure("E_RESIDENT_AW_FLOOR", "aw", "aw is not on PATH");
+    const read = (args) => {
+      const r = spawnSync(aw, args, { cwd: root, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
+      if (r.status !== 0) throw new Error(`aw ${args.slice(0, 2).join(" ")} ${r.error ? `failed: ${r.error.code}` : `exited ${r.status}`}${r.stderr ? `: ${String(r.stderr).trim().slice(0, 300)}` : ""}`);
+      return r.stdout;
     };
-  }
+    const readJson = (args, what, stage = "verify") => {
+      try { return parseAwJson(read(args), what); }
+      catch (e) { throw failure("E_RESIDENT_VERIFY", stage, `${what}: ${e.message}`); }
+    };
 
-  // ---- key and init
-  let identity, captures = [];
-  if (needsInit(state)) {
-    let key = await readKey({ env, stdin, stderr, name });
-    let scrub = scrubber([key, env.AWEB_API_KEY]);
-    const childEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AWEB_URL: env.AWEB_URL, AWEB_API_KEY: key, AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
-    mkdirSync(root, { recursive: true, mode: 0o700 });
-    const r = spawnSync(aw, INIT_ARGS(name), { cwd: root, env: childEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: INIT_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
-    // The key is held for this child only: aw's streams are scrubbed of it
-    // here, before anything else reads them, and then it is dropped.
-    const stdoutText = scrub(r.stdout || ""), stderrText = scrub(r.stderr || "");
-    const written = writeCaptures(root, r, scrub);
-    key = undefined; childEnv.AWEB_API_KEY = undefined; scrub = undefined;
-    captures = written.files;
-    if (r.error || r.status !== 0) {
-      let after;
-      try { after = rootState(root).state; } catch { after = "other"; }
-      const partial = join(root, ".aw", "partial-init.yaml");
-      const awText = stderrText.trim() || stdoutText.trim() || `aw init ${written.exit}`;
-      const details = { root, captures, partial: existsSync(partial) ? partial : null };
-      if (!["continue", "rejected", "adopt"].includes(after)) {
-        throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nprovisioning left nothing to continue; ${root} contains ${readdirSync(root).sort().join(", ") || "nothing"}; contact aweb with ${captures[1]}`, details);
+    // ---- preflight: nothing here has a remote effect
+    const where = { platform, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
+    const { state, rejected } = rootState(root);
+    if (needsInit(state) && !(typeof env.AWEB_URL === "string" && env.AWEB_URL.trim())) throw failure("E_RESIDENT_ARGUMENT", "preflight", `AWEB_URL is not set: copy the dashboard line, AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
+    const manager = unitManager(platform);
+    if (manager) {
+      const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
+      if (conflict) throw failure("E_RESIDENT_UNIT_CONFLICT", "preflight", conflictMessage(conflict, root));
+    }
+    const linger = lingerProblem({ platform, user: userInfo().username, env });
+    if (linger) throw failure("E_RESIDENT_LINGER", "preflight", linger);
+    try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
+    catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
+
+    if (opts.plan) {
+      const known = state === "adopt" ? expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami", "preflight"), name, []) : undefined;
+      const label = known ? custodyLabel(known.address, name) : `ai.aweb.custody.<domain of the returned address>.${name}`;
+      return {
+        outcome: "plan", name, root, state,
+        ...(rejected ? { rejected } : {}),
+        init: needsInit(state) ? { argv: ["aw", ...INIT_ARGS(name)], cwd: root, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] } : null,
+        verify: ["aw whoami --json", "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment PATH and HOME only)`),
+        custody: manager
+          ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
+          : { manager: null, handStep: handStep(root, name) },
+        record: `settings.oats.aweb.residents.${name}: ${root} in ${localYaml}`,
+        ...(opts.teamLabel ? { teamLabel: `${opts.teamLabel} → the returned team, with oats teams add where the workspace allows local teams` } : {}),
+      };
+    }
+
+    // ---- key and init
+    let identity;
+    if (needsInit(state)) {
+      let key = await readKey({ env, stdin, stderr, name });
+      let scrub = scrubber([key, env.AWEB_API_KEY]);
+      const childEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AWEB_URL: env.AWEB_URL, AWEB_API_KEY: key, AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
+      mkdirSync(root, { recursive: true, mode: 0o700 });
+      const r = spawnSync(aw, INIT_ARGS(name), { cwd: root, env: childEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: INIT_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
+      // The key is held for this child only: aw's streams are scrubbed of it
+      // here, before anything else reads them, and then it is dropped.
+      const stdoutText = scrub(r.stdout || ""), stderrText = scrub(r.stderr || "");
+      const written = writeCaptures(root, r, scrub);
+      key = undefined; childEnv.AWEB_API_KEY = undefined; scrub = undefined;
+      captures.push(...written.files);
+      if (r.error || r.status !== 0) {
+        let after;
+        try { after = rootState(root).state; } catch { after = "other"; }
+        const partial = join(root, ".aw", "partial-init.yaml");
+        const awText = stderrText.trim() || stdoutText.trim() || `aw init ${written.exit}`;
+        const details = { root, captures, partial: existsSync(partial) ? partial : null };
+        if (!["continue", "rejected", "adopt"].includes(after)) {
+          throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nprovisioning left nothing to continue; ${root} contains ${readdirSync(root).sort().join(", ") || "nothing"}; contact aweb with ${captures[1]}`, details);
+        }
+        throw failure("E_RESIDENT_INIT", "init", awText, details);
       }
-      throw failure("E_RESIDENT_INIT", "init", awText, details);
+      let answer;
+      try { answer = parseAwJson(stdoutText, "aw init"); }
+      catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
+      identity = expectFields("aw init", answer, name, ["status", "team_id"]);
+    } else {
+      identity = expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami"), name, []);
     }
-    let answer;
-    try { answer = parseAwJson(stdoutText, "aw init"); }
-    catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
-    identity = expectFields("aw init", answer, name, ["status", "team_id"]);
-  } else {
-    identity = expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami"), name, []);
-  }
 
-  // ---- verify, with the key absent
-  const doctor = identityDoctor(readJson(["doctor", "identity", "--offline", "--json"], "aw doctor identity --offline"), name);
-  if (identity.team && identity.team !== doctor.team) throw failure("E_RESIDENT_VERIFY", "verify", `aw init answered team ${identity.team}, but the identity on disk is in ${doctor.team}`);
-  const team = doctor.team;
-  const warnings = registryWarnings(read);
+    // ---- verify, with the key absent
+    const doctor = identityDoctor(readJson(["doctor", "identity", "--offline", "--json"], "aw doctor identity --offline"), name);
+    if (identity.team && identity.team !== doctor.team) throw failure("E_RESIDENT_VERIFY", "verify", `aw init answered team ${identity.team}, but the identity on disk is in ${doctor.team}`);
+    const team = doctor.team;
+    const warnings = registryWarnings(read);
 
-  // ---- custody
-  const label = custodyLabel(identity.address, name);
-  const status = () => read(["custody", "status", "--json"]);
-  let custody;
-  let unsupported = manager ? undefined : `this host (${platform}) has no supported per-user service manager`;
-  if (manager) {
-    const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
-    if (conflict) throw failure("E_RESIDENT_UNIT_CONFLICT", "custody", conflictMessage(conflict, root));
-    try {
-      const unit = ensureCustodyUnit({ platform, label, aw, root, home: env.HOME || "", address: identity.address, uid: process.getuid(), env, xdgConfigHome: env.XDG_CONFIG_HOME });
-      custody = { manager: unit.manager, label: unit.label, path: unit.path };
-    } catch (e) {
-      if (e.code !== "E_RESIDENT_UNIT_UNSUPPORTED") throw failure(e.code || "E_RESIDENT_UNIT", "custody", e.message);
-      unsupported = e.message;
+    // ---- custody
+    const label = custodyLabel(identity.address, name);
+    const status = () => read(["custody", "status", "--json"]);
+    let custody;
+    let unsupported = manager ? undefined : `this host (${platform}) has no supported per-user service manager`;
+    if (manager) {
+      const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
+      if (conflict) throw failure("E_RESIDENT_UNIT_CONFLICT", "custody", conflictMessage(conflict, root));
+      try {
+        const unit = ensureCustodyUnit({ platform, label, aw, root, home: env.HOME || "", address: identity.address, uid: process.getuid(), env, xdgConfigHome: env.XDG_CONFIG_HOME });
+        custody = { manager: unit.manager, label: unit.label, path: unit.path };
+      } catch (e) {
+        if (e.code !== "E_RESIDENT_UNIT_UNSUPPORTED") throw failure(e.code || "E_RESIDENT_UNIT", "custody", e.message);
+        unsupported = e.message;
+      }
     }
-  }
-  try { await waitForCustody({ status, resident: name, team, timeoutMs: unsupported ? 0 : undefined }); }
-  catch (e) {
-    if (unsupported) throw failure("E_RESIDENT_UNIT_UNSUPPORTED", "custody", `${unsupported}: ${handStep(root, name)}`);
-    throw failure("E_RESIDENT_CUSTODY", "custody", e.message);
-  }
-  custody = { status: "running", ...(custody || { manager: null, label: null, path: null }) };
+    try { await waitForCustody({ status, resident: name, team, timeoutMs: unsupported ? 0 : undefined }); }
+    catch (e) {
+      if (unsupported) throw failure("E_RESIDENT_UNIT_UNSUPPORTED", "custody", `${unsupported}: ${handStep(root, name)}`);
+      throw failure("E_RESIDENT_CUSTODY", "custody", e.message);
+    }
+    custody = { status: "running", ...(custody || { manager: null, label: null, path: null }) };
 
-  // ---- record
-  if (recorded === undefined) {
-    try { recordAwebSetting("residents", name, root, { start: deployment }); }
-    catch (e) { throw failure("E_RESIDENT_RECORD", "record", e.message); }
+    // ---- record
+    if (recorded === undefined) {
+      try { recordAwebSetting("residents", name, root, { start: deployment }); }
+      catch (e) { throw failure("E_RESIDENT_RECORD", "record", e.message); }
+    }
+    const teamLabel = opts.teamLabel ? recordTeamLabel(deployment, env, opts.teamLabel, team) : undefined;
+    const outcome = state === "create" ? "created" : needsInit(state) ? "resumed" : recorded === undefined ? "adopted" : "already-exists";
+    return {
+      outcome, name, root, address: identity.address, team, stableId: identity.stableId,
+      custody, recorded: { file: localYaml, setting: `settings.oats.aweb.residents.${name}` },
+      ...(teamLabel ? { teamLabel } : {}),
+      warnings, captures, next: NEXT(name),
+    };
+  } catch (e) {
+    if (e.stage) e.details = { root, ...(captures.length ? { captures } : {}), ...e.details };
+    throw e;
   }
-  const teamLabel = opts.teamLabel ? recordTeamLabel(deployment, env, opts.teamLabel, team) : undefined;
-  const outcome = state === "create" ? "created" : needsInit(state) ? "resumed" : recorded === undefined ? "adopted" : "already-exists";
-  return {
-    outcome, name, root, address: identity.address, team, stableId: identity.stableId,
-    custody, recorded: { file: localYaml, setting: `settings.oats.aweb.residents.${name}` },
-    ...(teamLabel ? { teamLabel } : {}),
-    warnings, captures, next: NEXT(name),
-  };
 }
 
 function renderText(r) {

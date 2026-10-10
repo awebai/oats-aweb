@@ -155,7 +155,7 @@ test("create: PASS line, next step, recorded resident, custody unit, captures, a
   assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.trimEnd().split("\n");
   assert.equal(lines[0], `PASS resident ${CAPTURED.address} team ${CAPTURED.team} custody running`);
-  assert.match(r.stdout, new RegExp(`Next: spawn a seat on this resident: give its soul the oats\\.aweb settings identity: \\{ mode: global, resident: ${NAME} \\}, then oats spawn <soul>\\.`));
+  assert.ok(r.stdout.includes(`\nNext: spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=${NAME}\n`), r.stdout);
   assert.equal(s.localYaml(), `schemaVersion: 2\nworkspace: local\nsettings:\n  oats.aweb:\n    residents:\n      "${NAME}": ${JSON.stringify(s.root)}\n`);
   const unit = readFileSync(s.unitPath, "utf8");
   assert.ok(unit.includes(s.root));
@@ -180,7 +180,7 @@ test("create --json answers one envelope with the outcome, the unit and the reco
     custody: { status: "running", manager: process.platform === "darwin" ? "launchd" : "systemd", label: LABEL, path: s.unitPath },
     recorded: { file: join(s.deployment, "oats-local.yaml"), setting: `settings.oats.aweb.residents.${NAME}` },
     warnings: ["aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"],
-    next: `spawn a seat on this resident: give its soul the oats.aweb settings identity: { mode: global, resident: ${NAME} }, then oats spawn <soul>.`,
+    next: `spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=${NAME}`,
     captures: undefined,
   });
   assert.equal(result.captures.length, 3);
