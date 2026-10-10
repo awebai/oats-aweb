@@ -7,6 +7,7 @@ import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
 import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
+import { readPendingRevokes, unrevokedGrant } from './pending-revokes.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -299,6 +300,9 @@ async function workspaceReadinessPhase(req) {
   if(ctx.home) {
     const expiry=grantExpiryAssessment(recordedStart(ctx.home).meta?.identity,{home:ctx.home,now});
     receiveProblems.push(...expiry.problems);warnings.push(...expiry.warnings);
+    // A grant a start or spawn could not revoke stays live until a later start or retire revokes it.
+    try {for(const entry of readPendingRevokes(ctx.home)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant(entry)}; a revoke failed and is retried at the next start and at retire`});}
+    catch(e) {warnings.push({code:'grant-revoke-pending',message:`the pending-revoke record is unreadable (${String(e.message||e).slice(0,200)}); its grants may stay valid`});}
   }
   // Preserve prerequisite diagnostics; receive evidence is meaningful only
   // after configuration and custody checks succeed.

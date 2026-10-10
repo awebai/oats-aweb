@@ -57,6 +57,7 @@ import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parse
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { parseTimestamp } from "../lib/wake-receive.mjs";
+import { addPendingRevoke, retryPendingRevokes, unrevokedGrant } from "../lib/pending-revokes.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -158,7 +159,10 @@ if (operation) {
     if (!code) process.exitCode = 1;
   });
 }
+/** Notes a start or retire adds to whatever it answers (pending revokes). */
+const outNotes = [];
 const out = (o, code = 0) => {
+  if (outNotes.length) o = { ...o, warning: [o?.warning, ...outNotes.map((n) => `oats-aweb: ${n}`)].filter(Boolean).join(" | ") };
   if (o?.launch?.claude) o = withChannelModeWarning(o);
   if (operation) operationFail("E_OPERATION_FAILED", String(o?.warning || o?.problems?.[0]?.message || "failed").replace(/^oats-aweb: /, ""));
   process.stdout.write(JSON.stringify(o) + "\n");
@@ -743,17 +747,27 @@ function validateMintedGrant(minted, grantHome, ttl) {
   return { minted, grantId, expiresAt, mintedTeam, alias: typeof minted.alias === "string" && minted.alias ? minted.alias : undefined, address: typeof minted.address === "string" && minted.address ? minted.address : null };
 }
 function parseMintedGrant(raw, grantHome, ttl) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome, ttl); }
-/** How long a grant that could not be revoked stays valid, and how to revoke
- *  it: a never-grant ends only when revoked. */
-function unrevokedGrant(grant, custody) {
-  const until = grant?.expiresAt === "never" ? "until revoked" : `until ${grant?.expiresAt || "its TTL"} unless revoked`;
-  return `grant ${grant?.id} stays valid ${until}: run \`aw id grant revoke ${grant?.id}\` in ${custody}`;
+/** Record a grant this hook could not revoke, for a later start or retire to
+ *  revoke, and say how long it stays valid and how to revoke it. */
+function recordUnrevoked(custody, grant, team, error) {
+  const entry = { grant: grant.id, custody, team, expiresAt: grant.expiresAt };
+  try { addPendingRevoke(home, entry); } catch { /* the message still names the revoke command */ }
+  return `; revoke failed (${String(error?.message || error).slice(0, 200)}), so ${unrevokedGrant(entry)}`;
 }
-/** Revoke a grant this hook will not keep; "" when it is gone, else what the
- *  operator must know about the grant that survives. */
-function revokeUnkept(custody, grant) {
+/** Revoke a grant this hook will not keep: "" when it is gone, else the note
+ *  recordUnrevoked gives. */
+function revokeOrRecord(custody, grant, team) {
   try { revokeGrant(custody, grant.id); return ""; }
-  catch (e) { return `; revoke failed (${String(e.message || e).slice(0, 200)}), so ${unrevokedGrant(grant, custody)}`; }
+  catch (e) { return recordUnrevoked(custody, grant, team, e); }
+}
+/** Retry every pending revoke in this home; the ones that still fail are named. */
+function retryPending() {
+  let result;
+  try { result = retryPendingRevokes(home, revokeGrant); }
+  catch (e) { outNotes.push(`pending-revoke record is unreadable (${String(e.message || e).slice(0, 200)}); its grants are not retried`); return []; }
+  for (const entry of result.revoked) outNotes.push(`pending grant ${entry.grant} is now revoked`);
+  for (const entry of result.remaining) outNotes.push(`revoke of pending grant ${entry.grant} failed again (${entry.error}), so ${unrevokedGrant(entry)}`);
+  return result.remaining;
 }
 function checkedGrantTTL() {
   try { return resolveGrantTTL(identitySettings.ttl); }
@@ -767,6 +781,8 @@ function checkedRenewMode() {
 }
 function globalGrantRenew(oldMeta) {
   if (identityMode === "global" || oldMeta.identity?.mode === "global") checkedGrantTTL();
+  // Every real start retries the grants an earlier start or spawn could not revoke.
+  if (oldMeta.identity?.mode === "global") retryPending();
   if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), ...(oldMeta.identity?.mode === "global" ? { warning: grantInventoryAdvisory(oldMeta.identity.grant, { retained: true }) } : {}) });
   if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
   const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
@@ -785,9 +801,10 @@ function globalGrantRenew(oldMeta) {
   let stamp = Math.floor(Date.now() / 1000);
   let grantHome = join(home, `.aweb-identity-${stamp}`);
   while (existsSync(grantHome)) grantHome = join(home, `.aweb-identity-${++stamp}`);
-  const keepPrevious = (why) => {
+  // A new grant left unrevoked fails the start: it is recorded, and it is live.
+  const keepPrevious = (why, unrevoked = "") => {
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
-    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: ${why}; keeping previous grant ${oldMeta.identity.grant.id}` });
+    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: ${why}; keeping previous grant ${oldMeta.identity.grant.id}${unrevoked}` }, unrevoked ? 1 : 0);
   };
   let raw, parsed;
   // A failed mint call printed no receipt, so there is no grant to revoke.
@@ -796,24 +813,26 @@ function globalGrantRenew(oldMeta) {
   try { parsed = parseMintedGrant(raw, grantHome, ttl); }
   catch (e) {
     const recovered = recoverGrantHome(grantHome);
-    keepPrevious(`renewal mint failed (${e.message || e})${recovered.grantId ? revokeUnkept(custody, { id: recovered.grantId, expiresAt: recovered.expiresAt }) : ""}`);
+    keepPrevious(`renewal mint failed (${e.message || e})`, recovered.grantId ? revokeOrRecord(custody, { id: recovered.grantId, expiresAt: recovered.expiresAt }, recovered.team || team) : "");
   }
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
   const recovered = recoverGrantHome(grantHome);
   const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
   const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, ttl, renew: "launch", scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
   const newGrant = newMeta.identity.grant;
-  if (mintedTeam !== team) keepPrevious(`renewal minted grant team ${mintedTeam} differs from ${team}${revokeUnkept(custody, newGrant)}`);
+  if (mintedTeam !== team) keepPrevious(`renewal minted grant team ${mintedTeam} differs from ${team}`, revokeOrRecord(custody, newGrant, mintedTeam));
   try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias: newMeta.identity.alias, team: mintedTeam }); }
-  catch (e) { keepPrevious(`renewal grant ${grantId} custody attachment failed (${e.message || e})${revokeUnkept(custody, newGrant)}`); }
+  catch (e) { keepPrevious(`renewal grant ${grantId} custody attachment failed (${e.message || e})`, revokeOrRecord(custody, newGrant, mintedTeam)); }
   // The start already registered the previous grant home; the new one replaces it.
   if (deliveryFor().broker) {
     try { wakeRegister(home, grantHome); }
-    catch (e) { keepPrevious(`renewal session delivery registration failed for new grant ${grantId} (${e.message || e})${revokeUnkept(custody, newGrant)}`); }
+    catch (e) { keepPrevious(`renewal session delivery registration failed for new grant ${grantId} (${e.message || e})`, revokeOrRecord(custody, newGrant, mintedTeam)); }
   }
   let warning;
   try { revokeGrant(custody, oldMeta.identity.grant.id); }
-  catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept, and the previous ${unrevokedGrant(oldMeta.identity.grant, custody)}`; }
+  // The seat has a working new grant: the start proceeds, and the previous one
+  // is recorded for a later start or retire to revoke.
+  catch (e) { warning = `oats-aweb: new grant ${grantId} is kept; previous grant ${oldMeta.identity.grant.id} was not revoked${recordUnrevoked(custody, oldMeta.identity.grant, oldMeta.identity.team, e)}`; }
   out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
 /** The renew mode a spawned grant records, when it is one launch accepts;
@@ -848,7 +867,7 @@ function globalGrantSpawn() {
         const grant = { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown" };
         meta = startedMeta({ identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { ...grant, scopes, home: grantHome } }) });
         try { revokeGrant(custody, recovered.grantId); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
-        catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, but revoke failed (${revokeError.message || revokeError})`, `; ${unrevokedGrant(grant, custody)}`); }
+        catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml`, recordUnrevoked(custody, grant, recovered.team || team, revokeError)); }
       }
       cleanup();
       throw parseError;
@@ -859,12 +878,12 @@ function globalGrantSpawn() {
     meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, ttl, ...recordedRenew(), scopes, home: grantHome, ...grantAppInventory(minted) } }) });
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
-      catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed (${e.message || e})`, `; ${unrevokedGrant(meta.identity.grant, custody)}`); }
+      catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}`, recordUnrevoked(custody, meta.identity.grant, mintedTeam, e)); }
     }
     try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias, team: mintedTeam }); }
     catch (e) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; the grant was revoked and nothing was kept`); }
-      catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; revoke failed (${revokeError.message || revokeError})`, `; ${unrevokedGrant(meta.identity.grant, custody)}`); }
+      catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}`, recordUnrevoked(custody, meta.identity.grant, mintedTeam, revokeError)); }
     }
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: grantHome };
@@ -872,7 +891,7 @@ function globalGrantSpawn() {
       try { wakeRegister(home, grantHome); }
       catch (e) {
         try { revokeGrant(custody, grantId); failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; grant revoked and grant home removed`); }
-        catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed (${revokeError.message || revokeError})`, `; ${unrevokedGrant(meta.identity.grant, custody)}`); }
+        catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`, recordUnrevoked(custody, meta.identity.grant, mintedTeam, revokeError)); }
       }
     }
     const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
@@ -886,27 +905,28 @@ function globalGrantSpawn() {
     });
   } catch (e) {
     // The returned meta lets retire's compensation revoke a grant that survives.
-    const survives = meta?.identity?.grant?.id ? revokeUnkept(custody, meta.identity.grant) : "";
+    const survives = meta?.identity?.grant?.id ? revokeOrRecord(custody, meta.identity.grant, meta.identity.team) : "";
     cleanup();
     out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
   }
 }
 function globalGrantRetire(meta) {
   if (brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
+  // Grants an earlier start or spawn could not revoke are retried first.
+  const pendingBefore = retryPending();
   const id = meta.identity?.grant?.id;
-  if (!id) out({ meta: { retired: false, reason: "nothing-to-revoke" } });
-  const resident = meta.identity?.resident;
-  const custody = resolveResidentCustody(resident);
-  try {
-    revokeGrant(custody, id);
-    removeGrantHomes();
-    out({ meta: { retired: true, identityRevoked: true, grant: id } });
-  } catch (e) {
-    removeGrantHomes();
-    // Not a success: the grant is a live credential until it is revoked or, if
-    // finite, lapses. The identity stays in the meta so a retry can revoke it.
-    out({ meta: { retired: false, reason: "grant-revoke-failed", grant: id, identity: meta.identity }, warning: `oats-aweb: grant ${id} was not revoked (${e.message || e}); ${unrevokedGrant(meta.identity.grant, custody)}` }, 1);
+  if (!id && !pendingBefore.length) out({ meta: { retired: false, reason: "nothing-to-revoke" } });
+  let unrevoked = pendingBefore.length > 0;
+  if (id) {
+    const custody = resolveResidentCustody(meta.identity?.resident);
+    try { revokeGrant(custody, id); }
+    catch (e) { outNotes.push(`grant ${id} was not revoked${recordUnrevoked(custody, meta.identity.grant, meta.identity.team, e)}`); unrevoked = true; }
   }
+  removeGrantHomes();
+  // A grant that survives a retire is a live credential: the retire fails, and
+  // the home keeps the pending record (and the meta the identity) for a retry.
+  if (unrevoked) out({ meta: { retired: false, reason: "grant-revoke-failed", ...(id ? { grant: id, identity: meta.identity } : {}) } }, 1);
+  out({ meta: { retired: true, identityRevoked: true, grant: id } });
 }
 const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json");
 /** The alias a home's .aw/workspace.yaml records under memberships (indented),

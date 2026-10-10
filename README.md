@@ -48,13 +48,18 @@ The rest:
   cannot send the encrypted reply to a sender outside the roster. When the
   custody status cannot be read, the message says "custody status could not
   be read: …", never that an op is missing.
-- **Revocation is the only end of a never-grant.** Wherever a revoke fails
-  (retire, the previous grant after a renewal, a grant spawn or renewal does
-  not keep), the message names the grant, how long it stays valid ("until
-  revoked", or "until <expiry> unless revoked" for a duration) and the exact
-  command, `aw id grant revoke <id>` run in the resident's custody directory.
-  A retire whose revoke fails exits nonzero for every grant and keeps the
-  grant's identity in its meta, so a retry can revoke it.
+- **No grant is left unrevoked silently.** Revocation is the only end of a
+  never-grant. Wherever a revoke fails, the grant is recorded in the home
+  (`.oats-aweb/pending-revokes.json`, which retire's recovery copy leaves out:
+  grant id, custody directory, team and recorded expiry, never keys), the
+  message names how long it stays valid ("until revoked", or "until <expiry>
+  unless revoked" for a duration) and the exact command, `aw id grant revoke
+  <id>` run in the resident's custody directory, and readiness warns
+  `grant-revoke-pending` until it clears. Every later start and retire retries
+  it. A new grant that renewal or spawn cannot revoke fails that start or
+  spawn; a previous grant left after a successful renewal does not (the seat
+  runs on its new grant). A retire exits nonzero while any remains, keeping the
+  record in the home and the grant's identity in its meta for the retry.
 - **`wake-daemon-outdated` is a warning.** A running wake daemon below the floor
   still receives, so readiness reports it with the remedy "upgrade aw, then
   restart the host wake daemon" and goes on to assess the target. A daemon that

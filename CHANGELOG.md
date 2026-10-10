@@ -52,14 +52,25 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   seat with `identity.e2ee: false` does not require the reply op and cannot send
   the encrypted reply to such a sender. A custody status that cannot be read
   says "custody status could not be read: …", never that an op is missing.
-- Revocation is the only end of a never-grant. Wherever a revoke fails (retire,
-  the previous grant after a renewal, a grant spawn or renewal does not keep),
-  the message names the grant, how long it stays valid ("until revoked", or
-  "until <expiry> unless revoked" for a duration) and the exact command,
-  `aw id grant revoke <id>` run in the resident's custody directory. Behaviour
-  change: a retire whose revoke fails, for every grant, keeps the grant's
-  identity in its meta so a retry can revoke it, and its message replaces
-  "it still expires at …". It still exits nonzero.
+- Revocation is the only end of a never-grant, and no grant is left unrevoked
+  silently. Wherever a revoke fails, the grant is recorded in the home
+  (`.oats-aweb/pending-revokes.json`: grant id, custody directory, team and
+  recorded expiry, never keys), the message names it, how long it stays valid
+  ("until revoked", or "until <expiry> unless revoked" for a duration) and the
+  exact command, `aw id grant revoke <id>` run in the resident's custody
+  directory, and readiness warns `grant-revoke-pending` until it clears. Every
+  later start and retire retries the record; a successful revoke clears it.
+  - A new grant that renewal or spawn does not keep (team mismatch, custody
+    attachment, wake registration, a receipt that fails validation) and cannot
+    revoke fails that start or spawn. The renewal's three silent catches
+    ("expires by TTL if revoke fails") are gone. A failed spawn also returns
+    the grant id in its meta for the kernel's retire compensation, since its
+    home may not survive.
+  - The previous grant after a successful renewal does not fail the start: the
+    seat runs on its new grant, and the previous one is recorded.
+  - Behaviour change: retire exits nonzero while any grant remains unrevoked,
+    for every grant, keeps the record in the home and the grant's identity in
+    its meta for the retry, and its message replaces "it still expires at …".
 - `wake-daemon-outdated` is now a readiness warning, not a problem: a running
   wake daemon below the floor still receives, readiness goes on to assess the
   target, and the remedy is "upgrade aw, then restart the host wake daemon".
