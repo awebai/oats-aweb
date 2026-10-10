@@ -234,13 +234,13 @@ test("single aw floor refuses older aw before grant mint and always passes --tea
   try {
     const { home, r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.12" });
     assert.notEqual(r.status, 0);
-    assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.32/);
+    assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.33/);
     assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => l.argv.slice(0, 3).join(" ") === "id grant mint"), false);
     assert.equal(existsSync(join(home, ".aweb-identity")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
   base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.32" });
+    const { r } = spawnGrant(base, {}, { FAKE_AW_VERSION: "1.36.33" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const mint = logLines(base).find((l) => l.argv.slice(0, 3).join(" ") === "id grant mint").argv;
     assert.equal(argvValue(mint, "--team"), "t:example.test");
@@ -315,7 +315,7 @@ test("readiness checks the recorded final grant locator, never newest directory"
     record(newHome);
     checked = runBindingCheck(bin, settings(custody), ctx);
     assert.equal(checked.doc.result.status, "needs-configuration");
-    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.32");
+    assert.equal(checked.doc.result.problems.find((p) => p.code === "custody")?.message, "grant newer is not attached to custody; retire and respawn on aw >= 1.36.33");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

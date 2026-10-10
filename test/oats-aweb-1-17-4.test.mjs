@@ -49,7 +49,7 @@ if (args[0] === "version") {
   const mode = process.env.FAKE_VERSION || "";
   if (mode === "nomatch") { console.log("no version here"); process.exit(0); }
   if (mode === "chunked") { fs.writeSync(1, "aw 1.3"); block(150); fs.writeSync(1, "6.30\\n  commit: abc\\n"); block(20000); process.exit(0); }
-  fs.writeSync(1, "aw " + (mode === "old" ? "1.36.12" : "1.36.32") + "\\n  commit: abc\\n");
+  fs.writeSync(1, "aw " + (mode === "old" ? "1.36.12" : "1.36.33") + "\\n  commit: abc\\n");
   if (mode === "slow" || mode === "old") block(20000);
   process.exit(0);
 }
@@ -344,7 +344,7 @@ test("spawn and the binding check do not wait out aw's update check, and the flo
   fx = fixture(t);
   r = fx.hook("spawn", { FAKE_VERSION: "old" });
   assert.equal(r.status, 1);
-  assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.32/);
+  assert.match(r.doc.warning, /aw 1\.36\.12 is older than required 1\.36\.33/);
   r = fx.hook("spawn", { FAKE_VERSION: "nomatch" });
   assert.equal(r.status, 1);
   assert.match(r.doc.warning, /aw version could not be read/);

@@ -11,7 +11,7 @@
   "requires": [
     {
       "command": "aw",
-      "why": "aw >= 1.36.32: identity minting at spawn, self-delete at retire, live receive registration, onboarding, all agent messaging, replies to senders outside the team roster, and grants that never expire",
+      "why": "aw >= 1.36.33: identity minting at spawn, self-delete at retire, live receive registration, onboarding, all agent messaging, replies to senders outside the team roster, grants that never expire, and resident creation with oats aweb resident create",
       "install": "https://aweb.ai/docs (aw CLI)"
     },
     {

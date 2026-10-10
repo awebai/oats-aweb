@@ -21,7 +21,7 @@ const saveGrants = (g) => fs.writeFileSync(registry, JSON.stringify(g));
 function csv(name, fallback) { return String(process.env[name] || fallback).split(",").map(s => s.trim()).filter(Boolean); }
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { console.error("grant command refuses external identity home"); process.exit(2); }
-if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.32")); process.exit(0); }
+if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.33")); process.exit(0); }
 if (s.startsWith("wake status")) { console.log(j({ instances: [] })); process.exit(0); }
 if (a[0] === "wake" && a[1] === "register" && process.env.FAKE_WAKE_REGISTER_FAIL) { console.error("broker socket refused"); process.exit(1); }
 if (s.startsWith("wake ")) process.exit(0);
