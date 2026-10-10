@@ -46,7 +46,7 @@ line: `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name>`
   `oats spawn … --provider oats.aweb identity.mode=global --provider oats.aweb
   identity.resident=<name>` step; `FAIL <stage>: <message>`; `--json` answers
   one JSON-v1 envelope with a stable code per failing stage; `--plan` changes
-  nothing.
+  nothing and needs neither the key nor `AWEB_URL`.
 - **Single aw floor 1.36.33** (`AW_MIN`); `setup --install-aw` installs
   `^1.36.33` by default. Upgrade aw on the host, restart the wake daemon and
   every resident custody service, then `oats sync`.

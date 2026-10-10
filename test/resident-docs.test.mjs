@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
-import { DOMAIN, NAME, setup } from "./helpers/resident-harness.mjs";
+import { AWEB_URL, DOMAIN, NAME, setup } from "./helpers/resident-harness.mjs";
 
 const DOC = readFileSync(new URL("../docs/resident-create.md", import.meta.url), "utf8");
 function documented(name) {
@@ -27,6 +27,7 @@ function normalized(s, doc) {
   swap(s.fake.bin, "/usr/local/bin");
   swap(CAPTURED.stableId, "did:aw:<stable id>");
   swap(DOMAIN, "acme.aweb.ai");
+  swap(AWEB_URL, "<AWEB_URL>");
   const out = JSON.parse(text.replace(/init-\d{8}T\d{6}Z\./g, "init-20261010T120000Z."));
   // The unit's manager and path are the platform's: launchd on macOS, systemd on Linux.
   if (out.result?.custody?.manager) out.result.custody.manager = "<launchd or systemd>";

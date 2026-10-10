@@ -269,7 +269,9 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     // ---- preflight: nothing here has a remote effect
     const where = { platform, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
     const { state, rejected } = rootState(root);
-    if (needsInit(state) && !(typeof env.AWEB_URL === "string" && env.AWEB_URL.trim())) throw failure("E_RESIDENT_ARGUMENT", "preflight", `AWEB_URL is not set: copy the dashboard line, AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
+    const awebUrl = typeof env.AWEB_URL === "string" && env.AWEB_URL.trim() ? env.AWEB_URL : undefined;
+    // A plan has no remote effect: it names the URL the init would use.
+    if (needsInit(state) && !awebUrl && !opts.plan) throw failure("E_RESIDENT_ARGUMENT", "preflight", `AWEB_URL is not set: copy the dashboard line, AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
     const manager = unitManager(platform);
     if (manager) {
       const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
@@ -287,7 +289,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       return {
         outcome: "plan", name, root, state,
         ...(rejected ? { rejected } : {}),
-        init: needsInit(state) ? { argv: ["aw", ...INIT_ARGS(name)], cwd: root, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] } : null,
+        init: needsInit(state) ? { argv: ["aw", ...INIT_ARGS(name)], cwd: root, awebUrl: awebUrl ?? "AWEB_URL from your dashboard line", env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] } : null,
         verify: ["aw whoami --json", "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
         custody: manager
           ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
@@ -382,7 +384,7 @@ function renderText(r) {
   if (r.outcome === "plan") {
     const lines = [`Plan for resident ${r.name} in ${r.root} (${r.state}). Nothing was changed.`];
     if (r.rejected) lines.push(`  ${r.rejected} is quarantined signing material: init runs once and aw refuses it with its own reconciliation message.`);
-    if (r.init) lines.push(`  init:    ${r.init.argv.join(" ")}  (in ${r.init.cwd}; environment ${r.init.env.join(", ")} only)`);
+    if (r.init) lines.push(`  init:    ${r.init.argv.join(" ")}  (in ${r.init.cwd}, against ${r.init.awebUrl}; environment ${r.init.env.join(", ")} only)`);
     for (const v of r.verify) lines.push(`  verify:  ${v}`);
     lines.push(r.custody.manager ? `  custody: ${r.custody.manager} unit ${r.custody.label} at ${r.custody.path}: ${r.custody.runs} in ${r.custody.workingDirectory}, environment PATH and HOME only` : `  custody: ${r.custody.handStep}`);
     lines.push(`  record:  ${r.record}`);

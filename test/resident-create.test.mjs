@@ -116,6 +116,20 @@ test("an empty answer at the prompt refuses without running init", (t) => {
   assert.deepEqual(initCalls(s.fake), []);
 });
 
+test("--plan without AWEB_URL shows a placeholder for it; a real create still refuses", (t) => {
+  const s = setup(t);
+  const plan = s.run(["create", NAME, "--plan", "--json"], {}, { unset: ["AWEB_URL", "AWEB_API_KEY"] });
+  assert.equal(plan.status, 0, plan.stdout + plan.stderr);
+  assert.equal(plan.doc.result.init.awebUrl, "AWEB_URL from your dashboard line");
+  const text = s.run(["create", NAME, "--plan"], {}, { unset: ["AWEB_URL", "AWEB_API_KEY"] });
+  assert.equal(text.status, 0, text.stderr);
+  assert.ok(text.stdout.includes("against AWEB_URL from your dashboard line"), text.stdout);
+  assert.equal(s.run(["create", NAME, "--plan", "--json"]).doc.result.init.awebUrl, AWEB_URL);
+  const create = s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_URL"] });
+  assert.equal(create.doc.error.code, "E_RESIDENT_ARGUMENT");
+  assert.deepEqual(initCalls(s.fake), []);
+});
+
 test("AWEB_URL is required for an init", (t) => {
   const s = setup(t);
   const r = s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_URL"] });
@@ -341,7 +355,7 @@ test("--plan changes nothing and names the steps without the key", (t) => {
   const plan = r.doc.result;
   assert.equal(plan.outcome, "plan");
   assert.equal(plan.state, "create");
-  assert.deepEqual(plan.init, { argv: ["aw", "init", "--global", "--name", NAME, "--do-not-touch-agents-md", "--json"], cwd: s.root, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK"] });
+  assert.deepEqual(plan.init, { argv: ["aw", "init", "--global", "--name", NAME, "--do-not-touch-agents-md", "--json"], cwd: s.root, awebUrl: AWEB_URL, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK"] });
   assert.equal(plan.custody.label, `ai.aweb.custody.<domain of the returned address>.${NAME}`);
   assert.equal(plan.record, `settings.oats.aweb.residents.${NAME}: ${s.root} in ${join(s.deployment, "oats-local.yaml")}`);
   assert.ok(!r.stdout.includes(KEY));

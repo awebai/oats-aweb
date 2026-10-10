@@ -31,7 +31,8 @@ OATS deployment (or pass `--dir`).
   already maps to a team is refused: the new resident's team is known only
   after the init, and if it is that team the label is already mapped.
 - `--plan` runs the preflight and prints what would run and be written. It
-  changes nothing and needs no key.
+  changes nothing and needs neither the key nor `AWEB_URL` (without it, the
+  plan shows `AWEB_URL from your dashboard line`).
 - `--json` answers one JSON-v1 envelope (examples below).
 
 ## What it does
@@ -363,6 +364,7 @@ pure verify: no init, no new key, custody only re-ensured):
         "--json"
       ],
       "cwd": "/srv/deploy/.aweb-residents/carol",
+      "awebUrl": "<AWEB_URL>",
       "env": [
         "PATH",
         "HOME",
