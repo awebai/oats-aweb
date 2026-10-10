@@ -631,8 +631,11 @@ the answer.
 
 ## Fixtures
 
-The unit tests read aw output from `test/fixtures/resident`. Every fixture
-there is captured verbatim from a real aw run by `capture.sh` and labelled
-with the aw version and commit and the capture date (its README). They are
+The unit tests read aw output from `test/fixtures/resident`: runs against
+aweb's local stack, captured verbatim by `capture.sh`, and in `cloud/`, runs
+against aweb Cloud's local preview stack, captured by aweb. Each is labelled
+with the aw version and commit, the capture date and its source (the README
+there). The one file that is not aw's output is the empty quarantine file aw's
+real refusal is captured against; the README says so. They are
 never acceptance evidence: acceptance is the joint E2E. They are refreshed with
 `capture.sh` whenever aw's output contract changes.
