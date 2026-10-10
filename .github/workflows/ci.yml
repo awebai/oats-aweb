@@ -31,6 +31,21 @@ jobs:
           OATS_HOST_ONLY_REQUIRED: '1'
           OATS_HOST_ONLY_KERNEL_ROOT: ${{ runner.temp }}/oats-hostonly-kernel
         run: node --test test/claude-channel-host-only.test.mjs test/public-kernel-team-roots.test.mjs test/public-kernel-disposable-home.test.mjs test/public-kernel-seat-registry.test.mjs
+      # The start preview projects launch-hook warnings from OATS 0.44.0 on; the
+      # hostOnly pin above (0.42.0) predates that.
+      - name: Provision pinned launch-preview kernel
+        shell: bash
+        run: |
+          git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-preview-kernel"
+          git -C "$RUNNER_TEMP/oats-preview-kernel" checkout --detach a7214525aba6a5d81fccd6427f20a53ef26c3763
+          test "$(git -C "$RUNNER_TEMP/oats-preview-kernel" rev-parse HEAD)" = a7214525aba6a5d81fccd6427f20a53ef26c3763
+          cd "$RUNNER_TEMP/oats-preview-kernel"
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Require the decision statement in a real start preview
+        env:
+          OATS_PREVIEW_KERNEL_REQUIRED: '1'
+          OATS_PREVIEW_KERNEL_ROOT: ${{ runner.temp }}/oats-preview-kernel
+        run: node --test test/public-kernel-launch-preview.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"
 
