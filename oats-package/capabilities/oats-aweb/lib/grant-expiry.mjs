@@ -8,24 +8,25 @@ import {NEVER_GRANT_TTL, resolveGrantTTL} from './grant-duration.mjs';
 
 export const GRANT_EXPIRY_WARNING_MS = 7 * 24 * 3600 * 1000;
 
-/** True when the seat's captured identity.ttl is a duration, which a restart
- *  would mint again. A recorded grant.ttl does not say this: a seat from before
- *  1.25.0 renews at 720h and records it without any setting. */
+/** True when the seat's captured identity.ttl is a duration. A recorded
+ *  grant.ttl does not say this: a seat from before 1.25.0 renews at 720h and
+ *  records it without any setting. */
 function explicitDuration(ttl) {
   try { return typeof ttl === 'string' && resolveGrantTTL(ttl) !== NEVER_GRANT_TTL; } catch { return false; }
 }
 
 /** This seat's remedy, from the renew mode its grant recorded and the
- *  identity.ttl it captured. A restart re-mints only under renew: launch, and
- *  with the captured duration, so renew: off and a set duration need a respawn.
- *  A grant minted before oats.aweb 1.25.0 records no renew mode and gets a
- *  remedy true for both. */
+ *  identity.ttl it captured. Under renew: launch a restart re-mints: a seat
+ *  with a set duration gets another one, and ends up never expiring only once
+ *  the setting is removed and it is respawned. Under renew: off a restart keeps
+ *  the grant. A grant minted before oats.aweb 1.25.0 records no renew mode, so
+ *  its remedy also covers renew: off. */
 export function grantExpiryRemedy(home, grant, configuredTtl) {
-  const restart = `restart the seat to renew it (\`oats session restart --home ${home}\`)`;
   if (grant?.renew === 'off') return 'respawn the seat (or set `renew: launch` and respawn): with renew off a restart keeps this grant';
-  if (explicitDuration(configuredTtl)) return `respawn the seat: it captured identity.ttl ${configuredTtl}, which a restart would mint again`;
-  if (grant?.renew === 'launch') return restart;
-  return `${restart}; if its identity.renew is off or it captured a short identity.ttl, respawn it instead`;
+  const restart = explicitDuration(configuredTtl)
+    ? `a restart renews it for another ${configuredTtl} (\`oats session restart --home ${home}\`); to stop it expiring, remove identity.ttl and respawn`
+    : `restart the seat to renew it (\`oats session restart --home ${home}\`)`;
+  return grant?.renew === 'launch' ? restart : `${restart}; if its identity.renew is off, respawn it instead`;
 }
 
 const shown = value => value === undefined ? 'absent' : JSON.stringify(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 80);

@@ -83,12 +83,13 @@ The rest:
   one. Each names the instant as recorded and that seat's remedy, from the
   renew mode the grant recorded (`identity.grant.renew`) and the
   `identity.ttl` the seat captured: under `renew: launch`, "restart the seat
-  to renew it (`oats session restart --home <home>`)", unless the seat captured
-  an `identity.ttl` duration, which a restart would mint again: then "respawn
-  the seat"; under `renew: off`, where a restart keeps the grant, "respawn the
-  seat (or set `renew: launch` and respawn)". A grant minted before 1.25.0
-  records no renew mode and gets: restart, or respawn if its renew is off or its
-  ttl short. LOCAL seats get none of these.
+  to renew it (`oats session restart --home <home>`)"; for a seat that
+  captured an `identity.ttl` duration, "a restart renews it for another <ttl>
+  (…); to stop it expiring, remove identity.ttl and respawn"; under
+  `renew: off`, where a restart keeps the grant, "respawn the seat (or set
+  `renew: launch` and respawn)". A grant minted before 1.25.0 records no renew
+  mode, so its remedy adds "if its identity.renew is off, respawn it instead".
+  LOCAL seats get none of these.
 
 ## 1.21.0 — connect a deployment on another machine
 

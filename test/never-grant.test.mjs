@@ -414,14 +414,17 @@ test("readiness gives a never-grant no lifetime diagnostic and never parses its 
   }
 });
 
-test("the expiry remedy: a captured duration respawns; never, unset, or a recorded fallback 720h restarts", () => {
+test("the expiry remedy: a captured duration renews on restart and says how to stop it expiring; never, unset or a recorded fallback 720h restarts", () => {
   const now = Date.parse("2026-10-10T02:00:00Z"), at = "2026-10-10T01:00:00Z";
   const remedy = (grant, configuredTtl) => grantExpiryAssessment({ mode: "global", grant: { id: "g", expiresAt: at, renew: "launch", ...grant } }, { home: "/h", now, configuredTtl }).problems[0].message.slice(`grant g expired at ${at}: `.length);
   const restart = "restart the seat to renew it (`oats session restart --home /h`)";
   assert.equal(remedy({ ttl: "never" }, undefined), restart);
   assert.equal(remedy({}, "never"), restart);
   assert.equal(remedy({ ttl: "720h" }, undefined), restart, "a pre-1.25.0 seat renewed at the fallback");
-  for (const ttl of ["720h", "24h"]) assert.equal(remedy({ ttl }, ttl), `respawn the seat: it captured identity.ttl ${ttl}, which a restart would mint again`);
+  // grant-expiring carries the same remedy as grant-expired.
+  assert.equal(grantExpiryAssessment({ mode: "global", grant: { id: "g", expiresAt: "2026-10-12T00:00:00Z", renew: "launch" } }, { home: "/h", now, configuredTtl: "720h" }).warnings[0].message,
+    "grant g expires at 2026-10-12T00:00:00Z, within 7 days: a restart renews it for another 720h (`oats session restart --home /h`); to stop it expiring, remove identity.ttl and respawn");
+  for (const ttl of ["720h", "24h"]) assert.equal(remedy({ ttl }, ttl), `a restart renews it for another ${ttl} (\`oats session restart --home /h\`); to stop it expiring, remove identity.ttl and respawn`);
 });
 
 // ------------------------------------------------- the real aw, read-only

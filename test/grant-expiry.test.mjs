@@ -21,9 +21,9 @@ const HOUR = 3600000, DAY = 24 * HOUR;
 const NOW = Date.parse("2026-10-10T02:00:00Z");
 const HOME = "/abs/agents/dev/instances/seat";
 const REMEDY = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`)";
-const RESPAWN = "respawn the seat: it captured identity.ttl 24h, which a restart would mint again";
+const RESPAWN = "a restart renews it for another 24h (`oats session restart --home /abs/agents/dev/instances/seat`); to stop it expiring, remove identity.ttl and respawn";
 const RENEW_OFF = "respawn the seat (or set `renew: launch` and respawn): with renew off a restart keeps this grant";
-const UNRECORDED = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`); if its identity.renew is off or it captured a short identity.ttl, respawn it instead";
+const UNRECORDED = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`); if its identity.renew is off, respawn it instead";
 const iso = (ms) => new Date(ms).toISOString();
 /** A recorded grant identity. Grants minted from 1.25.0 record their ttl and
  *  renew mode; `null` leaves one out, as a grant minted before 1.25.0 does. */
@@ -44,6 +44,8 @@ test("each seat gets its own remedy from the renew mode its grant recorded and t
   assert.equal(remedy({ ttl: "24h", renew: "launch" }, "24h"), RESPAWN);
   for (const configured of [undefined, "24h"]) assert.equal(remedy({ renew: "off" }, configured), RENEW_OFF, `renew off, captured ${configured}`);
   assert.equal(remedy({ ttl: null, renew: null }, undefined), UNRECORDED, "minted before 1.25.0");
+  // A duration on a record with no renew mode: a restart renews it, unless renew is off.
+  assert.equal(remedy({ ttl: null, renew: null }, "24h"), `${RESPAWN}; if its identity.renew is off, respawn it instead`);
   assert.equal(assess(grantIdentity(soon, { ttl: "24h", renew: "launch" }), NOW, "24h").warnings[0].message, `grant grant-1 expires at ${soon}, within 7 days: ${RESPAWN}`);
   assert.equal(assess(grantIdentity(soon, { renew: "off" })).warnings[0].message, `grant grant-1 expires at ${soon}, within 7 days: ${RENEW_OFF}`);
 });
