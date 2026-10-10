@@ -79,8 +79,17 @@ the ops and one that is not ready each fail with their own message.
   environment is built from nothing: `PATH`, `HOME`, `AWEB_URL`,
   `AWEB_API_KEY`, `AW_NO_UPDATE_CHECK=1`, and `AWID_REGISTRY_URL` when set. No
   `AWEB_IDENTITY_HOME`, no other variable.
-- Every other child (aw's reads, the unit managers, the kernel for
-  `--team-label`) gets no key and no `AWEB_*` or `AWID_*` variable.
+- Every other child gets no key and no `AWEB_*` variable. aw's reads in R
+  (`aw version`, `whoami`, the doctors, `custody status`) run with `PATH`,
+  `HOME`, `AW_NO_UPDATE_CHECK=1` and, when it is set, the init's
+  `AWID_REGISTRY_URL`. (A global identity also keeps its registry in
+  `.aw/identity.yaml`: aw's offline identity checks answer the same with and
+  without it.) The unit managers get `PATH`, `HOME`, `XDG_RUNTIME_DIR` and
+  `DBUS_SESSION_BUS_ADDRESS`; the kernel, for `--team-label`, no `AWEB_*` or
+  `AWID_*` variable.
+- The command never opens, copies, moves or deletes a file under R's `.aw`:
+  `.aw/partial-init.yaml` holds the identity's private signing key. It only
+  lists the directory's names and reruns aw.
 - It is never in argv, the custody unit, `oats-local.yaml`, the captures or
   any output, error paths included. aw's stdout, stderr and exit are kept only
   in `R/.oats-resident/init-<time>.{stdout,stderr,exit}` (directory 0700,

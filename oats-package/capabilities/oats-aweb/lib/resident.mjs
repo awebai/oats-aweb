@@ -237,8 +237,9 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     const recorded = typeof residents[name] === "string" ? residents[name] : undefined;
     if (recorded !== undefined && !samePath(recorded, root)) throw failure("E_RESIDENT_ROOT", "preflight", `settings.oats.aweb.residents.${name} already records ${recorded}, not ${root}: pass --root ${recorded} to verify that resident, or choose another name`);
 
-    // Every aw child but init runs with PATH and HOME only: no key, no identity selector.
-    const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1" };
+    // Every aw child but init runs with PATH and HOME, and the init's registry
+    // when one is set: no key, no identity selector.
+    const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
     const floor = await awFloorMessage({ env: readEnv });
     if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
     const aw = onPath("aw", env.PATH);
@@ -274,7 +275,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
         outcome: "plan", name, root, state,
         ...(rejected ? { rejected } : {}),
         init: needsInit(state) ? { argv: ["aw", ...INIT_ARGS(name)], cwd: root, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] } : null,
-        verify: ["aw whoami --json", "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment PATH and HOME only)`),
+        verify: ["aw whoami --json", "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
         custody: manager
           ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
           : { manager: null, handStep: handStep(root, name) },

@@ -4,7 +4,7 @@
 // aw 1.36.33 captures (test/fixtures/resident); see helpers/fake-aw-resident.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -145,6 +145,22 @@ test("AWID_REGISTRY_URL reaches the init child only when it is set", (t) => {
   const s = setup(t);
   assert.equal(s.run(["create", NAME]).status, 0);
   assert.equal(Object.hasOwn(initCalls(s.fake)[0].env, "AWID_REGISTRY_URL"), false);
+});
+
+test("aw's reads in R run with PATH and HOME, and the init's AWID_REGISTRY_URL when it is set", (t) => {
+  // A global identity also persists its registry in .aw/identity.yaml (real
+  // doctor identity --offline answers the same with and without the variable);
+  // the reads still use the registry the init used.
+  for (const registry of [undefined, "http://127.0.0.1:18010"]) {
+    const s = setup(t);
+    assert.equal(s.run(["create", NAME], registry ? { AWID_REGISTRY_URL: registry } : {}).status, 0);
+    const reads = s.fake.calls().filter((c) => c.cmd === "aw" && ["whoami", "doctor", "custody"].includes(c.argv[0]));
+    assert.ok(reads.length >= 3);
+    for (const call of reads) {
+      assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["AW_NO_UPDATE_CHECK", "HOME", "PATH", ...(registry ? ["AWID_REGISTRY_URL"] : [])].sort(), call.argv.join(" "));
+      if (registry) assert.equal(call.env.AWID_REGISTRY_URL, registry);
+    }
+  }
 });
 
 // ------------------------------------------------------------------ success
@@ -409,4 +425,27 @@ test("--plan on a complete identity names the exact unit and needs no key", (t) 
   assert.ok(r.stdout.includes(`unit ${LABEL} at ${s.unitPath}`), r.stdout);
   assert.doesNotMatch(r.stdout, /init:/);
   assert.equal(existsSync(s.unitPath), false);
+});
+
+test("the command opens no file under .aw: it lists names and reruns aw, whose files they are", (t) => {
+  // .aw/partial-init.yaml holds the identity's private signing key. With every
+  // file there unreadable, a continuation, an adopt and a plan still work.
+  if (process.getuid?.() === 0) { t.skip("root reads files whatever their mode"); return; }
+  const lock = (root, files) => {
+    mkdirSync(join(root, ".aw"), { recursive: true, mode: 0o700 });
+    for (const f of files) { writeFileSync(join(root, ".aw", f), "secret"); chmodSync(join(root, ".aw", f), 0o000); }
+  };
+  const resumed = setup(t);
+  lock(resumed.root, ["partial-init.yaml"]);
+  for (const args of [["create", NAME, "--plan", "--json"], ["create", NAME, "--json"]]) {
+    const r = resumed.run(args);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  }
+  const adopted = setup(t);
+  lock(adopted.root, ["identity.yaml", "signing.key", "workspace.yaml"]);
+  for (const args of [["create", NAME, "--plan", "--json"], ["create", NAME, "--json"]]) {
+    const r = adopted.run(args, {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  }
+  assert.equal(adopted.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }).doc.result.outcome, "adopted");
 });
