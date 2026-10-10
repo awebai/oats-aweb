@@ -113,6 +113,11 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   launch`, and every mint (spawn and renewing launch) passes an explicit
   `--ttl`; tests now pin both. Non-expiring grants are not available yet: aw and
   the aweb server cap a grant at 30 days (oats-aweb#80).
+- `oats aweb setup --join <label>` on a workspace that forbids local team
+  writes joins a second committed team under a different default with no team
+  write: the join preserves that default, so the default command is not needed
+  (oats-aweb#96, the known limit of 1.24.1). An unmapped label on a closed
+  workspace still refuses before acceptance.
 - Forward port of 1.24.1 (released from release/1.24, oats-aweb#95): `oats aweb
   setup --join <label>` and username setup on a workspace that forbids local
   team writes (`local-teams-closed`) refuse only when the plan needs a team
