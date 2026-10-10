@@ -148,7 +148,7 @@ the host wake broker wakes every runtime. A session is on one path, never both.
 | joined team with `receive: native` | the host wake broker presents that identity's mail/chat, either as a line with `aw --identity-home <path> …` commands or as the full event |
 | joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries |
 
-**Channel selection and launch consent**
+**Channel selection and the development-channel prompt**
 
 Host-only `settings.oats.aweb.claudeChannelMode` in `oats-local.yaml` picks one
 fixed Claude argument: argv, never consent, admission or receive. New
@@ -218,37 +218,27 @@ both keys in that source instead.
 
 *Development fallback.* `development` passes
 `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
-and needs no managed policy, but Claude may stop at its development-channels
-confirmation; nothing in this provider answers it. The only automation is the
-kernel's exact-home consent, qualified only for Claude 2.1.289 darwin-arm64:
+and needs no managed policy. Claude shows its development-channel prompt, and
+OATS (0.52.0 and later, which this provider requires) confirms that prompt once
+at launch. `delivery: session` or `claudeChannelMode: approved` stop the prompt.
+Provider, broker and ordinary agents never send prompt keys.
 
-**Exact-home operator opt-in:** first verify the selected kernel supports the
-released OATS 0.44.0 contract and the owner authorized this exact canonical home.
-Only then the authorized operator may put this in the HOST's `oats-local.yaml`:
-```yaml
-launchPromptAnswers:
-  homes:
-    /absolute/canonical/instance/home:
-      awebDevelopmentChannel: true
-```
-Absent/false is OFF; strict boolean, exact canonical home only. No wildcard,
-ancestor, soul, environment, spawn or captured-recipe inheritance; no migration.
-Provider/broker/ordinary agents never enable this setting or send prompt keys.
-`workspaceTrust` is refused; folder trust and API-key prompts stay separate.
-Only the qualified invocation-owned Claude 2.1.289 darwin-arm64 executable,
-110x35 frame and exact argv permit the kernel's one Enter. Before opting in or
-interpreting a result, read [Launch consent and retained recovery](references/launch-consent.md)
-for the digest, qualification, preview and receipt checks. Missing preview support
-is unreported/unsupported, never consent. Opt-in or completion proves no admission,
-connection, message presentation or model consumption.
+The kernel records each start's outcome in `instance.json` as
+`launchPrompts.status` and explains a `blocked` start in its own `launch-prompt`
+readiness item. The provider's `channel-dev-confirmation` warning states the
+decision at spawn apply, at start and restart, in the start preview
+(`oats launch-config preview`) and at readiness. Readiness is quiet only when
+the home's last start recorded `completed`; any other status, or none, warns.
+`oats spawn --preview` runs no provider hooks, so it shows no decision statement
+yet, from the provider or the kernel ([oats#912](https://github.com/awebai/oats/issues/912)).
+A confirmed prompt proves no admission, connection, message presentation or
+model consumption; `native-receive-unproven` remains.
 
-For `blocked`/`incomplete`, inspect the retained target with
+For `blocked` or `incomplete`, inspect the retained target with
 `oats session inspect --home <home> --json`. Never automatically resend a key,
 replay spawn, replace or restart because of that result or `launched:false`.
 Start only after inspection proves the session gone; live prompt intervention
-needs separate explicit operator authorization. The released completion limitation
-can retain an active healthy session after one submitted Enter;
-[oats#754](https://github.com/awebai/oats/issues/754) remains open.
+needs separate explicit operator authorization.
 
 Where broker delivery is authorized, an operator may choose `delivery: session`
 for an unattended home instead, without overriding an explicit native-channel
@@ -295,8 +285,8 @@ presentation and a receiver-verified reply recovered by exact message ID, not
 `native-receive-unproven`, `claude-channel-enrollment-unverified` and every
 `claude-channel-policy-*` verdict (admitted included) mean native
 connection/admission remains unproven, not ready for this acceptance. For Claude,
-section 4's approved route (or, as fallback, its exact-home consent and
-retained-recovery boundary) comes first; never bypass a prompt or an explicit
+section 4's approved route (or, as fallback, development mode with the kernel's
+confirmation and its retained-recovery boundary) comes first; never bypass a prompt or an explicit
 native requirement. Codex uses the broker; joined `receive: native`
 also means broker, distinct from Claude/Pi primary native delivery. After uncertain
 restart, recover exact IDs as above before retrying any effects.
@@ -360,8 +350,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
 | `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
-| `channel-dev-confirmation` | the home runs in development mode, so Claude may stop at its development-channels confirmation; mode is not consent | operator: move the host to section 4's approved route and respawn; as fallback, section 4's exact-home opt-in (qualified only for Claude 2.1.289 darwin-arm64) or separately authorized human intervention; no provider/broker/ordinary-agent keys |
-| `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4/reference); no automatic input, replay, replacement or restart; no readiness inference |
+| `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route or `delivery: session`, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
+| `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
 | `claude-channel-policy-not-admitted` | approved mode: the machine file exists but does not set up the route as section 4 writes it; the message names the missing key (`channelsEnabled`, the entry, or the wrong marketplace). A missing `channelsEnabled` blocks API-key and Team/Enterprise accounts, not Pro/Max | admin: section 4 host step 1 |
 | `claude-channel-enrollment-unverified` | approved mode, admission not established. No machine file, unreadable, or an unsupported platform (launch and readiness; providers up to 1.23.2 warned this at every approved launch without reading the policy) | admin: section 4 host step 1 (or the higher managed source); then section 4's startup check and the nonce exchange |
@@ -417,7 +407,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Selected version | Supported boundary |
 |---|---|
 | Released provider 1.21.1, OATS >=0.30, aw >=1.36.13 | Labelled setup/join/resume, LOCAL instance join/leave, existing GLOBAL resident grant consumption. OATS >=0.38 supplies `localTeams` policy. |
-| Released provider 1.22.0 (PR61/#65) | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. Qualified automation is a separate selected-kernel contract with explicit exact-home operator consent (section 4); provider mode supplies none. Verify the selected composition; a repository release is not an installation receipt. |
+| Released provider 1.22.0 (PR61/#65) | New Claude/channel compositions default to development; explicit approved and captured histories remain distinct. From provider 1.27.0 (OATS >=0.52.0) the kernel confirms the development-channel prompt at launch (section 4); provider mode answers nothing itself. Verify the selected composition; a repository release is not an installation receipt. |
 | Released provider 1.22.0 (#45/#52/#59, PR63) | Deployment-scoped sibling placement, current-root lookup for explicit join and corrected remedies are included. Older 1.21.1 compositions lack these fixes; verify the selected provider is 1.22.0 or later. |
 | Native aw 1.36.24 | Hosted sibling create and exact external-home allowlist below; aw 1.36.23 lacks hosted create. Native source `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; maintainer binary evidence `92abe3b43beb81562eafeb13b3f60d8f3c5d44c2` is separate, not our local trial. |
 | Released provider 1.24.0 (#87–#89, #91), OATS >=0.42 | Approved Claude channel route documented in section 4, and approved spawn, launch and readiness read the machine managed-settings policy (section 7 verdicts). Retire's recovery copy holds no provider home state ("What retire's recovery keeps" below); homes spawned on earlier providers are copied whole. |

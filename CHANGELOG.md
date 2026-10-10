@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.27.0 — Unreleased
+
+- **OATS confirms Claude's development-channel prompt.** A Claude home in
+  development mode (`claudeChannelMode: development`, the default, under
+  `delivery: channel`) no longer stops at Claude's development-channel prompt:
+  the kernel confirms it once at launch (oats#886). `delivery: session` or
+  `claudeChannelMode: approved` stop the prompt altogether. The
+  `claudeChannelMode` manifest description says so.
+- **The `channel-dev-confirmation` warning now states that decision:**
+  "Claude's development-channel prompt: OATS confirms this prompt at launch;
+  `delivery: session` or `claudeChannelMode: approved` stop it." It replaces
+  "Claude Code may stop at its development-channels confirmation, and nothing
+  in this provider answers it; …". Spawn apply, start and restart of a
+  development home always carry it: a new launch has no outcome yet.
+- **Readiness is quiet after a confirmed start.** Readiness reads the kernel's
+  record of the home's last start, `instance.json` `launchPrompts.status`, and
+  nothing else: `completed` gives no warning; `blocked`, `incomplete`,
+  `not-engaged`, any other status or no record give the warning above. The
+  provider never explains a block: the kernel's own `launch-prompt` readiness
+  item does. Approved, session, Pi and Codex homes are unchanged.
+- **Where the decision shows:** spawn apply, start and restart, the start
+  preview (`oats launch-config preview`) and readiness. It doesn't show in the
+  spawn preview yet: `oats spawn --preview` runs no provider hooks, and shows no
+  decision statement from the provider or the kernel
+  ([oats#912](https://github.com/awebai/oats/issues/912)).
+- **The exact-home launch consent is gone.** The skill's
+  `launchPromptAnswers` opt-in and its reference
+  (`references/launch-consent.md`) are removed: the kernel no longer reads that
+  key. Section 4 is now "Channel selection and the development-channel prompt".
+
 ## 1.26.2 — 2026-10-11
 
 - **A resident's seat is ready without a minting root.** In a deployment that

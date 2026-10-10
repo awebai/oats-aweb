@@ -5,6 +5,20 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.27.0 — OATS confirms Claude's development-channel prompt
+
+- **Development mode no longer stops at the prompt.** A Claude home in
+  `claudeChannelMode: development` (the default) under `delivery: channel` shows
+  Claude's development-channel prompt, and OATS confirms it once at launch.
+  `delivery: session` or `claudeChannelMode: approved` stop the prompt.
+- **`channel-dev-confirmation` states that decision** at spawn apply, start and
+  restart, the start preview (`oats launch-config preview`) and readiness.
+  Readiness is quiet once the kernel recorded the home's last start as
+  `launchPrompts.status: completed`. The spawn preview shows no decision
+  statement yet ([oats#912](https://github.com/awebai/oats/issues/912)).
+- **The exact-home launch consent recipe is gone** from the skill: the kernel
+  no longer reads that key.
+
 ## 1.26.2 — a resident's seat is ready without a minting root
 
 - In a deployment that holds only residents (one made by `resident create`,
@@ -336,20 +350,24 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   migration, consent inference, approved-to-development fallback or flip-back
   occurs. A future default change requires an explicit reviewed release.
 
-  Development selection may stop at Claude Code's confirmation; nothing in this
-  provider answers it. OATS 0.44.0 releases a narrowly qualified kernel controller
-  under explicit exact-home operator consent in host-local configuration. Verify
-  the selected kernel and exact executable/frame guards; a tag is not adoption.
-  See the skill's [Channel selection and launch consent](oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md#4-how-messages-reach-you-delivery-and-wakes)
-  recipe and [retained-result recovery](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/launch-consent.md).
+  Development selection shows Claude Code's development-channel prompt, and
+  OATS 0.52.0 and later confirm it once at launch; `delivery: session` or
+  `claudeChannelMode: approved` stop the prompt. The kernel records the outcome
+  in `instance.json` `launchPrompts.status` and explains a blocked start in its
+  own `launch-prompt` readiness item; `channel-dev-confirmation` states the
+  decision at spawn apply, start and restart, the start preview (`oats
+  launch-config preview`) and readiness, where it is quiet only after a
+  `completed` start. `oats spawn --preview` runs no provider hooks, so it shows
+  no decision statement yet ([oats#912](https://github.com/awebai/oats/issues/912)). See the skill's
+  [Channel selection and the development-channel prompt](oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md#4-how-messages-reach-you-delivery-and-wakes).
   A blocked result can retain an active session after Enter; inspect first, never
-  automatically resend input or relaunch. Neither opt-in nor completion proves
+  automatically resend input or relaunch. A confirmed prompt does not prove
   admission or receive readiness.
 
-  Provider warnings describe selection, never an observed answer. Actual prompt
-  outcomes belong to the kernel launch result and durable receipt, where
-  supported; provider mode, consent and readiness do not establish them. Passing
-  confirmation does not prove native receive; `native-receive-unproven` remains.
+  The provider never observes or answers a prompt: its readiness reads only the
+  status the kernel recorded, and actual prompt outcomes belong to the kernel
+  launch result and durable receipt. Passing confirmation does not prove native
+  receive; `native-receive-unproven` remains.
 
   Readiness uses the captured mode or an exact retained provider launch
   contribution, including historical development arguments. Missing evidence
