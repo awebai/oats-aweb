@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.24.1 — 2026-10-10
+
+Fixed: `oats aweb setup --join <label>` on a workspace that forbids local team
+writes (`local-teams-closed`) refused even when the workspace itself commits
+that label to the joined team and it is already the default, so the join needed
+no team write at all. Setup now refuses on a closed workspace only when its plan
+would actually write a mapping or a default; a committed, already-default team
+joins and records its minting root (`roots[<team>]`) without touching the team
+configuration. An unmapped label on a closed workspace still refuses before any
+aw call, as before. On a closed workspace a conflicting mapping or another
+configuration failure is now reported as that (`E_SETUP_TEAM_CONFLICT`,
+`E_SETUP_CONFIGURATION`) rather than as `E_SETUP_POLICY`; both still refuse
+before any write. Known limit: a closed workspace that commits the joined label
+but defaults to a different label still refuses, though the join would only
+preserve that default.
+
 ## 1.24.0 — 2026-10-09
 
 Docs (#87): the oats-aweb skill's section 4 documents the approved Claude channel
