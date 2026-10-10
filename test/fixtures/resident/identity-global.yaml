@@ -1,0 +1,9 @@
+schema_version: 2
+did: did:key:z6MktXTk13ViRAx3AUn9NLk61Q2tYfF96RK315uiUGsCE2pc
+stable_id: did:aw:26qkAXu3cUJHk7nr9s9cBWKU8Uek
+address: rcmac-2c46153c.test/rcmac-2c46153c-a
+custody: self
+identity_scope: global
+registry_url: http://127.0.0.1:52519
+registry_status: registered
+created_at: "2026-10-10T20:44:02Z"

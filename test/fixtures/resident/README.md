@@ -26,6 +26,7 @@ README is updated with the new version, commit and date.
 | `init-certificate-connect` | A complete global identity made the way aweb's own real-stack e2e makes one (`aw id create --skip-dns-verify`, team create, add-member, fetch-cert), then connected with aw's certificate `aw init --do-not-touch-agents-md --json`. It prints the same `connectOutput` JSON as the API-key init (`cmd/aw/init_connect.go`). |
 | `whoami`, `doctor-identity-offline`, `doctor-registry-online` | `aw whoami --json`, `aw doctor identity --offline --json` and `aw doctor registry --online --json` in that complete identity's directory. |
 | `custody-status-not-running`, `custody-status-running` | `aw custody status --json` there, before and while `aw custody serve` runs. |
+| `identity-global.yaml` | Not a run's output: the `.aw/identity.yaml` that aw 1.36.33 wrote for a complete global identity made the same way, copied unchanged on 2026-10-10 from the named macOS run of 1.26.0 (run `rcmac-2c46153c`, against this same stack). It holds no key (the signing key is `signing.key`); its `registry_url` is the stack's awid, a registry other than aw's default. `test/resident-seat-registry.test.mjs` reads it, and makes its default-registry and no-registry cases by changing only the `registry_url` line. |
 
 ## `cloud/`: aweb Cloud's local preview stack
 

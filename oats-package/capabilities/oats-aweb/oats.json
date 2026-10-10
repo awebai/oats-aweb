@@ -131,7 +131,8 @@
   },
   "environment": [
     "AWEB_DELIVERY",
-    "AWEB_IDENTITY_HOME"
+    "AWEB_IDENTITY_HOME",
+    "AWID_REGISTRY_URL"
   ],
   "settings": {
     "delivery": {
@@ -176,7 +177,8 @@
     }
   },
   "environmentNamespaces": [
-    "AWEB_"
+    "AWEB_",
+    "AWID_"
   ],
   "operations": {
     "teams": {
