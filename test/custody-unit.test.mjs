@@ -119,6 +119,16 @@ test("systemd: a $ in ExecStart is escaped as $$; Environment= keeps it, since s
   assert.match(text, /^WorkingDirectory=\/srv\/r\$x$/m);
 });
 
+test("systemd: a literal % is written %% in ExecStart=, Environment= and WorkingDirectory=, which all expand specifiers; launchd takes it as is", () => {
+  const unit = renderUnit({ platform: "linux", label: LABEL, aw: "/opt/100%u/aw", root: "/srv/%h/r", path: "/opt/100%u:/usr/bin", home: "/home/50%", address: "juan.aweb.ai/alice" });
+  assert.match(unit, /^ExecStart="\/opt\/100%%u\/aw" custody serve$/m);
+  assert.match(unit, /^Environment="PATH=\/opt\/100%%u:\/usr\/bin" "HOME=\/home\/50%%"$/m);
+  assert.match(unit, /^WorkingDirectory=\/srv\/%%h\/r$/m);
+  // launchd does no expansion in a plist's strings: XML escaping is all there is.
+  const plist = renderUnit({ platform: "darwin", label: LABEL, aw: "/opt/100%u/aw", root: "/srv/%h/r", path: "/opt/100%u:/usr/bin", home: "/home/50%", address: "juan.aweb.ai/alice" });
+  for (const value of ["/opt/100%u/aw", "/srv/%h/r", "/opt/100%u:/usr/bin", "/home/50%"]) assert.ok(plist.includes(`<string>${value}</string>`), value);
+});
+
 test("residentUnits finds every unit of a name, with the directory it serves", (t) => {
   const home = base(t);
   for (const platform of ["darwin", "linux"]) {
