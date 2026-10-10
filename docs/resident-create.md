@@ -4,7 +4,7 @@
 existing hosted aweb team from the team's dashboard API key. It serves the
 resident with a per-user custody service and records it in the deployment, so
 that grant seats can be spawned on it. It ships in oats.aweb 1.26.0 and needs
-aw 1.36.33 or later (the provider's single floor).
+aw 1.36.33 or later (the provider's single floor) and OATS 0.48.0 or later.
 
 ## Invocation
 
@@ -27,11 +27,12 @@ deployment's.
   `<namespace>/<name>`.
 - `--root <dir>` is the resident's directory, R. It defaults to
   `<deployment>/.aweb-residents/<name>`.
-- `--team-label <label>` maps a team label to the resident's team: with
-  `oats teams add` where the workspace allows local teams, else by printing the
-  lines to commit in `oats-workspace.yaml`. Before an init, a label that
-  already maps to a team is refused: the new resident's team is known only
-  after the init, and if it is that team the label is already mapped.
+- `--team-label <label>` names the label the resident's team is mapped under.
+  Without it the label is derived from the team's name (see
+  [The team and the default team](#the-team-and-the-default-team)). Before an
+  init, a `--team-label` that already maps to a team is refused: the new
+  resident's team is known only after the init, and if it is that team the
+  label is already mapped.
 - `--plan` runs the preflight and prints what would run and be written. It
   changes nothing and needs neither the key nor `AWEB_URL` (without it, the
   plan shows `AWEB_URL from your dashboard line`).
@@ -44,12 +45,12 @@ deployment's.
 | arguments | Parses the command line. | None. |
 | deployment | Finds the deployment and its `oats-local.yaml`. | None. |
 | aw | `aw version` must be 1.36.33 or later. | None. |
-| preflight | Reads R and the custody units; on Linux, `loginctl show-user <user> --property=Linger`; with `--team-label` before an init, the kernel's teams; for a complete identity, `aw whoami --json` and `aw custody status --json` in R. | None, local or remote. |
+| preflight | Reads R and the custody units; on Linux, `loginctl show-user <user> --property=Linger`; the kernel's `oats --version --json`, and with `--team-label` before an init, its teams; for a complete identity, `aw whoami --json` and `aw custody status --json` in R. | None, local or remote. |
 | key | Takes the key from `AWEB_API_KEY`, or the prompt. | None. |
 | init | Exactly `aw init --global --name <name> --do-not-touch-agents-md --json` in R, once. | aw registers the identity at awid and asks aweb to create it in the key's team. |
 | verify | `aw whoami --json` (adopting only), `aw doctor identity --offline --json` and `aw doctor registry --online --json` in R. | None. |
 | custody | Writes and loads the custody unit, then waits for `aw custody status --json` to be ready. | A per-user service. |
-| record | Writes `settings.oats.aweb.residents.<name>: R` in `oats-local.yaml`; maps `--team-label`. | Deployment configuration. |
+| record | Writes `settings.oats.aweb.residents.<name>: R` in `oats-local.yaml`; maps the resident's team under its label, and makes that label the default team where there is none. | Deployment configuration. |
 
 Init is skipped when R already holds a complete global identity: the command
 then verifies it, ensures its custody and records it (adopt). The preflight
@@ -95,8 +96,8 @@ the ops and one that is not ready each fail with their own message.
   `AWID_REGISTRY_URL`. (A global identity also keeps its registry in
   `.aw/identity.yaml`: aw's offline identity checks answer the same with and
   without it.) The unit managers get `PATH`, `HOME`, `XDG_RUNTIME_DIR` and
-  `DBUS_SESSION_BUS_ADDRESS`; the kernel, for `--team-label`, no `AWEB_*` or
-  `AWID_*` variable.
+  `DBUS_SESSION_BUS_ADDRESS`; the kernel (its version, its teams and the team
+  verbs) no `AWEB_*` or `AWID_*` variable.
 - The command never opens, copies, moves or deletes a file under R's `.aw`:
   `.aw/partial-init.yaml` holds the identity's private signing key. It only
   lists the directory's names and reruns aw.
@@ -109,6 +110,49 @@ the ops and one that is not ready each fail with their own message.
 
 aw also adds `.aw/` to `.git/info/exclude` when R is inside a git worktree.
 That is aw's own behaviour and touches no committed file.
+
+## The team and the default team
+
+The record stage maps the resident's team (the canonical id aw init returned,
+or the one the doctor shows when adopting) under a team label:
+
+- **The label** is `--team-label` when given. Without it, it is the team's
+  name, the part of the id before `:`, normalised as `oats aweb setup`
+  normalises team names: lowercase, `_` and `.` as `-`, no leading or trailing
+  `-`. `default:acme.aweb.ai` gives `default`. A name that gives no team label
+  of at most 64 characters is refused like a taken label (below).
+- **The mapping** is `oats teams add <label> --team <id> --no-default` where
+  the workspace allows local teams, read back. A label that already maps to
+  the same team is reused. Where the workspace allows no local teams, the
+  command changes nothing and prints the lines to commit in
+  `oats-workspace.yaml`.
+- **The default team.** A seat's grant is minted in the deployment's default
+  team, so the label must be that default before a seat is spawned. Where the
+  deployment has no default team, the command makes the label the default
+  (`oats teams default <label> --if-absent`, read back); a workspace without
+  local teams gets `defaultTeam: <label>` in its lines to commit. An existing
+  default, the deployment's or the workspace's, is never changed: when it is
+  another label, the output prints `oats teams default <label>` as its own
+  first step, before the spawn line, with that reason. Where the workspace
+  allows no local teams, that change is the workspace's, and only the mapping
+  is printed to commit.
+
+A plain `oats teams add` makes the first local team the deployment's default,
+which wins over the workspace's, so it could replace a default. The kernel's
+`--no-default` and `--if-absent` (feature `teams-conditional-default`, OATS
+0.48.0) never do, and a kernel without that feature ignores those flags. So
+the preflight asks the kernel (`oats --version --json`) and, without the
+feature, refuses before any effect with the upgrade:
+`npm install -g @awebai/oats@latest`.
+
+**A label that maps to another team.** With `--team-label`, before an init,
+any mapping of the label is refused in the preflight. A derived label can only
+be checked at record: the team is known only once the key has been used. By
+then the identity, its custody and `settings.oats.aweb.residents.<name>` are
+in place, so the refusal (`E_RESIDENT_TEAM_LABEL`, stage `record`) says so and
+gives the rerun: `oats aweb resident create <name> --team-label <other>` (with
+the run's `--dir` and `--root`, when it gave them). That rerun needs no API
+key: it verifies the resident and adds the mapping; it is not a second create.
 
 ## The custody unit
 
@@ -176,15 +220,47 @@ R under a supervisor that keeps it running (working directory R, environment
 Removing the unit does not remove the resident: R and
 `settings.oats.aweb.residents.<name>` stay until you remove them.
 
+## A seat's registry
+
+A grant seat on the resident verifies senders at an awid registry. Its grant
+home records none, so aw would fall back to `AWID_REGISTRY_URL`, else to its
+default registry (`https://api.awid.ai`), and mail from a resident on another
+registry would read as `verification_stale`. So the spawn and launch hooks of a
+seat (`identity.mode` global) give it `AWID_REGISTRY_URL`, set to the
+`registry_url` that the resident's `.aw/identity.yaml` records (R, found
+through `settings.oats.aweb.residents.<name>`), when that registry's origin is
+not aw's default. When it is the default, or the identity records none, they
+set nothing. The operator's own `AWID_REGISTRY_URL` is never passed on. A
+recorded value that is not an http(s) registry origin is a readiness problem
+(`custody`), and a spawn warning, and is not passed on.
+
 ## Output
 
 Text: `PASS resident <address> team <team id> custody running`, with
 `(resumed)`, `(adopted)` or `(already exists)` when that is what happened,
-then any warnings, the unit, the recorded setting and the next step:
+then any warnings, the unit, the recorded setting, the team label (whether it
+was derived, mapped or already mapped), the default team when this command set
+it or kept another, and the next step:
 
 ```
 Next: spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=<name>
 ```
+
+When another default team is kept, the steps are numbered, in the order to run
+them, after the reason:
+
+```
+Next, in order (a seat's grant is minted in the deployment's default team, which is core (core:acme.aweb.ai), not default):
+  1. oats teams default default
+  2. oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=<name>
+```
+
+In `--json`, `result.teamLabel` is `{label, team, status, derived, default}`:
+`status` is `added`, `reused` or `commit` (lines to commit, in `lines`), and
+`default` is `set`, `already`, `kept` or `commit`. `result.steps` is every
+command to run, in order (the spawn line last), with `result.stepsReason` and
+`result.defaultTeam` when another default is kept. `result.next` is the spawn
+step as a sentence.
 
 A failure is `FAIL <stage>: <message>` on stderr. An init failure's message
 is aw's own text (with the key redacted), so aw's "rerun the same command in
@@ -212,7 +288,7 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_UNIT` | custody | a launchctl or systemctl command failed |
 | `E_RESIDENT_UNIT_UNSUPPORTED` | custody | no unit on this host and custody is not running: the hand step |
 | `E_RESIDENT_CUSTODY` | custody | custody not ready in 30 s: not running, team not ready, or ops missing |
-| `E_RESIDENT_TEAM_LABEL` | preflight, record | `--team-label` already maps to a team (before an init) or to another team (adopting), or the kernel refused |
+| `E_RESIDENT_TEAM_LABEL` | preflight, record | the kernel lacks `teams-conditional-default` (OATS older than 0.48.0); `--team-label` already maps to a team (before an init); the label, given or derived, maps to another team (at record: rerun with `--team-label <other>`); or the kernel refused |
 
 ### The `--json` envelopes
 
@@ -246,6 +322,13 @@ Created:
       "file": "/srv/deploy/oats-local.yaml",
       "setting": "settings.oats.aweb.residents.carol"
     },
+    "teamLabel": {
+      "label": "default",
+      "team": "default:acme.aweb.ai",
+      "status": "added",
+      "derived": true,
+      "default": "set"
+    },
     "warnings": [
       "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
     ],
@@ -254,7 +337,10 @@ Created:
       "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
       "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
     ],
-    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+    "steps": [
+      "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    ]
   }
 }
 ```
@@ -283,6 +369,13 @@ Continued from a partial (an earlier init failed after it saved its key):
       "file": "/srv/deploy/oats-local.yaml",
       "setting": "settings.oats.aweb.residents.carol"
     },
+    "teamLabel": {
+      "label": "default",
+      "team": "default:acme.aweb.ai",
+      "status": "added",
+      "derived": true,
+      "default": "set"
+    },
     "warnings": [
       "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
     ],
@@ -291,7 +384,10 @@ Continued from a partial (an earlier init failed after it saved its key):
       "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
       "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
     ],
-    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+    "steps": [
+      "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    ]
   }
 }
 ```
@@ -321,11 +417,21 @@ pure verify: no init, no new key, custody only re-ensured):
       "file": "/srv/deploy/oats-local.yaml",
       "setting": "settings.oats.aweb.residents.carol"
     },
+    "teamLabel": {
+      "label": "default",
+      "team": "default:acme.aweb.ai",
+      "status": "added",
+      "derived": true,
+      "default": "set"
+    },
     "warnings": [
       "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
     ],
     "captures": [],
-    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+    "steps": [
+      "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    ]
   }
 }
 ```
@@ -352,11 +458,21 @@ pure verify: no init, no new key, custody only re-ensured):
       "file": "/srv/deploy/oats-local.yaml",
       "setting": "settings.oats.aweb.residents.carol"
     },
+    "teamLabel": {
+      "label": "default",
+      "team": "default:acme.aweb.ai",
+      "status": "added",
+      "derived": true,
+      "default": "set"
+    },
     "warnings": [
       "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
     ],
     "captures": [],
-    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+    "steps": [
+      "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    ]
   }
 }
 ```
@@ -409,7 +525,8 @@ pure verify: no init, no new key, custody only re-ensured):
         "HOME"
       ]
     },
-    "record": "settings.oats.aweb.residents.carol: /srv/deploy/.aweb-residents/carol in /srv/deploy/oats-local.yaml"
+    "record": "settings.oats.aweb.residents.carol: /srv/deploy/.aweb-residents/carol in /srv/deploy/oats-local.yaml",
+    "teamLabel": "the returned team's name → the returned team, with oats teams add --no-default where the workspace allows local teams; it becomes the default team only where there is none"
   }
 }
 ```
@@ -611,15 +728,91 @@ A custody without the floor ops:
 }
 ```
 
+Created where the workspace's default team is another (`core`), which is kept:
+
+<!-- envelope: default-kept -->
+```json
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "outcome": "created",
+    "name": "carol",
+    "root": "/srv/deploy/.aweb-residents/carol",
+    "address": "acme.aweb.ai/carol",
+    "team": "default:acme.aweb.ai",
+    "stableId": "did:aw:<stable id>",
+    "custody": {
+      "status": "running",
+      "manager": "<launchd or systemd>",
+      "label": "ai.aweb.custody.acme.aweb.ai.carol",
+      "path": "<unit path>"
+    },
+    "recorded": {
+      "file": "/srv/deploy/oats-local.yaml",
+      "setting": "settings.oats.aweb.residents.carol"
+    },
+    "teamLabel": {
+      "label": "default",
+      "team": "default:acme.aweb.ai",
+      "status": "added",
+      "derived": true,
+      "default": "kept"
+    },
+    "warnings": [
+      "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
+    ],
+    "captures": [
+      "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+      "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+      "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+    ],
+    "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+    "steps": [
+      "oats teams default default",
+      "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+    ],
+    "stepsReason": "a seat's grant is minted in the deployment's default team, which is core (core:acme.aweb.ai), not default",
+    "defaultTeam": {
+      "label": "core",
+      "team": "core:acme.aweb.ai"
+    }
+  }
+}
+```
+
+The label derived from the team's name already maps to another team:
+
+<!-- envelope: team-label-taken -->
+```json
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_RESIDENT_TEAM_LABEL",
+    "message": "the team label default, derived from the name of team default:acme.aweb.ai, already maps to default:other.example. The resident's identity, its custody and settings.oats.aweb.residents.carol are in place; only the team mapping is missing. Rerun with another label: oats aweb resident create carol --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create",
+    "details": {
+      "stage": "record",
+      "root": "/srv/deploy/.aweb-residents/carol",
+      "captures": [
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+      ]
+    }
+  }
+}
+```
+
 ## The joint real-stack E2E
 
 Acceptance is the joint E2E against aweb Cloud's local stack (local Cloud,
-AWID, PostgreSQL, Redis) with the published aw and the **released**
-oats.aweb 1.26.0: the commit tagged `v1.26.0`. It runs the dashboard's line
+AWID, PostgreSQL, Redis) with the published aw and the oats.aweb release
+under test, at its **tagged** commit. It runs the dashboard's line
 verbatim:
 
 ```
-AWEB_API_KEY=<key> AWEB_URL=<local Cloud url> AWID_REGISTRY_URL=<local AWID url> oats aweb resident create <name> --team-label <label>
+AWEB_API_KEY=<key> AWEB_URL=<local Cloud url> AWID_REGISTRY_URL=<local AWID url> oats aweb resident create <name>
 ```
 
 `AWID_REGISTRY_URL` is needed only because the local stack's registry is not
@@ -627,18 +820,20 @@ the default one.
 
 **Fixture contract.**
 
-1. A fresh OATS deployment D with oats.aweb 1.26.0 pinned, and aw 1.36.33 or
-   later on PATH. Nothing about the resident is configured in advance.
+1. A fresh OATS deployment D with the release under test pinned, OATS 0.48.0
+   or later, and aw 1.36.33 or later on PATH. Nothing about the resident is
+   configured in advance.
 2. The command, run in D, creates the resident in R
    (`D/.aweb-residents/<name>`), its custody unit, and
-   `settings.oats.aweb.residents.<name>`. `--team-label <label>` maps the
-   label to the resident's team. Make that label D's default team
-   (`oats teams default <label>`): a seat's grant is minted in its default team.
+   `settings.oats.aweb.residents.<name>`. It maps the resident's team under
+   the label derived from its name and, D having no default team, makes that
+   label D's default: a seat's grant is minted in the default team.
 3. A minimal soul for the seat: `soul.yaml` with `schemaVersion: 2`, a `name`,
    a `description` and `work: directory`, and nothing about identity.
-4. The seat: `oats spawn <soul> --provider oats.aweb identity.mode=global
-   --provider oats.aweb identity.resident=<name>`, with `--preview` first.
-   Spawn mints the seat's grant from the resident's custody.
+4. The seat: the printed steps, in order (the spawn line, with `<soul>`
+   replaced), with `--preview` first. Spawn mints the seat's grant from the
+   resident's custody, and the seat's environment carries the resident's
+   registry (`AWID_REGISTRY_URL`, the local AWID).
 
 What each acceptance item exercises here:
 
@@ -676,7 +871,10 @@ the answer.
 | Continuing a partial to a complete identity | Only the joint E2E |
 | A quarantined (`.rejected`) partial made by aw | No stack: aw makes one only when aweb answers with a different identity than it registered, which no honest server does. Unit tests replay aw's real refusal of a quarantine file |
 | A customer-held (BYOT) team's refusal | Only the joint E2E, once aw's preflight is released |
-| A seat spawned on the resident, and mail | Only the joint E2E |
+| The printed steps run verbatim through a real kernel with `teams-conditional-default`: no default (set), the workspace's default (kept, `oats teams default` first), and a reused label; each reaches a passing `--preview` and a `--no-launch` scaffold whose grant is recorded on the resident, and its retire leaves no active grant of that seat | CI: the same journeys |
+| The derived label, its refusal and the `--team-label` rerun, lines to commit, an older kernel's refusal | Unit tests with a fake kernel whose answers follow the real kernel's (`test/resident-create.test.mjs`) |
+| A seat's `AWID_REGISTRY_URL` from the resident's identity, never the operator's | Unit tests on a real aw 1.36.33 `identity.yaml` (`test/resident-seat-registry.test.mjs`) |
+| Mail between seats | Only the joint E2E |
 
 ## Fixtures
 
@@ -685,6 +883,7 @@ aweb's local stack, captured verbatim by `capture.sh`, and in `cloud/`, runs
 against aweb Cloud's local preview stack, captured by aweb. Each is labelled
 with the aw version and commit, the capture date and its source (the README
 there). The one file that is not aw's output is the empty quarantine file aw's
-real refusal is captured against; the README says so. They are
+real refusal is captured against; the README says so. `identity-global.yaml`
+is a resident's `.aw/identity.yaml` as aw wrote it, which holds no key. They are
 never acceptance evidence: acceptance is the joint E2E. They are refreshed with
 `capture.sh` whenever aw's output contract changes.

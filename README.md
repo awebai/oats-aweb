@@ -5,6 +5,19 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.26.1 — the printed next steps work in a fresh deployment
+
+- **`resident create` maps the team without `--team-label`.** The resident's
+  team is mapped under the team's name (`default` for `default:acme.aweb.ai`)
+  and becomes the deployment's default team where there is none, so the
+  printed spawn line works as printed. An existing default is never changed:
+  the command prints `oats teams default <label>` as the first step instead.
+  It needs OATS 0.48.0 or later and refuses an older kernel before any effect.
+- **A seat verifies at its resident's registry.** A grant seat gets
+  `AWID_REGISTRY_URL` from the resident's `.aw/identity.yaml` when that
+  registry is not aw's default.
+- Details: [docs/resident-create.md](docs/resident-create.md).
+
 ## 1.26.0 — one command for a GLOBAL resident
 
 - **`oats aweb resident create <name>`** makes a GLOBAL resident identity in an

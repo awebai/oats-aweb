@@ -67,11 +67,19 @@ const cases = {
   },
   custody: { fake: { custody: "missing-ops" }, run: (s) => s.run(["create", NAME, "--json"]) },
   "custody-running": { fake: { custody: "elsewhere" }, prepare: complete, run: (s) => s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }) },
+  "default-kept": {
+    setup: { kernel: { teams: [{ label: "core", team: "core:fixture-6400.test", from: "shared" }], defaultTeam: { label: "core", team: "core:fixture-6400.test", from: "workspace" } } },
+    run: (s) => s.run(["create", NAME, "--json"]),
+  },
+  "team-label-taken": {
+    setup: { kernel: { teams: [{ label: "default", team: "default:other.example", from: "local" }] } },
+    run: (s) => s.run(["create", NAME, "--json"]),
+  },
 };
 
 for (const [name, c] of Object.entries(cases)) {
   test(`docs/resident-create.md shows the real ${name} envelope`, (t) => {
-    const s = setup(t, c.fake);
+    const s = setup(t, c.fake, c.setup);
     c.prepare?.(s);
     const r = c.run(s);
     assert.ok(r.doc, r.stdout + r.stderr);

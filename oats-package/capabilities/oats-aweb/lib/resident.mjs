@@ -16,8 +16,9 @@ import { join, resolve } from "node:path";
 import { awFloorMessage, onPath } from "./binding-wire.mjs";
 import { parseAwJson } from "./grant-custody.mjs";
 import { assertAwebSettingRecordable, recordAwebSetting } from "./local-settings.mjs";
+import { querySelectedKernel } from "./session-readiness.mjs";
 import { selectedTeamKernel } from "./setup-team-default.mjs";
-import { selectedDeployment } from "./team-roots.mjs";
+import { normalizeAwebTeamName, selectedDeployment } from "./team-roots.mjs";
 import { conflictMessage, custodyLabel, ensureCustodyUnit, handStep, lingerProblem, ownUnitServes, residentUnits, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
 
 export const RESIDENT_USAGE = "usage: AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]";
@@ -194,20 +195,34 @@ function registryWarnings(read) {
   return failing.length ? failing.map((c) => `${what}: ${c.id} is ${c.status} (this can be publication lag)`) : [`${what}: status is ${doc?.status ?? "unknown"} (this can be publication lag)`];
 }
 
-const NEXT = (name) => `spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=${name}`;
-const commitLines = (label, team) => ["This workspace does not allow local teams; commit the team in oats-workspace.yaml:", "    teams:", `      ${JSON.stringify(label)}: { team: ${JSON.stringify(team)} }`];
+const SPAWN = (name) => `oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=${name}`;
+const NEXT = (name) => `spawn a seat on this resident: ${SPAWN(name)}`;
+const commitLines = (entries) => ["This workspace does not allow local teams; commit the team in oats-workspace.yaml:", ...entries];
+const KERNEL_LABEL_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const CONDITIONAL_DEFAULT = "teams-conditional-default";
 
 /** The selected kernel's team commands, failing as E_RESIDENT_TEAM_LABEL at
  *  `stage`. The kernel child gets no aweb or awid variable, the key least of all. */
+const kernelEnvOf = (env) => Object.fromEntries(Object.entries(env).filter(([k]) => !/^(AWEB_|AWID_)/.test(k)));
 function teamKernel(deployment, env, stage) {
-  const kernelEnv = Object.fromEntries(Object.entries(env).filter(([k]) => !/^(AWEB_|AWID_)/.test(k)));
   const failed = (e) => failure("E_RESIDENT_TEAM_LABEL", stage, e.message);
   let kernel;
-  try { kernel = selectedTeamKernel(deployment, kernelEnv); } catch (e) { throw failed(e); }
-  return {
-    read: () => { try { return kernel.read(); } catch (e) { throw failed(e); } },
-    add: (label, team) => { try { return kernel.add(label, team); } catch (e) { throw failed(e); } },
-  };
+  try { kernel = selectedTeamKernel(deployment, kernelEnvOf(env)); } catch (e) { throw failed(e); }
+  const guarded = (f) => (...args) => { try { return f(...args); } catch (e) { throw failed(e); } };
+  return { read: guarded(kernel.read), addMapping: guarded(kernel.addMapping), setDefaultIfAbsent: kernel.setDefaultIfAbsent };
+}
+
+/** Mapping a team must never replace a default: a plain `oats teams add`
+ *  makes the first local team the default, over the workspace's. The kernel's
+ *  `--no-default` and `--if-absent` (feature teams-conditional-default, OATS
+ *  0.48.0) are the only safe verbs, and an older kernel ignores those flags. */
+function preflightKernel(env) {
+  let version;
+  try { version = querySelectedKernel(["--version", "--json"], { env: kernelEnvOf(env) }); }
+  catch { throw failure("E_RESIDENT_TEAM_LABEL", "preflight", "the selected OATS kernel (OATS_CLI_BIN) did not answer oats --version --json: run this command as oats aweb resident create"); }
+  if (!Array.isArray(version?.features) || !version.features.includes(CONDITIONAL_DEFAULT)) {
+    throw failure("E_RESIDENT_TEAM_LABEL", "preflight", `oats aweb resident create needs OATS 0.48.0 or later (${CONDITIONAL_DEFAULT}), so that mapping the resident's team never replaces a default team; the selected kernel is ${typeof version?.version === "string" ? version.version : "unknown"}: upgrade OATS with \`npm install -g @awebai/oats@latest\`, then rerun`);
+  }
 }
 
 /** Before an init, a label that already maps to a team is refused: the new
@@ -217,18 +232,54 @@ function preflightTeamLabel(deployment, env, label) {
   if (row) throw failure("E_RESIDENT_TEAM_LABEL", "preflight", `team label ${label} already maps to ${row.team ?? "no team"}, and a new resident's team is known only after aw init: run without --team-label if the resident joins that team, or choose another label`);
 }
 
-/** Maps the team label to the resident's team through the selected kernel. */
-function recordTeamLabel(deployment, env, label, team) {
+/** The label a team is mapped under without --team-label: its name, the part
+ *  of the id before ':', as an aweb team name, and a kernel team label. */
+export function derivedTeamLabel(team) {
+  let label;
+  try { label = normalizeAwebTeamName(String(team).split(":")[0]); } catch { /* refused below */ }
+  if (!label || !KERNEL_LABEL_RE.test(label)) throw new Error(`the name of team ${team} is not a team label of at most 64 characters`);
+  return label;
+}
+
+/** Maps the resident's team under --team-label, or under its derived label,
+ *  through the selected kernel, and makes that label the default team only
+ *  where the deployment has none. An existing default is never changed. */
+function recordTeam(deployment, env, opts, team) {
+  const derived = opts.teamLabel === undefined;
+  const rerun = () => ["oats aweb resident create", opts.name, ...(opts.dir ? ["--dir", opts.dir] : []), ...(opts.root ? ["--root", opts.root] : []), "--team-label <other>"].join(" ");
+  // The identity, custody and residents setting are in place: only the mapping is missing.
+  const refuse = (why) => failure("E_RESIDENT_TEAM_LABEL", "record", `${why}. The resident's identity, its custody and settings.oats.aweb.residents.${opts.name} are in place; only the team mapping is missing. Rerun with another label: ${rerun()}. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create`);
+  let label = opts.teamLabel;
+  if (derived) { try { label = derivedTeamLabel(team); } catch (e) { throw refuse(e.message); } }
   const kernel = teamKernel(deployment, env, "record");
-  const read = kernel.read;
-  const doc = read();
+  let doc = kernel.read();
   const row = doc.teams.find((r) => r.label === label);
-  if (row && row.team !== team) throw failure("E_RESIDENT_TEAM_LABEL", "record", `team label ${label} already maps to ${row.team ?? "no team"}, not ${team}; choose another --team-label`);
-  if (row) return { label, team, status: "reused" };
-  if (doc.localTeams === false) return { label, team, status: "commit", lines: commitLines(label, team) };
-  kernel.add(label, team);
-  if (read().teams.find((r) => r.label === label)?.team !== team) throw failure("E_RESIDENT_TEAM_LABEL", "record", `oats teams add ${label} did not read back as ${team}`);
-  return { label, team, status: "added" };
+  if (row && row.team !== team) {
+    if (derived) throw refuse(`the team label ${label}, derived from the name of team ${team}, already maps to ${row.team ?? "no team"}`);
+    throw failure("E_RESIDENT_TEAM_LABEL", "record", `team label ${label} already maps to ${row.team ?? "no team"}, not ${team}; choose another --team-label`);
+  }
+  const result = { label, team, status: row ? "reused" : doc.localTeams === false ? "commit" : "added", derived };
+  const other = doc.defaultTeam && doc.defaultTeam.label !== label ? doc.defaultTeam : undefined;
+  if (doc.localTeams === false) {
+    const entries = [...(row ? [] : ["    teams:", `      ${JSON.stringify(label)}: { team: ${JSON.stringify(team)} }`]), ...(doc.defaultTeam ? [] : [`    defaultTeam: ${JSON.stringify(label)}`])];
+    // `oats teams default` is refused there too: a different default is the workspace's to change.
+    return { teamLabel: { ...result, default: doc.defaultTeam ? (other ? "kept" : "already") : "commit", ...(entries.length ? { lines: commitLines(entries) } : {}) }, other };
+  }
+  if (!row) {
+    kernel.addMapping(label, team);
+    doc = kernel.read();
+    if (doc.teams.find((r) => r.label === label)?.team !== team) throw failure("E_RESIDENT_TEAM_LABEL", "record", `oats teams add ${label} did not read back as ${team}`);
+  }
+  if (doc.defaultTeam?.label === label) return { teamLabel: { ...result, default: "already" } };
+  if (!doc.defaultTeam) {
+    // --if-absent refuses when a default appeared meanwhile: the readback decides.
+    let refused;
+    try { kernel.setDefaultIfAbsent(label); } catch (e) { refused = e; }
+    doc = kernel.read();
+    if (doc.defaultTeam?.label === label) return { teamLabel: { ...result, default: "set" } };
+    if (!doc.defaultTeam) throw failure("E_RESIDENT_TEAM_LABEL", "record", `oats teams default ${label} --if-absent did not make ${label} the default team${refused ? ` (${refused.message})` : ""}`);
+  }
+  return { teamLabel: { ...result, default: "kept" }, other: doc.defaultTeam, defaultStep: `oats teams default ${label}` };
 }
 
 /** The whole command. Returns the result document; throws a staged failure. */
@@ -281,6 +332,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     if (linger) throw failure("E_RESIDENT_LINGER", "preflight", linger);
     try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
     catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
+    preflightKernel(env);
     if (opts.teamLabel && needsInit(state)) preflightTeamLabel(deployment, env, opts.teamLabel);
     /** Why the custody answering in R is not this command's unit, or nothing
      *  when our unit's process is what serves it. */
@@ -318,7 +370,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
           ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
           : { manager: null, handStep: handStep(root, name) },
         record: `settings.oats.aweb.residents.${name}: ${root} in ${localYaml}`,
-        ...(opts.teamLabel ? { teamLabel: `${opts.teamLabel} → the returned team, with oats teams add where the workspace allows local teams` } : {}),
+        teamLabel: `${opts.teamLabel ?? "the returned team's name"} → the returned team, with oats teams add --no-default where the workspace allows local teams; it becomes the default team only where there is none`,
       };
     }
 
@@ -390,13 +442,18 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       try { recordAwebSetting("residents", name, root, { start: deployment }); }
       catch (e) { throw failure("E_RESIDENT_RECORD", "record", e.message); }
     }
-    const teamLabel = opts.teamLabel ? recordTeamLabel(deployment, env, opts.teamLabel, team) : undefined;
+    const { teamLabel, other, defaultStep } = recordTeam(deployment, env, opts, team);
     const outcome = state === "create" ? "created" : needsInit(state) ? "resumed" : recorded === undefined ? "adopted" : "already-exists";
+    // A seat's grant is minted in the default team: with another default, making
+    // this label the default is the operator's step, run first.
+    const before = defaultStep ? [defaultStep] : [];
     return {
       outcome, name, root, address: identity.address, team, stableId: identity.stableId,
       custody, recorded: { file: localYaml, setting: `settings.oats.aweb.residents.${name}` },
-      ...(teamLabel ? { teamLabel } : {}),
-      warnings, captures, next: NEXT(name),
+      teamLabel,
+      warnings, captures, next: NEXT(name), steps: [...before, SPAWN(name)],
+      ...(before.length ? { stepsReason: `a seat's grant is minted in the deployment's default team, which is ${other.label} (${other.team}), not ${teamLabel.label}` } : {}),
+      ...(other ? { defaultTeam: { label: other.label, team: other.team } } : {}),
     };
   } catch (e) {
     if (e.stage) e.details = { root, ...(captures.length ? { captures } : {}), ...e.details };
@@ -412,7 +469,7 @@ function renderText(r) {
     for (const v of r.verify) lines.push(`  verify:  ${v}`);
     lines.push(r.custody.manager ? `  custody: ${r.custody.manager} unit ${r.custody.label} at ${r.custody.path}: ${r.custody.runs} in ${r.custody.workingDirectory}, environment PATH and HOME only` : `  custody: ${r.custody.handStep}`);
     lines.push(`  record:  ${r.record}`);
-    if (r.teamLabel) lines.push(`  team label: ${r.teamLabel}`);
+    lines.push(`  team label: ${r.teamLabel}`);
     return lines.join("\n") + "\n";
   }
   const how = { created: "", resumed: " (resumed)", adopted: " (adopted)", "already-exists": " (already exists)" }[r.outcome];
@@ -420,9 +477,13 @@ function renderText(r) {
   for (const w of r.warnings) lines.push(`warning: ${w}`);
   if (r.custody.path) lines.push(`custody: ${r.custody.manager} unit ${r.custody.label} at ${r.custody.path}`);
   lines.push(`recorded: ${r.recorded.setting} in ${r.recorded.file}`);
-  if (r.teamLabel?.status === "commit") lines.push(...r.teamLabel.lines);
-  else if (r.teamLabel) lines.push(`team label: ${r.teamLabel.label} ${r.teamLabel.status === "added" ? "mapped to" : "already maps to"} ${r.teamLabel.team}`);
-  lines.push(`Next: ${r.next}`);
+  const t = r.teamLabel;
+  if (t.lines) lines.push(...t.lines);
+  if (t.status !== "commit") lines.push(`team label: ${t.label}${t.derived ? " (derived from the team's name)" : ""} ${t.status === "added" ? "mapped to" : "already maps to"} ${t.team}`);
+  if (t.default === "set") lines.push(`default team: ${t.label} (set: the deployment had none)`);
+  if (t.default === "kept") lines.push(`default team: ${r.defaultTeam.label} (kept; not changed by this command)`);
+  if (r.steps.length === 1) lines.push(`Next: ${r.next}`);
+  else lines.push(`Next, in order (${r.stepsReason}):`, ...r.steps.map((step, i) => `  ${i + 1}. ${step}`));
   return lines.join("\n") + "\n";
 }
 

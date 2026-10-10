@@ -51,7 +51,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
-import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRoot, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -327,11 +327,6 @@ function awebRoot() { return resolveAwebRoot(); }
  * name-only team config into a blocked spawn (reviewer-602627c). */
 const teamMemberships = (listed) => listed?.memberships || listed?.teams || [];
 const teamIdsOf = (listed) => teamMemberships(listed).map((m) => m.team_id || m.id || m);
-function normalizeAwebTeamName(label) {
-  const normalized = String(label || "").toLowerCase().replace(/[_.]+/g, "-").replace(/^-+|-+$/g, "");
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(normalized) || normalized.length > 128) throw new Error(`team label ${JSON.stringify(label)} does not normalize to a valid aweb team name`);
-  return normalized;
-}
 const AWEB_TEAM_ID_MESSAGE = "aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)";
 function validHostname(value) { const s = String(value || ""); return s.length <= 253 && s.split(".").every((label) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label)); }
 function validAwebTeamId(value) { const m = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(value || "")); return !!m && validHostname(m[2]); }
