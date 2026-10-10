@@ -327,10 +327,10 @@ async function workspaceReadinessPhase(req) {
         const targetProblems=target.problems;
         warnings.push(...target.warnings);
         receiveProblems.push(...targetProblems);
-        for(const joined of expected.joined) {
-          if(targetProblems.length) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
-          else warnings.push({code:'joined-team-receive',message:`joined team ${joined.label} passes observable broker route prerequisites; this is not harness-native connection or proof of message presentation`});
-        }
+        // A joined team that passes the broker route prerequisites needs no
+        // action, so it is not a warning (awebai/oats#881): the spawn brief and
+        // `oats aweb teams --json` already give its receive mode.
+        if(targetProblems.length) for(const joined of expected.joined) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
       }
     }
   }

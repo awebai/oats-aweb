@@ -357,7 +357,6 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | Code | Meaning | Who fixes it |
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
-| `joined-team-receive` | a joined team receives live through the broker (informational) | nobody |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; human may start the wake daemon |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
 | `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.32); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
