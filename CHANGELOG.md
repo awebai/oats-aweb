@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.25.0 — 2026-10-10
 
 **New grant seats never expire.** A GLOBAL seat spawned on this release gets a
 grant that ends only when revoked (oats-aweb#80).
@@ -121,19 +121,6 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   write: the join preserves that default, so the default command is not needed
   (oats-aweb#96, the known limit of 1.24.1). An unmapped label on a closed
   workspace still refuses before acceptance.
-- Forward port of 1.24.1 (released from release/1.24, oats-aweb#95): `oats aweb
-  setup --join <label>` and username setup on a workspace that forbids local
-  team writes (`local-teams-closed`) refuse only when the plan needs a team
-  write. A label the workspace commits to the predicted or joined team, already
-  the default, needs none: the join records its minting root
-  (`roots[<team>]`), and username setup proceeds to the account bootstrap,
-  without touching the team configuration. An unmapped label on a closed
-  workspace still refuses before any aw call. On a closed workspace a
-  conflicting mapping or another configuration failure is reported as that
-  (`E_SETUP_TEAM_CONFLICT`, `E_SETUP_CONFIGURATION`) rather than as
-  `E_SETUP_POLICY`; both still refuse before any write. Known limit: a closed
-  workspace that commits the label but defaults to a different label still
-  refuses, though the join would only preserve that default.
 - Add explicit `aweb probe --home` command and offline round-trip implementation:
   one nonce send, exact signed plaintext/decrypted-v2 reply proof, bounded
   deadlines and public diagnostic projections. No lifecycle/readiness probe,
@@ -148,6 +135,22 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   No live acceptance is claimed.
   See `docs/probe.md` for proof limits, JSON timing semantics and separate live
   acceptance requirements.
+
+## 1.24.1 — 2026-10-10
+
+Fixed: `oats aweb setup --join <label>` on a workspace that forbids local team
+writes (`local-teams-closed`) refused even when the workspace itself commits
+that label to the joined team and it is already the default, so the join needed
+no team write at all. Setup now refuses on a closed workspace only when its plan
+would actually write a mapping or a default; a committed, already-default team
+joins and records its minting root (`roots[<team>]`) without touching the team
+configuration. An unmapped label on a closed workspace still refuses before any
+aw call, as before. On a closed workspace a conflicting mapping or another
+configuration failure is now reported as that (`E_SETUP_TEAM_CONFLICT`,
+`E_SETUP_CONFIGURATION`) rather than as `E_SETUP_POLICY`; both still refuse
+before any write. Known limit: a closed workspace that commits the joined label
+but defaults to a different label still refuses, though the join would only
+preserve that default.
 
 ## 1.24.0 — 2026-10-09
 

@@ -61,9 +61,9 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.version, "1.24.0");
-  assert.equal(pkg.version, "1.24.0");
-  assert.equal(dist.version, "1.24.0");
+  assert.equal(manifest.version, "1.25.0");
+  assert.equal(pkg.version, "1.25.0");
+  assert.equal(dist.version, "1.25.0");
   assert.equal(manifest.settings.team, undefined);
   assert.match(manifest.settings.roots.description, /Keys are team ids only/);
   assert.equal(manifest.settings.roots.hostOnly, true);
