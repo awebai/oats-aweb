@@ -319,6 +319,17 @@ test("readiness checks the recorded final grant locator, never newest directory"
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
+test("a grant minted under renew: off records it; an invalid renew mode is not recorded", () => {
+  for (const [renew, recorded] of [["off", "off"], ["launch", "launch"], ["sometimes", undefined]]) {
+    const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+    try {
+      const { r } = spawnGrant(base, { identity: { renew } });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.equal(r.doc.meta.identity.grant.renew, recorded, renew);
+    } finally { rmSync(base, { recursive: true, force: true }); }
+  }
+});
+
 test("launch with renewal off preserves the existing grant locator and session delivery env", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
@@ -602,6 +613,7 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
       // aweb will read an omitted --ttl as a never-expiring grant: every mint names one.
       assert.deepEqual(spawnMint.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "720h"}`]);
       assert.equal(spawned.doc.meta.identity.grant.ttl, ttl || "720h", "the grant records the ttl it was minted with");
+      assert.equal(spawned.doc.meta.identity.grant.renew, "launch", "the grant records the renew mode it was minted under");
       write(join(base, "aw.log"), "");
       const launchEnv = { ...env, OATS_META: JSON.stringify(spawned.doc.meta) };
       const preview = runHook(bin, "launch", { ...launchEnv, OATS_LAUNCH_PREVIEW: "1" });
@@ -616,6 +628,7 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
       assert.deepEqual(mints[0].argv.filter(a => a.startsWith("--ttl")), [`--ttl=${ttl || "720h"}`], "the renew: launch re-mint names its ttl too");
       assert.notEqual(renewed.doc.meta.identity.grant.home, spawned.doc.meta.identity.grant.home);
       assert.equal(renewed.doc.meta.identity.grant.ttl, ttl || "720h");
+      assert.equal(renewed.doc.meta.identity.grant.renew, "launch");
     } finally { rmSync(base, { recursive: true, force: true }); }
   }
 });

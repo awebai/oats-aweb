@@ -40,12 +40,15 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   seat's last mint (no aw or custody call): `grant-expiring` (warning) within 7
   days of expiry, `grant-expired` (problem) at or after it, and
   `grant-expiry-unknown` (warning) when the record has no readable expiry. Each
-  names the recorded instant and that seat's remedy: "restart the seat to renew
-  it (`oats session restart --home <home>`)", or "respawn the seat" when its
-  grant was minted with an explicit non-default `identity.ttl`, which a restart
-  would mint again. Grants now record that ttl (`identity.grant.ttl`); one minted
-  before this release records none and gets the restart remedy. LOCAL seats are
-  unaffected.
+  names the recorded instant and that seat's remedy. Grants now record the ttl
+  and renew mode they were minted with (`identity.grant.ttl`,
+  `identity.grant.renew`): `renew: launch` with the default ttl gets "restart
+  the seat to renew it (`oats session restart --home <home>`)"; an explicit
+  non-default ttl, which a restart would mint again, gets "respawn the seat";
+  `renew: off`, where a restart keeps the grant, gets "respawn the seat (or set
+  `renew: launch` and respawn)". A grant minted before this release records
+  neither and gets a remedy true for both: restart, or respawn if renew is off
+  or the ttl is short. LOCAL seats are unaffected.
 - Grant seats still default to `identity.ttl: 720h` and `identity.renew:
   launch`, and every mint (spawn and renewing launch) passes an explicit
   `--ttl`; tests now pin both. Non-expiring grants are not available yet: aw and

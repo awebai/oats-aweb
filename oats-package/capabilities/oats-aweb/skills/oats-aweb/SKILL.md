@@ -369,9 +369,9 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. For an E2EE grant seat (the default) the custody must list `mail_reply_continuation.v1`; "required custody operations are missing: mail_reply_continuation.v1" means it runs code older than aw 1.36.31. "custody status could not be read" means it could not be asked | human; for the missing op, restart the custody on aw 1.36.31 or later |
-| `grant-expiring` (warning, grant seats only) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted with an explicit non-default `identity.ttl` |
-| `grant-expired` (grant seats only) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted with an explicit non-default `identity.ttl` |
-| `grant-expiry-unknown` (warning, grant seats only) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted with an explicit non-default `identity.ttl` |
+| `grant-expiring` (warning, grant seats only) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit non-default `identity.ttl` (section 8, "GLOBAL residents and grant seats") |
+| `grant-expired` (grant seats only) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit non-default `identity.ttl` (section 8, "GLOBAL residents and grant seats") |
+| `grant-expiry-unknown` (warning, grant seats only) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit non-default `identity.ttl` (section 8, "GLOBAL residents and grant seats") |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
 **Errors from `oats aweb join|leave|roster`:**
@@ -568,9 +568,13 @@ From provider 1.25.0, `oats readiness --home H --json` shows a grant seat's
 expiry from the grant recorded at its last start, asking neither aw nor custody:
 `grant-expiring` within 7 days of it, `grant-expired` once it has passed, and
 `grant-expiry-unknown` when the record has no readable expiry (section 7). Every
-mint passes an explicit `--ttl` (720h unless configured) and records it as
-`identity.grant.ttl`; a grant minted with an explicit non-default ttl gets the
-respawn remedy, since a restart would mint that ttl again.
+mint passes an explicit `--ttl` (720h unless configured) and records it, and
+the renew mode, as `identity.grant.ttl` and `identity.grant.renew`. The remedy
+follows them: `renew: launch` with the default ttl restarts the seat
+(`oats session restart --home <home>`); an explicit non-default ttl, which a
+restart would mint again, and `renew: off`, where a restart keeps the grant,
+respawn it. A grant minted before 1.25.0 records neither, and the message says
+to restart, or respawn if renew is off or the ttl short.
 
 With the provider 1.23.2 composition (#76), install an app from
 the selected LOCAL or GLOBAL resident home: installation approves it for that

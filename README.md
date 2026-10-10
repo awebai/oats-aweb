@@ -45,11 +45,15 @@ custody at >= 1.36.31.
   neither aw nor custody: `grant-expiring` (warning) within 7 days of expiry,
   `grant-expired` (problem; messaging unavailable) at or after it, and
   `grant-expiry-unknown` (warning) when no expiry can be read, never a guessed
-  one. Each names the instant as recorded and that seat's remedy: "restart the
-  seat to renew it (`oats session restart --home <home>`)", or "respawn the
-  seat" when its grant was minted with an explicit non-default `identity.ttl`
-  (recorded as `identity.grant.ttl` from this release), which a restart would
-  mint again. LOCAL seats get none of these. Grants still default to
+  one. Each names the instant as recorded and that seat's remedy, from the ttl
+  and renew mode its grant was minted with (recorded as `identity.grant.ttl`
+  and `identity.grant.renew` from this release): with `renew: launch` and the
+  default ttl, "restart the seat to renew it (`oats session restart --home
+  <home>`)"; with an explicit non-default ttl, which a restart would mint
+  again, "respawn the seat"; with `renew: off`, where a restart keeps the grant,
+  "respawn the seat (or set `renew: launch` and respawn)". A grant minted
+  before 1.25.0 records neither and gets: restart, or respawn if its renew is
+  off or its ttl short. LOCAL seats get none of these. Grants still default to
   `identity.ttl: 720h` and `identity.renew: launch`, and every mint passes an
   explicit `--ttl`. Non-expiring grants are not available yet: aw and the aweb
   server cap a grant at 30 days (oats-aweb#80).

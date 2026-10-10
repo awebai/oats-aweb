@@ -14,12 +14,16 @@ function explicitShortTtl(ttl) {
   try { return durationNanoseconds(ttl) !== durationNanoseconds(DEFAULT_GRANT_TTL); } catch { return false; }
 }
 
-/** This seat's remedy: a restart re-mints under the captured settings, so a
- *  home whose grant was minted with an explicit non-default ttl is respawned. */
+/** This seat's remedy, from the renew mode and ttl its grant recorded. A
+ *  restart re-mints only under renew: launch, and with the captured ttl, so
+ *  renew: off and an explicit non-default ttl need a respawn. A grant minted
+ *  before oats.aweb 1.25.0 records neither and gets a remedy true for both. */
 export function grantExpiryRemedy(home, grant) {
-  return explicitShortTtl(grant?.ttl)
-    ? `respawn the seat: it captured identity.ttl ${grant.ttl}, which a restart would mint again`
-    : `restart the seat to renew it (\`oats session restart --home ${home}\`)`;
+  const restart = `restart the seat to renew it (\`oats session restart --home ${home}\`)`;
+  if (grant?.renew === 'off') return 'respawn the seat (or set `renew: launch` and respawn): with renew off a restart keeps this grant';
+  if (explicitShortTtl(grant?.ttl)) return `respawn the seat: it captured identity.ttl ${grant.ttl}, which a restart would mint again`;
+  if (grant?.renew === 'launch') return restart;
+  return `${restart}; if its identity.renew is off or it captured a short identity.ttl, respawn it instead`;
 }
 
 const shown = value => value === undefined ? 'absent' : JSON.stringify(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 80);

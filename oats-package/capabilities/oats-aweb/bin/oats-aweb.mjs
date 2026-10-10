@@ -772,7 +772,7 @@ function globalGrantRenew(oldMeta) {
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
   const recovered = recoverGrantHome(grantHome);
   const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
-  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, ttl, scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
+  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, ttl, renew: "launch", scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
   if (mintedTeam !== team) {
     try { revokeGrant(custody, grantId); } catch { /* minted mismatch expires by TTL if revoke fails */ }
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -798,6 +798,9 @@ function globalGrantRenew(oldMeta) {
   catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept and the previous grant still expires at ${oldMeta.identity.grant.expiresAt || "its TTL"}`; }
   out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
+/** The renew mode a spawned grant records, when it is one launch accepts;
+ *  readiness reads it to give the seat its own expiry remedy. */
+const recordedRenew = () => ["launch", "off"].includes(grantRenewMode()) ? { renew: grantRenewMode() } : {};
 function globalGrantSpawn() {
   const ttl = checkedGrantTTL();
   const resident = String(identitySettings.resident || "");
@@ -829,7 +832,7 @@ function globalGrantSpawn() {
     const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome);
     const recovered = recoverGrantHome(grantHome);
     const alias = recovered.subjectAlias || mintedAlias || resident;
-    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, ttl, scopes, home: grantHome, ...grantAppInventory(minted) } }) });
+    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, ttl, ...recordedRenew(), scopes, home: grantHome, ...grantAppInventory(minted) } }) });
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
       catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed: ${e.message || e}`); }

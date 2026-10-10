@@ -22,8 +22,12 @@ const NOW = Date.parse("2026-10-10T02:00:00Z");
 const HOME = "/abs/agents/dev/instances/seat";
 const REMEDY = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`)";
 const RESPAWN = "respawn the seat: it captured identity.ttl 24h, which a restart would mint again";
+const RENEW_OFF = "respawn the seat (or set `renew: launch` and respawn): with renew off a restart keeps this grant";
+const UNRECORDED = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`); if its identity.renew is off or it captured a short identity.ttl, respawn it instead";
 const iso = (ms) => new Date(ms).toISOString();
-const grantIdentity = (expiresAt, ttl) => ({ mode: "global", alias: "resident-alias", team: TEAM, resident: "merlin", grant: { id: "grant-1", ...(expiresAt === undefined ? {} : { expiresAt }), ...(ttl === undefined ? {} : { ttl }), scopes: ["mail.read"], home: `${HOME}/.aweb-identity` } });
+/** A recorded grant identity. Grants minted from 1.25.0 record their ttl and
+ *  renew mode; `null` leaves one out, as a grant minted before 1.25.0 does. */
+const grantIdentity = (expiresAt, { ttl = "720h", renew = "launch" } = {}) => ({ mode: "global", alias: "resident-alias", team: TEAM, resident: "merlin", grant: { id: "grant-1", ...(expiresAt === undefined ? {} : { expiresAt }), ...(ttl === null ? {} : { ttl }), ...(renew === null ? {} : { renew }), scopes: ["mail.read"], home: `${HOME}/.aweb-identity` } });
 const assess = (identity, now = NOW) => grantExpiryAssessment(identity, { home: HOME, now });
 
 test("a grant expiring in 6 days 23 hours is the grant-expiring warning naming the instant and the remedy", () => {
@@ -31,14 +35,16 @@ test("a grant expiring in 6 days 23 hours is the grant-expiring warning naming t
   assert.deepEqual(assess(grantIdentity(at)), { problems: [], warnings: [{ code: "grant-expiring", message: `grant grant-1 expires at ${at}, within 7 days: ${REMEDY}` }] });
 });
 
-test("the remedy restarts a seat minted with the default ttl, or none recorded, and respawns one minted with a short ttl", () => {
-  const at = iso(NOW - 1000);
-  for (const ttl of [undefined, "720h", "43200m", "garbage"]) {
-    assert.equal(assess(grantIdentity(at, ttl)).problems[0].message, `grant grant-1 expired at ${at}: ${REMEDY}`, String(ttl));
-  }
-  assert.equal(assess(grantIdentity(at, "24h")).problems[0].message, `grant grant-1 expired at ${at}: ${RESPAWN}`);
-  const soon = iso(NOW + DAY);
-  assert.equal(assess(grantIdentity(soon, "24h")).warnings[0].message, `grant grant-1 expires at ${soon}, within 7 days: ${RESPAWN}`);
+test("each seat gets its own remedy from the renew mode and ttl its grant recorded", () => {
+  const at = iso(NOW - 1000), soon = iso(NOW + DAY);
+  const remedy = (options) => assess(grantIdentity(at, options)).problems[0].message.slice(`grant grant-1 expired at ${at}: `.length);
+  for (const ttl of ["720h", "43200m", "garbage"]) assert.equal(remedy({ ttl, renew: "launch" }), REMEDY, `renew launch, ttl ${ttl}`);
+  assert.equal(remedy({ ttl: null, renew: "launch" }), REMEDY, "renew launch, no ttl recorded");
+  assert.equal(remedy({ ttl: "24h", renew: "launch" }), RESPAWN);
+  for (const ttl of ["720h", "24h", null]) assert.equal(remedy({ ttl, renew: "off" }), RENEW_OFF, `renew off, ttl ${ttl}`);
+  assert.equal(remedy({ ttl: null, renew: null }), UNRECORDED, "minted before 1.25.0");
+  assert.equal(assess(grantIdentity(soon, { ttl: "24h", renew: "launch" })).warnings[0].message, `grant grant-1 expires at ${soon}, within 7 days: ${RESPAWN}`);
+  assert.equal(assess(grantIdentity(soon, { renew: "off" })).warnings[0].message, `grant grant-1 expires at ${soon}, within 7 days: ${RENEW_OFF}`);
 });
 
 test("a grant expiring in 7 days and 1 hour is silent", () => {
