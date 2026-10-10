@@ -27,7 +27,9 @@ OATS deployment (or pass `--dir`).
   `<deployment>/.aweb-residents/<name>`.
 - `--team-label <label>` maps a team label to the resident's team: with
   `oats teams add` where the workspace allows local teams, else by printing the
-  lines to commit in `oats-workspace.yaml`.
+  lines to commit in `oats-workspace.yaml`. Before an init, a label that
+  already maps to a team is refused: the new resident's team is known only
+  after the init, and if it is that team the label is already mapped.
 - `--plan` runs the preflight and prints what would run and be written. It
   changes nothing and needs no key.
 - `--json` answers one JSON-v1 envelope (examples below).
@@ -39,10 +41,10 @@ OATS deployment (or pass `--dir`).
 | arguments | Parses the command line. | None. |
 | deployment | Finds the deployment and its `oats-local.yaml`. | None. |
 | aw | `aw version` must be 1.36.33 or later. | None. |
-| preflight | Reads R and the custody units; on Linux, `loginctl show-user <user> --property=Linger`. | None, local or remote. |
+| preflight | Reads R and the custody units; on Linux, `loginctl show-user <user> --property=Linger`; with `--team-label` before an init, the kernel's teams. | None, local or remote. |
 | key | Takes the key from `AWEB_API_KEY`, or the prompt. | None. |
 | init | Exactly `aw init --global --name <name> --do-not-touch-agents-md --json` in R, once. | aw registers the identity at awid and asks aweb to create it in the key's team. |
-| verify | `aw doctor identity --offline --json` and `aw doctor registry --online --json` in R. | None. |
+| verify | `aw whoami --json` (adopting only), `aw doctor identity --offline --json` and `aw doctor registry --online --json` in R. | None. |
 | custody | Writes and loads the custody unit, then waits for `aw custody status --json` to be ready. | A per-user service. |
 | record | Writes `settings.oats.aweb.residents.<name>: R` in `oats-local.yaml`; maps `--team-label`. | Deployment configuration. |
 
@@ -58,10 +60,14 @@ decides from what R holds:
 | a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or a pure verify when it is already recorded |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 
-**Verify** fails unless aw's answer (or, when adopting, `aw whoami`) shows
-`status: connected`, `identity_scope: global`, the alias `<name>`, a
-canonical `<name>:<namespace>` team id, a `did:aw` stable id and the
-`<namespace>/<name>` address. Every check `aw doctor identity --offline` runs
+**Verify** fails unless aw init's answer shows `status: connected`,
+`identity_scope: global`, the alias `<name>`, a canonical `<name>:<namespace>`
+team id, a `did:aw` stable id and the `<namespace>/<name>` address. When
+adopting there is no init answer: `aw whoami` gives the scope, alias, stable
+id and address, and `aw doctor identity --offline` gives the team (its
+subject's `team_id`) and the connection (its subject's `workspace_id`). In
+every case the doctor's subject must be the global `<name>`, in a canonical
+team, with a workspace. Every check `aw doctor identity --offline` runs
 must be `ok`: with no identity at all, aw answers `status: ok` with every
 check `info`, so the overall status is not enough. A failing
 `aw doctor registry --online` is a warning only, because registry publication
@@ -105,12 +111,15 @@ That is aw's own behaviour and touches no committed file.
 aw has no install verb: `aw custody serve` takes no flags and serves the
 identity home of its working directory. The command writes a per-user unit
 that runs `<aw> custody serve` with working directory R and an environment of
-`PATH` and `HOME` only. Its label is `ai.aweb.custody.<namespace>.<name>`,
+`PATH` and `HOME` only. Its `PATH` is aw's directory (and its target's, when
+aw is a link), the directory of the node that ran the command (an npm-installed
+aw may need it) and `/usr/local/bin:/usr/bin:/bin`, not the caller's `PATH`:
+a rerun from another shell finds the unit unchanged and leaves it running. Its label is `ai.aweb.custody.<namespace>.<name>`,
 where `<namespace>` is the address's (`juan.aweb.ai` for
 `juan.aweb.ai/alice`). It never serves a grant home and copies no keys.
 
 The unit is idempotent: a re-run leaves an unchanged unit as it is and loads it
-if it is not running. A unit of that label that serves another directory is
+if it is not running. R reached through a symlink is the same directory. A unit of that label that serves another directory is
 refused, naming both, and so is any `ai.aweb.custody.*.<name>` unit that
 serves another directory, before any init.
 
@@ -182,7 +191,7 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_UNIT` | custody | a launchctl or systemctl command failed |
 | `E_RESIDENT_UNIT_UNSUPPORTED` | custody | no unit on this host and custody is not running: the hand step |
 | `E_RESIDENT_CUSTODY` | custody | custody not ready in 30 s: not running, team not ready, or ops missing |
-| `E_RESIDENT_TEAM_LABEL` | record | `--team-label` already maps to another team, or the kernel refused |
+| `E_RESIDENT_TEAM_LABEL` | preflight, record | `--team-label` already maps to a team (before an init) or to another team (adopting), or the kernel refused |
 
 ### The `--json` envelopes
 

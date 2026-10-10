@@ -394,14 +394,29 @@ test("--team-label on a workspace without local teams prints the lines to commit
   assert.deepEqual(kernel.calls().filter((c) => c.args[1] === "add"), []);
 });
 
-test("--team-label already mapped to another team is refused at the record stage", (t) => {
+test("--team-label that already maps to a team is refused before any init, and --plan says so", (t) => {
   const s = setup(t);
   const kernel = fakeKernelTeamConfig(join(s.base, "kernel"), s.deployment, { teams: [{ label: "residents", team: "default:other.example", from: "local" }] });
+  const plan = s.run(["create", NAME, "--team-label", "residents", "--plan", "--json"], { OATS_CLI_BIN: kernel.cli });
+  assert.equal(plan.doc.error.code, "E_RESIDENT_TEAM_LABEL");
   const r = s.run(["create", NAME, "--team-label", "residents", "--json"], { OATS_CLI_BIN: kernel.cli });
   assert.equal(r.status, 1);
   assert.equal(r.doc.error.code, "E_RESIDENT_TEAM_LABEL");
+  assert.equal(r.doc.error.details.stage, "preflight");
+  assert.equal(r.doc.error.message, "team label residents already maps to default:other.example, and a new resident's team is known only after aw init: run without --team-label if the resident joins that team, or choose another label");
+  assert.deepEqual(initCalls(s.fake), []);
+});
+
+test("--team-label on an adopt is checked against the resident's team, after verify", (t) => {
+  const s = setup(t);
+  mkdirSync(join(s.root, ".aw"), { recursive: true });
+  for (const f of ["identity.yaml", "signing.key", "workspace.yaml"]) writeFileSync(join(s.root, ".aw", f), "");
+  const kernel = fakeKernelTeamConfig(join(s.base, "kernel"), s.deployment, { teams: [{ label: "residents", team: "default:other.example", from: "local" }] });
+  const r = s.run(["create", NAME, "--team-label", "residents", "--json"], { OATS_CLI_BIN: kernel.cli }, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+  assert.equal(r.doc.error.code, "E_RESIDENT_TEAM_LABEL");
   assert.equal(r.doc.error.message, `team label residents already maps to default:other.example, not ${CAPTURED.team}; choose another --team-label`);
 });
+
 
 test("Linux without systemd lingering stops before any init with the exact admin command", (t) => {
   if (process.platform !== "linux") { t.skip("lingering is systemd's, on Linux"); return; }

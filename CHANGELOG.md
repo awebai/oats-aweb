@@ -32,13 +32,16 @@ line: `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name>`
   overall with every check `info` when there is no identity. A failing
   `aw doctor registry --online` is a warning.
 - **Custody.** A per-user unit `ai.aweb.custody.<namespace>.<name>` runs
-  `aw custody serve` in R with `PATH` and `HOME` only: a launchd agent on macOS,
+  `aw custody serve` in R with `PATH` and `HOME` only (that `PATH` is aw's and
+  node's directories and the system's, so a rerun from another shell leaves a
+  running unit alone): a launchd agent on macOS,
   a systemd --user unit (enabled by its path) on Linux, the hand step
   elsewhere. Then it waits for the running custody to be ready, the ops
   `mail_reply_continuation.v1` and `grant_never_ttl.v1` included.
 - **Record.** `settings.oats.aweb.residents.<name>: R` in `oats-local.yaml`;
   `--team-label <label>` maps the label to the resident's team (`oats teams
-  add`, or the lines to commit when the workspace allows no local teams).
+  add`, or the lines to commit when the workspace allows no local teams). Before
+  an init, a label that already maps to a team is refused in the preflight.
 - **Outcomes:** `PASS resident <address> team <id> custody running`, then the
   `oats spawn … --provider oats.aweb identity.mode=global --provider oats.aweb
   identity.resident=<name>` step; `FAIL <stage>: <message>`; `--json` answers

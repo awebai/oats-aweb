@@ -4,11 +4,11 @@
 // rendered file when it is installed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { custodyLabel, ensureCustodyUnit, lingerProblem, renderUnit, residentUnits, unitManager, unitPath, waitForCustody } from "../oats-package/capabilities/oats-aweb/lib/custody-unit.mjs";
+import { custodyLabel, ensureCustodyUnit, lingerProblem, renderUnit, residentUnits, unitManager, unitPath, unitSearchPath, waitForCustody } from "../oats-package/capabilities/oats-aweb/lib/custody-unit.mjs";
 import { fakeResidentAw } from "./helpers/fake-aw-resident.mjs";
 
 const LABEL = "ai.aweb.custody.juan.aweb.ai.alice";
@@ -175,8 +175,33 @@ test("systemctl and loginctl reach the user's manager through its bus variables;
     assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["DBUS_SESSION_BUS_ADDRESS", "HOME", "PATH", "XDG_RUNTIME_DIR"], `${call.cmd} ${call.argv.join(" ")}`);
   }
   const unit = readFileSync(unitPath({ platform: "linux", home }, LABEL), "utf8");
-  assert.match(unit, new RegExp(`^Environment="PATH=${fake.bin}" "HOME=${home}"$`, "m"));
+  assert.match(unit, new RegExp(`^Environment="PATH=${unitSearchPath("/bin/aw")}" "HOME=${home}"$`, "m"));
   assert.doesNotMatch(unit, /XDG_RUNTIME_DIR|DBUS|never-passed/);
+});
+
+test("the unit's PATH is aw's and node's directories and the system's, whatever PATH the command ran with", (t) => {
+  const dir = base(t);
+  mkdirSync(join(dir, "real")); writeFileSync(join(dir, "real", "aw"), ""); symlinkSync(join(dir, "real", "aw"), join(dir, "aw"));
+  assert.equal(unitSearchPath(join(dir, "aw")), [dir, join(dir, "real"), dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter((d, i, all) => all.indexOf(d) === i).join(":"));
+});
+
+test("a rerun from another PATH, or through a symlink to R, leaves a running unit alone", (t) => {
+  const dir = base(t);
+  const fake = fakeResidentAw(dir, { aw: false });
+  const home = join(dir, "home"); mkdirSync(home);
+  mkdirSync(join(dir, "r", "alice"), { recursive: true }); symlinkSync(join(dir, "r"), join(dir, "via"));
+  for (const platform of ["darwin", "linux"]) {
+    const opts = { platform, label: LABEL, aw: "/bin/aw", root: join(dir, "r", "alice"), home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home } };
+    ensureCustodyUnit(opts);
+    const written = readFileSync(unitPath({ platform, home }, LABEL), "utf8");
+    const calls = fake.calls().length;
+    for (const again of [{ ...opts, env: { ...opts.env, PATH: `${fake.bin}:/opt/venv/bin:/home/me/.nvm/bin` } }, { ...opts, root: join(dir, "via", "alice") }]) {
+      assert.equal(ensureCustodyUnit(again).changed, false);
+      assert.equal(readFileSync(unitPath({ platform, home }, LABEL), "utf8"), written);
+    }
+    assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv[0] === "--user" ? c.argv[1] : c.argv[0]).filter((v) => !["print", "is-active"].includes(v)), [], "no bootout, bootstrap, enable or restart");
+    rmSync(join(dir, "unit-loaded"), { force: true });
+  }
 });
 
 test("waitForCustody: ready, ops missing, unreadable: three different answers", async () => {

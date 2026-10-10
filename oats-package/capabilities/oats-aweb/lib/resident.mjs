@@ -10,15 +10,15 @@
 // Stages, each with its own error codes: arguments, deployment, aw, preflight
 // (no remote effect), key, init (one run, no retry), verify, custody, record.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
-import { delimiter, join, resolve } from "node:path";
-import { awFloorMessage } from "./binding-wire.mjs";
+import { join, resolve } from "node:path";
+import { awFloorMessage, onPath } from "./binding-wire.mjs";
 import { parseAwJson } from "./grant-custody.mjs";
 import { assertAwebSettingRecordable, recordAwebSetting } from "./local-settings.mjs";
 import { selectedTeamKernel } from "./setup-team-default.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
-import { conflictMessage, custodyLabel, ensureCustodyUnit, handStep, lingerProblem, residentUnits, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
+import { conflictMessage, custodyLabel, ensureCustodyUnit, handStep, lingerProblem, residentUnits, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
 
 export const RESIDENT_USAGE = "usage: AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]";
 const ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -35,7 +35,6 @@ const failure = (code, stage, message, details = {}) => Object.assign(new Error(
 const hostname = (s) => typeof s === "string" && s.length <= 253 && s.split(".").every((l) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(l));
 const canonicalTeam = (s) => { const m = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(s ?? "")); return !!m && hostname(m[2]); };
 const object = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
-const samePath = (a, b) => { if (resolve(a) === resolve(b)) return true; try { return realpathSync(a) === realpathSync(b); } catch { return false; } };
 
 export function parseResidentArgs(argv) {
   const usage = () => failure("E_RESIDENT_ARGUMENT", "arguments", RESIDENT_USAGE);
@@ -62,15 +61,6 @@ export function parseResidentArgs(argv) {
   if (!ALIAS_RE.test(opts.name)) throw failure("E_RESIDENT_ARGUMENT", "arguments", `invalid resident name ${JSON.stringify(opts.name)}: ${ALIAS_RULE}`);
   if (opts.teamLabel !== undefined && !LABEL_RE.test(opts.teamLabel)) throw failure("E_RESIDENT_ARGUMENT", "arguments", `invalid --team-label ${JSON.stringify(opts.teamLabel)}: a team label is lowercase letters, digits, '.', '_' or '-', starting with a letter or digit`);
   return opts;
-}
-
-/** The first executable `cmd` on PATH, as an absolute path. */
-function onPath(cmd, path) {
-  for (const dir of String(path || "").split(delimiter)) {
-    if (!dir) continue;
-    try { const p = join(dir, cmd); const st = statSync(p); if (st.isFile() && (st.mode & 0o111)) return resolve(p); } catch { /* keep looking */ }
-  }
-  return undefined;
 }
 
 /** What R holds: create (empty or missing), continue (aw's partial init),
@@ -207,18 +197,36 @@ function registryWarnings(read) {
 const NEXT = (name) => `spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=${name}`;
 const commitLines = (label, team) => ["This workspace does not allow local teams; commit the team in oats-workspace.yaml:", "    teams:", `      ${JSON.stringify(label)}: { team: ${JSON.stringify(team)} }`];
 
+/** The selected kernel's team commands, failing as E_RESIDENT_TEAM_LABEL at
+ *  `stage`. The kernel child gets no aweb or awid variable, the key least of all. */
+function teamKernel(deployment, env, stage) {
+  const kernelEnv = Object.fromEntries(Object.entries(env).filter(([k]) => !/^(AWEB_|AWID_)/.test(k)));
+  const failed = (e) => failure("E_RESIDENT_TEAM_LABEL", stage, e.message);
+  let kernel;
+  try { kernel = selectedTeamKernel(deployment, kernelEnv); } catch (e) { throw failed(e); }
+  return {
+    read: () => { try { return kernel.read(); } catch (e) { throw failed(e); } },
+    add: (label, team) => { try { return kernel.add(label, team); } catch (e) { throw failed(e); } },
+  };
+}
+
+/** Before an init, a label that already maps to a team is refused: the new
+ *  resident's team is known only after aw init, which is a remote effect. */
+function preflightTeamLabel(deployment, env, label) {
+  const row = teamKernel(deployment, env, "preflight").read().teams.find((r) => r.label === label);
+  if (row) throw failure("E_RESIDENT_TEAM_LABEL", "preflight", `team label ${label} already maps to ${row.team ?? "no team"}, and a new resident's team is known only after aw init: run without --team-label if the resident joins that team, or choose another label`);
+}
+
 /** Maps the team label to the resident's team through the selected kernel. */
 function recordTeamLabel(deployment, env, label, team) {
-  // The kernel child gets no aweb or awid variable, the key least of all.
-  const kernelEnv = Object.fromEntries(Object.entries(env).filter(([k]) => !/^(AWEB_|AWID_)/.test(k)));
-  const kernel = (() => { try { return selectedTeamKernel(deployment, kernelEnv); } catch (e) { throw failure("E_RESIDENT_TEAM_LABEL", "record", e.message); } })();
-  const read = () => { try { return kernel.read(); } catch (e) { throw failure("E_RESIDENT_TEAM_LABEL", "record", e.message); } };
+  const kernel = teamKernel(deployment, env, "record");
+  const read = kernel.read;
   const doc = read();
   const row = doc.teams.find((r) => r.label === label);
   if (row && row.team !== team) throw failure("E_RESIDENT_TEAM_LABEL", "record", `team label ${label} already maps to ${row.team ?? "no team"}, not ${team}; choose another --team-label`);
   if (row) return { label, team, status: "reused" };
   if (doc.localTeams === false) return { label, team, status: "commit", lines: commitLines(label, team) };
-  try { kernel.add(label, team); } catch (e) { throw failure("E_RESIDENT_TEAM_LABEL", "record", e.message); }
+  kernel.add(label, team);
   if (read().teams.find((r) => r.label === label)?.team !== team) throw failure("E_RESIDENT_TEAM_LABEL", "record", `oats teams add ${label} did not read back as ${team}`);
   return { label, team, status: "added" };
 }
@@ -246,7 +254,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
     const floor = await awFloorMessage({ env: readEnv });
     if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
-    const aw = onPath("aw", env.PATH);
+    const aw = onPath("aw", env);
     if (!aw) throw failure("E_RESIDENT_AW_FLOOR", "aw", "aw is not on PATH");
     const read = (args) => {
       const r = spawnSync(aw, args, { cwd: root, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
@@ -271,6 +279,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     if (linger) throw failure("E_RESIDENT_LINGER", "preflight", linger);
     try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
     catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
+    if (opts.teamLabel && needsInit(state)) preflightTeamLabel(deployment, env, opts.teamLabel);
 
     if (opts.plan) {
       const known = state === "adopt" ? expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami", "preflight"), name, []) : undefined;

@@ -130,7 +130,11 @@ test("a complete global identity is adopted: verified, served by a real per-user
   if (process.platform === "darwin") j.cleanups.push(() => spawnSync("launchctl", ["bootout", `gui/${userInfo().uid}/${label}`]));
   else j.cleanups.push(() => spawnSync("systemctl", ["--user", "disable", "--now", `${label}.service`], { env: j.env }));
 
-  const r = j.run(["create", "carol", "--root", root, "--json"]);
+  // The key is in the environment, as on the dashboard's line: adopting needs
+  // no init, so it must reach nothing the custody and record stages write.
+  const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
+  const withKey = { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL };
+  const r = j.run(["create", "carol", "--root", root, "--json"], withKey);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const result = r.doc.result;
   assert.equal(result.outcome, "adopted");
@@ -143,7 +147,20 @@ test("a complete global identity is adopted: verified, served by a real per-user
   assert.ok(status.ops.includes("mail_reply_continuation.v1") && status.ops.includes("grant_never_ttl.v1"));
   assert.match(readFileSync(join(j.deployment, "oats-local.yaml"), "utf8"), new RegExp(`"carol": ${JSON.stringify(root).replace(/[.]/g, "\\.")}`));
 
-  const again = j.run(["create", "carol", "--root", root, "--json"], { OATS_SETTINGS: JSON.stringify({ residents: { carol: root } }) });
+  const again = j.run(["create", "carol", "--root", root, "--json"], { ...withKey, OATS_SETTINGS: JSON.stringify({ residents: { carol: root } }) });
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.equal(again.doc.result.outcome, "already-exists");
+
+  // No written file has the key: the real unit, oats-local.yaml, R and the
+  // home aw used. Nor has the loaded service's environment.
+  assert.ok(filesUnder(j.base).includes(result.custody.path));
+  assert.deepEqual(filesUnder(j.base).filter((p) => readFileSync(p).includes(key)), []);
+  for (const out of [r, again]) assert.ok(!out.stdout.includes(key) && !out.stderr.includes(key));
+  const loaded = process.platform === "darwin"
+    ? spawnSync("launchctl", ["print", `gui/${userInfo().uid}/${label}`], { encoding: "utf8" })
+    : spawnSync("systemctl", ["--user", "show", "-p", "Environment", `${label}.service`], { encoding: "utf8", env: j.env });
+  assert.equal(loaded.status, 0, loaded.stderr);
+  assert.ok(!loaded.stdout.includes(key), loaded.stdout);
+  assert.match(loaded.stdout, /PATH/);
+  assert.doesNotMatch(loaded.stdout, /AWEB_|AWID_/);
 });
