@@ -372,7 +372,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
 | `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
 | `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), or respawn it when its grant was minted under `renew: off` or with an explicit `identity.ttl` duration (section 8, "GLOBAL residents and grant seats") |
-| `grant-revoke-pending` (warning, grant seats) | a grant this seat minted or held could not be revoked and stays valid (until revoked, or until its expiry); the message names it and the revoke command. Every start and retire retries it, and a retire fails while it remains | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat to retry |
+| `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
+| `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
 | `grant-never-expires` (informational, never-grant seats) | the seat's grant never expires: it ends only when revoked, at retire or by the resident's owner | nobody |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 
@@ -573,15 +574,16 @@ background renewal.
 Every mint passes its ttl explicitly (`--ttl=never` or the duration) and records
 it, and the renew mode, as `identity.grant.ttl` and `identity.grant.renew`; a
 never-grant records `expiresAt: "never"`. A never seat's custody must list
-`grant_never_ttl.v1`. When a revoke fails (retire, the previous grant after a
-renewal, a grant spawn or renewal does not keep), the grant is recorded in the
-home (`.oats-aweb/pending-revokes.json`: id, custody directory, team, expiry;
-no keys), the message says how long it stays valid ("until revoked" for a
-never-grant) and the exact command, `aw id grant revoke <id>` run in the
-resident's custody directory, and readiness warns `grant-revoke-pending`. Every
-later start and retire retries it. A new grant left unrevoked fails its start
-or spawn; a previous grant left after a successful renewal does not. A retire
-exits nonzero while any remains.
+`grant_never_ttl.v1`. Every mint is labelled `oats:<instance>:<seat>` (a random
+seat id kept in `identity.seat`), and the custody's grant list is the source of
+truth: every real start and retire revokes this seat's other active grants (at
+retire, all of them), including one minted before a crash; other labels are never
+touched. A failed revoke names how long the grant stays valid ("until revoked"
+for a never-grant) and the exact command, `aw id grant revoke <id>` run in the
+resident's custody directory; readiness warns `grant-revoke-pending`, or
+`grant-revoke-unchecked` when the list cannot be read. A failed renewal keeps the
+previous grant and starts on it; only a failed first mint at spawn fails. A
+retire exits nonzero while a grant stays unrevoked or the list is unread.
 
 `oats readiness --home H --json` reads the grant recorded at the seat's last
 mint, asking neither aw nor custody: `grant-never-expires` for a never-grant;

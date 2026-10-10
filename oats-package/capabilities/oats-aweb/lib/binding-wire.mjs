@@ -1,13 +1,13 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
 import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
-import { readPendingRevokes, unrevokedGrant } from './pending-revokes.mjs';
+import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -292,6 +292,16 @@ async function workspaceReadinessPhase(req) {
         const next=recorded?.id?renewalGrantTTL(identity.ttl,recorded.ttl):resolveGrantTTL(identity.ttl);
         const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,ttl:recorded?.expiresAt==='never'?'never':next,fatalOnError:false,runAw:localAw});
         for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
+        // This seat's active grants other than the current one, from the custody's
+        // list: each stays valid until the next start or retire revokes it.
+        const seat=ctx.home?recordedStart(ctx.home).meta?.identity?.seat:undefined;
+        if(seat) {
+          try {
+            const label=seatGrantLabel(ctx.instance||basename(ctx.home),seat);
+            for(const g of strayGrants(teamGrants(argv=>localAw(argv,custody),details.team),label,recorded?.id)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant({...g,custody})}; the next start or retire revokes it`});
+          }
+          catch(e) {warnings.push({code:'grant-revoke-unchecked',message:`could not check for orphaned grants (${String(e.message||e).slice(0,200)}); this seat may hold grants that stay valid`});}
+        }
       }
       catch(e) {problems.push({code:'custody',message:e.message});}
     }
@@ -300,9 +310,6 @@ async function workspaceReadinessPhase(req) {
   if(ctx.home) {
     const expiry=grantExpiryAssessment(recordedStart(ctx.home).meta?.identity,{home:ctx.home,now});
     receiveProblems.push(...expiry.problems);warnings.push(...expiry.warnings);
-    // A grant a start or spawn could not revoke stays live until a later start or retire revokes it.
-    try {for(const entry of readPendingRevokes(ctx.home)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant(entry)}; a revoke failed and is retried at the next start and at retire`});}
-    catch(e) {warnings.push({code:'grant-revoke-pending',message:`the pending-revoke record is unreadable (${String(e.message||e).slice(0,200)}); its grants may stay valid`});}
   }
   // Preserve prerequisite diagnostics; receive evidence is meaningful only
   // after configuration and custody checks succeed.

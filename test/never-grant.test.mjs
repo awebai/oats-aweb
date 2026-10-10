@@ -215,11 +215,72 @@ test("retire: a never-grant that was not revoked stays valid, says how to revoke
   assert.deepEqual(finite.retire(finiteFailed.doc.meta).doc.meta, { retired: true, identityRevoked: true, grant: "grant-spawn" });
 });
 
-const pendingFile = (home) => join(home, ".oats-aweb", "pending-revokes.json");
-const pending = (home) => existsSync(pendingFile(home)) ? JSON.parse(readFileSync(pendingFile(home), "utf8")).pending.map(e => e.grant) : [];
+// The custody's grant list (the fake's registry, like the server's) is the
+// source of truth for what a seat still holds.
+const registry = (s) => join(s.base, "grants.json");
+const grantsOf = (s) => existsSync(registry(s)) ? JSON.parse(readFileSync(registry(s), "utf8")) : [];
+const active = (s) => grantsOf(s).filter(g => g.status === "active").map(g => g.grant_id).sort();
+const addGrant = (s, grant) => writeFileSync(registry(s), JSON.stringify([{ team_id: TEAM, status: "active", expires_at: "never", ...grant }, ...grantsOf(s)]));
 const newGrantOf = (s, n = 1) => "grant-" + mints(s.calls())[n].find(a => a.startsWith("--out=")).split(".aweb-identity-")[1];
 
-test("renewal: a previous grant that cannot be revoked does not fail the start; it is recorded, warned, and revoked at the next start", (t) => {
+test("every mint carries a label unique to its seat, kept across renewals", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  const id = spawned.doc.meta.identity.seat;
+  assert.match(id, /^[0-9a-f]{16}$/);
+  const launched = s.launch(spawned.doc.meta, {});
+  assert.equal(launched.doc.meta.identity.seat, id);
+  assert.deepEqual(mints(s.calls()).map(a => a.find(x => x.startsWith("--label="))), [`--label=oats:probe:${id}`, `--label=oats:probe:${id}`]);
+  assert.notEqual(seat(t).spawn({}).doc.meta.identity.seat, id, "a new seat of the same name gets its own id");
+});
+
+test("a grant minted before a crash, found only in the custody's list, is revoked at the next start", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  addGrant(s, { grant_id: "grant-crashed", label: `oats:probe:${spawned.doc.meta.identity.seat}` });
+  s.record(spawned.doc.meta);
+  assert.ok(s.readiness({}).warnings.some(w => w.code === "grant-revoke-pending" && w.message.startsWith(STAYS("grant-crashed", s.custody))));
+  const launched = s.launch(spawned.doc.meta, {}, { FAKE_REVOKE_FAIL: "never-matches" });
+  assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+  assert.match(launched.doc.warning, /revoked orphaned grant grant-crashed/);
+  assert.equal(active(s).includes("grant-crashed"), false);
+});
+
+test("a seat sweeps only its own label: another seat of the same name, a pre-1.25.0 label and look-alikes are untouched", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  const mine = spawned.doc.meta.identity.seat;
+  const other = "0123456789abcdef";
+  for (const [grant_id, label] of [["grant-other-seat", `oats:probe:${other}`], ["grant-legacy", "oats:probe"], ["grant-prefix", `oats:probe:${mine}x`], ["grant-other-name", `oats:probe2:${mine}`], ["grant-mine-old", `oats:probe:${mine}`]]) addGrant(s, { grant_id, label });
+  s.launch(spawned.doc.meta, {});
+  assert.deepEqual(active(s).filter(g => !g.startsWith("grant-1")), ["grant-legacy", "grant-other-name", "grant-other-seat", "grant-prefix"]);
+  // The other seat, run in the same custody, leaves this seat's grants alone too.
+  const otherMeta = { ...spawned.doc.meta, identity: { ...spawned.doc.meta.identity, seat: other, grant: { ...spawned.doc.meta.identity.grant, id: "grant-other-current" } } };
+  const before = active(s).filter(g => g.startsWith("grant-1"));
+  s.launch(otherMeta, {}, { FAKE_MINT_FAIL: "1" });
+  assert.equal(active(s).includes("grant-other-seat"), false, "the other seat revokes its own stray grant");
+  assert.deepEqual(active(s).filter(g => g.startsWith("grant-1")), before, "and none of this seat's");
+});
+
+test("renewal: a fresh grant that cannot be revoked does not fail the start; the seat runs on its previous grant", (t) => {
+  for (const env of [{ FAKE_VERIFY_ERROR: "custody socket refused" }, { FAKE_GRANT_TEAM: "other:example.test" }]) {
+    const s = seat(t);
+    const spawned = s.spawn({});
+    const launched = s.launch(spawned.doc.meta, {}, { ...env, FAKE_REVOKE_FAIL: "1" });
+    assert.equal(launched.status, 0, JSON.stringify(env) + launched.stdout + launched.stderr);
+    assert.equal(launched.doc.meta.identity.grant.id, "grant-spawn", "the previous grant is kept");
+    const fresh = newGrantOf(s);
+    assert.ok(launched.doc.warning.includes(STAYS(fresh, s.custody)), launched.doc.warning);
+    if (!env.FAKE_GRANT_TEAM) {
+      const next = s.launch(spawned.doc.meta, {});
+      assert.equal(next.status, 0, next.stdout + next.stderr);
+      assert.match(next.doc.warning, new RegExp(`revoked orphaned grant ${fresh}`));
+      assert.equal(active(s).includes(fresh), false);
+    }
+  }
+});
+
+test("renewal: a previous grant that cannot be revoked does not fail the start; readiness shows it and the next start revokes it", (t) => {
   for (const identity of [{}, { ttl: "24h" }]) {
     const s = seat(t);
     const spawned = s.spawn(identity);
@@ -227,58 +288,53 @@ test("renewal: a previous grant that cannot be revoked does not fail the start; 
     assert.equal(launched.status, 0, launched.stdout + launched.stderr);
     assert.notEqual(launched.doc.meta.identity.grant.id, "grant-spawn", "the seat runs on its new grant");
     const until = identity.ttl ? "until 2026-09-24T07:00:00Z unless revoked" : "until revoked";
-    assert.ok(launched.doc.warning.includes(`previous grant grant-spawn was not revoked; revoke failed (`), launched.doc.warning);
     assert.ok(launched.doc.warning.includes(`grant grant-spawn stays valid ${until}: run \`aw id grant revoke grant-spawn\` in ${s.custody}`), launched.doc.warning);
-    assert.deepEqual(pending(s.home), ["grant-spawn"]);
     s.record(launched.doc.meta);
     assert.ok(s.readiness(identity).warnings.some(w => w.code === "grant-revoke-pending" && w.message.startsWith(`grant grant-spawn stays valid ${until}`)));
     const next = s.launch(launched.doc.meta, identity);
-    assert.equal(next.status, 0, next.stdout + next.stderr);
-    assert.match(next.doc.warning, /pending grant grant-spawn is now revoked/);
-    assert.deepEqual(pending(s.home), []);
+    assert.match(next.doc.warning, /revoked orphaned grant grant-spawn/);
+    s.record(next.doc.meta);
     assert.equal(s.readiness(identity).warnings.some(w => w.code === "grant-revoke-pending"), false);
   }
 });
 
-test("renewal: a new grant whose cleanup cannot revoke it fails the start, is recorded and is revoked later", (t) => {
-  for (const env of [{ FAKE_VERIFY_ERROR: "custody socket refused" }, { FAKE_GRANT_TEAM: "other:example.test" }]) {
-    const s = seat(t);
-    const spawned = s.spawn({});
-    const launched = s.launch(spawned.doc.meta, {}, { ...env, FAKE_REVOKE_FAIL: "1" });
-    assert.equal(launched.status, 1, JSON.stringify(env));
-    assert.equal(launched.doc.meta.identity.grant.id, "grant-spawn", "the previous grant is kept");
-    const fresh = newGrantOf(s);
-    assert.ok(launched.doc.warning.includes(STAYS(fresh, s.custody)), launched.doc.warning);
-    assert.deepEqual(pending(s.home), [fresh]);
-    const next = s.launch(spawned.doc.meta, {});
-    assert.equal(next.status, 0, next.stdout + next.stderr);
-    assert.ok(revokes(s.calls()).some(a => a[3] === fresh));
-    assert.deepEqual(pending(s.home), []);
-  }
-});
-
-test("retire exits nonzero while a pending revoke remains, and succeeds once it clears", (t) => {
+test("a grant list that cannot be read: a start proceeds saying so, readiness says so, and retire does not succeed", (t) => {
   const s = seat(t);
   const spawned = s.spawn({});
-  const launched = s.launch(spawned.doc.meta, {}, { FAKE_REVOKE_FAIL: "grant-spawn" });
-  const failed = s.retire(launched.doc.meta, { FAKE_REVOKE_FAIL: "grant-spawn" });
-  assert.equal(failed.status, 1);
-  assert.equal(failed.doc.meta.reason, "grant-revoke-failed");
-  assert.ok(failed.doc.warning.includes(STAYS("grant-spawn", s.custody)), failed.doc.warning);
-  assert.deepEqual(pending(s.home), ["grant-spawn"], "the record stays in the home for the retry");
-  const retried = s.retire(launched.doc.meta);
-  assert.equal(retried.status, 0, retried.stdout + retried.stderr);
-  assert.deepEqual(pending(s.home), []);
+  const launched = s.launch(spawned.doc.meta, {}, { FAKE_GRANT_LIST_FAIL: "custody unreachable" });
+  assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+  assert.match(launched.doc.warning, /could not check for orphaned grants \(aw id grant failed \(exit 1\): custody unreachable\)/);
+  assert.doesNotMatch(launched.doc.warning, /no orphaned/);
+  s.record(launched.doc.meta);
+  assert.ok(s.readiness({}, { FAKE_GRANT_LIST_FAIL: "custody unreachable" }).warnings.some(w => w.code === "grant-revoke-unchecked" && /could not check for orphaned grants/.test(w.message)));
+  const retired = s.retire(launched.doc.meta, { FAKE_GRANT_LIST_FAIL: "custody unreachable" });
+  assert.equal(retired.status, 1);
+  assert.equal(retired.doc.meta.reason, "grant-list-failed");
+  assert.match(retired.doc.warning, /could not check for orphaned grants/);
+  assert.equal(s.retire(launched.doc.meta).status, 0, "a retry that can read the list succeeds");
 });
 
-test("spawn: a never-grant whose attachment or wake registration fails and cannot be revoked is named, kept in the meta and recorded", (t) => {
+test("retire revokes every active grant of the seat, and a failure lists each grant with its revoke command (what --force prints)", (t) => {
+  const s = seat(t);
+  const spawned = s.spawn({});
+  addGrant(s, { grant_id: "grant-crashed", label: `oats:probe:${spawned.doc.meta.identity.seat}` });
+  const failed = s.retire(spawned.doc.meta, { FAKE_REVOKE_FAIL: "grant-spawn,grant-crashed" });
+  assert.equal(failed.status, 1);
+  assert.equal(failed.doc.meta.reason, "grant-revoke-failed");
+  for (const id of ["grant-spawn", "grant-crashed"]) assert.ok(failed.doc.warning.includes(STAYS(id, s.custody)), failed.doc.warning);
+  const retried = s.retire(failed.doc.meta);
+  assert.equal(retried.status, 0, retried.stdout + retried.stderr);
+  assert.deepEqual(active(s), []);
+});
+
+test("spawn: a never-grant whose attachment or wake registration fails and cannot be revoked fails, named, with its seat in the meta", (t) => {
   for (const [env, settings] of [[{ FAKE_VERIFY_ERROR: "custody socket refused" }, {}], [{ FAKE_WAKE_REGISTER_FAIL: "1" }, { delivery: "session" }]]) {
     const s = seat(t);
     const r = s.spawn({}, { ...env, FAKE_REVOKE_FAIL: "1", OATS_SETTINGS: JSON.stringify({ ...s.settings({}), ...settings }) });
     assert.notEqual(r.status, 0, JSON.stringify(env));
-    assert.equal(r.doc.meta.identity.grant.id, "grant-spawn", "retire compensation can still revoke it");
+    assert.equal(r.doc.meta.identity.grant.id, "grant-spawn", "the kernel's retire compensation can still revoke it");
+    assert.match(r.doc.meta.identity.seat, /^[0-9a-f]{16}$/, "and find it by its label");
     assert.ok(r.doc.warning.includes(STAYS("grant-spawn", s.custody)), r.doc.warning);
-    assert.deepEqual(pending(s.home), ["grant-spawn"]);
   }
 });
 
@@ -326,6 +382,10 @@ test("real aw at the floor parses the --ttl forms OATS passes", (t) => {
     assert.doesNotMatch(r.stderr, /invalid argument/, `${ttl} parses: ${r.stderr}`);
     assert.match(r.stderr, /not initialized for aw/, ttl);
   }
+  // The seat sweep's list call parses too (aw then stops: no identity here).
+  const list = aw(["id", "grant", "list", "--team=t:example.invalid", "--json"]);
+  assert.doesNotMatch(list.stderr, /unknown flag|invalid argument/, list.stderr);
+  assert.match(list.stderr, /not initialized for aw/);
   for (const [ttl, why] of [["721h", /grant duration must be 60s to 720h or never/], ["Never", /invalid duration/]]) {
     assert.match(mint(ttl).stderr, new RegExp(`invalid argument "${ttl}" for "--ttl" flag: .*${why.source}`), ttl);
   }

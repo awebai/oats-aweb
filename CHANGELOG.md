@@ -53,25 +53,36 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   the encrypted reply to such a sender. A custody status that cannot be read
   says "custody status could not be read: …", never that an op is missing.
 - Revocation is the only end of a never-grant, and no grant is left unrevoked
-  silently. Wherever a revoke fails, the grant is recorded in the home
-  (`.oats-aweb/pending-revokes.json`: grant id, custody directory, team and
-  recorded expiry, never keys), the message names it, how long it stays valid
-  ("until revoked", or "until <expiry> unless revoked" for a duration) and the
-  exact command, `aw id grant revoke <id>` run in the resident's custody
-  directory, and readiness warns `grant-revoke-pending` until it clears. Every
-  later start and retire retries the record; a successful revoke clears it.
-  - A new grant that renewal or spawn does not keep (team mismatch, custody
-    attachment, wake registration, a receipt that fails validation) and cannot
-    revoke fails that start or spawn. The renewal's three silent catches
-    ("expires by TTL if revoke fails") are gone. For a failed spawn the
-    durable carrier is the returned meta, not the record: the kernel's
-    rollback runs retire with that meta (`identity.grant.id`), and a record
-    written in a home the rollback removes does not survive it.
-  - The previous grant after a successful renewal does not fail the start: the
-    seat runs on its new grant, and the previous one is recorded.
-  - Behaviour change: retire exits nonzero while any grant remains unrevoked,
-    for every grant, keeps the record in the home and the grant's identity in
-    its meta for the retry, and its message replaces "it still expires at …".
+  silently. Every mint carries a label unique to its seat,
+  `oats:<instance>:<seat>`, where `<seat>` is random at spawn and kept in the
+  identity meta (`identity.seat`); a name reused after a retire, or repeated
+  across deployments under one resident, is a different seat. The custody's
+  grant list (`aw id grant list --team <team> --json`) is the source of truth:
+  at every real start and at retire, this seat's active grants other than the
+  current one (at retire, all of them) are revoked, so a grant minted before a
+  crash or left by a failed revoke is found and ended. Labels of any other
+  form, including the bare `oats:<instance>` of earlier releases, are never
+  touched. Readiness warns `grant-revoke-pending` for each such grant, from the
+  list. Wherever a revoke fails, the message names the grant, how long it stays
+  valid ("until revoked", or "until <expiry> unless revoked" for a duration)
+  and the exact command, `aw id grant revoke <id>` run in the resident's
+  custody directory. When the list cannot be read, a start proceeds and says
+  "could not check for orphaned grants", readiness warns
+  `grant-revoke-unchecked`, and a retire does not succeed.
+  - A renewal whose fresh grant fails a step (team mismatch, custody
+    attachment, wake registration, a receipt that fails validation) keeps the
+    previous grant and starts on it; a fresh grant it cannot revoke is named and
+    swept at the next start. Only the first mint at spawn, with no grant to fall
+    back on, fails. The renewal's three silent "expires by TTL if revoke fails"
+    catches are gone. For a failed spawn the returned meta carries the grant id
+    and seat to the kernel's rollback retire.
+  - The previous grant after a successful renewal does not fail the start; it
+    is named and swept at the next start.
+  - Behaviour change: retire exits nonzero while any grant of the seat stays
+    unrevoked, or when it could not read the list, for every grant; the kernel
+    then keeps the home and the meta for the retry. Its message lists each
+    grant with its revoke command, which is what `oats retire --force` prints,
+    and replaces "it still expires at …".
 - `wake-daemon-outdated` is now a readiness warning, not a problem: a running
   wake daemon below the floor still receives, readiness goes on to assess the
   target, and the remedy is "upgrade aw, then restart the host wake daemon".
