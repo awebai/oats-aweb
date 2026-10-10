@@ -57,7 +57,9 @@ The rest:
   <id>` run in the resident's custody directory, and readiness warns
   `grant-revoke-pending` until it clears. Every later start and retire retries
   it. A new grant that renewal or spawn cannot revoke fails that start or
-  spawn; a previous grant left after a successful renewal does not (the seat
+  spawn (for a failed spawn the returned meta carries the grant id to the
+  kernel's rollback retire; a record in a home the rollback removes does not
+  survive it); a previous grant left after a successful renewal does not (the seat
   runs on its new grant). A retire exits nonzero while any remains, keeping the
   record in the home and the grant's identity in its meta for the retry.
 - **`wake-daemon-outdated` is a warning.** A running wake daemon below the floor

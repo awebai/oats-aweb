@@ -63,9 +63,10 @@ readiness and spawn (below), and an old daemon is reported as a warning.
   - A new grant that renewal or spawn does not keep (team mismatch, custody
     attachment, wake registration, a receipt that fails validation) and cannot
     revoke fails that start or spawn. The renewal's three silent catches
-    ("expires by TTL if revoke fails") are gone. A failed spawn also returns
-    the grant id in its meta for the kernel's retire compensation, since its
-    home may not survive.
+    ("expires by TTL if revoke fails") are gone. For a failed spawn the
+    durable carrier is the returned meta, not the record: the kernel's
+    rollback runs retire with that meta (`identity.grant.id`), and a record
+    written in a home the rollback removes does not survive it.
   - The previous grant after a successful renewal does not fail the start: the
     seat runs on its new grant, and the previous one is recorded.
   - Behaviour change: retire exits nonzero while any grant remains unrevoked,
