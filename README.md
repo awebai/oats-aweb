@@ -7,6 +7,9 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
 
 ## 1.27.0 — OATS confirms Claude's development-channel prompt
 
+Requires OATS 0.52.0 or later: upgrade the kernel first, then `oats sync`.
+Older kernels stay on oats.aweb 1.26.2.
+
 - **Development mode no longer stops at the prompt.** A Claude home in
   `claudeChannelMode: development` (the default) under `delivery: channel` shows
   Claude's development-channel prompt, and OATS confirms it once at launch.

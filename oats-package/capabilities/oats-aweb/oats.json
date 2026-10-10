@@ -3,7 +3,7 @@
   "command": "aweb",
   "version": "1.27.0",
   "compatibility": {
-    "oats": ">=0.42.0"
+    "oats": ">=0.52.0"
   },
   "layer": "messaging",
   "launchPreview": true,

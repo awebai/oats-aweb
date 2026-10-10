@@ -86,7 +86,7 @@ const notCopiedRows = (names) => names.map((path) => ({ scope: 'home', path, own
 test('manifest declares the provider home state and the kernel floor that honours it', () => {
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'capabilities/oats-aweb/oats.json'), 'utf8'));
   assert.deepEqual(manifest.retirement, { disposable: { home: DECLARED } });
-  assert.equal(manifest.compatibility.oats, '>=0.42.0');
+  assert.equal(manifest.compatibility.oats, '>=0.52.0');
 });
 
 test('retire leaves the provider home state out of recovery, after the hook ran with the keys in place', { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {

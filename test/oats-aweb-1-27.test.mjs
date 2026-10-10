@@ -12,6 +12,22 @@ const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const SKILL_DIR = join(CAPABILITY, "skills", "oats-aweb");
 const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
 
+test("the kernel floor is the release that confirms the prompt", () => {
+  const distribution = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
+  assert.equal(manifest.compatibility.oats, ">=0.52.0");
+  assert.equal(distribution.compatibility.oats, ">=0.52.0");
+});
+
+test("the changelog leads 1.27.0 with the host order and the kernel floor, quoting the kernel's refusal", () => {
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
+  assert.match(section, /^## 1\.27\.0 — Unreleased\n\n\*\*Host order, before syncing to this release:\*\* upgrade the OATS kernel to\n0\.52\.0 or later first, then `oats sync`\./);
+  assert.match(section, /aw 1\.36\.33 or later, with every resident custody service and the host wake\ndaemon restarted/);
+  assert.match(section, /\*\*Compatibility: requires OATS 0\.52\.0 or later\.\*\* Older kernels stay on\noats\.aweb 1\.26\.2\./);
+  // The kernel's own refusal (lib/resolve.mjs, E_CAPABILITY_INCOMPATIBLE), for a package pin.
+  assert.ok(section.includes("`E_CAPABILITY_INCOMPATIBLE`: \"oats.aweb requires oats >=0.52.0; this kernel is <version> — pin a release of oats.aweb whose range admits <version> in the workspace's packages:, or run a kernel the range admits\""), section);
+});
+
 test("claudeChannelMode's description states what each mode passes and who confirms the prompt", () => {
   const description = manifest.settings.claudeChannelMode.description;
   assert.match(description, /development passes --dangerously-load-development-channels, and OATS confirms Claude's development-channel prompt at launch/i);

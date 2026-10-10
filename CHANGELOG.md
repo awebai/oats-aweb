@@ -2,6 +2,15 @@
 
 ## 1.27.0 — Unreleased
 
+**Host order, before syncing to this release:** upgrade the OATS kernel to
+0.52.0 or later first, then `oats sync`. The aw order is unchanged from 1.26.0:
+aw 1.36.33 or later, with every resident custody service and the host wake
+daemon restarted after the upgrade.
+
+**Compatibility: requires OATS 0.52.0 or later.** Older kernels stay on
+oats.aweb 1.26.2. On an older kernel the kernel refuses the composition and
+names the range, with `E_CAPABILITY_INCOMPATIBLE`: "oats.aweb requires oats >=0.52.0; this kernel is <version> — pin a release of oats.aweb whose range admits <version> in the workspace's packages:, or run a kernel the range admits".
+
 - **OATS confirms Claude's development-channel prompt.** A Claude home in
   development mode (`claudeChannelMode: development`, the default, under
   `delivery: channel`) no longer stops at Claude's development-channel prompt:
