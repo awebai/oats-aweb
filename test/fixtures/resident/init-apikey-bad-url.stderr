@@ -1,0 +1,2 @@
+Post "not%20a%20url/api/v1/workspaces/init": unsupported protocol scheme ""
+rerun the same command in this directory; do not delete .aw/partial-init.yaml

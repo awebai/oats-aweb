@@ -1,13 +1,13 @@
 {
-  "address": "fixture-12941.test/carol",
+  "address": "fixture-26163.test/carol",
   "alias": "carol",
   "custody": "self",
-  "did": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx",
-  "domain": "fixture-12941.test",
+  "did": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD",
+  "domain": "fixture-26163.test",
   "identity_scope": "global",
   "inbound_configurable": true,
   "inbound_mode": "open",
   "inbound_mode_label": "All",
   "name": "carol",
-  "stable_id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z"
+  "stable_id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL"
 }

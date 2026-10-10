@@ -26,8 +26,16 @@ KEY="aw_sk_fixture_not_a_real_key"
 (cd "$S/partial" && env -i PATH="$(dirname "$AW"):/usr/bin:/bin" HOME="$S/home" AWEB_URL="$AWEB_URL" AWID_REGISTRY_URL="$AWID" AWEB_API_KEY="$KEY" AW_NO_UPDATE_CHECK=1 NO_COLOR=1 "$AW" init --global --name alice --do-not-touch-agents-md --json > "$OUT/init-apikey-workspace-init-404.stdout" 2> "$OUT/init-apikey-workspace-init-404.stderr"; echo $? > "$OUT/init-apikey-workspace-init-404.exit")
 # The same partial, resumed with another registry: aw's context check refuses.
 (cd "$S/partial" && env -i PATH="$(dirname "$AW"):/usr/bin:/bin" HOME="$S/home" AWEB_URL="$AWEB_URL" AWID_REGISTRY_URL="http://localhost:${AWID##*:}" AWEB_API_KEY="$KEY" AW_NO_UPDATE_CHECK=1 NO_COLOR=1 "$AW" init --global --name alice --do-not-touch-agents-md --json > "$OUT/init-apikey-registry-mismatch.stdout" 2> "$OUT/init-apikey-registry-mismatch.stderr"; echo $? > "$OUT/init-apikey-registry-mismatch.exit")
-# A partial alone is not an identity: the offline identity doctor fails.
+# A partial alone is not an identity: every offline identity check is info.
 capture doctor-identity-offline-partial "$S/partial" doctor identity --offline --json
+# A quarantined partial: the file is named the way aw names one (only aweb
+# Cloud makes aw quarantine), and aw's refusal of it is real.
+mkdir -p "$S/rejected/.aw" && chmod 700 "$S/rejected/.aw"
+: > "$S/rejected/.aw/partial-init.yaml.20261010T000000.000000000Z.1.rejected" && chmod 600 "$S/rejected/.aw/"*.rejected
+(cd "$S/rejected" && env -i PATH="$(dirname "$AW"):/usr/bin:/bin" HOME="$S/home" AWEB_URL="$AWEB_URL" AWID_REGISTRY_URL="$AWID" AWEB_API_KEY="$KEY" AW_NO_UPDATE_CHECK=1 NO_COLOR=1 "$AW" init --global --name alice --do-not-touch-agents-md --json > "$OUT/init-apikey-rejected.stdout" 2> "$OUT/init-apikey-rejected.stderr"; echo $? > "$OUT/init-apikey-rejected.exit")
+# An init that fails before it writes anything: a malformed AWEB_URL.
+mkdir -p "$S/nothing"
+(cd "$S/nothing" && env -i PATH="$(dirname "$AW"):/usr/bin:/bin" HOME="$S/home" AWEB_URL="not a url" AWID_REGISTRY_URL="$AWID" AWEB_API_KEY="$KEY" AW_NO_UPDATE_CHECK=1 NO_COLOR=1 "$AW" init --global --name alice --do-not-touch-agents-md --json > "$OUT/init-apikey-bad-url.stdout" 2> "$OUT/init-apikey-bad-url.stderr"; echo $? > "$OUT/init-apikey-bad-url.exit"; find . -mindepth 1 | sort > "$S/nothing.left")
 
 # A complete global identity, made as aweb's own real-stack e2e makes one
 # (cli/go/e2e/real_stack_e2e_test.go), then connected with aw's

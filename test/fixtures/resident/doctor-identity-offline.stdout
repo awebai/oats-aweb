@@ -39,7 +39,7 @@
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z",
+        "id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
         "type": "did"
       }
     },
@@ -47,14 +47,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx"
+        "did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD"
       },
       "id": "identity.local.did_key_format",
       "message": "Identity did:key is syntactically valid.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z",
+        "id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
         "type": "did"
       }
     },
@@ -62,14 +62,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx"
+        "did_key": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD"
       },
       "id": "identity.local.signing_key_matches_did",
       "message": "Local signing key matches identity did.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:key:z6MkkU3QQgu8JfrpY62HfMGBN7esu9W5yX3Scf2XbWq76oMx",
+        "id": "did:key:z6MkpGGDw2WYXyCNcjVWeFYaHJequXCThgKUm9d8rvv8v9QD",
         "type": "did"
       }
     },
@@ -77,7 +77,7 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:+OLILdo7razlfYmtdowSE0Q93w1LCz3S/UmNDMTaVmY"
+        "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI"
       },
       "id": "identity.e2ee.encryption_state",
       "message": "Local E2E encryption key state has an active key.",
@@ -93,15 +93,15 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:+OLILdo7razlfYmtdowSE0Q93w1LCz3S/UmNDMTaVmY"
+        "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI"
       },
       "id": "identity.e2ee.private_key",
       "message": "Local E2E encryption private key matches the active key id.",
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.x25519.key",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.x25519.key",
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.x25519.key",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.x25519.key",
         "type": "local_path"
       }
     },
@@ -109,15 +109,15 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:+OLILdo7razlfYmtdowSE0Q93w1LCz3S/UmNDMTaVmY"
+        "encryption_key_id": "sha256:AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI"
       },
       "id": "identity.e2ee.assertion",
       "message": "Local E2E encryption-key assertion verifies under the identity signing key.",
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.assertion.json",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-OLILdo7razlfYmtdowSE0Q93w1LCz3S_UmNDMTaVmY.assertion.json",
+        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.assertion.json",
+        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-AZnzTd38ncLkHDkzTQEqiXofVFmJ78CPpxPHru6sVmI.assertion.json",
         "type": "local_path"
       }
     },
@@ -125,7 +125,7 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "published_at": "2026-10-10T16:38:45Z"
+        "published_at": "2026-10-10T16:41:29Z"
       },
       "id": "identity.e2ee.assertion_published",
       "message": "Local E2E encryption-key assertion was recorded as published.",
@@ -142,14 +142,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "stable_id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z"
+        "stable_id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL"
       },
       "id": "identity.local.stable_id_expected",
       "message": "Global identity stable_id is present.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:3nuTxsPosbMv5sxTj6PS8cYH3W3z",
+        "id": "did:aw:vDmcFdjtb7rSbby9QRMg5xzJKeL",
         "type": "did"
       }
     },
@@ -157,14 +157,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "address": "fixture-12941.test/carol"
+        "address": "fixture-26163.test/carol"
       },
       "id": "identity.local.address_expected",
       "message": "Global identity address is present.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "fixture-12941.test/carol",
+        "id": "fixture-26163.test/carol",
         "type": "address"
       }
     },
@@ -181,7 +181,7 @@
       "status": "ok"
     }
   ],
-  "generated_at": "2026-10-10T16:38:45Z",
+  "generated_at": "2026-10-10T16:41:29Z",
   "mode": "offline",
   "redactions": [
     {
@@ -204,9 +204,9 @@
     "identity_path": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
     "identity_scope": "global",
     "name": "carol",
-    "team_id": "default:fixture-12941.test",
+    "team_id": "default:fixture-26163.test",
     "working_dir": "/private/tmp/oats-resident-capture/complete",
-    "workspace_id": "d03de292-b752-4d89-b749-914263359510"
+    "workspace_id": "597a262f-95af-45ae-8087-e3ba25a66090"
   },
   "version": "doctor.v1"
 }
