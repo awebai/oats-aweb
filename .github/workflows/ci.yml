@@ -78,6 +78,11 @@ jobs:
           XDG_RUNTIME_DIR="/run/user/$(id -u)" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" systemctl --user show-environment >/dev/null || { echo "systemctl --user cannot reach the user manager"; exit 1; }
           echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - name: Make lsof available, so the journeys prove the socket-owner check
+        shell: bash
+        run: |
+          command -v lsof || { echo "lsof missing; installing it on this runner"; sudo apt-get install -y lsof; }
+          command -v lsof
       - name: Real-stack resident create journeys
         env:
           OATS_RESIDENT_JOURNEY_REQUIRED: '1'

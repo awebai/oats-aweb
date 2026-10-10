@@ -225,10 +225,20 @@ function runningPid(manager, env, uid, label) {
   return Number(value("MainPID")) || undefined;
 }
 
+const pause = (ms) => new Promise((done) => setTimeout(done, ms));
+
 /** Whether this command's own unit is what serves R: its file at the
- *  expected path for the label, serving R, its process running, and that
- *  process the one that owns the custody socket. {serves, why}. */
-export function ownUnitServes({ platform, label, root, home, xdgConfigHome, uid, env, socketPath }) {
+ *  expected path for the label, serving R, and its process the server.
+ *  {serves, via} or {serves: false, why}.
+ *
+ *  aw refuses a second custody server on a socket that answers, before it
+ *  listens (aw 1.36.33, cmd/aw/custody.go:235-238), so while another custody
+ *  answers, our unit's process cannot be listening. Where lsof exists, the
+ *  process must own the custody socket (via "lsof"). Where it does not, the
+ *  same pid must still be running `settleMs` later (via "steady-pid"): a
+ *  crash-looping aw exits within milliseconds, while launchd and systemd wait
+ *  seconds before restarting it. */
+export async function ownUnitServes({ platform, label, root, home, xdgConfigHome, uid, env, socketPath, settleMs = 1000 }) {
   const manager = unitManager(platform);
   if (!manager) return { serves: false, why: "no unit of this command on this platform" };
   const path = unitPath({ platform, home, xdgConfigHome }, label);
@@ -238,10 +248,13 @@ export function ownUnitServes({ platform, label, root, home, xdgConfigHome, uid,
   const pid = runningPid(manager, env, uid, label);
   if (!pid) return { serves: false, why: "its process is not running" };
   const owners = manage(env, "lsof", ["-t", socketPath]);
-  if (owners.missing) return { serves: false, why: "lsof is not available to tell which process owns the custody socket" };
-  const pids = owners.ok ? owners.stdout.split(/\s+/).filter(Boolean).map(Number) : [];
-  if (pids.includes(pid)) return { serves: true };
-  return { serves: false, why: pids.length ? `another process (${pids.join(", ")}) owns the custody socket` : "no process was found owning the custody socket" };
+  if (!owners.missing) {
+    const pids = owners.ok ? owners.stdout.split(/\s+/).filter(Boolean).map(Number) : [];
+    if (pids.includes(pid)) return { serves: true, via: "lsof" };
+    return { serves: false, why: pids.length ? `another process (${pids.join(", ")}) owns the custody socket` : "no process was found owning the custody socket" };
+  }
+  await pause(settleMs);
+  return runningPid(manager, env, uid, label) === pid ? { serves: true, via: "steady-pid" } : { serves: false, why: "its process did not stay running" };
 }
 
 /** What an operator runs where OATS writes no unit. */
@@ -251,16 +264,24 @@ export function handStep(root, name) {
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 /** Waits until the running custody is ready for grant seats: running, the team
- *  ready, signing and E2EE keys ready, and the floor ops listed. Throws the
- *  last answer when it is not ready in time. */
-export async function waitForCustody({ status, resident, team, timeoutMs = 30000, intervalMs = 500 }) {
+ *  ready, signing and E2EE keys ready, and the floor ops listed; with `owner`,
+ *  also served by the process it asks about (`owner(status)` answers a problem,
+ *  or nothing when that process is the server). Throws the last answer when it
+ *  is not ready in time: E_RESIDENT_CUSTODY_RUNNING when another process
+ *  answers, E_RESIDENT_CUSTODY otherwise. */
+export async function waitForCustody({ status, resident, team, owner, timeoutMs = 30000, intervalMs = 500 }) {
   const until = Date.now() + timeoutMs;
   for (;;) {
+    let last;
     try {
-      return custodyPreflight({ custody: "", resident, team, e2eeRequired: true, ttl: "never", fatalOnError: false, runAw: () => status() }).status;
+      const ready = custodyPreflight({ custody: "", resident, team, e2eeRequired: true, ttl: "never", fatalOnError: false, runAw: () => status() }).status;
+      const problem = owner ? await owner(ready) : undefined;
+      if (!problem) return ready;
+      last = { code: "E_RESIDENT_CUSTODY_RUNNING", message: problem };
     } catch (e) {
-      if (Date.now() >= until) fail("E_RESIDENT_CUSTODY", String(e.message || e));
+      last = { code: "E_RESIDENT_CUSTODY", message: String(e.message || e) };
     }
+    if (Date.now() >= until) fail(last.code, last.message);
     await sleep(intervalMs);
   }
 }

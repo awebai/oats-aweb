@@ -32,6 +32,16 @@ fs.appendFileSync(path.join(state.base, "calls.jsonl"), JSON.stringify({ cmd: pa
 const flag = (name) => fs.existsSync(path.join(state.base, name));
 const touch = (name) => fs.writeFileSync(path.join(state.base, name), "");
 const replay = (f) => { process.stdout.write(f.stdout); process.stderr.write(f.stderr); process.exit(f.exit); };
+// Whether our unit's process is running at this look. A flapping one is
+// running at the first look and gone at every later one.
+const running = () => {
+  if (["crashloop", "takeover"].includes(state.custody)) return false;
+  if (state.custody !== "flapping") return true;
+  const looks = path.join(state.base, "looks");
+  const seen = fs.existsSync(looks);
+  fs.writeFileSync(looks, "");
+  return !seen;
+};
 ${body}`;
 
 /**
@@ -48,7 +58,9 @@ ${body}`;
  *   running, started by hand or by another supervisor, with no unit of ours),
  *   "crashloop" (that other custody runs, and our unit is loaded but
  *   restarting against it: launchd's "spawn scheduled", systemd's
- *   activating/auto-restart).
+ *   activating/auto-restart), "takeover" (another custody answers only once
+ *   our unit has started, and our unit restarts against it), "flapping" (our
+ *   unit's process is running at the first look and gone at the next).
  * Our unit's process is pid 4242 and owns the custody socket (fake lsof);
  * another custody is pid 999.
  * lsof: false leaves the fake lsof out, as on a host without it.
@@ -79,6 +91,7 @@ if (argv[0] === "doctor" && argv[1] === "identity") replay(f["doctor-identity-of
 if (argv[0] === "doctor" && argv[1] === "registry") replay(f["doctor-registry-online"]);
 if (argv[0] === "custody" && argv[1] === "status") {
   if (state.custody === "elsewhere" || state.custody === "crashloop") replay(f["custody-status-running"]);
+  if (state.custody === "takeover" && flag("unit-loaded")) replay(f["custody-status-running"]);
   if (!flag("unit-loaded") || state.custody === "never") replay(f["custody-status-not-running"]);
   replay(state.custody === "missing-ops" ? state.missingOps : f["custody-status-running"]);
 }
@@ -87,7 +100,7 @@ process.stderr.write("fake aw: unexpected " + argv.join(" ") + "\\n"); process.e
   write("launchctl", `
 if (argv[0] === "print") {
   if (!flag("unit-loaded")) process.exit(113);
-  process.stdout.write(state.custody === "crashloop" ? "gui/501/x = {\\n\\tstate = spawn scheduled\\n\\tlast exit code = 1\\n}\\n" : "gui/501/x = {\\n\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tstate = active\\n\\t}\\n}\\n");
+  process.stdout.write(running() ? "gui/501/x = {\\n\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tstate = active\\n\\t}\\n}\\n" : "gui/501/x = {\\n\\tstate = spawn scheduled\\n\\tlast exit code = 1\\n}\\n");
   process.exit(0);
 }
 if (argv[0] === "bootstrap") { touch("unit-loaded"); process.exit(0); }
@@ -101,8 +114,7 @@ if (argv[1] === "daemon-reload") process.exit(0);
 if (argv[1] === "enable" || argv[1] === "restart") { touch("unit-loaded"); process.exit(0); }
 if (argv[1] === "is-active") process.exit(flag("unit-loaded") ? 0 : 3);
 if (argv[1] === "show") {
-  const running = flag("unit-loaded") && state.custody !== "crashloop";
-  process.stdout.write(running ? "ActiveState=active\\nSubState=running\\nMainPID=4242\\n" : "ActiveState=activating\\nSubState=auto-restart\\nMainPID=0\\n");
+  process.stdout.write(flag("unit-loaded") && running() ? "ActiveState=active\\nSubState=running\\nMainPID=4242\\n" : "ActiveState=activating\\nSubState=auto-restart\\nMainPID=0\\n");
   process.exit(0);
 }
 process.exit(97);
@@ -113,7 +125,7 @@ process.exit(97);
 `);
   if (lsof) write("lsof", `
 if (argv[0] !== "-t") process.exit(97);
-if (state.custody === "elsewhere" || state.custody === "crashloop") { process.stdout.write("999\\n"); process.exit(0); }
+if (["elsewhere", "crashloop", "takeover"].includes(state.custody)) { process.stdout.write("999\\n"); process.exit(0); }
 if (flag("unit-loaded")) { process.stdout.write("4242\\n"); process.exit(0); }
 process.exit(1);
 `);

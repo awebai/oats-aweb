@@ -19,8 +19,11 @@ line: `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name>`
   anything else is refused naming what is there. Also refused: a resident
   already recorded at another R, a custody unit of this name serving another
   directory, a complete identity whose custody already runs but not from this
-  command's unit, whose process must be running and own the custody socket
-  (`E_RESIDENT_CUSTODY_RUNNING`: stop it, then rerun), and on
+  command's unit, whose process must be running and be the server: it owns the
+  custody socket where `lsof` exists, else it stays up (aw refuses a second
+  server on an answering socket). The same check makes the custody ready only
+  when our unit serves it (`E_RESIDENT_CUSTODY_RUNNING`: stop the other, then
+  rerun), and on
   Linux a user without systemd lingering (with the exact
   `loginctl enable-linger <user>`).
 - **One init run.** Exactly `aw init --global --name <name>

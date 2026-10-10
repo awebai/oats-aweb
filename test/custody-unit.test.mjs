@@ -221,27 +221,65 @@ test("a rerun from another PATH, or through a symlink to R, leaves a running uni
   }
 });
 
-test("ownUnitServes: our unit's own process must be running and own the custody socket", (t) => {
-  // Loaded is not enough: a KeepAlive unit restarting against another custody
-  // is loaded (launchd "spawn scheduled", systemd activating/auto-restart).
+// aw refuses a second custody server on a socket that answers, before it
+// listens (aw 1.36.33 cmd/aw/custody.go:235-238), so a unit's process that
+// stays up is the server; lsof, where there is one, names the socket's owner.
+function ownership(t) {
   const dir = base(t);
   const home = join(dir, "home"); mkdirSync(home);
   const root = join(dir, "r", "alice"); mkdirSync(root, { recursive: true });
+  let n = 0;
+  return async (platform, fakeOptions) => {
+    const at = join(dir, `case-${n++}`);
+    const fake = fakeResidentAw(at, { aw: false, ...fakeOptions });
+    const env = { PATH: fake.bin, HOME: home };
+    const file = unitPath({ platform, home }, LABEL);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, renderUnit({ platform, label: LABEL, aw: "/bin/aw", root, path: "/bin", home, address: "juan.aweb.ai/alice" }));
+    writeFileSync(join(at, "unit-loaded"), "");
+    return ownUnitServes({ platform, label: LABEL, root, home, uid: 501, env, socketPath: "/tmp/custody.sock", settleMs: 20 });
+  };
+}
+
+test("ownUnitServes: our unit's process must be running, and own the socket where lsof can say", async (t) => {
+  const check = ownership(t);
   for (const platform of ["darwin", "linux"]) {
-    const check = (fakeOptions) => {
-      const at = join(dir, `${platform}-${fakeOptions.custody}-${fakeOptions.lsof === false ? "nolsof" : "lsof"}`);
-      const fake = fakeResidentAw(at, { aw: false, ...fakeOptions });
-      const env = { PATH: fake.bin, HOME: home };
-      const file = unitPath({ platform, home }, LABEL);
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, renderUnit({ platform, label: LABEL, aw: "/bin/aw", root, path: "/bin", home, address: "juan.aweb.ai/alice" }));
-      writeFileSync(join(at, "unit-loaded"), "");
-      return ownUnitServes({ platform, label: LABEL, root, home, uid: 501, env, socketPath: "/tmp/custody.sock" });
+    assert.deepEqual(await check(platform, { custody: "ready" }), { serves: true, via: "lsof" }, platform);
+    // Loaded is not running: a unit restarting against another custody.
+    assert.deepEqual(await check(platform, { custody: "crashloop" }), { serves: false, why: "its process is not running" }, platform);
+    assert.deepEqual(await check(platform, { custody: "elsewhere" }), { serves: false, why: "another process (999) owns the custody socket" }, platform);
+  }
+});
+
+test("ownUnitServes without lsof: the same pid still running a moment later is the server; one that dies inside the window is not", async (t) => {
+  const check = ownership(t);
+  for (const platform of ["darwin", "linux"]) {
+    assert.deepEqual(await check(platform, { custody: "ready", lsof: false }), { serves: true, via: "steady-pid" }, platform);
+    assert.deepEqual(await check(platform, { custody: "flapping", lsof: false }), { serves: false, why: "its process did not stay running" }, platform);
+    assert.deepEqual(await check(platform, { custody: "crashloop", lsof: false }), { serves: false, why: "its process is not running" }, platform);
+  }
+});
+
+test("waitForCustody with an owner check: another process answering after our unit starts is not ready, and times out as E_RESIDENT_CUSTODY_RUNNING", async (t) => {
+  const dir = base(t);
+  const home = join(dir, "home"); mkdirSync(home);
+  const root = join(dir, "r", "alice"); mkdirSync(root, { recursive: true });
+  const ready = readFileSync(new URL("./fixtures/resident/custody-status-running.stdout", import.meta.url), "utf8");
+  const team = JSON.parse(ready).teams[0].team_id;
+  for (const platform of ["darwin", "linux"]) {
+    const fake = fakeResidentAw(join(dir, platform), { aw: false, custody: "takeover" });
+    const env = { PATH: fake.bin, HOME: home };
+    ensureCustodyUnit({ platform, label: LABEL, aw: "/bin/aw", root, home, address: "juan.aweb.ai/alice", uid: 501, env });
+    const owner = async (status) => {
+      const own = await ownUnitServes({ platform, label: LABEL, root, home, uid: 501, env, socketPath: status.socket_path, settleMs: 5 });
+      return own.serves ? undefined : `not ours (${own.why})`;
     };
-    assert.deepEqual(check({ custody: "ready" }), { serves: true }, platform);
-    assert.deepEqual(check({ custody: "crashloop" }), { serves: false, why: "its process is not running" }, platform);
-    assert.deepEqual(check({ custody: "elsewhere" }), { serves: false, why: "another process (999) owns the custody socket" }, platform);
-    assert.deepEqual(check({ custody: "ready", lsof: false }), { serves: false, why: "lsof is not available to tell which process owns the custody socket" }, platform);
+    await assert.rejects(waitForCustody({ status: () => ready, owner, resident: "alice", team, timeoutMs: 100, intervalMs: 10 }), { code: "E_RESIDENT_CUSTODY_RUNNING", message: "not ours (its process is not running)" });
+    const ours = fakeResidentAw(join(dir, `${platform}-ours`), { aw: false });
+    writeFileSync(join(dir, `${platform}-ours`, "unit-loaded"), "");
+    const ourOwner = async (status) => ((await ownUnitServes({ platform, label: LABEL, root, home, uid: 501, env: { PATH: ours.bin, HOME: home }, socketPath: status.socket_path, settleMs: 5 })).serves ? undefined : "not ours");
+    assert.equal((await waitForCustody({ status: () => ready, owner: ourOwner, resident: "alice", team, timeoutMs: 1000, intervalMs: 10 })).status, "running");
+    rmSync(unitPath({ platform, home }, LABEL), { force: true });
   }
 });
 

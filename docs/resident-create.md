@@ -128,10 +128,17 @@ server on a socket that answers, so a unit started beside it would restart in
 a loop while the other custody answered. Stop it (`aw custody stop` in R, or
 stop whatever supervises it), then rerun. This command's own unit counts as
 what serves R only when its process is running (launchd's `state = running`
-with a pid; systemd's `active`/`running` with a main pid) and that process owns
-the custody socket, as `lsof -t <socket>` reports. A unit that is merely loaded,
-restarting against another custody, does not count; without `lsof` the command
-cannot tell, and refuses. The unit is idempotent: a re-run
+with a pid; systemd's `active`/`running` with a main pid) and is the server. A
+unit that is merely loaded, restarting against another custody, does not
+count. The same check runs after the command starts its unit: the custody is
+ready only when our unit's process serves it, and another process answering
+fails `E_RESIDENT_CUSTODY_RUNNING`. Where `lsof` exists, the process must own
+the custody socket (`lsof -t <socket>`). Where it does not, the same pid must
+still be running a second later: aw refuses a second custody server on a socket
+that answers, before it listens (aw 1.36.33, `cmd/aw/custody.go:235-238`), so
+a process that stays up is the server, while a crash-looping aw exits within
+milliseconds and launchd and systemd wait seconds before restarting it. A host
+without `lsof` is never refused for that. The unit is idempotent: a re-run
 leaves an unchanged unit as it is and loads it if it is not running. R reached through a symlink is the same directory. A unit of that label that serves another directory is
 refused, naming both, and so is any `ai.aweb.custody.*.<name>` unit that
 serves another directory, before any init.

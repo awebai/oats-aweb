@@ -282,6 +282,16 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
     catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
     if (opts.teamLabel && needsInit(state)) preflightTeamLabel(deployment, env, opts.teamLabel);
+    /** Why the custody answering in R is not this command's unit, or nothing
+     *  when our unit's process is what serves it. */
+    const notOurCustody = async (label, status) => {
+      const own = await ownUnitServes({ platform, label, root, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME, uid: process.getuid(), env, socketPath: String(status?.socket_path || "") });
+      if (own.serves) return undefined;
+      const step = `run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
+      return own.why === "no unit of this command serves it"
+        ? `custody for ${name} is already running in ${root}, and not from this command's unit ${label}: ${step}`
+        : `custody for ${name} is already running in ${root}, and this command's unit ${label} is not what serves it (${own.why}): ${step}`;
+    };
     // A complete identity may already be served by a custody someone started
     // by hand or under another supervisor. A unit started beside it would
     // restart in a loop (aw refuses a second server on a socket that answers),
@@ -292,13 +302,8 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       let status;
       try { status = parseAwJson(read(["custody", "status", "--json"]), "aw custody status"); } catch { /* unreadable is not running here */ }
       if (status?.status === "running") {
-        const own = ownUnitServes({ platform, label, root, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME, uid: process.getuid(), env, socketPath: String(status.socket_path || "") });
-        if (!own.serves) {
-          const step = `run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
-          throw failure("E_RESIDENT_CUSTODY_RUNNING", "preflight", own.why === "no unit of this command serves it"
-            ? `custody for ${name} is already running in ${root}, and not from this command's unit ${label}: ${step}`
-            : `custody for ${name} is already running in ${root}, and this command's unit ${label} is not what serves it (${own.why}): ${step}`);
-        }
+        const problem = await notOurCustody(label, status);
+        if (problem) throw failure("E_RESIDENT_CUSTODY_RUNNING", "preflight", problem);
       }
     }
 
@@ -372,10 +377,11 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
         unsupported = e.message;
       }
     }
-    try { await waitForCustody({ status, resident: name, team, timeoutMs: unsupported ? 0 : undefined }); }
+    // Ready means our unit's process is the server, not just that a custody answers.
+    try { await waitForCustody({ status, resident: name, team, owner: custody ? (ready) => notOurCustody(label, ready) : undefined, timeoutMs: unsupported ? 0 : undefined }); }
     catch (e) {
       if (unsupported) throw failure("E_RESIDENT_UNIT_UNSUPPORTED", "custody", `${unsupported}: ${handStep(root, name)}`);
-      throw failure("E_RESIDENT_CUSTODY", "custody", e.message);
+      throw failure(e.code === "E_RESIDENT_CUSTODY_RUNNING" ? e.code : "E_RESIDENT_CUSTODY", "custody", e.message);
     }
     custody = { status: "running", ...(custody || { manager: null, label: null, path: null }) };
 
