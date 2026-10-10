@@ -97,8 +97,14 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env
     // the diagnosis anyone gets.
     const scrub = (t) => secrets.filter(Boolean).reduce((acc, sec) => acc.split(sec).join("<redacted>"), String(t ?? ""));
     const where = [argv[0], argv[1], argv[2]].filter((a) => a && !secrets.includes(a) && !a.startsWith("-")).join(" ");
-    const why = secretSafe ? "" : (scrub(e.stderr).trim() || (e.status === undefined ? String(e.code || "failed") : ""));
-    const err = new Error(`${where} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
+    // A child that never exited (killed at the timeout, a signal, a spawn error)
+    // has no status: the outcome says why, which is not its output, so even a
+    // secretSafe command reports it.
+    const outcome = e.status != null ? `failed (exit ${e.status})`
+      : e.code === "ETIMEDOUT" ? `timed out after ${Math.round(timeout / 1000)} s`
+      : `failed: ${e.code || e.signal || "no exit status"}`;
+    const output = secretSafe ? "" : scrub(e.stderr).trim();
+    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
     err.stderr = scrub(e.stderr).trim();

@@ -321,7 +321,8 @@ test("a grant list that hangs at a start gives the could-not-check note within t
   const launched = s.launch(spawned.doc.meta, {}, { FAKE_GRANT_LIST_SLEEP_MS: "40000" });
   const took = Date.now() - started;
   assert.equal(launched.status, 0, launched.stdout + launched.stderr);
-  assert.match(launched.doc.warning, /could not check for orphaned grants/);
+  assert.match(launched.doc.warning, /could not check for orphaned grants \(aw id grant timed out after 10 s\)/);
+  assert.doesNotMatch(launched.doc.warning, /exit null/);
   assert.ok(took < 20000, `the start waited ${took} ms for the list (bound 10 s plus the renewal)`);
 });
 
