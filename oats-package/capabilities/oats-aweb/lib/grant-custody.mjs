@@ -10,6 +10,10 @@ export function parseAwJson(text, what) {
   throw new Error(`${what} returned no JSON result`);
 }
 
+const REPLY_CONTINUATION_OP = 'mail_reply_continuation.v1';
+
+/** Preflight a resident's running custody service from `aw custody status --json`.
+ *  Warnings are {code, message}: conditions that do not stop the grant. */
 export function custodyPreflight({ custody, resident, team, e2eeRequired = true, runAw, fatalOnError = true, fatal }) {
   const failNow = (message) => { if (fatalOnError && typeof fatal === 'function') fatal(message); throw new Error(message); };
   let status;
@@ -33,6 +37,9 @@ export function custodyPreflight({ custody, resident, team, e2eeRequired = true,
   if (missingOps.length) fail(`required custody operations are missing: ${missingOps.join(', ')}`);
   if (e2eeRequired && status.keys?.encryption_ready !== true) fail('keys.encryption_ready is false');
   const warnings = [];
-  if (!e2eeRequired && status.keys?.encryption_ready !== true) warnings.push('E2E encryption is disabled for this grant and custody encryption is not ready; encrypted mail/chat will not be available in this session.');
+  if (!e2eeRequired && status.keys?.encryption_ready !== true) warnings.push({ code: 'e2ee-disabled', message: 'E2E encryption is disabled for this grant and custody encryption is not ready; encrypted mail/chat will not be available in this session.' });
+  // A custody started before an aw upgrade keeps running its old code, and an
+  // aw 1.36.30 custody reports the same ops as older ones; aw 1.36.31 adds this op.
+  if (!ops.has(REPLY_CONTINUATION_OP)) warnings.push({ code: 'custody-reply-continuation-unproven', message: `cannot tell whether the running custody service for ${resident} can reply to senders outside the team roster: its status does not report ${REPLY_CONTINUATION_OP}, and custody from aw 1.36.30 looks the same as older custody. This is not a detected fault; if aw was upgraded after the custody service started, restart the custody service after upgrading aw` });
   return { status, warnings };
 }

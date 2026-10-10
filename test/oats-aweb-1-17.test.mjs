@@ -23,7 +23,7 @@ function tempDir(t, prefix = "oats-aweb-117-") {
 }
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 
-function fakeAw117(t, { version = "1.36.13" } = {}) {
+function fakeAw117(t, { version = "1.36.30" } = {}) {
   const base = tempDir(t), bin = join(base, "bin"), calls = join(base, "calls.jsonl");
   write(join(bin, "aw"), `#!${process.execPath}
 const fs = require("node:fs"), path = require("node:path");
@@ -44,7 +44,7 @@ if (args[0] === "workspace" && args[1] === "delete") { if (process.env.FAKE_DELE
 if (args[0] === "id" && args[1] === "team" && args[2] === "members") { emit({ team_id: flag("--team-id"), members: [{ alias: "dev-1" }] }); process.exit(0); }
 if (args[0] === "id" && args[1] === "team" && args[2] === "list") { const team = process.env.FAKE_LIST_OTHER_TEAM ? "other:example.test" : (String(identityHome || "").includes(".aweb-identity-shared") ? "shared:example.test" : "default:example.test"); emit({ memberships: [{ team_id: team, registry_origin: "https://api.awid.ai" }] }); process.exit(0); }
 if (args[0] === "wake" && ["register", "deregister"].includes(args[1])) { console.log("ok"); process.exit(0); }
-if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.13", instances: [] }); process.exit(0); }
+if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.30", instances: [] }); process.exit(0); }
 if (args[0] === "init") { fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true }); fs.writeFileSync(path.join(process.cwd(), ".aw", "teams.yaml"), "active_team: default:alice.aweb.ai\\n"); emit({ team_id: "default:alice.aweb.ai" }); process.exit(0); }
 console.error("unexpected aw " + args.join(" ")); process.exit(93);
 `);

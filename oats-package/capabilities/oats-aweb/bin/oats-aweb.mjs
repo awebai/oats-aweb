@@ -53,7 +53,7 @@ import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
-import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
+import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
@@ -114,11 +114,6 @@ const parseSecretJson = (text, what) => {
   try { return JSON.parse(text); }
   catch { throw new Error(`${what} returned output that is not valid JSON (withheld: this command handles credentials)`); }
 };
-function semverAtLeast(version, floor) {
-  const a = version.split(".").map(Number), b = floor.split(".").map(Number);
-  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
-  return true;
-}
 /** Is a command on PATH? Resolved in-process rather than by running
  * `command -v`, which is a SHELL BUILTIN — spawning it as a program depends on
  * a /usr/bin/command binary that many systems do not ship, and its absence
@@ -460,24 +455,13 @@ function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPA
 }
 function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label)); }
 
-/** The aw floor. The version read stops at the version line instead of
- * waiting out aw's update check; the binding check shares it
- * (lib/binding-wire.mjs readAwVersion). */
-async function awFloorProblem() {
-  if (!onPath("aw")) return `aw CLI not on PATH; install aw >= ${AW_MIN}`;
-  const version = await readAwVersion();
-  if (!version) return `aw version could not be read; install aw >= ${AW_MIN}`;
-  if (semverAtLeast(version, AW_MIN)) return undefined;
-  return `aw ${version} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`;
-}
-
 /** What `npm install -g @awebai/aw@<spec>` may be given: an exact version, or a ^/~ range. */
 const AW_VERSION_SPEC_RE = /^[\^~]?\d+\.\d+\.\d+$/;
 /** The aw step of `setup --install-aw` / `--check-only`, as one status: `ok` (meets the floor),
  *  `done` (installed now), `needs-human` (missing or old, not asked to install) or `failed`. The
  *  default install is AW_MIN's release line (`^AW_MIN`, the newest compatible aw). */
 async function ensureAw({ install, version }) {
-  const problem = await awFloorProblem();
+  const problem = await awFloorMessage();
   if (!problem) return { status: "ok", version: await readAwVersion() };
   if (!install) return { status: "needs-human", detail: problem, remedy: "`oats aweb setup --install-aw` (installs aw with npm)" };
   const was = onPath("aw") ? (await readAwVersion()) || "unreadable" : "missing";
@@ -487,7 +471,7 @@ async function ensureAw({ install, version }) {
     const why = String(e.stderr || e.message || "").replace(/\s+/g, " ").trim().slice(0, 500);
     return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}` };
   }
-  const after = await awFloorProblem();
+  const after = await awFloorMessage();
   if (after) return { status: "failed", code: "E_AW_FLOOR", detail: `npm install -g ${pkg} ran, but ${after}` };
   const installed = await readAwVersion();
   return { status: "done", version: installed, detail: `installed aw ${installed} (was ${was})` };
@@ -509,7 +493,7 @@ if (!onPath("aw") && !setupHandlesAw) {
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
 if ((isCommand && !setupHandlesAw) || event === "spawn") {
-  const floorProblem = await awFloorProblem();
+  const floorProblem = await awFloorMessage();
   if (floorProblem) {
     if (isCommand) { console.error(`oats aweb ${event}: ${floorProblem}`); process.exit(1); }
     fatal(`${floorProblem}, so no identity could be minted and this instance would not meet the messaging contract`);
@@ -760,6 +744,8 @@ function checkedRenewMode() {
   if (mode !== "off" && mode !== "launch") fatal(`identity.renew must be "off" or "launch" (got ${JSON.stringify(identitySettings.renew)})`);
   return mode;
 }
+/** A custody preflight warning as one line of hook `warning`. */
+const custodyWarningLine = (w) => `oats-aweb: ${w.code} — ${w.message}`;
 function globalGrantRenew(oldMeta) {
   const ttl = identityMode === "global" || oldMeta.identity?.mode === "global" ? checkedGrantTTL() : undefined;
   if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), ...(oldMeta.identity?.mode === "global" ? { warning: grantInventoryAdvisory(oldMeta.identity.grant, { retained: true }) } : {}) });
@@ -812,7 +798,7 @@ function globalGrantRenew(oldMeta) {
   let warning;
   try { revokeGrant(custody, oldMeta.identity.grant.id); }
   catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept and the previous grant still expires at ${oldMeta.identity.grant.expiresAt || "its TTL"}`; }
-  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
+  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings.map(custodyWarningLine), grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
 function globalGrantSpawn() {
   const ttl = checkedGrantTTL();
@@ -864,8 +850,10 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
       }
     }
-    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
-    const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
+    const warnings = [...teamWarnings, ...preflight.warnings.map(custodyWarningLine), ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
+    // The agent is told only what changes its own session; custody remedies are the operator's.
+    const e2eeWarnings = preflight.warnings.filter((w) => w.code === "e2ee-disabled");
+    const e2eeBrief = e2eeWarnings.length ? ` Warning: ${e2eeWarnings.map((w) => w.message).join(" ")}` : "";
     out({
       meta,
       env,
@@ -2061,7 +2049,7 @@ if (event === "launch") {
   if (inviteStdin && !joinLabel) { console.error(`oats aweb setup: --invite-stdin requires --join <label> so the team gets its own root\n${usage}`); process.exit(2); }
   if (checkOnly && (username || createLabel || joinLabel || invite || inviteStdin)) { console.error(`oats aweb setup: --check-only cannot be combined with --username, --create, --join or --invite\n${usage}`); process.exit(2); }
   if (awVersion && !installAw) { console.error(`oats aweb setup: --aw-version requires --install-aw\n${usage}`); process.exit(2); }
-  if (awVersion && !AW_VERSION_SPEC_RE.test(awVersion)) { console.error(`oats aweb setup: --aw-version must be a version such as 1.36.23, ^1.36.13 or ~1.36.13\n${usage}`); process.exit(2); }
+  if (awVersion && !AW_VERSION_SPEC_RE.test(awVersion)) { console.error(`oats aweb setup: --aw-version must be a version such as ${AW_MIN}, ^${AW_MIN} or ~${AW_MIN}\n${usage}`); process.exit(2); }
   // The token is read into memory only: never argv, a file or any output.
   if (inviteStdin) {
     try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }

@@ -5,9 +5,11 @@ import {join, delimiter} from 'node:path';
 import {request as httpsRequest} from 'node:https';
 import {refuse, parseProbeJson, canonicalArgument} from './probe-runtime.mjs';
 import {readWorkspaceService} from './probe-service.mjs';
+import {AW_MIN} from './binding-wire.mjs';
 
-// Maintainer declaration: oats-aweb#57, issuecomment-6077900224. Probe only.
-export const PROBE_RELEASE_SUPPORT = Object.freeze({origins: Object.freeze(['https://app.aweb.ai']), cliFloor: '1.36.28', serverFloor: '1.27.12'});
+// Maintainer declaration: oats-aweb#57, issuecomment-6077900224. The origins and
+// server floor are probe only; the CLI floor is the provider's single aw floor.
+export const PROBE_RELEASE_SUPPORT = Object.freeze({origins: Object.freeze(['https://app.aweb.ai']), cliFloor: AW_MIN, serverFloor: '1.27.12'});
 
 /** Exact selected service only. URL.origin strips /api without switching host;
  * credentials, query strings and fragments are never accepted as an authority. */

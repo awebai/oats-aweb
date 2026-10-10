@@ -16,7 +16,7 @@ function val(flag) { const eq = a.find((x) => x.startsWith(flag + "=")); if (eq)
 function csv(name, fallback) { return String(process.env[name] || fallback).split(",").map(s => s.trim()).filter(Boolean); }
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { console.error("grant command refuses external identity home"); process.exit(2); }
-if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.13")); process.exit(0); }
+if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.30")); process.exit(0); }
 if (s.startsWith("wake status")) { console.log(j({ instances: [] })); process.exit(0); }
 if (s.startsWith("wake ")) process.exit(0);
 // Retained-seat responses are opt-in and stay inside the temporary fixture.
@@ -40,7 +40,7 @@ if (a[0] === "custody" && a[1] === "status" && a.includes("--json")) {
     const line = text.split("\\n").find((l) => l.trim().startsWith("socket_path:"));
     if (!line) { console.error("grant home has no custody.socket_path locator"); process.exit(1); }
     const socket = line.split("socket_path:")[1].trim();
-    console.log(j({ status: process.env.FAKE_VERIFY_STATUS || "running", service_id: "custody-fake-4c353d6d", socket_path: process.env.FAKE_VERIFY_SOCKET || socket, resident: { did_aw: "did:aw:resident", did_key: "did:key:resident", address: "oats.aweb.ai/resident-alias", alias: process.env.FAKE_VERIFY_ALIAS || "resident-alias" }, teams: [{ team_id: team, ready: process.env.FAKE_VERIFY_TEAM_READY !== "0", certificate_present: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["sign_plain_message.v1", "create_e2ee_envelope.v1", "unwrap_e2ee_message.v1", "status.v1"] }));
+    console.log(j({ status: process.env.FAKE_VERIFY_STATUS || "running", service_id: "custody-fake-4c353d6d", socket_path: process.env.FAKE_VERIFY_SOCKET || socket, resident: { did_aw: "did:aw:resident", did_key: "did:key:resident", address: "oats.aweb.ai/resident-alias", alias: process.env.FAKE_VERIFY_ALIAS || "resident-alias" }, teams: [{ team_id: team, ready: process.env.FAKE_VERIFY_TEAM_READY !== "0", certificate_present: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["status.v1", "sign_plain_message.v1", "sign_app_request.v1", "create_e2ee_envelope.v1", "unwrap_e2ee_message.v1"] }));
     process.exit(0);
   }
   const doc = {
@@ -50,7 +50,7 @@ if (a[0] === "custody" && a[1] === "status" && a.includes("--json")) {
     resident: { did_aw: "did:aw:resident", did_key: "did:key:resident", address: "oats.aweb.ai/resident-alias", alias: "resident-alias" },
     teams: process.env.FAKE_CUSTODY_TEAMS ? JSON.parse(process.env.FAKE_CUSTODY_TEAMS) : [{ team_id: team, ready: process.env.FAKE_TEAM_READY !== "0", certificate_present: process.env.FAKE_CERTIFICATE_PRESENT !== "0", grant_status_endpoint_ready: process.env.FAKE_GRANT_STATUS_ENDPOINT_READY !== "0" }],
     keys: { signing_ready: process.env.FAKE_SIGNING_READY !== "0", encryption_ready: process.env.FAKE_ENCRYPTION_READY !== "0", encryption_key_id: "enc-1" },
-    ops: csv("FAKE_CUSTODY_OPS", "sign_plain_message.v1,create_e2ee_envelope.v1,unwrap_e2ee_message.v1,status.v1"),
+    ops: csv("FAKE_CUSTODY_OPS", "status.v1,sign_plain_message.v1,sign_app_request.v1,create_e2ee_envelope.v1,unwrap_e2ee_message.v1"),
     freshness: { source: "fake", last_checked_at: "2026-09-24T00:00:00Z", max_cache_age_seconds: 30 },
     errors: process.env.FAKE_CUSTODY_ERRORS ? JSON.parse(process.env.FAKE_CUSTODY_ERRORS) : []
   };

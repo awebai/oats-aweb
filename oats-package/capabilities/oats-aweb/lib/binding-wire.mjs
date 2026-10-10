@@ -168,7 +168,7 @@ function workspaceReadinessContext(value) {
   return value;
 }
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
-export const AW_MIN = '1.36.13';
+export const AW_MIN = '1.36.30';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
@@ -260,7 +260,11 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
 }
 function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
 function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const st=statSync(join(dir,cmd));if(st.isFile()&&(st.mode&0o111))return true;}catch{}}return false;}
-async function awFloorProblem(){if(!onPath('aw'))return{code:'needs-configuration',message:`aw CLI not on PATH; install aw >= ${AW_MIN}`};const installed=await readAwVersion();if(!installed)return{code:'needs-configuration',message:`aw version could not be read; install aw >= ${AW_MIN}`};return !semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
+const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
+/** Why the aw on PATH does not meet AW_MIN, or undefined when it does: the one
+ *  wording every path that refuses below the floor uses. */
+export async function awFloorMessage(){if(!onPath('aw'))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion();if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
+async function awFloorProblem(){const message=await awFloorMessage();return message?{code:'needs-configuration',message}:null;}
 async function workspaceReadinessPhase(req) {
   const deadline=Date.now()+28000;
   const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
@@ -278,7 +282,7 @@ async function workspaceReadinessPhase(req) {
     else if(details.team) {
       try {
         const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,fatalOnError:false,runAw:localAw});
-        for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
+        warnings.push(...preflight.warnings);
       }
       catch(e) {problems.push({code:'custody',message:e.message});}
     }

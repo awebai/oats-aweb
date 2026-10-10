@@ -14,7 +14,7 @@ const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
 const BINDING = join(CAPABILITY, "bin", "oats-aweb-binding.mjs");
 const CLASSIC_REFUSAL = "oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x";
-const FAKE_AW_VERSION = "1.36.13";
+const FAKE_AW_VERSION = "1.36.30";
 const IDENTITY_HOME_POLICY = "not yet identity-home-aware";
 const TEAM_JOIN_POLICY = 'command "aw team join" is not yet identity-home-aware; refusing to use an external identity home';
 
@@ -46,7 +46,7 @@ function runBindingCheck(input, env = {}, cwd = process.cwd()) {
   return result;
 }
 
-function fakeAw114(t, { wakeStatus = { daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.13", daemon_commit: "347d4875" } } = {}) {
+function fakeAw114(t, { wakeStatus = { daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.30", daemon_commit: "347d4875" } } = {}) {
   const base = tempDir(t);
   const bin = join(base, "bin");
   mkdirSync(bin);
@@ -563,7 +563,7 @@ test("published aw >= 1.36.6 exposes wake status version state", (t) => {
   if (doc.daemon_version_state === "reported") assert.equal(typeof doc.daemon_version, "string");
 });
 
-test("wake daemon readiness reports outdated, unknown and not-running states", (t) => {
+test("wake daemon readiness warns on an outdated daemon and reports unknown and not-running states as problems", (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(join(home,'.aw'),{recursive:true});
@@ -577,7 +577,8 @@ test("wake daemon readiness reports outdated, unknown and not-running states", (
   let checked = runBindingCheck(bindingRequest(settings, context), { PATH: outdatedAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);
   let result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "unavailable");
-  assert.match(result.problems.find((p) => p.code === "wake-daemon-outdated").message, /running 1\.36\.4.*required 1\.36\.13/);
+  assert.match(result.warnings.find((w) => w.code === "wake-daemon-outdated").message, /running 1\.36\.4; required 1\.36\.30: upgrade aw, then restart the host wake daemon/);
+  assert.deepEqual(result.problems.map((p) => p.code), ["wake-target-missing"], "an outdated daemon is a warning; the target row is still assessed");
 
   const unknownAw = fakeAw114(t, { wakeStatus: { instances: [], daemon_running: true, daemon_version_state: "unknown" } });
   checked = runBindingCheck(bindingRequest(settings, context), { PATH: unknownAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);

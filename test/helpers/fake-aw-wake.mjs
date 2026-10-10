@@ -12,14 +12,14 @@ function tempDir(t) {
 }
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 
-/** A fake aw 1.36.13 modelling the 1.15 surface: multi-identity wake
+/** A fake aw 1.36.30 modelling the 1.15 surface: multi-identity wake
  *  registration and wake status derived from the stored registration. Any
  *  `aw auth …` or `aw team ensure` call is recorded as forbidden, exits 97, and
  *  fails the test: 1.15 defers default-team enrollment to 1.16.
  *  FAKE_WAKE_FAIL=register|deregister makes that `aw wake` subcommand fail;
  *  FAKE_WAKE_DEREGISTER_LATE makes deregister exit 0 and keep the registration,
  *  as aw does when the daemon does not answer in time. */
-export function fakeAwWake(t, { daemon = true, version = "1.36.13", daemonVersion = "1.36.13" } = {}) {
+export function fakeAwWake(t, { daemon = true, version = "1.36.30", daemonVersion = "1.36.30" } = {}) {
   // Registered before tempDir's cleanup so it still sees the call log.
   let readCalls = () => [];
   t.after(() => assert.deepEqual(readCalls().filter((c) => c.forbidden).map((c) => c.args.join(" ")), [], "oats.aweb 1.15 must not call aw auth or aw team ensure"));

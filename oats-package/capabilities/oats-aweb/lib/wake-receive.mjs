@@ -278,7 +278,10 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   if (status.daemon_version_state !== 'reported' || typeof status.daemon_version !== 'string' || !/^\d+\.\d+\.\d+$/.test(status.daemon_version || '')) return fail('wake-daemon-version-unknown', 'host wake daemon compatibility is unproven');
   const version = status.daemon_version.split('.').map(Number), floor = minimumVersion.split('.').map(Number);
   const difference = version.map((n, i) => n - floor[i]).find(n => n !== 0);
-  if (difference < 0) return fail('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}`);
+  // A daemon below the floor still receives; the floor exists for replies to
+  // senders outside the roster, so it is reported as a warning, and every
+  // later check (and its fail) still carries that warning.
+  if (difference < 0) warnings.push(problem('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}: upgrade aw, then restart the host wake daemon`));
   const rows = status.instances.filter(row => samePath(row?.home, home));
   if (rows.length !== 1) return fail('wake-target-missing', 'canonical home must have exactly one broker target row');
   const row = rows[0];
