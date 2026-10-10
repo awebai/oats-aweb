@@ -27,6 +27,7 @@ README is updated with the new version, commit and date.
 | `whoami`, `doctor-identity-offline`, `doctor-registry-online` | `aw whoami --json`, `aw doctor identity --offline --json` and `aw doctor registry --online --json` in that complete identity's directory. |
 | `custody-status-not-running`, `custody-status-running` | `aw custody status --json` there, before and while `aw custody serve` runs. |
 
-Not captured here: aweb Cloud's answers (a successful API-key init, a
-quarantined `.rejected` partial, a refusal for a customer-held team). The OSS
-stack cannot produce them, and they are proven only in the joint E2E.
+Not captured here: aweb Cloud's answers (a successful API-key init, the
+different-identity answer that makes aw quarantine a partial, a refusal for a
+customer-held team). The OSS stack cannot produce them, and they are proven
+only in the joint E2E.

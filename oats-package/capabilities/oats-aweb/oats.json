@@ -75,6 +75,7 @@
     "join": "bin/oats-aweb.mjs join",
     "leave": "bin/oats-aweb.mjs leave",
     "invite": "bin/oats-aweb.mjs invite",
+    "resident": "bin/oats-aweb.mjs resident",
     "probe": "bin/oats-aweb-probe.mjs"
   },
   "binding": {

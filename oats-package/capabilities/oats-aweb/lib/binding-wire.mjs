@@ -267,8 +267,9 @@ function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||
 function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const st=statSync(join(dir,cmd));if(st.isFile()&&(st.mode&0o111))return true;}catch{}}return false;}
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
 /** Why the aw on PATH does not meet AW_MIN, or undefined when it does: the one
- *  wording every path that refuses below the floor uses. */
-export async function awFloorMessage(){if(!onPath('aw'))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion();if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
+ *  wording every path that refuses below the floor uses. `env` is the PATH to
+ *  search and the environment `aw version` runs in. */
+export async function awFloorMessage({env=process.env}={}){if(!onPath('aw',env))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion({env});if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
 async function awFloorProblem(){const message=await awFloorMessage();return message?{code:'needs-configuration',message}:null;}
 async function workspaceReadinessPhase(req) {
   // One clock for every time-based judgement in this answer.

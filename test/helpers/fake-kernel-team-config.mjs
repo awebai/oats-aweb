@@ -8,7 +8,7 @@ export function fakeKernelTeamConfig(dir, deployment, initial = {}) {
   writeFileSync(cli, `import fs from 'node:fs';
 const args=process.argv.slice(2),file=${JSON.stringify(state)},calls=${JSON.stringify(calls)};
 const doc=JSON.parse(fs.readFileSync(file,'utf8'));
-fs.appendFileSync(calls,JSON.stringify({args,cwd:process.cwd(),ambientAgent:process.env.OATS_AGENT,ambientHome:process.env.OATS_HOME})+'\\n');
+fs.appendFileSync(calls,JSON.stringify({args,cwd:process.cwd(),ambientAgent:process.env.OATS_AGENT,ambientHome:process.env.OATS_HOME,awebEnv:Object.keys(process.env).filter(k=>/^(AWEB_|AWID_)/.test(k))})+'\\n');
 const fail=()=>{console.log(JSON.stringify({schemaVersion:1,ok:false,error:{code:'E_LOCAL_CHANGED',message:'SECRET_KERNEL_BODY'}}));process.exit(1);};
 if(args[1]==='add'||args[1]==='default'){
  const verb=args[1];if(doc.failure===verb+'-before')fail();
