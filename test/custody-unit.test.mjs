@@ -160,6 +160,21 @@ test("ensureCustodyUnit installs once, is idempotent, and refuses a unit of its 
   assert.deepEqual(linux.slice(0, 2), ["--user daemon-reload", `--user enable --now ${LABEL}.service`]);
 });
 
+test("systemctl and loginctl reach the user's manager through its bus variables; the unit itself gets PATH and HOME only", (t) => {
+  const dir = base(t);
+  const fake = fakeResidentAw(dir, { aw: false });
+  const home = join(dir, "home"); mkdirSync(home);
+  const env = { PATH: fake.bin, HOME: home, XDG_RUNTIME_DIR: "/run/user/1000", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus", AWEB_API_KEY: "never-passed", SHELL: "/bin/sh" };
+  ensureCustodyUnit({ platform: "linux", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 1000, env });
+  lingerProblem({ platform: "linux", user: "alice", env });
+  for (const call of fake.calls()) {
+    assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["DBUS_SESSION_BUS_ADDRESS", "HOME", "PATH", "XDG_RUNTIME_DIR"], `${call.cmd} ${call.argv.join(" ")}`);
+  }
+  const unit = readFileSync(unitPath({ platform: "linux", home }, LABEL), "utf8");
+  assert.match(unit, new RegExp(`^Environment="PATH=${fake.bin}" "HOME=${home}"$`, "m"));
+  assert.doesNotMatch(unit, /XDG_RUNTIME_DIR|DBUS|never-passed/);
+});
+
 test("waitForCustody: ready, ops missing, unreadable: three different answers", async () => {
   const answers = {
     ready: () => readFileSync(new URL("./fixtures/resident/custody-status-running.stdout", import.meta.url), "utf8"),

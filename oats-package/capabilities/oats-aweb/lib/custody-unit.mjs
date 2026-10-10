@@ -120,10 +120,14 @@ export function conflictMessage(unit, root) {
   return `custody unit ${unit.path} already serves ${unit.root ?? "an unreadable directory"}, not ${root}; remove that unit or choose another name`;
 }
 
-/** A command a unit manager runs, with PATH and HOME only. */
+/** A unit manager command's environment: PATH and HOME, and the variables
+ *  systemctl --user and loginctl find the user's manager by. Never anything
+ *  else, and none of it goes into the unit. */
+const MANAGER_ENV = ["PATH", "HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
 function manage(env, cmd, args) {
+  const managerEnv = Object.fromEntries(MANAGER_ENV.filter((k) => typeof env[k] === "string").map((k) => [k, env[k]]));
   try {
-    return { ok: true, stdout: execFileSync(cmd, args, { env: { PATH: env.PATH || "", HOME: env.HOME || "" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30000 }) };
+    return { ok: true, stdout: execFileSync(cmd, args, { env: managerEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30000 }) };
   } catch (e) {
     return { ok: false, missing: e.code === "ENOENT", status: e.status, stderr: String(e.stderr || "").trim() };
   }

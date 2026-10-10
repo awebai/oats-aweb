@@ -258,7 +258,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
     if (conflict) throw failure("E_RESIDENT_UNIT_CONFLICT", "preflight", conflictMessage(conflict, root));
   }
-  const linger = lingerProblem({ platform, user: userInfo().username, env: readEnv });
+  const linger = lingerProblem({ platform, user: userInfo().username, env });
   if (linger) throw failure("E_RESIDENT_LINGER", "preflight", linger);
   try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
   catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
@@ -327,7 +327,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
     if (conflict) throw failure("E_RESIDENT_UNIT_CONFLICT", "custody", conflictMessage(conflict, root));
     try {
-      const unit = ensureCustodyUnit({ platform, label, aw, root, home: env.HOME || "", address: identity.address, uid: process.getuid(), env: { PATH: env.PATH || "", HOME: env.HOME || "" }, xdgConfigHome: env.XDG_CONFIG_HOME });
+      const unit = ensureCustodyUnit({ platform, label, aw, root, home: env.HOME || "", address: identity.address, uid: process.getuid(), env, xdgConfigHome: env.XDG_CONFIG_HOME });
       custody = { manager: unit.manager, label: unit.label, path: unit.path };
     } catch (e) {
       if (e.code !== "E_RESIDENT_UNIT_UNSUPPORTED") throw failure(e.code || "E_RESIDENT_UNIT", "custody", e.message);
