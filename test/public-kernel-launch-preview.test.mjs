@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
 
 const packageRoot = fileURLToPath(new URL('../oats-package', import.meta.url));
-const PINNED = 'a7214525aba6a5d81fccd6427f20a53ef26c3763'; // v0.50.0
+const PINNED = 'd27de605c7f6a5df4c3e7eb8566cc37a33d34c0c'; // main at 0.52.0
 const kernel = process.env.OATS_PREVIEW_KERNEL_ROOT;
 if (process.env.OATS_PREVIEW_KERNEL_REQUIRED === '1') assert.ok(kernel, 'required launch-preview test needs OATS_PREVIEW_KERNEL_ROOT');
 const DEV_FLAG = '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace';
@@ -54,7 +54,7 @@ function deployment(t, mode) {
   return { dep, oats };
 }
 
-test('the start preview of a development Claude home carries the decision statement', { skip: !kernel && 'requires pinned v0.50.0 public kernel checkout', timeout: 180000 }, (t) => {
+test('the start preview of a development Claude home carries the decision statement', { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {
   const f = deployment(t, 'development');
   const spawned = f.oats(['spawn', 'probe', '--name', 'dev-probe', '--no-launch', '--harness', 'claude', '--dir', f.dep]);
   assert.ok(spawned.warnings.includes(DECISION), JSON.stringify(spawned.warnings));
@@ -65,7 +65,7 @@ test('the start preview of a development Claude home carries the decision statem
   assert.equal(preview.warnings.filter((w) => w === DECISION).length, 1, JSON.stringify(preview.warnings));
 });
 
-test('the start preview of an approved Claude home carries no decision statement', { skip: !kernel && 'requires pinned v0.50.0 public kernel checkout', timeout: 180000 }, (t) => {
+test('the start preview of an approved Claude home carries no decision statement', { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {
   const f = deployment(t, 'approved');
   const spawned = f.oats(['spawn', 'probe', '--name', 'approved-probe', '--no-launch', '--harness', 'claude', '--dir', f.dep]);
   const preview = f.oats(['launch-config', 'preview', '--home', spawned.home]);

@@ -1,5 +1,5 @@
 // Actual generic kernel hostOnly contract, opt-in locally and REQUIRED in CI.
-// Pinned source bb2ba8c9 (0.42.0); no claim about another installed kernel.
+// Pinned source d27de605 (0.52.0); no claim about another installed kernel.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -11,7 +11,7 @@ if(process.env.OATS_HOST_ONLY_REQUIRED==='1') assert.ok(root,'required hostOnly 
 const manifest=JSON.parse(readFileSync(new URL('../oats-package/capabilities/oats-aweb/oats.json',import.meta.url),'utf8'));
 const kernel=root?await import(pathToFileURL(join(root,'lib/resolve.mjs'))):null;
 const remoteModule=root?await import(pathToFileURL(join(root,'lib/remote.mjs'))):null;
-if(root) assert.equal(JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,'0.42.0');
+if(root) assert.equal(JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,'0.52.0');
 function fixture(){
   const key='github.com/example/fixture',commit='a'.repeat(40);
   const soul={name:'dev',repoKey:key,commit,path:'souls/dev',definition:{schemaVersion:2,name:'dev',work:'directory',capabilities:{'oats.aweb':{from:'here'}}}};
