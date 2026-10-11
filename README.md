@@ -10,7 +10,8 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
 - **Development mode no longer stops at the prompt.** A Claude home in
   `claudeChannelMode: development` (the default) under `delivery: channel` shows
   Claude's development-channel prompt, and OATS confirms it once at launch.
-  `delivery: session` or `claudeChannelMode: approved` stop the prompt.
+  `settings.oats.aweb.delivery: session` or
+  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt.
 - **`channel-dev-confirmation` states that decision** at spawn apply, start and
   restart, the start preview (`oats launch-config preview`) and readiness.
   Readiness is quiet once the kernel recorded the home's last start as
@@ -21,7 +22,7 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
   of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or the account or organization
   has no channels. Remove the variable from the launch environment, use an
-  account with channels, or use `delivery: session`.
+  account with channels, or use `settings.oats.aweb.delivery: session`.
 - **The exact-home launch consent recipe is gone** from the skill: the kernel
   no longer reads that key.
 
@@ -357,10 +358,12 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   occurs. A future default change requires an explicit reviewed release.
 
   Development selection shows Claude Code's development-channel prompt, and
-  OATS 0.52.0 and later confirm it once at launch; `delivery: session` or
-  `claudeChannelMode: approved` stop the prompt. The kernel records the outcome
-  in `instance.json` `launchPrompts.status` and explains a blocked start in its
-  own `launch-prompt` readiness item; `channel-dev-confirmation` states the
+  OATS 0.52.0 and later confirm it once at launch;
+  `settings.oats.aweb.delivery: session` or
+  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt. The kernel
+  records the outcome in `instance.json` `launchPrompts.status` and explains a
+  blocked start in its own `launch-prompt` readiness item;
+  `channel-dev-confirmation` states the
   decision at spawn apply, start and restart, the start preview (`oats
   launch-config preview`) and readiness, where it is quiet only after a
   `completed` start. `oats spawn --preview` runs no provider hooks, so it shows

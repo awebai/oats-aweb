@@ -18,7 +18,7 @@ const PINNED = 'a7214525aba6a5d81fccd6427f20a53ef26c3763'; // v0.50.0
 const kernel = process.env.OATS_PREVIEW_KERNEL_ROOT;
 if (process.env.OATS_PREVIEW_KERNEL_REQUIRED === '1') assert.ok(kernel, 'required launch-preview test needs OATS_PREVIEW_KERNEL_ROOT');
 const DEV_FLAG = '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace';
-const DECISION = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `delivery: session` or `claudeChannelMode: approved` stop it.";
+const DECISION = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.";
 
 // A deployment whose `probe` soul (work: directory) activates oats.aweb from a
 // local git member, with the host-only mode set in oats-local.yaml. The inert

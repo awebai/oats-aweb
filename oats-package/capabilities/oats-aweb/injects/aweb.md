@@ -46,12 +46,12 @@ where authorized, without overriding an explicit native-channel requirement.
 Never switch to development as an automatic fallback.
 
 Under development mode Claude shows its development-channel prompt and OATS
-confirms it once at launch; `delivery: session` or `claudeChannelMode: approved`
-stop the prompt. See /oats-aweb section 4, **Channel selection and the
-development-channel prompt**. The kernel records each start's outcome in
-`instance.json` `launchPrompts.status` and explains a blocked start in its own
-`launch-prompt` readiness item. A confirmed prompt does not prove native
-receive; `native-receive-unproven` remains.
+confirms it once at launch; `settings.oats.aweb.delivery: session` or
+`settings.oats.aweb.claudeChannelMode: approved` stop the prompt. See /oats-aweb
+section 4, **Channel selection and the development-channel prompt**. The kernel
+records each start's outcome in `instance.json` `launchPrompts.status` and
+explains a blocked start in its own `launch-prompt` readiness item. A confirmed
+prompt does not prove native receive; `native-receive-unproven` remains.
 
 **When woken**, read what the broker or channel presents first: it may be a
 line naming what is waiting, or the full mail/chat event with body. aw 1.36.21+

@@ -51,7 +51,7 @@ export function recordedRuntime(meta, harness) {
  * receipt; only the kernel's recorded launchPrompts.status is. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: "Claude's development-channel prompt: OATS confirms this prompt at launch; `delivery: session` or `claudeChannelMode: approved` stop it.",
+  message: "Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.",
 };
 
 /** The kernel's launchPrompts.status when Claude ignored the development-channel
@@ -63,7 +63,7 @@ export const CHANNEL_DEV_CONFIRMATION = {
 export const CHANNELS_UNAVAILABLE_STATUS = 'flag-ignored';
 export const CLAUDE_CHANNELS_UNAVAILABLE = {
   code: 'claude-channels-unavailable',
-  message: 'Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `delivery: session`.',
+  message: 'Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `settings.oats.aweb.delivery: session`.',
 };
 
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({

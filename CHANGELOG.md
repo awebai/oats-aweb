@@ -5,12 +5,14 @@
 - **OATS confirms Claude's development-channel prompt.** A Claude home in
   development mode (`claudeChannelMode: development`, the default, under
   `delivery: channel`) no longer stops at Claude's development-channel prompt:
-  the kernel confirms it once at launch (oats#886). `delivery: session` or
-  `claudeChannelMode: approved` stop the prompt altogether. The
-  `claudeChannelMode` manifest description says so.
+  the kernel confirms it once at launch (oats#886).
+  `settings.oats.aweb.delivery: session` or
+  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt altogether.
+  The `claudeChannelMode` manifest description says so.
 - **The `channel-dev-confirmation` warning now states that decision:**
   "Claude's development-channel prompt: OATS confirms this prompt at launch;
-  `delivery: session` or `claudeChannelMode: approved` stop it." It replaces
+  `settings.oats.aweb.delivery: session` or
+  `settings.oats.aweb.claudeChannelMode: approved` stop it." It replaces
   "Claude Code may stop at its development-channels confirmation, and nothing
   in this provider answers it; …". Spawn apply, start and restart of a
   development home always carry it: a new launch has no outcome yet.
@@ -33,7 +35,8 @@
   environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or
   organization has no channels. Remove the variable from the launch environment
-  yourself, use an account with channels, or use `delivery: session`." The
+  yourself, use an account with channels, or use
+  `settings.oats.aweb.delivery: session`." The
   provider never reads, unsets or changes these variables: readiness runs in the
   operator's shell, not in Claude's launch environment. It doesn't name
   `claudeChannelMode: approved`: approved mode needs channels too. Spawn, start

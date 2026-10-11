@@ -27,11 +27,23 @@ test("the skill drops the exact-home consent and its reference, and says where t
   const skill = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
   for (const gone of [/launchPromptAnswers/, /launch-consent\.md/, /exact-home/, /awebDevelopmentChannel/]) assert.doesNotMatch(skill, gone);
   assert.match(skill, /\*\*Channel selection and the development-channel prompt\*\*/);
-  assert.match(skill, /OATS \(0\.52\.0 and later, which this provider requires\) confirms that prompt once\nat launch\. `delivery: session` or `claudeChannelMode: approved` stop the prompt\./);
+  assert.match(skill, /OATS \(0\.52\.0 and later, which this provider requires\) confirms that prompt once\nat launch\. `settings\.oats\.aweb\.delivery: session` or\n`settings\.oats\.aweb\.claudeChannelMode: approved` stop the prompt\./);
+  const devRow = skill.split("\n").find((line) => line.startsWith("| `channel-dev-confirmation` |"));
+  assert.match(devRow, /to stop the prompt, operator: section 4's approved route or `settings\.oats\.aweb\.delivery: session`, then respawn/);
   assert.match(skill, /decision at spawn apply, at start and restart, in the start preview\n\(`oats launch-config preview`\) and at readiness\./);
   assert.match(skill, /`oats spawn --preview` runs no provider hooks, so it shows no decision statement\nyet, from the provider or the kernel \(\[oats#912\]\(https:\/\/github\.com\/awebai\/oats\/issues\/912\)\)/);
   for (const file of ["README.md"]) assert.doesNotMatch(readFileSync(join(REPO, file), "utf8"), /launch-consent\.md|launchPromptAnswers/, file);
   assert.doesNotMatch(readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8"), /per-home consent|nothing in this provider answers/);
+});
+
+test("every sentence saying what stops the prompt names the full setting paths", () => {
+  const flat = (text) => text.replace(/\s+/g, " ");
+  const STOP = "`settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop the prompt";
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
+  assert.ok(flat(section).includes(`the kernel confirms it once at launch (oats#886). ${STOP} altogether.`), section);
+  assert.ok(flat(readFileSync(join(REPO, "README.md"), "utf8")).includes(`OATS 0.52.0 and later confirm it once at launch; ${STOP}.`), "README configuration section");
+  assert.ok(flat(readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8")).includes(`OATS confirms it once at launch; ${STOP}.`), "injects/aweb.md");
 });
 
 test("the skill, readme and changelog give both causes of claude-channels-unavailable, without approved as its remedy", () => {
@@ -41,20 +53,22 @@ test("the skill, readme and changelog give both causes of claude-channels-unavai
   const paragraph = flat(skill.slice(skill.indexOf("When Claude ignored the flag"), skill.indexOf("`oats spawn --preview` runs no provider hooks")));
   assert.ok(paragraph.startsWith("When Claude ignored the flag, the kernel records `flag-ignored` and sends no key; readiness then warns `claude-channels-unavailable` instead"), paragraph);
   assert.ok(paragraph.includes(CAUSES), paragraph);
-  assert.ok(paragraph.includes("Remove the variable from the launch environment, use an account with channels, or use `delivery: session`"), paragraph);
+  assert.ok(paragraph.includes("Remove the variable from the launch environment, use an account with channels, or use `settings.oats.aweb.delivery: session`"), paragraph);
   assert.ok(paragraph.includes("The provider never reads or changes those variables."), paragraph);
   const row = skill.split("\n").find((line) => line.startsWith("| `claude-channels-unavailable` |"));
   assert.ok(row, "section 7 has a claude-channels-unavailable row");
   for (const name of ["DISABLE_TELEMETRY", "DO_NOT_TRACK", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"]) assert.match(row, new RegExp(`\`${name}\``));
-  assert.match(row, /remove the variable from the launch environment, an account with channels, or `delivery: session`/);
+  assert.match(row, /remove the variable from the launch environment, an account with channels, or `settings\.oats\.aweb\.delivery: session`/);
   assert.doesNotMatch(row, /claudeChannelMode: approved`? (stops|fixes)|approved route/);
   const readme = flat(readFileSync(join(REPO, "README.md"), "utf8"));
-  assert.ok(readme.includes("when Claude ignored the flag (the kernel recorded `flag-ignored`): its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or the account or organization has no channels."), "README 1.27.0 bullet");
+  assert.ok(readme.includes("when Claude ignored the flag (the kernel recorded `flag-ignored`): its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or the account or organization has no channels. Remove the variable from the launch environment, use an account with channels, or use `settings.oats.aweb.delivery: session`."), "README 1.27.0 bullet");
+  assert.ok(readme.includes("OATS confirms it once at launch. `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop the prompt."), "README 1.27.0 bullet");
   assert.doesNotMatch(readme, /ignored the flag because the account/);
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
   const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
   assert.match(section, /- \*\*`claude-channels-unavailable` when Claude ignored the development-channel flag\.\*\*/);
-  assert.ok(flat(section).includes("\"Claude ignored the development-channel flag at the last start, so this home has no channel delivery. " + CAUSES + " Remove the variable from the launch environment yourself, use an account with channels, or use `delivery: session`.\""), section);
+  assert.ok(flat(section).includes("\"Claude ignored the development-channel flag at the last start, so this home has no channel delivery. " + CAUSES + " Remove the variable from the launch environment yourself, use an account with channels, or use `settings.oats.aweb.delivery: session`.\""), section);
+  assert.ok(flat(section).includes("\"Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.\""), section);
   assert.ok(flat(section).includes("The provider never reads, unsets or changes these variables"), section);
   for (const text of [skill, section]) assert.doesNotMatch(flat(text), /Where the account or organization has no channels, Claude ignores|because the account or organization has no channels/);
 });

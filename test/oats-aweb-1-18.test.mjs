@@ -423,21 +423,21 @@ test("an outdated wake daemon over otherwise healthy broker evidence is ready, w
 // ------------------------------------------- channel-dev-confirmation (1.27.0)
 // Development selection states the kernel's decision at spawn and launch; at
 // readiness only the kernel's recorded outcome (launchPrompts.status) quiets it.
-const DEV_CONFIRMATION_MESSAGE = /Claude's development-channel prompt: OATS confirms this prompt at launch; `delivery: session` or `claudeChannelMode: approved` stop it\./;
+const DEV_CONFIRMATION_MESSAGE = "Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.";
 // The shapes the kernel writes to instance.json launchPrompts (sources in the file).
 const LAUNCH_PROMPTS = JSON.parse(readFileSync(join(REPO, "test", "fixtures", "launch-prompts.json"), "utf8"));
-const DEV_CONFIRMATION = new RegExp(`channel-dev-confirmation — ${DEV_CONFIRMATION_MESSAGE.source}`);
+const DEV_CONFIRMATION = `channel-dev-confirmation — ${DEV_CONFIRMATION_MESSAGE}`;
 
 test("a development Claude start states the kernel's confirmation, preview and real alike", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: {claudeChannelMode:"development"} });
   const meta = fx.spawn().meta;
   const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
   assert.equal(preview.status, 0, preview.stdout + preview.stderr);
-  assert.match(preview.doc.warning, DEV_CONFIRMATION);
+  assert.ok(preview.doc.warning.includes(DEV_CONFIRMATION), preview.doc.warning);
   const real = fx.launch(meta, "claude");
   assert.equal(real.status, 0, real.stdout + real.stderr);
   assert.deepEqual(real.doc.launch, { claude: DEV_CHANNEL_FLAG });
-  assert.match(real.doc.warning, DEV_CONFIRMATION);
+  assert.ok(real.doc.warning.includes(DEV_CONFIRMATION), real.doc.warning);
   assert.match(real.doc.warning, /^oats-aweb: /);
 });
 
@@ -448,7 +448,7 @@ test("the confirmation line joins the start's other warnings", (t) => {
   const r = fx.launch(meta, "claude", { extra: unmapped });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.doc.warning, /left joined team alpha/);
-  assert.match(r.doc.warning, DEV_CONFIRMATION);
+  assert.ok(r.doc.warning.includes(DEV_CONFIRMATION), r.doc.warning);
 });
 
 test("a Claude spawn under channel says it too: the spawn's own start carries the flag", (t) => {
@@ -456,7 +456,7 @@ test("a Claude spawn under channel says it too: the spawn's own start carries th
   const r = fx.hook("spawn");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(r.doc.launch, { claude: DEV_CHANNEL_FLAG });
-  assert.match(r.doc.warning, DEV_CONFIRMATION);
+  assert.ok(r.doc.warning.includes(DEV_CONFIRMATION), r.doc.warning);
 });
 
 test("spawns and starts without the Claude channel flag carry no confirmation line", (t) => {
@@ -485,7 +485,7 @@ test("readiness warns channel-dev-confirmation for a home whose last start was C
       assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
     if (warns) {
-      assert.match(warning.message, DEV_CONFIRMATION_MESSAGE);
+      assert.equal(warning.message, DEV_CONFIRMATION_MESSAGE);
       assert.equal(result.status, "ready", "configured native route carries a connection uncertainty warning");
       assert.ok(result.warnings.some(w => w.code === "native-receive-unproven"));
     }
@@ -509,7 +509,7 @@ test("readiness is quiet only when the kernel recorded a completed launch prompt
     assert.equal(result.status, "ready", `${name}: ${JSON.stringify(result)}`);
     const warning = (result.warnings || []).find((w) => w.code === "channel-dev-confirmation");
     assert.equal(!!warning, warns, `${name}: ${JSON.stringify(result)}`);
-    if (warns) assert.match(warning.message, DEV_CONFIRMATION_MESSAGE);
+    if (warns) assert.equal(warning.message, DEV_CONFIRMATION_MESSAGE);
     // The provider never explains a block: the kernel's launch-prompt item does.
     assert.doesNotMatch(JSON.stringify(result), /unexpected prompt|audit failed|blocked:|differed|aweb-dev-channel-confirmation-1|Something else/, name);
   }
@@ -528,7 +528,7 @@ test("a recorded launch prompt changes nothing on the approved, session or non-C
   }
 });
 
-const CHANNELS_UNAVAILABLE_MESSAGE = "Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `delivery: session`.";
+const CHANNELS_UNAVAILABLE_MESSAGE = "Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `settings.oats.aweb.delivery: session`.";
 
 test("readiness warns claude-channels-unavailable, not the confirmation, when Claude ignored the development-channel flag", (t) => {
   // Keyed on the status alone: the record's reason is neither required nor echoed.
@@ -1152,7 +1152,7 @@ for(const mode of [undefined,'approved']) test(`selector emits the fixed argumen
     assert.doesNotMatch(doc.warning||'',/channel-dev-confirmation/);
   } else {
     assert.match(doc.warning,new RegExp(DEV_CODE));
-    assert.match(doc.warning,DEV_CONFIRMATION);
+    assert.ok(doc.warning.includes(DEV_CONFIRMATION), doc.warning);
   }
   assert.doesNotMatch(doc.warning||'',/launchPromptAnswers|awebDevelopmentChannel/);
   fx.record(doc.meta,'claude');
