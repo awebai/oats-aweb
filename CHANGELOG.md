@@ -22,13 +22,20 @@
   `launch-prompt` readiness item does. Approved, session, Pi and Codex homes are
   unchanged.
 - **`claude-channels-unavailable` when Claude ignored the development-channel flag.**
-  Where the account or organization has no channels, Claude ignores
-  `--dangerously-load-development-channels`, and the kernel sends no key and
-  records `launchPrompts.status: flag-ignored`. Readiness for that development
-  home warns `claude-channels-unavailable` instead of `channel-dev-confirmation`:
-  "Claude ignored the development-channel flag at the last start: this account or
-  organization has no channels, so this home has no channel delivery. Use an
-  account with channels, or `delivery: session`." It doesn't name
+  Claude ignores `--dangerously-load-development-channels` when its launch
+  environment opts out of telemetry (any of `DISABLE_TELEMETRY`, `DO_NOT_TRACK`
+  or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or
+  organization has no channels; the kernel then sends no key and records
+  `launchPrompts.status: flag-ignored`. Readiness for that development home
+  warns `claude-channels-unavailable` instead of `channel-dev-confirmation`:
+  "Claude ignored the development-channel flag at the last start, so this home
+  has no channel delivery. Claude Code disables channels when its launch
+  environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or
+  organization has no channels. Remove the variable from the launch environment
+  yourself, use an account with channels, or use `delivery: session`." The
+  provider never reads, unsets or changes these variables: readiness runs in the
+  operator's shell, not in Claude's launch environment. It doesn't name
   `claudeChannelMode: approved`: approved mode needs channels too. Spawn, start
   and restart, and the approved, session, Pi and Codex homes, are unchanged.
 - **Where the decision shows:** spawn apply, start and restart, the start

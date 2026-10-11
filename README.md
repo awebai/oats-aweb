@@ -17,8 +17,11 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
   `launchPrompts.status: completed`. The spawn preview shows no decision
   statement yet ([oats#912](https://github.com/awebai/oats/issues/912)).
 - **`claude-channels-unavailable`** replaces it at readiness when Claude ignored
-  the flag because the account or organization has no channels (the kernel
-  recorded `flag-ignored`): use an account with channels, or `delivery: session`.
+  the flag (the kernel recorded `flag-ignored`): its launch environment opts out
+  of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or the account or organization
+  has no channels. Remove the variable from the launch environment, use an
+  account with channels, or use `delivery: session`.
 - **The exact-home launch consent recipe is gone** from the skill: the kernel
   no longer reads that key.
 

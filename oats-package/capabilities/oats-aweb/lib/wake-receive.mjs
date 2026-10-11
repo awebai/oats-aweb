@@ -55,12 +55,15 @@ export const CHANNEL_DEV_CONFIRMATION = {
 };
 
 /** The kernel's launchPrompts.status when Claude ignored the development-channel
- *  flag at the last start: the account or organization has no channels, so the
- *  kernel sent no key. Approved needs channels too, so it is no remedy here. */
+ *  flag at the last start, so the kernel sent no key: Claude Code disables
+ *  channels when its launch environment opts out of telemetry, or when the
+ *  account or organization has none. Readiness runs in the operator's shell,
+ *  not Claude's launch environment, so the provider names the variables and
+ *  never reads or changes them. Approved needs channels too: no remedy here. */
 export const CHANNELS_UNAVAILABLE_STATUS = 'flag-ignored';
 export const CLAUDE_CHANNELS_UNAVAILABLE = {
   code: 'claude-channels-unavailable',
-  message: 'Claude ignored the development-channel flag at the last start: this account or organization has no channels, so this home has no channel delivery. Use an account with channels, or `delivery: session`.',
+  message: 'Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `delivery: session`.',
 };
 
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
@@ -105,7 +108,7 @@ function aggregateClaudeModes(combined) {
  * hook argument is a fallback for old records without per-provider receipts.
  * An approved home's warning reads the machine managed-settings evidence; a
  * development home's is quiet only when the kernel recorded its last start's
- * launch prompt `completed`, says the account has no channels when Claude
+ * launch prompt `completed`, says the home has no channel delivery when Claude
  * ignored the flag, and otherwise (any other status, or none) states the
  * decision; the kernel's own launch-prompt readiness item explains a block. */
 function capturedClaudeChannel(meta, hooks, policy, launchPromptStatus) {

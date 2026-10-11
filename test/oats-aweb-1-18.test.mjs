@@ -527,7 +527,7 @@ test("a recorded launch prompt changes nothing on the approved, session or non-C
   }
 });
 
-const CHANNELS_UNAVAILABLE_MESSAGE = "Claude ignored the development-channel flag at the last start: this account or organization has no channels, so this home has no channel delivery. Use an account with channels, or `delivery: session`.";
+const CHANNELS_UNAVAILABLE_MESSAGE = "Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `delivery: session`.";
 
 test("readiness warns claude-channels-unavailable, not the confirmation, when Claude ignored the development-channel flag", (t) => {
   // Keyed on the status alone: the record's reason is neither required nor echoed.
@@ -541,6 +541,15 @@ test("readiness warns claude-channels-unavailable, not the confirmation, when Cl
     assert.deepEqual(result.warnings.filter((w) => w.code === "claude-channels-unavailable").map((w) => w.message), [CHANNELS_UNAVAILABLE_MESSAGE], name);
     assert.ok(result.warnings.some((w) => w.code === "native-receive-unproven"), name);
     assert.doesNotMatch(JSON.stringify(result), /start-fixture|2026-10-10T12|something-else|"channels-unavailable"|reason/, name);
+  }
+});
+
+test("readiness reads no telemetry opt-out variable: the operator's shell is not Claude's launch environment", (t) => {
+  const optOut = { DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" };
+  for (const [name, launchPrompts] of [["completed", LAUNCH_PROMPTS.completed], ["not-engaged", LAUNCH_PROMPTS.notEngaged], ["flag-ignored", LAUNCH_PROMPTS.flagIgnored], ["missing record", undefined]]) {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { claudeChannelMode: "development" } });
+    fx.record(fx.spawn().meta, "claude", { launchPrompts });
+    assert.deepEqual(fx.readiness({ extra: optOut }), fx.readiness(), name);
   }
 });
 

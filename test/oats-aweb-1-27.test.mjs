@@ -34,17 +34,29 @@ test("the skill drops the exact-home consent and its reference, and says where t
   assert.doesNotMatch(readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8"), /per-home consent|nothing in this provider answers/);
 });
 
-test("the skill and changelog name claude-channels-unavailable, without approved as its remedy", () => {
+test("the skill, readme and changelog give both causes of claude-channels-unavailable, without approved as its remedy", () => {
+  const flat = (text) => text.replace(/\s+/g, " ");
+  const CAUSES = "Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels.";
   const skill = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
-  assert.match(skill, /When Claude ignored the flag because the account or organization has no\nchannels, the kernel records `flag-ignored` and sends no key; readiness then\nwarns `claude-channels-unavailable` instead/);
+  const paragraph = flat(skill.slice(skill.indexOf("When Claude ignored the flag"), skill.indexOf("`oats spawn --preview` runs no provider hooks")));
+  assert.ok(paragraph.startsWith("When Claude ignored the flag, the kernel records `flag-ignored` and sends no key; readiness then warns `claude-channels-unavailable` instead"), paragraph);
+  assert.ok(paragraph.includes(CAUSES), paragraph);
+  assert.ok(paragraph.includes("Remove the variable from the launch environment, use an account with channels, or use `delivery: session`"), paragraph);
+  assert.ok(paragraph.includes("The provider never reads or changes those variables."), paragraph);
   const row = skill.split("\n").find((line) => line.startsWith("| `claude-channels-unavailable` |"));
   assert.ok(row, "section 7 has a claude-channels-unavailable row");
-  assert.match(row, /an account with channels, or `delivery: session`/);
+  for (const name of ["DISABLE_TELEMETRY", "DO_NOT_TRACK", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"]) assert.match(row, new RegExp(`\`${name}\``));
+  assert.match(row, /remove the variable from the launch environment, an account with channels, or `delivery: session`/);
   assert.doesNotMatch(row, /claudeChannelMode: approved`? (stops|fixes)|approved route/);
+  const readme = flat(readFileSync(join(REPO, "README.md"), "utf8"));
+  assert.ok(readme.includes("when Claude ignored the flag (the kernel recorded `flag-ignored`): its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or the account or organization has no channels."), "README 1.27.0 bullet");
+  assert.doesNotMatch(readme, /ignored the flag because the account/);
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
   const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
   assert.match(section, /- \*\*`claude-channels-unavailable` when Claude ignored the development-channel flag\.\*\*/);
-  assert.ok(section.includes("\"Claude ignored the development-channel flag at the last start: this account or\n  organization has no channels, so this home has no channel delivery. Use an\n  account with channels, or `delivery: session`.\""), section);
+  assert.ok(flat(section).includes("\"Claude ignored the development-channel flag at the last start, so this home has no channel delivery. " + CAUSES + " Remove the variable from the launch environment yourself, use an account with channels, or use `delivery: session`.\""), section);
+  assert.ok(flat(section).includes("The provider never reads, unsets or changes these variables"), section);
+  for (const text of [skill, section]) assert.doesNotMatch(flat(text), /Where the account or organization has no channels, Claude ignores|because the account or organization has no channels/);
 });
 
 test("the changelog names each operator-visible 1.27.0 change", () => {

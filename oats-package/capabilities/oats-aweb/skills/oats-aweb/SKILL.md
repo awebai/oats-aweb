@@ -229,11 +229,14 @@ readiness item. The provider's `channel-dev-confirmation` warning states the
 decision at spawn apply, at start and restart, in the start preview
 (`oats launch-config preview`) and at readiness. Readiness is quiet only when
 the home's last start recorded `completed`; any other status, or none, warns.
-When Claude ignored the flag because the account or organization has no
-channels, the kernel records `flag-ignored` and sends no key; readiness then
-warns `claude-channels-unavailable` instead: the home has no channel delivery.
-Use an account with channels, or `delivery: session`; approved mode needs
-channels too.
+When Claude ignored the flag, the kernel records `flag-ignored` and sends no
+key; readiness then warns `claude-channels-unavailable` instead: the home has
+no channel delivery. Claude Code disables channels when its launch environment
+opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization
+has no channels. Remove the variable from the launch environment, use an
+account with channels, or use `delivery: session`; approved mode needs channels
+too. The provider never reads or changes those variables.
 `oats spawn --preview` runs no provider hooks, so it shows no decision statement
 yet, from the provider or the kernel ([oats#912](https://github.com/awebai/oats/issues/912)).
 A confirmed prompt proves no admission, connection, message presentation or
@@ -356,7 +359,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | human: start the host wake daemon, or upgrade aw and restart it |
 | `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | human: upgrade aw, then restart the host wake daemon |
 | `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route or `delivery: session`, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
-| `claude-channels-unavailable` | development mode, readiness only: the home's last start recorded `launchPrompts.status: flag-ignored`. Claude ignored the development-channel flag because this account or organization has no channels, so the home has no channel delivery | operator: an account with channels, or `delivery: session`, then respawn. Approved mode needs channels too |
+| `claude-channels-unavailable` | development mode, readiness only: the home's last start recorded `launchPrompts.status: flag-ignored`. Claude ignored the development-channel flag, so the home has no channel delivery. Claude Code disables channels when its launch environment sets `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, or when the account or organization has no channels | operator: remove the variable from the launch environment, an account with channels, or `delivery: session` (then respawn). Approved mode needs channels too |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; section 4's startup check and the nonce exchange |
 | `claude-channel-policy-not-admitted` | approved mode: the machine file exists but does not set up the route as section 4 writes it; the message names the missing key (`channelsEnabled`, the entry, or the wrong marketplace). A missing `channelsEnabled` blocks API-key and Team/Enterprise accounts, not Pro/Max | admin: section 4 host step 1 |
