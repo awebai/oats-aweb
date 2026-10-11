@@ -21,7 +21,7 @@ test("the kernel floor is the release that confirms the prompt", () => {
 test("the changelog leads 1.27.0 with the host order and the kernel floor, quoting the kernel's refusal", () => {
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
   const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
-  assert.match(section, /^## 1\.27\.0 — Unreleased\n\n\*\*Host order, before syncing to this release:\*\* upgrade the OATS kernel to\n0\.52\.0 or later first, then `oats sync`\./);
+  assert.match(section, /^## 1\.27\.0 — 2026-10-11\n\n\*\*Host order, before syncing to this release:\*\* upgrade the OATS kernel to\n0\.52\.0 or later first, then `oats sync`\./);
   assert.match(section, /aw 1\.36\.33 or later, with every resident custody service and the host wake\ndaemon restarted/);
   assert.match(section, /\*\*Compatibility: requires OATS 0\.52\.0 or later\.\*\* Older kernels stay on\noats\.aweb 1\.26\.2\./);
   // The kernel's own refusal (lib/resolve.mjs, E_CAPABILITY_INCOMPATIBLE), for a package pin.
@@ -92,6 +92,6 @@ test("the skill, readme and changelog give both causes of claude-channels-unavai
 test("the changelog names each operator-visible 1.27.0 change", () => {
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
   const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
-  assert.match(section, /^## 1\.27\.0 — Unreleased\n/);
+  assert.match(section, /^## 1\.27\.0 — 2026-10-11\n/);
   for (const expected of [/OATS confirms/, /channel-dev-confirmation/, /`completed`/, /spawn --preview/, /oats#912/, /launch-consent/]) assert.match(section, expected);
 });

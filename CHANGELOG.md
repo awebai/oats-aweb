@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.27.0 — Unreleased
+## 1.27.0 — 2026-10-11
 
 **Host order, before syncing to this release:** upgrade the OATS kernel to
 0.52.0 or later first, then `oats sync`. The aw order is unchanged from 1.26.0:
