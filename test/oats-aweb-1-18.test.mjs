@@ -510,7 +510,7 @@ test("readiness is quiet only when the kernel recorded a completed launch prompt
     assert.equal(!!warning, warns, `${name}: ${JSON.stringify(result)}`);
     if (warns) assert.match(warning.message, DEV_CONFIRMATION_MESSAGE);
     // The provider never explains a block: the kernel's launch-prompt item does.
-    assert.doesNotMatch(JSON.stringify(result), /unexpected prompt|audit failed|blocked:/, name);
+    assert.doesNotMatch(JSON.stringify(result), /unexpected prompt|audit failed|blocked:|differed|aweb-dev-channel-confirmation-1|Something else/, name);
   }
 });
 

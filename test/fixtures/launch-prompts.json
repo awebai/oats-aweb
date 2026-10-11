@@ -1,26 +1,69 @@
 {
   "source": {
-    "kernel": "awebai/oats ae9308b27510",
-    "writer": "lib/core.mjs record() writes instance.json launchPrompts (and deletes it when a start has no outcome); the outcome object is finish() in lib/launch-prompts.mjs: {status, answers, reason, receipt}",
-    "notEngaged": "the 0.52.0 kernel (oats#886) writes {status: 'not-engaged', startId, at} for a start that does not engage its controller; shape from the root's ruling 971b5c28, to be refreshed from the kernel branch's writer when it lands"
+    "kernel": "awebai/oats feat/886-unattended-start at checkpoint d56b6938 (not yet reviewed; refresh at the handed-back head)",
+    "writer": "lib/core.mjs: notEngaged(startId) at :651; spawn writes not-engaged (:4541), the controller result (:4568) and the retained escalation (:4603); start/restart puts not-engaged into planExtra (:6895), writes the controller result (:6967) through record() (:6608-6610). --no-launch writes nothing.",
+    "outcome": "lib/launch-prompts.mjs finish(): {status, answers, reason, receipt}, and a blocked miss adds differed: devChannelDifference() in lib/launch-prompt-fixtures.mjs, {nearest, firstDifference: {index, expected, found}}"
   },
   "completed": {
     "status": "completed",
-    "answers": [],
+    "answers": [
+      {
+        "class": "awebDevelopmentChannel",
+        "signatureId": "aweb-dev-channel-confirmation-1",
+        "status": "submitted"
+      }
+    ],
     "reason": "recognized launch boundary",
-    "receipt": [{"ok": true, "results": [{"ok": true, "path": ".oats-events.jsonl"}]}]
+    "receipt": [
+      {
+        "ok": true,
+        "results": [
+          {
+            "ok": true,
+            "path": ".oats-events.jsonl"
+          }
+        ]
+      }
+    ]
   },
   "blocked": {
     "status": "blocked",
     "answers": [],
     "reason": "blocked: unexpected prompt",
-    "receipt": [{"ok": true, "results": [{"ok": true, "path": ".oats-events.jsonl"}]}]
+    "receipt": [
+      {
+        "ok": true,
+        "results": [
+          {
+            "ok": true,
+            "path": ".oats-events.jsonl"
+          }
+        ]
+      }
+    ],
+    "differed": {
+      "nearest": "aweb-dev-channel-confirmation-1",
+      "firstDifference": {
+        "index": 9,
+        "expected": "Loading development channels --",
+        "found": "Something else entirely on scree"
+      }
+    }
   },
   "incomplete": {
     "status": "incomplete",
     "answers": [],
     "reason": "launch prompt audit failed",
-    "receipt": [{"ok": false, "results": [{"ok": false}]}]
+    "receipt": [
+      {
+        "ok": false,
+        "results": [
+          {
+            "ok": false
+          }
+        ]
+      }
+    ]
   },
   "notEngaged": {
     "status": "not-engaged",
