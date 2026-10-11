@@ -61,7 +61,8 @@ test('the start preview of a development Claude home carries the decision statem
   const preview = f.oats(['launch-config', 'preview', '--home', spawned.home]);
   assert.deepEqual(preview.argv.slice(0, 2), DEV_FLAG.split(' '));
   assert.ok(preview.preflight.some((c) => c.check === 'capabilities' && /refreshed by launch hooks: oats\.aweb/.test(c.detail)), JSON.stringify(preview.preflight));
-  assert.deepEqual(preview.warnings, [DECISION]);
+  // Kernels carrying oats#886 add their own launch-prompt line beside it.
+  assert.equal(preview.warnings.filter((w) => w === DECISION).length, 1, JSON.stringify(preview.warnings));
 });
 
 test('the start preview of an approved Claude home carries no decision statement', { skip: !kernel && 'requires pinned v0.50.0 public kernel checkout', timeout: 180000 }, (t) => {
