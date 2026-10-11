@@ -133,7 +133,10 @@ or the one the doctor shows when adopting) under a team label:
   local teams gets `defaultTeam: <label>` in its lines to commit. An existing
   default, the deployment's or the workspace's, is never changed: when it is
   another label, the output prints `oats teams default <label>` as its own
-  first step, before the spawn line, with that reason. Where the workspace
+  first step, before the spawn line, with that reason and its consequence:
+  it moves the default team of the whole deployment, so every later spawn of
+  a soul without a default team of its own goes to the resident's team. That
+  step is the operator's decision; the command never runs it. Where the workspace
   allows no local teams, that change is the workspace's, and only the mapping
   is printed to commit, and the output gives the reason before the spawn line
   (`Before spawning: …`; `stepsReason` in `--json`).
@@ -243,7 +246,9 @@ through `settings.oats.aweb.residents.<name>`), when that registry's origin is
 not aw's default. When it is the default, or the identity records none, they
 set nothing. The operator's own `AWID_REGISTRY_URL` is never passed on. A
 recorded value that is not an http(s) registry origin is a readiness problem
-(`custody`), and a spawn warning, and is not passed on.
+(`custody`), and a spawn warning, and is not passed on. That message names
+the identity file and the reason, never the value, which may hold
+credentials.
 
 ## Output
 
@@ -261,7 +266,7 @@ When another default team is kept, the steps are numbered, in the order to run
 them, after the reason:
 
 ```
-Next, in order (a seat's grant is minted in the deployment's default team, which is core (core:acme.aweb.ai), not default):
+Next, in order (a seat's grant is minted in the deployment's default team, which is core (core:acme.aweb.ai), not default. Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (default:acme.aweb.ai)):
   1. oats teams default default
   2. oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=<name>
 ```
@@ -783,7 +788,7 @@ Created where the workspace's default team is another (`core`), which is kept:
       "oats teams default default",
       "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
     ],
-    "stepsReason": "a seat's grant is minted in the deployment's default team, which is core (core:acme.aweb.ai), not default",
+    "stepsReason": "a seat's grant is minted in the deployment's default team, which is core (core:acme.aweb.ai), not default. Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (default:acme.aweb.ai)",
     "defaultTeam": {
       "label": "core",
       "team": "core:acme.aweb.ai"

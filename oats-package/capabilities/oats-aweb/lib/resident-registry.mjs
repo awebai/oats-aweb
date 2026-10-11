@@ -38,6 +38,7 @@ export function residentRegistryEnv(custody) {
   if (!recorded && !line) return { env: {} };
   let origin;
   try { if (!recorded) throw new Error("it is not a URL"); origin = registryServerOrigin(recorded); }
-  catch (e) { return { env: {}, problem: `the resident's identity at ${join(custody, ".aw", "identity.yaml")} records registry_url ${JSON.stringify(recorded || line).slice(0, 200)}, which is not an http(s) registry origin (${e.message}); repair it there, else the seat verifies senders at aw's default registry` }; }
+  // The value is never quoted: it may hold userinfo, a password included.
+  catch (e) { return { env: {}, problem: `the resident's identity at ${join(custody, ".aw", "identity.yaml")} records a registry_url that is not an http(s) registry origin (${e.message}); repair it there, else the seat verifies senders at aw's default registry` }; }
   return origin === AW_DEFAULT_REGISTRY ? { env: {} } : { env: { AWID_REGISTRY_URL: recorded } };
 }

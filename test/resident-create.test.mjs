@@ -485,14 +485,14 @@ test("another default team, from the workspace, is kept: setting this label as d
   assert.deepEqual(r.doc.result.teamLabel, { label: "default", team: CAPTURED.team, status: "added", derived: true, default: "kept" });
   assert.deepEqual(r.doc.result.steps, ["oats teams default default", SPAWN]);
   assert.equal(r.doc.result.next, `spawn a seat on this resident: ${r.doc.result.steps.at(-1)}`);
-  assert.equal(r.doc.result.stepsReason, "a seat's grant is minted in the deployment's default team, which is core (core:fixture-6400.test), not default");
+  assert.equal(r.doc.result.stepsReason, `a seat's grant is minted in the deployment's default team, which is core (core:fixture-6400.test), not default. Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (${CAPTURED.team})`);
   assert.deepEqual(s.kernel.read().defaultTeam, { label: "core", team: "core:fixture-6400.test", from: "workspace" });
   assert.deepEqual(kernelVerbs(s.kernel), [["add", "default", `--team=${CAPTURED.team}`, "--no-default"]]);
   const text = s.run(["create", NAME], recordedResident(s), { unset: ["AWEB_API_KEY", "AWEB_URL"] });
   assert.ok(text.stdout.endsWith([
     `team label: default (derived from the team's name) already maps to ${CAPTURED.team}`,
     "default team: core (kept; not changed by this command)",
-    "Next, in order (a seat's grant is minted in the deployment's default team, which is core (core:fixture-6400.test), not default):",
+    `Next, in order (a seat's grant is minted in the deployment's default team, which is core (core:fixture-6400.test), not default. Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (${CAPTURED.team})):`,
     "  1. oats teams default default",
     `  2. ${SPAWN}`,
     "",

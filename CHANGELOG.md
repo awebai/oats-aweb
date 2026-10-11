@@ -33,7 +33,9 @@ rolled back.
   team. Where the deployment has none, the command makes the mapped label the
   default and reads it back. An existing default is never changed: when it is
   another label, the output prints `oats teams default <label>` as its own
-  first step, before the spawn line, with that reason. Where the workspace
+  first step, before the spawn line, with that reason and its consequence: it
+  moves the default team of the whole deployment, so every later spawn of a
+  soul without a default team of its own goes to the resident's team. Where the workspace
   allows no local teams, the lines to commit include `defaultTeam:` when the
   workspace has none; when it has another default, that change is the
   workspace's, and the output says so before the spawn line.
@@ -73,7 +75,8 @@ set `AWID_REGISTRY_URL`. The spawn and launch hooks now give the seat
 (`https://api.awid.ai`). The operator's environment is never read for it. A
 recorded value that is not an http(s) registry origin, including one the YAML
 reader cannot take (a quote or `#` in it), is a readiness problem (`custody`)
-and a spawn warning, and is not passed on.
+and a spawn warning, and is not passed on. Its message names the identity
+file and the reason, never the recorded value, which may hold credentials.
 
 **Declared contract.** The manifest declares the hook environment variable
 `AWID_REGISTRY_URL` (in `environment`) and the namespace `AWID_` (in

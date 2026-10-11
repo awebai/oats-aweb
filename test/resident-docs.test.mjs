@@ -86,3 +86,10 @@ for (const [name, c] of Object.entries(cases)) {
     assert.deepEqual(normalized(s, c.normalize ? c.normalize(s, r.doc) : r.doc), documented(name));
   });
 }
+
+test("the doc and the skill say what `oats teams default` does to the deployment, and that it is the operator's decision", () => {
+  const skill = readFileSync(new URL("../oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md", import.meta.url), "utf8");
+  assert.ok(DOC.includes("Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (default:acme.aweb.ai)"));
+  assert.ok(DOC.includes("That\n  step is the operator's decision; the command never runs it."));
+  assert.ok(skill.includes("so it is the operator's decision: an agent prints it and asks, and never runs it on its own."));
+});

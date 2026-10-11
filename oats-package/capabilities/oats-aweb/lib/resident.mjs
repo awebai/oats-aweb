@@ -458,7 +458,8 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       custody, recorded: { file: localYaml, setting: `settings.oats.aweb.residents.${name}` },
       teamLabel,
       warnings, captures, next: NEXT(name), steps: [...before, SPAWN(name)],
-      ...(other ? { stepsReason: `a seat's grant is minted in the deployment's default team, which is ${other.label} (${other.team}), not ${teamLabel.label}${before.length ? "" : `; making ${teamLabel.label} the default team is a change to oats-workspace.yaml (defaultTeam:), which this workspace commits`}` } : {}),
+      // The default step moves the whole deployment's default, not this seat's: say so.
+      ...(other ? { stepsReason: `a seat's grant is minted in the deployment's default team, which is ${other.label} (${other.team}), not ${teamLabel.label}${before.length ? `. Running ${before[0]} moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to ${teamLabel.label} (${team})` : `; making ${teamLabel.label} the default team is a change to oats-workspace.yaml (defaultTeam:), which this workspace commits`}` } : {}),
       ...(other ? { defaultTeam: { label: other.label, team: other.team } } : {}),
     };
   } catch (e) {
