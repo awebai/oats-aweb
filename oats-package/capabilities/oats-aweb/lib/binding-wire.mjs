@@ -243,6 +243,14 @@ function parseOatsTeams(env=process.env){try{const rows=JSON.parse(env.OATS_TEAM
 function primaryTeamLabel(env=process.env){return typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():null;}
 function unmappedPrimary(env=process.env){return undefined;}
 
+/** Whether readiness requires a minting root: a global seat with a resident
+ *  acts through that resident's grant, so it needs none (whether the resident
+ *  resolves is the custody check's). Both the workspace readiness phase and the
+ *  binding path ask this through readinessDetails. */
+function needsMintingRoot(settings) {
+  const identity=obj(settings.identity)?settings.identity:{};
+  return !(identity.mode==='global' && typeof identity.resident==='string' && identity.resident.trim());
+}
 async function readinessDetails(settings,{deployment,env=process.env}={}) {
   try { selectClaudeChannel(settings.claudeChannelMode); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
@@ -254,7 +262,7 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
     problems.push({code:'needs-configuration',message:label?unmappedDefaultMessage(label):NO_TEAMS_MESSAGE});
   }
-  if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
+  if(needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 async function readinessFromSettings(settings,options) {return (await readinessDetails(settings,options)).result;}

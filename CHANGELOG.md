@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.26.2 — Unreleased
+
+- **A resident's seat is ready without a minting root.** In a deployment that
+  holds only residents (one made by `oats aweb resident create`, for example),
+  readiness no longer reports `no messaging root at <deployment>: run oats aweb
+  setup there or set settings.oats.aweb.root` for a seat with
+  `identity.mode: global` and an `identity.resident`: that seat acts through
+  the resident's grant and mints nothing. Whether the resident resolves is
+  still the custody check's. Local mode is unchanged, and so is a GLOBAL seat
+  with no resident: it reports the missing root and that it requires
+  `identity.resident`. The same rule holds for `oats readiness` and for a
+  binding's check. The declared environment, custody and keys are unchanged.
+
 ## 1.26.1 — Unreleased
 
 **`oats aweb resident create` now needs OATS 0.48.0 or later wherever it maps
