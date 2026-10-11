@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.26.2 — Unreleased
+## 1.26.2 — 2026-10-11
 
 - **A resident's seat is ready without a minting root.** In a deployment that
   holds only residents (one made by `oats aweb resident create`, for example),
@@ -13,7 +13,7 @@
   `identity.resident`. The same rule holds for `oats readiness` and for a
   binding's check. The declared environment, custody and keys are unchanged.
 
-## 1.26.1 — Unreleased
+## 1.26.1 — 2026-10-10
 
 **`oats aweb resident create` now needs OATS 0.48.0 or later wherever it maps
 the team through the kernel.** The kernel gained `oats teams add --no-default`
