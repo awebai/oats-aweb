@@ -5,6 +5,13 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.26.2 — a resident's seat is ready without a minting root
+
+- In a deployment that holds only residents (one made by `resident create`,
+  for example), a GLOBAL seat no longer reports "no messaging root" at
+  readiness. Local mode still needs its minting root, as does a GLOBAL seat
+  with no resident configured.
+
 ## 1.26.1 — the printed next steps work in a fresh deployment
 
 - **`resident create` maps the team without `--team-label`.** The resident's
@@ -477,7 +484,9 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   wrong-type or unknown values fail before provider effects. This setting changes
   only Claude/channel arguments; Pi, Codex and `delivery: session` are unchanged.
 - `root`: absolute directory whose `.aw` is the default team's minting root.
-  This root is for one aweb team only.
+  This root is for one aweb team only. A seat with `identity.mode: global` and
+  an `identity.resident` acts through that resident's grant and needs no
+  minting root, so readiness does not ask for one.
 - `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over
   `root` and is required when a deployment mints into more than one aweb team.
   Each mapped directory owns its own `.aw` identity for exactly that team.

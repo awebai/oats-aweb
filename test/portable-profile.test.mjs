@@ -66,6 +66,30 @@ test('binding-less workspace readiness check follows settings roots, team labels
  assert.equal(invoke(f,'check',request('check',{context:{...workspaceContext,kind:'foreign'},action},{delivery:'session',root:f.root})).value.ok,false);
 });
 
+test('in a deployment with no .aw, a global seat with a resident needs no minting root on either check path; local mode and a global seat without a resident still do',t=>{
+ // A deployment that holds only residents, as resident create makes it. The
+ // resident's identity, aw's version and its custody status are the real aw
+ // 1.36.33 captures in test/fixtures/resident, so the team is the captured one.
+ const f=fixture(t),deployment=join(f.base,'residents-only');fs.mkdirSync(deployment);
+ const custody=join(f.base,'custody');fs.mkdirSync(join(custody,'.aw'),{recursive:true});fs.copyFileSync(join(root,'test/fixtures/resident/identity-global.yaml'),join(custody,'.aw','identity.yaml'));
+ const captured=name=>JSON.stringify(join(root,'test/fixtures/resident',name));
+ fs.writeFileSync(join(f.base,'bin','aw'),`#!${process.execPath}\nconst {readFileSync}=require('node:fs');\nprocess.stdout.write(readFileSync(process.argv[2]==='version'?${captured('aw-version.txt')}:${captured('custody-status-running.stdout')}));\n`,{mode:0o755});
+ const capturedTeam='default:fixture-6400.test',env={OATS_DEFAULT_TEAM_ID:capturedTeam,OATS_TEAMS:JSON.stringify([{label:'private',team:capturedTeam,default:true,from:'local'}])};
+ const noRoot={code:'needs-configuration',message:`no messaging root at ${deployment}: run oats aweb setup there or set settings.oats.aweb.root`};
+ const noResident={code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'};
+ const global={delivery:'session',identity:{mode:'global',resident:'merlin'},residents:{merlin:custody}},local={delivery:'session',residents:{merlin:custody}},residentless={delivery:'session',identity:{mode:'global'},residents:{merlin:custody}};
+ // The workspace readiness phase, as `oats readiness` asks it for the deployment.
+ const workspace=settings=>invoke(f,'check',request('check',{context:{kind:'workspace',workspace:'fixture-workspace',deployment,soul:'example',team:null,instance:null,home:null},action:{kind:'readiness'}},settings),env).value.result;
+ assert.deepEqual(workspace(global),{status:'ready',problems:[],warnings:[]});
+ assert.deepEqual(workspace(local),{status:'needs-configuration',problems:[noRoot],warnings:[]});
+ assert.deepEqual(workspace(residentless),{status:'needs-configuration',problems:[noRoot,noResident],warnings:[]});
+ // The binding path: its host readiness falls back to the working directory, here the deployment.
+ const p=bind(f);
+ const bound=settings=>{const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),'check'],{env:{...f.env,...env},cwd:deployment,input:JSON.stringify(request('check',{binding:p.binding,context,action:{kind:'inspect'}},settings)),encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);return JSON.parse(r.stdout).result;};
+ assert.deepEqual(bound(global),{status:'ready',problems:[]});
+ assert.deepEqual(bound(local),{status:'needs-configuration',problems:[noRoot]});
+ assert.deepEqual(bound(residentless),{status:'needs-configuration',problems:[noRoot]});
+});
 test('malformed/unknown input never supplies authority, default context, identity copying or delivery downgrade',t=>{
  const f=fixture(t),base=request('normalize',{declarations,context});
  for(const settings of [{delivery:'none'},{delivery:'invalid'},{identity:{source:'/must-not-read/.aw'},delivery:'session'}])assert.equal(invoke(f,'normalize',{...base,settings}).value.ok,false);
@@ -129,7 +153,7 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  for(const key of ['root','roots','residents'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
  assert.equal(Object.hasOwn(m,'helperInjection'),false);
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
- assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.26.1');
+ assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.26.2');
 });
 test('coupled current kernel wire and sole resolver accept actual codec output but do not turn binding into readiness',async t=>{
  const framework=process.env.OATS_P1_FRAMEWORK_ROOT;if(!framework){t.skip('requires explicitly pinned current framework source');return;}
