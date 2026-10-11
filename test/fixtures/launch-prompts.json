@@ -1,9 +1,14 @@
 {
   "source": {
-    "kernel": "awebai/oats PR #917 head 881ecc1f97bf221eea92ad204c2f1162568fbb9b (a PR head, not a release; same writer lines as checkpoint d56b6938)",
-    "writer": "lib/core.mjs: notEngaged(startId) at :651; spawn writes not-engaged (:4541), the controller result (:4568) and the retained escalation (:4603); start/restart puts not-engaged into planExtra (:6895), writes the controller result (:6967) through record() (:6608-6610). --no-launch writes nothing.",
-    "outcome": "lib/launch-prompts.mjs finish(): {status, answers, reason, receipt}, and a blocked miss adds differed: devChannelDifference() in lib/launch-prompt-fixtures.mjs, {nearest, firstDifference: {index, expected, found}}",
-    "flagIgnored": "awebai/oats PR #917, pending #917 head: the writer's file:line is cited when it lands. Shape from the kernel expert: {status: \"flag-ignored\", reason: \"channels-unavailable\", startId, at}, when Claude ignored --dangerously-load-development-channels (its launch environment opts out of telemetry, or the account or organization has no channels) and the kernel sent no key."
+    "kernel": "awebai/oats PR #917 final head 7d0b01e82b9400e035a7f489c48c8e916bfd6dff (a PR head, not a release). Recheck these lines against the merged main commit at the pin move.",
+    "writer": "lib/core.mjs: notEngaged(startId) :662 {status, startId, at}; channelsUnavailable(startId, result) :665 {status: flag-ignored, reason: channels-unavailable, signatureId, startId, at}. Spawn writes not-engaged (:4653), the controller result mapped through channelsUnavailable (:4681) and the retained blocked/incomplete (:4717). Start/restart writes not-engaged (:7069), the controller result mapped (:7132-7133), incomplete on a dispatch or recording failure (:7136), into planExtra (:7142), which record() writes (:6782-6784). --no-launch writes nothing.",
+    "outcome": "lib/launch-prompts.mjs finish(): {status, answers, reason, receipt}; only flag-ignored adds signatureId (a completed answer's signatureId is in answers); a blocked result adds differed (devChannelDifference() in lib/launch-prompt-fixtures.mjs, {nearest, firstDifference: {index, expected, found}}, 40-character snippets) and, before any Enter, claudeSessionShown.",
+    "completed": "lib/launch-prompts.mjs:164",
+    "blocked": "lib/launch-prompts.mjs:181 (blocked: unexpected prompt, before any Enter, via blocked() and finish(); claudeSessionShown only when Claude's session banner shows)",
+    "blockedObservationTimeout": "lib/launch-prompts.mjs:217 (OBSERVATION_TIMEOUT, :18): after the one submitted Enter, blocked(last, ...) with what differed",
+    "incomplete": "lib/launch-prompts.mjs finish() :84-91 and :190 (launch prompt audit failed)",
+    "notEngaged": "lib/core.mjs:662",
+    "flagIgnored": "lib/core.mjs:665, from lib/launch-prompts.mjs:176 (signatureId aweb-dev-channel-flag-ignored-1 in lib/launch-prompt-fixtures/dev-channel-confirmation.json)"
   },
   "completed": {
     "status": "completed",
@@ -46,8 +51,38 @@
       "nearest": "aweb-dev-channel-confirmation-1",
       "firstDifference": {
         "index": 9,
-        "expected": "Loading development channels --",
-        "found": "Something else entirely on scree"
+        "expected": "Loading development channels --dangerous",
+        "found": "Something else entirely on screen, waiti"
+      }
+    }
+  },
+  "blockedObservationTimeout": {
+    "status": "blocked",
+    "answers": [
+      {
+        "class": "awebDevelopmentChannel",
+        "signatureId": "aweb-dev-channel-confirmation-1",
+        "status": "submitted"
+      }
+    ],
+    "reason": "blocked: observation timeout",
+    "receipt": [
+      {
+        "ok": true,
+        "results": [
+          {
+            "ok": true,
+            "path": ".oats-events.jsonl"
+          }
+        ]
+      }
+    ],
+    "differed": {
+      "nearest": "aweb-dev-channel-confirmation-1",
+      "firstDifference": {
+        "index": 0,
+        "expected": "WARNING: Loading development channels --",
+        "found": "Claude Code is still starting on screen"
       }
     }
   },
@@ -74,6 +109,7 @@
   "flagIgnored": {
     "status": "flag-ignored",
     "reason": "channels-unavailable",
+    "signatureId": "aweb-dev-channel-flag-ignored-1",
     "startId": "start-fixture",
     "at": "2026-10-10T12:00:00.000Z"
   }

@@ -496,6 +496,7 @@ test("readiness is quiet only when the kernel recorded a completed launch prompt
   for (const [name, launchPrompts, warns] of [
     ["completed", LAUNCH_PROMPTS.completed, false],
     ["blocked", LAUNCH_PROMPTS.blocked, true],
+    ["blocked after the Enter: observation timeout", LAUNCH_PROMPTS.blockedObservationTimeout, true],
     ["incomplete", LAUNCH_PROMPTS.incomplete, true],
     ["not-engaged", LAUNCH_PROMPTS.notEngaged, true],
     ["missing record", undefined, true],
@@ -540,7 +541,7 @@ test("readiness warns claude-channels-unavailable, not the confirmation, when Cl
     assert.equal((result.warnings || []).some((w) => w.code === "channel-dev-confirmation"), false, `${name}: ${JSON.stringify(result)}`);
     assert.deepEqual(result.warnings.filter((w) => w.code === "claude-channels-unavailable").map((w) => w.message), [CHANNELS_UNAVAILABLE_MESSAGE], name);
     assert.ok(result.warnings.some((w) => w.code === "native-receive-unproven"), name);
-    assert.doesNotMatch(JSON.stringify(result), /start-fixture|2026-10-10T12|something-else|"channels-unavailable"|reason/, name);
+    assert.doesNotMatch(JSON.stringify(result), /start-fixture|2026-10-10T12|something-else|"channels-unavailable"|reason|aweb-dev-channel-flag-ignored-1/, name);
   }
 });
 
