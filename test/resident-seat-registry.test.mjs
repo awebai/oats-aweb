@@ -125,7 +125,7 @@ test("a local identity's spawn and launch are unchanged: no AWID_ variable, thou
 });
 
 test("a malformed recorded registry is never echoed: no userinfo reaches readiness, spawn or launch output", (t) => {
-  for (const recorded of ["https://user:secret@reg.example", "https://user:secret@reg example/x#y"]) {
+  for (const recorded of ["https://user:secret@reg.example", "https://user:secret@reg example/x#y", "https://alice:s3cr3t@reg.example", "https://alice:s3cr3t@reg example/x#y"]) {
     const s = seat(t, withRegistry(recorded));
     const outputs = [JSON.stringify(s.readiness())];
     const spawned = s.hook("spawn", { AWID_REGISTRY_URL: OPERATOR_REGISTRY });
@@ -133,7 +133,7 @@ test("a malformed recorded registry is never echoed: no userinfo reaches readine
     for (const env of Object.values(launchEnvs(s, spawned.meta))) outputs.push(JSON.stringify(env));
     outputs.push(JSON.stringify(s.hook("launch", { OATS_META: JSON.stringify(spawned.meta), OATS_LAUNCH_PREVIEW: "1" })));
     assert.ok(outputs[0].includes("records a registry_url that is not an http(s) registry origin"), outputs[0]);
-    // "userinfo" may name the reason; the credentials themselves never appear.
-    for (const out of outputs) assert.ok(!out.includes("user:") && !out.includes("secret"), `${recorded}: ${out}`);
+    // "userinfo" may name the reason, so for `user` the check is `user:`; alice's are literal.
+    for (const out of outputs) assert.ok(!out.includes("user:") && !out.includes("secret") && !out.includes("alice") && !out.includes("s3cr3t"), `${recorded}: ${out}`);
   }
 });
