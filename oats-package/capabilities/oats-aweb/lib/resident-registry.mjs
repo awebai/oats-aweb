@@ -32,9 +32,12 @@ export function residentRegistryEnv(custody) {
   let text;
   try { text = readFileSync(join(custody, ".aw", "identity.yaml"), "utf8"); } catch { return { env: {} }; }
   const recorded = yamlScalar(text, "registry_url");
-  if (!recorded) return { env: {} };
+  // A registry_url line whose value the scalar reader cannot take (a quote or
+  // a `#` in it) is still a recorded value, and not a URL.
+  const line = /^registry_url:[ \t]*(.*)$/m.exec(text)?.[1].trim();
+  if (!recorded && !line) return { env: {} };
   let origin;
-  try { origin = registryServerOrigin(recorded); }
-  catch (e) { return { env: {}, problem: `the resident's identity at ${join(custody, ".aw", "identity.yaml")} records registry_url ${JSON.stringify(recorded).slice(0, 200)}, which is not an http(s) registry origin (${e.message}); repair it there, else the seat verifies senders at aw's default registry` }; }
+  try { if (!recorded) throw new Error("it is not a URL"); origin = registryServerOrigin(recorded); }
+  catch (e) { return { env: {}, problem: `the resident's identity at ${join(custody, ".aw", "identity.yaml")} records registry_url ${JSON.stringify(recorded || line).slice(0, 200)}, which is not an http(s) registry origin (${e.message}); repair it there, else the seat verifies senders at aw's default registry` }; }
   return origin === AW_DEFAULT_REGISTRY ? { env: {} } : { env: { AWID_REGISTRY_URL: recorded } };
 }

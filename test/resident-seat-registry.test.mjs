@@ -88,7 +88,7 @@ test("a resident on aw's default registry, or with no registry recorded, gives t
 });
 
 test("a recorded registry that is not an http(s) origin is a readiness problem and is never passed on", (t) => {
-  for (const [recorded, why] of [["ftp://registry.example", "its scheme is not http or https"], ["http://registry.example/v1", "it includes a path"], ["https://user@registry.example", "it includes userinfo"]]) {
+  for (const [recorded, why] of [["ftp://registry.example", "its scheme is not http or https"], ["http://registry.example/v1", "it includes a path"], ["https://user@registry.example", "it includes userinfo"], ["https://r.example/#x", "it is not a URL"], ["\"https://r.example/it's\"", "it is not a URL"]]) {
     const s = seat(t, withRegistry(recorded));
     const message = `the resident's identity at ${join(s.custody, ".aw", "identity.yaml")} records registry_url ${JSON.stringify(recorded)}, which is not an http(s) registry origin (${why}); repair it there, else the seat verifies senders at aw's default registry`;
     assert.deepEqual(s.readiness().problems.filter((p) => p.code === "custody"), [{ code: "custody", message }]);

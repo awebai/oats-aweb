@@ -135,15 +135,22 @@ or the one the doctor shows when adopting) under a team label:
   another label, the output prints `oats teams default <label>` as its own
   first step, before the spawn line, with that reason. Where the workspace
   allows no local teams, that change is the workspace's, and only the mapping
-  is printed to commit.
+  is printed to commit, and the output gives the reason before the spawn line
+  (`Before spawning: …`; `stepsReason` in `--json`).
 
 A plain `oats teams add` makes the first local team the deployment's default,
 which wins over the workspace's, so it could replace a default. The kernel's
 `--no-default` and `--if-absent` (feature `teams-conditional-default`, OATS
 0.48.0) never do, and a kernel without that feature ignores those flags. So
-the preflight asks the kernel (`oats --version --json`) and, without the
-feature, refuses before any effect with the upgrade:
-`npm install -g @awebai/oats@latest`.
+the preflight asks the kernel (`oats --version --json`). Without the feature,
+it refuses before any effect wherever the record stage would write through
+the kernel, which is everywhere but a workspace that allows no local teams
+(there the command writes nothing through the kernel and prints what to
+commit). The refusal (`E_RESIDENT_TEAM_LABEL`, stage `preflight`) reads:
+"oats aweb resident create needs OATS 0.48.0 or later
+(teams-conditional-default), so that mapping the resident's team never
+replaces a default team; the selected kernel is <version>: upgrade OATS with
+`npm install -g @awebai/oats@latest`, then rerun".
 
 **A label that maps to another team.** With `--team-label`, before an init,
 any mapping of the label is refused in the preflight. A derived label can only
@@ -151,8 +158,10 @@ be checked at record: the team is known only once the key has been used. The
 check runs after `aw init` and before the label is written. By then the
 identity, its custody and `settings.oats.aweb.residents.<name>` are in place,
 so the refusal (`E_RESIDENT_TEAM_LABEL`, stage `record`) names both teams, the
-one the label maps to and the resident's, says what is in place, and gives the
-rerun: `oats aweb resident create <name> --team-label <other>` (with
+one the label maps to and the resident's, and what is in place in terms an
+operator can check: R's path, the custody unit's label and file (the plist on
+macOS), and `settings.oats.aweb.residents.<name>` in the deployment's
+`oats-local.yaml`. It gives the rerun: `oats aweb resident create <name> --team-label <other>` (with
 the run's `--dir` and `--root`, when it gave them). That rerun needs no API
 key: it verifies the resident and adds the mapping; it is not a second create.
 
@@ -528,7 +537,7 @@ pure verify: no init, no new key, custody only re-ensured):
       ]
     },
     "record": "settings.oats.aweb.residents.carol: /srv/deploy/.aweb-residents/carol in /srv/deploy/oats-local.yaml",
-    "teamLabel": "the returned team's name → the returned team, with oats teams add --no-default where the workspace allows local teams; it becomes the default team only where there is none"
+    "teamLabel": "derived from the returned team's name after aw init, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after aw init, with the identity, its custody and the residents setting in place, and names the --team-label rerun"
   }
 }
 ```
@@ -792,7 +801,7 @@ The label derived from the team's name already maps to another team:
   "ok": false,
   "error": {
     "code": "E_RESIDENT_TEAM_LABEL",
-    "message": "the team label default, derived from the name of team default:acme.aweb.ai, already maps to default:other.example. This check runs after aw init and before the label is written: the resident's identity, its custody and settings.oats.aweb.residents.carol are in place; only the team mapping is missing. Rerun with another label: oats aweb resident create carol --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create",
+    "message": "the team label default, derived from the name of team default:acme.aweb.ai, already maps to default:other.example. This check runs after aw init and before the label is written. Already in place: the resident's identity in /srv/deploy/.aweb-residents/carol, its custody unit ai.aweb.custody.acme.aweb.ai.carol (<unit path>), and settings.oats.aweb.residents.carol in /srv/deploy/oats-local.yaml; only the team mapping is missing. Rerun with another label: oats aweb resident create carol --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create",
     "details": {
       "stage": "record",
       "root": "/srv/deploy/.aweb-residents/carol",

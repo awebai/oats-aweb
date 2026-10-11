@@ -499,21 +499,51 @@ test("another default team, from the workspace, is kept: setting this label as d
   ].join("\n")), text.stdout);
 });
 
-test("a derived label that maps to another team is refused at record; rerunning with --team-label maps it without a second init", (t) => {
+test("a derived label mapped to another team: refused after init naming what is in place; the printed rerun, run as printed, adopts it with nothing orphaned", (t) => {
   const s = setup(t, {}, { kernel: { teams: [{ label: "default", team: "default:other.example", from: "local" }], defaultTeam: { label: "default", team: "default:other.example", from: "deployment" } } });
   const r = s.run(["create", NAME, "--json"]);
   assert.equal(r.status, 1);
   assert.equal(r.doc.error.code, "E_RESIDENT_TEAM_LABEL");
   assert.equal(r.doc.error.details.stage, "record");
-  assert.equal(r.doc.error.message, `the team label default, derived from the name of team ${CAPTURED.team}, already maps to default:other.example. This check runs after aw init and before the label is written: the resident's identity, its custody and settings.oats.aweb.residents.${NAME} are in place; only the team mapping is missing. Rerun with another label: oats aweb resident create ${NAME} --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create`);
+  const yaml = join(s.deployment, "oats-local.yaml");
+  assert.equal(r.doc.error.message, `the team label default, derived from the name of team ${CAPTURED.team}, already maps to default:other.example. This check runs after aw init and before the label is written. Already in place: the resident's identity in ${s.root}, its custody unit ${LABEL} (${s.unitPath}), and settings.oats.aweb.residents.${NAME} in ${yaml}; only the team mapping is missing. Rerun with another label: oats aweb resident create ${NAME} --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create`);
+  // What the message names is there: R, the unit, the residents setting; no mapping was written.
+  assert.ok(existsSync(join(s.root, ".aw")) && s.fake.loaded());
   assert.match(s.localYaml(), new RegExp(`residents:\\n      "${NAME}": `));
-  assert.ok(s.fake.loaded());
-  const rerun = s.run(["create", NAME, "--team-label", "residents", "--json"], recordedResident(s), { unset: ["AWEB_API_KEY", "AWEB_URL"] });
-  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.deepEqual(kernelVerbs(s.kernel), []);
+  const unit = readFileSync(s.unitPath, "utf8");
+  const callsBefore = s.fake.calls().length;
+
+  // The printed rerun line, run as printed with <other> filled in, by the kernel's dispatch of `oats aweb resident`.
+  const line = /Rerun with another label: (.+?)\. That rerun/.exec(r.doc.error.message)[1].replace("<other>", "residents");
+  assert.ok(line.startsWith("oats aweb resident "), line);
+  const rerun = s.run([...line.slice("oats aweb resident ".length).split(" "), "--json"], recordedResident(s), { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+  assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
   assert.equal(rerun.doc.result.outcome, "already-exists");
-  assert.deepEqual(rerun.doc.result.teamLabel, { label: "residents", team: CAPTURED.team, status: "added", derived: false, default: "kept" });
-  assert.deepEqual(rerun.doc.result.steps, ["oats teams default residents", SPAWN]);
+  // One identity: the same R and DID, and still the one init of the first run.
+  assert.equal(rerun.doc.result.root, s.root);
+  assert.equal(rerun.doc.result.stableId, CAPTURED.stableId);
   assert.equal(initCalls(s.fake).length, 1);
+  // One custody unit: the same label and file, never stopped, reloaded or restarted.
+  assert.deepEqual(rerun.doc.result.custody, { status: "running", manager: process.platform === "darwin" ? "launchd" : "systemd", label: LABEL, path: s.unitPath });
+  assert.equal(readFileSync(s.unitPath, "utf8"), unit);
+  assert.deepEqual(s.fake.calls().slice(callsBefore).filter((c) => ["bootout", "bootstrap", "kickstart"].includes(c.argv[0]) || ["enable", "restart", "stop", "start"].includes(c.argv[1])), []);
+  // Nothing orphaned: one R, one unit file, one residents entry.
+  assert.deepEqual(readdirSync(join(s.deployment, ".aweb-residents")), [NAME]);
+  assert.deepEqual(readdirSync(dirname(s.unitPath)), [LABEL + s.unitPath.slice(s.unitPath.lastIndexOf("."))]);
+  assert.equal(s.localYaml().match(/^      "[^"]+": /gm).length, 1);
+  // The mapping and the default, as specified: mapped, the other default kept and printed first.
+  assert.deepEqual(rerun.doc.result.teamLabel, { label: "residents", team: CAPTURED.team, status: "added", derived: false, default: "kept" });
+  assert.deepEqual(s.kernel.read().teams.find((row) => row.label === "residents"), { label: "residents", team: CAPTURED.team, from: "local" });
+  assert.deepEqual(s.kernel.read().defaultTeam, { label: "default", team: "default:other.example", from: "deployment" });
+  assert.deepEqual(rerun.doc.result.steps, ["oats teams default residents", SPAWN]);
+});
+
+test("--plan without --team-label says the label is derived after init, and where the run stops if it is taken", (t) => {
+  const s = setup(t);
+  const r = s.run(["create", NAME, "--plan", "--json"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.doc.result.teamLabel, "derived from the returned team's name after aw init, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after aw init, with the identity, its custody and the residents setting in place, and names the --team-label rerun");
 });
 
 test("the refusal names --root and --dir when the run gave them", (t) => {
@@ -550,10 +580,25 @@ test("where the workspace allows no local teams and has another default, only th
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.doc.result.teamLabel.lines, ["This workspace does not allow local teams; commit the team in oats-workspace.yaml:", "    teams:", `      "default": { team: "${CAPTURED.team}" }`]);
   assert.equal(r.doc.result.teamLabel.default, "kept");
+  // The default is the workspace's to change: no runnable step, but the reason is given.
   assert.deepEqual(r.doc.result.steps, [SPAWN]);
+  const reason = "a seat's grant is minted in the deployment's default team, which is core (core:fixture-6400.test), not default; making default the default team is a change to oats-workspace.yaml (defaultTeam:), which this workspace commits";
+  assert.equal(r.doc.result.stepsReason, reason);
+  assert.deepEqual(r.doc.result.defaultTeam, { label: "core", team: "core:fixture-6400.test" });
+  const text = s.run(["create", NAME], recordedResident(s), { unset: ["AWEB_API_KEY", "AWEB_URL"] });
+  assert.ok(text.stdout.endsWith(`default team: core (kept; not changed by this command)\nBefore spawning: ${reason}.\nNext: spawn a seat on this resident: ${SPAWN}\n`), text.stdout);
+  assert.ok(text.stdout.includes(`team label: default (derived from the team's name), to commit for ${CAPTURED.team}:\nThis workspace does not allow local teams;`), text.stdout);
 });
 
-test("a kernel without teams-conditional-default is refused before any effect, with the upgrade", (t) => {
+test("a kernel without teams-conditional-default, where the workspace allows no local teams, is not refused: nothing is written through it", (t) => {
+  const s = setup(t, {}, { kernel: { version: "0.42.0", localTeams: false } });
+  const r = s.run(["create", NAME, "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.result.teamLabel.status, "commit");
+  assert.deepEqual(kernelVerbs(s.kernel), []);
+});
+
+test("a kernel without teams-conditional-default is refused before any effect, with the upgrade, where the workspace allows local teams", (t) => {
   const s = setup(t, {}, { kernel: { version: "0.42.0" } });
   const message = "oats aweb resident create needs OATS 0.48.0 or later (teams-conditional-default), so that mapping the resident's team never replaces a default team; the selected kernel is 0.42.0: upgrade OATS with `npm install -g @awebai/oats@latest`, then rerun";
   for (const args of [["create", NAME, "--json"], ["create", NAME, "--plan", "--json"], ["create", NAME, "--team-label", "residents", "--json"]]) {
