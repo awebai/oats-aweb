@@ -1,6 +1,6 @@
 {
   "source": {
-    "kernel": "awebai/oats feat/886-unattended-start at checkpoint d56b6938 (not yet reviewed; refresh at the handed-back head)",
+    "kernel": "awebai/oats PR #917 head 881ecc1f97bf221eea92ad204c2f1162568fbb9b (a PR head, not a release; same writer lines as checkpoint d56b6938)",
     "writer": "lib/core.mjs: notEngaged(startId) at :651; spawn writes not-engaged (:4541), the controller result (:4568) and the retained escalation (:4603); start/restart puts not-engaged into planExtra (:6895), writes the controller result (:6967) through record() (:6608-6610). --no-launch writes nothing.",
     "outcome": "lib/launch-prompts.mjs finish(): {status, answers, reason, receipt}, and a blocked miss adds differed: devChannelDifference() in lib/launch-prompt-fixtures.mjs, {nearest, firstDifference: {index, expected, found}}"
   },
