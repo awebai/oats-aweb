@@ -16,6 +16,9 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
   Readiness is quiet once the kernel recorded the home's last start as
   `launchPrompts.status: completed`. The spawn preview shows no decision
   statement yet ([oats#912](https://github.com/awebai/oats/issues/912)).
+- **`claude-channels-unavailable`** replaces it at readiness when Claude ignored
+  the flag because the account or organization has no channels (the kernel
+  recorded `flag-ignored`): use an account with channels, or `delivery: session`.
 - **The exact-home launch consent recipe is gone** from the skill: the kernel
   no longer reads that key.
 

@@ -514,13 +514,33 @@ test("readiness is quiet only when the kernel recorded a completed launch prompt
   }
 });
 
-test("a completed launch prompt does not quiet the approved, session or non-Claude routes", (t) => {
-  for (const [delivery, runtime, settings] of [["channel", "claude", { claudeChannelMode: "approved" }], ["session", "claude", {}], ["channel", "codex", {}], ["channel", "pi", {}]]) {
-    const fx = fixture(t, { delivery, runtime, settings });
-    fx.record(fx.spawn().meta, runtime, { launchPrompts: LAUNCH_PROMPTS.completed });
+test("a recorded launch prompt changes nothing on the approved, session or non-Claude routes", (t) => {
+  for (const [name, launchPrompts] of [["completed", LAUNCH_PROMPTS.completed], ["flag-ignored", LAUNCH_PROMPTS.flagIgnored]]) {
+    for (const [delivery, runtime, settings] of [["channel", "claude", { claudeChannelMode: "approved" }], ["session", "claude", {}], ["channel", "codex", {}], ["channel", "pi", {}]]) {
+      const fx = fixture(t, { delivery, runtime, settings });
+      fx.record(fx.spawn().meta, runtime, { launchPrompts });
+      const result = fx.readiness();
+      const label = `${name} ${delivery}/${runtime}: ${JSON.stringify(result)}`;
+      assert.equal((result.warnings || []).some((w) => w.code === "channel-dev-confirmation" || w.code === "claude-channels-unavailable"), false, label);
+      if (settings.claudeChannelMode === "approved") assertOnePolicyVerdict(result.warnings);
+    }
+  }
+});
+
+const CHANNELS_UNAVAILABLE_MESSAGE = "Claude ignored the development-channel flag at the last start: this account or organization has no channels, so this home has no channel delivery. Use an account with channels, or `delivery: session`.";
+
+test("readiness warns claude-channels-unavailable, not the confirmation, when Claude ignored the development-channel flag", (t) => {
+  // Keyed on the status alone: the record's reason is neither required nor echoed.
+  const { reason, ...noReason } = LAUNCH_PROMPTS.flagIgnored;
+  for (const [name, launchPrompts] of [["kernel record", LAUNCH_PROMPTS.flagIgnored], ["no reason", noReason], ["another reason", { ...noReason, reason: "something-else" }]]) {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { claudeChannelMode: "development" } });
+    fx.record(fx.spawn().meta, "claude", { launchPrompts });
     const result = fx.readiness();
-    assert.equal((result.warnings || []).some((w) => w.code === "channel-dev-confirmation"), false, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
-    if (settings.claudeChannelMode === "approved") assertOnePolicyVerdict(result.warnings);
+    assert.equal(result.status, "ready", `${name}: ${JSON.stringify(result)}`);
+    assert.equal((result.warnings || []).some((w) => w.code === "channel-dev-confirmation"), false, `${name}: ${JSON.stringify(result)}`);
+    assert.deepEqual(result.warnings.filter((w) => w.code === "claude-channels-unavailable").map((w) => w.message), [CHANNELS_UNAVAILABLE_MESSAGE], name);
+    assert.ok(result.warnings.some((w) => w.code === "native-receive-unproven"), name);
+    assert.doesNotMatch(JSON.stringify(result), /start-fixture|2026-10-10T12|something-else|"channels-unavailable"|reason/, name);
   }
 });
 

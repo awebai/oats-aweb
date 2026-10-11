@@ -17,9 +17,20 @@
 - **Readiness is quiet after a confirmed start.** Readiness reads the kernel's
   record of the home's last start, `instance.json` `launchPrompts.status`, and
   nothing else: `completed` gives no warning; `blocked`, `incomplete`,
-  `not-engaged`, any other status or no record give the warning above. The
-  provider never explains a block: the kernel's own `launch-prompt` readiness
-  item does. Approved, session, Pi and Codex homes are unchanged.
+  `not-engaged`, any other status but `flag-ignored` (below) or no record give
+  the warning above. The provider never explains a block: the kernel's own
+  `launch-prompt` readiness item does. Approved, session, Pi and Codex homes are
+  unchanged.
+- **`claude-channels-unavailable` when Claude ignored the development-channel flag.**
+  Where the account or organization has no channels, Claude ignores
+  `--dangerously-load-development-channels`, and the kernel sends no key and
+  records `launchPrompts.status: flag-ignored`. Readiness for that development
+  home warns `claude-channels-unavailable` instead of `channel-dev-confirmation`:
+  "Claude ignored the development-channel flag at the last start: this account or
+  organization has no channels, so this home has no channel delivery. Use an
+  account with channels, or `delivery: session`." It doesn't name
+  `claudeChannelMode: approved`: approved mode needs channels too. Spawn, start
+  and restart, and the approved, session, Pi and Codex homes, are unchanged.
 - **Where the decision shows:** spawn apply, start and restart, the start
   preview (`oats launch-config preview`) and readiness. It doesn't show in the
   spawn preview yet: `oats spawn --preview` runs no provider hooks, and shows no

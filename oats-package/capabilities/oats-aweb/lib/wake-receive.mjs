@@ -54,6 +54,15 @@ export const CHANNEL_DEV_CONFIRMATION = {
   message: "Claude's development-channel prompt: OATS confirms this prompt at launch; `delivery: session` or `claudeChannelMode: approved` stop it.",
 };
 
+/** The kernel's launchPrompts.status when Claude ignored the development-channel
+ *  flag at the last start: the account or organization has no channels, so the
+ *  kernel sent no key. Approved needs channels too, so it is no remedy here. */
+export const CHANNELS_UNAVAILABLE_STATUS = 'flag-ignored';
+export const CLAUDE_CHANNELS_UNAVAILABLE = {
+  code: 'claude-channels-unavailable',
+  message: 'Claude ignored the development-channel flag at the last start: this account or organization has no channels, so this home has no channel delivery. Use an account with channels, or `delivery: session`.',
+};
+
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
   approved: '--channels plugin:aweb-channel@awebai-marketplace',
   development: '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace',
@@ -96,8 +105,9 @@ function aggregateClaudeModes(combined) {
  * hook argument is a fallback for old records without per-provider receipts.
  * An approved home's warning reads the machine managed-settings evidence; a
  * development home's is quiet only when the kernel recorded its last start's
- * launch prompt `completed` (any other status, or none, states the decision;
- * the kernel's own launch-prompt readiness item explains a block). */
+ * launch prompt `completed`, says the account has no channels when Claude
+ * ignored the flag, and otherwise (any other status, or none) states the
+ * decision; the kernel's own launch-prompt readiness item explains a block. */
 function capturedClaudeChannel(meta, hooks, policy, launchPromptStatus) {
   const recorded = meta.claudeChannelMode;
   if (recorded !== undefined) selectClaudeChannel(recorded);
@@ -121,7 +131,8 @@ function capturedClaudeChannel(meta, hooks, policy, launchPromptStatus) {
   if (aggregateModes.length > 1 || (mode !== undefined && aggregateModes.some(value => value !== mode))) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
   if (mode === undefined) return {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'};
   if (mode === 'approved') return approvedChannelPolicyWarning(policy);
-  return launchPromptStatus === 'completed' ? undefined : {...CHANNEL_DEV_CONFIRMATION};
+  if (launchPromptStatus === 'completed') return undefined;
+  return launchPromptStatus === CHANNELS_UNAVAILABLE_STATUS ? {...CLAUDE_CHANNELS_UNAVAILABLE} : {...CHANNEL_DEV_CONFIRMATION};
 }
 
 /** external-session | native-channel | native-pi. */

@@ -34,6 +34,19 @@ test("the skill drops the exact-home consent and its reference, and says where t
   assert.doesNotMatch(readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8"), /per-home consent|nothing in this provider answers/);
 });
 
+test("the skill and changelog name claude-channels-unavailable, without approved as its remedy", () => {
+  const skill = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
+  assert.match(skill, /When Claude ignored the flag because the account or organization has no\nchannels, the kernel records `flag-ignored` and sends no key; readiness then\nwarns `claude-channels-unavailable` instead/);
+  const row = skill.split("\n").find((line) => line.startsWith("| `claude-channels-unavailable` |"));
+  assert.ok(row, "section 7 has a claude-channels-unavailable row");
+  assert.match(row, /an account with channels, or `delivery: session`/);
+  assert.doesNotMatch(row, /claudeChannelMode: approved`? (stops|fixes)|approved route/);
+  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
+  const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
+  assert.match(section, /- \*\*`claude-channels-unavailable` when Claude ignored the development-channel flag\.\*\*/);
+  assert.ok(section.includes("\"Claude ignored the development-channel flag at the last start: this account or\n  organization has no channels, so this home has no channel delivery. Use an\n  account with channels, or `delivery: session`.\""), section);
+});
+
 test("the changelog names each operator-visible 1.27.0 change", () => {
   const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
   const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
