@@ -505,7 +505,7 @@ test("a derived label that maps to another team is refused at record; rerunning 
   assert.equal(r.status, 1);
   assert.equal(r.doc.error.code, "E_RESIDENT_TEAM_LABEL");
   assert.equal(r.doc.error.details.stage, "record");
-  assert.equal(r.doc.error.message, `the team label default, derived from the name of team ${CAPTURED.team}, already maps to default:other.example. The resident's identity, its custody and settings.oats.aweb.residents.${NAME} are in place; only the team mapping is missing. Rerun with another label: oats aweb resident create ${NAME} --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create`);
+  assert.equal(r.doc.error.message, `the team label default, derived from the name of team ${CAPTURED.team}, already maps to default:other.example. This check runs after aw init and before the label is written: the resident's identity, its custody and settings.oats.aweb.residents.${NAME} are in place; only the team mapping is missing. Rerun with another label: oats aweb resident create ${NAME} --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create`);
   assert.match(s.localYaml(), new RegExp(`residents:\\n      "${NAME}": `));
   assert.ok(s.fake.loaded());
   const rerun = s.run(["create", NAME, "--team-label", "residents", "--json"], recordedResident(s), { unset: ["AWEB_API_KEY", "AWEB_URL"] });
@@ -536,7 +536,10 @@ test("where the workspace allows no local teams, the lines to commit include def
   const r = s.run(["create", NAME]);
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.stdout.includes(`This workspace does not allow local teams; commit the team in oats-workspace.yaml:\n    teams:\n      "default": { team: "${CAPTURED.team}" }\n    defaultTeam: "default"\n`), r.stdout);
+  // Nothing about the team is recorded locally: no kernel team verb, no team or default in oats-local.yaml.
   assert.deepEqual(kernelVerbs(s.kernel), []);
+  assert.deepEqual({ teams: s.kernel.read().teams, defaultTeam: s.kernel.read().defaultTeam }, { teams: [], defaultTeam: null });
+  assert.doesNotMatch(s.localYaml(), /teams|defaultTeam/);
   const json = s.run(["create", NAME, "--json"], recordedResident(s), { unset: ["AWEB_API_KEY", "AWEB_URL"] });
   assert.deepEqual({ ...json.doc.result.teamLabel, lines: undefined }, { label: "default", team: CAPTURED.team, status: "commit", derived: true, default: "commit", lines: undefined });
 });

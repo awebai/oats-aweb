@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
+import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
@@ -95,5 +96,30 @@ test("a recorded registry that is not an http(s) origin is a readiness problem a
     assert.deepEqual(awidNames(spawned.env), []);
     assert.ok(spawned.warning.includes(`oats-aweb: ${message}`), spawned.warning);
     for (const [path, env] of Object.entries(launchEnvs(s, spawned.meta))) assert.deepEqual(awidNames(env), [], `${recorded} ${path}`);
+  }
+});
+
+test("a local identity's spawn and launch are unchanged: no AWID_ variable, though a custom-registry resident is configured and the operator sets one", (t) => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-seat-registry-local-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const fake = fakeAwSetupPath(t);
+  const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
+  writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ memberships: [{ team_id: TEAM }] }));
+  const home = join(root, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
+  const custody = join(base, "custody", "merlin"); mkdirSync(join(custody, ".aw"), { recursive: true });
+  writeFileSync(join(custody, ".aw", "identity.yaml"), CAPTURED_IDENTITY);
+  const settings = { root, delivery: "session", residents: { merlin: custody } };
+  const hook = (event, env = {}) => {
+    const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${fake.path}:${process.env.PATH}`, OATS_EVENT: event, ...teamEnv, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(settings), AWID_REGISTRY_URL: OPERATOR_REGISTRY, AW_FAKE_TEAM: TEAM, ...env } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return JSON.parse(r.stdout.trim().split(/\n/).at(-1));
+  };
+  const spawned = hook("spawn");
+  assert.equal(spawned.meta.identity.mode, "local");
+  assert.ok(spawned.env.AWEB_IDENTITY_HOME, JSON.stringify(spawned.env));
+  assert.deepEqual(awidNames(spawned.env), []);
+  for (const extra of [{ OATS_LAUNCH_PREVIEW: "1" }, {}]) {
+    const launched = hook("launch", { OATS_META: JSON.stringify(spawned.meta), ...extra });
+    assert.deepEqual(awidNames(launched.env || {}), [], JSON.stringify(extra));
   }
 });

@@ -248,7 +248,7 @@ function recordTeam(deployment, env, opts, team) {
   const derived = opts.teamLabel === undefined;
   const rerun = () => ["oats aweb resident create", opts.name, ...(opts.dir ? ["--dir", opts.dir] : []), ...(opts.root ? ["--root", opts.root] : []), "--team-label <other>"].join(" ");
   // The identity, custody and residents setting are in place: only the mapping is missing.
-  const refuse = (why) => failure("E_RESIDENT_TEAM_LABEL", "record", `${why}. The resident's identity, its custody and settings.oats.aweb.residents.${opts.name} are in place; only the team mapping is missing. Rerun with another label: ${rerun()}. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create`);
+  const refuse = (why) => failure("E_RESIDENT_TEAM_LABEL", "record", `${why}. This check runs after aw init and before the label is written: the resident's identity, its custody and settings.oats.aweb.residents.${opts.name} are in place; only the team mapping is missing. Rerun with another label: ${rerun()}. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create`);
   let label = opts.teamLabel;
   if (derived) { try { label = derivedTeamLabel(team); } catch (e) { throw refuse(e.message); } }
   const kernel = teamKernel(deployment, env, "record");

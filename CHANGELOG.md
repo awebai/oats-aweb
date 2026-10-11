@@ -24,13 +24,20 @@ rolled back.
   deployment's default, over the workspace's. The mapping is now
   `oats teams add --no-default`, and the default is set only with
   `oats teams default --if-absent`.
-- **Needs OATS 0.48.0 or later** for `resident create`
-  (`teams-conditional-default`; an older kernel ignores those flags). On an
-  older kernel the command refuses before any effect, with the upgrade
-  `npm install -g @awebai/oats@latest`. The package's `compatibility.oats`
-  stays `>=0.42.0`.
+- **Needs OATS 0.48.0 or later** for `resident create`. The kernel gained
+  `oats teams add --no-default` and `oats teams default --if-absent` in OATS
+  0.48.0, as the feature `teams-conditional-default`; an older kernel ignores
+  those flags. On an older admitted kernel the command refuses before any
+  effect (`E_RESIDENT_TEAM_LABEL`, stage `preflight`), with exactly: "oats aweb
+  resident create needs OATS 0.48.0 or later (teams-conditional-default), so
+  that mapping the resident's team never replaces a default team; the
+  selected kernel is <version>: upgrade OATS with
+  `npm install -g @awebai/oats@latest`, then rerun". The package's
+  `compatibility.oats` stays `>=0.42.0`.
 - **A derived label that maps to another team** is refused at the record stage
-  (`E_RESIDENT_TEAM_LABEL`): the team is known only after the init. The
+  (`E_RESIDENT_TEAM_LABEL`), and the message names both teams: the one the
+  label maps to and the resident's. The team is known only after the init, so
+  this check runs after `aw init` and before the label is written. The
   identity, its custody and `settings.oats.aweb.residents.<name>` are already
   in place, and the message gives the rerun,
   `oats aweb resident create <name> --team-label <other>`, which needs no key:
@@ -55,7 +62,11 @@ recorded value that is not an http(s) registry origin is a readiness problem
 **Declared contract.** The manifest declares the hook environment variable
 `AWID_REGISTRY_URL` (in `environment`) and the namespace `AWID_` (in
 `environmentNamespaces`). A deployment's trust review at `oats sync` shows
-both. No other `AWID_` variable is set.
+both. No other `AWID_` variable is set. A grant seat's session on a resident
+whose registry is not aw's default now carries one more variable,
+`AWID_REGISTRY_URL`; every other session, local identities' included, is
+unchanged. The manifest validates, and such a seat's spawn hook output is
+accepted, on the oldest admitted kernel, OATS 0.42.0.
 
 ## 1.26.0 — 2026-10-10
 

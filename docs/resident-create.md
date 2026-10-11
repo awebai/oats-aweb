@@ -147,10 +147,12 @@ feature, refuses before any effect with the upgrade:
 
 **A label that maps to another team.** With `--team-label`, before an init,
 any mapping of the label is refused in the preflight. A derived label can only
-be checked at record: the team is known only once the key has been used. By
-then the identity, its custody and `settings.oats.aweb.residents.<name>` are
-in place, so the refusal (`E_RESIDENT_TEAM_LABEL`, stage `record`) says so and
-gives the rerun: `oats aweb resident create <name> --team-label <other>` (with
+be checked at record: the team is known only once the key has been used. The
+check runs after `aw init` and before the label is written. By then the
+identity, its custody and `settings.oats.aweb.residents.<name>` are in place,
+so the refusal (`E_RESIDENT_TEAM_LABEL`, stage `record`) names both teams, the
+one the label maps to and the resident's, says what is in place, and gives the
+rerun: `oats aweb resident create <name> --team-label <other>` (with
 the run's `--dir` and `--root`, when it gave them). That rerun needs no API
 key: it verifies the resident and adds the mapping; it is not a second create.
 
@@ -790,7 +792,7 @@ The label derived from the team's name already maps to another team:
   "ok": false,
   "error": {
     "code": "E_RESIDENT_TEAM_LABEL",
-    "message": "the team label default, derived from the name of team default:acme.aweb.ai, already maps to default:other.example. The resident's identity, its custody and settings.oats.aweb.residents.carol are in place; only the team mapping is missing. Rerun with another label: oats aweb resident create carol --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create",
+    "message": "the team label default, derived from the name of team default:acme.aweb.ai, already maps to default:other.example. This check runs after aw init and before the label is written: the resident's identity, its custody and settings.oats.aweb.residents.carol are in place; only the team mapping is missing. Rerun with another label: oats aweb resident create carol --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create",
     "details": {
       "stage": "record",
       "root": "/srv/deploy/.aweb-residents/carol",
