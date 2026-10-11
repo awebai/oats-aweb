@@ -524,9 +524,7 @@ function assertSelectedClaudeChannel(doc, mode, {preview = false} = {}) {
     else assert.doesNotMatch(doc.warning||'',/claude-channel-/);
     assert.doesNotMatch(doc.warning||'',/channel-dev-confirmation/);
   } else {
-    assert.match(doc.warning,/see the oats-aweb skill, section 4 \(Channel selection and launch consent\)/);
-    assert.match(doc.warning,/channel-dev-confirmation/);
-    assert.match(doc.warning,/nothing in this provider answers it/);
+    assert.match(doc.warning,/channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings\.oats\.aweb\.delivery: session` or `settings\.oats\.aweb\.claudeChannelMode: approved` stop it\./);
     assert.doesNotMatch(doc.warning,/claude-channel-enrollment-unverified/);
   }
 }

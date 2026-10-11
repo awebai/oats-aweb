@@ -1,5 +1,65 @@
 # Changelog
 
+## 1.27.0 — 2026-10-11
+
+**Host order, before syncing to this release:** upgrade the OATS kernel to
+0.52.0 or later first, then `oats sync`. The aw order is unchanged from 1.26.0:
+aw 1.36.33 or later, with every resident custody service and the host wake
+daemon restarted after the upgrade.
+
+**Compatibility: requires OATS 0.52.0 or later.** Older kernels stay on
+oats.aweb 1.26.2. On an older kernel the kernel refuses the composition and
+names the range, with `E_CAPABILITY_INCOMPATIBLE`: "oats.aweb requires oats >=0.52.0; this kernel is <version> — pin a release of oats.aweb whose range admits <version> in the workspace's packages:, or run a kernel the range admits".
+
+- **OATS confirms Claude's development-channel prompt.** A Claude home in
+  development mode (`claudeChannelMode: development`, the default, under
+  `delivery: channel`) no longer stops at Claude's development-channel prompt:
+  the kernel confirms it once at launch (oats#886).
+  `settings.oats.aweb.delivery: session` or
+  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt altogether.
+  The `claudeChannelMode` manifest description says so.
+- **The `channel-dev-confirmation` warning now states that decision:**
+  "Claude's development-channel prompt: OATS confirms this prompt at launch;
+  `settings.oats.aweb.delivery: session` or
+  `settings.oats.aweb.claudeChannelMode: approved` stop it." It replaces
+  "Claude Code may stop at its development-channels confirmation, and nothing
+  in this provider answers it; …". Spawn apply, start and restart of a
+  development home always carry it: a new launch has no outcome yet.
+- **Readiness is quiet after a confirmed start.** Readiness reads the kernel's
+  record of the home's last start, `instance.json` `launchPrompts.status`, and
+  nothing else: `completed` gives no warning; `blocked`, `incomplete`,
+  `not-engaged`, any other status but `flag-ignored` (below) or no record give
+  the warning above. The provider never explains a block: the kernel's own
+  `launch-prompt` readiness item does. Approved, session, Pi and Codex homes are
+  unchanged.
+- **`claude-channels-unavailable` when Claude ignored the development-channel flag.**
+  Claude ignores `--dangerously-load-development-channels` when its launch
+  environment opts out of telemetry (any of `DISABLE_TELEMETRY`, `DO_NOT_TRACK`
+  or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or
+  organization has no channels; the kernel then sends no key and records
+  `launchPrompts.status: flag-ignored`. Readiness for that development home
+  warns `claude-channels-unavailable` instead of `channel-dev-confirmation`:
+  "Claude ignored the development-channel flag at the last start, so this home
+  has no channel delivery. Claude Code disables channels when its launch
+  environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or
+  organization has no channels. Remove the variable from the launch environment
+  yourself, use an account with channels, or use
+  `settings.oats.aweb.delivery: session`." The
+  provider never reads, unsets or changes these variables: readiness runs in the
+  operator's shell, not in Claude's launch environment. It doesn't name
+  `claudeChannelMode: approved`: approved mode needs channels too. Spawn, start
+  and restart, and the approved, session, Pi and Codex homes, are unchanged.
+- **Where the decision shows:** spawn apply, start and restart, the start
+  preview (`oats launch-config preview`) and readiness. It doesn't show in the
+  spawn preview yet: `oats spawn --preview` runs no provider hooks, and shows no
+  decision statement from the provider or the kernel
+  ([oats#912](https://github.com/awebai/oats/issues/912)).
+- **The exact-home launch consent is gone.** The skill's
+  `launchPromptAnswers` opt-in and its reference
+  (`references/launch-consent.md`) are removed: the kernel no longer reads that
+  key. Section 4 is now "Channel selection and the development-channel prompt".
+
 ## 1.26.2 — 2026-10-11
 
 - **A resident's seat is ready without a minting root.** In a deployment that

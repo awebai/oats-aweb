@@ -1,0 +1,116 @@
+{
+  "source": {
+    "kernel": "awebai/oats main d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c (0.52.0; the CI kernel pin).",
+    "writer": "lib/core.mjs: notEngaged(startId) :662 {status, startId, at}; channelsUnavailable(startId, result) :665 {status: flag-ignored, reason: channels-unavailable, signatureId, startId, at}. Spawn writes not-engaged (:4653), the controller result mapped through channelsUnavailable (:4681) and the retained blocked/incomplete (:4717). Start/restart writes not-engaged (:7100), the controller result mapped (:7163-7164), incomplete on a dispatch or recording failure (:7167), into planExtra (:7173), which record() writes (:6813-6817) and returns in the start result (:6821). --no-launch writes nothing.",
+    "outcome": "lib/launch-prompts.mjs finish(): {status, answers, reason, receipt}; only flag-ignored adds signatureId (a completed answer's signatureId is in answers); a blocked result adds differed (devChannelDifference() in lib/launch-prompt-fixtures.mjs, {nearest, firstDifference: {index, expected, found}}, 40-character snippets) and, before any Enter, claudeSessionShown.",
+    "completed": "lib/launch-prompts.mjs:164",
+    "blocked": "lib/launch-prompts.mjs:181 (blocked: unexpected prompt, before any Enter, via blocked() and finish(); claudeSessionShown only when Claude's session banner shows)",
+    "blockedObservationTimeout": "lib/launch-prompts.mjs:217 (OBSERVATION_TIMEOUT, :18): after the one submitted Enter, blocked(last, ...) with what differed",
+    "incomplete": "lib/launch-prompts.mjs finish() :84-91 and :190 (launch prompt audit failed)",
+    "notEngaged": "lib/core.mjs:662",
+    "flagIgnored": "lib/core.mjs:665, from lib/launch-prompts.mjs:176 (signatureId aweb-dev-channel-flag-ignored-1 in lib/launch-prompt-fixtures/dev-channel-confirmation.json)"
+  },
+  "completed": {
+    "status": "completed",
+    "answers": [
+      {
+        "class": "awebDevelopmentChannel",
+        "signatureId": "aweb-dev-channel-confirmation-1",
+        "status": "submitted"
+      }
+    ],
+    "reason": "recognized launch boundary",
+    "receipt": [
+      {
+        "ok": true,
+        "results": [
+          {
+            "ok": true,
+            "path": ".oats-events.jsonl"
+          }
+        ]
+      }
+    ]
+  },
+  "blocked": {
+    "status": "blocked",
+    "answers": [],
+    "reason": "blocked: unexpected prompt",
+    "receipt": [
+      {
+        "ok": true,
+        "results": [
+          {
+            "ok": true,
+            "path": ".oats-events.jsonl"
+          }
+        ]
+      }
+    ],
+    "differed": {
+      "nearest": "aweb-dev-channel-confirmation-1",
+      "firstDifference": {
+        "index": 9,
+        "expected": "Loading development channels --dangerous",
+        "found": "Something else entirely on screen, waiti"
+      }
+    }
+  },
+  "blockedObservationTimeout": {
+    "status": "blocked",
+    "answers": [
+      {
+        "class": "awebDevelopmentChannel",
+        "signatureId": "aweb-dev-channel-confirmation-1",
+        "status": "submitted"
+      }
+    ],
+    "reason": "blocked: observation timeout",
+    "receipt": [
+      {
+        "ok": true,
+        "results": [
+          {
+            "ok": true,
+            "path": ".oats-events.jsonl"
+          }
+        ]
+      }
+    ],
+    "differed": {
+      "nearest": "aweb-dev-channel-confirmation-1",
+      "firstDifference": {
+        "index": 0,
+        "expected": "WARNING: Loading development channels --",
+        "found": "Claude Code is still starting on screen"
+      }
+    }
+  },
+  "incomplete": {
+    "status": "incomplete",
+    "answers": [],
+    "reason": "launch prompt audit failed",
+    "receipt": [
+      {
+        "ok": false,
+        "results": [
+          {
+            "ok": false
+          }
+        ]
+      }
+    ]
+  },
+  "notEngaged": {
+    "status": "not-engaged",
+    "startId": "start-fixture",
+    "at": "2026-10-10T12:00:00.000Z"
+  },
+  "flagIgnored": {
+    "status": "flag-ignored",
+    "reason": "channels-unavailable",
+    "signatureId": "aweb-dev-channel-flag-ignored-1",
+    "startId": "start-fixture",
+    "at": "2026-10-10T12:00:00.000Z"
+  }
+}

@@ -18,12 +18,14 @@ jobs:
           node-version: 22
       - name: Validate manifests, vendored skills, and hooks
         run: npm test
+      # Both kernel pins: the awebai/oats main commit d27de605 (0.52.0, this
+      # package's floor), not a release tag.
       - name: Provision pinned generic hostOnly validator
         shell: bash
         run: |
           git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-hostonly-kernel"
-          git -C "$RUNNER_TEMP/oats-hostonly-kernel" checkout --detach bb2ba8c9a254edb745913b9c5a9d9b833fda932d
-          test "$(git -C "$RUNNER_TEMP/oats-hostonly-kernel" rev-parse HEAD)" = bb2ba8c9a254edb745913b9c5a9d9b833fda932d
+          git -C "$RUNNER_TEMP/oats-hostonly-kernel" checkout --detach d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
+          test "$(git -C "$RUNNER_TEMP/oats-hostonly-kernel" rev-parse HEAD)" = d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
           cd "$RUNNER_TEMP/oats-hostonly-kernel"
           npm ci --ignore-scripts --no-audit --no-fund
       - name: Require actual hostOnly refusal and host-local controls
@@ -31,6 +33,19 @@ jobs:
           OATS_HOST_ONLY_REQUIRED: '1'
           OATS_HOST_ONLY_KERNEL_ROOT: ${{ runner.temp }}/oats-hostonly-kernel
         run: node --test test/claude-channel-host-only.test.mjs test/public-kernel-team-roots.test.mjs test/public-kernel-disposable-home.test.mjs test/public-kernel-seat-registry.test.mjs
+      - name: Provision pinned launch-preview kernel
+        shell: bash
+        run: |
+          git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-preview-kernel"
+          git -C "$RUNNER_TEMP/oats-preview-kernel" checkout --detach d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
+          test "$(git -C "$RUNNER_TEMP/oats-preview-kernel" rev-parse HEAD)" = d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
+          cd "$RUNNER_TEMP/oats-preview-kernel"
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Require the decision statement in a real start preview
+        env:
+          OATS_PREVIEW_KERNEL_REQUIRED: '1'
+          OATS_PREVIEW_KERNEL_ROOT: ${{ runner.temp }}/oats-preview-kernel
+        run: node --test test/public-kernel-launch-preview.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"
 
@@ -47,8 +62,9 @@ jobs:
     env:
       AWEB_STACK_COMMIT: 1d7ee6bb3519a3c940ebeb12afc86d921dc13e27
       AW_VERSION: 1.36.33
-      # An OATS kernel with teams-conditional-default (the awebai/oats commit tagged v0.50.0).
-      CONDITIONAL_DEFAULT_KERNEL_COMMIT: a7214525aba6a5d81fccd6427f20a53ef26c3763
+      # An OATS kernel with teams-conditional-default that this package admits
+      # (the awebai/oats main commit d27de605, 0.52.0).
+      CONDITIONAL_DEFAULT_KERNEL_COMMIT: d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
