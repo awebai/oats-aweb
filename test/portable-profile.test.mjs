@@ -68,21 +68,24 @@ test('binding-less workspace readiness check follows settings roots, team labels
 
 test('in a deployment with no .aw, a global seat with a resident needs no minting root on either check path; local mode and a global seat without a resident still do',t=>{
  // A deployment that holds only residents, as resident create makes it. The
- // resident's identity is the real aw 1.36.33 one in test/fixtures/resident.
+ // resident's identity, aw's version and its custody status are the real aw
+ // 1.36.33 captures in test/fixtures/resident, so the team is the captured one.
  const f=fixture(t),deployment=join(f.base,'residents-only');fs.mkdirSync(deployment);
  const custody=join(f.base,'custody');fs.mkdirSync(join(custody,'.aw'),{recursive:true});fs.copyFileSync(join(root,'test/fixtures/resident/identity-global.yaml'),join(custody,'.aw','identity.yaml'));
- fs.writeFileSync(join(f.base,'bin','aw'),`#!${process.execPath}\nconst args=process.argv.slice(2);\nif(args[0]==='version'){console.log('aw 1.36.33');process.exit(0);}\nconsole.log(JSON.stringify({status:'running',teams:[{team_id:'${team.id}',ready:true,certificate_present:true,grant_status_endpoint_ready:true}],keys:{signing_ready:true,encryption_ready:true},ops:['status.v1','sign_plain_message.v1','sign_app_request.v1','grant_never_ttl.v1','create_e2ee_envelope.v1','unwrap_e2ee_message.v1','mail_reply_continuation.v1'],errors:[]}));\n`,{mode:0o755});
+ const captured=name=>JSON.stringify(join(root,'test/fixtures/resident',name));
+ fs.writeFileSync(join(f.base,'bin','aw'),`#!${process.execPath}\nconst {readFileSync}=require('node:fs');\nprocess.stdout.write(readFileSync(process.argv[2]==='version'?${captured('aw-version.txt')}:${captured('custody-status-running.stdout')}));\n`,{mode:0o755});
+ const capturedTeam='default:fixture-6400.test',env={OATS_DEFAULT_TEAM_ID:capturedTeam,OATS_TEAMS:JSON.stringify([{label:'private',team:capturedTeam,default:true,from:'local'}])};
  const noRoot={code:'needs-configuration',message:`no messaging root at ${deployment}: run oats aweb setup there or set settings.oats.aweb.root`};
  const noResident={code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'};
  const global={delivery:'session',identity:{mode:'global',resident:'merlin'},residents:{merlin:custody}},local={delivery:'session',residents:{merlin:custody}},residentless={delivery:'session',identity:{mode:'global'},residents:{merlin:custody}};
  // The workspace readiness phase, as `oats readiness` asks it for the deployment.
- const workspace=settings=>invoke(f,'check',request('check',{context:{kind:'workspace',workspace:'fixture-workspace',deployment,soul:'example',team:null,instance:null,home:null},action:{kind:'readiness'}},settings)).value.result;
+ const workspace=settings=>invoke(f,'check',request('check',{context:{kind:'workspace',workspace:'fixture-workspace',deployment,soul:'example',team:null,instance:null,home:null},action:{kind:'readiness'}},settings),env).value.result;
  assert.deepEqual(workspace(global),{status:'ready',problems:[],warnings:[]});
  assert.deepEqual(workspace(local),{status:'needs-configuration',problems:[noRoot],warnings:[]});
  assert.deepEqual(workspace(residentless),{status:'needs-configuration',problems:[noRoot,noResident],warnings:[]});
  // The binding path: its host readiness falls back to the working directory, here the deployment.
  const p=bind(f);
- const bound=settings=>{const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),'check'],{env:f.env,cwd:deployment,input:JSON.stringify(request('check',{binding:p.binding,context,action:{kind:'inspect'}},settings)),encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);return JSON.parse(r.stdout).result;};
+ const bound=settings=>{const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb-binding.mjs'),'check'],{env:{...f.env,...env},cwd:deployment,input:JSON.stringify(request('check',{binding:p.binding,context,action:{kind:'inspect'}},settings)),encoding:'utf8',timeout:10000});assert.equal(r.status,0,r.stderr);return JSON.parse(r.stdout).result;};
  assert.deepEqual(bound(global),{status:'ready',problems:[]});
  assert.deepEqual(bound(local),{status:'needs-configuration',problems:[noRoot]});
  assert.deepEqual(bound(residentless),{status:'needs-configuration',problems:[noRoot]});
