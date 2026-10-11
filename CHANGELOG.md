@@ -1,5 +1,92 @@
 # Changelog
 
+## 1.26.1 — Unreleased
+
+**`oats aweb resident create` now needs OATS 0.48.0 or later wherever it maps
+the team through the kernel.** The kernel gained `oats teams add --no-default`
+and `oats teams default --if-absent` in OATS 0.48.0 (`teams-conditional-default`).
+On a kernel from 0.42 to 0.47, 1.26.0's `resident create` ran: without
+`--team-label` it mapped nothing, and with `--team-label` it ran a plain
+`oats teams add`, which could replace the workspace's default team. 1.26.1
+refuses there before any effect whenever it would write a mapping through the
+kernel. With the derived label, that is every run where the workspace allows
+local teams. Where it allows none, nothing is written through the kernel, so
+there is no refusal and the entry to commit is printed. In practice this costs
+nothing: `resident create` shipped only in 1.26.0, and on those kernels its
+printed next step did not work either. The refusal, before any effect, reads:
+"oats aweb resident create needs OATS 0.48.0 or later
+(teams-conditional-default), so that mapping the resident's team never
+replaces a default team; the selected kernel is <version>: upgrade OATS with
+`npm install -g @awebai/oats@latest`, then rerun".
+
+**Fixed: `oats aweb resident create` now leaves a deployment where its printed
+next step works.** Before, without `--team-label` it mapped no team, so in a
+fresh deployment the printed spawn line failed with "no teams configured" and
+rolled back.
+
+- **The team is mapped without `--team-label`.** The resident's team is mapped
+  under its name, the part of the team id before `:`, normalised as
+  `oats aweb setup` normalises team names (`default` for
+  `default:acme.aweb.ai`). A label that already maps to the same team is
+  reused. `--team-label` works as before.
+- **The default team.** A seat's grant is minted in the deployment's default
+  team. Where the deployment has none, the command makes the mapped label the
+  default and reads it back. An existing default is never changed: when it is
+  another label, the output prints `oats teams default <label>` as its own
+  first step, before the spawn line, with that reason and its consequence: it
+  moves the default team of the whole deployment, so every later spawn of a
+  soul without a default team of its own goes to the resident's team. Where the workspace
+  allows no local teams, the lines to commit include `defaultTeam:` when the
+  workspace has none; when it has another default, that change is the
+  workspace's, and the output says so before the spawn line.
+- **Fixed: `--team-label` could replace the workspace's default team.** The
+  mapping was a plain `oats teams add`, which makes the first local team the
+  deployment's default, over the workspace's. The mapping is now
+  `oats teams add --no-default`, and the default is set only with
+  `oats teams default --if-absent`.
+- **OATS 0.48.0** (above): an older kernel ignores `--no-default` and
+  `--if-absent`, so the command refuses it wherever it would write through the
+  kernel. The package's `compatibility.oats` stays `>=0.42.0`.
+- **A derived label that maps to another team** is refused at the record stage
+  (`E_RESIDENT_TEAM_LABEL`), and the message names both teams: the one the
+  label maps to and the resident's. The team is known only after the init, so
+  this check runs after `aw init` and before the label is written. The
+  message names what is already in place: R's path, the custody unit's label
+  and file, and `settings.oats.aweb.residents.<name>` in the deployment's
+  `oats-local.yaml`. It gives the rerun,
+  `oats aweb resident create <name> --team-label <other>`, which needs no key:
+  it verifies the resident and adds the mapping, adopting what the first run
+  left: the same identity and custody unit, nothing orphaned. A team name that
+  gives no team label of at most 64 characters is refused the same way.
+  `--plan` without `--team-label` says the label is derived after `aw init` and
+  that the run stops there if it is taken.
+- **Output.** Text and `--json` report the label, its status (`added`,
+  `reused`, `commit`), whether it was derived, and the default team (`set`,
+  `already`, `kept`, `commit`). Added to `--json`: `steps`, every command to
+  run in order (the spawn line last), and, when another default is kept,
+  `stepsReason` and `defaultTeam`. `next` is unchanged.
+
+**Fixed: a grant seat on a resident with its own registry verifies at that
+registry.** Mail read by a seat on a resident whose identity records a custom
+`registry_url` showed `verification_stale` unless the operator's environment
+set `AWID_REGISTRY_URL`. The spawn and launch hooks now give the seat
+`AWID_REGISTRY_URL`, read from the resident's `.aw/identity.yaml` (through
+`settings.oats.aweb.residents`), when its origin is not aw's default
+(`https://api.awid.ai`). The operator's environment is never read for it. A
+recorded value that is not an http(s) registry origin, including one the YAML
+reader cannot take (a quote or `#` in it), is a readiness problem (`custody`)
+and a spawn warning, and is not passed on. Its message names the identity
+file and the reason, never the recorded value, which may hold credentials.
+
+**Declared contract.** The manifest declares the hook environment variable
+`AWID_REGISTRY_URL` (in `environment`) and the namespace `AWID_` (in
+`environmentNamespaces`). A deployment's trust review at `oats sync` shows
+both. No other `AWID_` variable is set. A grant seat's session on a resident
+whose registry is not aw's default now carries one more variable,
+`AWID_REGISTRY_URL`; every other session, local identities' included, is
+unchanged. The manifest validates, and such a seat's spawn hook output is
+accepted, on the oldest admitted kernel, OATS 0.42.0.
+
 ## 1.26.0 — 2026-10-10
 
 **Host order, before syncing to this release:** upgrade aw to 1.36.33 or later,

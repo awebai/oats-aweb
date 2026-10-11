@@ -51,7 +51,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
-import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRoot, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -63,6 +63,7 @@ import { parseTimestamp } from "../lib/wake-receive.mjs";
 import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
+import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -326,11 +327,6 @@ function awebRoot() { return resolveAwebRoot(); }
  * name-only team config into a blocked spawn (reviewer-602627c). */
 const teamMemberships = (listed) => listed?.memberships || listed?.teams || [];
 const teamIdsOf = (listed) => teamMemberships(listed).map((m) => m.team_id || m.id || m);
-function normalizeAwebTeamName(label) {
-  const normalized = String(label || "").toLowerCase().replace(/[_.]+/g, "-").replace(/^-+|-+$/g, "");
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(normalized) || normalized.length > 128) throw new Error(`team label ${JSON.stringify(label)} does not normalize to a valid aweb team name`);
-  return normalized;
-}
 const AWEB_TEAM_ID_MESSAGE = "aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)";
 function validHostname(value) { const s = String(value || ""); return s.length <= 253 && s.split(".").every((label) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label)); }
 function validAwebTeamId(value) { const m = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(value || "")); return !!m && validHostname(m[2]); }
@@ -607,10 +603,16 @@ function newestGrantHome() {
 }
 const priorGrantHome = (meta = {}) => typeof meta.identity?.grant?.home === "string" && meta.identity.grant.home ? meta.identity.grant.home : newestGrantHome();
 const localIdentityHome = () => join(home, ".aw");
+/** A grant seat's registry, from its resident's identity through the residents
+ *  setting; nothing when the resident does not resolve, which readiness reports. */
+function seatRegistryEnv(resident) {
+  const custody = settings.residents && typeof settings.residents === "object" ? settings.residents[resident] : undefined;
+  return typeof custody === "string" && isAbsolute(custody) ? residentRegistryEnv(custody).env : {};
+}
 function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
   const { env: deliveryEnv, launch } = deliveryFor();
   const env = { ...deliveryEnv };
-  if (meta.identity?.mode === "global" && meta.identity?.grant?.id) env.AWEB_IDENTITY_HOME = identityHome;
+  if (meta.identity?.mode === "global" && meta.identity?.grant?.id) Object.assign(env, { AWEB_IDENTITY_HOME: identityHome }, seatRegistryEnv(meta.identity.resident));
   else if ((meta.identity?.mode || identityMode) === "local") env.AWEB_IDENTITY_HOME = localIdentityHome();
   return { ...(Object.keys(env).length ? { env } : {}), ...(launch ? { launch } : {}) };
 }
@@ -831,7 +833,8 @@ function globalGrantSpawn() {
       catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError)); }
     }
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
-    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: grantHome };
+    const registry = residentRegistryEnv(custody);
+    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: grantHome, ...registry.env };
     if (broker) {
       try { wakeRegister(home, grantHome); }
       catch (e) {
@@ -839,7 +842,7 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError)); }
       }
     }
-    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
+    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : []), ...(registry.problem ? [`oats-aweb: ${registry.problem}`] : [])];
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     out({
       meta,

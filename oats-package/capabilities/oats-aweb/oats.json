@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.26.0",
+  "version": "1.26.1",
   "compatibility": {
     "oats": ">=0.42.0"
   },
@@ -131,7 +131,8 @@
   },
   "environment": [
     "AWEB_DELIVERY",
-    "AWEB_IDENTITY_HOME"
+    "AWEB_IDENTITY_HOME",
+    "AWID_REGISTRY_URL"
   ],
   "settings": {
     "delivery": {
@@ -176,7 +177,8 @@
     }
   },
   "environmentNamespaces": [
-    "AWEB_"
+    "AWEB_",
+    "AWID_"
   ],
   "operations": {
     "teams": {

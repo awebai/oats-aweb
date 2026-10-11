@@ -17,7 +17,9 @@ diagnostic (a failure there is a warning only, since publication can lag; read
 it against the online checks below), a per-user custody unit (launchd on
 macOS, systemd --user on Linux) that runs `aw custody serve` in R, the custody
 readiness check, and
-`settings.oats.aweb.residents.<name>`. A complete identity already in R is
+`settings.oats.aweb.residents.<name>`, and the mapping of the resident's team
+under `--team-label` or the team's name, made the default team where the
+deployment has none (provider 1.26.1, OATS >=0.48.0). A complete identity already in R is
 verified and adopted, not re-created; a partial init is continued with the same
 DID; a quarantined partial is refused with aw's own message. With no
 `AWEB_API_KEY` it asks for the key on the terminal without echo. Its stages,

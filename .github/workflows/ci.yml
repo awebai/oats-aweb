@@ -30,22 +30,25 @@ jobs:
         env:
           OATS_HOST_ONLY_REQUIRED: '1'
           OATS_HOST_ONLY_KERNEL_ROOT: ${{ runner.temp }}/oats-hostonly-kernel
-        run: node --test test/claude-channel-host-only.test.mjs test/public-kernel-team-roots.test.mjs test/public-kernel-disposable-home.test.mjs
+        run: node --test test/claude-channel-host-only.test.mjs test/public-kernel-team-roots.test.mjs test/public-kernel-disposable-home.test.mjs test/public-kernel-seat-registry.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"
 
   # oats aweb resident create against aweb's local stack (postgres, redis, awid
   # and the OSS aweb server, built from aweb at a pinned commit) with the
-  # released aw: registration at awid, same-DID resume, the key's absence on a
-  # failure, and adopting a resident with a real systemd --user custody unit.
-  # aweb Cloud's workspaces/init is not in that stack: a complete create is the
-  # joint E2E's (docs/resident-create.md).
+  # released aw and a real OATS kernel: registration at awid, same-DID resume,
+  # the key's absence on a failure, adopting a resident with a real systemd
+  # --user custody unit, and its printed next steps run as printed, through a
+  # seat's real grant and its retire. aweb Cloud's workspaces/init is not in
+  # that stack: a complete create is the joint E2E's (docs/resident-create.md).
   resident-journey:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
       AWEB_STACK_COMMIT: 1d7ee6bb3519a3c940ebeb12afc86d921dc13e27
       AW_VERSION: 1.36.33
+      # An OATS kernel with teams-conditional-default (the awebai/oats commit tagged v0.50.0).
+      CONDITIONAL_DEFAULT_KERNEL_COMMIT: a7214525aba6a5d81fccd6427f20a53ef26c3763
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,6 +63,14 @@ jobs:
       - name: Start postgres, redis, awid and aweb
         working-directory: ${{ runner.temp }}/aweb
         run: docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis awid aweb
+      - name: Provision the conditional-default kernel
+        shell: bash
+        run: |
+          git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/conditional-default-kernel"
+          git -C "$RUNNER_TEMP/conditional-default-kernel" checkout --detach "$CONDITIONAL_DEFAULT_KERNEL_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/conditional-default-kernel" rev-parse HEAD)" = "$CONDITIONAL_DEFAULT_KERNEL_COMMIT"
+          cd "$RUNNER_TEMP/conditional-default-kernel"
+          npm ci --ignore-scripts --no-audit --no-fund
       - name: Install the released aw in an isolated prefix
         shell: bash
         run: |
@@ -89,6 +100,7 @@ jobs:
           OATS_RESIDENT_JOURNEY_AW: ${{ runner.temp }}/aw/node_modules/.bin/aw
           OATS_RESIDENT_JOURNEY_AWEB_URL: http://127.0.0.1:18000
           OATS_RESIDENT_JOURNEY_AWID_URL: http://127.0.0.1:18010
+          OATS_RESIDENT_JOURNEY_KERNEL: ${{ runner.temp }}/conditional-default-kernel
         run: node --test test/resident-journey.test.mjs
       - name: Stack logs
         if: failure()

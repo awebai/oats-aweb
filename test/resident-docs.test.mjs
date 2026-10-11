@@ -67,14 +67,29 @@ const cases = {
   },
   custody: { fake: { custody: "missing-ops" }, run: (s) => s.run(["create", NAME, "--json"]) },
   "custody-running": { fake: { custody: "elsewhere" }, prepare: complete, run: (s) => s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }) },
+  "default-kept": {
+    setup: { kernel: { teams: [{ label: "core", team: "core:fixture-6400.test", from: "shared" }], defaultTeam: { label: "core", team: "core:fixture-6400.test", from: "workspace" } } },
+    run: (s) => s.run(["create", NAME, "--json"]),
+  },
+  "team-label-taken": {
+    setup: { kernel: { teams: [{ label: "default", team: "default:other.example", from: "local" }] } },
+    run: (s) => s.run(["create", NAME, "--json"]),
+  },
 };
 
 for (const [name, c] of Object.entries(cases)) {
   test(`docs/resident-create.md shows the real ${name} envelope`, (t) => {
-    const s = setup(t, c.fake);
+    const s = setup(t, c.fake, c.setup);
     c.prepare?.(s);
     const r = c.run(s);
     assert.ok(r.doc, r.stdout + r.stderr);
     assert.deepEqual(normalized(s, c.normalize ? c.normalize(s, r.doc) : r.doc), documented(name));
   });
 }
+
+test("the doc and the skill say what `oats teams default` does to the deployment, and that it is the operator's decision", () => {
+  const skill = readFileSync(new URL("../oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md", import.meta.url), "utf8");
+  assert.ok(DOC.includes("Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (default:acme.aweb.ai)"));
+  assert.ok(DOC.includes("That\n  step is the operator's decision; the command never runs it."));
+  assert.ok(skill.includes("so it is the operator's decision: an agent prints it and asks, and never runs it on its own."));
+});

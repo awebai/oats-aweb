@@ -9,6 +9,7 @@ import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
 import { childOutcome } from './child-outcome.mjs';
+import { residentRegistryEnv } from './resident-registry.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -171,7 +172,7 @@ function workspaceReadinessContext(value) {
   if(value.home!==null && value.home!==undefined && (typeof value.home!=='string' || !value.home.trim())) wireError('invalid-binding');
   return value;
 }
-function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
+export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export { AW_MIN } from './aw-floor.mjs';
 import { AW_MIN } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
@@ -287,26 +288,30 @@ async function workspaceReadinessPhase(req) {
     const custody=resident?residents[resident]:undefined;
     if(!resident) problems.push({code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'});
     else if(typeof custody!=='string' || !isAbsolute(custody) || !existsSync(join(custody,'.aw','identity.yaml'))) problems.push({code:'custody',message:`identity.mode "global" resident ${JSON.stringify(resident)} is not resolvable; set oats-local.yaml settings.oats.aweb.residents.${resident} to an absolute custody directory whose .aw/identity.yaml exists`});
-    else if(details.team) {
-      try {
-        // A never-grant in use, or the next mint's ttl (a renewal keeps the seat's
-        // duration; a new seat's default is never), decides the custody's ops.
-        const recorded=ctx.home?recordedStart(ctx.home).meta?.identity?.grant:undefined;
-        const next=recorded?.id?renewalGrantTTL(identity.ttl,recorded.ttl):resolveGrantTTL(identity.ttl);
-        const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,ttl:recorded?.expiresAt==='never'?'never':next,fatalOnError:false,runAw:localAw});
-        for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
-        // This seat's active grants other than the current one, from the custody's
-        // list: each stays valid until the next start or retire revokes it.
-        const seat=ctx.home?recordedStart(ctx.home).meta?.identity?.seat:undefined;
-        if(seat) {
-          try {
-            const label=seatGrantLabel(ctx.instance||basename(ctx.home),seat);
-            for(const g of strayGrants(teamGrants(argv=>localAw(argv,custody),details.team),label,recorded?.id)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant({...g,custody})}; the next start or retire revokes it`});
+    else {
+      const registry=residentRegistryEnv(custody);
+      if(registry.problem) problems.push({code:'custody',message:registry.problem});
+      if(details.team) {
+        try {
+          // A never-grant in use, or the next mint's ttl (a renewal keeps the seat's
+          // duration; a new seat's default is never), decides the custody's ops.
+          const recorded=ctx.home?recordedStart(ctx.home).meta?.identity?.grant:undefined;
+          const next=recorded?.id?renewalGrantTTL(identity.ttl,recorded.ttl):resolveGrantTTL(identity.ttl);
+          const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,ttl:recorded?.expiresAt==='never'?'never':next,fatalOnError:false,runAw:localAw});
+          for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
+          // This seat's active grants other than the current one, from the custody's
+          // list: each stays valid until the next start or retire revokes it.
+          const seat=ctx.home?recordedStart(ctx.home).meta?.identity?.seat:undefined;
+          if(seat) {
+            try {
+              const label=seatGrantLabel(ctx.instance||basename(ctx.home),seat);
+              for(const g of strayGrants(teamGrants(argv=>localAw(argv,custody),details.team),label,recorded?.id)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant({...g,custody})}; the next start or retire revokes it`});
+            }
+            catch(e) {warnings.push({code:'grant-revoke-unchecked',message:`could not check for orphaned grants (${String(e.message||e).slice(0,200)}); this seat may hold grants that stay valid`});}
           }
-          catch(e) {warnings.push({code:'grant-revoke-unchecked',message:`could not check for orphaned grants (${String(e.message||e).slice(0,200)}); this seat may hold grants that stay valid`});}
         }
+        catch(e) {problems.push({code:'custody',message:e.message});}
       }
-      catch(e) {problems.push({code:'custody',message:e.message});}
     }
   }
   const receiveProblems=[];
