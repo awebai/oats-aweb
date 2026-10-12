@@ -666,7 +666,7 @@ test("a custody already running with no unit of ours is refused before any effec
   const s = setup(t, { custody: "elsewhere" });
   mkdirSync(join(s.root, ".aw"), { recursive: true });
   for (const f of ["identity.yaml", "signing.key", "workspace.yaml"]) writeFileSync(join(s.root, ".aw", f), "");
-  const message = `custody for ${NAME} is already running in ${s.root}, and not from this command's unit ${LABEL}: run \`aw custody stop\` in ${s.root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
+  const message = `custody for ${NAME} is already running in ${s.root}, and not from this command's unit ${LABEL}: no recognised unit was found; find and stop any supervisor outside the recognised units: run \`aw custody stop\` in ${s.root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
   for (const args of [["create", NAME, "--json"], ["create", NAME, "--plan", "--json"]]) {
     const r = s.run(args, {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
     assert.equal(r.status, 1, r.stdout + r.stderr);

@@ -61,7 +61,7 @@ decides from what R holds:
 | nothing, or does not exist | init creates the resident |
 | `.aw/partial-init.yaml` (an earlier init that failed part way) | init continues it: aw reuses the saved key, so the DID is the same |
 | `.aw/partial-init.yaml.<time>.<n>.rejected` (aw quarantined the key) | init runs once, and aw refuses with its own reconciliation message; there is no rerun |
-| a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or a pure verify when it is already recorded |
+| a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded |
 | a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 
@@ -174,17 +174,24 @@ aw has no install verb: `aw custody serve` takes no flags and serves the
 identity home of its working directory. The command writes a per-user unit
 that runs `<aw> custody serve` with working directory R and an environment of
 `PATH` and `HOME` only. Its `PATH` is aw's directory (and its target's, when
-aw is a link), the directory of the node that ran the command (an npm-installed
-aw may need it) and `/usr/local/bin:/usr/bin:/bin`, not the caller's `PATH`:
-a rerun from another shell finds the unit unchanged and leaves it running. Its label is `ai.aweb.custody.<namespace>.<name>`,
+aw is a link), the directory of the absolute `OATS_NODE_BIN` supplied by the
+kernel (an npm-installed aw may need it) and `/usr/local/bin:/usr/bin:/bin`.
+The kernel owns the node-path selection rule; the provider keeps that path,
+including its stable link, without resolving it. If `OATS_NODE_BIN` is absent,
+empty or relative, the provider falls back to `process.execPath`, retaining
+compatibility with older kernels without increasing the package's kernel floor.
+An unchanged selection leaves the unit running. Its label is `ai.aweb.custody.<namespace>.<name>`,
 where `<namespace>` is the address's (`juan.aweb.ai` for
 `juan.aweb.ai/alice`). It never serves a grant home and copies no keys.
 
 A custody that already serves R, started by hand or by another supervisor, is
 refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): aw refuses a second
 server on a socket that answers, so a unit started beside it would restart in
-a loop while the other custody answered. Stop it (`aw custody stop` in R, or
-stop whatever supervises it), then rerun. This command's own unit counts as
+a loop while the other custody answered. When a recognised unit for R is
+found, the error names its label and file and gives the retirement steps below.
+Otherwise it explicitly says no recognised unit was found: find and stop any
+supervisor outside the recognised units (`aw custody stop` in R, or stop
+whatever supervises it), then rerun. This command's own unit counts as
 what serves R only when its process is running (launchd's `state = running`
 with a pid; systemd's `active`/`running` with a main pid) and is the server. A
 unit that is merely loaded, restarting against another custody, does not
@@ -199,7 +206,16 @@ milliseconds and launchd and systemd wait seconds before restarting it. A host
 without `lsof` is never refused for that. The unit is idempotent: a re-run
 leaves an unchanged unit as it is and loads it if it is not running. R reached through a symlink is the same directory. A unit of that label that serves another directory is
 refused, naming both, and so is any `ai.aweb.custody.*.<name>` unit that
-serves another directory, before any init.
+serves another directory, before any init. A same-root unit under another
+label is also refused (`E_RESIDENT_UNIT_CONFLICT`) before any write, including
+when unloaded. A running foreign custody is reported first as
+`E_RESIDENT_CUSTODY_RUNNING`, with the same retirement steps. Discovery covers
+`ai.aweb.custody.<namespace>.<name>` for this resident across namespaces;
+arbitrarily named services are outside it. The command never adopts or removes
+another unit. On macOS the operator runs `launchctl bootout gui/<uid>/<label>`
+and moves the named plist out of `~/Library/LaunchAgents`. On Linux the operator
+runs `systemctl --user disable --now <label>.service`, removes the named unit
+file and runs `systemctl --user daemon-reload`. Then rerun resident create.
 
 **macOS (launchd).** The agent is
 `~/Library/LaunchAgents/ai.aweb.custody.<namespace>.<name>.plist` (`RunAtLoad`,
@@ -233,6 +249,30 @@ R under a supervisor that keeps it running (working directory R, environment
 
 Removing the unit does not remove the resident: R and
 `settings.oats.aweb.residents.<name>` stay until you remove them.
+
+### After changing Node or aw
+
+An existing unit is rewritten only by rerunning
+`oats aweb resident create <name>` from the deployment, with the same `--root`
+if one was used. It needs no API key for a complete identity, keeps the resident,
+and rewrites and reloads a changed unit. Run it after updating the provider to
+pick up `OATS_NODE_BIN`, or after changing a recorded executable path. Updating
+OATS or restarting a seat alone does not rewrite the custody unit.
+
+The kernel's node choice can survive a Homebrew upgrade through an `opt` link;
+a version manager's selected version path still lasts only while that version
+exists. See OATS's [After a change of Node version](https://github.com/awebai/oats/blob/main/docs/upgrading.md#after-a-change-of-node-version).
+
+The unit also records the absolute first executable `aw` on the command's
+`PATH`, without replacing it with its real path. If npm's global prefix is
+inside a Node version, that `aw` path and its directory disappear when that
+version is removed, even when the unit's node directory is stable. Before
+removing the old version, install aw in the new version (for example,
+`npm install -g @awebai/aw@latest`), ensure that aw is first on `PATH`, and rerun
+resident create to refresh the recorded path. There is no separate stable-aw
+selection rule. These path hazards are established from the unit-writing code;
+the fixture tests do not prove live service-manager behaviour or what aw itself
+retains of its inherited environment.
 
 ## A seat's registry
 
@@ -293,9 +333,9 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_DEPLOYMENT` | deployment | no readable deployment |
 | `E_RESIDENT_AW_FLOOR` | aw | aw missing or older than 1.36.33 |
 | `E_RESIDENT_ROOT` | preflight | R holds something else, or the name is recorded at another R |
-| `E_RESIDENT_UNIT_CONFLICT` | preflight, custody | a custody unit of this name serves another directory |
+| `E_RESIDENT_UNIT_CONFLICT` | preflight, custody | a custody unit of this name serves another directory, or serves R under another label |
 | `E_RESIDENT_LINGER` | preflight | Linux user without systemd lingering |
-| `E_RESIDENT_CUSTODY_RUNNING` | preflight | a custody already serves R, and not from this command's unit |
+| `E_RESIDENT_CUSTODY_RUNNING` | preflight, custody | a custody already serves R, and not from this command's unit |
 | `E_RESIDENT_RECORD` | preflight, record | `oats-local.yaml` cannot be updated safely |
 | `E_RESIDENT_KEY` | key | no key and no terminal, an empty answer, or a malformed key |
 | `E_RESIDENT_INIT` | init | aw init failed; aw's text |
@@ -409,7 +449,7 @@ Continued from a partial (an earlier init failed after it saved its key):
 ```
 
 A complete identity adopted, then the same on a re-run once it is recorded (a
-pure verify: no init, no new key, custody only re-ensured):
+verification: no init, no new key, custody re-ensured and its unit refreshed if changed):
 
 <!-- envelope: adopted -->
 ```json
@@ -712,7 +752,7 @@ A custody already running, started by hand, when adopting:
   "ok": false,
   "error": {
     "code": "E_RESIDENT_CUSTODY_RUNNING",
-    "message": "custody for carol is already running in /srv/deploy/.aweb-residents/carol, and not from this command's unit ai.aweb.custody.acme.aweb.ai.carol: run `aw custody stop` in /srv/deploy/.aweb-residents/carol (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it",
+    "message": "custody for carol is already running in /srv/deploy/.aweb-residents/carol, and not from this command's unit ai.aweb.custody.acme.aweb.ai.carol: no recognised unit was found; find and stop any supervisor outside the recognised units: run `aw custody stop` in /srv/deploy/.aweb-residents/carol (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it",
     "details": {
       "stage": "preflight",
       "root": "/srv/deploy/.aweb-residents/carol"

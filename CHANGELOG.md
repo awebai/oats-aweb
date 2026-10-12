@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.27.1 — 2026-10-12
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.
+
+- **Resident custody units under another label are refused (#111).** Within
+  the recognised `ai.aweb.custody.<namespace>.<name>` units, a same-root unit
+  under another namespace now fails `E_RESIDENT_UNIT_CONFLICT` without writes,
+  even when unloaded. Running foreign custody fails `E_RESIDENT_CUSTODY_RUNNING`
+  first. Both errors name the discovered unit and the platform's retirement
+  steps: macOS `launchctl bootout gui/<uid>/<label>` and move the plist out of
+  `~/Library/LaunchAgents`; Linux `systemctl --user disable --now <label>.service`
+  and remove the unit file. The command never adopts or removes a foreign unit.
+  If no recognised unit is found, the running-custody error explicitly directs
+  the operator to find and stop any other supervisor, retaining `aw custody stop`
+  in R or stop whatever supervises it. Arbitrarily named services remain outside
+  discovery; different-root conflicts are unchanged.
+- **Custody units use the kernel-selected Node directory (#112).** The unit's
+  PATH uses the directory of absolute `OATS_NODE_BIN`, preserving its stable
+  link. Older kernels, or empty/relative values, retain the `process.execPath`
+  fallback. The provider does not duplicate the kernel's stable-node rule.
+- **Refresh existing units by rerunning `oats aweb resident create <name>`**
+  from the deployment, keeping any original `--root`. It verifies the same
+  resident without an API key, rewrites a changed unit and reloads it. An OATS
+  upgrade or seat restart alone does not rewrite it. The absolute selected `aw`
+  path remains a separate hazard when npm installs it inside a Node version:
+  install aw under the new version and rerun resident create before removing
+  the old version. See [the custody unit](docs/resident-create.md#the-custody-unit).
+
+
 ## 1.27.0 — 2026-10-11
 
 **Host order, before syncing to this release:** upgrade the OATS kernel to

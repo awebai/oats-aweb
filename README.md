@@ -5,6 +5,14 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.27.1 — custody unit conflicts and Node paths
+
+`resident create` refuses recognised same-root custody units under another
+label, naming the unit and platform retirement steps. Its unit PATH now uses
+the kernel's absolute `OATS_NODE_BIN`, with the previous node path as fallback
+on older kernels. Both floors are unchanged. Rerun `oats aweb resident create <name>` from the deployment to rewrite an existing unit; see
+[the custody unit and upgrade steps](docs/resident-create.md#the-custody-unit).
+
 ## 1.27.0 — OATS confirms Claude's development-channel prompt
 
 Requires OATS 0.52.0 or later: upgrade the kernel first, then `oats sync`.
@@ -880,9 +888,12 @@ verify, record) and `lib/custody-unit.mjs` (the launchd and systemd units);
 the shared `oats-local.yaml` writer is `lib/local-settings.mjs`. Its contract,
 envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md).
 
-- `node --test test/resident-create.test.mjs test/custody-unit.test.mjs
-  test/resident-docs.test.mjs test/resident-cloud-captures.test.mjs` runs the
-  unit tests. Their fake aw (`test/helpers/fake-aw-resident.mjs`) replays only
+- Run `node --test <file>` separately for `test/resident-create.test.mjs`,
+  `test/custody-unit.test.mjs`, `test/resident-custody-regressions.test.mjs`,
+  `test/resident-docs.test.mjs` and `test/resident-cloud-captures.test.mjs`
+  for the unit tests. The custody regressions exercise both platforms, including
+  foreign-unit refusal without writes and rewriting an existing unit after
+  the kernel-selected node path changes. Their fake aw (`test/helpers/fake-aw-resident.mjs`) replays only
   real captures from `test/fixtures/resident`, and fake launchctl, systemctl and
   loginctl record their calls under a temporary HOME. The prompt tests drive a
   real pseudo-terminal through `python3`. `test/resident-docs.test.mjs` fails

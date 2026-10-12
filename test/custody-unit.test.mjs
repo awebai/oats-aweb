@@ -192,14 +192,14 @@ test("systemctl and loginctl reach the user's manager through its bus variables;
     assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["DBUS_SESSION_BUS_ADDRESS", "HOME", "PATH", "XDG_RUNTIME_DIR"], `${call.cmd} ${call.argv.join(" ")}`);
   }
   const unit = readFileSync(unitPath({ platform: "linux", home }, LABEL), "utf8");
-  assert.match(unit, new RegExp(`^Environment="PATH=${unitSearchPath("/bin/aw")}" "HOME=${home}"$`, "m"));
+  assert.match(unit, new RegExp(`^Environment="PATH=${unitSearchPath("/bin/aw", env)}" "HOME=${home}"$`, "m"));
   assert.doesNotMatch(unit, /XDG_RUNTIME_DIR|DBUS|never-passed/);
 });
 
 test("the unit's PATH is aw's and node's directories and the system's, whatever PATH the command ran with", (t) => {
   const dir = base(t);
   mkdirSync(join(dir, "real")); writeFileSync(join(dir, "real", "aw"), ""); symlinkSync(join(dir, "real", "aw"), join(dir, "aw"));
-  assert.equal(unitSearchPath(join(dir, "aw")), [dir, join(dir, "real"), dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter((d, i, all) => all.indexOf(d) === i).join(":"));
+  assert.equal(unitSearchPath(join(dir, "aw"), {}), [dir, join(dir, "real"), dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter((d, i, all) => all.indexOf(d) === i).join(":"));
 });
 
 test("a rerun from another PATH, or through a symlink to R, leaves a running unit alone", (t) => {
@@ -296,4 +296,19 @@ test("waitForCustody: ready, ops missing, unreadable: three different answers", 
     { code: "E_RESIDENT_CUSTODY", message: "custody preflight failed for carol: status=running; required custody operations are missing: mail_reply_continuation.v1, grant_never_ttl.v1; restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then oats sync)" });
   await assert.rejects(waitForCustody({ status: answers.unreadable, resident: "carol", team, timeoutMs: 100, intervalMs: 10 }),
     { code: "E_RESIDENT_CUSTODY", message: /^custody preflight failed for carol: custody status could not be read: aw custody status returned no JSON result/ });
+});
+
+test("the unit PATH keeps the kernel's absolute node link; missing, empty and relative values fall back", (t) => {
+  const dir = base(t);
+  const keg = join(dir, "Cellar", "node", "1", "bin");
+  const opt = join(dir, "opt", "node", "bin");
+  mkdirSync(keg, { recursive: true }); mkdirSync(opt, { recursive: true });
+  writeFileSync(join(keg, "node"), ""); symlinkSync(join(keg, "node"), join(opt, "node"));
+  const aw = join(dir, "aw");
+  const expected = (nodeDir) => [...new Set([dir, nodeDir, "/usr/local/bin", "/usr/bin", "/bin"])].join(":");
+  assert.equal(unitSearchPath(aw, { OATS_NODE_BIN: join(opt, "node") }), expected(opt));
+  for (const given of [undefined, "", "node", "relative/bin/node", 42]) {
+    assert.equal(unitSearchPath(aw, { OATS_NODE_BIN: given }), expected(dirname(process.execPath)));
+  }
+  assert.equal(unitSearchPath(aw, { OATS_NODE_BIN: join(dir, "node") }), expected(dir), "deduplicates directories");
 });
