@@ -691,7 +691,7 @@ test("our unit loaded but restarting beside another custody is refused, not take
   const r = s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.equal(r.doc.error.code, "E_RESIDENT_CUSTODY_RUNNING");
-  assert.match(r.doc.error.message, /its process is not running/);
+  assert.equal(r.doc.error.message, `custody for ${NAME} is already running in ${s.root}, and this command's unit ${LABEL} is not what serves it (its process is not running): no other recognised unit was found; find and stop any supervisor outside the recognised units: run \`aw custody stop\` in ${s.root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`);
   assert.equal(readFileSync(s.unitPath, "utf8"), before);
 });
 

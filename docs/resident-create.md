@@ -187,9 +187,10 @@ where `<namespace>` is the address's (`juan.aweb.ai` for
 A custody that already serves R, started by hand or by another supervisor, is
 refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): aw refuses a second
 server on a socket that answers, so a unit started beside it would restart in
-a loop while the other custody answered. When a recognised unit for R is
+a loop while the other custody answered. When another recognised unit for R is
 found, the error names its label and file and gives the retirement steps below.
-Otherwise it explicitly says no recognised unit was found: find and stop any
+Otherwise it explicitly says no recognised unit was found (or no other unit,
+when this command's own unit exists but is not the server): find and stop any
 supervisor outside the recognised units (`aw custody stop` in R, or stop
 whatever supervises it), then rerun. This command's own unit counts as
 what serves R only when its process is running (launchd's `state = running`

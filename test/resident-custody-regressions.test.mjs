@@ -107,6 +107,28 @@ for (const platform of ["darwin", "linux"]) {
     });
     assert.deepEqual([snapshot(s.home), snapshot(s.deployment)], before);
   });
+  for (const stage of ["preflight", "custody"]) {
+    test(`${platform}: ${stage} keeps our non-serving unit out of the supervisor remedy`, async (t) => {
+      const s = setup(t, { custody: stage === "preflight" ? "crashloop" : "takeover" });
+      complete(s);
+      const path = unitPath({ platform, home: s.home }, LABEL);
+      if (stage === "preflight") {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, renderUnit({ platform, label: LABEL, aw: "/fixture/bin/aw", root: s.root, path: "/fixture/bin", home: s.home, address: CAPTURED.address }));
+        writeFileSync(join(s.base, "unit-loaded"), "");
+      }
+      const before = stage === "preflight" ? [snapshot(s.home), snapshot(s.deployment)] : undefined;
+      await assert.rejects(create(s, platform), (e) => {
+        assert.equal(e.code, "E_RESIDENT_CUSTODY_RUNNING"); assert.equal(e.stage, stage);
+        assert.equal(e.message, `custody for ${NAME} is already running in ${s.root}, and this command's unit ${LABEL} is not what serves it (its process is not running): no other recognised unit was found; find and stop any supervisor outside the recognised units: run \`aw custody stop\` in ${s.root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`);
+        assert.doesNotMatch(e.message, /bootout|disable --now|move .*LaunchAgents|remove the unit/);
+        return true;
+      });
+      assert.ok(existsSync(path), "our unit remains in place");
+      assert.equal(initCalls(s.fake).length, 0);
+      if (before) assert.deepEqual([snapshot(s.home), snapshot(s.deployment)], before);
+    });
+  }
   test(`${platform}: resident create rewrites the existing unit with the kernel-selected node directory`, async (t) => {
     const s = setup(t);
     const oldBin = join(s.base, "Cellar", "node", "old", "bin");

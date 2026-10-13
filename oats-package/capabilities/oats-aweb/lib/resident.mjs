@@ -344,10 +344,12 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       const own = await ownUnitServes({ platform, label, root, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME, uid: process.getuid(), env, socketPath: String(status?.socket_path || "") });
       if (own.serves) return undefined;
       const units = residentUnits(where, name).filter((u) => u.root && samePath(u.root, root));
-      const supervisor = units.find((u) => u.label !== label) || units[0];
+      // Our unit just failed ownership verification; retiring it cannot stop
+      // the custody that is actually answering. Only name another unit.
+      const supervisor = units.find((u) => u.label !== label);
       const step = supervisor
         ? `recognised custody unit ${supervisor.label} (${supervisor.path}) is configured for this root: ${retireUnitStep(supervisor, where)}, then rerun; a unit started beside it would restart in a loop against it`
-        : `no recognised unit was found; find and stop any supervisor outside the recognised units: run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
+        : `no ${units.length ? "other " : ""}recognised unit was found; find and stop any supervisor outside the recognised units: run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
       return own.why === "no unit of this command serves it"
         ? `custody for ${name} is already running in ${root}, and not from this command's unit ${label}: ${step}`
         : `custody for ${name} is already running in ${root}, and this command's unit ${label} is not what serves it (${own.why}): ${step}`;
