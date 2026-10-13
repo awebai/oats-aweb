@@ -323,9 +323,8 @@ keeps the identity and reports the failure. Do not manually delete its receipts.
 
 ## 6. Etiquette
 
-- **Message when it moves work:** a handoff, a blocking question, a review
-  request, a result someone waits for. Don't send FYIs nobody asked for, "on it"
-  acks for mail, or progress chatter; batch updates into one mail.
+- **Whether to send, to whom, what goes in and how long it is:**
+  `/oats-token-saving` (`oats.core`). This section is how to send it.
 - **Threads:** reply to the message you are answering; one topic per thread;
   a clear subject that says what you need ("Review: PR 42 auth fix").
 - **Humans:** be brief and decision-shaped: what you need, options, your
