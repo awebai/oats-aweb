@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.27.2 — 2026-10-14
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33. Instruction text
+only.
+
+- **`/oats-aweb` etiquette points to `/oats-token-saving`** for whether to
+  send, to whom, what goes in and how long
+  ([oats#1103](https://github.com/awebai/oats/issues/1103), #114). The
+  section keeps how to send. `/oats-token-saving` ships in `oats.core` 2.6.0
+  (OATS 0.54.0); on an older kernel the pointer names a skill the instance
+  does not have, and the rule above it still stands. New spawns pick it up
+  after `oats sync`; running instances keep what they were spawned with.
+
 ## 1.27.1 — 2026-10-12
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.

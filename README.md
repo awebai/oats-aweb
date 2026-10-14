@@ -5,6 +5,12 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.27.2 — etiquette points to `/oats-token-saving`
+
+Instruction text only. The `/oats-aweb` skill's etiquette defers whether to
+send, to whom and how long to `/oats-token-saving` (`oats.core` 2.6.0, OATS
+0.54.0) and keeps how to send. Both floors are unchanged.
+
 ## 1.27.1 — custody unit conflicts and Node paths
 
 `resident create` refuses recognised same-root custody units under another
