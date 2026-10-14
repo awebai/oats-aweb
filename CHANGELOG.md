@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.27.3 — 2026-10-14
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33. No new aw upgrade
+or service restart is required for this fix. Keep the existing upgrade order:
+meet the kernel/aw floors (restart custody services and the wake daemon after
+an aw upgrade), then update the provider pin and `oats sync`.
+
+- **Broker readiness no longer mistakes query-time timestamps for the future
+  (#116).** Judge `aw wake status` timestamps against a clock read after the
+  status call, not readiness's phase-start clock. This removes the false
+  `wake-status-stale` problem and consequent `unavailable` verdict for Codex,
+  `delivery: session`, and joined-team broker routes. No skew allowance is
+  added: malformed or genuinely future timestamps still fail; inspection
+  ordering and observation-age warnings remain intact.
+- **Existing homes keep their captured provider bytes.** Updating the pin and
+  syncing supplies the fix to new compositions; it does not rewrite running
+  homes or establish successful message delivery.
+
 ## 1.27.2 — 2026-10-14
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33. Instruction text

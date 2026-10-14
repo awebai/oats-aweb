@@ -595,6 +595,51 @@ function transportStatus(fx, runtime = "codex") {
   }] };
 }
 
+// #116: aw 1.36.35 stamps updated_at while answering `wake status`, after
+// readiness has already started. Control both clocks without sleeps; this
+// subprocess wrapper advances the parent clock only once the status read ends.
+for (const route of [
+  {delivery: 'channel', runtime: 'codex'},
+  {delivery: 'session', runtime: 'claude'},
+  {delivery: 'channel', runtime: 'pi', settings: {join: 'alpha'}},
+]) test(`readiness judges broker timestamps after the status read: ${route.delivery}/${route.runtime}`, t => {
+  const fx = fixture(t, route);
+  fx.record(fx.spawn().meta, route.runtime);
+  const start = Date.parse('2026-10-14T12:00:00Z'), end = start + 10;
+  const clock = join(fx.ws, 'readiness-clock.cjs');
+  writeFileSync(clock, `
+const cp = require('node:child_process');
+const original = cp.execFileSync;
+Date.now = () => ${start};
+cp.execFileSync = function (file, args, options) {
+  const result = original(file, args, options);
+  if (file === 'aw' && JSON.stringify(args) === '["wake","status","--json"]') Date.now = () => ${end};
+  return result;
+};
+require('node:module').syncBuiltinESMExports();
+`);
+  const status = transportStatus(fx, route.runtime === 'pi' ? 'pi' : 'codex');
+  if (route.runtime === 'pi') status.instances[0].runtime_delivery = 'native-pi';
+  const assess = (updated, inspected = start + 5) => {
+    status.updated_at = new Date(updated).toISOString();
+    status.instances[0].last_inspect_at = new Date(inspected).toISOString();
+    fx.fake.setStatus(status);
+    return fx.readiness({extra: {NODE_OPTIONS: `--require=${clock}`}});
+  };
+  for (const updated of [start + 5, end]) {
+    const result = assess(updated);
+    assert.equal(result.status, 'ready', JSON.stringify(result));
+    assert.deepEqual(result.problems, []);
+    assert.equal(result.warnings.some(w => w.code === 'joined-team-poll-only'), false);
+  }
+  const future = assess(end + 1);
+  assert.equal(future.status, 'unavailable');
+  assert.ok(future.problems.some(p => p.code === 'wake-status-stale'), 'no future skew allowance');
+  const inspectionAfterSnapshot = assess(start + 5, start + 6);
+  assert.equal(inspectionAfterSnapshot.status, 'unavailable');
+  assert.ok(inspectionAfterSnapshot.problems.some(p => p.code === 'receive-inspection-unproven'));
+});
+
 function snapshot(dir) {
   return readdirSync(dir, {withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).map(e => [e.name, e.isDirectory() ? snapshot(join(dir,e.name)) : readFileSync(join(dir,e.name)).toString('base64')]);
 }
