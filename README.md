@@ -5,6 +5,14 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.27.3 — broker readiness uses a post-status clock
+
+Fixes false `wake-status-stale` / `unavailable` on broker-required homes
+(Codex, `delivery: session`, and native-channel homes with joined teams).
+Broker timestamps are judged after the status read, with no skew allowance;
+invalid and genuinely future timestamps still fail. Both floors are unchanged:
+OATS >=0.52.0 and aw >=1.36.33. See [the changelog](CHANGELOG.md#1273--2026-10-14).
+
 ## 1.27.2 — etiquette points to `/oats-token-saving`
 
 Instruction text only. The `/oats-aweb` skill's etiquette defers whether to
