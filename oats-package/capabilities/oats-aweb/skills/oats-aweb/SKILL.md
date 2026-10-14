@@ -323,8 +323,9 @@ keeps the identity and reports the failure. Do not manually delete its receipts.
 
 ## 6. Etiquette
 
-- **Whether to send, to whom, what goes in and how long it is:**
-  `/oats-token-saving` (`oats.core`). This section is how to send it.
+- **Message only when it moves work:** no FYIs, acks or progress reports. Whether to
+  send, to whom, what goes in and how long: `/oats-token-saving` (`oats.core` 2.6.0
+  and later). This section is how to send it.
 - **Threads:** reply to the message you are answering; one topic per thread;
   a clear subject that says what you need ("Review: PR 42 auth fix").
 - **Humans:** be brief and decision-shaped: what you need, options, your
