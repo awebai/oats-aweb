@@ -146,7 +146,7 @@ settings:
   schedule job, and reports:
   - the timer;
   - the homes that publish;
-  - the homes that do not publish yet, with the reason: no agent DID recorded,
+  - the homes that do not publish yet, with the reason: aw gave no agent id,
     or not designated;
   - the last result for each agent.
 
@@ -155,16 +155,10 @@ instance record, never guessed", but today nothing records one. On the local
 path `capabilityMeta` has no DID; resident seats record an address but no
 `did:aw`; `resident create` returns `stableId` and drops it.
 
-When `health.publish` is on:
-
-- The spawn and launch hooks add `identity.did` to meta:
-  - the `did:key` for local and joined identities, from `aw whoami --json` in
-    the identity home;
-  - the resident's `did:aw` for global identities.
-- `resident create` records the stable id beside the resident's root in the
-  `residents` setting.
-- A home without a recorded DID is not published, and `health status` lists
-  it.
+D7 settles this: nothing is recorded in meta or in the `residents` setting,
+and the hooks are unchanged. Each tick reads the id from aw itself and caches
+it (§5, D7). A home whose id aw does not give is not published, and the tick
+lists it as skipped.
 
 **Clock and sequence.**
 
@@ -248,6 +242,19 @@ part (up to 30 s per check). The publisher runs at most 4 homes at once, with a
   deployment. Above about 1 s per home: liveness (session inspect, events) every
   tick, readiness cached per home for at most 5 minutes and refreshed early when
   liveness changes. The measurement and the choice are recorded here.
+  - **Measured 2026-10-15** on a scratch deployment of 4 launched homes (kernel
+    0.58.0, macOS, load about 4; median CPU s, user + sys, of 5 runs):
+    `oats status` 0.20 once per tick; per home `session inspect` 0.16,
+    `instance events` 0.15, `readiness --home` 0.20. A live home skips
+    `instance events` (its last event only tells a stop from a crash), so a
+    tick costs about 0.2 + 0.36 s per live home.
+  - **Choice: no readiness cache.** That is below 1 s per home. A tick over 30
+    live homes still costs about 11 s of CPU a minute, so a deployment that size
+    is where to measure again.
+  - **Not measured:** the provider's own readiness work on a real oats.aweb
+    home (`aw` wake status) and `aw doctor identity --offline` per identity.
+    Scratch homes carry no aweb identity, and real deployments were out of
+    bounds for this measurement.
 - **DID recording** when `health.publish` is on: additive meta, never guessed;
   homes without it are listed and not published.
 - **D7 (supersedes the hook rows of §1 and D4's immediate publish): the tick
@@ -255,8 +262,10 @@ part (up to 30 s per check). The publisher runs at most 4 homes at once, with a
   settings recorded at spawn, so a home spawned before `health enable` could
   never designate at launch. Each tick, per home:
   - identity.mode comes from the recorded meta;
-  - the agent id is aw's own answer, `aw whoami --json`: `did` in the local
-    identity home, `stable_id` in the resident's custody root;
+  - the agent id is aw's own answer, `aw doctor identity --offline --json`
+    (`aw whoami` asks the server, a request per identity per tick; the offline
+    doctor makes none): `did` in the local identity home, `stable_id` in the
+    resident's custody root;
   - the id is cached in `<home>/.oats-aweb/health.json` (provider state, a
     cache of aw's answer, not a record of ours);
   - designation runs `aw status-host set`: as the agent with its own identity
@@ -266,3 +275,17 @@ part (up to 30 s per check). The publisher runs at most 4 homes at once, with a
   - A newly started or restarted agent appears within a minute; `health
     status` and the docs say so. `resident create` and the `residents`
     setting do not change.
+
+## 6. Follow-ups, outside the first PR
+
+- **Live designation and publish against a server** waits for the released aw
+  1.36.38 (agreed with oats-expert-juan, 2026-10-15). Until then the send is
+  proven offline only: the publisher's argv through aw built from aweb
+  4636fb9f9, `--print-signed`, against the 7 valid vector documents.
+- **A real channel's receipt** (Claude channel 1.7.17, pi extension 0.3.15):
+  the receipt rows are tested on the file format the aw doc fixes; a test
+  against a real adapter's receipt waits for those releases.
+- **The cost of the provider's readiness and `aw doctor`** per home on a real
+  deployment (§5, Cost).
+- **Pin the floors to released versions** once the aw, channel and pi tags
+  exist.
