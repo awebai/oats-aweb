@@ -362,7 +362,8 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   server-managed settings or MDM that is a root-owned file a human admin writes
   once (`/etc/claude-code/managed-settings.json` on Linux,
   `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS).
-  The skill's section 4 has the host steps, verification and failure remedies.
+  The skill's section 4 summarises the host steps; the procedure, its checks and
+  failure remedies are oats.setup's `/oats-host-delivery` (oats.framework 1.11.0).
   Without that policy the channel does not register. Readiness reads the
   machine file read-only and warns one verdict: `claude-channel-policy-admitted`,
   `claude-channel-policy-not-admitted` (naming the missing key),

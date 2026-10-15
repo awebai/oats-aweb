@@ -157,7 +157,7 @@ There is no automatic fallback, flip-back or migration between modes.
 
 **The host procedure lives in oats.setup.** How an operator makes and checks
 a host's two delivery choices is the oats.setup skill `/oats-host-delivery`
-([source](https://github.com/awebai/oats/blob/main/oats-package/capabilities/oats-setup/skills/oats-host-delivery/SKILL.md)).
+(oats.framework 1.11.0 and later; [source](https://github.com/awebai/oats/blob/main/oats-package/capabilities/oats-setup/skills/oats-host-delivery/SKILL.md)).
 Its Choice 1 covers Claude channel delivery:
 - the approved route's managed-settings file, its precedence and its
   drop-ins;
@@ -183,17 +183,23 @@ recovery" below.
 Host steps, once per machine. `/oats-host-delivery`, Choice 1, holds each
 step's exact commands and checks:
 
-1. A human admin writes `channelsEnabled: true` and the aweb-channel entry in
-   `allowedChannelPlugins` into Claude's managed policy, as root. On Linux it
-   is `/etc/claude-code/managed-settings.json`; on macOS,
-   `/Library/Application Support/ClaudeCode/managed-settings.json`. The admin
-   merges into an existing file, or uses a `managed-settings.d/` drop-in. On
-   an account governed by server-managed settings or MDM, the organization
-   admin sets them there instead.
+1. A human admin writes these two keys into Claude's managed policy, as root.
+   On Linux it is `/etc/claude-code/managed-settings.json`; on macOS,
+   `/Library/Application Support/ClaudeCode/managed-settings.json`.
+   ```json
+   {"channelsEnabled": true, "allowedChannelPlugins": [{"plugin": "aweb-channel", "marketplace": "awebai-marketplace"}]}
+   ```
+   - The admin merges them into an existing file, or uses a
+     `managed-settings.d/` drop-in.
+   - Setting `allowedChannelPlugins` replaces Anthropic's default channel
+     allowlist on that host. List any of its plugins this host still uses.
+   - On an account governed by server-managed settings or MDM, the
+     organization admin sets the keys there instead.
 2. `oats-local.yaml`: `settings.oats.aweb.claudeChannelMode: approved`, with
    `delivery: channel` (the default).
 3. `aweb-channel@awebai-marketplace` installed and enabled in the Claude
-   config the launch uses (its `CLAUDE_CONFIG_DIR`).
+   config the launch uses: its `CLAUDE_CONFIG_DIR`, else the launching user's
+   default.
 4. Respawn existing homes: they keep their captured mode until respawned.
 
 With provider 1.24.0 (#88, #89), an approved spawn or launch reads the machine
@@ -358,7 +364,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | Code | Meaning | Who fixes it |
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
-| `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; operator: install or restart the host wake broker (`/oats-host-delivery`, Choice 2), then restart the home |
+| `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; operator: install or start the broker (`/oats-host-delivery`, Choice 2); if readiness then shows `wake-target-missing`, restart the home with the operator's word |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | operator: install or start its service, or upgrade aw and restart it (`/oats-host-delivery`, Choice 2) |
 | `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | operator: upgrade aw, then restart the broker's service (`/oats-host-delivery`, Choice 2) |
 | `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route or `settings.oats.aweb.delivery: session`, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
