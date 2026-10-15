@@ -131,10 +131,11 @@ WantedBy=default.target
 }
 
 /** The argv of a systemd unit's (last) ExecStart=: quoted or bare words, its
- *  exec prefixes dropped, %% and $$ unescaped. */
+ *  exec prefixes dropped, %% and $$ unescaped. A line ending in a backslash
+ *  continues on the next one (systemd.syntax(7)). */
 export function execStartArgv(text) {
   let line;
-  for (const m of String(text).matchAll(/^[ \t]*ExecStart[ \t]*=[ \t]*(.*)$/gm)) line = m[1];
+  for (const m of String(text).replace(/\\\r?\n/g, " ").matchAll(/^[ \t]*ExecStart[ \t]*=[ \t]*(.*)$/gm)) line = m[1];
   if (!line) return undefined;
   const prefix = /^[-@:+!]*/.exec(line)[0];
   line = line.slice(prefix.length);
@@ -157,15 +158,67 @@ export function execStartArgv(text) {
   return prefix.includes("@") ? [unescaped[0], ...unescaped.slice(2)] : unescaped;
 }
 
-/** The argv of a launchd plist (Program, else ProgramArguments[0], runs). */
-export function plistArgv(text) {
-  const array = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(String(text));
+/** A binary property list (bplist00, as launchd also reads) decoded to plain
+ *  values, or undefined when it is not one or is malformed. Dates, reals and
+ *  data decode to null: a launchd job's program, arguments and label are
+ *  strings. */
+export function decodeBinaryPlist(buf) {
+  try {
+    if (!Buffer.isBuffer(buf) || buf.length < 40 || buf.toString("latin1", 0, 8) !== "bplist00") return undefined;
+    const trailer = buf.length - 32;
+    const offsetSize = buf[trailer + 6], refSize = buf[trailer + 7];
+    const uint = (at, size) => { if (size < 1 || size > 8 || at < 0 || at + size > buf.length) throw new Error("bounds"); let n = 0; for (let i = 0; i < size; i++) n = n * 256 + buf[at + i]; if (!Number.isSafeInteger(n)) throw new Error("size"); return n; };
+    const count = uint(trailer + 8, 8), top = uint(trailer + 16, 8), table = uint(trailer + 24, 8);
+    if (count > 100000 || top >= count) return undefined;
+    const offsets = Array.from({ length: count }, (_, i) => uint(table + i * offsetSize, offsetSize));
+    const decode = (ref, depth) => {
+      if (depth > 32 || ref >= count) throw new Error("ref");
+      let at = offsets[ref];
+      const marker = uint(at++, 1), type = marker >> 4, info = marker & 0xf;
+      const length = () => { if (info !== 0xf) return info; const m = uint(at++, 1); if (m >> 4 !== 1) throw new Error("length"); const size = 1 << (m & 0xf); const n = uint(at, size); at += size; return n; };
+      if (type === 0x0) return info === 0x9 ? true : info === 0x8 ? false : null;
+      if (type === 0x1) return uint(at, Math.min(1 << info, 8));
+      if (type === 0x5) { const n = length(); if (at + n > buf.length) throw new Error("bounds"); return buf.toString("latin1", at, at + n); }
+      if (type === 0x6) { const n = length(); if (at + 2 * n > buf.length) throw new Error("bounds"); return Buffer.from(buf.subarray(at, at + 2 * n)).swap16().toString("utf16le"); }
+      if (type === 0xa) { const n = length(); return Array.from({ length: n }, (_, i) => decode(uint(at + i * refSize, refSize), depth + 1)); }
+      if (type === 0xd) {
+        const n = length(), out = {};
+        for (let i = 0; i < n; i++) {
+          const key = decode(uint(at + i * refSize, refSize), depth + 1);
+          if (typeof key !== "string") throw new Error("key");
+          out[key] = decode(uint(at + (n + i) * refSize, refSize), depth + 1);
+        }
+        return out;
+      }
+      return null; // real, date, data, uid, set: nothing a job's program is made of
+    };
+    return decode(top, 0);
+  } catch { return undefined; }
+}
+
+const stringArray = (v) => Array.isArray(v) && v.every((s) => typeof s === "string") ? v : [];
+/** The argv of a launchd job (Program, else ProgramArguments[0], runs) from
+ *  its plist, XML text or binary. */
+export function plistArgv(content) {
+  if (Buffer.isBuffer(content) && content.toString("latin1", 0, 8) === "bplist00") {
+    const doc = decodeBinaryPlist(content);
+    if (!object(doc)) return undefined;
+    const args = stringArray(doc.ProgramArguments);
+    if (typeof doc.Program === "string") return [doc.Program, ...args.slice(1)];
+    return args.length ? args : undefined;
+  }
+  const text = String(content);
+  const array = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(text);
   const args = array ? [...array[1].matchAll(/<string>([^<]*)<\/string>/g)].map((m) => unXml(m[1])) : [];
-  const program = /<key>Program<\/key>\s*<string>([^<]*)<\/string>/.exec(String(text));
+  const program = /<key>Program<\/key>\s*<string>([^<]*)<\/string>/.exec(text);
   if (program) return [unXml(program[1]), ...args.slice(1)];
   return args.length ? args : undefined;
 }
-const plistLabel = (text) => { const m = /<key>Label<\/key>\s*<string>([^<]*)<\/string>/.exec(String(text)); return m ? unXml(m[1]) : undefined; };
+const plistLabel = (content) => {
+  if (Buffer.isBuffer(content) && content.toString("latin1", 0, 8) === "bplist00") { const doc = decodeBinaryPlist(content); return object(doc) && typeof doc.Label === "string" ? doc.Label : undefined; }
+  const m = /<key>Label<\/key>\s*<string>([^<]*)<\/string>/.exec(String(content));
+  return m ? unXml(m[1]) : undefined;
+};
 
 /** Whether argv runs the wake broker: an `aw` binary (by name or by its link's
  *  target) with `wake run`, whatever flags follow. */
@@ -187,12 +240,12 @@ export function wakeUnits(where) {
   const foreign = [];
   for (const f of entries) {
     const path = join(dir, f);
-    let text;
-    try { if (!statSync(path).isFile()) continue; text = readFileSync(path, "utf8"); } catch { text = undefined; }
-    const argv = text === undefined ? undefined : where.platform === "darwin" ? plistArgv(text) : execStartArgv(text);
-    const label = (where.platform === "darwin" && text !== undefined && plistLabel(text)) || f.slice(0, -suffix.length);
+    let bytes, text;
+    try { if (!statSync(path).isFile()) continue; bytes = readFileSync(path); text = bytes.toString("utf8"); } catch { bytes = undefined; }
+    const argv = bytes === undefined ? undefined : where.platform === "darwin" ? plistArgv(bytes) : execStartArgv(text);
+    const label = (where.platform === "darwin" && bytes !== undefined && plistLabel(bytes)) || f.slice(0, -suffix.length);
     const unit = { label, path, aw: Array.isArray(argv) ? argv[0] : undefined };
-    if (path === ourPath && text !== undefined && text.includes(WAKE_MARKER)) ours = { ...unit, text };
+    if (path === ourPath && bytes !== undefined && text.includes(WAKE_MARKER)) ours = { ...unit, text };
     else if (path === ourPath || runsWakeBroker(argv)) foreign.push(unit);
   }
   return { ours, foreign };

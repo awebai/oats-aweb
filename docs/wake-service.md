@@ -81,7 +81,10 @@ broker is foreign: a systemd unit whose `ExecStart=`, or a plist whose
 `Program`/`ProgramArguments`, is an `aw` binary (by name, or by its link
 target) followed by `wake run`. A file at our path without the marker is also
 foreign. `install` and `uninstall` never change, adopt or remove a foreign
-unit. Binary plists and units outside the user unit directory are not read.
+unit. `ExecStart=` is read as a logical line (a trailing backslash continues
+it), and plists are read in both forms launchd accepts: XML, and binary
+(`bplist00`, decoded by the command itself on every platform). Units outside
+the user unit directory, and systemd drop-ins, are not read.
 
 ## `install`
 

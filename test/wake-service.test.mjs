@@ -10,7 +10,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathS
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { execStartArgv, plistArgv, renderWakeUnit, runsWakeBroker, WAKE_FALLBACK_PATH, WAKE_LABEL, WAKE_MARKER, wakeMain, wakeUnitPath } from "../oats-package/capabilities/oats-aweb/lib/wake-service.mjs";
+import { decodeBinaryPlist, execStartArgv, plistArgv, renderWakeUnit, runsWakeBroker, WAKE_FALLBACK_PATH, WAKE_LABEL, WAKE_MARKER, wakeMain, wakeUnitPath } from "../oats-package/capabilities/oats-aweb/lib/wake-service.mjs";
 import { AW_MIN } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 import { fakeWakeHost } from "./helpers/fake-wake-host.mjs";
 
@@ -215,6 +215,46 @@ test("install refuses a foreign unit that runs aw wake run, and a file at our pa
     assert.equal(readFileSync(unitFile(host2, platform), "utf8"), "hand written\n");
     assert.deepEqual(host2.changes(), []);
   }
+});
+
+const FIXTURES = fileURLToPath(new URL("./fixtures/wake/", import.meta.url));
+const fixtureBytes = (name) => readFileSync(join(FIXTURES, name));
+
+test("binary plists (bplist00, written by Python's plistlib) decode; anything else is undefined", () => {
+  assert.deepEqual(decodeBinaryPlist(fixtureBytes("foreign-binary.plist")), { EnvironmentVariables: { NOTE: "caf\u00e9 \u2615", PATH: "/usr/local/bin:/usr/bin" }, KeepAlive: true, Label: "com.me.wake", ProgramArguments: ["/usr/local/bin/aw", "wake", "run"], RunAtLoad: true, ThrottleInterval: 10 });
+  assert.deepEqual(plistArgv(fixtureBytes("foreign-binary.plist")), ["/usr/local/bin/aw", "wake", "run"]);
+  assert.deepEqual(plistArgv(fixtureBytes("program-binary.plist")), ["/opt/homebrew/bin/aw", "wake", "run", "--max-streams", "8"]);
+  assert.deepEqual(plistArgv(fixtureBytes("custody-binary.plist")), ["/usr/local/bin/aw", "custody", "serve"]);
+  const good = fixtureBytes("foreign-binary.plist");
+  for (const bad of [Buffer.from("bplist00"), good.subarray(0, good.length - 5), Buffer.concat([good.subarray(0, good.length - 8), Buffer.alloc(8, 0xff)]), Buffer.from("<plist/>")]) assert.equal(decodeBinaryPlist(bad), undefined);
+  assert.equal(plistArgv(good.subarray(0, 20)), undefined);
+});
+
+test("install refuses a stopped foreign unit in every representation: a continued ExecStart=, a binary plist (ProgramArguments or Program)", async (t) => {
+  const cases = [
+    ["linux", "old-wake.service", (host) => `[Service]\nExecStart=${host.bin}/aw \\\n  wake run\nRestart=always\n`, "systemctl --user disable --now old-wake.service"],
+    ["darwin", "old-wake.plist", () => fixtureBytes("foreign-binary.plist"), "launchctl bootout gui/501/com.me.wake"],
+    ["darwin", "old-wake2.plist", () => fixtureBytes("program-binary.plist"), "launchctl bootout gui/501/com.me.wake2"],
+  ];
+  for (const [platform, file, content, retire] of cases) {
+    const host = fakeWakeHost(t);
+    const dir = dirname(unitFile(host, platform));
+    mkdirSync(dir, { recursive: true });
+    const foreign = join(dir, file), bytes = content(host);
+    writeFileSync(foreign, bytes);
+    const r = await wake(host, platform, ["install", "--json"]);
+    assert.equal(r.code, 1, `${file}: ${r.stdout}`);
+    assert.equal(r.json.error.code, "E_WAKE_UNIT_CONFLICT", file);
+    assert.ok(r.json.error.message.includes(foreign) && r.json.error.message.includes(retire), r.json.error.message);
+    assert.equal(existsSync(unitFile(host, platform)), false, `${file}: nothing written`);
+    assert.deepEqual(host.changes(), [], `${file}: no manager change`);
+    assert.deepEqual(readFileSync(foreign), Buffer.from(bytes), `${file}: untouched`);
+  }
+  // A binary plist that serves something else is not a wake unit.
+  const host = fakeWakeHost(t);
+  mkdirSync(dirname(unitFile(host, "darwin")), { recursive: true });
+  writeFileSync(join(dirname(unitFile(host, "darwin")), "ai.aweb.custody.x.y.plist"), fixtureBytes("custody-binary.plist"));
+  assert.equal((await wake(host, "darwin", ["install", "--json"])).code, 0);
 });
 
 test("install refuses a daemon running outside any recognised unit, naming its pid", async (t) => {
