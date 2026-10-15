@@ -256,9 +256,9 @@ effect when the daemon starts. Readiness reads the daemon's own status
 with `wake-daemon-not-running`, and each joined team adds
 `joined-team-poll-only`.
 
-The provider does not install the broker or restart it. The operator runs it
-as a per-user service, with `AW_WAKE_OATS_BIN` and a `PATH` that reaches
-`oats`, `node` and `tmux`, and restarts it after every aw upgrade:
+The operator installs it as a per-user service with `oats aweb wake install`,
+run in their own shell (provider 1.28.0; section 8, "Host wake broker
+service"), and reruns it after every aw upgrade to restart it:
 `/oats-host-delivery`, Choice 2.
 
 **When woken:**
