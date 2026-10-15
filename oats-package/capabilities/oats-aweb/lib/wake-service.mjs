@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { homedir, userInfo } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { AW_MIN, awFloorMessage, onPath, readAwVersion } from "./binding-wire.mjs";
-import { lingerEnabled, manage, managed, retireUnitStep, runningPid, samePath, searchPath, systemdQuoted, unitDir, unitManager, unitNode, unXml, xml } from "./custody-unit.mjs";
+import { lingerEnabled, manage, managed, runningPid, samePath, searchPath, systemdQuoted, unitDir, unitManager, unitNode, unXml, xml } from "./custody-unit.mjs";
 import { kernelQueryEnvironment } from "./session-readiness.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
 import { expectedReceive, statusListsHome } from "./wake-receive.mjs";
@@ -130,12 +130,27 @@ WantedBy=default.target
   return fail("E_WAKE_UNSUPPORTED", `no wake unit for platform ${platform}`);
 }
 
+/** A unit file's logical lines, as systemd.syntax(7) assembles them: a line
+ *  ending in a backslash continues on the next line that is not a comment
+ *  (`#` or `;`), the backslash read as a space. */
+export function logicalLines(text) {
+  const lines = [];
+  let open = null;
+  for (const raw of String(text).split(/\r?\n/)) {
+    if (/^[ \t]*[#;]/.test(raw)) { if (open === null) lines.push(raw); continue; }
+    const continues = raw.endsWith("\\");
+    open = (open ?? "") + (continues ? `${raw.slice(0, -1)} ` : raw);
+    if (!continues) { lines.push(open); open = null; }
+  }
+  if (open !== null) lines.push(open);
+  return lines;
+}
+
 /** The argv of a systemd unit's (last) ExecStart=: quoted or bare words, its
- *  exec prefixes dropped, %% and $$ unescaped. A line ending in a backslash
- *  continues on the next one (systemd.syntax(7)). */
+ *  exec prefixes dropped, %% and $$ unescaped. */
 export function execStartArgv(text) {
   let line;
-  for (const m of String(text).replace(/\\\r?\n/g, " ").matchAll(/^[ \t]*ExecStart[ \t]*=[ \t]*(.*)$/gm)) line = m[1];
+  for (const logical of logicalLines(text)) { const m = /^[ \t]*ExecStart[ \t]*=[ \t]*(.*)$/.exec(logical); if (m) line = m[1]; }
   if (!line) return undefined;
   const prefix = /^[-@:+!]*/.exec(line)[0];
   line = line.slice(prefix.length);
@@ -159,9 +174,10 @@ export function execStartArgv(text) {
 }
 
 /** A binary property list (bplist00, as launchd also reads) decoded to plain
- *  values, or undefined when it is not one or is malformed. Dates, reals and
- *  data decode to null: a launchd job's program, arguments and label are
- *  strings. */
+ *  values, or undefined when its structure is malformed. Integers decode as
+ *  numbers (an 8-byte one is signed); reals, dates, data and anything else
+ *  decode to null, never failing the whole list: a launchd job's program,
+ *  arguments and label are strings. */
 export function decodeBinaryPlist(buf) {
   try {
     if (!Buffer.isBuffer(buf) || buf.length < 40 || buf.toString("latin1", 0, 8) !== "bplist00") return undefined;
@@ -177,7 +193,11 @@ export function decodeBinaryPlist(buf) {
       const marker = uint(at++, 1), type = marker >> 4, info = marker & 0xf;
       const length = () => { if (info !== 0xf) return info; const m = uint(at++, 1); if (m >> 4 !== 1) throw new Error("length"); const size = 1 << (m & 0xf); const n = uint(at, size); at += size; return n; };
       if (type === 0x0) return info === 0x9 ? true : info === 0x8 ? false : null;
-      if (type === 0x1) return uint(at, Math.min(1 << info, 8));
+      if (type === 0x1) {
+        if (info <= 2) return uint(at, 1 << info);
+        if (info === 3 && at + 8 <= buf.length) return Number(buf.readBigInt64BE(at));
+        return null; // a 16-byte integer
+      }
       if (type === 0x5) { const n = length(); if (at + n > buf.length) throw new Error("bounds"); return buf.toString("latin1", at, at + n); }
       if (type === 0x6) { const n = length(); if (at + 2 * n > buf.length) throw new Error("bounds"); return Buffer.from(buf.subarray(at, at + 2 * n)).swap16().toString("utf16le"); }
       if (type === 0xa) { const n = length(); return Array.from({ length: n }, (_, i) => decode(uint(at + i * refSize, refSize), depth + 1)); }
@@ -251,9 +271,18 @@ export function wakeUnits(where) {
   return { ours, foreign };
 }
 
+/** How the operator retires a foreign wake unit: the migration steps
+ *  oats.setup's host-delivery procedure cites (awebai/oats#1232). */
+export function retireWakeStep(unit, { platform, uid }) {
+  const quote = (s) => /^[A-Za-z0-9/_.@:-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+  return platform === "darwin"
+    ? `run \`launchctl bootout ${quote(`gui/${uid}/${unit.label}`)}\`, remove ${unit.path}`
+    : `run \`systemctl --user disable --now ${quote(`${unit.label}.service`)}\`, remove ${unit.path}`;
+}
+
 export function foreignWakeMessage(units, where, verb) {
-  return units.map((u) => `${u.path === wakeUnitPath(where) ? "a wake unit not written by oats aweb wake install" : "another wake broker unit"} is at ${u.path}; to retire it, ${retireUnitStep(u, where)}`).join("; ")
-    + `; then rerun; ${verb} never takes over, changes or removes another unit`;
+  return units.map((u) => `${u.path === wakeUnitPath(where) ? "a wake unit not written by oats aweb wake install" : "another wake broker unit"} is at ${u.path}; to retire it, ${retireWakeStep(u, where)}`).join("; ")
+    + `; then rerun oats aweb wake ${verb}; ${verb} never takes over, changes or removes another unit`;
 }
 
 /** `aw wake status --json` with aw's default state directory (the one the unit

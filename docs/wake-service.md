@@ -86,6 +86,18 @@ it), and plists are read in both forms launchd accepts: XML, and binary
 (`bplist00`, decoded by the command itself on every platform). Units outside
 the user unit directory, and systemd drop-ins, are not read.
 
+A hand-written unit at exactly `ai.aweb.wake.service` or
+`ai.aweb.wake.plist` has no marker, so it is foreign too. `E_WAKE_UNIT_CONFLICT`
+names each foreign unit with its migration steps, which oats.setup's
+`/oats-host-delivery` cites:
+
+- Linux: `systemctl --user disable --now <unit>.service`, remove the file,
+  then rerun `oats aweb wake install`;
+- macOS: `launchctl bootout gui/<uid>/<label>` (the plist's `Label`), remove
+  the file, then rerun `oats aweb wake install`.
+
+For example: ``another wake broker unit is at /home/me/.config/systemd/user/aw-wake.service; to retire it, run `systemctl --user disable --now aw-wake.service`, remove /home/me/.config/systemd/user/aw-wake.service; then rerun oats aweb wake install; install never takes over, changes or removes another unit``.
+
 ## `install`
 
 Every check runs before anything is written. `--plan` runs the same read-only

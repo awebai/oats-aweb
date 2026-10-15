@@ -10,7 +10,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathS
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { decodeBinaryPlist, execStartArgv, plistArgv, renderWakeUnit, runsWakeBroker, WAKE_FALLBACK_PATH, WAKE_LABEL, WAKE_MARKER, wakeMain, wakeUnitPath } from "../oats-package/capabilities/oats-aweb/lib/wake-service.mjs";
+import { decodeBinaryPlist, execStartArgv, logicalLines, plistArgv, renderWakeUnit, runsWakeBroker, WAKE_FALLBACK_PATH, WAKE_LABEL, WAKE_MARKER, wakeMain, wakeUnitPath } from "../oats-package/capabilities/oats-aweb/lib/wake-service.mjs";
 import { AW_MIN } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 import { fakeWakeHost } from "./helpers/fake-wake-host.mjs";
 
@@ -107,6 +107,9 @@ test("the recogniser: aw (by name or link target) with wake run, quoted or bare,
   assert.deepEqual(execStartArgv('ExecStart=-"/a b/aw" wake run --state-dir "/s t"'), ["/a b/aw", "wake", "run", "--state-dir", "/s t"]);
   assert.deepEqual(execStartArgv("ExecStart=@/usr/bin/aw aw-broker wake run"), ["/usr/bin/aw", "wake", "run"]);
   assert.equal(execStartArgv("[Service]\nType=simple\n"), undefined);
+  // systemd.syntax(7): a continuation skips comment lines and joins the next line.
+  assert.deepEqual(logicalLines("A=1 \\\n# note\n; note\n  2\n# alone\nB=3"), ["A=1    2", "# alone", "B=3"]);
+  assert.deepEqual(execStartArgv("ExecStart=/x/aw \\\n# keep below\n; and this\n  wake \\\n  run\n"), ["/x/aw", "wake", "run"]);
   assert.ok(runsWakeBroker(["/x/aw", "wake", "run", "--max-streams", "8"]));
   assert.ok(runsWakeBroker([join(host.base, "aweb-cli"), "wake", "run"]), "a link whose target is aw");
   for (const argv of [["/x/aw", "wake", "status"], ["/x/aw", "custody", "serve"], ["/x/awx", "wake", "run"], ["/x/aw"], undefined]) assert.equal(runsWakeBroker(argv), false, JSON.stringify(argv));
@@ -201,7 +204,8 @@ test("install refuses a foreign unit that runs aw wake run, and a file at our pa
     assert.equal(r.code, 1);
     assert.equal(r.json.error.code, "E_WAKE_UNIT_CONFLICT");
     assert.ok(r.json.error.message.includes(foreign), r.json.error.message);
-    assert.ok(r.json.error.message.includes(platform === "darwin" ? "launchctl bootout gui/501/com.me.wake" : "systemctl --user disable --now aw-wake.service"), r.json.error.message);
+    // The migration steps oats.setup's procedure cites (awebai/oats#1232).
+    assert.equal(r.json.error.message, `another wake broker unit is at ${foreign}; to retire it, run \`${platform === "darwin" ? "launchctl bootout gui/501/com.me.wake" : "systemctl --user disable --now aw-wake.service"}\`, remove ${foreign}; then rerun oats aweb wake install; install never takes over, changes or removes another unit`);
     assert.equal(readFileSync(foreign, "utf8"), before, "the foreign unit is untouched");
     assert.equal(existsSync(unitFile(host, platform)), false, "nothing written");
     assert.deepEqual(host.changes(), []);
@@ -211,7 +215,8 @@ test("install refuses a foreign unit that runs aw wake run, and a file at our pa
     writeFileSync(unitFile(host2, platform), "hand written\n");
     const r2 = await wake(host2, platform, ["install", "--json"]);
     assert.equal(r2.json.error.code, "E_WAKE_UNIT_CONFLICT");
-    assert.match(r2.json.error.message, /not written by oats aweb wake install/);
+    const own = unitFile(host2, platform);
+    assert.equal(r2.json.error.message, `a wake unit not written by oats aweb wake install is at ${own}; to retire it, run \`${platform === "darwin" ? "launchctl bootout gui/501/ai.aweb.wake" : "systemctl --user disable --now ai.aweb.wake.service"}\`, remove ${own}; then rerun oats aweb wake install; install never takes over, changes or removes another unit`);
     assert.equal(readFileSync(unitFile(host2, platform), "utf8"), "hand written\n");
     assert.deepEqual(host2.changes(), []);
   }
@@ -225,16 +230,21 @@ test("binary plists (bplist00, written by Python's plistlib) decode; anything el
   assert.deepEqual(plistArgv(fixtureBytes("foreign-binary.plist")), ["/usr/local/bin/aw", "wake", "run"]);
   assert.deepEqual(plistArgv(fixtureBytes("program-binary.plist")), ["/opt/homebrew/bin/aw", "wake", "run", "--max-streams", "8"]);
   assert.deepEqual(plistArgv(fixtureBytes("custody-binary.plist")), ["/usr/local/bin/aw", "custody", "serve"]);
+  // Every other scalar a job may hold decodes without losing the program: a
+  // signed 64-bit integer (Nice -1) included; reals, dates and data are null.
+  assert.deepEqual(decodeBinaryPlist(fixtureBytes("scalars-binary.plist")), { Big: -(2 ** 62), Blob: null, ExitTimeOut: 2 ** 40, Label: "com.me.wake3", Nice: -1, ProgramArguments: ["/usr/local/bin/aw", "wake", "run"], Ratio: null, Since: null, SoftResourceLimits: { NumberOfFiles: 1024 } });
   const good = fixtureBytes("foreign-binary.plist");
   for (const bad of [Buffer.from("bplist00"), good.subarray(0, good.length - 5), Buffer.concat([good.subarray(0, good.length - 8), Buffer.alloc(8, 0xff)]), Buffer.from("<plist/>")]) assert.equal(decodeBinaryPlist(bad), undefined);
   assert.equal(plistArgv(good.subarray(0, 20)), undefined);
 });
 
-test("install refuses a stopped foreign unit in every representation: a continued ExecStart=, a binary plist (ProgramArguments or Program)", async (t) => {
+test("install refuses a stopped foreign unit in every representation: a continued ExecStart= (across comment lines too), a binary plist (ProgramArguments or Program, with any scalars)", async (t) => {
   const cases = [
     ["linux", "old-wake.service", (host) => `[Service]\nExecStart=${host.bin}/aw \\\n  wake run\nRestart=always\n`, "systemctl --user disable --now old-wake.service"],
     ["darwin", "old-wake.plist", () => fixtureBytes("foreign-binary.plist"), "launchctl bootout gui/501/com.me.wake"],
     ["darwin", "old-wake2.plist", () => fixtureBytes("program-binary.plist"), "launchctl bootout gui/501/com.me.wake2"],
+    ["linux", "old-wake3.service", (host) => `[Service]\nExecStart=${host.bin}/aw \\\n# Keep the arguments below on their own line.\n; and this\n  wake run\nRestart=always\n`, "systemctl --user disable --now old-wake3.service"],
+    ["darwin", "old-wake3.plist", () => fixtureBytes("scalars-binary.plist"), "launchctl bootout gui/501/com.me.wake3"],
   ];
   for (const [platform, file, content, retire] of cases) {
     const host = fakeWakeHost(t);
