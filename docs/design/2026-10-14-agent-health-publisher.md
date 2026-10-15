@@ -243,3 +243,19 @@ part (up to 30 s per check). The publisher runs at most 4 homes at once, with a
   liveness changes. The measurement and the choice are recorded here.
 - **DID recording** when `health.publish` is on: additive meta, never guessed;
   homes without it are listed and not published.
+- **D7 (supersedes the hook rows of §1 and D4's immediate publish): the tick
+  does everything; hooks stay byte-identical.** A launch hook runs under the
+  settings recorded at spawn, so a home spawned before `health enable` could
+  never designate at launch. Each tick, per home:
+  - identity.mode comes from the recorded meta;
+  - the agent id is aw's own answer, `aw whoami --json`: `did` in the local
+    identity home, `stable_id` in the resident's custody root;
+  - the id is cached in `<home>/.oats-aweb/health.json` (provider state, a
+    cache of aw's answer, not a record of ours);
+  - designation runs `aw status-host set`: as the agent with its own identity
+    home, or as the resident in its custody root. It runs only when there is no
+    cached success for (agent id, host_did), when either changed, or after a
+    403 `not_status_host`. An id that differs from the cache drops the cache.
+  - A newly started or restarted agent appears within a minute; `health
+    status` and the docs say so. `resident create` and the `residents`
+    setting do not change.
