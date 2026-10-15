@@ -9,6 +9,7 @@
     "oats.session_unobservable": "Its server cannot see its session.",
     "oats.launch_prompt_waiting": "It is waiting at a startup prompt.",
     "oats.channel_not_loaded": "Its message channel did not load.",
+    "oats.channel_stream_down": "Its message channel is not connected.",
     "oats.readiness_unavailable": "Its server could not check it.",
     "oats.needs_configuration": "Its setup is incomplete.",
     "oats.authorization_required": "It needs authorization.",

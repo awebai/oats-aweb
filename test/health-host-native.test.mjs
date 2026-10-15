@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AW_STATUS_MIN, healthHost } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
@@ -109,5 +109,22 @@ test("the refusal log appends one JSON line per refusal under the deployment", {
     await host.log({ at: "2026-10-14T16:01:00Z", alias: "a", status: 429, code: "rate_limited", message: "m", retry_after: 5 });
     const lines = readFileSync(join(dir, ".oats-aweb", "health", "log.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.deepEqual(lines.map((l) => l.code), ["stale_seq", "rate_limited"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("receipt reads <identity dir>/receive/stream.json, null when absent or unreadable; pidAlive asks the process table", { skip: false }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "aweb-health-receipt-"));
+  try {
+    const host = healthHost({ deployment: dir, env: {} });
+    assert.equal(await host.receipt(dir), null);
+    mkdirSync(join(dir, "receive"));
+    const receipt = { v: 1, kind: "claude-channel", did: "did:key:z6MkX", pid: process.pid, opened_at: "2026-10-14T15:00:00Z", heartbeat_at: "2026-10-14T16:00:00Z" };
+    writeFileSync(join(dir, "receive", "stream.json"), JSON.stringify(receipt));
+    assert.deepEqual(await host.receipt(dir), receipt);
+    writeFileSync(join(dir, "receive", "stream.json"), "{half");
+    assert.equal(await host.receipt(dir), null);
+    assert.equal(host.pidAlive(process.pid), true);
+    const gone = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
+    assert.equal(host.pidAlive(Number(gone)), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

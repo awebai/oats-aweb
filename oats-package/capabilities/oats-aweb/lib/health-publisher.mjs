@@ -14,6 +14,8 @@ import {CONTROL_CHARACTER, checkDocument} from './status-document.mjs';
 export const VALIDITY_MS = 300 * 1000;
 const DEFAULT_BUDGET_MS = 45 * 1000;
 const DEFAULT_CONCURRENCY = 4;
+/** A channel refreshes its receipt at most every 30 s while it reads. */
+const RECEIPT_FRESH_MS = 90 * 1000;
 const OPERATOR_MAX_BYTES = 120;
 const HEALTH_KEYS = ['publish', 'language', 'operator'];
 
@@ -44,20 +46,37 @@ function identitiesOf(row, settings) {
   if (!meta) return {identities: []};
   if (meta.retained) return {skip: 'a retained seat is not published in v1'};
   const id = meta.identity ?? {};
+  // A Claude or pi home on channel delivery receives through its own channel,
+  // which leaves a receipt in the identity directory it runs as; everything
+  // else receives through the host wake broker and leaves none.
+  const native = (meta.delivery ?? 'channel') === 'channel' && ['claude', 'pi'].includes(meta.runtime);
   if (id.mode === 'global') {
     const custody = settings.residents?.[id.resident];
     if (!custody) return {skip: `resident ${id.resident} is not in settings.oats.aweb.residents`};
-    return {identities: [{kind: 'resident', resident: id.resident, team: id.team, alias: id.alias, id: {cwd: custody}, host: {cwd: custody}, cacheFile: residentCacheFile(custody), identity: {kind: 'primary'}}]};
+    return {identities: [{kind: 'resident', resident: id.resident, team: id.team, alias: id.alias, id: {cwd: custody}, host: {cwd: custody}, cacheFile: residentCacheFile(custody), identity: {kind: 'primary'}, receive: {native: native && !!id.grant?.home, dir: id.grant?.home}}]};
   }
   const team = id.team ?? meta.team, alias = id.alias ?? meta.alias;
   const rootFor = (t) => settings.roots?.[t] ?? settings.root;
   if (!rootFor(team)) return {skip: `no minting root for team ${team}`};
   const cacheFile = join(row.home, '.oats-aweb', 'health.json');
-  const identities = [{kind: 'local', team, alias, id: {identityHome: join(row.home, '.aw')}, host: {cwd: rootFor(team)}, cacheFile, identity: {kind: 'primary'}}];
+  const identities = [{kind: 'local', team, alias, id: {identityHome: join(row.home, '.aw')}, host: {cwd: rootFor(team)}, cacheFile, identity: {kind: 'primary'}, receive: {native, dir: join(row.home, '.aw')}}];
   for (const j of meta.joinedTeams ?? []) {
-    if (rootFor(j.team)) identities.push({kind: 'local', team: j.team, alias: j.alias ?? alias, id: {identityHome: j.identityHome}, host: {cwd: rootFor(j.team)}, cacheFile, identity: {kind: 'joined', receive: j.receive}});
+    if (rootFor(j.team)) identities.push({kind: 'local', team: j.team, alias: j.alias ?? alias, id: {identityHome: j.identityHome}, host: {cwd: rootFor(j.team)}, cacheFile, identity: {kind: 'joined', receive: j.receive}, receive: {native: false}});
   }
   return {identities};
+}
+
+/** Whether a native channel's receipt proves this agent receives now: proven
+ *  when it names this agent (its did:key, or a resident's did:aw), its process
+ *  is alive and its heartbeat is recent; stale when it names this agent but
+ *  either has failed; absent otherwise. */
+async function receiptState(receive, agent, host, now) {
+  if (!receive.native) return 'absent';
+  const receipt = await host.receipt(receive.dir).catch(() => null);
+  const named = agent.kind === 'resident' ? receipt?.stable_id : receipt?.did;
+  if (!receipt || receipt.v !== 1 || named !== agent.agentId) return 'absent';
+  const heartbeat = Date.parse(receipt.heartbeat_at);
+  return Number.isSafeInteger(receipt.pid) && host.pidAlive(receipt.pid) && now - heartbeat <= RECEIPT_FRESH_MS ? 'proven' : 'stale';
 }
 
 /** Settles `promise`, or answers null once `ms` have passed. */
@@ -144,7 +163,7 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
   homes.forEach(({identities}, i) => {
     for (const identity of identities) {
       const key = agentKey(identity.id, identity.team);
-      const seat = assessHealth({...observed[i], ...words, grant: homes[i].row.capabilityMeta['oats.aweb'].identity?.grant ?? null, identity: identity.identity});
+      const seat = {...observed[i], grant: homes[i].row.capabilityMeta['oats.aweb'].identity?.grant ?? null, identity: identity.identity, receive: identity.receive};
       const agent = agents.get(key) ?? {...identity, seats: []};
       agent.seats.push(seat);
       agents.set(key, agent);
@@ -156,7 +175,7 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
     for (const team of Object.keys(cache)) {
       const key = agentKey({cwd: custody}, team);
       if (agents.has(key) || !cache[team].designated) continue;
-      agents.set(key, {kind: 'resident', resident, team, alias: cache[team].alias, id: {cwd: custody}, host: {cwd: custody}, cacheFile: residentCacheFile(custody), seats: [retiredHealth(words)]});
+      agents.set(key, {kind: 'resident', resident, team, alias: cache[team].alias, id: {cwd: custody}, host: {cwd: custody}, cacheFile: residentCacheFile(custody), seats: [], retired: true});
     }
   }
 
@@ -172,7 +191,8 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
       agent.agentId = agent.kind === 'resident' ? own?.stable_id : own?.did;
       agent.hostDid = hostId?.did;
       if (!agent.agentId || !agent.hostDid) { result.skipped.push({alias: agent.alias, team: agent.team, reason: agent.agentId ? 'aw gave no publisher did' : 'aw gave no agent id'}); continue; }
-      const {reachable, reason, fixing} = combineSeats(agent.seats);
+      const assessed = agent.retired ? [retiredHealth(words)] : await Promise.all(agent.seats.map(async (seat) => assessHealth({...seat, ...words, receive: {native: seat.receive.native, receipt: await receiptState(seat.receive, agent, host, time)}})));
+      const {reachable, reason, fixing} = combineSeats(assessed);
       await publishAgent(agent, {reachable, ...(reason ? {reason} : {}), ...(fixing ? {fixing} : {})}, {host, now: time, result});
     }
   });

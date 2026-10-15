@@ -12,7 +12,7 @@ const NOW = Date.parse("2026-10-14T16:00:00Z");
 const HOUR = 3600000;
 const ready = { status: "ready", problems: [], warnings: [] };
 const alive = { state: "alive", lastEvent: "launched" };
-const base = { now: NOW, liveness: alive, launchPrompts: { status: "completed" }, readiness: ready, grant: null, identity: { kind: "primary" } };
+const base = { now: NOW, liveness: alive, launchPrompts: { status: "completed" }, readiness: ready, grant: null, identity: { kind: "primary" }, receive: { native: true, receipt: "absent" } };
 const problem = (code, status = "unavailable") => ({ status, problems: [{ code, message: `/Users/someone/secret/path ${code}` }], warnings: [] });
 const warning = (code) => ({ status: "ready", problems: [], warnings: [{ code, message: `host.example ${code}` }] });
 const verdict = (over) => { const h = assessHealth({ ...base, ...over }); return [h.reachable, h.reason?.code ?? null, h.fixing?.by ?? null]; };
@@ -48,6 +48,10 @@ const ROWS = [
   ["a joined identity that polls", { identity: { kind: "joined", receive: "poll" } }, ["degraded", "oats.joined_team_poll_only", "operator"]],
   ["a joined identity with native receive", { identity: { kind: "joined", receive: "native" } }, ["yes", null, null]],
   ["all good", {}, ["yes", null, null]],
+  ["a native home with a live receipt has proven receive, even with no record that the channel loaded", { readiness: warning("native-receive-unproven"), launchPrompts: null, receive: { native: true, receipt: "proven" } }, ["yes", null, null]],
+  ["a native home whose receipt went stale has lost its stream", { readiness: warning("native-receive-unproven"), receive: { native: true, receipt: "stale" } }, ["no", "oats.channel_stream_down", "operator"]],
+  ["session delivery has no receipt, and that proves nothing missing", { launchPrompts: null, receive: { native: false, receipt: "absent" } }, ["yes", null, null]],
+  ["session delivery is judged by the broker rows, not by a receipt", { readiness: problem("wake-daemon-not-running"), receive: { native: false, receipt: "absent" } }, ["no", "oats.wake_broker_down", "operator"]],
 ];
 
 for (const [name, over, expected] of ROWS) test(`row: ${name}`, () => assert.deepEqual(verdict(over), expected));

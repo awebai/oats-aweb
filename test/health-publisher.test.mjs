@@ -25,7 +25,7 @@ const seatRow = (name) => ({ instance: name, home: `/d/agents/r/instances/${name
 const where = (target) => target.identityHome ?? target.cwd;
 
 /** An in-memory host: rows, liveness, readiness and aw answers per directory. */
-function fakeHost({ rows, liveness = {}, readiness = {}, ids = {}, setResult = () => ({ ok: true, status: 200 }), publishResult = () => ({ ok: true, status: 200 }), supportsStatus = true, cache = {} } = {}) {
+function fakeHost({ rows, liveness = {}, readiness = {}, ids = {}, receipts = {}, alive = [], setResult = () => ({ ok: true, status: 200 }), publishResult = () => ({ ok: true, status: 200 }), supportsStatus = true, cache = {} } = {}) {
   const calls = { set: [], clear: [], publish: [], log: [], readiness: [] };
   return {
     calls, cache,
@@ -37,6 +37,8 @@ function fakeHost({ rows, liveness = {}, readiness = {}, ids = {}, setResult = (
     statusHostSet: async (target, hostDid) => { const dir = where(target); calls.set.push({ dir, hostDid }); return setResult(dir, hostDid); },
     statusHostClear: async (target) => { calls.clear.push(where(target)); return { ok: true, status: 200 }; },
     statusPublish: async (target, alias, document) => { const dir = where(target); calls.publish.push({ dir, alias, document }); return publishResult(dir, alias, document); },
+    receipt: async (dir) => receipts[dir] ?? null,
+    pidAlive: (pid) => alive.includes(pid),
     readCache: async (file) => cache[file] ?? null,
     writeCache: async (file, value) => { cache[file] = value; },
     log: async (entry) => { calls.log.push(entry); },
@@ -233,4 +235,50 @@ test("a designation aw cannot clear stays cached and is reported", async () => {
   const result = await clearDesignations({ settings, host });
   assert.deepEqual(result.failed, [{ alias: "dev-1", team: TEAM, status: null, code: "transport", message: "offline" }]);
   assert.equal(host.cache["/d/agents/a/instances/dev-1/.oats-aweb/health.json"][TEAM].designated, true);
+});
+
+const nativeRow = (name) => { const row = localRow(name, { launchPrompts: null }); Object.assign(row.capabilityMeta["oats.aweb"], { delivery: "channel", runtime: "claude" }); return row; };
+const unproven = { status: "ready", problems: [], warnings: [{ code: "native-receive-unproven", message: "x" }] };
+const receiptAt = (did, ms, extra = {}) => ({ v: 1, kind: "claude-channel", did, pid: 4242, opened_at: "2026-10-14T15:00:00Z", heartbeat_at: new Date(ms).toISOString().replace(".000Z", "Z").replace(/\.\d+Z$/, "Z"), ...extra });
+
+test("a native home's live receipt, for its own did, proves receive", async () => {
+  const home = "/d/agents/a/instances/dev-1";
+  const host = fakeHost({ rows: [nativeRow("dev-1")], ids: { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkDev" } }, readiness: { [home]: unproven }, receipts: { [`${home}/.aw`]: receiptAt("did:key:z6MkDev", NOW - 30000) }, alive: [4242] });
+  await publishTick({ settings, now: () => NOW, host });
+  assert.equal(host.calls.publish[0].document.reachable, "yes");
+});
+
+test("a receipt whose process is gone, or whose heartbeat is over 90 s old, is a stream that is down", async () => {
+  const home = "/d/agents/a/instances/dev-1";
+  for (const [receipt, alive] of [[receiptAt("did:key:z6MkDev", NOW - 30000), []], [receiptAt("did:key:z6MkDev", NOW - 91000), [4242]]]) {
+    const host = fakeHost({ rows: [nativeRow("dev-1")], ids: { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkDev" } }, readiness: { [home]: unproven }, receipts: { [`${home}/.aw`]: receipt }, alive });
+    await publishTick({ settings, now: () => NOW, host });
+    assert.equal(host.calls.publish[0].document.reason.code, "oats.channel_stream_down");
+  }
+});
+
+test("a receipt for another identity proves nothing about this one", async () => {
+  const home = "/d/agents/a/instances/dev-1";
+  const host = fakeHost({ rows: [nativeRow("dev-1")], ids: { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkDev" } }, readiness: { [home]: unproven }, receipts: { [`${home}/.aw`]: receiptAt("did:key:z6MkOld", NOW - 30000) }, alive: [4242] });
+  await publishTick({ settings, now: () => NOW, host });
+  assert.equal(host.calls.publish[0].document.reason.code, "oats.receive_unknown");
+});
+
+test("a resident seat's receipt is read from its grant home and matched by the resident's did:aw", async () => {
+  const row = seatRow("seat-a");
+  Object.assign(row.capabilityMeta["oats.aweb"], { delivery: "channel", runtime: "claude" });
+  row.capabilityMeta["oats.aweb"].identity.grant = { home: `${row.home}/.aweb-identity-17`, expiresAt: "never" };
+  row.launchPrompts = null;
+  const host = fakeHost({ rows: [row], ids: idsFor, readiness: { [row.home]: unproven }, receipts: { [`${row.home}/.aweb-identity-17`]: receiptAt("did:key:z6MkGrantWorker", NOW - 10000, { stable_id: "did:aw:merlin" }) }, alive: [4242] });
+  await publishTick({ settings, now: () => NOW, host });
+  assert.equal(host.calls.publish[0].document.reachable, "yes");
+});
+
+test("a home under session delivery reads no receipt", async () => {
+  const row = localRow("dev-1");
+  Object.assign(row.capabilityMeta["oats.aweb"], { delivery: "session", runtime: "codex" });
+  const host = fakeHost({ rows: [row], ids: idsFor });
+  host.receipt = async () => { throw new Error("no receipt is read under session delivery"); };
+  await publishTick({ settings, now: () => NOW, host });
+  assert.equal(host.calls.publish[0].document.reachable, "yes");
 });

@@ -135,6 +135,16 @@ export function healthHost({deployment, env}) {
       return doc.ok ? doc.result.scheduler : null;
     },
 
+    /** A native channel's receipt of an open stream (aweb-acah.3.2), or null. */
+    async receipt(dir) {
+      try { return JSON.parse(await readFile(join(dir, 'receive', 'stream.json'), 'utf8')); } catch { return null; }
+    },
+
+    /** Whether process `pid` exists (a process of another user counts). */
+    pidAlive(pid) {
+      try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
+    },
+
     async readCache(file) {
       try { const value = JSON.parse(await readFile(file, 'utf8')); return value && typeof value === 'object' ? value : null; } catch { return null; }
     },

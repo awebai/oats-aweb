@@ -90,11 +90,18 @@ Evaluation order: the first row that matches wins.
 | 20 | warning `grant-expiring`, with expiry within 24 h | `degraded` | `oats.grant_expiring` | `operator` |
 | 21 | warning `joined-team-poll-only` (on the joined identity's own status) | `degraded` | `oats.joined_team_poll_only` | `operator` |
 | 22 | warning `receive-ownership-unproven`, `receive-observation-aged` or `receive-observation-unproven` | `degraded` | `oats.receive_unproven` | `unknown` |
+| 22a | native channel home (Claude or pi, `delivery: channel`) whose receipt `<identity dir>/receive/stream.json` names this agent (did:key; a resident's did:aw), with a live pid and a heartbeat within 90 s | `yes` (receive proven) | — | — |
+| 22b | native channel home whose receipt names this agent but whose pid is gone or heartbeat is older than 90 s | `no` | `oats.channel_stream_down` | `operator` |
 | 23 | warning `native-receive-unproven` with the channel loaded (`launchPrompts.status` is not `flag-ignored`) and the harness alive | `yes` | — | — |
 | 23a | warning `native-receive-unproven` without that evidence | `unknown` | `oats.receive_unknown` | `unknown` |
 | 24 | none of the above | `yes` | — | — |
 
-**Limitation (v1).** `yes` means "running, with its channel loaded and nothing
+A home under session delivery (every Codex home, and any home set to
+`delivery: session`) never has a receipt; the broker rows judge it, and the
+absence of a receipt is not a missing proof. A receipt naming another identity
+is ignored.
+
+**Limitation (v1).** Without a receipt, `yes` means "running, with its channel loaded and nothing
 known wrong", not "delivery proven": oats.aweb has no proof of an open
 native stream. aweb has been asked for a local receipt from the channel plugin
 and the pi extension; once it exists, `yes` on a channel home requires it.

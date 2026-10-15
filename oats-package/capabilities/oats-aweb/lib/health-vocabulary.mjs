@@ -3,8 +3,10 @@
 // The table is docs/design/2026-10-14-agent-health-publisher.md §2; the first
 // matching row wins. Codes are an OATS contract and only ever added; texts
 // come from a fixed phrase file per language, because readiness messages carry
-// paths and hostnames. In v1 `yes` means "running, with its channel loaded and
-// nothing known wrong", not "delivery proven".
+// paths and hostnames. On a native channel home, the channel's receipt of an
+// open stream proves receive; without one, `yes` means "running, with its
+// channel loaded and nothing known wrong", not "delivery proven". A home under
+// session delivery never has a receipt: the broker rows judge it.
 import {readFileSync} from 'node:fs';
 
 const phrases = (language) => JSON.parse(readFileSync(new URL(`../phrases/${language}.json`, import.meta.url), 'utf8'));
@@ -34,8 +36,10 @@ const row = (reachable, code, by) => ({reachable, code, by});
  *  {state: alive|shell|stopped|not-launched|unobservable, lastEvent};
  *  `readiness` is the provider's {status, problems, warnings}, or null when
  *  it could not be read; `identity` is {kind: 'primary'} or
- *  {kind: 'joined', receive}. */
-function classify({now, liveness, launchPrompts, readiness, grant, identity}) {
+ *  {kind: 'joined', receive}; `receive` is {native, receipt}, where native
+ *  says the home receives through its own channel and receipt is proven,
+ *  stale or absent. */
+function classify({now, liveness, launchPrompts, readiness, grant, identity, receive}) {
   const {state, lastEvent} = liveness;
   if (state !== 'alive' && state !== 'unobservable') {
     if (lastEvent === 'stopped') return row('no', 'oats.stopped', 'nobody');
@@ -57,6 +61,10 @@ function classify({now, liveness, launchPrompts, readiness, grant, identity}) {
   if (warnings.has('grant-expiring') && expiresAt - now <= GRANT_EXPIRING_MS) return row('degraded', 'oats.grant_expiring', 'operator');
   if (identity?.kind === 'joined' && identity.receive === 'poll') return row('degraded', 'oats.joined_team_poll_only', 'operator');
   if (RECEIVE_UNPROVEN_WARNINGS.some((c) => warnings.has(c))) return row('degraded', 'oats.receive_unproven', 'unknown');
+  if (receive?.native && identity?.kind !== 'joined') {
+    if (receive.receipt === 'proven') return row('yes');
+    if (receive.receipt === 'stale') return row('no', 'oats.channel_stream_down', 'operator');
+  }
   if (warnings.has('native-receive-unproven') && !CHANNEL_LOADED.includes(launchPrompts?.status)) return row('unknown', 'oats.receive_unknown', 'unknown');
   return row('yes');
 }
