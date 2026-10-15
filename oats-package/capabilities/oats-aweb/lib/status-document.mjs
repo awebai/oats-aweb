@@ -24,7 +24,7 @@ const FIXING_KEYS = ['by', 'text'];
 const REASON_CODE = /^[a-z][a-z0-9]*\.[a-z0-9_]+$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 // One line: no C0 or C1 control character, no DEL, no line or paragraph separator.
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+export const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 const refuse = (error, message) => ({ok: false, error, message});
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -85,7 +85,7 @@ const parseTimestamp = (s) => (typeof s === 'string' && TIMESTAMP.test(s) && !Nu
 function checkText(value, field, maxBytes, required) {
   if (value === undefined) return required ? refuse('missing_field', `${field} is required`) : null;
   if (typeof value !== 'string' || value === '') return refuse('invalid_value', `${field} must be a non-empty string`);
-  if (CONTROL.test(value)) return refuse('control_character', `${field} must be one line with no control characters`);
+  if (CONTROL_CHARACTER.test(value)) return refuse('control_character', `${field} must be one line with no control characters`);
   if (utf8Length(value) > maxBytes) return refuse('text_too_long', `${field} is over ${maxBytes} bytes`);
   return null;
 }

@@ -74,6 +74,12 @@ export function assessHealth(input) {
   return {reachable, reason, fixing};
 }
 
+/** A resident whose seats on this host are all retired. */
+export function retiredHealth({language} = {}) {
+  const words = PHRASES[language] || PHRASES.en;
+  return {reachable: 'no', reason: {code: 'oats.retired', text: words.reasons['oats.retired'] ?? PHRASES.en.reasons['oats.retired']}, fixing: {by: 'nobody', text: words.nobody}};
+}
+
 /** One resident's status from its seats on this host: the best seat wins. */
 export function combineSeats(seats) {
   return seats.reduce((best, seat) => (RANK[seat.reachable] < RANK[best.reachable] ? seat : best));
