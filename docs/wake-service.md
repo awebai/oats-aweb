@@ -27,6 +27,10 @@ agent's shell carries a session's PATH, and the unit would record it, which is
 also why `oats schedule host install` is the operator's step
 ([oats#967](https://github.com/awebai/oats/issues/967)).
 
+On macOS, run `install` from the desktop login, not over ssh: an ssh session has
+no `gui/<uid>` domain, so the plist is written and then `launchctl bootstrap`
+fails (`E_WAKE_UNIT`); rerunning `install` from the desktop recovers.
+
 ## The unit
 
 `install` resolves `aw` and `oats` from the invoking shell's PATH. It takes

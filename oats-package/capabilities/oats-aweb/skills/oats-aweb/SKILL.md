@@ -682,6 +682,9 @@ check delivery) is oats.setup's `/oats-host-delivery`, Choice 2
 (oats.framework 1.11.0). This card is the command. It is provider 1.28.0, aw
 >=1.36.33, and runs in D, in the operator's own shell, as the user who runs
 the instances, never inside an instance.
+On macOS, run `install` from the desktop login, not over ssh: an ssh session has
+no `gui/<uid>` domain, so the plist is written and then `launchctl bootstrap`
+fails (`E_WAKE_UNIT`); rerunning `install` from the desktop recovers.
 
 | Act | Command in D | Writes / success / one next step | Error → remedy |
 |---|---|---|---|
