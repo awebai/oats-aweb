@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.28.0 — 2026-10-15
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33
+([oats#1224](https://github.com/awebai/oats/issues/1224)).
+
+- **`oats aweb wake install | status | uninstall`.** A host could finish
+  onboarding with no host wake broker, which left every home that needs it
+  poll-only, and nothing in OATS installed the broker as a service. `install`
+  writes the per-user unit `ai.aweb.wake` (systemd `--user` on Linux, a
+  LaunchAgent on macOS). The unit runs `<aw> wake run` with only `PATH` and
+  `AW_WAKE_OATS_BIN`, resolved from the operator's shell. Its PATH reaches
+  `tmux`, which the broker's `oats session` calls need: tmux's directory, then
+  the kernel host timer's fallback, which starts with `/opt/homebrew/bin`.
+  With no tmux on PATH, `install` warns `wake-tmux-missing`. It then
+  (re)starts the unit and verifies the daemon reports the installed aw's version.
+  Rerunning it restarts the broker after an aw upgrade. It never takes over a
+  unit it did not write (`E_WAKE_UNIT_CONFLICT`, with the retire steps), or a
+  broker started by hand (`E_WAKE_RUNNING_UNSUPERVISED`). It refuses inside an
+  instance (`E_WAKE_INSIDE_HOME`). On Linux with lingering off it warns, or
+  refuses with `--linger-required`. `status` is read-only: it reports the
+  unit, the daemon and the deployment's homes that need the broker, each
+  registered or not. `uninstall` removes only that unit. The unit is built
+  from the custody unit's parts, and custody behaviour is unchanged. Reference:
+  [docs/wake-service.md](docs/wake-service.md); the host procedure is
+  oats.setup's `/oats-host-delivery`, Choice 2 (oats.framework 1.11.0).
+- **Readiness warns `claude-channel-mode-default`** for a Claude
+  `delivery: channel` home that runs in development mode because
+  `claudeChannelMode` was never set. It judges the home's captured settings:
+  no key, or the key with the origin `manifest-default`. A home recorded
+  before OATS kept setting origins stays silent, since it cannot tell unset
+  from an explicit `development`. The warning can appear beside
+  `channel-dev-confirmation`.
+- **Soul-scope readiness checks the host wake broker** when the spawn will
+  need it: `delivery: session`, or a non-empty `join`. It reads
+  `aw wake status --json` once, and reports the home-scope codes
+  (`wake-daemon-not-running`, `wake-daemon-version-unknown`, and
+  `wake-daemon-outdated` as a warning). With no broker needed, it reads
+  nothing.
+- `/oats-aweb` §4 and §7 point to oats.setup's `/oats-host-delivery` for the
+  host procedure (oats#1224, #118).
+- **Existing homes keep their captured provider bytes.** Updating the pin and
+  syncing supplies these to new compositions and to operator commands run from
+  the deployment.
+
 ## 1.27.3 — 2026-10-14
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33. No new aw upgrade

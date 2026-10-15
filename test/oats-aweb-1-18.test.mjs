@@ -728,11 +728,13 @@ test("unreadable or malformed status is unavailable without writes", (t) => {
   assert.equal(fx.readiness({extra:{FAKE_WAKE_FAIL:"status"}}).status,"unavailable");
 });
 
-test("null-home readiness remains prerequisites only", (t) => {
+// From oats.aweb 1.28.0 (awebai/oats#1224) soul scope reads the daemon a
+// session spawn will need, once, and nothing about any target.
+test("null-home readiness reads only the host daemon, once", (t) => {
   const fx = fixture(t, {delivery:"session",runtime:"codex"});
   const result=fx.readiness({targetHome:null});
   assert.equal(result.status,"ready",JSON.stringify(result));
-  assert.deepEqual(fx.wakeCalls(),[]);
+  assert.deepEqual(fx.wakeCalls(),["status"]);
 });
 
 test("mixed native primary retains failed joined problem and confirmation guidance", (t) => {
