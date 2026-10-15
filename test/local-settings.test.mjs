@@ -48,3 +48,12 @@ test("roots keep their own wording", (t) => {
   assert.throws(() => recordAwebSetting("roots", "default:example.com", "/r", { start: dir }),
     { message: `${join(dir, "oats-local.yaml")}: cannot safely update settings.oats.aweb.roots automatically (line 3 is not a block-style roots: mapping); add this line by hand under block-style settings.oats.aweb.roots: "default:example.com": "/r"` });
 });
+
+test("the health map takes a boolean as a YAML boolean, beside quoted strings, and replaces it in place", (t) => {
+  const dir = deployment(t, 'schemaVersion: 2\nworkspace: local\nsettings:\n  oats.aweb:\n    root: "/roots/default"\n');
+  recordAwebSetting("health", "publish", true, { start: dir });
+  recordAwebSetting("health", "operator", "Nactiva's operator", { start: dir });
+  assert.equal(read(dir), 'schemaVersion: 2\nworkspace: local\nsettings:\n  oats.aweb:\n    root: "/roots/default"\n    health:\n      "publish": true\n      "operator": "Nactiva\'s operator"\n');
+  recordAwebSetting("health", "publish", false, { start: dir });
+  assert.match(read(dir), /\n {6}"publish": false\n {6}"operator"/);
+});
