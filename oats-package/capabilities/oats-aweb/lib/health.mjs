@@ -14,7 +14,7 @@ import {clearDesignations, healthSettings, publishTick} from './health-publisher
 
 export const HEALTH_JOB = 'oats-aweb-health';
 const NOTE = 'a newly started or restarted agent appears within a minute';
-/** The first releases that publish (aw) and prove receive (the channels). */
+/** The releases required to publish (aw) and to prove receive (the channels). */
 const FLOORS = {aw: AW_STATUS_MIN, claudeChannel: '1.7.17', piExtension: '0.3.15'};
 /** A tick older than this means publishing has stopped. */
 const STALE_TICK_MS = 3 * 60 * 1000;
@@ -132,7 +132,7 @@ export function healthText(doc) {
   if (r.lastTick) lines.push(`last tick: ${r.lastTick.at} (published ${r.lastTick.published}, refused ${r.lastTick.refused}, skipped ${r.lastTick.skipped}, failed ${r.lastTick.failed ?? 0})`);
   for (const p of r.problems) lines.push(`problem: ${p}`);
   if (r.designations) lines.push(`designations cleared: ${r.designations.cleared.length}, not cleared: ${r.designations.failed.length}`);
-  lines.push(`minimums: aw ${r.floors.aw} to publish; Claude channel ${r.floors.claudeChannel} or pi extension ${r.floors.piExtension} to prove receive`);
+  lines.push(`required: aw ${r.floors.aw} to publish; Claude channel ${r.floors.claudeChannel} or pi extension ${r.floors.piExtension} to prove receive`);
   lines.push(`note: ${r.note}`);
   return lines.join('\n');
 }

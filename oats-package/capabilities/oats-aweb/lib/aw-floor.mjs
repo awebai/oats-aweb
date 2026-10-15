@@ -5,3 +5,13 @@
  *  the aw `oats aweb resident create` is built and tested on: its custody
  *  starts when its working directory is reached through a symlink. */
 export const AW_MIN = '1.36.33';
+
+/** Whether `version` (major.minor.patch) is at least `floor`; a version that
+ *  is not one is never. */
+export function versionAtLeast(version, floor) {
+  const parts = (v) => (/^\d+\.\d+\.\d+$/.test(String(v)) ? String(v).split('.').map(Number) : null);
+  const v = parts(version), f = parts(floor);
+  if (!v || !f) return false;
+  for (let i = 0; i < 3; i++) if (v[i] !== f[i]) return v[i] > f[i];
+  return true;
+}

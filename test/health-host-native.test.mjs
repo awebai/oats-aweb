@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AW_STATUS_MIN, healthHost, statusPublishArgs } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
+import { versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 import { createScratchDeployment } from "./helpers/scratch-deployment.mjs";
 
 const NATIVE = process.env.OATS_AWEB_HEALTH_NATIVE === "1";
@@ -81,11 +82,11 @@ test("identityOf answers null for a directory that holds no identity", { skip },
   } finally { rmSync(empty, { recursive: true, force: true }); }
 });
 
-test("awSupportsStatus agrees with the installed aw, and names its version when it cannot publish", { skip }, async () => {
-  const help = spawnSync("aw", ["status", "publish", "--help"], { encoding: "utf8" });
+test("awSupportsStatus agrees with the installed aw's version, and names it when it cannot publish", { skip }, async () => {
   const version = spawnSync("aw", ["version"], { encoding: "utf8" }).stdout.match(/aw (\d+\.\d+\.\d+)/)[1];
   const answer = await healthHost({ deployment: tmpdir(), env: { PATH: process.env.PATH, HOME: process.env.HOME } }).awSupportsStatus();
-  assert.equal(answer.ok, help.status === 0);
+  assert.equal(answer.ok, versionAtLeast(version, AW_STATUS_MIN));
+  if (answer.ok) assert.equal(spawnSync("aw", ["status", "publish", "--help"]).status, 0, "an aw at the floor has status publish");
   if (!answer.ok) assert.equal(answer.message, `aw ${version} has no status publish; needs aw >= ${AW_STATUS_MIN} (aweb-acah.3.1)`);
 });
 

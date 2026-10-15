@@ -7,6 +7,7 @@
 import {spawn} from 'node:child_process';
 import {appendFile, mkdir, readFile, rename, stat, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
+import {versionAtLeast} from './aw-floor.mjs';
 
 const KERNEL_TIMEOUT_MS = 30 * 1000;
 const AW_TIMEOUT_MS = 15 * 1000;
@@ -105,10 +106,11 @@ export function healthHost({deployment, env}) {
       return typeof stableId === 'string' && stableId.startsWith('did:aw:') ? {did, stable_id: stableId} : {did};
     },
 
+    /** Whether the aw on PATH is at least AW_STATUS_MIN; its version decides,
+     *  since a pre-release build below the floor may already list the command. */
     async awSupportsStatus() {
-      if ((await aw({}, ['status', 'publish', '--help'])).status === 0) return {ok: true};
-      const version = (await aw({}, ['version'])).stdout.match(/aw (\d+\.\d+\.\d+)/)?.[1] ?? 'unknown';
-      return {ok: false, message: AW_STATUS_UNSUPPORTED(version)};
+      const version = (await aw({}, ['version'])).stdout.match(/^aw (\d+\.\d+\.\d+)$/m)?.[1] ?? 'unknown';
+      return versionAtLeast(version, AW_STATUS_MIN) ? {ok: true} : {ok: false, message: AW_STATUS_UNSUPPORTED(version)};
     },
 
     async statusHostSet(target, hostDid) {
