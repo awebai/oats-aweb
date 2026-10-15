@@ -83,8 +83,14 @@ async function receiptState(receive, agent, host, now) {
   return Number.isSafeInteger(receipt.pid) && receipt.pid > 0 && host.pidAlive(receipt.pid) && age >= -RECEIPT_SKEW_MS && age <= RECEIPT_FRESH_MS ? 'proven' : 'stale';
 }
 
-/** Settles `promise`, or answers null once `ms` have passed. */
-const within = (promise, ms) => Promise.race([promise, new Promise((resolve) => setTimeout(resolve, Math.max(0, ms), null).unref?.())]).catch(() => null);
+/** Settles `promise`, or answers null once `ms` have passed. The timer holds
+ *  the process until then, since a hung answer may hold nothing, and is
+ *  cleared as soon as the race settles. */
+function within(promise, ms) {
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, Math.max(0, ms), null); });
+  return Promise.race([promise, deadline]).catch(() => null).finally(() => clearTimeout(timer));
+}
 
 async function pool(items, size, work) {
   const out = new Array(items.length);

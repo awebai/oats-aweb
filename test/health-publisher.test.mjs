@@ -7,6 +7,7 @@
 // rehearsal, not here.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { clearDesignations, healthSettings, publishTick } from "../oats-package/capabilities/oats-aweb/lib/health-publisher.mjs";
 import { checkDocument } from "../oats-package/capabilities/oats-aweb/lib/status-document.mjs";
 
@@ -352,4 +353,25 @@ test("a refusal the log cannot record is listed as failed, and the agent's own b
   const second = await publishTick({ settings, now: () => NOW + 60000, host });
   assert.equal(host.calls.publish.length, 1);
   assert.deepEqual(second.skipped, [{ alias: "dev-1", team: TEAM, reason: "rate limited until 2026-10-14T16:01:30Z" }]);
+});
+
+test("a tick whose readiness never answers still ends at its budget, with nothing else keeping the process alive", () => {
+  // Run in a process of its own: a test runner's own handles would otherwise
+  // keep the event loop alive and hide a budget timer that cannot.
+  const script = `
+    import { publishTick } from ${JSON.stringify(new URL("../oats-package/capabilities/oats-aweb/lib/health-publisher.mjs", import.meta.url).href)};
+    const row = { instance: "dev-1", home: "/d/agents/a/instances/dev-1", launched: true, launchPrompts: { status: "completed" }, capabilityMeta: { "oats.aweb": { team: "default:acme.aweb.ai", alias: "dev-1", identity: { mode: "local", alias: "dev-1", team: "default:acme.aweb.ai" } } } };
+    const host = {
+      awSupportsStatus: async () => ({ ok: true }), status: async () => ({ agents: [{ instances: [row] }] }),
+      liveness: async () => ({ state: "alive", lastEvent: null }), readiness: () => new Promise(() => {}),
+      identityOf: async (t) => ({ did: t.identityHome ? "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd" : "did:key:z6Mkn4x1HvZkkoREXWaXdWF8FjRTPd9PFqDab3QpbRG7M3Nu" }),
+      statusHostSet: async () => ({ ok: true, status: 200 }), statusPublish: async () => ({ ok: true, status: 200 }),
+      receipt: async () => null, pidAlive: () => false, readCache: async () => null, writeCache: async () => {}, log: async () => {},
+    };
+    const result = await publishTick({ settings: { root: "/d/root", health: { publish: true } }, now: () => Date.parse("2026-10-14T16:00:00Z"), host, budgetMs: 20 });
+    process.stdout.write(JSON.stringify(result.published));
+  `;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 10000 });
+  assert.equal(r.status, 0, `exit ${r.status}: ${r.stderr}`);
+  assert.deepEqual(JSON.parse(r.stdout), [{ alias: "dev-1", team: "default:acme.aweb.ai", reachable: "unknown", code: "oats.readiness_unavailable" }]);
 });
