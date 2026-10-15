@@ -5,7 +5,7 @@
 // binaries by test/health-host-native.test.mjs and
 // test/health-command-native.test.mjs.
 import {spawn} from 'node:child_process';
-import {appendFile, mkdir, readFile, rename, writeFile} from 'node:fs/promises';
+import {appendFile, mkdir, readFile, rename, stat, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 
 const KERNEL_TIMEOUT_MS = 30 * 1000;
@@ -19,6 +19,8 @@ const KERNEL_UNSET = ['OATS_INSTANCE', 'OATS_INSTANCE_HOME', 'OATS_HOME'];
 /** The first aw with `aw status-host` and `aw status publish` (aweb-acah.3.1). */
 export const AW_STATUS_MIN = '1.36.38';
 export const AW_STATUS_UNSUPPORTED = (version) => `aw ${version} has no status publish; needs aw >= ${AW_STATUS_MIN} (aweb-acah.3.1)`;
+/** The refusal log's size before it rotates. */
+const LOG_MAX_BYTES = 1024 * 1024;
 /** How the publisher hands aw one status document for `alias`, on stdin. */
 export const statusPublishArgs = (alias) => ['status', 'publish', '--alias', alias, '--document', '-', '--json'];
 
@@ -164,6 +166,10 @@ export function healthHost({deployment, env}) {
     async log(entry) {
       const file = join(deployment, '.oats-aweb', 'health', 'log.jsonl');
       await mkdir(dirname(file), {recursive: true, mode: 0o700});
+      // A refusal that repeats every minute must not grow the log without
+      // bound: past the cap, the log becomes its one older generation.
+      const size = await stat(file).then((st) => st.size, () => 0);
+      if (size >= LOG_MAX_BYTES) await rename(file, `${file}.1`);
       await appendFile(file, `${JSON.stringify(entry)}\n`, {mode: 0o600});
     },
   };

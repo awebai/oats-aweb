@@ -173,7 +173,7 @@ test("homes it cannot publish are listed with why, never guessed", async () => {
   const result = await publishTick({ settings: { ...settings, root: undefined }, now: () => NOW, host });
   assert.equal(host.calls.publish.length, 0);
   assert.deepEqual(result.skipped, [
-    { home: "/d/agents/a/instances/kept", reason: "a retained seat is not published in v1" },
+    { home: "/d/agents/a/instances/kept", reason: "a seat that holds its resident identity itself, without a grant, is not published in v1" },
     { home: "/d/agents/r/instances/seat-x", reason: "resident ghost is not in settings.oats.aweb.residents" },
     { home: "/d/agents/a/instances/far", reason: "no minting root for team far:elsewhere" },
   ]);
@@ -281,4 +281,64 @@ test("a home under session delivery reads no receipt", async () => {
   host.receipt = async () => { throw new Error("no receipt is read under session delivery"); };
   await publishTick({ settings, now: () => NOW, host });
   assert.equal(host.calls.publish[0].document.reachable, "yes");
+});
+
+test("one home whose observation throws is published unknown, and every other home is still published", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1"), localRow("dev-2")], ids: idsFor });
+  const liveness = host.liveness;
+  host.liveness = async (row) => { if (row.instance === "dev-1") throw new Error("kernel answered without a result"); return liveness(row); };
+  const result = await publishTick({ settings, now: () => NOW, host });
+  const by = Object.fromEntries(host.calls.publish.map((p) => [p.alias, p.document]));
+  assert.deepEqual([by["dev-1"].reachable, by["dev-1"].reason.code], ["unknown", "oats.session_unobservable"]);
+  assert.equal(by["dev-2"].reachable, "yes");
+  assert.equal(result.published.length, 2);
+});
+
+test("one agent whose bookkeeping throws is listed as failed, and every other agent is still published", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1"), localRow("dev-2")], ids: idsFor });
+  const writeCache = host.writeCache;
+  host.writeCache = async (file, value) => { if (file.includes("/dev-1/")) throw new Error("EACCES: permission denied"); return writeCache(file, value); };
+  const result = await publishTick({ settings, now: () => NOW, host });
+  assert.deepEqual(result.published.map((p) => p.alias).sort(), ["dev-1", "dev-2"]);
+  assert.deepEqual(result.failed, [{ alias: "dev-1", team: TEAM, message: "EACCES: permission denied" }]);
+});
+
+test("a language with no phrase file falls back to en, even one named like an object property", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, liveness: { "dev-1": { state: "shell", lastEvent: "stopped" } } });
+  await publishTick({ settings: { ...settings, health: { publish: true, language: "toString" } }, now: () => NOW, host });
+  assert.equal(host.calls.publish[0].document.reason.text, "It was stopped.");
+});
+
+test("a 429 on designation also waits for Retry-After", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, setResult: () => ({ ok: false, status: 429, code: "rate_limited", message: "slow down", retry_after: 90 }) });
+  await publishTick({ settings, now: () => NOW, host });
+  const second = await publishTick({ settings, now: () => NOW + 60000, host });
+  assert.equal(host.calls.set.length, 1);
+  assert.deepEqual(second.skipped, [{ alias: "dev-1", team: TEAM, reason: "rate limited until 2026-10-14T16:01:30Z" }]);
+});
+
+test("a joined team with no identity home recorded is not published as whatever identity is ambient", async () => {
+  const row = localRow("dev-1");
+  row.capabilityMeta["oats.aweb"].joinedTeams = [{ label: "ops", team: OTHER, alias: "dev-1", receive: "native" }];
+  const host = fakeHost({ rows: [row], ids: idsFor });
+  const result = await publishTick({ settings, now: () => NOW, host });
+  assert.deepEqual(host.calls.publish.map((p) => p.document.team_id), [TEAM]);
+  assert.deepEqual(result.skipped, [{ home: row.home, reason: `joined team ${OTHER} has no identity home recorded` }]);
+});
+
+test("the tick's reasons never use the words that make the scheduler hold the job", async () => {
+  const row = seatRow("seat-a");
+  row.capabilityMeta["oats.aweb"].retained = true;
+  const result = await publishTick({ settings, now: () => NOW, host: fakeHost({ rows: [row], ids: idsFor }) });
+  assert.equal(result.skipped.length, 1);
+  assert.doesNotMatch(JSON.stringify(result), /INCOMPLETE|quarantin|retain|could not verif/);
+});
+
+test("a receipt naming pid 0, or a heartbeat ahead of the clock, proves nothing", async () => {
+  const home = "/d/agents/a/instances/dev-1";
+  for (const receipt of [receiptAt("did:key:z6MkDev", NOW - 30000, { pid: 0 }), receiptAt("did:key:z6MkDev", NOW + 120000)]) {
+    const host = fakeHost({ rows: [nativeRow("dev-1")], ids: { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkDev" } }, readiness: { [home]: unproven }, receipts: { [`${home}/.aw`]: receipt }, alive: [0, 4242] });
+    await publishTick({ settings, now: () => NOW, host });
+    assert.equal(host.calls.publish[0].document.reason.code, "oats.channel_stream_down");
+  }
 });

@@ -11,6 +11,8 @@ import {readFileSync} from 'node:fs';
 
 const phrases = (language) => JSON.parse(readFileSync(new URL(`../phrases/${language}.json`, import.meta.url), 'utf8'));
 export const PHRASES = {en: phrases('en')};
+/** The phrase table for `language`, or en when there is none. */
+const phrasesFor = (language) => (Object.hasOwn(PHRASES, language) ? PHRASES[language] : PHRASES.en);
 
 const GRANT_EXPIRING_MS = 24 * 3600 * 1000;
 const RANK = {yes: 0, degraded: 1, no: 2, unknown: 3};
@@ -48,7 +50,8 @@ function classify({now, liveness, launchPrompts, readiness, grant, identity, rec
   }
   if (state === 'unobservable') return row('unknown', 'oats.session_unobservable', 'unknown');
   if (launchPrompts?.status === 'blocked') return row('no', 'oats.launch_prompt_waiting', 'operator');
-  if (launchPrompts?.status === 'flag-ignored') return row('no', 'oats.channel_not_loaded', 'operator');
+  // Only the home's own channel was ignored; a joined identity is woken by the broker.
+  if (launchPrompts?.status === 'flag-ignored' && identity?.kind !== 'joined') return row('no', 'oats.channel_not_loaded', 'operator');
   if (!readiness) return row('unknown', 'oats.readiness_unavailable', 'unknown');
   const problems = new Set((readiness.problems || []).map((p) => p.code));
   const warnings = new Set((readiness.warnings || []).map((w) => w.code));
@@ -74,7 +77,7 @@ function classify({now, liveness, launchPrompts, readiness, grant, identity, rec
 export function assessHealth(input) {
   const {reachable, code, by} = classify(input);
   if (reachable === 'yes') return {reachable};
-  const words = PHRASES[input.language] || PHRASES.en;
+  const words = phrasesFor(input.language);
   const reason = {code, text: words.reasons[code] ?? PHRASES.en.reasons[code]};
   const fixing = by === 'operator' ? {by, text: input.operator || words.operator}
     : by === 'nobody' ? {by, text: words.nobody}
@@ -84,7 +87,7 @@ export function assessHealth(input) {
 
 /** A resident whose seats on this host are all retired. */
 export function retiredHealth({language} = {}) {
-  const words = PHRASES[language] || PHRASES.en;
+  const words = phrasesFor(language);
   return {reachable: 'no', reason: {code: 'oats.retired', text: words.reasons['oats.retired'] ?? PHRASES.en.reasons['oats.retired']}, fixing: {by: 'nobody', text: words.nobody}};
 }
 

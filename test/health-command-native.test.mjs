@@ -30,6 +30,13 @@ test("health commands through the real kernel and scheduler", { skip }, async (t
     assert.equal(doc.result.job, null);
   });
 
+  await t.test("--dir naming the deployment, as one token or two, is not taken for the action", () => {
+    for (const args of [["status", `--dir=${scratch.deployment}`], ["status", "--dir", scratch.deployment], ["--dir", scratch.deployment, "status"]]) {
+      const r = scratch.oats(["aweb", "health", ...args, "--json"]);
+      assert.equal(JSON.parse(r.stdout).ok, true, `${args.join(" ")}: ${r.stdout}${r.stderr}`);
+    }
+  });
+
   await t.test("enable records the host setting, registers the per-minute job and names the operator's timer step", () => {
     const { exit, doc } = aweb("enable", "--operator", "Scratch's operator");
     assert.equal(doc.ok, true, JSON.stringify(doc));

@@ -69,7 +69,7 @@ Evaluation order: the first row that matches wins.
 | # | Condition (source) | reachable | reason.code | fixing.by |
 |---|---|---|---|---|
 | 1 | Retired local or joined identity | not published: retire deletes the workspace, and aweb deletes the designation and the row | — | — |
-| 2 | Resident seat retired, and no other live seat of that resident on the host | `no` | `oats.retired` | `nobody` |
+| 2 | Resident seat retired or being retired (`retirePending`), and no other live seat of that resident on the host | `no` | `oats.retired` | `nobody` |
 | 3 | Harness not alive, and the last event is `stopped` | `no` | `oats.stopped` | `nobody` |
 | 4 | Never launched (`--no-launch`, no `launched` event) | `no` | `oats.not_started` | `operator` |
 | 5 | Harness not alive, and the last event is `launched` or `restarted`. This covers a crash, and a tmux server lost to a reboot. | `no` | `oats.not_running` | `operator` |
@@ -220,6 +220,21 @@ and message to `<deployment>/.oats-aweb/health/log.jsonl`, one line per refusal:
 part (up to 30 s per check). The publisher runs at most 4 homes at once, with a
 45 s budget. A home not assessed within the budget is published as `unknown` /
 `oats.readiness_unavailable`. The rehearsal measures this on a real deployment.
+
+**A slow tick.** The budget bounds readiness only; a hung kernel or aw call
+is bounded by its own timeout, so a tick can outlast its minute. It never
+overlaps the next: the kernel takes the job's lock for each run and skips a
+minute whose lock is still held (`lib/schedule.mjs`, `acquireJobLock`). A slow
+tick costs the minutes it spans; documents stay valid for 5 minutes.
+
+**One failure stays one.** An observation that throws makes that home
+`unobservable`; an agent whose bookkeeping throws (an unwritable cache, an
+answer of the wrong shape) is listed under `failed`, possibly after its
+document was sent, and every other agent is still published.
+
+**What the job prints.** The scheduled job runs without `--json` and prints
+only counts. Server and aw messages appear only in `--json` output, in
+`refused[].message`, as aw passes them through.
 
 ## 5. Decisions (oats-expert-juan, 2026-10-14)
 

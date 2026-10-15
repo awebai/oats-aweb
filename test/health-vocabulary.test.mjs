@@ -25,6 +25,7 @@ const ROWS = [
   ["session unobservable", { liveness: { state: "unobservable", lastEvent: "launched" } }, ["unknown", "oats.session_unobservable", "unknown"]],
   ["launch prompt blocked", { launchPrompts: { status: "blocked" } }, ["no", "oats.launch_prompt_waiting", "operator"]],
   ["channel flag ignored", { launchPrompts: { status: "flag-ignored" }, readiness: warning("claude-channels-unavailable") }, ["no", "oats.channel_not_loaded", "operator"]],
+  ["channel flag ignored says nothing of a joined identity, which the broker wakes", { launchPrompts: { status: "flag-ignored" }, identity: { kind: "joined", receive: "native" }, receive: { native: false, receipt: "absent" } }, ["yes", null, null]],
   ["readiness failed", { readiness: null }, ["unknown", "oats.readiness_unavailable", "unknown"]],
   ["needs configuration", { readiness: problem("needs-configuration", "needs-configuration") }, ["no", "oats.needs_configuration", "operator"]],
   ["authorization required", { readiness: { status: "authorization-required", problems: [], warnings: [] } }, ["no", "oats.authorization_required", "operator"]],

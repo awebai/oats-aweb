@@ -24,8 +24,18 @@ const jobSpec = (deployment) => ({enabled: true, cron: '* * * * *', tz: 'UTC', k
 const sameJob = (job, spec) => job.kind === spec.kind && job.cron === spec.cron && job.cwd === spec.cwd && JSON.stringify(job.argv) === JSON.stringify(spec.argv);
 const lastTickFile = (deployment) => join(deployment, '.oats-aweb', 'health', 'last.json');
 
+/** The kernel's own scope flags, as `--dir=X` or `--dir X`; they select the
+ *  deployment, which `selectedDeployment` reads, and are not health's. */
+const SCOPE_FLAGS = ['--dir', '--soul'];
+
 function parse(argv) {
-  const [action, ...rest] = argv.filter((a) => a !== '--json' && !a.startsWith('--soul') && !a.startsWith('--dir'));
+  const kept = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--json' || SCOPE_FLAGS.some((f) => argv[i].startsWith(`${f}=`))) continue;
+    if (SCOPE_FLAGS.includes(argv[i])) { i++; continue; }
+    kept.push(argv[i]);
+  }
+  const [action, ...rest] = kept;
   const options = {};
   for (let i = 0; i < rest.length; i++) {
     const [flag, inline] = rest[i].split(/=(.*)/s);
@@ -53,7 +63,7 @@ async function report(health, {deployment, host}) {
     else if (!timer.active) problems.push('the host timer is installed but not running: see `oats schedule host status`');
     const supported = await host.awSupportsStatus();
     if (!supported.ok) problems.push(supported.message);
-    if (!problems.length && (!lastTick || Date.now() - Date.parse(lastTick.at) > STALE_TICK_MS)) problems.push(`no publish since ${lastTick?.at ?? 'enable'}: see \`oats schedule show ${HEALTH_JOB}\``);
+    if (!problems.length && (!lastTick || Date.now() - Date.parse(lastTick.at) > STALE_TICK_MS)) problems.push(`no tick since ${lastTick?.at ?? 'enable'}: see \`oats schedule show ${HEALTH_JOB}\``);
   }
   return {
     publish: health.publish, language: health.language, operator: health.operator,
@@ -83,7 +93,7 @@ async function publish({deployment, host, settings}) {
   const result = await publishTick({settings, now: Date.now, host});
   if (!result.disabled) {
     await mkdir(join(deployment, '.oats-aweb', 'health'), {recursive: true, mode: 0o700});
-    await writeFile(lastTickFile(deployment), `${JSON.stringify({at: new Date().toISOString(), published: result.published.length, refused: result.refused.length, skipped: result.skipped.length})}\n`, {mode: 0o600});
+    await writeFile(lastTickFile(deployment), `${JSON.stringify({at: new Date().toISOString(), published: result.published.length, refused: result.refused.length, skipped: result.skipped.length, failed: result.failed.length})}\n`, {mode: 0o600});
   }
   return result;
 }
@@ -93,7 +103,7 @@ async function publish({deployment, host, settings}) {
  *  stops it. */
 export async function healthMain(argv, {env = process.env, stdout = process.stdout} = {}) {
   const json = argv.includes('--json');
-  const print = (doc) => stdout.write(json ? `${JSON.stringify(doc)}\n` : `${text(doc)}\n`);
+  const print = (doc) => stdout.write(json ? `${JSON.stringify(doc)}\n` : `${healthText(doc)}\n`);
   try {
     const {action, options} = parse(argv);
     const deployment = selectedDeployment(env);
@@ -112,13 +122,14 @@ export async function healthMain(argv, {env = process.env, stdout = process.stdo
   }
 }
 
-function text(doc) {
+/** The plain lines for one result envelope. */
+export function healthText(doc) {
   if (!doc.ok) return `oats aweb health: ${doc.error.message}`;
   const r = doc.result;
-  if ('published' in r) return `published ${r.published.length}, refused ${r.refused.length}, skipped ${r.skipped.length}`;
+  if ('published' in r) return `published ${r.published.length}, refused ${r.refused.length}, skipped ${r.skipped.length}, failed ${r.failed.length}`;
   if (r.disabled) return 'publishing is off (settings.oats.aweb.health.publish)';
   const lines = [`publishing: ${r.publish ? 'on' : 'off'}${r.publish ? (r.ready ? ', ready' : ', NOT ready') : ''}`];
-  if (r.lastTick) lines.push(`last publish: ${r.lastTick.at} (published ${r.lastTick.published}, refused ${r.lastTick.refused}, skipped ${r.lastTick.skipped})`);
+  if (r.lastTick) lines.push(`last tick: ${r.lastTick.at} (published ${r.lastTick.published}, refused ${r.lastTick.refused}, skipped ${r.lastTick.skipped}, failed ${r.lastTick.failed ?? 0})`);
   for (const p of r.problems) lines.push(`problem: ${p}`);
   if (r.designations) lines.push(`designations cleared: ${r.designations.cleared.length}, not cleared: ${r.designations.failed.length}`);
   lines.push(`minimums: aw ${r.floors.aw} to publish; Claude channel ${r.floors.claudeChannel} or pi extension ${r.floors.piExtension} to prove receive`);

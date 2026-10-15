@@ -16,6 +16,8 @@ const DEFAULT_BUDGET_MS = 45 * 1000;
 const DEFAULT_CONCURRENCY = 4;
 /** A channel refreshes its receipt at most every 30 s while it reads. */
 const RECEIPT_FRESH_MS = 90 * 1000;
+/** A heartbeat further ahead of this host's clock than this proves nothing. */
+const RECEIPT_SKEW_MS = 5 * 1000;
 const OPERATOR_MAX_BYTES = 120;
 const HEALTH_KEYS = ['publish', 'language', 'operator'];
 
@@ -31,11 +33,11 @@ export function healthSettings(settings) {
   return {publish: health.publish === true, language: health.language ?? 'en', operator: health.operator ?? null};
 }
 
-/** Where a resident's designation cache lives: beside its custody state. */
 /** One agent is one identity in one team; `target` says where aw acts as it:
  *  {identityHome} for an instance identity, {cwd} for a root or custody. */
 const agentKey = (target, team) => JSON.stringify([target, team]);
 
+/** Where a resident's designation cache lives: beside its custody state. */
 const residentCacheFile = (custody) => join(custody, '.oats-resident', 'health.json');
 
 const isoSeconds = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString().replace('.000Z', 'Z');
@@ -44,7 +46,7 @@ const isoSeconds = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString().
 function identitiesOf(row, settings) {
   const meta = row.capabilityMeta?.['oats.aweb'];
   if (!meta) return {identities: []};
-  if (meta.retained) return {skip: 'a retained seat is not published in v1'};
+  if (meta.retained) return {skip: 'a seat that holds its resident identity itself, without a grant, is not published in v1'};
   const id = meta.identity ?? {};
   // A Claude or pi home on channel delivery receives through its own channel,
   // which leaves a receipt in the identity directory it runs as; everything
@@ -60,10 +62,12 @@ function identitiesOf(row, settings) {
   if (!rootFor(team)) return {skip: `no minting root for team ${team}`};
   const cacheFile = join(row.home, '.oats-aweb', 'health.json');
   const identities = [{kind: 'local', team, alias, id: {identityHome: join(row.home, '.aw')}, host: {cwd: rootFor(team)}, cacheFile, identity: {kind: 'primary'}, receive: {native, dir: join(row.home, '.aw')}}];
+  const skips = [];
   for (const j of meta.joinedTeams ?? []) {
+    if (!j.identityHome) { skips.push(`joined team ${j.team} has no identity home recorded`); continue; }
     if (rootFor(j.team)) identities.push({kind: 'local', team: j.team, alias: j.alias ?? alias, id: {identityHome: j.identityHome}, host: {cwd: rootFor(j.team)}, cacheFile, identity: {kind: 'joined', receive: j.receive}, receive: {native: false}});
   }
-  return {identities};
+  return {identities, skips};
 }
 
 /** Whether a native channel's receipt proves this agent receives now: proven
@@ -75,8 +79,8 @@ async function receiptState(receive, agent, host, now) {
   const receipt = await host.receipt(receive.dir).catch(() => null);
   const named = agent.kind === 'resident' ? receipt?.stable_id : receipt?.did;
   if (!receipt || receipt.v !== 1 || named !== agent.agentId) return 'absent';
-  const heartbeat = Date.parse(receipt.heartbeat_at);
-  return Number.isSafeInteger(receipt.pid) && host.pidAlive(receipt.pid) && now - heartbeat <= RECEIPT_FRESH_MS ? 'proven' : 'stale';
+  const age = now - Date.parse(receipt.heartbeat_at);
+  return Number.isSafeInteger(receipt.pid) && receipt.pid > 0 && host.pidAlive(receipt.pid) && age >= -RECEIPT_SKEW_MS && age <= RECEIPT_FRESH_MS ? 'proven' : 'stale';
 }
 
 /** Settles `promise`, or answers null once `ms` have passed. */
@@ -94,7 +98,7 @@ async function pool(items, size, work) {
 /** One home's kernel state and provider readiness. Readiness is read only for
  *  a running home, within what is left of the tick's budget. */
 async function observeHome(row, host, deadline) {
-  const liveness = row.launched === false ? {state: 'not-launched', lastEvent: null} : await host.liveness(row);
+  const liveness = row.launched === false ? {state: 'not-launched', lastEvent: null} : await host.liveness(row).catch(() => ({state: 'unobservable', lastEvent: null}));
   const readiness = liveness.state === 'alive' ? await within(host.readiness(row.home), deadline - Date.now()) : null;
   return {liveness, launchPrompts: row.launchPrompts ?? null, readiness};
 }
@@ -119,7 +123,7 @@ async function publishAgent(agent, health, {host, now, result}) {
   }
   if (!entry.designated) {
     const set = await host.statusHostSet(agent.id, agent.hostDid);
-    if (!set.ok) { await refused(set); await save(); return; }
+    if (!set.ok) { await refused(set); if (set.status === 429 && Number.isFinite(set.retry_after)) entry.retryUntil = now + set.retry_after * 1000; await save(); return; }
     entry.designated = true;
   }
   const seq = now;
@@ -145,14 +149,14 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
   const supported = await host.awSupportsStatus();
   if (!supported.ok) throw new Error(supported.message);
   const deadline = Date.now() + budgetMs;
-  const result = {published: [], refused: [], skipped: []};
+  const result = {published: [], refused: [], skipped: [], failed: []};
   const rows = (await host.status()).agents.flatMap((a) => a.instances ?? []).filter((r) => !r.retirePending);
 
   const homes = [];
   for (const row of rows) {
-    const {identities, skip} = identitiesOf(row, settings);
-    if (skip) result.skipped.push({home: row.home, reason: skip});
-    else if (identities.length) homes.push({row, identities});
+    const {identities, skip, skips = []} = identitiesOf(row, settings);
+    for (const reason of skip ? [skip] : skips) result.skipped.push({home: row.home, reason});
+    if (!skip && identities.length) homes.push({row, identities});
   }
   const observed = await pool(homes, concurrency, ({row}) => observeHome(row, host, deadline));
   const time = now();
@@ -179,6 +183,15 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
     }
   }
 
+  const assessAndPublish = async (agent) => {
+    const own = await ask(agent.id), hostId = await ask(agent.host);
+    agent.agentId = agent.kind === 'resident' ? own?.stable_id : own?.did;
+    agent.hostDid = hostId?.did;
+    if (!agent.agentId || !agent.hostDid) { result.skipped.push({alias: agent.alias, team: agent.team, reason: agent.agentId ? 'aw gave no publisher did' : 'aw gave no agent id'}); return; }
+    const assessed = agent.retired ? [retiredHealth(words)] : await Promise.all(agent.seats.map(async (seat) => assessHealth({...seat, ...words, receive: {native: seat.receive.native, receipt: await receiptState(seat.receive, agent, host, time)}})));
+    const {reachable, reason, fixing} = combineSeats(assessed);
+    await publishAgent(agent, {reachable, ...(reason ? {reason} : {}), ...(fixing ? {fixing} : {})}, {host, now: time, result});
+  };
   const ids = new Map();
   const ask = (target) => { const k = JSON.stringify(target); if (!ids.has(k)) ids.set(k, host.identityOf(target).catch(() => null)); return ids.get(k); };
   // Agents sharing a cache file (a home's primary and joined identities)
@@ -187,13 +200,10 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
   for (const agent of agents.values()) byCache.set(agent.cacheFile, [...(byCache.get(agent.cacheFile) ?? []), agent]);
   await pool([...byCache.values()], concurrency, async (group) => {
     for (const agent of group) {
-      const own = await ask(agent.id), hostId = await ask(agent.host);
-      agent.agentId = agent.kind === 'resident' ? own?.stable_id : own?.did;
-      agent.hostDid = hostId?.did;
-      if (!agent.agentId || !agent.hostDid) { result.skipped.push({alias: agent.alias, team: agent.team, reason: agent.agentId ? 'aw gave no publisher did' : 'aw gave no agent id'}); continue; }
-      const assessed = agent.retired ? [retiredHealth(words)] : await Promise.all(agent.seats.map(async (seat) => assessHealth({...seat, ...words, receive: {native: seat.receive.native, receipt: await receiptState(seat.receive, agent, host, time)}})));
-      const {reachable, reason, fixing} = combineSeats(assessed);
-      await publishAgent(agent, {reachable, ...(reason ? {reason} : {}), ...(fixing ? {fixing} : {})}, {host, now: time, result});
+      // One agent's failure (an unwritable cache, an answer of the wrong
+      // shape) is listed and never stops the others. It may come after its
+      // document was sent, so it is listed apart from what was skipped.
+      try { await assessAndPublish(agent); } catch (error) { result.failed.push({alias: agent.alias, team: agent.team, message: String(error?.message ?? error)}); }
     }
   });
   return result;
