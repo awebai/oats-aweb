@@ -30,6 +30,10 @@ export function healthSettings(settings) {
 }
 
 /** Where a resident's designation cache lives: beside its custody state. */
+/** One agent is one identity in one team; `target` says where aw acts as it:
+ *  {identityHome} for an instance identity, {cwd} for a root or custody. */
+const agentKey = (target, team) => JSON.stringify([target, team]);
+
 const residentCacheFile = (custody) => join(custody, '.oats-resident', 'health.json');
 
 const isoSeconds = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString().replace('.000Z', 'Z');
@@ -43,15 +47,15 @@ function identitiesOf(row, settings) {
   if (id.mode === 'global') {
     const custody = settings.residents?.[id.resident];
     if (!custody) return {skip: `resident ${id.resident} is not in settings.oats.aweb.residents`};
-    return {identities: [{kind: 'resident', resident: id.resident, team: id.team, alias: id.alias, idDir: custody, hostDir: custody, cacheFile: residentCacheFile(custody), identity: {kind: 'primary'}}]};
+    return {identities: [{kind: 'resident', resident: id.resident, team: id.team, alias: id.alias, id: {cwd: custody}, host: {cwd: custody}, cacheFile: residentCacheFile(custody), identity: {kind: 'primary'}}]};
   }
   const team = id.team ?? meta.team, alias = id.alias ?? meta.alias;
   const rootFor = (t) => settings.roots?.[t] ?? settings.root;
   if (!rootFor(team)) return {skip: `no minting root for team ${team}`};
   const cacheFile = join(row.home, '.oats-aweb', 'health.json');
-  const identities = [{kind: 'local', team, alias, idDir: join(row.home, '.aw'), hostDir: rootFor(team), cacheFile, identity: {kind: 'primary'}}];
+  const identities = [{kind: 'local', team, alias, id: {identityHome: join(row.home, '.aw')}, host: {cwd: rootFor(team)}, cacheFile, identity: {kind: 'primary'}}];
   for (const j of meta.joinedTeams ?? []) {
-    if (rootFor(j.team)) identities.push({kind: 'local', team: j.team, alias: j.alias ?? alias, idDir: j.identityHome, hostDir: rootFor(j.team), cacheFile, identity: {kind: 'joined', receive: j.receive}});
+    if (rootFor(j.team)) identities.push({kind: 'local', team: j.team, alias: j.alias ?? alias, id: {identityHome: j.identityHome}, host: {cwd: rootFor(j.team)}, cacheFile, identity: {kind: 'joined', receive: j.receive}});
   }
   return {identities};
 }
@@ -95,7 +99,7 @@ async function publishAgent(agent, health, {host, now, result}) {
     return;
   }
   if (!entry.designated) {
-    const set = await host.statusHostSet(agent.idDir, agent.hostDid);
+    const set = await host.statusHostSet(agent.id, agent.hostDid);
     if (!set.ok) { await refused(set); await save(); return; }
     entry.designated = true;
   }
@@ -103,7 +107,7 @@ async function publishAgent(agent, health, {host, now, result}) {
   const document = {v: 1, type: 'agent_status', team_id: team, agent: agent.agentId, publisher_did: agent.hostDid, seq, ...health, observed_at: isoSeconds(now), valid_until: isoSeconds(now + VALIDITY_MS)};
   const checked = checkDocument(document, {now});
   if (!checked.ok) { await refused({status: null, code: checked.error, message: checked.message}); return; }
-  const answer = await host.statusPublish(agent.hostDir, alias, document);
+  const answer = await host.statusPublish(agent.host, alias, document);
   delete entry.retryUntil;
   if (answer.ok) {
     result.published.push({alias, team, reachable: health.reachable, code: health.reason?.code ?? null});
@@ -139,7 +143,7 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
   const agents = new Map();
   homes.forEach(({identities}, i) => {
     for (const identity of identities) {
-      const key = `${identity.idDir}\u0000${identity.team}`;
+      const key = agentKey(identity.id, identity.team);
       const seat = assessHealth({...observed[i], ...words, grant: homes[i].row.capabilityMeta['oats.aweb'].identity?.grant ?? null, identity: identity.identity});
       const agent = agents.get(key) ?? {...identity, seats: []};
       agent.seats.push(seat);
@@ -150,24 +154,24 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
   for (const [resident, custody] of Object.entries(settings.residents ?? {})) {
     const cache = (await host.readCache(residentCacheFile(custody))) ?? {};
     for (const team of Object.keys(cache)) {
-      const key = `${custody}\u0000${team}`;
+      const key = agentKey({cwd: custody}, team);
       if (agents.has(key) || !cache[team].designated) continue;
-      agents.set(key, {kind: 'resident', resident, team, alias: cache[team].alias, idDir: custody, hostDir: custody, cacheFile: residentCacheFile(custody), seats: [retiredHealth(words)]});
+      agents.set(key, {kind: 'resident', resident, team, alias: cache[team].alias, id: {cwd: custody}, host: {cwd: custody}, cacheFile: residentCacheFile(custody), seats: [retiredHealth(words)]});
     }
   }
 
-  const whoami = new Map();
-  const ask = (dir) => { if (!whoami.has(dir)) whoami.set(dir, host.whoami(dir).catch(() => null)); return whoami.get(dir); };
+  const ids = new Map();
+  const ask = (target) => { const k = JSON.stringify(target); if (!ids.has(k)) ids.set(k, host.identityOf(target).catch(() => null)); return ids.get(k); };
   // Agents sharing a cache file (a home's primary and joined identities)
   // publish one after another; different files in parallel.
   const byCache = new Map();
   for (const agent of agents.values()) byCache.set(agent.cacheFile, [...(byCache.get(agent.cacheFile) ?? []), agent]);
   await pool([...byCache.values()], concurrency, async (group) => {
     for (const agent of group) {
-      const own = await ask(agent.idDir), hostId = await ask(agent.hostDir);
+      const own = await ask(agent.id), hostId = await ask(agent.host);
       agent.agentId = agent.kind === 'resident' ? own?.stable_id : own?.did;
       agent.hostDid = hostId?.did;
-      if (!agent.agentId || !agent.hostDid) { result.skipped.push({alias: agent.alias, team: agent.team, reason: agent.agentId ? 'aw whoami gave no publisher did' : 'aw whoami gave no agent id'}); continue; }
+      if (!agent.agentId || !agent.hostDid) { result.skipped.push({alias: agent.alias, team: agent.team, reason: agent.agentId ? 'aw gave no publisher did' : 'aw gave no agent id'}); continue; }
       const {reachable, reason, fixing} = combineSeats(agent.seats);
       await publishAgent(agent, {reachable, ...(reason ? {reason} : {}), ...(fixing ? {fixing} : {})}, {host, now: time, result});
     }

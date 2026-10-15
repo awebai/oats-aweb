@@ -21,8 +21,11 @@ const settings = { root: ROOT, roots: { [OTHER]: OPS_ROOT }, residents: { merlin
 const localRow = (name, over = {}) => ({ instance: name, home: `/d/agents/a/instances/${name}`, launched: true, launchPrompts: { status: "completed" }, capabilityMeta: { "oats.aweb": { team: TEAM, alias: name, identity: { mode: "local", alias: name, team: TEAM } } }, ...over });
 const seatRow = (name) => ({ instance: name, home: `/d/agents/r/instances/${name}`, launched: true, launchPrompts: { status: "not-engaged" }, capabilityMeta: { "oats.aweb": { identity: { mode: "global", alias: "merlin", team: TEAM, resident: "merlin", seat: name } } } });
 
+/** The directory an aw target names: an identity home, or the cwd of a root. */
+const where = (target) => target.identityHome ?? target.cwd;
+
 /** An in-memory host: rows, liveness, readiness and aw answers per directory. */
-function fakeHost({ rows, liveness = {}, readiness = {}, whoami = {}, setResult = () => ({ ok: true, status: 200 }), publishResult = () => ({ ok: true, status: 200 }), supportsStatus = true, cache = {} } = {}) {
+function fakeHost({ rows, liveness = {}, readiness = {}, ids = {}, setResult = () => ({ ok: true, status: 200 }), publishResult = () => ({ ok: true, status: 200 }), supportsStatus = true, cache = {} } = {}) {
   const calls = { set: [], publish: [], log: [], readiness: [] };
   return {
     calls, cache,
@@ -30,16 +33,16 @@ function fakeHost({ rows, liveness = {}, readiness = {}, whoami = {}, setResult 
     status: async () => ({ agents: [{ name: "a", instances: rows }] }),
     liveness: async (row) => liveness[row.instance] ?? { state: "alive", lastEvent: "launched" },
     readiness: async (home) => { calls.readiness.push(home); return home in readiness ? readiness[home] : { status: "ready", problems: [], warnings: [] }; },
-    whoami: async (dir) => dir in whoami ? whoami[dir] : { did: `did:key:z6Mk${Buffer.from(dir).toString("hex").slice(-40)}` },
-    statusHostSet: async (dir, hostDid) => { calls.set.push({ dir, hostDid }); return setResult(dir, hostDid); },
-    statusPublish: async (dir, alias, document) => { calls.publish.push({ dir, alias, document }); return publishResult(dir, alias, document); },
+    identityOf: async (target) => { const dir = where(target); return dir in ids ? ids[dir] : { did: `did:key:z6Mk${Buffer.from(dir).toString("hex").slice(-40)}` }; },
+    statusHostSet: async (target, hostDid) => { const dir = where(target); calls.set.push({ dir, hostDid }); return setResult(dir, hostDid); },
+    statusPublish: async (target, alias, document) => { const dir = where(target); calls.publish.push({ dir, alias, document }); return publishResult(dir, alias, document); },
     readCache: async (file) => cache[file] ?? null,
     writeCache: async (file, value) => { cache[file] = value; },
     log: async (entry) => { calls.log.push(entry); },
   };
 }
 
-const whoamiFor = { [ROOT]: { did: ROOT_DID }, [OPS_ROOT]: { did: OPS_DID }, [RESIDENT]: { did: RESIDENT_DID, stable_id: "did:aw:merlin" } };
+const idsFor = { [ROOT]: { did: ROOT_DID }, [OPS_ROOT]: { did: OPS_DID }, [RESIDENT]: { did: RESIDENT_DID, stable_id: "did:aw:merlin" } };
 
 test("health settings: off unless publish is true; language defaults to en; the operator role is one short line", () => {
   assert.deepEqual(healthSettings({}), { publish: false, language: "en", operator: null });
@@ -52,7 +55,7 @@ test("health settings: off unless publish is true; language defaults to en; the 
 
 test("a local agent is designated as itself, then published by its team's root with a checked document", async () => {
   const home = "/d/agents/a/instances/dev-1";
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: { ...whoamiFor, [`${home}/.aw`]: { did: "did:key:z6MkAgentDev1" } } });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkAgentDev1" } } });
   const result = await publishTick({ settings, now: () => NOW, host });
   assert.deepEqual(host.calls.set, [{ dir: `${home}/.aw`, hostDid: ROOT_DID }]);
   assert.equal(host.calls.publish.length, 1);
@@ -65,7 +68,7 @@ test("a local agent is designated as itself, then published by its team's root w
 });
 
 test("designation is cached per (agent id, host): the second tick does not designate again", async () => {
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor });
   await publishTick({ settings, now: () => NOW, host });
   await publishTick({ settings, now: () => NOW + 60000, host });
   assert.equal(host.calls.set.length, 1);
@@ -75,8 +78,8 @@ test("designation is cached per (agent id, host): the second tick does not desig
 
 test("a re-minted identity (a different id from aw) drops the cache and designates again", async () => {
   const home = "/d/agents/a/instances/dev-1";
-  const who = { ...whoamiFor, [`${home}/.aw`]: { did: "did:key:z6MkFirst" } };
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: who });
+  const who = { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkFirst" } };
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: who });
   await publishTick({ settings, now: () => NOW, host });
   who[`${home}/.aw`] = { did: "did:key:z6MkSecond" };
   await publishTick({ settings, now: () => NOW + 60000, host });
@@ -86,7 +89,7 @@ test("a re-minted identity (a different id from aw) drops the cache and designat
 
 test("a 403 not_status_host is logged with its exact fields and designates again at the next tick", async () => {
   let first = true;
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor, publishResult: () => (first ? (first = false, { ok: false, status: 403, code: "not_status_host", message: "not the status host for dev-1" }) : { ok: true, status: 200 }) });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, publishResult: () => (first ? (first = false, { ok: false, status: 403, code: "not_status_host", message: "not the status host for dev-1" }) : { ok: true, status: 200 }) });
   const result = await publishTick({ settings, now: () => NOW, host });
   assert.deepEqual(result.refused, [{ alias: "dev-1", team: TEAM, status: 403, code: "not_status_host", message: "not the status host for dev-1" }]);
   assert.deepEqual(host.calls.log.map(({ alias, status, code, message, retry_after }) => ({ alias, status, code, message, retry_after })), [{ alias: "dev-1", status: 403, code: "not_status_host", message: "not the status host for dev-1", retry_after: null }]);
@@ -96,7 +99,7 @@ test("a 403 not_status_host is logged with its exact fields and designates again
 
 test("a 429 skips that agent until Retry-After has passed", async () => {
   let n = 0;
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor, publishResult: () => (n++ === 0 ? { ok: false, status: 429, code: "rate_limited", message: "slow down", retry_after: 90 } : { ok: true, status: 200 }) });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, publishResult: () => (n++ === 0 ? { ok: false, status: 429, code: "rate_limited", message: "slow down", retry_after: 90 } : { ok: true, status: 200 }) });
   await publishTick({ settings, now: () => NOW, host });
   const second = await publishTick({ settings, now: () => NOW + 60000, host });
   assert.equal(host.calls.publish.length, 1);
@@ -107,7 +110,7 @@ test("a 429 skips that agent until Retry-After has passed", async () => {
 
 test("a 409 stale_seq is logged and the next tick simply sends a newer seq", async () => {
   let n = 0;
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor, publishResult: () => (n++ === 0 ? { ok: false, status: 409, code: "stale_seq", message: "seq is not greater than the stored seq" } : { ok: true, status: 200 }) });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, publishResult: () => (n++ === 0 ? { ok: false, status: 409, code: "stale_seq", message: "seq is not greater than the stored seq" } : { ok: true, status: 200 }) });
   await publishTick({ settings, now: () => NOW, host });
   await publishTick({ settings, now: () => NOW + 60000, host });
   assert.equal(host.calls.log[0].code, "stale_seq");
@@ -116,7 +119,7 @@ test("a 409 stale_seq is logged and the next tick simply sends a newer seq", asy
 });
 
 test("a failed designation is logged and that agent is not published this tick", async () => {
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor, setResult: () => ({ ok: false, status: 422, code: "invalid_host", message: "host_did is not an active member of this team" }) });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, setResult: () => ({ ok: false, status: 422, code: "invalid_host", message: "host_did is not an active member of this team" }) });
   const result = await publishTick({ settings, now: () => NOW, host });
   assert.equal(host.calls.publish.length, 0);
   assert.deepEqual(result.refused, [{ alias: "dev-1", team: TEAM, status: 422, code: "invalid_host", message: "host_did is not an active member of this team" }]);
@@ -126,7 +129,7 @@ test("a joined identity is its own agent, published by that team's root, degrade
   const home = "/d/agents/a/instances/dev-1";
   const row = localRow("dev-1");
   row.capabilityMeta["oats.aweb"].joinedTeams = [{ label: "ops", team: OTHER, identityHome: `${home}/.aweb-identity-ops`, receive: "poll", alias: "dev-1" }];
-  const host = fakeHost({ rows: [row], whoami: whoamiFor });
+  const host = fakeHost({ rows: [row], ids: idsFor });
   await publishTick({ settings, now: () => NOW, host });
   const joined = host.calls.publish.find((p) => p.document.team_id === OTHER);
   assert.equal(joined.dir, OPS_ROOT);
@@ -137,7 +140,7 @@ test("a joined identity is its own agent, published by that team's root, degrade
 });
 
 test("a resident's seats publish one document: the resident's did:aw, signed by its custody root, best seat wins", async () => {
-  const host = fakeHost({ rows: [seatRow("seat-a"), seatRow("seat-b")], whoami: whoamiFor, liveness: { "seat-a": { state: "stopped", lastEvent: "launched" } } });
+  const host = fakeHost({ rows: [seatRow("seat-a"), seatRow("seat-b")], ids: idsFor, liveness: { "seat-a": { state: "stopped", lastEvent: "launched" } } });
   await publishTick({ settings, now: () => NOW, host });
   assert.equal(host.calls.publish.length, 1);
   const { dir, alias, document } = host.calls.publish[0];
@@ -150,7 +153,7 @@ test("a resident's seats publish one document: the resident's did:aw, signed by 
 });
 
 test("a resident whose seats are all gone, after it was published, is published as retired", async () => {
-  const host = fakeHost({ rows: [seatRow("seat-a")], whoami: whoamiFor });
+  const host = fakeHost({ rows: [seatRow("seat-a")], ids: idsFor });
   await publishTick({ settings, now: () => NOW, host });
   host.status = async () => ({ agents: [{ name: "r", instances: [] }] });
   await publishTick({ settings, now: () => NOW + 60000, host });
@@ -163,7 +166,7 @@ test("homes it cannot publish are listed with why, never guessed", async () => {
   const retained = localRow("kept"); retained.capabilityMeta["oats.aweb"] = { team: TEAM, alias: "kept", retained: true, identity: { mode: "global", alias: "kept", team: TEAM } };
   const unknownResident = seatRow("seat-x"); unknownResident.capabilityMeta["oats.aweb"].identity.resident = "ghost";
   const noRoot = localRow("far"); noRoot.capabilityMeta["oats.aweb"].team = "far:elsewhere"; noRoot.capabilityMeta["oats.aweb"].identity.team = "far:elsewhere";
-  const host = fakeHost({ rows: [noMeta, retained, unknownResident, noRoot], whoami: whoamiFor });
+  const host = fakeHost({ rows: [noMeta, retained, unknownResident, noRoot], ids: idsFor });
   const result = await publishTick({ settings: { ...settings, root: undefined }, now: () => NOW, host });
   assert.equal(host.calls.publish.length, 0);
   assert.deepEqual(result.skipped, [
@@ -175,34 +178,34 @@ test("homes it cannot publish are listed with why, never guessed", async () => {
 
 test("an id aw cannot give is listed, not guessed", async () => {
   const home = "/d/agents/a/instances/dev-1";
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: { ...whoamiFor, [`${home}/.aw`]: null } });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: { ...idsFor, [`${home}/.aw`]: null } });
   const result = await publishTick({ settings, now: () => NOW, host });
   assert.equal(host.calls.publish.length, 0);
-  assert.deepEqual(result.skipped, [{ alias: "dev-1", team: TEAM, reason: "aw whoami gave no agent id" }]);
+  assert.deepEqual(result.skipped, [{ alias: "dev-1", team: TEAM, reason: "aw gave no agent id" }]);
 });
 
 test("a home whose readiness does not answer within the budget is published unknown, not dropped", async () => {
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor });
   host.readiness = () => new Promise(() => {});
   const result = await publishTick({ settings, now: () => NOW, host, budgetMs: 20 });
   assert.deepEqual(result.published, [{ alias: "dev-1", team: TEAM, reachable: "unknown", code: "oats.readiness_unavailable" }]);
 });
 
 test("an aw without the status commands stops the tick before anything is sent", async () => {
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor, supportsStatus: false });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, supportsStatus: false });
   await assert.rejects(publishTick({ settings, now: () => NOW, host }), /aw 1.36.36 has no status publish; needs a release of aw with `aw status publish`/);
   assert.equal(host.calls.set.length + host.calls.publish.length, 0);
 });
 
 test("publishing off: the tick does nothing at all", async () => {
-  const host = fakeHost({ rows: [localRow("dev-1")], whoami: whoamiFor });
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor });
   const result = await publishTick({ settings: { ...settings, health: undefined }, now: () => NOW, host });
   assert.deepEqual(result, { disabled: true });
   assert.equal(host.calls.readiness.length + host.calls.set.length + host.calls.publish.length, 0);
 });
 
 test("a stopped home is published as stopped with the operator role from settings when someone must act", async () => {
-  const host = fakeHost({ rows: [localRow("dev-1"), localRow("dev-2")], whoami: whoamiFor, liveness: { "dev-1": { state: "stopped", lastEvent: "stopped" }, "dev-2": { state: "shell", lastEvent: "launched" } } });
+  const host = fakeHost({ rows: [localRow("dev-1"), localRow("dev-2")], ids: idsFor, liveness: { "dev-1": { state: "stopped", lastEvent: "stopped" }, "dev-2": { state: "shell", lastEvent: "launched" } } });
   await publishTick({ settings: { ...settings, health: { publish: true, operator: "Nactiva's operator" } }, now: () => NOW, host });
   const byAlias = Object.fromEntries(host.calls.publish.map((p) => [p.alias, p.document]));
   assert.deepEqual(byAlias["dev-1"].fixing, { by: "nobody", text: "Stopped on purpose." });

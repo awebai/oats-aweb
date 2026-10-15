@@ -59,3 +59,11 @@ test("the pre-send check refuses a document it would never publish, with the vec
   assert.deepEqual(checkDocument({ ...good.document, reason: { code: "oats.x", text: "a\nb" } }, { now }).error, "control_character");
   assert.deepEqual(checkDocument({ ...good.document, type: "mail" }, { now }).error, "wrong_type");
 });
+
+test("a yes document carries no reason or fixing: null is refused as invalid_value, as the server does", () => {
+  const yes = vector.valid.find((c) => c.name === "reachable_yes_minimal");
+  const now = at(yes.now);
+  assert.deepEqual(checkDocument(yes.document, { now }), { ok: true });
+  assert.equal(checkDocument({ ...yes.document, reason: null }, { now }).error, "invalid_value");
+  assert.equal(checkDocument({ ...yes.document, fixing: null }, { now }).error, "invalid_value");
+});

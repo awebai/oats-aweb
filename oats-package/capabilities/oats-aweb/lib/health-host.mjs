@@ -1,0 +1,126 @@
+// What the agent status publisher reads and runs on the host: the kernel's
+// public CLI (status, session inspect, instance events, readiness), aw (the
+// offline identity doctor and the status commands), its designation caches
+// and its refusal log. Every argv here is exercised against the real binaries
+// by test/health-host-native.test.mjs.
+import {spawn} from 'node:child_process';
+import {appendFile, mkdir, readFile, rename, writeFile} from 'node:fs/promises';
+import {dirname, join} from 'node:path';
+
+const KERNEL_TIMEOUT_MS = 30 * 1000;
+const AW_TIMEOUT_MS = 15 * 1000;
+/** The kernel events that say what last happened to a home's session. */
+const LIFECYCLE = ['launched', 'restarted', 'stopped'];
+/** Ambient identity selectors that must never redirect an aw call. */
+const AW_UNSET = ['AWEB_IDENTITY_HOME', 'AWEB_URL', 'AWEB_API_KEY', 'AWEB_ROLE_NAME', 'AWEB_ROLE'];
+/** An instance session's own variables, which would scope a kernel call to it. */
+const KERNEL_UNSET = ['OATS_INSTANCE', 'OATS_INSTANCE_HOME', 'OATS_HOME'];
+export const AW_STATUS_UNSUPPORTED = (version) => `aw ${version} has no status publish; needs a release of aw with \`aw status publish\` (aweb-acah.3.1)`;
+
+function run(command, args, {cwd, env, input, timeout}) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {cwd, env, stdio: ['pipe', 'pipe', 'pipe'], timeout});
+    let stdout = '', stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('error', (error) => resolve({status: null, stdout, stderr: String(error.message || error)}));
+    child.on('close', (status, signal) => resolve({status: signal ? null : status, stdout, stderr: signal ? `killed by ${signal}` : stderr}));
+    child.stdin.end(input ?? '');
+  });
+}
+
+const without = (env, names) => Object.fromEntries(Object.entries(env).filter(([k]) => !names.includes(k)));
+const parseJson = (text) => { try { return JSON.parse(text); } catch { return undefined; } };
+/** aw prints one JSON object; take the last line that is one. */
+const lastJson = (text) => String(text).trim().split('\n').reverse().map(parseJson).find((v) => v && typeof v === 'object');
+
+/** `deployment` is where kernel calls run and the log lives; `env` is the
+ *  environment the children start from. The kernel is the one that dispatched
+ *  this command (OATS_NODE_BIN and OATS_CLI_BIN), else `oats` on PATH. */
+export function healthHost({deployment, env}) {
+  const kernelArgv = env.OATS_NODE_BIN && env.OATS_CLI_BIN ? [env.OATS_NODE_BIN, env.OATS_CLI_BIN] : ['oats'];
+  const kernelEnv = without(env, KERNEL_UNSET);
+  const awEnv = {...without(env, AW_UNSET), AW_NO_UPDATE_CHECK: '1'};
+
+  const kernel = async (args) => {
+    const r = await run(kernelArgv[0], [...kernelArgv.slice(1), ...args, '--json'], {cwd: deployment, env: kernelEnv, timeout: KERNEL_TIMEOUT_MS});
+    return parseJson(r.stdout) ?? {ok: false, error: {code: 'E_UNREADABLE', message: (r.stderr || r.stdout).trim().slice(0, 500)}};
+  };
+  const aw = (target, args, input) => run('aw', [...(target.identityHome ? ['--identity-home', target.identityHome] : []), ...args], {cwd: target.cwd ?? deployment, env: awEnv, input, timeout: AW_TIMEOUT_MS});
+  /** An aw status command's answer: {ok, status, code, message, retry_after}. */
+  const awAnswer = (r) => {
+    const doc = lastJson(r.stdout);
+    if (doc && typeof doc.ok === 'boolean') return {status: null, code: null, message: '', retry_after: null, ...doc};
+    return {ok: false, status: null, code: 'transport', message: (r.stderr || r.stdout).trim().slice(0, 500) || `aw exited ${r.status}`, retry_after: null};
+  };
+
+  return {
+    async status() {
+      const doc = await kernel(['status']);
+      if (!Array.isArray(doc?.agents)) throw new Error(`oats status gave no roster: ${doc?.error?.message ?? 'no answer'}`);
+      return doc;
+    },
+
+    /** {state: alive|shell|stopped|not-launched|unobservable, lastEvent}. */
+    async liveness({instance, home}) {
+      const inspected = await kernel(['session', 'inspect', '--home', home]);
+      // The kernel names no code for a tmux server that is gone, as after a
+      // reboot; its message is the only sign that the session is not running.
+      const serverGone = !inspected.ok && inspected.error?.code === 'E_SESSION_UNAVAILABLE' && /no server running/.test(inspected.error.message ?? '');
+      if (!inspected.ok && !serverGone) return {state: 'unobservable', lastEvent: null};
+      const events = await kernel(['instance', 'events', instance, '--home', home]);
+      const lastEvent = (events.ok ? events.result.events : []).map((e) => e.kind).filter((k) => LIFECYCLE.includes(k)).at(-1) ?? null;
+      if (serverGone) return {state: 'stopped', lastEvent};
+      const {present, state} = inspected.result;
+      return {state: present && state === 'unknown' ? 'alive' : state, lastEvent};
+    },
+
+    /** The oats.aweb provider's readiness answer, or null when there is none. */
+    async readiness(home) {
+      const doc = await kernel(['readiness', '--home', home]);
+      const items = doc?.ok ? doc.result.checks?.providers?.items ?? [] : [];
+      return items.find((i) => i.capability?.id === 'oats.aweb')?.result ?? null;
+    },
+
+    /** {did, stable_id?} from aw's offline identity doctor, or null. */
+    async identityOf(target) {
+      const doc = parseJson((await aw(target, ['doctor', 'identity', '--offline', '--json'])).stdout);
+      const detail = (id) => doc?.checks?.find((c) => c.id === id && c.status === 'ok')?.detail ?? {};
+      const did = detail('identity.local.did_key_format').did_key;
+      const stableId = detail('identity.local.stable_id_expected').stable_id;
+      if (typeof did !== 'string' || !did.startsWith('did:key:')) return null;
+      return typeof stableId === 'string' && stableId.startsWith('did:aw:') ? {did, stable_id: stableId} : {did};
+    },
+
+    async awSupportsStatus() {
+      if ((await aw({}, ['status', 'publish', '--help'])).status === 0) return {ok: true};
+      const version = (await aw({}, ['version'])).stdout.match(/aw (\d+\.\d+\.\d+)/)?.[1] ?? 'unknown';
+      return {ok: false, message: AW_STATUS_UNSUPPORTED(version)};
+    },
+
+    async statusHostSet(target, hostDid) {
+      return awAnswer(await aw(target, ['status-host', 'set', '--host-did', hostDid, '--json']));
+    },
+
+    async statusPublish(target, alias, document) {
+      return awAnswer(await aw(target, ['status', 'publish', '--alias', alias, '--document', '-', '--json'], JSON.stringify(document)));
+    },
+
+    async readCache(file) {
+      try { const value = JSON.parse(await readFile(file, 'utf8')); return value && typeof value === 'object' ? value : null; } catch { return null; }
+    },
+
+    async writeCache(file, value) {
+      await mkdir(dirname(file), {recursive: true, mode: 0o700});
+      const temporary = `${file}.${process.pid}.tmp`;
+      await writeFile(temporary, `${JSON.stringify(value)}\n`, {mode: 0o600});
+      await rename(temporary, file);
+    },
+
+    async log(entry) {
+      const file = join(deployment, '.oats-aweb', 'health', 'log.jsonl');
+      await mkdir(dirname(file), {recursive: true, mode: 0o700});
+      await appendFile(file, `${JSON.stringify(entry)}\n`, {mode: 0o600});
+    },
+  };
+}
