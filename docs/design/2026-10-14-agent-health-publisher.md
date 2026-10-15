@@ -315,14 +315,23 @@ only counts. Server and aw messages appear only in `--json` output, in
 
 ## 6. Follow-ups, outside the first PR
 
-- **Live designation and publish against a server**, on a scratch deployment
-  and an aweb test team, with the released aw 1.36.38 (oats-expert-juan,
-  2026-10-15). Before that the send was proven offline only: the publisher's
-  argv through aw built from aweb 4636fb9f9, `--print-signed`, against the 7
-  valid vector documents.
-- **A real adapter's receipt**: the pi extension 0.3.15 in a scratch home, read
-  by the receipt proof. Until then the receipt rows are tested on the file format
-  the aw doc fixes.
+- **Live designation and publish against a server: done** (2026-10-15).
+  `test/health-live.test.mjs` (opt-in, `OATS_AWEB_HEALTH_LIVE=1`) ran against
+  a throwaway local aweb 1.27.24, with released aw 1.36.38 and pi extension
+  0.3.15, in a throwaway team of its own. Its scratch deployment spawns a pi
+  agent minted into that team. Each step is read back as the agent (the
+  designation) and from the team's dashboard route (the stored health):
+  - before enable: the aweb fallback;
+  - a tick with the extension's real receipt fresh: `yes`, stored with
+    `source: host` and `verified: true`; the signed payload names the agent's
+    did:key and the root as publisher;
+  - with pi stopped (SIGSTOP), so its pid lives and its heartbeat ages past
+    90 s: `no` / `oats.channel_stream_down` (row 22b);
+  - `disable`: the designation is cleared and aweb shows its own facts again.
+  The test retires its agent, which deletes the identity on the server.
+- **A real adapter's receipt: done**, the pi extension 0.3.15's own
+  `stream.json`, in the same run. No Claude channel 1.7.17 seat was used
+  (oats-expert-juan kept live Claude seats out of it).
 - **The cost of the provider's readiness and `aw doctor`** per home on a real
   deployment (§5, Cost).
 - **Required releases pinned** (aw 1.36.38, Claude channel 1.7.17, pi extension

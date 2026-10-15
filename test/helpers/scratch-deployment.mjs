@@ -15,19 +15,23 @@ const CAPABILITY = new URL("../../oats-package/capabilities/oats-aweb", import.m
 
 /** `withAweb`: the workspace member also carries this checkout's oats.aweb
  *  capability and a soul that composes it from there, so `oats aweb …` runs
- *  from the deployment. That soul is never spawned: spawning would mint a
- *  real aweb identity. */
-export function createScratchDeployment({ withAweb = false } = {}) {
+ *  from the deployment. That soul is spawned only by the live test
+ *  (health-live.test.mjs), which gives a throwaway team and its root:
+ *  `home` (a HOME holding that team's authority, kept on dispose), `path` (a
+ *  directory put first on PATH, for its aw), `env` (more variables), `teams`
+ *  (YAML appended to oats-workspace.yaml) and `local` (YAML appended to
+ *  oats-local.yaml). */
+export function createScratchDeployment({ withAweb = false, home: givenHome, path, env: extraEnv = {}, teams = "", local = "" } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "aweb-health-scratch-")));
   // tmux refuses socket paths over about 100 bytes: keep its directory short.
   const tmux = realpathSync(mkdtempSync("/tmp/ah."));
-  const home = join(root, "home"), ws = join(root, "ws"), deployment = join(root, "dep"), bin = join(root, "bin");
+  const home = givenHome ?? join(root, "home"), ws = join(root, "ws"), deployment = join(root, "dep"), bin = join(root, "bin");
   for (const d of [home, ws, bin]) mkdirSync(d, { recursive: true });
   const gitConfig = join(root, "gitconfig");
   writeFileSync(gitConfig, "");
-  const env = { PATH: `${dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1" };
+  const env = { ...extraEnv, PATH: `${path ? `${path}:` : ""}${dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1" };
   const write = (path, text) => { mkdirSync(dirname(join(ws, path)), { recursive: true }); writeFileSync(join(ws, path), text); };
-  write("oats-workspace.yaml", `schemaVersion: 2\nname: scratch\nmembers: [${WORKSPACE}]\n`);
+  write("oats-workspace.yaml", `schemaVersion: 2\nname: scratch\nmembers: [${WORKSPACE}]\n${teams}`);
   write("oats-membership.yaml", `schemaVersion: 2\nworkspace: ${WORKSPACE}\n`);
   write("souls/plain/soul.yaml", "schemaVersion: 2\nname: plain\ndescription: Scratch soul with no capabilities\nwork: directory\ncapabilities:\n  oats.core: off\n");
   write("souls/plain/AGENTS.md", "Scratch soul.\n");
@@ -46,7 +50,7 @@ export function createScratchDeployment({ withAweb = false } = {}) {
   const oats = (args, { cwd = deployment, input } = {}) => spawnSync("oats", args, { cwd, env, input, encoding: "utf8", timeout: 60000 });
   const onboard = oats(["onboard", deployment, "--workspace", WORKSPACE, "--json"], { cwd: root });
   if (onboard.status !== 0) throw new Error(`oats onboard failed: ${onboard.stdout}${onboard.stderr}`);
-  appendFileSync(join(deployment, "oats-local.yaml"), `launch-configs:\n  fake:\n    harness: pi\n    executable: "${harness}"\n`);
+  appendFileSync(join(deployment, "oats-local.yaml"), `launch-configs:\n  fake:\n    harness: pi\n    executable: "${harness}"\n${local}`);
   const json = (args, options) => { const r = oats([...args, "--json"], options); try { return JSON.parse(r.stdout); } catch { throw new Error(`oats ${args.join(" ")}: ${r.stdout}${r.stderr}`); } };
   const homeOf = (name) => join(deployment, "agents", "plain", "instances", name);
   const sockets = () => readdirSync(tmux, { recursive: true }).map((p) => join(tmux, p)).filter((p) => p.endsWith("/oats"));
