@@ -375,6 +375,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `claude-channel-enrollment-unverified` | approved mode, admission not established. No machine file, unreadable, or an unsupported platform (launch and readiness; providers up to 1.23.2 warned this at every approved launch without reading the policy) | admin: section 4 host step 1 (`/oats-host-delivery`, Choice 1), or the higher managed source; then the banner check and the nonce exchange |
 | `claude-channel-policy-malformed` | approved mode: a machine managed-settings file is not a JSON object; Claude Code documents that it refuses to start while a managed-settings file cannot be parsed (code.claude.com/docs/en/managed-settings.md) | admin: repair the file the message names |
 | `claude-channel-mode-unproven` | the retained record does not establish the historical mode | do not infer a mode from current defaults or claim connection |
+| `claude-channel-mode-default` (warning, home readiness only) | a Claude `delivery: channel` home runs in development mode because nobody chose a mode: its captured settings have no `claudeChannelMode`, or have the manifest default (origin `manifest-default`). It can appear beside `channel-dev-confirmation`. Limit: a home whose record holds no setting origins (composed before OATS recorded them) cannot tell unset from an explicit `development`, so it stays silent | operator: set `settings.oats.aweb.claudeChannelMode` in `oats-local.yaml`, `approved` (the managed-settings route, `/oats-host-delivery`, Choice 1) or `development` explicitly, then respawn |
 | `custody`, `e2ee-disabled` | resident-grant mode custody/encryption issue. A never-ttl grant seat needs its custody to list `grant_never_ttl.v1`; an E2EE grant seat (the default) needs `mail_reply_continuation.v1`. "required custody operations are missing: <op>" for either means the custody runs code older than aw 1.36.32, where those ops arrived; the remedy names the client floor, 1.36.33. "custody status could not be read" means it could not be asked | human; for a missing op, restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then `oats sync`) |
 | `grant-expiring` (warning, grant seats with a duration) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
 | `grant-expired` (grant seats with a duration) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which renews a seat with a captured `identity.ttl` duration for another such duration (to stop it expiring, remove identity.ttl and respawn); respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
@@ -392,6 +393,30 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
   session grant; joined teams need local identities. Report it.
 - "failed to leave team … kept …" — the release was not confirmed; the identity
   home was kept on purpose so leave can be retried. Retry later or report.
+
+**Errors from `oats aweb wake install|status|uninstall`** (section 8, "Host
+wake broker service"; the host procedure is `/oats-host-delivery`, Choice 2;
+full table in the package's `docs/wake-service.md`):
+
+- `E_WAKE_INSIDE_HOME` — run in an instance (`OATS_INSTANCE_HOME` set). The
+  operator runs it in their own shell; an agent reports it.
+- `E_WAKE_UNIT_CONFLICT` — another unit runs `aw wake run`, or a file at the
+  `ai.aweb.wake` path was not written by install. Retire it with the printed
+  steps, then rerun. It is never touched.
+- `E_WAKE_RUNNING_UNSUPERVISED` — a broker runs outside the unit, started by
+  hand. Stop it (the message names `daemon_pid`), then rerun.
+- `E_WAKE_PATH` — `aw`, `oats` or `node` is not on the shell's PATH.
+  `E_AW_FLOOR` — aw is below 1.36.33. `E_WAKE_STATE_DIR` — unset
+  `AW_WAKE_STATE_DIR` (the unit uses aw's default).
+- `E_WAKE_LINGER` — `--linger-required` with systemd lingering off: an
+  administrator runs `loginctl enable-linger <user>`. Without the flag,
+  install warns `wake-linger-off` instead.
+- `wake-tmux-missing` (warning) — no `tmux` on the shell's PATH, so the
+  broker cannot reach OATS sessions. Install tmux or fix PATH, then rerun
+  install.
+- `E_WAKE_NOT_RUNNING` — the unit is in place, but the daemon did not report
+  running on the installed aw's version within about 10 s. The unit is kept;
+  read the log the message names.
 
 **Other symptoms:**
 
@@ -433,6 +458,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Released provider 1.25.1, OATS >=0.42, aw >=1.36.32 | Readiness warns only about what someone must act on: no `joined-team-receive` for a joined team that receives live. A start waits at most 10 s for the custody grant list; an aw call that never exits is reported as timed out or by its code or signal. |
 | Released provider 1.26.0, OATS >=0.42, aw >=1.36.33 | `oats aweb resident create <name>` creates or adopts a GLOBAL resident in an existing hosted team from the dashboard's API key, installs its per-user custody unit and records `residents.<name>` ("GLOBAL residents and grant seats" below). One aw client floor, 1.36.33. |
 | Provider 1.26.1, OATS >=0.48 for `resident create` | `resident create` maps the resident's team without `--team-label` (under the team's name) and makes it the default team where there is none; another default is kept and `oats teams default <label>` is printed as the first step. That step moves the whole deployment's default team (every later spawn of a soul without its own default goes to the resident's team), so it is the operator's decision: an agent prints it and asks, and never runs it on its own. A grant seat gets `AWID_REGISTRY_URL` from its resident's identity when that registry is not aw's default. |
+| Provider 1.28.0, OATS >=0.52.0, aw >=1.36.33 | `oats aweb wake install`, `status` and `uninstall` install the host wake broker as a per-user service ("Host wake broker service" below). Readiness warns `claude-channel-mode-default` for a Claude channel home whose mode nobody chose, and checks the broker at soul scope when the spawn will need it (section 7). |
 | Future provider #56 / #60 | Token-only setup and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
@@ -648,6 +674,23 @@ Setup has no `--global`; GLOBAL spawn consumes a provisioned resident and
 creates a scoped worker grant. Worker home has no root key; it is not keyless.
 LOCAL root/spawn-authority diagnostics are never a GLOBAL gate. Wider-team
 grant extension remains unsupported #60.
+
+### Host wake broker service
+
+The procedure for a host (when it needs the broker, the order, and how to
+check delivery) is oats.setup's `/oats-host-delivery`, Choice 2
+(oats.framework 1.11.0). This card is the command. It is provider 1.28.0, aw
+>=1.36.33, and runs in D, in the operator's own shell, as the user who runs
+the instances, never inside an instance.
+
+| Act | Command in D | Writes / success / one next step | Error → remedy |
+|---|---|---|---|
+| Install, or restart after an aw upgrade | `oats aweb wake install [--plan] [--linger-required] [--json]` | The per-user unit `ai.aweb.wake` (systemd `--user` on Linux, a LaunchAgent on macOS) running `<aw> wake run` with the shell's resolved `aw`, `oats` and `node`, then loads and (re)starts it. Success: `PASS wake broker <version> (<manager> unit <path>)`, verified by `aw wake status`. `--plan` prints the unit and actions and changes nothing. Next: `oats aweb wake status`. | Section 7's `E_WAKE_*` list. On Linux with lingering off it installs and warns `wake-linger-off`. |
+| Report | `oats aweb wake status [--json]` | Read-only. The unit (and whether its `aw` is still the one on PATH), the daemon (version, floor), and the deployment's homes that need the broker, each registered or not. Exit 0 even when something is wrong. | `homes.known: false` names why the homes could not be read. |
+| Remove | `oats aweb wake uninstall [--plan] [--json]` | Stops, disables and deletes only the unit install wrote. With none, `removed: false`. | A foreign unit is never touched (`E_WAKE_UNIT_CONFLICT`). |
+
+The unit's text, the JSON shapes and every error are in the package's
+`docs/wake-service.md`.
 
 ### Connecting a deployment on another machine
 

@@ -5,6 +5,16 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.28.0 — the host wake broker as a service
+
+`oats aweb wake install | status | uninstall` installs, reports and removes
+the per-user unit (`ai.aweb.wake`) that keeps `aw wake run` going: see
+[docs/wake-service.md](docs/wake-service.md). Readiness warns
+`claude-channel-mode-default` for a Claude channel home that runs in
+development mode because nobody chose it, and checks the broker at soul scope
+when the spawn will need it. Both floors are unchanged. See
+[the changelog](CHANGELOG.md#1280--2026-10-15).
+
 ## 1.27.3 — broker readiness uses a post-status clock
 
 Fixes false `wake-status-stale` / `unavailable` on broker-required homes
@@ -930,6 +940,23 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
 - When aw's output contract changes, refresh the fixtures with
   `test/fixtures/resident/capture.sh <aw> <scratch dir>` against the same stack,
   and update its README's version, commit and date.
+
+### Wake service verification
+
+`oats aweb wake install|status|uninstall` lives in `lib/wake-service.mjs`. It
+builds its unit from `lib/custody-unit.mjs`'s parts: the unit directory and
+quoting, `searchPath`, the manager runner, linger and the running pid. Change
+those parts only with both commands' tests green. Its contract, unit text and
+errors are in [docs/wake-service.md](docs/wake-service.md).
+
+- `node --test test/wake-service.test.mjs` covers both platforms against a fake
+  host (`test/helpers/fake-wake-host.mjs`): fake aw, oats, systemctl,
+  launchctl, loginctl and ps on a PATH holding nothing else, under a temporary
+  HOME and XDG_CONFIG_HOME, with a fake kernel for `status`'s home walk.
+- Never run `install` or `uninstall`, or a manager command, against a real
+  user's units to test it. `systemctl --user` reaches the real user manager
+  whatever HOME is, so a live systemd proof needs a disposable machine or
+  user.
 
 ### GLOBAL grant app inventory (provider 1.23.2, #76)
 
