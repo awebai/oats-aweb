@@ -51,6 +51,15 @@ test("health commands through the real kernel and scheduler", { skip }, async (t
     assert.equal(scratch.json(["schedule", "list"]).result.schedules.filter((j) => j.id === JOB).length, 1);
   });
 
+  await t.test("enable and status name the minimum aw, Claude channel and pi extension, in text and in JSON", () => {
+    const minimums = "minimums: aw 1.36.38 to publish; Claude channel 1.7.17 or pi extension 0.3.15 to prove receive";
+    for (const action of ["enable", "status"]) {
+      const r = scratch.oats(["aweb", "health", action]);
+      assert.ok(r.stdout.split("\n").includes(minimums), `${action}:\n${r.stdout}`);
+      assert.deepEqual(aweb(action).doc.result.floors, { aw: "1.36.38", claudeChannel: "1.7.17", piExtension: "0.3.15" });
+    }
+  });
+
   await t.test("publish with an aw that has no status commands fails before sending, in words the scheduler does not hold", () => {
     const { exit, doc } = aweb("publish");
     const awPublishes = spawnSync("aw", ["status", "publish", "--help"], { env: scratch.env }).status === 0;

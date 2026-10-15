@@ -121,6 +121,7 @@ function text(doc) {
   if (r.lastTick) lines.push(`last publish: ${r.lastTick.at} (published ${r.lastTick.published}, refused ${r.lastTick.refused}, skipped ${r.lastTick.skipped})`);
   for (const p of r.problems) lines.push(`problem: ${p}`);
   if (r.designations) lines.push(`designations cleared: ${r.designations.cleared.length}, not cleared: ${r.designations.failed.length}`);
+  lines.push(`minimums: aw ${r.floors.aw} to publish; Claude channel ${r.floors.claudeChannel} or pi extension ${r.floors.piExtension} to prove receive`);
   lines.push(`note: ${r.note}`);
   return lines.join('\n');
 }
