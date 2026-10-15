@@ -242,12 +242,18 @@ for an unattended home instead, without overriding an explicit native-channel
 requirement.
 
 **The host wake broker** (`aw wake run`, one per host user) wakes every Codex
-home, every `delivery: session` home and every joined team. Without it,
-joined teams record `receive: poll`. The provider registers a home at spawn
-and launch, and readiness reads the daemon's own status (section 7). It does
-not install the broker or restart it. The operator runs it as a per-user
-service with `AW_WAKE_OATS_BIN` and a `PATH` that reaches `oats` and `node`,
-and restarts it after every aw upgrade: `/oats-host-delivery`, Choice 2.
+home, every `delivery: session` home and every joined team. The provider
+registers a home at spawn and launch. `aw wake register` accepts a
+registration even while the daemon is down, and the registration takes
+effect when the daemon starts. Readiness reads the daemon's own status
+(section 7). Without a running daemon, every such home reads `unavailable`
+with `wake-daemon-not-running`, and each joined team adds
+`joined-team-poll-only`.
+
+The provider does not install the broker or restart it. The operator runs it
+as a per-user service, with `AW_WAKE_OATS_BIN` and a `PATH` that reaches
+`oats`, `node` and `tmux`, and restarts it after every aw upgrade:
+`/oats-host-delivery`, Choice 2.
 
 **When woken:**
 
