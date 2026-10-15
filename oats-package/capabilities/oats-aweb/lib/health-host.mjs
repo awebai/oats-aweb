@@ -33,6 +33,9 @@ function run(command, args, {cwd, env, input, timeout}) {
     child.stderr.on('data', (d) => { stderr += d; });
     child.on('error', (error) => resolve({status: null, stdout, stderr: String(error.message || error)}));
     child.on('close', (status, signal) => resolve({status: signal ? null : status, stdout, stderr: signal ? `killed by ${signal}` : stderr}));
+    // A child that exits before reading its input closes the pipe under the
+    // write (EPIPE): its exit status and output are its answer.
+    child.stdin.on('error', () => {});
     child.stdin.end(input ?? '');
   });
 }
