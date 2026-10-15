@@ -68,8 +68,8 @@ test("publish to a real server: designate, fresh receipt yes, stale receipt no, 
   if (!spawned.ok) {
     // A failed spawn has no instance to retire; say whether its identity was
     // left behind on the server.
-    const left = (await read()).status === 200;
-    assert.fail(`spawn ${alias}: ${JSON.stringify(spawned.error)}${left ? `; its identity is left on the server: remove it with \`aw team admin remove-agent\`` : ""}`);
+    const left = await read().then((r) => (r.status === 200 ? "; its identity is left on the server: remove it with `aw team admin remove-agent`" : ""), (error) => `; whether its identity is left on the server is unknown (${error.message})`);
+    assert.fail(`spawn ${alias}: ${JSON.stringify(spawned.error)}${left}`);
   }
   cleanup.spawned = true;
 
