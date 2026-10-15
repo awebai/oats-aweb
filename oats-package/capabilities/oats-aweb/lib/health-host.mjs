@@ -48,6 +48,9 @@ export function healthHost({deployment, env}) {
   const kernelArgv = env.OATS_NODE_BIN && env.OATS_CLI_BIN ? [env.OATS_NODE_BIN, env.OATS_CLI_BIN] : ['oats'];
   const kernelEnv = without(env, KERNEL_UNSET);
   const awEnv = {...without(env, AW_UNSET), AW_NO_UPDATE_CHECK: '1'};
+  // Agents publish in parallel; their log writes run one after another, so
+  // two of them never rotate the log at once.
+  let logged = Promise.resolve();
 
   const kernel = async (args) => {
     const r = await run(kernelArgv[0], [...kernelArgv.slice(1), ...args, '--json'], {cwd: deployment, env: kernelEnv, timeout: KERNEL_TIMEOUT_MS});
@@ -163,14 +166,19 @@ export function healthHost({deployment, env}) {
       await rename(temporary, file);
     },
 
-    async log(entry) {
-      const file = join(deployment, '.oats-aweb', 'health', 'log.jsonl');
-      await mkdir(dirname(file), {recursive: true, mode: 0o700});
-      // A refusal that repeats every minute must not grow the log without
-      // bound: past the cap, the log becomes its one older generation.
-      const size = await stat(file).then((st) => st.size, () => 0);
-      if (size >= LOG_MAX_BYTES) await rename(file, `${file}.1`);
-      await appendFile(file, `${JSON.stringify(entry)}\n`, {mode: 0o600});
+    log(entry) {
+      const write = async () => {
+        const file = join(deployment, '.oats-aweb', 'health', 'log.jsonl');
+        await mkdir(dirname(file), {recursive: true, mode: 0o700});
+        // A refusal that repeats every minute must not grow the log without
+        // bound: past the cap, the log becomes its one older generation.
+        const size = await stat(file).then((st) => st.size, () => 0);
+        if (size >= LOG_MAX_BYTES) await rename(file, `${file}.1`);
+        await appendFile(file, `${JSON.stringify(entry)}\n`, {mode: 0o600});
+      };
+      const done = logged.then(write);
+      logged = done.catch(() => {});
+      return done;
     },
   };
 }

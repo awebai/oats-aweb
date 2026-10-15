@@ -128,6 +128,19 @@ test("the refusal log keeps one older generation once it passes 1 MiB, so it nev
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("refusals logged at once while the log crosses its cap all land, and the older generation survives", { skip: false }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "aweb-health-log-"));
+  try {
+    const host = healthHost({ deployment: dir, env: {} });
+    const log = join(dir, ".oats-aweb", "health", "log.jsonl");
+    await host.log({ at: "2026-10-14T16:00:00Z", code: "first" });
+    writeFileSync(log, `${readFileSync(log, "utf8")}${"x".repeat(1024 * 1024)}\n`);
+    await Promise.all(["a", "b", "c", "d"].map((code) => host.log({ at: "2026-10-14T16:01:00Z", code })));
+    assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l).code).sort(), ["a", "b", "c", "d"]);
+    assert.match(readFileSync(`${log}.1`, "utf8"), /"code":"first"/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("receipt reads <identity dir>/receive/stream.json, null when absent or unreadable; pidAlive asks the process table", { skip: false }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "aweb-health-receipt-"));
   try {

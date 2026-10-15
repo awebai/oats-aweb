@@ -342,3 +342,14 @@ test("a receipt naming pid 0, or a heartbeat ahead of the clock, proves nothing"
     assert.equal(host.calls.publish[0].document.reason.code, "oats.channel_stream_down");
   }
 });
+
+test("a refusal the log cannot record is listed as failed, and the agent's own bookkeeping still happens", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, publishResult: () => ({ ok: false, status: 429, code: "rate_limited", message: "slow down", retry_after: 90 }) });
+  host.log = async () => { throw new Error("ENOSPC: no space left on device"); };
+  const first = await publishTick({ settings, now: () => NOW, host });
+  assert.deepEqual(first.failed, [{ alias: "dev-1", team: TEAM, message: "refusal not logged: ENOSPC: no space left on device" }]);
+  assert.equal(first.refused.length, 1);
+  const second = await publishTick({ settings, now: () => NOW + 60000, host });
+  assert.equal(host.calls.publish.length, 1);
+  assert.deepEqual(second.skipped, [{ alias: "dev-1", team: TEAM, reason: "rate limited until 2026-10-14T16:01:30Z" }]);
+});

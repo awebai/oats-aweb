@@ -115,7 +115,10 @@ async function publishAgent(agent, health, {host, now, result}) {
   const refused = async (answer) => {
     const row = {alias, team, status: answer.status ?? null, code: answer.code ?? null, message: answer.message ?? ''};
     result.refused.push(row);
-    await host.log({at: isoSeconds(now), ...row, retry_after: answer.retry_after ?? null});
+    // A log that cannot be written is reported, and never costs the agent
+    // its designation or Retry-After bookkeeping.
+    await host.log({at: isoSeconds(now), ...row, retry_after: answer.retry_after ?? null})
+      .catch((error) => result.failed.push({alias, team, message: `refusal not logged: ${String(error?.message ?? error)}`}));
   };
   if (entry.retryUntil && now < entry.retryUntil) {
     result.skipped.push({alias, team, reason: `rate limited until ${isoSeconds(entry.retryUntil)}`});

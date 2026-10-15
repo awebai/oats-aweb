@@ -232,6 +232,15 @@ tick costs the minutes it spans; documents stay valid for 5 minutes.
 answer of the wrong shape) is listed under `failed`, possibly after its
 document was sent, and every other agent is still published.
 
+**Retry-After.** aw reports it as `retry_after`, whole seconds, or `null`
+when the header is not an integer (an HTTP date); with `null` the agent is
+tried again at the next tick. A log write that fails is listed under
+`failed` and never costs the agent its designation or Retry-After record.
+
+**Disable.** It clears the designations it cached for the homes and residents
+it sees. A home already retired needs none: retire deletes its workspace and
+aweb drops the designation with it.
+
 **What the job prints.** The scheduled job runs without `--json` and prints
 only counts. Server and aw messages appear only in `--json` output, in
 `refused[].message`, as aw passes them through.
