@@ -21,10 +21,19 @@ const CAPABILITY = new URL("../../oats-package/capabilities/oats-aweb", import.m
  *  directory put first on PATH, for its aw), `env` (more variables), `teams`
  *  (YAML appended to oats-workspace.yaml) and `local` (YAML appended to
  *  oats-local.yaml). */
-export function createScratchDeployment({ withAweb = false, home: givenHome, path, env: extraEnv = {}, teams = "", local = "" } = {}) {
+export function createScratchDeployment(options = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "aweb-health-scratch-")));
   // tmux refuses socket paths over about 100 bytes: keep its directory short.
   const tmux = realpathSync(mkdtempSync("/tmp/ah."));
+  // A deployment that fails half-built leaves nothing behind.
+  try { return buildScratchDeployment(root, tmux, options); } catch (error) {
+    rmSync(tmux, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome, path, env: extraEnv = {}, teams = "", local = "" }) {
   const home = givenHome ?? join(root, "home"), ws = join(root, "ws"), deployment = join(root, "dep"), bin = join(root, "bin");
   for (const d of [home, ws, bin]) mkdirSync(d, { recursive: true });
   const gitConfig = join(root, "gitconfig");

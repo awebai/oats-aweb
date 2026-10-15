@@ -84,8 +84,8 @@ async function enable(options, {deployment, host, settings}) {
 async function disable({deployment, host, settings}) {
   await host.removeSchedule(HEALTH_JOB);
   recordAwebSetting('health', 'publish', false, {start: deployment});
-  const supported = await host.awSupportsStatus();
-  const designations = supported.ok ? await clearDesignations({settings, host}) : {cleared: [], failed: [], skipped: supported.message};
+  const clears = await host.awClearsDesignations();
+  const designations = clears.ok ? await clearDesignations({settings, host}) : {cleared: [], failed: [], skipped: clears.message};
   return {...(await report({...healthSettings(settings), publish: false}, {deployment, host})), designations};
 }
 

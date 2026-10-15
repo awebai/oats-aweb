@@ -111,7 +111,9 @@ receipt stays on rows 23 and 23a.
 **Required releases.** Publishing needs aw 1.36.38 (`aw status-host`,
 `aw status publish`) and server 1.27.24. Whenever publishing is on, `health`
 checks `aw version` against 1.36.38 in `enable`, in `status` and on every tick.
-An aw below it is refused even if it lists the commands. The provider's own aw
+An aw below it is refused even if it lists the commands. `disable` is the off
+path: it clears designations with any aw that has `status-host clear`, below
+the floor too, so turning publishing off never leaves one behind. The provider's own aw
 floor stays 1.36.33, so a deployment that never enables health needs nothing
 newer. Proving receive needs Claude channel 1.7.17 or pi extension 0.3.15.
 `health status` states all three as required (`required: aw 1.36.38 to publish;

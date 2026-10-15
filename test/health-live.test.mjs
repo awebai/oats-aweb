@@ -31,36 +31,47 @@ const skip = process.env.OATS_AWEB_HEALTH_LIVE !== "1" ? "set OATS_AWEB_HEALTH_L
 const STALE_AFTER_MS = 95 * 1000;
 
 test("publish to a real server: designate, fresh receipt yes, stale receipt no, disable clears", { skip, timeout: 6 * 60 * 1000 }, async (t) => {
+  // One cleanup, in order: resume a stopped adapter (so retire can stop it),
+  // retire the agent (which deletes its identity on the server, with the aw
+  // under test, so before its directory goes), dispose the scratch, then the
+  // aw directory.
+  const cleanup = { stopped: null, spawned: false, scratch: null };
+  const alias = `hp-${randomBytes(3).toString("hex")}`;
   const bin = mkdtempSync(join(tmpdir(), "aweb-health-live-bin-"));
+  t.after(() => {
+    if (cleanup.stopped) try { process.kill(cleanup.stopped, "SIGCONT"); } catch { /* gone */ }
+    const retired = cleanup.spawned ? cleanup.scratch.oats(["retire", alias, "--force", "--json"]) : null;
+    cleanup.scratch?.dispose();
+    rmSync(bin, { recursive: true, force: true });
+    if (retired && retired.status !== 0) throw new Error(`retire ${alias} left its identity on the server: ${retired.stdout}${retired.stderr}`);
+  });
   symlinkSync(given.AW, join(bin, "aw"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
   const registry = Object.fromEntries(["AWID_REGISTRY_URL", "AWID_SKIP_DNS_VERIFY"].filter((n) => process.env[n]).map((n) => [n, process.env[n]]));
-  const scratch = createScratchDeployment({
+  const scratch = cleanup.scratch = createScratchDeployment({
     withAweb: true, home: given.LIVE_HOME, path: bin, env: { ...registry, AW_NO_UPDATE_CHECK: "1" },
     teams: `teams:\n  live: { team: '${given.LIVE_TEAM}' }\ndefaultTeam: live\nlocalTeams: true\n`,
     local: `  pi:\n    harness: pi\n    executable: pi\nsettings:\n  oats.aweb:\n    root: ${given.LIVE_ROOT}\n`,
   });
-  const alias = `hp-${randomBytes(3).toString("hex")}`;
   const home = join(scratch.deployment, "agents", "messenger", "instances", alias);
   const health = (...args) => scratch.json(["aweb", "health", ...args, "--soul", "messenger"]);
   const aw = (...args) => JSON.parse(spawnSync("aw", args, { env: scratch.env, encoding: "utf8" }).stdout);
   const designation = () => aw("--identity-home", join(home, ".aw"), "status-host", "show", "--json");
+  const read = () => fetch(`${given.LIVE_SERVER}/v1/teams/${given.LIVE_TEAM}/agents/${alias}`, { headers: { "X-Dashboard-Token": readFileSync(given.LIVE_TOKEN, "utf8").trim() } });
   const stored = async () => {
-    const r = await fetch(`${given.LIVE_SERVER}/v1/teams/${given.LIVE_TEAM}/agents/${alias}`, { headers: { "X-Dashboard-Token": readFileSync(given.LIVE_TOKEN, "utf8").trim() } });
+    const r = await read();
     assert.equal(r.status, 200, `dashboard read of ${alias}`);
     return (await r.json()).health;
   };
   const rootDid = JSON.parse(spawnSync("aw", ["whoami", "--json"], { cwd: given.LIVE_ROOT, env: scratch.env, encoding: "utf8" }).stdout).did;
 
-  // Retiring deletes the agent's identity on the server; it needs the
-  // deployment, so it runs before the scratch is disposed.
-  t.after(() => {
-    const retired = scratch.oats(["retire", alias, "--force", "--json"]);
-    scratch.dispose();
-    if (retired.status !== 0) throw new Error(`retire ${alias} left its identity on the server: ${retired.stdout}${retired.stderr}`);
-  });
   const spawned = scratch.json(["spawn", "messenger", "--name", alias, "--launch-config", "pi"]);
-  assert.equal(spawned.ok, true, JSON.stringify(spawned.error));
+  if (!spawned.ok) {
+    // A failed spawn has no instance to retire; say whether its identity was
+    // left behind on the server.
+    const left = (await read()).status === 200;
+    assert.fail(`spawn ${alias}: ${JSON.stringify(spawned.error)}${left ? `; its identity is left on the server: remove it with \`aw team admin remove-agent\`` : ""}`);
+  }
+  cleanup.spawned = true;
 
   // The extension writes its receipt on its first read of the stream.
   const receiptFile = join(home, ".aw", "receive", "stream.json");
@@ -82,13 +93,14 @@ test("publish to a real server: designate, fresh receipt yes, stale receipt no, 
 
   // A hung adapter: its process lives, its stream reads nothing.
   process.kill(receipt.pid, "SIGSTOP");
-  t.after(() => { try { process.kill(receipt.pid, "SIGCONT"); } catch { /* gone */ } });
+  cleanup.stopped = receipt.pid;
   await delay(Math.max(0, Date.parse(JSON.parse(readFileSync(receiptFile, "utf8")).heartbeat_at) + STALE_AFTER_MS - Date.now()));
   tick = health("publish");
   assert.deepEqual(tick.result.published, [{ alias, team: given.LIVE_TEAM, reachable: "no", code: "oats.channel_stream_down" }]);
   status = await stored();
   assert.deepEqual([status.source, status.reachable, status.reason_text, status.fixing_by, status.fixing_text, status.verified], ["host", "no", "Its message channel is not connected.", "operator", "Live test operator", true], JSON.stringify(status));
   process.kill(receipt.pid, "SIGCONT");
+  cleanup.stopped = null;
 
   const disabled = health("disable");
   assert.deepEqual(disabled.result.designations, { cleared: [{ alias, team: given.LIVE_TEAM }], failed: [] });

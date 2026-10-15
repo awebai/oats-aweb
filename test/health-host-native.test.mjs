@@ -83,7 +83,7 @@ test("identityOf answers null for a directory that holds no identity", { skip },
 });
 
 test("awSupportsStatus agrees with the installed aw's version, and names it when it cannot publish", { skip }, async () => {
-  const version = spawnSync("aw", ["version"], { encoding: "utf8" }).stdout.match(/aw (\d+\.\d+\.\d+)/)[1];
+  const version = spawnSync("aw", ["version"], { encoding: "utf8" }).stdout.match(/^aw (\S+)$/m)?.[1] ?? "unknown";
   const answer = await healthHost({ deployment: tmpdir(), env: { PATH: process.env.PATH, HOME: process.env.HOME } }).awSupportsStatus();
   assert.equal(answer.ok, versionAtLeast(version, AW_STATUS_MIN));
   if (answer.ok) assert.equal(spawnSync("aw", ["status", "publish", "--help"]).status, 0, "an aw at the floor has status publish");

@@ -70,7 +70,7 @@ test("health commands through the real kernel and scheduler", { skip }, async (t
 
   await t.test("publish with an aw below the floor fails before sending, in words the scheduler does not hold", () => {
     const { exit, doc } = aweb("publish");
-    const version = spawnSync("aw", ["version"], { env: scratch.env, encoding: "utf8" }).stdout.match(/aw (\d+\.\d+\.\d+)/)?.[1];
+    const version = spawnSync("aw", ["version"], { env: scratch.env, encoding: "utf8" }).stdout.match(/^aw (\S+)$/m)?.[1];
     if (versionAtLeast(version, "1.36.38")) { assert.equal(doc.ok, true, "an aw at the floor publishes"); return; }
     assert.equal(exit, 1);
     assert.equal(doc.error.code, "E_HEALTH_AW");

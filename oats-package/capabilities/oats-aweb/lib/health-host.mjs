@@ -65,6 +65,9 @@ export function healthHost({deployment, env}) {
     return {ok: false, status: null, code: 'transport', message: (r.stderr || r.stdout).trim().slice(0, 500) || `aw exited ${r.status}`, retry_after: null};
   };
 
+  /** The version aw prints on its first line, as printed, or 'unknown'. */
+  const awVersion = async () => (await aw({}, ['version'])).stdout.match(/^aw (\S+)$/m)?.[1] ?? 'unknown';
+
   return {
     async status() {
       const doc = await kernel(['status']);
@@ -109,8 +112,16 @@ export function healthHost({deployment, env}) {
     /** Whether the aw on PATH is at least AW_STATUS_MIN; its version decides,
      *  since a pre-release build below the floor may already list the command. */
     async awSupportsStatus() {
-      const version = (await aw({}, ['version'])).stdout.match(/^aw (\d+\.\d+\.\d+)$/m)?.[1] ?? 'unknown';
+      const version = await awVersion();
       return versionAtLeast(version, AW_STATUS_MIN) ? {ok: true} : {ok: false, message: AW_STATUS_UNSUPPORTED(version)};
+    },
+
+    /** Whether the aw on PATH can clear a designation: any aw with
+     *  `status-host clear`, below the floor too, so turning publishing off
+     *  never leaves a designation behind. */
+    async awClearsDesignations() {
+      if ((await aw({}, ['status-host', 'clear', '--help'])).status === 0) return {ok: true};
+      return {ok: false, message: `aw ${await awVersion()} has no status-host clear; designations stay until an aw >= ${AW_STATUS_MIN} runs \`oats aweb health disable\``};
     },
 
     async statusHostSet(target, hostDid) {
