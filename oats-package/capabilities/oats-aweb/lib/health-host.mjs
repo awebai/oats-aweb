@@ -73,11 +73,14 @@ export function healthHost({deployment, env}) {
       // reboot; its message is the only sign that the session is not running.
       const serverGone = !inspected.ok && inspected.error?.code === 'E_SESSION_UNAVAILABLE' && /no server running/.test(inspected.error.message ?? '');
       if (!inspected.ok && !serverGone) return {state: 'unobservable', lastEvent: null};
+      const state = serverGone ? 'stopped' : inspected.result.present && inspected.result.state === 'unknown' ? 'alive' : inspected.result.state;
+      // The last lifecycle event only tells an intended stop from a crash, so
+      // a live harness's events are not read: each kernel call costs a tick
+      // about 0.15 s of CPU.
+      if (state === 'alive') return {state, lastEvent: null};
       const events = await kernel(['instance', 'events', instance, '--home', home]);
       const lastEvent = (events.ok ? events.result.events : []).map((e) => e.kind).filter((k) => LIFECYCLE.includes(k)).at(-1) ?? null;
-      if (serverGone) return {state: 'stopped', lastEvent};
-      const {present, state} = inspected.result;
-      return {state: present && state === 'unknown' ? 'alive' : state, lastEvent};
+      return {state, lastEvent};
     },
 
     /** The oats.aweb provider's readiness answer, or null when there is none. */

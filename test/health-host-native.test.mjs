@@ -33,9 +33,9 @@ test("kernel surfaces in a scratch deployment", { skip }, async (t) => {
     assert.deepEqual(rows.map((r) => [r.instance, r.home, r.launched]).sort(), [["h-crash", crashed, true], ["h-idle", idle, false], ["h-live", live, true], ["h-stop", stopped, true]]);
   });
 
-  await t.test("liveness tells a live harness, a crash, an intended stop and a home never launched apart", async () => {
+  await t.test("liveness tells a live harness, a crash, an intended stop and a home never launched apart; a live one's events are not read", async () => {
     const of = async (instance, home) => host.liveness({ instance, home });
-    assert.deepEqual(await of("h-live", live), { state: "alive", lastEvent: "launched" });
+    assert.deepEqual(await of("h-live", live), { state: "alive", lastEvent: null });
     assert.deepEqual(await of("h-crash", crashed), { state: "shell", lastEvent: "launched" });
     assert.deepEqual(await of("h-stop", stopped), { state: "shell", lastEvent: "stopped" });
     assert.deepEqual(await of("h-idle", idle), { state: "not-launched", lastEvent: null });
