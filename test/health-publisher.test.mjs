@@ -7,7 +7,7 @@
 // rehearsal, not here.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { healthSettings, publishTick } from "../oats-package/capabilities/oats-aweb/lib/health-publisher.mjs";
+import { clearDesignations, healthSettings, publishTick } from "../oats-package/capabilities/oats-aweb/lib/health-publisher.mjs";
 import { checkDocument } from "../oats-package/capabilities/oats-aweb/lib/status-document.mjs";
 
 const NOW = Date.parse("2026-10-14T16:00:00.250Z");
@@ -26,15 +26,16 @@ const where = (target) => target.identityHome ?? target.cwd;
 
 /** An in-memory host: rows, liveness, readiness and aw answers per directory. */
 function fakeHost({ rows, liveness = {}, readiness = {}, ids = {}, setResult = () => ({ ok: true, status: 200 }), publishResult = () => ({ ok: true, status: 200 }), supportsStatus = true, cache = {} } = {}) {
-  const calls = { set: [], publish: [], log: [], readiness: [] };
+  const calls = { set: [], clear: [], publish: [], log: [], readiness: [] };
   return {
     calls, cache,
-    awSupportsStatus: async () => (supportsStatus ? { ok: true } : { ok: false, message: "aw 1.36.36 has no status publish; needs a release of aw with `aw status publish` (aweb-acah.3.1)" }),
+    awSupportsStatus: async () => (supportsStatus ? { ok: true } : { ok: false, message: "aw 1.36.36 has no status publish; needs aw >= 1.36.38 (aweb-acah.3.1)" }),
     status: async () => ({ agents: [{ name: "a", instances: rows }] }),
     liveness: async (row) => liveness[row.instance] ?? { state: "alive", lastEvent: "launched" },
     readiness: async (home) => { calls.readiness.push(home); return home in readiness ? readiness[home] : { status: "ready", problems: [], warnings: [] }; },
     identityOf: async (target) => { const dir = where(target); return dir in ids ? ids[dir] : { did: `did:key:z6Mk${Buffer.from(dir).toString("hex").slice(-40)}` }; },
     statusHostSet: async (target, hostDid) => { const dir = where(target); calls.set.push({ dir, hostDid }); return setResult(dir, hostDid); },
+    statusHostClear: async (target) => { calls.clear.push(where(target)); return { ok: true, status: 200 }; },
     statusPublish: async (target, alias, document) => { const dir = where(target); calls.publish.push({ dir, alias, document }); return publishResult(dir, alias, document); },
     readCache: async (file) => cache[file] ?? null,
     writeCache: async (file, value) => { cache[file] = value; },
@@ -193,7 +194,7 @@ test("a home whose readiness does not answer within the budget is published unkn
 
 test("an aw without the status commands stops the tick before anything is sent", async () => {
   const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, supportsStatus: false });
-  await assert.rejects(publishTick({ settings, now: () => NOW, host }), /aw 1.36.36 has no status publish; needs a release of aw with `aw status publish`/);
+  await assert.rejects(publishTick({ settings, now: () => NOW, host }), /aw 1.36.36 has no status publish; needs aw >= 1.36.38/);
   assert.equal(host.calls.set.length + host.calls.publish.length, 0);
 });
 
@@ -211,4 +212,25 @@ test("a stopped home is published as stopped with the operator role from setting
   assert.deepEqual(byAlias["dev-1"].fixing, { by: "nobody", text: "Stopped on purpose." });
   assert.deepEqual(byAlias["dev-2"].fixing, { by: "operator", text: "Nactiva's operator" });
   assert.equal(host.calls.readiness.length, 0, "readiness is not read for a home that is not running");
+});
+
+test("disabling clears every designation the publisher made, as each agent, and forgets it", async () => {
+  const home = "/d/agents/a/instances/dev-1";
+  const host = fakeHost({ rows: [localRow("dev-1"), seatRow("seat-a")], ids: idsFor });
+  await publishTick({ settings, now: () => NOW, host });
+  const result = await clearDesignations({ settings, host });
+  assert.deepEqual(host.calls.clear.sort(), [`${home}/.aw`, RESIDENT].sort());
+  assert.deepEqual(result.cleared.map((c) => c.alias).sort(), ["dev-1", "merlin"]);
+  assert.equal(host.cache[`${home}/.oats-aweb/health.json`][TEAM], undefined);
+  await clearDesignations({ settings, host });
+  assert.equal(host.calls.clear.length, 2, "nothing designated is left to clear");
+});
+
+test("a designation aw cannot clear stays cached and is reported", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor });
+  await publishTick({ settings, now: () => NOW, host });
+  host.statusHostClear = async () => ({ ok: false, status: null, code: "transport", message: "offline" });
+  const result = await clearDesignations({ settings, host });
+  assert.deepEqual(result.failed, [{ alias: "dev-1", team: TEAM, status: null, code: "transport", message: "offline" }]);
+  assert.equal(host.cache["/d/agents/a/instances/dev-1/.oats-aweb/health.json"][TEAM].designated, true);
 });

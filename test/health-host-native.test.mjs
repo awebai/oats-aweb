@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { healthHost } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
+import { AW_STATUS_MIN, healthHost } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
 import { createScratchDeployment } from "./helpers/scratch-deployment.mjs";
 
 const NATIVE = process.env.OATS_AWEB_HEALTH_NATIVE === "1";
@@ -84,7 +84,7 @@ test("awSupportsStatus agrees with the installed aw, and names its version when 
   const version = spawnSync("aw", ["version"], { encoding: "utf8" }).stdout.match(/aw (\d+\.\d+\.\d+)/)[1];
   const answer = await healthHost({ deployment: tmpdir(), env: { PATH: process.env.PATH, HOME: process.env.HOME } }).awSupportsStatus();
   assert.equal(answer.ok, help.status === 0);
-  if (!answer.ok) assert.equal(answer.message, `aw ${version} has no status publish; needs a release of aw with \`aw status publish\` (aweb-acah.3.1)`);
+  if (!answer.ok) assert.equal(answer.message, `aw ${version} has no status publish; needs aw >= ${AW_STATUS_MIN} (aweb-acah.3.1)`);
 });
 
 test("the cache is written atomically, owner-only, and read back", { skip: false }, async () => {

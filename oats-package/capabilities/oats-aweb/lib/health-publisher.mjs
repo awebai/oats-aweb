@@ -178,3 +178,28 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
   });
   return result;
 }
+
+/** Clears, as each agent, every status host designation the publisher has
+ *  cached, so aweb falls back to its own facts instead of a host that has
+ *  stopped reporting. A designation aw cannot clear stays cached. */
+export async function clearDesignations({settings, host}) {
+  const result = {cleared: [], failed: []};
+  const agents = new Map();
+  for (const row of (await host.status()).agents.flatMap((a) => a.instances ?? [])) {
+    for (const identity of identitiesOf(row, settings).identities ?? []) agents.set(agentKey(identity.id, identity.team), identity);
+  }
+  for (const custody of Object.values(settings.residents ?? {})) {
+    const cache = (await host.readCache(residentCacheFile(custody))) ?? {};
+    for (const team of Object.keys(cache)) agents.set(agentKey({cwd: custody}, team), {team, alias: cache[team].alias, id: {cwd: custody}, cacheFile: residentCacheFile(custody)});
+  }
+  for (const {team, alias, id, cacheFile} of agents.values()) {
+    const cache = (await host.readCache(cacheFile)) ?? {};
+    if (!cache[team]?.designated) continue;
+    const answer = await host.statusHostClear(id);
+    if (!answer.ok) { result.failed.push({alias, team, status: answer.status ?? null, code: answer.code ?? null, message: answer.message ?? ''}); continue; }
+    delete cache[team];
+    await host.writeCache(cacheFile, cache);
+    result.cleared.push({alias, team});
+  }
+  return result;
+}

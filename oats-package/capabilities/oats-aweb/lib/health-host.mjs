@@ -1,8 +1,9 @@
 // What the agent status publisher reads and runs on the host: the kernel's
-// public CLI (status, session inspect, instance events, readiness), aw (the
-// offline identity doctor and the status commands), its designation caches
-// and its refusal log. Every argv here is exercised against the real binaries
-// by test/health-host-native.test.mjs.
+// public CLI (status, session inspect, instance events, readiness, schedule),
+// aw (the offline identity doctor and the status commands), its designation
+// caches and its refusal log. Every argv here is exercised against the real
+// binaries by test/health-host-native.test.mjs and
+// test/health-command-native.test.mjs.
 import {spawn} from 'node:child_process';
 import {appendFile, mkdir, readFile, rename, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
@@ -15,7 +16,9 @@ const LIFECYCLE = ['launched', 'restarted', 'stopped'];
 const AW_UNSET = ['AWEB_IDENTITY_HOME', 'AWEB_URL', 'AWEB_API_KEY', 'AWEB_ROLE_NAME', 'AWEB_ROLE'];
 /** An instance session's own variables, which would scope a kernel call to it. */
 const KERNEL_UNSET = ['OATS_INSTANCE', 'OATS_INSTANCE_HOME', 'OATS_HOME'];
-export const AW_STATUS_UNSUPPORTED = (version) => `aw ${version} has no status publish; needs a release of aw with \`aw status publish\` (aweb-acah.3.1)`;
+/** The first aw with `aw status-host` and `aw status publish` (aweb-acah.3.1). */
+export const AW_STATUS_MIN = '1.36.38';
+export const AW_STATUS_UNSUPPORTED = (version) => `aw ${version} has no status publish; needs aw >= ${AW_STATUS_MIN} (aweb-acah.3.1)`;
 
 function run(command, args, {cwd, env, input, timeout}) {
   return new Promise((resolve) => {
@@ -102,8 +105,34 @@ export function healthHost({deployment, env}) {
       return awAnswer(await aw(target, ['status-host', 'set', '--host-did', hostDid, '--json']));
     },
 
+    async statusHostClear(target) {
+      return awAnswer(await aw(target, ['status-host', 'clear', '--json']));
+    },
+
     async statusPublish(target, alias, document) {
       return awAnswer(await aw(target, ['status', 'publish', '--alias', alias, '--document', '-', '--json'], JSON.stringify(document)));
+    },
+
+    /** The deployment's local schedule `id`, or null. */
+    async schedule(id) {
+      const doc = await kernel(['schedule', 'show', id]);
+      return doc.ok ? doc.result.schedule : null;
+    },
+
+    async addSchedule(id, spec) {
+      const doc = await kernel(['schedule', 'add', id, '--spec-json', JSON.stringify(spec)]);
+      if (!doc.ok) throw new Error(`oats schedule add ${id}: ${doc.error?.message ?? 'no answer'}`);
+    },
+
+    async removeSchedule(id) {
+      const doc = await kernel(['schedule', 'remove', id]);
+      if (!doc.ok && doc.error?.code !== 'E_SCHEDULE_UNKNOWN') throw new Error(`oats schedule remove ${id}: ${doc.error?.message ?? 'no answer'}`);
+    },
+
+    /** The host timer as `oats schedule host status` reports it. */
+    async timer() {
+      const doc = await kernel(['schedule', 'host', 'status']);
+      return doc.ok ? doc.result.scheduler : null;
     },
 
     async readCache(file) {

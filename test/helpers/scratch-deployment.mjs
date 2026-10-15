@@ -5,13 +5,19 @@
 // capability; its harness is a script that sleeps, so a launched home is a
 // real tmux pane with a live process.
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync, readdirSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const WORKSPACE = "git:github.com/scratch/ws";
 
-export function createScratchDeployment() {
+const CAPABILITY = new URL("../../oats-package/capabilities/oats-aweb", import.meta.url).pathname;
+
+/** `withAweb`: the workspace member also carries this checkout's oats.aweb
+ *  capability and a soul that composes it from there, so `oats aweb …` runs
+ *  from the deployment. That soul is never spawned: spawning would mint a
+ *  real aweb identity. */
+export function createScratchDeployment({ withAweb = false } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "aweb-health-scratch-")));
   // tmux refuses socket paths over about 100 bytes: keep its directory short.
   const tmux = realpathSync(mkdtempSync("/tmp/ah."));
@@ -25,6 +31,11 @@ export function createScratchDeployment() {
   write("oats-membership.yaml", `schemaVersion: 2\nworkspace: ${WORKSPACE}\n`);
   write("souls/plain/soul.yaml", "schemaVersion: 2\nname: plain\ndescription: Scratch soul with no capabilities\nwork: directory\ncapabilities:\n  oats.core: off\n");
   write("souls/plain/AGENTS.md", "Scratch soul.\n");
+  if (withAweb) {
+    cpSync(CAPABILITY, join(ws, "capabilities", "oats-aweb"), { recursive: true });
+    write("souls/messenger/soul.yaml", "schemaVersion: 2\nname: messenger\ndescription: Scratch soul composing oats.aweb, never spawned\nwork: directory\ncapabilities:\n  oats.core: off\n  oats.aweb: { from: here }\n");
+    write("souls/messenger/AGENTS.md", "Scratch messenger soul.\n");
+  }
   const git = (...args) => execFileSync("git", ["-c", "user.name=scratch", "-c", "user.email=scratch@example.invalid", "-C", ws, ...args], { env, stdio: "pipe" });
   git("init", "-q", "-b", "main"); git("add", "."); git("commit", "-qm", "scratch");
   execFileSync("git", ["config", "--file", gitConfig, `url.file://${ws}.insteadOf`, "https://github.com/scratch/ws.git"], { env });

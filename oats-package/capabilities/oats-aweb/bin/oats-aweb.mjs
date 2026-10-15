@@ -48,6 +48,8 @@ import { residentMain } from '../lib/resident.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'resident') process.exit(await residentMain(process.argv.slice(3)));
 import { wakeMain } from '../lib/wake-service.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await wakeMain(process.argv.slice(3)));
+import { healthMain } from '../lib/health.mjs';
+if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await healthMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
