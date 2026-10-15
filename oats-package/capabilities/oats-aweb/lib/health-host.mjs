@@ -19,6 +19,8 @@ const KERNEL_UNSET = ['OATS_INSTANCE', 'OATS_INSTANCE_HOME', 'OATS_HOME'];
 /** The first aw with `aw status-host` and `aw status publish` (aweb-acah.3.1). */
 export const AW_STATUS_MIN = '1.36.38';
 export const AW_STATUS_UNSUPPORTED = (version) => `aw ${version} has no status publish; needs aw >= ${AW_STATUS_MIN} (aweb-acah.3.1)`;
+/** How the publisher hands aw one status document for `alias`, on stdin. */
+export const statusPublishArgs = (alias) => ['status', 'publish', '--alias', alias, '--document', '-', '--json'];
 
 function run(command, args, {cwd, env, input, timeout}) {
   return new Promise((resolve) => {
@@ -110,7 +112,7 @@ export function healthHost({deployment, env}) {
     },
 
     async statusPublish(target, alias, document) {
-      return awAnswer(await aw(target, ['status', 'publish', '--alias', alias, '--document', '-', '--json'], JSON.stringify(document)));
+      return awAnswer(await aw(target, statusPublishArgs(alias), JSON.stringify(document)));
     },
 
     /** The deployment's local schedule `id`, or null. */

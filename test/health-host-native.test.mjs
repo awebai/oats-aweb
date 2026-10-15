@@ -3,14 +3,16 @@
 // the real aw. Opt in with OATS_AWEB_HEALTH_NATIVE=1 (needs oats, tmux and aw
 // on PATH). The aw identity reads also need a real identity home and resident
 // custody root, given read-only as OATS_AWEB_HEALTH_IDENTITY_HOME and
-// OATS_AWEB_HEALTH_RESIDENT_ROOT; nothing here writes to them.
+// OATS_AWEB_HEALTH_RESIDENT_ROOT; nothing here writes to them. The vector
+// signing test runs OATS_AWEB_HEALTH_AW, an absolute path to an aw build,
+// when given (else aw on PATH), offline under a scratch HOME.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AW_STATUS_MIN, healthHost } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
+import { AW_STATUS_MIN, healthHost, statusPublishArgs } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
 import { createScratchDeployment } from "./helpers/scratch-deployment.mjs";
 
 const NATIVE = process.env.OATS_AWEB_HEALTH_NATIVE === "1";
@@ -126,5 +128,17 @@ test("receipt reads <identity dir>/receive/stream.json, null when absent or unre
     assert.equal(host.pidAlive(process.pid), true);
     const gone = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
     assert.equal(host.pidAlive(Number(gone)), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the real aw signs every valid vector document, sent as the publisher sends it, to the vector's exact bytes and signature", { skip }, () => {
+  const vector = JSON.parse(readFileSync(new URL("./fixtures/agent-status-v1.json", import.meta.url), "utf8"));
+  const dir = mkdtempSync(join(tmpdir(), "aweb-health-sign-"));
+  try {
+    for (const c of vector.valid) {
+      const out = spawnSync(process.env.OATS_AWEB_HEALTH_AW ?? "aw", [...statusPublishArgs("alice"), "--print-signed"], { cwd: dir, input: JSON.stringify(c.document), encoding: "utf8", env: { PATH: process.env.PATH, HOME: dir, AW_NO_UPDATE_CHECK: "1", AW_AGENT_STATUS_TEST_SEED_HEX: vector.signing_seed_hex } });
+      assert.equal(out.status, 0, `${c.name}: ${out.stderr}`);
+      assert.deepEqual(JSON.parse(out.stdout), { signed_payload: c.signed_payload, signature: c.signature }, c.name);
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
