@@ -26,11 +26,12 @@ const seatRow = (name) => ({ instance: name, home: `/d/agents/r/instances/${name
 const where = (target) => target.identityHome ?? target.cwd;
 
 /** An in-memory host: rows, liveness, readiness and aw answers per directory. */
-function fakeHost({ rows, liveness = {}, readiness = {}, ids = {}, receipts = {}, alive = [], setResult = () => ({ ok: true, status: 200 }), publishResult = () => ({ ok: true, status: 200 }), supportsStatus = true, cache = {} } = {}) {
+function fakeHost({ rows, liveness = {}, readiness = {}, ids = {}, receipts = {}, alive = [], setResult = () => ({ ok: true, status: 200 }), publishResult = () => ({ ok: true, status: 200 }), supportsStatus = true, clears = { ok: true }, cache = {} } = {}) {
   const calls = { set: [], clear: [], publish: [], log: [], readiness: [] };
   return {
     calls, cache,
     awSupportsStatus: async () => (supportsStatus ? { ok: true } : { ok: false, message: "aw 1.36.36 has no status publish; needs aw >= 1.36.38 (aweb-acah.3.1)" }),
+    awClearsDesignations: async () => clears,
     status: async () => ({ agents: [{ name: "a", instances: rows }] }),
     liveness: async (row) => liveness[row.instance] ?? { state: "alive", lastEvent: "launched" },
     readiness: async (home) => { calls.readiness.push(home); return home in readiness ? readiness[home] : { status: "ready", problems: [], warnings: [] }; },
@@ -236,6 +237,23 @@ test("a designation aw cannot clear stays cached and is reported", async () => {
   const result = await clearDesignations({ settings, host });
   assert.deepEqual(result.failed, [{ alias: "dev-1", team: TEAM, status: null, code: "transport", message: "offline" }]);
   assert.equal(host.cache["/d/agents/a/instances/dev-1/.oats-aweb/health.json"][TEAM].designated, true);
+});
+
+const CANNOT_CLEAR = "aw 1.36.37 has no status-host clear; upgrade aw to 1.36.38 or later and run `oats aweb health disable` again";
+
+test("an aw that cannot clear leaves every designation cached, each reported with why", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1"), seatRow("seat-a")], ids: idsFor });
+  await publishTick({ settings, now: () => NOW, host });
+  host.awClearsDesignations = async () => ({ ok: false, message: CANNOT_CLEAR });
+  const result = await clearDesignations({ settings, host });
+  assert.deepEqual(result, { cleared: [], failed: [{ alias: "dev-1", team: TEAM, status: null, code: "aw", message: CANNOT_CLEAR }, { alias: "merlin", team: TEAM, status: null, code: "aw", message: CANNOT_CLEAR }] });
+  assert.deepEqual(host.calls.clear, [], "nothing is sent to an aw that cannot clear");
+  assert.equal(host.cache["/d/agents/a/instances/dev-1/.oats-aweb/health.json"][TEAM].designated, true);
+});
+
+test("with nothing designated, an aw that cannot clear has nothing to report", async () => {
+  const host = fakeHost({ rows: [localRow("dev-1")], ids: idsFor, clears: { ok: false, message: CANNOT_CLEAR } });
+  assert.deepEqual(await clearDesignations({ settings, host }), { cleared: [], failed: [] });
 });
 
 const nativeRow = (name) => { const row = localRow(name, { launchPrompts: null }); Object.assign(row.capabilityMeta["oats.aweb"], { delivery: "channel", runtime: "claude" }); return row; };

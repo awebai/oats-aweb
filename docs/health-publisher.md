@@ -179,14 +179,20 @@ oats aweb health disable
    deletes its identity.
 
    With an aw that cannot clear, `disable` still removes the job and turns
-   publishing off, and every designation stays on the server until an aw
-   1.36.38 or later runs `disable` again. The plain output then reads
-   `designations cleared: 0, not cleared: 0`, the same as when there was
-   nothing to clear. Only `--json` says why, in `designations.skipped`
-   (`aw 1.36.37 has no status-host clear; designations stay until an aw >=
-   1.36.38 runs \`oats aweb health disable\``).
+   publishing off, but every designation stays on the server. Each one is
+   counted as not cleared, and a line says why:
 
-It exits 0 once the job is gone.
+   ```
+   designations cleared: 0, not cleared: 3
+   designations not cleared: aw 1.36.37 has no status-host clear; upgrade aw to 1.36.38 or later and run `oats aweb health disable` again
+   ```
+
+   A designation the server refused to clear gets the same kind of line, with
+   the server's message (or its HTTP status). `--json` lists each one under
+   `designations.failed`, with its alias, team, status, code and message.
+
+`disable` exits 1 when any designation is left on the server, so a script
+notices, and 0 otherwise. The job is gone and publishing is off either way.
 
 ## One tick: `publish`
 

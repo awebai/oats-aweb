@@ -54,5 +54,5 @@ test("the refusal holds none of the words that make the scheduler hold the job",
 
 test("designations can be cleared by any aw that has status-host clear, below the floor too", async (t) => {
   assert.deepEqual(await hostWithAw(t, "aw 1.36.37\n").awClearsDesignations(), { ok: true });
-  assert.deepEqual(await hostWithAw(t, "aw 1.36.30\n", { statusHost: false }).awClearsDesignations(), { ok: false, message: "aw 1.36.30 has no status-host clear; designations stay until an aw >= 1.36.38 runs `oats aweb health disable`" });
+  assert.deepEqual(await hostWithAw(t, "aw 1.36.30\n", { statusHost: false }).awClearsDesignations(), { ok: false, message: "aw 1.36.30 has no status-host clear; upgrade aw to 1.36.38 or later and run `oats aweb health disable` again" });
 });
