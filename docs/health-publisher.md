@@ -1,8 +1,9 @@
 # `oats aweb health`: the agent status publisher
 
 `oats aweb health enable | status | disable | publish` publishes a signed
-status for every agent of a deployment to aweb, once a minute. aweb shows it
-on the team's dashboard, in place of aweb's own guess from presence:
+status for every agent of a deployment to aweb, once a minute. Under aweb's
+agent-health contract (aweb `docs/agent-health.md`), the team's dashboard
+renders that status instead of aweb's own facts about the agent:
 
 - whether the agent can be reached (`yes`, `degraded`, `no` or `unknown`);
 - why not, in one sentence ("Its message channel is not connected.");
@@ -35,8 +36,8 @@ This page is the operator's reference.
   receives, but it writes no receive receipt
   (`<identity dir>/receive/stream.json`), so its home cannot be proven
   reachable. The missing receipt alone never makes it `no`: such a home is
-  judged on the weaker evidence (its channel loaded and its harness alive) and
-  published `yes` or `unknown`. The receipt names the adapter's kind but not its
+  judged by the design's other rows, and without any other finding it is
+  `yes` with its channel loaded and its harness alive, else `unknown`. The receipt names the adapter's kind but not its
   version, which is why OATS cannot tell an old adapter from one that has not
   connected yet.
 
@@ -59,7 +60,7 @@ oats aweb health publish [--json]
 
 All four also take the kernel's `--dir <deployment>` and `--soul <soul>`. When
 several souls of the deployment provide oats.aweb and none is given, the
-command says which one it used.
+kernel says which one it used.
 
 ## Turn it on: `enable`
 
@@ -119,13 +120,16 @@ Every instance that `oats status` lists, except those being retired:
   seats of one resident make one status.
 
 A seat that holds a resident's identity itself, without a grant, is skipped.
-So is any agent whose id aw cannot read. Each tick's `--json` lists every skip
-with its reason.
+So is any agent whose id aw cannot read, a home whose team has no minting
+root, and a rate-limited agent. Each of these is listed in the tick's `--json`
+with its reason. Two are left out without a line: an instance that does not
+compose oats.aweb, and a joined team that has no minting root.
 
 Each status is valid for 5 minutes, and every tick sends a new one. If ticks
-stop, aweb shows "No report from its server since <time>" once that time
-passes, never "online". The states and their reasons are the design's
-vocabulary table (§2).
+stop, aweb marks the status stale once that time passes. Its contract has the
+dashboard say "No report from its server since <time>", never "online"
+(aweb `docs/agent-health.md`, Reading). The states and their reasons are the
+design's vocabulary table (§2).
 
 ## Check it: `status`
 
@@ -164,12 +168,21 @@ oats aweb health disable
 2. Records `"publish": false`, keeping `operator` and `language` for the next
    `enable`.
 3. **Clears every designation it made**, as each agent, so aweb goes back to
-   its own facts instead of waiting on a host that has stopped reporting. Any
-   aw with `aw status-host clear` can do this, including one below 1.36.38.
-   The output counts what was cleared and what was not
-   (`designations cleared: 3, not cleared: 0`). A designation that could not be
-   cleared stays recorded, so running `disable` again retries it. A home that
-   was already retired needs none, because retire deletes its identity.
+   its own facts instead of waiting on a host that has stopped reporting. It
+   needs an aw with `aw status-host clear`: aw 1.36.38 or later (a released aw
+   below that has no `status-host`). The output counts what was cleared and
+   what was not (`designations cleared: 3, not cleared: 0`). A designation
+   that could not be cleared stays recorded, so running `disable` again
+   retries it. A home that was already retired needs none, because retire
+   deletes its identity.
+
+   With an aw that cannot clear, `disable` still removes the job and turns
+   publishing off, and every designation stays on the server until an aw
+   1.36.38 or later runs `disable` again. The plain output then reads
+   `designations cleared: 0, not cleared: 0`, the same as when there was
+   nothing to clear. Only `--json` says why, in `designations.skipped`
+   (`aw 1.36.37 has no status-host clear; designations stay until an aw >=
+   1.36.38 runs \`oats aweb health disable\``).
 
 It exits 0 once the job is gone.
 
@@ -192,8 +205,10 @@ at once. It prints counts, `published 4, refused 0, skipped 1, failed 0`. With
 - **failed:** an agent whose bookkeeping failed; the others are still
   published.
 
-`ok: false` means the tick could not run at all: aw below 1.36.38, or no
-deployment selected. With publishing off it does nothing.
+`ok: false` means the tick could not run at all: aw below 1.36.38
+(`E_HEALTH_AW`), or `E_HEALTH` (a setting that breaks its rules, no deployment
+selected, `oats status` giving no roster). With publishing off it does
+nothing.
 
 ## Files
 
@@ -205,7 +220,8 @@ deployment selected. With publishing off it does nothing.
 | `<home>/.oats-aweb/health.json` | per home: the agent id, its host and whether it is designated, a cache of aw's answers |
 | `<custody>/.oats-resident/health.json` | the same for a resident |
 
-All of them are owner-only (0600, in 0700 directories).
+The command writes each of them owner-only (0600), and creates their
+directories 0700. A directory that already exists keeps its mode.
 
 ## Errors
 

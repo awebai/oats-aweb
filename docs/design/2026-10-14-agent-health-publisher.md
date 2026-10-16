@@ -32,8 +32,8 @@ The kernel already has the tick hook we need: a local `command` schedule job.
 | Mapping to a document | oats.aweb | The vocabulary table (§2) and a phrase table per language. |
 | Validation | oats.aweb | A validator that passes the vector's 7 valid and 31 invalid cases, red first. |
 | Signing and sending | aw (D1) | `aw status-host set\|clear\|show` and `aw status publish --alias <a> --document -`, an aw slice requested from aweb. oats.aweb puts the call behind one function; when the installed aw lacks the command it reports "aw <version> has no status publish; needs aw >= X". |
-| Designation | oats.aweb hooks | Three call sites: the spawn hook after it mints the identity; the launch hook once per existing instance that has not been designated; and `oats aweb resident create`. |
-| Immediate publish on change | oats.aweb launch hook (start/restart); retire hook (resident seats only) | There is no stop hook. A stop is published at the next tick, within 60 s. See D4. |
+| Designation | oats.aweb hooks (superseded by D7: the tick designates) | Three call sites: the spawn hook after it mints the identity; the launch hook once per existing instance that has not been designated; and `oats aweb resident create`. |
+| Immediate publish on change | oats.aweb launch hook (start/restart); retire hook (resident seats only) (superseded by D7: no hook publishes) | There is no stop hook. A stop is published at the next tick, within 60 s. See D4. |
 
 The parent agreement also says "oats setup installs it and `oats doctor` fails
 without it". Two kernel facts stand in the way:
