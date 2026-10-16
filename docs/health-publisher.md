@@ -41,7 +41,7 @@ This page is the operator's reference.
   version, which is why OATS cannot tell an old adapter from one that has not
   connected yet.
 
-`status` states all four: `required: aw 1.36.38 to publish; Claude channel
+`status` states the aw and channel releases: `required: aw 1.36.38 to publish; Claude channel
 1.7.17 or pi extension 0.3.15 to prove receive`.
 
 ## Where to run it

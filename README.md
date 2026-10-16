@@ -5,6 +5,16 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.29.0 — the agent status publisher
+
+`oats aweb health enable | status | disable | publish` publishes a signed
+status for every agent of a deployment to aweb once a minute (can it be
+reached, why not, who fixes it), which aweb's dashboard shows instead of its
+own guess. It is opt-in and host-only: a deployment that never enables it
+behaves as before. Publishing needs aw 1.36.38. Both floors are unchanged.
+See [docs/health-publisher.md](docs/health-publisher.md) and
+[the changelog](CHANGELOG.md#1290--2026-10-16).
+
 ## 1.28.0 — the host wake broker as a service
 
 `oats aweb wake install | status | uninstall` installs, reports and removes

@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.29.0 — 2026-10-16
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33. Publishing health
+needs aw 1.36.38, checked only while publishing is on.
+
+- **`oats aweb health enable | status | disable | publish`: the agent status
+  publisher** (aweb-acah.3; #123, #125, #127). Once a minute it publishes a signed
+  status for every agent of the deployment to aweb: whether it can be
+  reached (`yes`, `degraded`, `no` or `unknown`), why not, and who fixes it.
+  The team's dashboard shows that instead of aweb's own guess. It is opt-in
+  and host-only (`settings.oats.aweb.health` in `oats-local.yaml`), and runs
+  in the deployment directory, in the operator's shell, never inside an
+  instance.
+  - `enable` records `health.publish: true` (with `--operator <role>` and
+    `--language <tag>`) and registers one schedule job, `oats-aweb-health`.
+    It never installs the host timer: until the timer runs, `status` names
+    it as a problem.
+  - Each tick designates the host's root as each agent's status host once,
+    then publishes the agent's status, signed with `aw status publish`.
+  - A channel home is proven reachable by its adapter's receive receipt
+    (Claude channel 1.7.17, pi extension 0.3.15). An older adapter still
+    receives but writes no receipt, and the missing receipt alone never
+    makes a home `no`.
+  - `disable` removes the job, records `publish: false` and clears every
+    designation it made, so aweb shows its own facts again. It exits 1 and
+    says why for each designation it leaves on the server; a rerun retries
+    them.
+  - Required releases: aw 1.36.38 to publish (checked by version in
+    `enable`, `status` and every tick; an older aw or a pre-release is
+    refused before anything is sent), server 1.27.24, and Claude channel
+    1.7.17 or pi extension 0.3.15 to prove receive (stated, not checked).
+  - A child aw that exits before reading its input is now its answer, not
+    an unhandled `EPIPE`.
+  - Reference: [docs/health-publisher.md](docs/health-publisher.md), with a
+    card in `/oats-aweb` section 8. The design:
+    [docs/design/2026-10-14-agent-health-publisher.md](docs/design/2026-10-14-agent-health-publisher.md).
+- **`/oats-aweb`: on macOS, `oats aweb wake install` runs from the desktop
+  login, not over ssh** (#120). An ssh session has no `gui/<uid>` domain, so
+  `launchctl bootstrap` fails (`E_WAKE_UNIT`); rerunning `install` from the
+  desktop recovers.
+
 ## 1.28.0 — 2026-10-15
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33
