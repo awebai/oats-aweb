@@ -35,9 +35,9 @@ This page is the operator's reference.
 - **The channels** are not checked. An older channel or extension still
   receives, but it writes no receive receipt
   (`<identity dir>/receive/stream.json`), so its home cannot be proven
-  reachable. The missing receipt alone never makes it `no`: such a home is
-  judged by the design's other rows, and without any other finding it is
-  `yes` with its channel loaded and its harness alive, else `unknown`. The receipt names the adapter's kind but not its
+  reachable. The missing receipt alone never makes it `no`: the design's other
+  rows judge such a home. With nothing else found, it is `yes` when its channel
+  is loaded and its harness alive, and `unknown` otherwise. The receipt names the adapter's kind but not its
   version, which is why OATS cannot tell an old adapter from one that has not
   connected yet.
 
@@ -121,7 +121,9 @@ Every instance that `oats status` lists, except those being retired:
 
 A seat that holds a resident's identity itself, without a grant, is skipped.
 So is any agent whose id aw cannot read, a home whose team has no minting
-root, and a rate-limited agent. Each of these is listed in the tick's `--json`
+root, a seat whose resident is not in `settings.oats.aweb.residents`, a joined
+team with no identity home recorded, and a rate-limited agent. Each of these
+is listed in the tick's `--json`
 with its reason. Two are left out without a line: an instance that does not
 compose oats.aweb, and a joined team that has no minting root.
 
