@@ -102,9 +102,24 @@ absence of a receipt is not a missing proof. A receipt naming another identity
 is ignored.
 
 **Limitation (v1).** Without a receipt, `yes` means "running, with its channel loaded and nothing
-known wrong", not "delivery proven": oats.aweb has no proof of an open
-native stream. aweb has been asked for a local receipt from the channel plugin
-and the pi extension; once it exists, `yes` on a channel home requires it.
+known wrong", not "delivery proven". The receipt ships in Claude channel 1.7.17
+and pi extension 0.3.15. An older adapter writes none and still receives, and
+the receipt names its adapter's kind, not its version. So oats.aweb cannot tell
+an older adapter from one that has not read yet, and a channel home with no
+receipt stays on rows 23 and 23a.
+
+**Required releases.** Publishing needs aw 1.36.38 (`aw status-host`,
+`aw status publish`) and server 1.27.24. Whenever publishing is on, `health`
+checks `aw version` against 1.36.38 in `enable`, in `status` and on every tick.
+An aw below it is refused even if it lists the commands. `disable` is the off
+path: it clears designations with any aw that has `status-host clear`, below
+the floor too, so turning publishing off never leaves one behind. The provider's own aw
+floor stays 1.36.33, so a deployment that never enables health needs nothing
+newer. Proving receive needs Claude channel 1.7.17 or pi extension 0.3.15.
+`health status` states all three as required (`required: aw 1.36.38 to publish;
+Claude channel 1.7.17 or pi extension 0.3.15 to prove receive`) but checks no
+adapter's version, for the reason above. For the same reason the manifest gives
+the channels no minimum version.
 
 Notes:
 
@@ -302,14 +317,24 @@ only counts. Server and aw messages appear only in `--json` output, in
 
 ## 6. Follow-ups, outside the first PR
 
-- **Live designation and publish against a server** waits for the released aw
-  1.36.38 (agreed with oats-expert-juan, 2026-10-15). Until then the send is
-  proven offline only: the publisher's argv through aw built from aweb
-  4636fb9f9, `--print-signed`, against the 7 valid vector documents.
-- **A real channel's receipt** (Claude channel 1.7.17, pi extension 0.3.15):
-  the receipt rows are tested on the file format the aw doc fixes; a test
-  against a real adapter's receipt waits for those releases.
+- **Live designation and publish against a server: done** (2026-10-15).
+  `test/health-live.test.mjs` (opt-in, `OATS_AWEB_HEALTH_LIVE=1`) ran against
+  a throwaway local aweb 1.27.24, with released aw 1.36.38 and pi extension
+  0.3.15, in a throwaway team of its own. Its scratch deployment spawns a pi
+  agent minted into that team. Each step is read back as the agent (the
+  designation) and from the team's dashboard route (the stored health):
+  - before enable: the aweb fallback;
+  - a tick with the extension's real receipt fresh: `yes`, stored with
+    `source: host` and `verified: true`; the signed payload names the agent's
+    did:key and the root as publisher;
+  - with pi stopped (SIGSTOP), so its pid lives and its heartbeat ages past
+    90 s: `no` / `oats.channel_stream_down` (row 22b);
+  - `disable`: the designation is cleared and aweb shows its own facts again.
+  The test retires its agent, which deletes the identity on the server.
+- **A real adapter's receipt: done**, the pi extension 0.3.15's own
+  `stream.json`, in the same run. No Claude channel 1.7.17 seat was used
+  (oats-expert-juan kept live Claude seats out of it).
 - **The cost of the provider's readiness and `aw doctor`** per home on a real
   deployment (§5, Cost).
-- **Pin the floors to released versions** once the aw, channel and pi tags
-  exist.
+- **Required releases pinned** (aw 1.36.38, Claude channel 1.7.17, pi extension
+  0.3.15, server 1.27.24): see "Required releases" in §2.

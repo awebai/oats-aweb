@@ -7,6 +7,7 @@
 import {spawn} from 'node:child_process';
 import {appendFile, mkdir, readFile, rename, stat, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
+import {versionAtLeast} from './aw-floor.mjs';
 
 const KERNEL_TIMEOUT_MS = 30 * 1000;
 const AW_TIMEOUT_MS = 15 * 1000;
@@ -32,6 +33,9 @@ function run(command, args, {cwd, env, input, timeout}) {
     child.stderr.on('data', (d) => { stderr += d; });
     child.on('error', (error) => resolve({status: null, stdout, stderr: String(error.message || error)}));
     child.on('close', (status, signal) => resolve({status: signal ? null : status, stdout, stderr: signal ? `killed by ${signal}` : stderr}));
+    // A child that exits before reading its input closes the pipe under the
+    // write (EPIPE): its exit status and output are its answer.
+    child.stdin.on('error', () => {});
     child.stdin.end(input ?? '');
   });
 }
@@ -63,6 +67,9 @@ export function healthHost({deployment, env}) {
     if (doc && typeof doc.ok === 'boolean') return {status: null, code: null, message: '', retry_after: null, ...doc};
     return {ok: false, status: null, code: 'transport', message: (r.stderr || r.stdout).trim().slice(0, 500) || `aw exited ${r.status}`, retry_after: null};
   };
+
+  /** The version aw prints on its first line, as printed, or 'unknown'. */
+  const awVersion = async () => (await aw({}, ['version'])).stdout.match(/^aw (\S+)$/m)?.[1] ?? 'unknown';
 
   return {
     async status() {
@@ -105,10 +112,19 @@ export function healthHost({deployment, env}) {
       return typeof stableId === 'string' && stableId.startsWith('did:aw:') ? {did, stable_id: stableId} : {did};
     },
 
+    /** Whether the aw on PATH is at least AW_STATUS_MIN; its version decides,
+     *  since a pre-release build below the floor may already list the command. */
     async awSupportsStatus() {
-      if ((await aw({}, ['status', 'publish', '--help'])).status === 0) return {ok: true};
-      const version = (await aw({}, ['version'])).stdout.match(/aw (\d+\.\d+\.\d+)/)?.[1] ?? 'unknown';
-      return {ok: false, message: AW_STATUS_UNSUPPORTED(version)};
+      const version = await awVersion();
+      return versionAtLeast(version, AW_STATUS_MIN) ? {ok: true} : {ok: false, message: AW_STATUS_UNSUPPORTED(version)};
+    },
+
+    /** Whether the aw on PATH can clear a designation: any aw with
+     *  `status-host clear`, below the floor too, so turning publishing off
+     *  never leaves a designation behind. */
+    async awClearsDesignations() {
+      if ((await aw({}, ['status-host', 'clear', '--help'])).status === 0) return {ok: true};
+      return {ok: false, message: `aw ${await awVersion()} has no status-host clear; designations stay until an aw >= ${AW_STATUS_MIN} runs \`oats aweb health disable\``};
     },
 
     async statusHostSet(target, hostDid) {
