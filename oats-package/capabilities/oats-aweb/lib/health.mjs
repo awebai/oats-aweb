@@ -84,8 +84,7 @@ async function enable(options, {deployment, host, settings}) {
 async function disable({deployment, host, settings}) {
   await host.removeSchedule(HEALTH_JOB);
   recordAwebSetting('health', 'publish', false, {start: deployment});
-  const clears = await host.awClearsDesignations();
-  const designations = clears.ok ? await clearDesignations({settings, host}) : {cleared: [], failed: [], skipped: clears.message};
+  const designations = await clearDesignations({settings, host});
   return {...(await report({...healthSettings(settings), publish: false}, {deployment, host})), designations};
 }
 
@@ -98,9 +97,14 @@ async function publish({deployment, host, settings}) {
   return result;
 }
 
+/** An action's exit status: 1 while publishing is on and something stops
+ *  it, or when `disable` left a designation on the server; else 0. */
+export function healthExit(result) {
+  return (result.publish && result.ready === false) || result.designations?.failed.length ? 1 : 0;
+}
+
 /** Runs one action; prints one JSON envelope with --json, else plain lines.
- *  Exits 1 when the action failed, or when publishing is on and something
- *  stops it. */
+ *  Exits 1 when the action failed, or as healthExit says. */
 export async function healthMain(argv, {env = process.env, stdout = process.stdout} = {}) {
   const json = argv.includes('--json');
   const print = (doc) => stdout.write(json ? `${JSON.stringify(doc)}\n` : `${healthText(doc)}\n`);
@@ -114,7 +118,7 @@ export async function healthMain(argv, {env = process.env, stdout = process.stdo
       : action === 'status' ? await report(healthSettings(settings), {deployment, host})
       : await publish({deployment, host, settings});
     print({schemaVersion: 1, ok: true, result});
-    return result.ready === false && result.publish ? 1 : 0;
+    return healthExit(result);
   } catch (error) {
     const code = error.code ?? (/has no status publish/.test(error.message) ? 'E_HEALTH_AW' : 'E_HEALTH');
     print({schemaVersion: 1, ok: false, error: {code, message: String(error.message || error)}});
@@ -131,7 +135,11 @@ export function healthText(doc) {
   const lines = [`publishing: ${r.publish ? 'on' : 'off'}${r.publish ? (r.ready ? ', ready' : ', NOT ready') : ''}`];
   if (r.lastTick) lines.push(`last tick: ${r.lastTick.at} (published ${r.lastTick.published}, refused ${r.lastTick.refused}, skipped ${r.lastTick.skipped}, failed ${r.lastTick.failed ?? 0})`);
   for (const p of r.problems) lines.push(`problem: ${p}`);
-  if (r.designations) lines.push(`designations cleared: ${r.designations.cleared.length}, not cleared: ${r.designations.failed.length}`);
+  if (r.designations) {
+    lines.push(`designations cleared: ${r.designations.cleared.length}, not cleared: ${r.designations.failed.length}`);
+    const reason = (f) => f.message || (f.status ? `HTTP ${f.status}` : f.code);
+    for (const why of new Set(r.designations.failed.map(reason))) lines.push(`designations not cleared: ${why}`);
+  }
   lines.push(`required: aw ${r.floors.aw} to publish; Claude channel ${r.floors.claudeChannel} or pi extension ${r.floors.piExtension} to prove receive`);
   lines.push(`note: ${r.note}`);
   return lines.join('\n');

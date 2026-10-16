@@ -220,9 +220,12 @@ export async function publishTick({settings, now, host, budgetMs = DEFAULT_BUDGE
 
 /** Clears, as each agent, every status host designation the publisher has
  *  cached, so aweb falls back to its own facts instead of a host that has
- *  stopped reporting. A designation aw cannot clear stays cached. */
+ *  stopped reporting. A designation aw cannot clear stays cached and is
+ *  listed under `failed` with why; with an aw that has no `status-host clear`
+ *  that is every one of them. */
 export async function clearDesignations({settings, host}) {
   const result = {cleared: [], failed: []};
+  const clears = await host.awClearsDesignations();
   const agents = new Map();
   for (const row of (await host.status()).agents.flatMap((a) => a.instances ?? [])) {
     for (const identity of identitiesOf(row, settings).identities ?? []) agents.set(agentKey(identity.id, identity.team), identity);
@@ -234,7 +237,7 @@ export async function clearDesignations({settings, host}) {
   for (const {team, alias, id, cacheFile} of agents.values()) {
     const cache = (await host.readCache(cacheFile)) ?? {};
     if (!cache[team]?.designated) continue;
-    const answer = await host.statusHostClear(id);
+    const answer = clears.ok ? await host.statusHostClear(id) : {ok: false, status: null, code: 'aw', message: clears.message};
     if (!answer.ok) { result.failed.push({alias, team, status: answer.status ?? null, code: answer.code ?? null, message: answer.message ?? ''}); continue; }
     delete cache[team];
     await host.writeCache(cacheFile, cache);

@@ -32,8 +32,8 @@ The kernel already has the tick hook we need: a local `command` schedule job.
 | Mapping to a document | oats.aweb | The vocabulary table (§2) and a phrase table per language. |
 | Validation | oats.aweb | A validator that passes the vector's 7 valid and 31 invalid cases, red first. |
 | Signing and sending | aw (D1) | `aw status-host set\|clear\|show` and `aw status publish --alias <a> --document -`, an aw slice requested from aweb. oats.aweb puts the call behind one function; when the installed aw lacks the command it reports "aw <version> has no status publish; needs aw >= X". |
-| Designation | oats.aweb hooks | Three call sites: the spawn hook after it mints the identity; the launch hook once per existing instance that has not been designated; and `oats aweb resident create`. |
-| Immediate publish on change | oats.aweb launch hook (start/restart); retire hook (resident seats only) | There is no stop hook. A stop is published at the next tick, within 60 s. See D4. |
+| Designation | oats.aweb hooks (superseded by D7: the tick designates) | Three call sites: the spawn hook after it mints the identity; the launch hook once per existing instance that has not been designated; and `oats aweb resident create`. |
+| Immediate publish on change | oats.aweb launch hook (start/restart); retire hook (resident seats only) (superseded by D7: no hook publishes) | There is no stop hook. A stop is published at the next tick, within 60 s. See D4. |
 
 The parent agreement also says "oats setup installs it and `oats doctor` fails
 without it". Two kernel facts stand in the way:
@@ -112,8 +112,9 @@ receipt stays on rows 23 and 23a.
 `aw status publish`) and server 1.27.24. Whenever publishing is on, `health`
 checks `aw version` against 1.36.38 in `enable`, in `status` and on every tick.
 An aw below it is refused even if it lists the commands. `disable` is the off
-path: it clears designations with any aw that has `status-host clear`, below
-the floor too, so turning publishing off never leaves one behind. The provider's own aw
+path: it clears designations with any aw that has `status-host clear` (no
+released aw below 1.36.38 has it). A designation it cannot clear stays
+recorded, is reported with why, and makes `disable` exit 1. The provider's own aw
 floor stays 1.36.33, so a deployment that never enables health needs nothing
 newer. Proving receive needs Claude channel 1.7.17 or pi extension 0.3.15.
 `health status` states all three as required (`required: aw 1.36.38 to publish;
@@ -158,12 +159,11 @@ settings:
 - Only `en` ships in v1. Adding a language means adding a phrase file to the
   package. Do Pepe's users need `es` from day one?
 - `oats aweb health enable|disable|status` writes the key, adds or removes the
-  schedule job, and reports:
-  - the timer;
-  - the homes that publish;
-  - the homes that do not publish yet, with the reason: aw gave no agent id,
-    or not designated;
-  - the last result for each agent.
+  schedule job, and reports the job, the host timer, the last tick's counts
+  (published, refused, skipped, failed), what stops publishing, and the
+  required releases. Each tick's own `--json` lists every agent's result,
+  including the homes it skipped and why (aw gave no agent id, no minting
+  root, a retained seat).
 
 **Recording the agent DID.** The agreement says the DID is "read from the
 instance record, never guessed", but today nothing records one. On the local
@@ -183,7 +183,7 @@ lists it as skipped.
 
 A publish runs on every tick, even when nothing changed, which refreshes
 `valid_until`. The aweb rate limit is 1 publish per 5 s per agent; the tick
-publishes once per 60 s, plus the launch hook's publish.
+publishes once per 60 s (D7: no hook publishes).
 
 ## 4. Errors and existing deployments
 
@@ -200,17 +200,14 @@ change only if their operator runs `oats aweb health enable`.
 
 **Enabling on an existing deployment.**
 
-- New spawns designate at once.
-- Existing instances designate at their next launch, as the agent, through its
-  own credential.
-- A seat that is already dead is designated when it is repaired, or by the
-  team controller. The controller path is not in v1; `health status` lists such
-  seats.
-- Until then aweb shows them on its own fallback.
+- The first tick designates every agent it sees, as the agent, through its
+  own credential (D7), whether its session is running or not; new spawns are
+  designated at the next tick.
+- Until an agent is designated, aweb shows it on its own fallback.
 
-**Designation failure.** At spawn, a failed designation is a warning and never
-fails the spawn, because messaging works without it. The launch hook tries
-again at the next start.
+**Designation failure.** A refused designation is logged like any refusal
+and the agent is not published that tick; the next tick tries again. Nothing
+in spawn, launch or retire depends on it (D7).
 
 **Refusals when publishing.** Each refusal is logged with its exact HTTP status
 and message to `<deployment>/.oats-aweb/health/log.jsonl`, one line per refusal:
@@ -219,7 +216,7 @@ and message to `<deployment>/.oats-aweb/health/log.jsonl`, one line per refusal:
   stepped back recovers once it passes the stored value.
 - **429:** logged with `Retry-After`. That agent is skipped until then.
 - **403 "not the status host for <alias>":** logged, and the home is marked
-  undesignated in `health status`. The next launch designates it again.
+  undesignated in its cache. The next tick designates it again.
 - **Any other status, or a transport error:** logged.
 
 **The tick's envelope.**

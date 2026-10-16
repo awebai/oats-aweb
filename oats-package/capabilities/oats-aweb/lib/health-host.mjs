@@ -124,7 +124,7 @@ export function healthHost({deployment, env}) {
      *  never leaves a designation behind. */
     async awClearsDesignations() {
       if ((await aw({}, ['status-host', 'clear', '--help'])).status === 0) return {ok: true};
-      return {ok: false, message: `aw ${await awVersion()} has no status-host clear; designations stay until an aw >= ${AW_STATUS_MIN} runs \`oats aweb health disable\``};
+      return {ok: false, message: `aw ${await awVersion()} has no status-host clear; upgrade aw to ${AW_STATUS_MIN} or later and run \`oats aweb health disable\` again`};
     },
 
     async statusHostSet(target, hostDid) {
