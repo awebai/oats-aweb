@@ -473,9 +473,9 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   broker prerequisites pass. It uses the home's captured delivery and final
   credential locator, plus retained joined membership. The kernel's recorded
   `instance.json.launch.harness` governs runtime selection, with top-level
-  `harness` accepted when the launch recipe lacks it. If both are supplied they
-  must be nonempty, unpadded strings and agree; malformed or inconsistent
-  evidence reports
+  `harness` accepted when the launch recipe lacks it. Each supplied field must
+  be a nonempty, unpadded string; if both are supplied they must agree. Malformed
+  or inconsistent evidence reports
   `receive-record-unavailable`. Provider `meta.runtime` is a legacy fallback
   only when both kernel fields are absent. A launch hook can run before a later
   launch failure, so provider metadata alone must not override the kernel's
