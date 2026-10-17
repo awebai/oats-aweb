@@ -35,3 +35,20 @@ test('malformed time has an unknown diagnostic, missing time warns, and actual f
   status.updated_at='2026-10-17T06:08:42.001Z';
   assert.equal(assess(status).problems[0].code,'wake-status-stale');
 });
+
+
+test('operator daemon 1.36.40 excerpt preserves fractional timestamps and incomplete evidence',()=>{
+  const excerpt=JSON.parse(readFileSync(new URL('./fixtures/wake-status/daemon-1.36.40-issue-excerpt.json',import.meta.url),'utf8'));
+  assert.equal(excerpt.daemon_version,'1.36.40');
+  const row=excerpt.instances[0];
+  for (const value of [excerpt.updated_at,row.last_inspect_at,row.registered_at,row.channel_core.last_run_at,row.channel_core.last_input_at,row.channel_core.last_success_at,row.receive_identities[0].connected_at,row.managed_receiver.registration.registered_at]) assert.ok(Number.isFinite(parseTimestamp(value)),value);
+  const options={now:Date.parse('2026-10-17T06:10:01Z'),clientVersion:'1.36.40'};
+  assert.equal(assess(excerpt,options).problems[0].code,'wake-daemon-not-running');
+  // Synthetic augmentation, not captured flags: the reduced excerpt cannot
+  // establish daemon readiness. Keep its worker error and all timestamps.
+  const augmented={...excerpt,daemon_running:true,daemon_version_state:'reported'};
+  const result=assess(augmented,options);
+  assert.deepEqual(result.problems,[]);
+  assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
+  assert.ok(result.warnings.some(w=>w.code==='receive-observation-aged'));
+});

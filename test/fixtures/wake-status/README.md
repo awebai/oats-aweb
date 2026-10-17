@@ -16,9 +16,24 @@ test home and synthetic team. The pure assessment uses the stored values. That
 replay is fixture support, not proof of live receive or model consumption.
 
 This is evidence for a 1.36.40 **client reading a 1.36.37 daemon**, not a
-1.36.40 daemon capture or a separate 1.36.37 client run. A full sanitized status
-from a running 1.36.40 daemon, including top-level `updated_at`, remains missing.
-The timestamps-only issue excerpt is insufficient to substitute for it.
+1.36.40 daemon capture or a separate 1.36.37 client run.
+
+`daemon-1.36.40-issue-excerpt.json` is a sanitized copy of the reduced status
+excerpt [posted by the operator on issue #132](https://github.com/awebai/oats-aweb/issues/132#issuecomment-6230535181)
+on 2026-10-17. It reports daemon 1.36.40, top-level `updated_at`, and one
+external-session row. The issue reports client 1.36.40, but the excerpt itself
+contains no client-version field. Paths, team and owner/trace IDs were replaced;
+all timestamps, field presence, states, errors and stream observations remain
+unchanged. The retained worker error is not evidence of a healthy endpoint.
+
+The 1.36.40 excerpt omits `daemon_running` and `daemon_version_state`, so it
+cannot establish the complete broker prerequisites on its own. The regression
+checks the original excerpt's timestamps and its incomplete-daemon diagnostic.
+A separate explicitly synthetic augmentation supplies those two missing flags
+only to exercise timestamp assessment and retained-error warnings. It is not a
+captured full response or a claim of live receive. A full status response from
+a running 1.36.40 daemon remains missing; the earlier timestamps-only issue
+comment is distinct from this later reduced status excerpt.
 
 The existing parser accepts attached RFC 3339 fractional seconds. Malformed
 values in tests are explicitly synthetic mutations, never captured failures.

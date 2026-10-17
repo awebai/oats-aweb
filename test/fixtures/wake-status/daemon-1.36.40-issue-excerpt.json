@@ -1,0 +1,69 @@
+{
+  "updated_at": "2026-10-17T06:10:00.037747Z",
+  "daemon_version": "1.36.40",
+  "instances": [
+    {
+      "channel_core": {
+        "ambient_dropped": 0,
+        "ambient_queued": 0,
+        "bundle_path": "/fixture/path-bundle_path",
+        "evicted_events": 0,
+        "last_error": "E_RUNTIME_AUTHORITY_MISMATCH: instance metadata disagrees with independent session receipt",
+        "last_input_at": "2026-10-17T06:08:05.79Z",
+        "last_run_at": "2026-10-17T05:43:36.426618Z",
+        "last_success_at": "2026-10-17T06:08:05.79Z",
+        "next_retry_at": "0001-01-01T00:00:00Z",
+        "node_path": "/fixture/path-node_path",
+        "readiness_state": "unknown",
+        "readiness_waiting": "inspect_done",
+        "restart_count": 0,
+        "running": true,
+        "trace_binding_id": "/fixture/path-trace_binding_id",
+        "trace_message_id": "fixture-trace_message_id",
+        "trace_stage": "lane_job_completed"
+      },
+      "delivery": "session",
+      "evicted_events": 0,
+      "home": "/fixture/home",
+      "identity_home": "/fixture/home/.aw",
+      "last_inspect_at": "2026-10-17T06:08:04.78566Z",
+      "last_state": "unknown",
+      "managed_receiver": {
+        "generation": 0,
+        "owner_id": "fixture-owner_id",
+        "registration": {
+          "delivery": "session",
+          "home": "/fixture/home",
+          "identity_home": "/fixture/home/.aw",
+          "receive_identities": [
+            {
+              "controls": true,
+              "delivery_owner": "session-hints",
+              "identity_home": "/fixture/home/.aw",
+              "team_id": "fixture:example.test"
+            }
+          ],
+          "registered_at": "2026-10-17T05:43:36.389366Z",
+          "runtime_delivery": "external-session"
+        }
+      },
+      "paused": false,
+      "phase": "active",
+      "receive_identities": [
+        {
+          "connected_at": "2026-10-17T05:43:36.692944Z",
+          "controls": true,
+          "delivery_owner": "session-hints",
+          "identity_home": "/fixture/home/.aw",
+          "stream_admitted": true,
+          "stream_phase": "streaming",
+          "team_id": "fixture:example.test",
+          "unread_count": 1
+        }
+      ],
+      "registered_at": "2026-10-17T05:43:36.389366Z",
+      "runtime_delivery": "external-session",
+      "stream_admitted": true
+    }
+  ]
+}

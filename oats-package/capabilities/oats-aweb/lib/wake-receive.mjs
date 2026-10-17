@@ -418,7 +418,7 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   // status (kernel: unknown), and distinguish it from a parsed future snapshot.
   if (updated !== undefined && !Number.isFinite(updated)) {
     const client = typeof clientVersion === 'string' && /^\d+\.\d+\.\d+$/.test(clientVersion) ? clientVersion : 'unknown';
-    return fail('wake-status-timestamp-unknown', `status.updated_at is not a valid RFC 3339 timestamp (aw client ${client}; daemon ${status.daemon_version}); broker observation time is unknown`);
+    return fail('wake-status-timestamp-unknown', `status.updated_at is not an RFC 3339 timestamp in the form aw emits (aw client ${client}; daemon ${status.daemon_version}); broker observation time is unknown`);
   }
   if (updated !== undefined && updated > now) return fail('wake-status-stale', 'status.updated_at is in the future');
   if (inspected !== undefined && (!Number.isFinite(inspected) || inspected > now || (updated !== undefined && inspected > updated))) return fail('receive-inspection-unproven', 'supplied broker inspection timestamp is invalid, future or later than the snapshot');
