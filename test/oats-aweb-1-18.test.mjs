@@ -1437,3 +1437,31 @@ test('Codex kernel receipt still requires broker prerequisites without captured 
   assert.ok(result.problems.some(p=>p.code==='wake-stream-missing'),JSON.stringify(result));
   assert.ok(result.warnings.some(p=>p.code==='receive-ownership-unproven'),JSON.stringify(result));
 });
+
+// Isolate each modern field so a conflict with a second field cannot mask
+// acceptance of invalid explicit evidence. The broker itself is healthy.
+for(const field of ['launch','top-level']) for(const value of ['', ' ', '\t\n', ' codex ']) {
+  test(`reject ${field} harness ${JSON.stringify(value)} with healthy external broker`,t=>{
+    const fx=fixture(t,{delivery:'channel',runtime:'codex'}),meta=fx.spawn().meta;
+    const doc={capabilityMeta:{'oats.aweb':meta}};
+    if(field==='launch')doc.launch={harness:value};else doc.harness=value;
+    writeFileSync(join(fx.home,'instance.json'),JSON.stringify(doc));
+    fx.fake.setStatus(transportStatus(fx));
+    const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+    const result=fx.readiness();
+    assert.equal(result.status,'unavailable',JSON.stringify(result));
+    assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'),JSON.stringify(result));
+    assert.deepEqual(snapshot(fx.home),before);
+    assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version']]);
+  });
+}
+test('empty legacy provider runtime remains an external route with healthy broker',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'}),meta=fx.spawn().meta;
+  meta.runtime='';
+  writeFileSync(join(fx.home,'instance.json'),JSON.stringify({capabilityMeta:{'oats.aweb':meta}}));
+  fx.fake.setStatus(transportStatus(fx));
+  const calls=fx.fake.readCalls().length,result=fx.readiness({extra:{OATS_RUNTIME:'claude'}});
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.deepEqual(result.problems,[]);
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});

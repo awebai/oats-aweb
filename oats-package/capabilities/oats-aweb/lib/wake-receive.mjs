@@ -231,7 +231,10 @@ function receiveRecord(home) {
       (doc.launch !== undefined && !object(doc.launch))) return {error: 'captured instance record is malformed'};
   const meta = doc.capabilityMeta?.['oats.aweb'] ?? {};
   if (!object(meta) || doc.capabilityMeta?.['oats.aweb'] === null ||
-      [meta.runtime, doc.launch?.harness, doc.harness].some(v => v !== undefined && typeof v !== 'string') ||
+      (meta.runtime !== undefined && typeof meta.runtime !== 'string') ||
+      // Kernel harness fields are nonempty identifiers. Only legacy provider
+      // runtime metadata retains the empty-string external-broker meaning.
+      [doc.launch?.harness, doc.harness].some(v => v !== undefined && (typeof v !== 'string' || !v.trim() || v !== v.trim())) ||
       (meta.delivery !== undefined && !['session', 'channel'].includes(meta.delivery)) ||
       (doc.launch?.hooks !== undefined && !object(doc.launch.hooks)) ||
       (doc.launch?.hooks?.env !== undefined && !object(doc.launch.hooks.env))) return {error: 'captured delivery/runtime or credential metadata is malformed'};
