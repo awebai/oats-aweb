@@ -683,7 +683,7 @@ const defects = [
   ["readiness paused", s => s.instances[0].channel_core.readiness_paused=true, "wake-worker-unavailable"],
   ["worker error without completed inspection", s => {s.instances[0].channel_core.last_error="failed"; s.instances[0].channel_core.readiness_waiting="inspect_start";}, "wake-worker-unavailable"],
   ["target error", s => s.instances[0].last_error="failed", "wake-worker-unavailable"],
-  ["missing target", s => s.instances = [], "wake-target-missing"],
+  ["missing target", s => s.instances = [], "wake-stream-missing"],
   ["duplicate target", s => s.instances.push(s.instances[0]), "wake-target-missing"],
   ["inactive", s => s.instances[0].phase = "inactive", "wake-target-inactive"],
   ["pending", s => s.instances[0].phase = "pending", "wake-target-inactive"],
@@ -699,7 +699,7 @@ const defects = [
   ]),
   ["missing stream phase", s => delete s.instances[0].receive_identities[0].stream_phase, "wake-stream-unavailable"],
   ["stream error", s => s.instances[0].receive_identities[0].stream_error = "refused", "wake-stream-unavailable"],
-  ["missing binding", s => s.instances[0].receive_identities.pop(), "wake-target-binding"],
+  ["missing binding", s => s.instances[0].receive_identities.pop(), "wake-stream-missing"],
   ["extra binding", s => s.instances[0].receive_identities.push({...s.instances[0].receive_identities[0], identity_home: "/wrong"}), "wake-target-binding"],
   ["wrong binding", s => s.instances[0].receive_identities[0].identity_home = "/wrong", "wake-target-binding"],
   ["wrong owner", s => s.instances[0].receive_identities[0].delivery_owner = "native", "wake-target-binding"],
@@ -1360,3 +1360,80 @@ for (const [runtime, delivery] of [['claude', 'channel'], ['codex', 'channel'], 
     assert.equal(launched.doc.meta.wakeJoined, false);
   });
 }
+
+// Kernel receipts govern readiness; config names and previous provider runtime
+// can describe a different start. Caller OATS_RUNTIME is not target authority.
+for (const joined of [false, true]) for (const missing of ['target', 'primary', 'stream-list', 'native-row', 'native-pi-row']) {
+  if (missing.startsWith('native-') && !joined) continue;
+  test(`Codex receipt with stale Claude meta requires ${missing} stream (joined=${joined})`, t => {
+    const fx = fixture(t, {delivery:'channel',runtime:'codex',settings:joined?{join:'alpha'}:{}});
+    const meta = fx.spawn().meta, status = transportStatus(fx);
+    meta.runtime = 'claude'; meta.claudeChannelMode = 'development';
+    fx.record(meta, 'codex');
+    const doc = JSON.parse(readFileSync(join(fx.home,'instance.json')));
+    doc.launch.launchConfig = 'claude-aweb-native';
+    writeFileSync(join(fx.home,'instance.json'),JSON.stringify(doc));
+    if (missing === 'target') status.instances = [];
+    else if (missing === 'stream-list') delete status.instances[0].receive_identities;
+    else status.instances[0].receive_identities.shift();
+    if (missing.startsWith('native-')) Object.assign(status.instances[0], {
+      runtime_delivery:missing==='native-pi-row'?'native-pi':'native-channel',
+      delivery:missing==='native-pi-row'?'native-pi':'native-channel',
+      primary_identity_home:join(fx.home,'.aw'),identity_home:meta.joinedTeams[0].identityHome,
+    });
+    fx.fake.setStatus(status);
+    const before = snapshot(fx.home), calls = fx.fake.readCalls().length;
+    const result = fx.readiness({extra:{OATS_RUNTIME:'claude'}});
+    assert.equal(result.status,'unavailable',JSON.stringify(result));
+    assert.ok(result.problems.some(p=>p.code==='wake-stream-missing'),JSON.stringify(result));
+    assert.equal(result.warnings.some(w=>['native-receive-unproven','channel-dev-confirmation'].includes(w.code)),false);
+    assert.deepEqual(snapshot(fx.home),before);
+    assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+  });
+}
+for (const harness of ['codex','claude','pi']) test(`kernel ${harness} receipt overrides contradictory provider runtime`, t => {
+  const fx = fixture(t,{delivery:'channel',runtime:harness});
+  const meta = fx.spawn().meta;
+  meta.runtime = harness === 'codex' ? 'claude' : 'codex';
+  if(harness==='codex') meta.claudeChannelMode='development';
+  fx.record(meta,harness);
+  if (harness === 'codex') fx.fake.setStatus(transportStatus(fx));
+  const calls = fx.fake.readCalls().length, result = fx.readiness({extra:{OATS_RUNTIME:meta.runtime}});
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.equal(fx.fake.readCalls().slice(calls).some(c=>c.args[0]==='wake'),harness==='codex');
+  assert.equal(result.warnings.some(w=>w.code==='native-receive-unproven'),harness!=='codex');
+});
+for (const source of ['top-level-harness','provider-meta']) test(`readiness runtime fallback to ${source}`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'}),meta=fx.spawn().meta;
+  const doc={capabilityMeta:{'oats.aweb':meta}};
+  if(source==='top-level-harness'){doc.harness='codex';meta.runtime='claude';}
+  writeFileSync(join(fx.home,'instance.json'),JSON.stringify(doc));
+  fx.fake.setStatus({daemon_running:true,daemon_version_state:'reported',daemon_version:'1.36.37',instances:[]});
+  const result=fx.readiness({extra:{OATS_RUNTIME:'claude'}});
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='wake-stream-missing'),JSON.stringify(result));
+});
+for(const field of ['launch','top-level','provider','conflicting']) test(`malformed ${field} runtime cannot be masked by a valid Codex receipt`,t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'}),meta=fx.spawn().meta;
+  fx.record(meta,'codex');
+  const doc=JSON.parse(readFileSync(join(fx.home,'instance.json')));
+  if(field==='launch')doc.launch.harness=false;
+  if(field==='top-level')doc.harness=false;
+  if(field==='provider')doc.capabilityMeta['oats.aweb'].runtime=false;
+  if(field==='conflicting')doc.harness='claude';
+  writeFileSync(join(fx.home,'instance.json'),JSON.stringify(doc));
+  const result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'),JSON.stringify(result));
+});
+
+test('Codex kernel receipt still requires broker prerequisites without captured delivery',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'}),meta=fx.spawn().meta;
+  delete meta.delivery; delete meta.runtime;
+  fx.record(meta,'codex');
+  fx.fake.setStatus({daemon_running:true,daemon_version_state:'reported',daemon_version:'1.36.37',instances:[]});
+  const result=fx.readiness({extra:{OATS_RUNTIME:'claude'}});
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='wake-stream-missing'),JSON.stringify(result));
+  assert.ok(result.warnings.some(p=>p.code==='receive-ownership-unproven'),JSON.stringify(result));
+});
