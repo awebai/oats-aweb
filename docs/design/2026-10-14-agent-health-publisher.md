@@ -85,7 +85,7 @@ Evaluation order: the first row that matches wins.
 | 15 | problem `wake-daemon-not-running`, `wake-status-unavailable`, `wake-stream-unavailable` or `wake-worker-unavailable` | `no` | `oats.wake_broker_down` | `operator` |
 | 16 | problem `wake-target-missing`, `wake-target-inactive`, `wake-target-binding` or `receive-record-unavailable` | `no` | `oats.wake_not_registered` | `operator` |
 | 17 | problem `wake-target-paused` | `no` | `oats.wake_paused` | `operator` |
-| 18 | problem `receive-inspection-unproven`, `wake-status-stale` or `wake-daemon-version-unknown` | `unknown` | `oats.receive_unknown` | `unknown` |
+| 18 | problem `receive-inspection-unproven`, `wake-status-stale`, `wake-status-timestamp-unknown` or `wake-daemon-version-unknown` | `unknown` | `oats.receive_unknown` | `unknown` |
 | 19 | any other problem code (forward-tolerant) | `unknown` | `oats.unclassified` | `unknown` |
 | 20 | warning `grant-expiring`, with expiry within 24 h | `degraded` | `oats.grant_expiring` | `operator` |
 | 21 | warning `joined-team-poll-only` (on the joined identity's own status) | `degraded` | `oats.joined_team_poll_only` | `operator` |

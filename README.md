@@ -501,6 +501,13 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   failure. Missing observation evidence is unproven, never an invented
   successful inspection. Supplied timestamps must still be valid, nonfuture
   and consistently ordered; malformed or contradictory status is a problem.
+  A supplied malformed `status.updated_at` reports
+  `wake-status-timestamp-unknown`, naming the observed client and daemon versions
+  (or `unknown` when unavailable). Provider `unavailable` maps to kernel
+  `unknown`; malformed time is not evidence of staleness. A parsed future
+  snapshot remains `wake-status-stale`. The parser accepts RFC 3339 timestamps
+  with attached fractional seconds of one through nine digits, as emitted by
+  supported aw releases; it does not infer compatibility from a version alone.
   Known stopped/shell/unusable endpoint state, failed inspection and explicit
   errors remain problems even when old or followed by `inspect_start`, which
   can retain prior state and errors. `last_inspect_at` also updates on errors;
