@@ -1396,6 +1396,7 @@ for (const harness of ['codex','claude','pi']) test(`kernel ${harness} receipt o
   const meta = fx.spawn().meta;
   meta.runtime = harness === 'codex' ? 'claude' : 'codex';
   if(harness==='codex') meta.claudeChannelMode='development';
+  else delete meta.claudeChannelMode; // a previous Codex receipt has no Claude mode
   fx.record(meta,harness);
   if (harness === 'codex') fx.fake.setStatus(transportStatus(fx));
   const calls = fx.fake.readCalls().length, result = fx.readiness({extra:{OATS_RUNTIME:meta.runtime}});
@@ -1464,4 +1465,14 @@ test('empty legacy provider runtime remains an external route with healthy broke
   assert.equal(result.status,'ready',JSON.stringify(result));
   assert.deepEqual(result.problems,[]);
   assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+});
+
+test('kernel Claude receipt does not excuse internally contradictory provider mode',t=>{
+  const fx=fixture(t,{delivery:'channel',runtime:'claude'}),meta=fx.spawn().meta;
+  meta.runtime='codex'; // Claude mode was retained, which contradicts this receipt itself.
+  fx.record(meta,'claude');
+  const calls=fx.fake.readCalls().length,result=fx.readiness();
+  assert.equal(result.status,'unavailable',JSON.stringify(result));
+  assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'),JSON.stringify(result));
+  assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version']]);
 });
