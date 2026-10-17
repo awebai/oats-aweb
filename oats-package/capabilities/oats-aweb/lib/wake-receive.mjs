@@ -337,7 +337,7 @@ export function wakeDaemonAssessment(status, {minimumVersion}) {
 /** Released aw status is a transport observation. Worker telemetry is absent at
  * the CLI floor; that is unknown, not permission to invent a healthy worker.
  * No generation/start witness is required or inferred from historical inputs. */
-export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now()} = {}) {
+export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime, capturedDelivery, primary, primaryTeam, bindings, incomplete = false}, {minimumVersion, now = Date.now(), clientVersion} = {}) {
   const warnings = [];
   const fail = (code, message) => ({problems: [problem(code, message)], warnings});
   if (!object(status) || !Array.isArray(status.instances)) return fail('wake-status-unavailable', 'aw wake status is unavailable or malformed');
@@ -414,7 +414,13 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   if (states.every(Boolean) && states[0] !== states[1]) return fail('wake-status-unavailable', 'broker observation states contradict each other');
   const updated = status.updated_at === undefined ? undefined : parseTimestamp(status.updated_at);
   const inspected = row.last_inspect_at === undefined ? undefined : parseTimestamp(row.last_inspect_at);
-  if (updated !== undefined && (!Number.isFinite(updated) || updated > now)) return fail('wake-status-stale', 'supplied broker status timestamp is invalid or future');
+  // A malformed observation cannot establish age. Keep the wire's unavailable
+  // status (kernel: unknown), and distinguish it from a parsed future snapshot.
+  if (updated !== undefined && !Number.isFinite(updated)) {
+    const client = typeof clientVersion === 'string' && /^\d+\.\d+\.\d+$/.test(clientVersion) ? clientVersion : 'unknown';
+    return fail('wake-status-timestamp-unknown', `status.updated_at is not an RFC 3339 timestamp in the form aw emits (aw client ${client}; daemon ${status.daemon_version}); broker observation time is unknown`);
+  }
+  if (updated !== undefined && updated > now) return fail('wake-status-stale', 'status.updated_at is in the future');
   if (inspected !== undefined && (!Number.isFinite(inspected) || inspected > now || (updated !== undefined && inspected > updated))) return fail('receive-inspection-unproven', 'supplied broker inspection timestamp is invalid, future or later than the snapshot');
   // Released aw retains nonempty LastError across child status updates, while
   // ReadinessError can clear (channel_core_runner.go:508-539, v1.36.23). There
