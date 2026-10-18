@@ -35,7 +35,7 @@ const ROWS = [
   ...["wake-daemon-not-running", "wake-status-unavailable", "wake-stream-unavailable", "wake-worker-unavailable"].map((c) => [c, { readiness: problem(c) }, ["no", "oats.wake_broker_down", "operator"]]),
   ...["wake-target-missing", "wake-stream-missing", "wake-target-inactive", "wake-target-binding", "receive-record-unavailable"].map((c) => [c, { readiness: problem(c) }, ["no", "oats.wake_not_registered", "operator"]]),
   ["wake target paused", { readiness: problem("wake-target-paused") }, ["no", "oats.wake_paused", "operator"]],
-  ...["receive-inspection-unproven", "wake-status-stale", "wake-daemon-version-unknown"].map((c) => [c, { readiness: problem(c) }, ["unknown", "oats.receive_unknown", "unknown"]]),
+  ...["receive-inspection-unproven", "wake-status-stale", "wake-status-timestamp-unknown", "wake-daemon-version-unknown"].map((c) => [c, { readiness: problem(c) }, ["unknown", "oats.receive_unknown", "unknown"]]),
   ["an unknown problem code", { readiness: problem("something-new") }, ["unknown", "oats.unclassified", "unknown"]],
   ["grant expiring within 24 h", { readiness: warning("grant-expiring"), grant: { expiresAt: new Date(NOW + 23 * HOUR).toISOString() } }, ["degraded", "oats.grant_expiring", "operator"]],
   ["grant expiring in 3 days is still yes", { readiness: warning("grant-expiring"), grant: { expiresAt: new Date(NOW + 72 * HOUR).toISOString() } }, ["yes", null, null]],

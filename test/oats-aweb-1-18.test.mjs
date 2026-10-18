@@ -640,6 +640,35 @@ require('node:module').syncBuiltinESMExports();
   assert.ok(inspectionAfterSnapshot.problems.some(p => p.code === 'receive-inspection-unproven'));
 });
 
+// Synthetic mutations exercise diagnostics; these values are not captured wire data.
+test('malformed snapshot time is unknown with field and observed versions, without extra aw calls', t => {
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  fx.record(fx.spawn().meta,'codex');
+  for (const value of ['invalid', '', null, 17, {}, '2026-02-30T12:00:00Z']) {
+    const status=transportStatus(fx);status.updated_at=value;fx.fake.setStatus(status);
+    const before=snapshot(fx.home),calls=fx.fake.readCalls().length;
+    const result=fx.readiness();
+    assert.equal(result.status,'unavailable'); // Kernel provider mapping: unknown.
+    assert.equal(result.problems[0].code,'wake-status-timestamp-unknown');
+    assert.match(result.problems[0].message,/status\.updated_at.*aw client 1\.36\.33; daemon 1\.36\.21/);
+    assert.equal(result.problems.some(p=>p.code==='wake-status-stale'),false);
+    assert.deepEqual(snapshot(fx.home),before);
+    assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version'],['wake','status','--json']]);
+  }
+});
+
+test('captured client 1.36.40 / daemon 1.36.37 wire replay accepts fractional timestamps', t => {
+  const fx=fixture(t,{delivery:'channel',runtime:'codex'});
+  fx.record(fx.spawn().meta,'codex');
+  // Relocate sanitized locators/team to this test's temporary home and team.
+  const raw=readFileSync(join(REPO,'test/fixtures/wake-status/client-1.36.40-daemon-1.36.37.json'),'utf8');
+  const status=JSON.parse(raw.replaceAll('/fixture/home',fx.home).replaceAll('fixture:example.test','legacy:example.test'));
+  fx.fake.setStatus(status);
+  const result=fx.readiness();
+  assert.equal(result.status,'ready',JSON.stringify(result));
+  assert.deepEqual(result.problems,[]);
+});
+
 function snapshot(dir) {
   return readdirSync(dir, {withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).map(e => [e.name, e.isDirectory() ? snapshot(join(dir,e.name)) : readFileSync(join(dir,e.name)).toString('base64')]);
 }
@@ -664,7 +693,7 @@ const defects = [
   ["future inspection", s => s.instances[0].last_inspect_at = "2999-01-01T00:00:00Z", "receive-inspection-unproven"],
   ["inspection newer than snapshot", s => s.updated_at = new Date(Date.parse(s.instances[0].last_inspect_at)-1).toISOString(), "receive-inspection-unproven"],
   ["future snapshot", s => s.updated_at = "2999-01-01T00:00:00Z", "wake-status-stale"],
-  ["malformed snapshot", s => s.updated_at = "invalid", "wake-status-stale"],
+  ["malformed snapshot", s => s.updated_at = "invalid", "wake-status-timestamp-unknown"],
   ["shell endpoint", s => {s.instances[0].last_state="shell"; s.instances[0].channel_core.readiness_state="shell";}, "receive-inspection-unproven"],
   ["absent endpoint", s => {s.instances[0].last_state="not-launched"; s.instances[0].channel_core.readiness_state="not-launched";}, "receive-inspection-unproven"],
   ["failed inspection retaining unknown", s => {s.instances[0].channel_core.readiness_waiting="inspect_error"; s.instances[0].channel_core.readiness_error="unavailable";}, "wake-worker-unavailable"],
@@ -675,7 +704,7 @@ const defects = [
   ["inspect_start retaining shell endpoint", s => {s.instances[0].channel_core.readiness_waiting="inspect_start"; s.instances[0].last_state="shell"; s.instances[0].channel_core.readiness_state="shell";}, "receive-inspection-unproven"],
   ["wrong-type observation", s => s.instances[0].channel_core.readiness_state=17, "wake-status-unavailable"],
   ["wrong-type inspection", s => s.instances[0].last_inspect_at=17, "receive-inspection-unproven"],
-  ["wrong-type snapshot", s => s.updated_at=17, "wake-status-stale"],
+  ["wrong-type snapshot", s => s.updated_at=17, "wake-status-timestamp-unknown"],
   ["contradictory usable observation states", s => s.instances[0].last_state="idle", "wake-status-unavailable"],
   ["inspection error with empty diagnostic", s => {s.instances[0].channel_core.readiness_waiting="inspect_error"; s.instances[0].channel_core.readiness_error="";}, "receive-inspection-unproven"],
   ["conflicting observation state", s => s.instances[0].last_state="stopped", "receive-inspection-unproven"],
@@ -826,7 +855,7 @@ test('observation-age warning boundaries, quiet workers and timing skew use an i
   assert.equal(evaluate(observed+30001).problems[0].code,'receive-inspection-unproven');
   status.updated_at='2026-02-30T12:00:00Z';
   status.instances[0].last_inspect_at=status.updated_at;
-  assert.equal(evaluate(Date.parse('2026-03-02T12:00:00Z')).problems[0].code,'wake-status-stale','impossible date must not normalize to an observation');
+  assert.equal(evaluate(Date.parse('2026-03-02T12:00:00Z')).problems[0].code,'wake-status-timestamp-unknown','impossible date must not normalize to an observation');
 });
 
 test('failed prerequisites preserve configuration diagnostics without querying a recorded receive path', (t) => {
