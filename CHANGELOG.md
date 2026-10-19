@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.30.0 — 2026-10-19
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.
+
+- **Codex homes need the host wake broker, judged from the kernel's launch
+  record** (#134, the provider half of awebai/oats#1345). Readiness chooses a home's
+  runtime from the kernel's recorded `instance.json` `launch.harness`, with
+  top-level `harness` when the launch recipe lacks it. Both must be
+  nonempty, unpadded strings, and must agree when both are present. Provider
+  `meta.runtime` is used only when both kernel fields are absent, and
+  configuration names or the caller's environment never select the runtime.
+  - A home recorded as Codex requires the broker's prerequisites, even when
+    its captured delivery is absent.
+  - A missing Codex target or primary stream (including a retained native
+    row that carries only joined identities) reports `wake-stream-missing`.
+    Refused or disconnected streams still report `wake-stream-unavailable`.
+  - Malformed or inconsistent kernel fields report
+    `receive-record-unavailable`.
+  - A start decides between the broker and the channel path from
+    `OATS_RUNTIME` (the alias of `OATS_HARNESS`), whatever the launch
+    configuration is called.
+- **A malformed wake-status timestamp is no longer called stale** (#133). A
+  supplied `status.updated_at` that does not parse reports
+  `wake-status-timestamp-unknown`, naming the observed aw client and daemon
+  versions. Provider `unavailable` maps to the kernel's `unknown`. A parsed
+  future snapshot is still `wake-status-stale`. RFC 3339 timestamps with one
+  to nine fractional digits are accepted.
+
 ## 1.29.0 — 2026-10-16
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33. Publishing health
