@@ -33,7 +33,7 @@ const ROWS = [
   ["grant expired", { readiness: problem("grant-expired") }, ["no", "oats.grant_expired", "operator"]],
   ["grant revoked", { readiness: problem("grant-revoked") }, ["no", "oats.grant_revoked", "operator"]],
   ...["wake-daemon-not-running", "wake-status-unavailable", "wake-stream-unavailable", "wake-worker-unavailable"].map((c) => [c, { readiness: problem(c) }, ["no", "oats.wake_broker_down", "operator"]]),
-  ...["wake-target-missing", "wake-target-inactive", "wake-target-binding", "receive-record-unavailable"].map((c) => [c, { readiness: problem(c) }, ["no", "oats.wake_not_registered", "operator"]]),
+  ...["wake-target-missing", "wake-stream-missing", "wake-target-inactive", "wake-target-binding", "receive-record-unavailable"].map((c) => [c, { readiness: problem(c) }, ["no", "oats.wake_not_registered", "operator"]]),
   ["wake target paused", { readiness: problem("wake-target-paused") }, ["no", "oats.wake_paused", "operator"]],
   ...["receive-inspection-unproven", "wake-status-stale", "wake-status-timestamp-unknown", "wake-daemon-version-unknown"].map((c) => [c, { readiness: problem(c) }, ["unknown", "oats.receive_unknown", "unknown"]]),
   ["an unknown problem code", { readiness: problem("something-new") }, ["unknown", "oats.unclassified", "unknown"]],

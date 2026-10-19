@@ -578,7 +578,7 @@ test("wake daemon readiness warns on an outdated daemon and reports unknown and 
   let result = JSON.parse(checked.stdout).result;
   assert.equal(result.status, "unavailable");
   assert.match(result.warnings.find((w) => w.code === "wake-daemon-outdated").message, /running 1\.36\.4; required 1\.36\.33: upgrade aw, then restart the host wake daemon/);
-  assert.deepEqual(result.problems.map((p) => p.code), ["wake-target-missing"], "an outdated daemon is a warning; the target row is still assessed");
+  assert.deepEqual(result.problems.map((p) => p.code), ["wake-stream-missing"], "an outdated daemon is a warning; the Codex primary stream is still assessed");
 
   const unknownAw = fakeAw114(t, { wakeStatus: { instances: [], daemon_running: true, daemon_version_state: "unknown" } });
   checked = runBindingCheck(bindingRequest(settings, context), { PATH: unknownAw.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment" }, home);

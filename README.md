@@ -434,9 +434,10 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   [cjr adoption #673](https://github.com/awebai/oats/issues/673) is separate.
 
   A home is on exactly one path. Every start decides the path afresh from the
-  setting and the start's runtime (a home can be restarted under another
-  harness): the broker path registers the home, the channel path runs `aw wake
-  deregister` and confirms with `aw wake status --json` that the home is no
+  setting and the kernel-selected target runtime (`OATS_RUNTIME`, the
+  compatibility alias of `OATS_HARNESS`; a home can restart under another
+  harness), regardless of a retained launch configuration's name: the broker
+  path registers the home, the channel path runs `aw wake deregister` and confirms with `aw wake status --json` that the home is no
   longer listed. If either step fails the start is refused, since a home on both
   paths would get every wake twice and a home on neither hears nothing. The
   status read confirms that the home is deregistered, not that terminal input
@@ -469,10 +470,23 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   or paginated `aw mail inbox --show-all --json` with `--cursor`, not
   mail read state or `--conversation-id`.
   Home readiness reports whether the configured supported route and observable
-  broker prerequisites pass. It uses the home's captured delivery, runtime and
-  final credential locator, plus retained joined membership. Claude Code and pi
-  use native channels by default; Codex normally uses the supported external
-  broker. A `ready` result does not certify recent endpoint observation, native
+  broker prerequisites pass. It uses the home's captured delivery and final
+  credential locator, plus retained joined membership. The kernel's recorded
+  `instance.json.launch.harness` governs runtime selection, with top-level
+  `harness` accepted when the launch recipe lacks it. Each supplied field must
+  be a nonempty, unpadded string; if both are supplied they must agree. Malformed
+  or inconsistent evidence reports
+  `receive-record-unavailable`. Provider `meta.runtime` is a legacy fallback
+  only when both kernel fields are absent. A launch hook can run before a later
+  launch failure, so provider metadata alone must not override the kernel's
+  published launch receipt. Configuration names and the readiness caller's
+  environment never select the target runtime. Claude Code and pi use native
+  channels by default; Codex requires the supported external broker. An absent
+  Codex target or missing primary stream (including a retained native row
+  carrying only joined identities) reports `wake-stream-missing`. Refused or
+  disconnected supplied streams retain `wake-stream-unavailable`; malformed
+  bindings and route/policy mismatches retain `wake-target-binding`. A `ready`
+  result does not certify recent endpoint observation, native
   connection, current start, uninterrupted liveness, automatic presentation or
   model consumption.
 
@@ -539,7 +553,9 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   Only absent captured delivery falls back to `settings.delivery`; `session`
   requires broker checks. Captured `session` requires them even without runtime;
   captured `channel` without runtime leaves primary ownership unproven, including
-  when current settings say `session`. A retained empty runtime string keeps its
+  when current settings say `session`. An explicit Codex runtime requires broker
+  prerequisites even when captured delivery is absent, while complete-set
+  ownership remains unproven. A retained empty runtime string keeps its
   existing external-broker meaning. Any known joined path requires broker checks.
   Retained joined identities still receive target/worker/stream and known-policy
   checks. Malformed JSON, unreadable records, wrong types, invalid values and
@@ -1032,3 +1048,19 @@ source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
 There is no legacy fallback. The
 selected-service guarantee holds modulo redirects issued by the selected origin
 for unauthenticated heartbeat discovery only; signed mail and metadata refuse redirects. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).
+
+### Runtime delivery regression verification
+
+`node --test test/oats-aweb-1-18.test.mjs test/codex-delivery-wire.test.mjs`
+checks stale provider runtime, missing Codex target/primary stream, inconsistent
+kernel receipts and retained native/joined routing. Readiness remains read-only.
+With `OATS_PREVIEW_KERNEL_ROOT` selecting a real kernel installation or checkout,
+`node --test test/public-kernel-codex-delivery.test.mjs` executes its
+`prepareLaunchHooks` producer for preview, preflight and real provider hooks in
+disposable homes. Ambient Claude selectors and a retained Claude recipe cannot
+override the selected Codex runtime. This fixture uses fake aw for registration;
+it does not start a harness or prove live receive. CI requires it against the
+same pinned kernel as the launch-preview tests.
+
+The sanitized live status sample and limits are recorded in
+[test/fixtures/codex-delivery/README.md](test/fixtures/codex-delivery/README.md).
