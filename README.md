@@ -5,6 +5,16 @@ Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.30.0 — Codex readiness from the kernel's launch record
+
+Readiness now takes a home's runtime from the kernel's recorded launch
+(`instance.json` `launch.harness`), not from provider metadata. A home that
+launched under Codex therefore needs the host wake broker: a missing Codex
+target or primary stream reports `wake-stream-missing`. A malformed
+`status.updated_at` from `aw wake status` reports
+`wake-status-timestamp-unknown`, no longer `wake-status-stale`. Both floors are
+unchanged. See [the changelog](CHANGELOG.md#1300--2026-10-19).
+
 ## 1.29.0 — the agent status publisher
 
 `oats aweb health enable | status | disable | publish` publishes a signed
