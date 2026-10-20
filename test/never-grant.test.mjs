@@ -1,7 +1,7 @@
 // oats.aweb 1.25: grants never expire by default (oats-aweb#80). `identity.ttl`
 // is `never` unless set to a duration (60s to 720h), every mint passes it
 // explicitly, a never seat's custody must list grant_never_ttl.v1, revocation is
-// the only end of a never-grant, and readiness says it never expires.
+// the only end of an uncapped never-grant. A team cap may return a finite expiry.
 //
 // aw 1.36.32 shapes (df6bb193): `--ttl` takes "never" or 60s..720h (real binary,
 // `aw id grant mint --help`); a never-grant's mint JSON and grant.yaml carry
@@ -105,7 +105,7 @@ test("a never-grant is recorded as never, and the brief says it never expires", 
 // ------------------------------------------------- mint receipt validation
 
 test("a minted expiry must match the request: anything else fails closed, revokes and keeps nothing", (t) => {
-  for (const [identity, expires] of [[{}, "2027-01-01T00:00:00Z"], [{}, ""], [{}, "soon"], [{}, "2026-02-30T00:00:00Z"], [{ ttl: "24h" }, "never"], [{ ttl: "24h" }, "soon"]]) {
+  for (const [identity, expires] of [[{}, ""], [{}, "soon"], [{}, "2026-02-30T00:00:00Z"], [{ ttl: "24h" }, "never"], [{ ttl: "24h" }, "soon"]]) {
     const s = seat(t);
     const r = s.spawn(identity, { FAKE_MINT_EXPIRES: expires });
     assert.notEqual(r.status, 0, `${JSON.stringify(identity)} ${expires}`);
@@ -118,7 +118,7 @@ test("a minted expiry must match the request: anything else fails closed, revoke
 test("a renewal whose minted expiry does not match revokes the new grant and keeps the old one", (t) => {
   const s = seat(t);
   const spawned = s.spawn({});
-  const launched = s.launch(spawned.doc.meta, {}, { FAKE_MINT_EXPIRES: "2027-01-01T00:00:00Z" });
+  const launched = s.launch(spawned.doc.meta, {}, { FAKE_MINT_EXPIRES: "soon" });
   assert.equal(launched.status, 0, launched.stdout + launched.stderr);
   assert.equal(launched.doc.meta.identity.grant.id, "grant-spawn", "the previous grant is kept");
   const renewed = mints(s.calls())[1].find(a => a.startsWith("--out=")).slice("--out=".length);
@@ -126,6 +126,53 @@ test("a renewal whose minted expiry does not match revokes the new grant and kee
   assert.deepEqual(revokes(s.calls()).map(a => a[3]), [newId]);
   assert.equal(existsSync(renewed), false);
   assert.match(launched.doc.warning, /keeping previous grant grant-spawn/);
+});
+
+test("a capped never request starts and renews with its finite expiry and recorded ttl", (t) => {
+  for (const identity of [{}, { ttl: "never" }]) {
+    const s = seat(t);
+    const expiresAt = new Date(Date.now() + 3 * 24 * 3600000).toISOString();
+    const spawned = s.spawn(identity, { FAKE_MINT_EXPIRES: expiresAt });
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    assert.equal(spawned.doc.meta.identity.grant.ttl, "never");
+    assert.equal(spawned.doc.meta.identity.grant.expiresAt, expiresAt);
+    assert.ok(spawned.doc.brief.includes(`; expires: ${expiresAt}.`), spawned.doc.brief);
+    assert.doesNotMatch(spawned.doc.brief, /never expires/);
+    s.record(spawned.doc.meta);
+    const ready = s.readiness(identity);
+    // This fixture deliberately has no wake daemon; isolate grant/custody
+    // readiness from that unrelated receive diagnostic.
+    assert.deepEqual(ready.problems.map(p => p.code), ["wake-daemon-not-running"]);
+    const expiring = ready.warnings.find(w => w.code === "grant-expiring");
+    assert.ok(expiring, JSON.stringify(ready));
+    assert.ok(expiring.message.includes(`oats session restart --home ${s.home}`), expiring.message);
+    assert.doesNotMatch(expiring.message, /remove identity\.ttl/);
+    const missingOp = s.readiness(identity, { FAKE_CUSTODY_OPS: WITHOUT(NEVER_OP) });
+    assert.ok(missingOp.problems.some(p => p.code === "custody" && p.message.includes(NEVER_OP)), JSON.stringify(missingOp));
+
+    // An expired capped grant can be renewed from resident custody. With the
+    // setting absent, the recorded request still determines the next mint.
+    const expiredAt = new Date(Date.now() - 60000).toISOString();
+    const expired = { ...spawned.doc.meta, identity: { ...spawned.doc.meta.identity,
+      grant: { ...spawned.doc.meta.identity.grant, expiresAt: expiredAt } } };
+    s.record(expired);
+    const unavailable = s.readiness(identity);
+    assert.equal(unavailable.status, "unavailable", JSON.stringify(unavailable));
+    const problem = unavailable.problems.find(p => p.code === "grant-expired");
+    assert.ok(problem, JSON.stringify(unavailable));
+    assert.ok(problem.message.includes(`oats session restart --home ${s.home}`), problem.message);
+    assert.doesNotMatch(problem.message, /remove identity\.ttl/);
+    const nextExpiry = new Date(Date.now() + 5 * 24 * 3600000).toISOString();
+    const launched = s.launch(expired, identity, { FAKE_MINT_EXPIRES: nextExpiry });
+    assert.equal(launched.status, 0, launched.stdout + launched.stderr);
+    assert.notEqual(launched.doc.meta.identity.grant.id, "grant-spawn");
+    assert.equal(launched.doc.meta.identity.grant.ttl, "never");
+    assert.equal(launched.doc.meta.identity.grant.expiresAt, nextExpiry);
+    assert.deepEqual(mints(s.calls()).map(a => a.filter(x => x.startsWith("--ttl"))), [["--ttl=never"], ["--ttl=never"]]);
+    assert.deepEqual(revokes(s.calls()).map(a => a[3]), ["grant-spawn"]);
+    s.record(launched.doc.meta);
+    assert.deepEqual(s.readiness(identity).problems.map(p => p.code), ["wake-daemon-not-running"]);
+  }
 });
 
 // ------------------------------------------ an aweb server without never-grants
@@ -455,8 +502,8 @@ test("the expiry remedy: a captured duration renews on restart and says how to s
   const now = Date.parse("2026-10-10T02:00:00Z"), at = "2026-10-10T01:00:00Z";
   const remedy = (grant, configuredTtl) => grantExpiryAssessment({ mode: "global", grant: { id: "g", expiresAt: at, renew: "launch", ...grant } }, { home: "/h", now, configuredTtl }).problems[0].message.slice(`grant g expired at ${at}: `.length);
   const restart = "restart the seat to renew it (`oats session restart --home /h`)";
-  assert.equal(remedy({ ttl: "never" }, undefined), restart);
-  assert.equal(remedy({}, "never"), restart);
+  assert.equal(remedy({ ttl: "never" }, undefined), "restart the seat to renew it up to the team's limit (`oats session restart --home /h`)");
+  assert.equal(remedy({}, "never"), "restart the seat to renew it up to the team's limit (`oats session restart --home /h`)");
   assert.equal(remedy({ ttl: "720h" }, undefined), restart, "a pre-1.25.0 seat renewed at the fallback");
   // grant-expiring carries the same remedy as grant-expired.
   assert.equal(grantExpiryAssessment({ mode: "global", grant: { id: "g", expiresAt: "2026-10-12T00:00:00Z", renew: "launch" } }, { home: "/h", now, configuredTtl: "720h" }).warnings[0].message,

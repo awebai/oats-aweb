@@ -38,7 +38,8 @@ test("a grant expiring in 6 days 23 hours is the grant-expiring warning naming t
 test("each seat gets its own remedy from the renew mode its grant recorded and the identity.ttl it captured", () => {
   const at = iso(NOW - 1000), soon = iso(NOW + DAY);
   const remedy = (options, configured) => assess(grantIdentity(at, options), NOW, configured).problems[0].message.slice(`grant grant-1 expired at ${at}: `.length);
-  for (const configured of [undefined, "", "never", "garbage"]) assert.equal(remedy({ renew: "launch" }, configured), REMEDY, `captured ttl ${configured}`);
+  for (const configured of [undefined, "", "garbage"]) assert.equal(remedy({ renew: "launch" }, configured), REMEDY, `captured ttl ${configured}`);
+  assert.equal(remedy({ ttl: "never", renew: "launch" }, "never"), "restart the seat to renew it up to the team's limit (`oats session restart --home /abs/agents/dev/instances/seat`)");
   // A seat from before 1.25.0 renews at 720h and records it, with no setting: a restart renews it.
   assert.equal(remedy({ ttl: "720h", renew: "launch" }, undefined), REMEDY);
   assert.equal(remedy({ ttl: "24h", renew: "launch" }, "24h"), RESPAWN);

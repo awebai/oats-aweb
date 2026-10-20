@@ -1,10 +1,18 @@
 // A grant seat's expiry, from the grant recorded at its last mint
 // (identity.grant.expiresAt, aw's `id grant mint` expires_at), with no aw or
-// custody call. A grant minted with a duration (at most 720h) expires, and a
-// seat that is not restarted in time loses messaging; a never-grant, recorded
-// as expiresAt "never", ends only when revoked.
+// custody call. A finite expiry applies even when ttl is never: the team or
+// issuing certificate can cap the request. A seat that is not restarted in
+// time loses messaging; expiresAt "never" ends only when revoked.
 import {parseTimestamp} from './wake-receive.mjs';
 import {NEVER_GRANT_TTL, resolveGrantTTL} from './grant-duration.mjs';
+
+/** A never request may be capped by the team or issuing certificate. Trust
+ *  the finite receipt as the deadline; duration requests still require one. */
+export function mintedExpiryProblem(expiresAt, ttl) {
+  if ((ttl === 'never' && expiresAt === 'never') || Number.isFinite(parseTimestamp(expiresAt))) return undefined;
+  const shown = JSON.stringify(expiresAt) ?? 'undefined';
+  return `aw id grant mint returned expires_at ${shown.slice(0, 64)} for a ${ttl} grant`;
+}
 
 export const GRANT_EXPIRY_WARNING_MS = 7 * 24 * 3600 * 1000;
 
@@ -17,13 +25,16 @@ function explicitDuration(ttl) {
 
 /** This seat's remedy, from the renew mode its grant recorded and the
  *  identity.ttl it captured. Under renew: launch a restart re-mints: a seat
- *  with a set duration gets another one, and ends up never expiring only once
- *  the setting is removed and it is respawned. Under renew: off a restart keeps
- *  the grant. A grant minted before oats.aweb 1.25.0 records no renew mode, so
- *  its remedy also covers renew: off. */
+ *  with a set duration requests another one. A never request with a finite
+ *  receipt remains subject to the team or issuing certificate limit. Under
+ *  renew: off a restart keeps the grant. A grant minted before oats.aweb
+ *  1.25.0 records no renew mode, so its remedy also covers renew: off. */
 export function grantExpiryRemedy(home, grant, configuredTtl) {
   if (grant?.renew === 'off') return 'respawn the seat (or set `renew: launch` and respawn): with renew off a restart keeps this grant';
-  const restart = explicitDuration(configuredTtl)
+  const cappedNever = (configuredTtl === NEVER_GRANT_TTL || grant?.ttl === NEVER_GRANT_TTL) && Number.isFinite(parseTimestamp(grant?.expiresAt));
+  const restart = cappedNever
+    ? `restart the seat to renew it up to the team's limit (\`oats session restart --home ${home}\`)`
+    : explicitDuration(configuredTtl)
     ? `a restart renews it for another ${configuredTtl} (\`oats session restart --home ${home}\`); to stop it expiring, remove identity.ttl and respawn`
     : `restart the seat to renew it (\`oats session restart --home ${home}\`)`;
   return grant?.renew === 'launch' ? restart : `${restart}; if its identity.renew is off, respawn it instead`;

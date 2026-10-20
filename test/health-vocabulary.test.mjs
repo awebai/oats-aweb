@@ -6,6 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assessHealth, combineSeats, PHRASES } from "../oats-package/capabilities/oats-aweb/lib/health-vocabulary.mjs";
+import { grantExpiryAssessment } from "../oats-package/capabilities/oats-aweb/lib/grant-expiry.mjs";
 import { checkDocument } from "../oats-package/capabilities/oats-aweb/lib/status-document.mjs";
 
 const NOW = Date.parse("2026-10-14T16:00:00Z");
@@ -97,4 +98,13 @@ test("a resident's seats combine to the best seat: yes, then degraded, then no, 
 
 test("authorization-required comes before custody and the wake rows, as the table orders them", () => {
   assert.deepEqual(verdict({ readiness: { status: "authorization-required", problems: [{ code: "custody", message: "x" }], warnings: [] } }), ["no", "oats.authorization_required", "operator"]);
+});
+
+test("a capped never-ttl seat uses its finite expiry for health", () => {
+  for (const [hours, expected] of [[72, ["yes", null, null]], [23, ["degraded", "oats.grant_expiring", "operator"]], [-1, ["no", "oats.grant_expired", "operator"]]]) {
+    const grant = { id: "capped", ttl: "never", renew: "launch", expiresAt: new Date(NOW + hours * HOUR).toISOString() };
+    const assessment = grantExpiryAssessment({ mode: "global", grant }, { home: "/seat", now: NOW, configuredTtl: "never" });
+    const readiness = { status: assessment.problems.length ? "unavailable" : "ready", ...assessment };
+    assert.deepEqual(verdict({ grant, readiness }), expected);
+  }
 });
