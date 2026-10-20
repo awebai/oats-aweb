@@ -212,8 +212,10 @@ The rest:
   renew mode the grant recorded (`identity.grant.renew`) and the
   `identity.ttl` the seat captured: under `renew: launch`, "restart the seat
   to renew it (`oats session restart --home <home>`)"; for a seat that
-  captured an `identity.ttl` duration, "a restart renews it for another <ttl>
-  (…); to stop it expiring, remove identity.ttl and respawn"; under
+  captured an `identity.ttl` duration, "a restart requests another <ttl>
+  (…); removing identity.ttl and respawning requests never; team or certificate
+  limits still apply"; for a capped never request, "restart the seat to renew
+  it up to the team's limit (…)"; under
   `renew: off`, where a restart keeps the grant, "respawn the seat (or set
   `renew: launch` and respawn)". A grant minted before 1.25.0 records no renew
   mode, so its remedy adds "if its identity.renew is off, respawn it instead".
