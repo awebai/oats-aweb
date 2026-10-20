@@ -9,6 +9,10 @@
   limit. Duration requests still refuse `expires_at: "never"`, and malformed
   receipts still fail closed. No aw floor or pin changes; live capped-mint
   acceptance is pending the upstream aw release.
+- A lowered team cap or a later finite certificate expiry can end a grant
+  before its recorded expiry, including `"never"`; readiness cannot predict
+  this without certificate polling, so aw reports the runtime grant error
+  and a restart remints.
 
 ## 1.30.0 — 2026-10-19
 
