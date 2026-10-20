@@ -159,8 +159,9 @@ The rest:
   chat; aw 1.36.32 mints grants that never expire.
 - **Every mint states its ttl** (`--ttl=never` or the duration), though aw's own
   default is now never. A minted grant's `expires_at` must answer its request:
-  the string `"never"` for a never-grant, a timestamp for a duration. Anything
-  else fails the mint closed: the grant is revoked and nothing is kept. When the
+  `"never"` or a finite timestamp for a never request (the team or issuing
+  certificate may cap it), a finite timestamp for a duration. Anything else
+  fails the mint closed: the grant is revoked and nothing is kept. When the
   aweb service refuses a never mint (a server without never-grants answers 422,
   or 404 before the grants endpoint), aw mints nothing: the error shows aw's
   message, nothing is kept and nothing is retried with a duration.
@@ -211,8 +212,10 @@ The rest:
   renew mode the grant recorded (`identity.grant.renew`) and the
   `identity.ttl` the seat captured: under `renew: launch`, "restart the seat
   to renew it (`oats session restart --home <home>`)"; for a seat that
-  captured an `identity.ttl` duration, "a restart renews it for another <ttl>
-  (…); to stop it expiring, remove identity.ttl and respawn"; under
+  captured an `identity.ttl` duration, "a restart requests another <ttl>
+  (…); removing identity.ttl and respawning requests never; team or certificate
+  limits still apply"; for a capped never request, "restart the seat to renew
+  it up to the team's limit (…)"; under
   `renew: off`, where a restart keeps the grant, "respawn the seat (or set
   `renew: launch` and respawn)". A grant minted before 1.25.0 records no renew
   mode, so its remedy adds "if its identity.renew is off, respawn it instead".
@@ -605,16 +608,17 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   [existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md).
   Global spawn consumes a provisioned resident; it does not create one:
   `oats aweb resident create` does.
-  A new GLOBAL seat's grant never expires (`identity.ttl: never`, the default
-  from 1.25.0, [#80](https://github.com/awebai/oats-aweb/issues/80)), with
+  A new GLOBAL seat requests `identity.ttl: never` by default, with
   `identity.renew: launch`: each actual launch re-mints, while preview makes
   no changes. A renewal keeps the seat's duration (its captured ttl, else the
   ttl the grant recorded, else 720h for a grant minted before 1.25.0).
   `identity.ttl` may instead set a Go duration from 60s to 720h;
   `E_GRANT_TTL` refuses anything else before grant or launch effects,
   including retained-grant paths. Explicit `renew: off` retains the existing
-  grant. What bounds a never-grant is its scopes and revocation, at retire or
-  by the resident's owner.
+  grant. The team grant cap or issuing-certificate expiry can impose a finite
+  deadline even on a never request. The mint receipt's `expires_at`, recorded
+  as `identity.grant.expiresAt`, determines expiry diagnostics and the brief;
+  renewal preserves the requested TTL. Scopes and revocation still apply.
   Existing homes retain their captured provider/settings until explicitly
   recomposed; publishing this version does not update them automatically.
 
@@ -917,6 +921,15 @@ It preserves absent/null/empty default aliases and Go duration syntax, including
 component-wise nanosecond truncation. Launch validates before preview, broker
 registration or retained-grant returns. LOCAL launch must keep its ordinary
 joined-team lifecycle instead of entering the GLOBAL renewal early return.
+
+Mint receipt validation lives in `lib/grant-expiry.mjs`: a never request
+accepts `"never"` or a finite RFC3339 timestamp; a duration requires a finite
+timestamp. Downstream code uses the recorded expiry, independently of the
+requested TTL. Run `node --test --test-concurrency=1 test/minted-expiry.test.mjs
+test/never-grant.test.mjs test/grant-expiry.test.mjs test/health-vocabulary.test.mjs`
+for receipt validation, capped-seat startup and renewal, custody preflight,
+expiry diagnostics and health classification. The fake-aw harness checks the
+provider's contract; it does not establish live capped-mint acceptance.
 
 Run `node --test test/grant-duration.test.mjs test/oats-aweb-hook-1-13.test.mjs`
 for duration boundaries, mint arguments, default/explicit renewal and retained

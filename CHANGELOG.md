@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Accept a finite mint receipt for `identity.ttl: never` when the team or
+  issuing certificate caps the grant. Keep the requested TTL for renewal;
+  readiness, health and the brief use the recorded finite expiry. The expiry
+  remedy for a capped never seat explains that restart renews up to the team's
+  limit; duration remedies describe the requested renewal rather than promising
+  an uncapped lifetime. Duration requests still refuse `expires_at: "never"`, and malformed
+  receipts still fail closed. No aw floor or pin changes; live capped-mint
+  acceptance is pending the upstream aw release.
+- A lowered team cap or a later finite certificate expiry can end a grant
+  before its recorded expiry, including `"never"`; readiness cannot predict
+  this without certificate polling, so aw reports the runtime grant error
+  and a restart remints.
+
 ## 1.30.0 — 2026-10-19
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.
