@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
-import { grantExpiryAssessment } from "../oats-package/capabilities/oats-aweb/lib/grant-expiry.mjs";
+import { grantExpiryAssessment, grantExpiryRemedy } from "../oats-package/capabilities/oats-aweb/lib/grant-expiry.mjs";
 import { DEFAULT_GRANT_TTL } from "../oats-package/capabilities/oats-aweb/lib/grant-duration.mjs";
 
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
@@ -21,7 +21,7 @@ const HOUR = 3600000, DAY = 24 * HOUR;
 const NOW = Date.parse("2026-10-10T02:00:00Z");
 const HOME = "/abs/agents/dev/instances/seat";
 const REMEDY = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`)";
-const RESPAWN = "a restart renews it for another 24h (`oats session restart --home /abs/agents/dev/instances/seat`); to stop it expiring, remove identity.ttl and respawn";
+const RESPAWN = "a restart requests another 24h (`oats session restart --home /abs/agents/dev/instances/seat`); removing identity.ttl and respawning requests never; team or certificate limits still apply";
 const RENEW_OFF = "respawn the seat (or set `renew: launch` and respawn): with renew off a restart keeps this grant";
 const UNRECORDED = "restart the seat to renew it (`oats session restart --home /abs/agents/dev/instances/seat`); if its identity.renew is off, respawn it instead";
 const iso = (ms) => new Date(ms).toISOString();
@@ -145,4 +145,11 @@ test("1.25.0 grant seats default to a never-expiring grant renewed at every laun
   const description = manifest.settings.identity.description;
   assert.match(description, /ttl \(never, or a Go duration from 60s to 720h; default never\)/);
   assert.match(description, /renew \(off\|launch, default launch\)/);
+});
+
+test("the restart remedy follows the next requested ttl when configuration overrides the record", () => {
+  const grant = { id: "g", ttl: "never", renew: "launch", expiresAt: iso(NOW + DAY) };
+  assert.equal(grantExpiryRemedy(HOME, grant, "24h"), RESPAWN);
+  assert.equal(grantExpiryRemedy(HOME, { ...grant, ttl: "24h" }, "never"), "restart the seat to renew it up to the team's limit (`oats session restart --home /abs/agents/dev/instances/seat`)");
+  assert.equal(grantExpiryRemedy(HOME, grant, "garbage"), REMEDY, "bad settings do not make readiness throw");
 });

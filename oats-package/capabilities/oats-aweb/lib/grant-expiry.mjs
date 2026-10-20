@@ -2,9 +2,10 @@
 // (identity.grant.expiresAt, aw's `id grant mint` expires_at), with no aw or
 // custody call. A finite expiry applies even when ttl is never: the team or
 // issuing certificate can cap the request. A seat that is not restarted in
-// time loses messaging; expiresAt "never" ends only when revoked.
+// time loses messaging. Runtime policy or certificate limits can end a grant
+// sooner, including one recorded as expiresAt "never".
 import {parseTimestamp} from './wake-receive.mjs';
-import {NEVER_GRANT_TTL, resolveGrantTTL} from './grant-duration.mjs';
+import {NEVER_GRANT_TTL, renewalGrantTTL, resolveGrantTTL} from './grant-duration.mjs';
 
 /** A never request may be capped by the team or issuing certificate. Trust
  *  the finite receipt as the deadline; duration requests still require one. */
@@ -31,11 +32,13 @@ function explicitDuration(ttl) {
  *  1.25.0 records no renew mode, so its remedy also covers renew: off. */
 export function grantExpiryRemedy(home, grant, configuredTtl) {
   if (grant?.renew === 'off') return 'respawn the seat (or set `renew: launch` and respawn): with renew off a restart keeps this grant';
-  const cappedNever = (configuredTtl === NEVER_GRANT_TTL || grant?.ttl === NEVER_GRANT_TTL) && Number.isFinite(parseTimestamp(grant?.expiresAt));
+  let nextTtl;
+  try { nextTtl = renewalGrantTTL(configuredTtl, grant?.ttl); } catch { /* readiness still explains expiry when a captured ttl is invalid */ }
+  const cappedNever = nextTtl === NEVER_GRANT_TTL && Number.isFinite(parseTimestamp(grant?.expiresAt));
   const restart = cappedNever
     ? `restart the seat to renew it up to the team's limit (\`oats session restart --home ${home}\`)`
     : explicitDuration(configuredTtl)
-    ? `a restart renews it for another ${configuredTtl} (\`oats session restart --home ${home}\`); to stop it expiring, remove identity.ttl and respawn`
+    ? `a restart requests another ${configuredTtl} (\`oats session restart --home ${home}\`); removing identity.ttl and respawning requests never; team or certificate limits still apply`
     : `restart the seat to renew it (\`oats session restart --home ${home}\`)`;
   return grant?.renew === 'launch' ? restart : `${restart}; if its identity.renew is off, respawn it instead`;
 }

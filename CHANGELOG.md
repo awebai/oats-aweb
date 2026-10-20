@@ -6,7 +6,8 @@
   issuing certificate caps the grant. Keep the requested TTL for renewal;
   readiness, health and the brief use the recorded finite expiry. The expiry
   remedy for a capped never seat explains that restart renews up to the team's
-  limit. Duration requests still refuse `expires_at: "never"`, and malformed
+  limit; duration remedies describe the requested renewal rather than promising
+  an uncapped lifetime. Duration requests still refuse `expires_at: "never"`, and malformed
   receipts still fail closed. No aw floor or pin changes; live capped-mint
   acceptance is pending the upstream aw release.
 - A lowered team cap or a later finite certificate expiry can end a grant
