@@ -1192,3 +1192,12 @@ dispatch without `aw`. It shares the delivery fake-home fixture with the
 upgrade followed by launch: registration precedes old-grant revocation, and a
 failed registration keeps the old grant. All lifecycle effects use fake `aw`
 and temporary homes. Run `npm run validate` for the manifests and schema.
+
+CI also requires `test/public-kernel-upgrade.test.mjs` against the kernel at
+`OATS_KERNEL_COMMIT`, with `OATS_PREVIEW_KERNEL_ROOT` selecting its checkout
+and `OATS_PREVIEW_KERNEL_REQUIRED=1`. It uses the scratch-deployment helper,
+fake aw and a sleeping harness: acquire the local v1.17.1 package bytes,
+spawn a global-grant session seat, re-lock to this branch, stop, plan/apply
+upgrade, and start again. It checks the module, migrated metadata, previous
+version, upgrade event and registration-before-revocation ordering. CI fetches
+the provider tags at checkout; the test never fetches or uses a live identity.
