@@ -55,7 +55,7 @@
           "delivery_owner": "session-hints",
           "identity_home": "/fixture/home/.aweb-identity-1792217848",
           "stream_admitted": true,
-          "stream_error": "aweb: http 403: {\"detail\":\"grant revoked\"}",
+          "stream_error": "aweb: http 403 (x-request-id: redacted, cf-ray: redacted): {\"detail\":\"grant revoked\"}",
           "stream_phase": "quarantined",
           "team_id": "jro:jro.aweb.ai",
           "unread_count": 1

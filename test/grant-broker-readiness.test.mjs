@@ -60,14 +60,16 @@ test('the reduced quarantined capture preserves its wire error and does not inve
   assert.equal(status.daemon_version, '1.36.37');
   assert.equal(status.instances.length, 1);
   assert.equal(status.instances[0].receive_identities[0].stream_phase, 'quarantined');
-  assert.equal(status.instances[0].receive_identities[0].stream_error, 'aweb: http 403: {"detail":"grant revoked"}');
+  assert.equal(status.instances[0].receive_identities[0].stream_error, 'aweb: http 403 (x-request-id: redacted, cf-ray: redacted): {"detail":"grant revoked"}');
   assert.equal(status.daemon_running, undefined);
   assert.equal(status.daemon_version_state, undefined);
-  assert.doesNotMatch(JSON.stringify(status), /owner_id|x-request-id|cf-ray|\/Users\//);
+  assert.doesNotMatch(JSON.stringify(status), /owner_id|\/Users\//);
 });
 
 test('a broker bound to the previous grant is unavailable and names both homes and restart remedy', t => {
   const fx = fixture(t);
+  fx.row.receive_identities[0].stream_phase = 'streaming';
+  delete fx.row.receive_identities[0].stream_error;
   const result = fx.run();
   assert.equal(result.status, 'unavailable');
   const issue = result.problems.find(p => p.code === 'wake-target-binding');
@@ -134,11 +136,13 @@ test('a legacy grant seat without a runtime keeps the same transient and error r
   delete fx.captured.launch.harness;
   delete fx.captured.capabilityMeta['oats.aweb'].runtime;
   fx.record();
-  fx.row.receive_identities[0].stream_phase = 'starting';
+  fx.row.receive_identities[0].stream_phase = 'retrying';
+  fx.row.receive_identities[0].stream_error = 'aweb: http 503: {"detail":"service unavailable"}';
   const result = fx.run();
   assert.equal(result.status, 'ready', JSON.stringify(result));
   assert.equal(result.warnings.filter(w => w.code === 'wake-stream-unavailable').length, 1);
   assert.ok(result.warnings.some(w => w.code === 'receive-ownership-unproven'));
+  fx.row.receive_identities[0].stream_phase = 'quarantined';
   fx.row.receive_identities[0].stream_error = 'aweb: http 403: {"detail":"grant revoked"}';
   const failed = fx.run();
   assert.equal(failed.status, 'unavailable');
@@ -155,13 +159,64 @@ test('transient phase never excuses missing admission or malformed stream errors
   assert.ok(fx.run().problems.some(p => p.code === 'wake-status-unavailable'));
 });
 
-for (const phase of ['streaming', 'starting', 'retrying']) test(`a ${phase} stream with an explicit error is unavailable`, t => {
+// aw v1.36.37 wake/stream.go:269-279,326 quarantines permanent refusals,
+// but every retrying observation carries its recoverable error.
+for (const [error, detail] of [
+  ['aweb: http 503: {"detail":"service unavailable"}', /HTTP 503.*service unavailable/],
+  ['dial tcp: network is unreachable', /dial tcp: network is unreachable/],
+]) test(`a retrying stream warns with its recoverable error: ${error}`, t => {
+  const fx = fixture(t); fx.match();
+  fx.row.receive_identities[0].stream_phase = 'retrying';
+  fx.row.receive_identities[0].stream_error = error;
+  const result = fx.run();
+  assert.equal(result.status, 'ready', JSON.stringify(result));
+  assert.deepEqual(result.problems, []);
+  const warning = result.warnings.find(w => w.code === 'wake-stream-unavailable');
+  assert.ok(warning, JSON.stringify(result));
+  assert.match(warning.message, detail);
+});
+
+test('streaming phase decides readiness even with retained error text', t => {
+  const fx = fixture(t); fx.match();
+  fx.row.receive_identities[0].stream_error = 'dial tcp: network is unreachable';
+  const result = fx.run();
+  assert.equal(result.status, 'ready', JSON.stringify(result));
+  assert.deepEqual(result.problems, []);
+});
+
+test('recoverable warnings exclude headers, URLs, credentials and arbitrary bodies', t => {
+  const fx = fixture(t); fx.match();
+  fx.row.receive_identities[0].stream_phase = 'retrying';
+  for (const error of [
+    'aweb: http 503 (x-request-id: request-secret, cf-ray: ray-secret): {"detail":"service unavailable","token":"token-secret","request_body":"body-secret"}',
+    'Get "https://user:password-secret@example.test/events?token=token-secret": dial tcp 192.0.2.1:443: network is unreachable {"request_body":"body-secret"}',
+  ]) {
+    fx.row.receive_identities[0].stream_error = error;
+    const result = fx.run();
+    assert.equal(result.status, 'ready', JSON.stringify(result));
+    const diagnostic = JSON.stringify(result.warnings);
+    assert.match(diagnostic, /service unavailable|network is unreachable/);
+    assert.doesNotMatch(diagnostic, /request-secret|ray-secret|token-secret|password-secret|body-secret|request_body|example\.test|192\.0\.2/);
+  }
+});
+
+for (const phase of ['quarantined', 'stopped']) test(`a ${phase} stream with an explicit error is unavailable`, t => {
   const fx = fixture(t); fx.match();
   fx.row.receive_identities[0].stream_phase = phase;
   fx.row.receive_identities[0].stream_error = 'aweb: http 403: {"detail":"grant revoked"}';
   const result = fx.run();
   assert.equal(result.status, 'unavailable');
   assert.ok(result.problems.some(p => p.code === 'wake-stream-unavailable' && /403.*grant revoked/.test(p.message)), JSON.stringify(result));
+});
+
+test('an unknown phase fails closed and names the raw phase', t => {
+  const fx = fixture(t); fx.match();
+  fx.row.receive_identities[0].stream_phase = 'new-aw-phase';
+  const result = fx.run();
+  assert.equal(result.status, 'unavailable');
+  const issue = result.problems.find(p => p.code === 'wake-stream-unavailable');
+  assert.ok(issue, JSON.stringify(result));
+  assert.match(issue.message, /new-aw-phase/);
 });
 
 for (const phase of ['quarantined', 'stopped', 'connected', undefined]) test(`a ${phase ?? 'missing'} grant stream phase without an error remains unavailable`, t => {

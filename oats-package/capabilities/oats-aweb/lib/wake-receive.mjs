@@ -345,20 +345,35 @@ export function wakeDaemonAssessment(status, {minimumVersion}) {
 }
 
 // aw v1.36.37 wake/stream.go's complete StreamPhase vocabulary. Unknown phases
-// must not be treated as reconnects. An explicit error still wins over a phase.
+// must not be treated as reconnects. Phase determines grant-stream readiness:
+// stream.go:269-279,326 gives retrying its recoverable error text.
 const STREAM_PHASES = ['starting', 'streaming', 'retrying', 'quarantined', 'stopped'];
 const TRANSIENT_STREAM_PHASES = ['starting', 'retrying'];
 const GRANT_BROKER_REMEDY = 'restart the seat to re-register the broker with the current grant home';
 
-/** Errors are arbitrary server text. Extract only the HTTP status and known
- * grant denials, never echo headers, tokens or arbitrary response/request data. */
+/** Errors are arbitrary server text. Extract only HTTP status, recognized
+ * denial/service details and network failure phrases; never echo headers,
+ * URLs, tokens or arbitrary response/request data. */
 function grantStreamSummary(hit) {
-  const phase = STREAM_PHASES.includes(hit.stream_phase) ? hit.stream_phase : 'unknown';
+  const phase = STREAM_PHASES.includes(hit.stream_phase) ? hit.stream_phase : `unknown (${typeof hit.stream_phase === 'string' ? JSON.stringify(hit.stream_phase).slice(0, 160) : hit.stream_phase === undefined ? 'absent' : typeof hit.stream_phase})`;
   const match = /^aweb: http ([1-5]\d{2})(?: \([^)]*\))?:\s*(.*)$/s.exec(hit.stream_error || '');
   let detail;
   try { detail = match && JSON.parse(match[2]).detail; } catch { /* not a structured HTTP error */ }
-  const safeDetail = typeof detail === 'string' && /^grant (?:revoked|expired|subject inactive|issuer revoked|freshness unavailable)$/.test(detail) ? `: ${detail}` : '';
-  return `broker receive stream is ${phase}${match ? ` (HTTP ${match[1]}${safeDetail})` : hit.stream_error ? ' (stream error reported)' : ''}${hit.stream_admitted !== true ? '; stream admission is not confirmed' : ''}; ${GRANT_BROKER_REMEDY}`;
+  const safeDetail = typeof detail === 'string' && /^(?:grant (?:revoked|expired|subject inactive|issuer revoked|freshness unavailable)|service unavailable|internal server error|bad gateway|gateway timeout|upstream temporarily unavailable|too many requests)$/.test(detail) ? `: ${detail}` : '';
+  const network = /\b(?:dial tcp: )?(?:network is unreachable|connection refused|connection reset by peer|context deadline exceeded|i\/o timeout|no such host|TLS handshake timeout|unexpected EOF|EOF)\b/.exec(hit.stream_error || '')?.[0];
+  const remedy = TRANSIENT_STREAM_PHASES.includes(hit.stream_phase) && hit.stream_admitted === true ? 'the broker reconnects automatically' : GRANT_BROKER_REMEDY;
+  return `broker receive stream is ${phase}${match ? ` (HTTP ${match[1]}${safeDetail})` : network ? ` (${network})` : hit.stream_error ? ' (stream error reported)' : ''}${hit.stream_admitted !== true ? '; stream admission is not confirmed' : ''}; ${remedy}`;
+}
+
+function receiveStreamAssessment(hit, grantHome, fallback) {
+  if (grantHome && samePath(hit.identity_home, grantHome)) {
+    if (hit.stream_admitted === true && hit.stream_phase === 'streaming') return null;
+    const diagnostic = problem('wake-stream-unavailable', grantStreamSummary(hit));
+    return hit.stream_admitted === true && TRANSIENT_STREAM_PHASES.includes(hit.stream_phase)
+      ? {warning: diagnostic} : {problem: diagnostic};
+  }
+  if (hit.stream_admitted === true && !hit.stream_error && hit.stream_phase === 'streaming') return null;
+  return {problem: problem('wake-stream-unavailable', fallback)};
 }
 
 /** Released aw status is a transport observation. Worker telemetry is absent at
@@ -434,12 +449,9 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
         if (hit.team_id !== undefined && primaryTeam !== undefined && hit.team_id !== primaryTeam) return fail('wake-target-binding', 'broker primary team contradicts the retained identity');
         if (capturedDelivery === 'session' && (hit.controls !== true || classes.length)) return fail('wake-target-binding', 'broker primary policy contradicts the retained session route');
       }
-      if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') {
-        if (grantSession && samePath(hit.identity_home, grantHome)) {
-          if (hit.stream_admitted === true && !hit.stream_error && TRANSIENT_STREAM_PHASES.includes(hit.stream_phase)) warnings.push(problem('wake-stream-unavailable', grantStreamSummary(hit)));
-          else return fail('wake-stream-unavailable', grantStreamSummary(hit));
-        } else return fail('wake-stream-unavailable', 'supplied receive stream is missing, refused or not connected');
-      }
+      const stream = receiveStreamAssessment(hit, grantSession ? grantHome : undefined, 'supplied receive stream is missing, refused or not connected');
+      if (stream?.problem) return {problems: [stream.problem], warnings};
+      if (stream?.warning) warnings.push(stream.warning);
     }
   }
   for (const expected of bindings) {
@@ -451,13 +463,9 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
     if ((hit.label !== undefined && typeof hit.label !== 'string') || (hit.label || undefined) !== expected.label || (hit.team_id !== undefined && hit.team_id !== expected.team) || hit.delivery_owner !== 'session-hints' ||
         (hit.controls !== undefined && typeof hit.controls !== 'boolean') || (hit.controls === true) !== expected.controls ||
         !Array.isArray(classes) || classes.length !== expected.event_classes.length || classes.some(c => typeof c !== 'string') || JSON.stringify([...classes].sort()) !== JSON.stringify([...expected.event_classes].sort())) return fail('wake-target-binding', 'broker receive ownership, label or event policy differs from the captured home');
-    if (hit.stream_admitted !== true || hit.stream_error || hit.stream_phase !== 'streaming') {
-      if (grantSession && samePath(hit.identity_home, grantHome)) {
-        if (hit.stream_admitted === true && !hit.stream_error && TRANSIENT_STREAM_PHASES.includes(hit.stream_phase)) {
-          if (!incomplete) warnings.push(problem('wake-stream-unavailable', grantStreamSummary(hit)));
-        } else return fail('wake-stream-unavailable', grantStreamSummary(hit));
-      } else return fail('wake-stream-unavailable', 'required receive stream is missing, refused or not connected');
-    }
+    const stream = receiveStreamAssessment(hit, grantSession ? grantHome : undefined, 'required receive stream is missing, refused or not connected');
+    if (stream?.problem) return {problems: [stream.problem], warnings};
+    if (stream?.warning && !incomplete) warnings.push(stream.warning);
   }
   const core = row.channel_core;
   if (!object(core) || core.running !== true) return fail('wake-worker-unavailable', 'broker worker is stopped or current worker evidence is unavailable');
