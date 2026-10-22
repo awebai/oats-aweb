@@ -1,0 +1,19 @@
+{
+  "team": "t:example.test",
+  "alias": "probe",
+  "delivery": "channel",
+  "defaultTeam": {
+    "label": "default",
+    "team": "t:example.test",
+    "from": "deployment"
+  },
+  "left": [],
+  "runtime": "claude",
+  "identity": {
+    "mode": "local",
+    "alias": "probe",
+    "team": "t:example.test",
+    "address": null,
+    "resident": null
+  }
+}

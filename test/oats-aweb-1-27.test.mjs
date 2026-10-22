@@ -12,10 +12,10 @@ const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const SKILL_DIR = join(CAPABILITY, "skills", "oats-aweb");
 const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
 
-test("the kernel floor is the release that confirms the prompt", () => {
+test("the kernel floor admits stopped-home upgrades", () => {
   const distribution = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.compatibility.oats, ">=0.52.0");
-  assert.equal(distribution.compatibility.oats, ">=0.52.0");
+  assert.equal(manifest.compatibility.oats, ">=0.68.0");
+  assert.equal(distribution.compatibility.oats, ">=0.68.0");
 });
 
 test("the changelog leads 1.27.0 with the host order and the kernel floor, quoting the kernel's refusal", () => {

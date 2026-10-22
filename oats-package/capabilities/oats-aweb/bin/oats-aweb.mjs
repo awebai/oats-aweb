@@ -5,6 +5,7 @@
  * Invoked by the OATS kernel at instance lifecycle events (hook contract):
  *   oats-aweb spawn    mint a team-scoped aweb identity for the instance
  *   oats-aweb retire   gracefully self-delete it (BEFORE the home dir is removed)
+ *   oats-aweb upgrade  adopt stopped-home metadata without host effects
  *   oats-aweb roster   list the aweb team's members — the cross-machine directory
  *                     of live instances (alias = instance name) and humans
  *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the
@@ -15,7 +16,7 @@
  *                     service (lib/wake-service.mjs)
  *
  * Env contract (set by the kernel):
- *   OATS_EVENT     spawn|retire
+ *   OATS_EVENT     spawn|launch|retire|upgrade
  *   OATS_INSTANCE  instance name (used as the aweb alias)
  *   OATS_HOME      instance home dir (cwd is also set to it)
  *   OATS_CONTEXT   resolution context dir (the soul's repo / agents root parent)
@@ -24,7 +25,7 @@
  *   OATS_SETTINGS  JSON of the provider's `settings:` block
  *   OATS_DEFAULT_TEAM/OATS_DEFAULT_TEAM_ID/OATS_DEFAULT_TEAM_FROM default team facts
  *   OATS_TEAMS     JSON rows {label, team, default, from} for mapped eligible teams
- *   OATS_META      JSON persisted from this hook's previous spawn output (retire only)
+ *   OATS_META      JSON persisted from this hook's previous output
  *
  * Output (spawn, stdout JSON):
  *   { "meta": {...persisted to instance.json + OATS_META at retire},
@@ -53,7 +54,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await w
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -224,6 +225,62 @@ const parseAwJson = (text, what) => {
   throw new Error(`${what} returned no JSON result`);
 };
 
+/** Delivery/runtime fields shared by launch and stopped-home adoption. Upgrade
+ * preserves channel proof; only launch may replace claudeChannelMode. */
+function configuredDelivery(settings) {
+  const value = settings?.delivery;
+  return String(value ?? "channel") === "session" ? "session" : "channel";
+}
+function deliveryRuntimeMeta(meta, delivery, runtime) {
+  return { ...meta, delivery, ...(runtime === undefined ? {} : { runtime }) };
+}
+
+function upgrade() {
+  // OATS_UPGRADE_MODULE_DIR is unused: no host registrations are made here.
+  // Any future registration must use that final path, never the staging path.
+  let meta, reason;
+  const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
+  try { meta = JSON.parse(process.env.OATS_META || ""); }
+  catch { reason = "OATS_META must be valid JSON."; }
+  if (!reason) {
+    if (!object(meta)) reason = "OATS_META must be an object.";
+    else {
+      const pair = value => typeof value?.team === "string" && typeof value?.alias === "string";
+      if (!pair(meta) && !(meta.identity?.mode === "global" && object(meta.identity.grant) && pair(meta.identity))) {
+        const missing = ["team", "alias"].filter(key => typeof meta[key] !== "string");
+        reason = `OATS_META is missing string fields: ${missing.join(", ")}.`;
+      }
+    }
+  }
+  const phase = process.env.OATS_UPGRADE_PHASE;
+  if (phase === "plan") out(reason ? { adopt: false, reason, remedy: `respawn the instance: oats retire ${process.env.OATS_INSTANCE}, then oats spawn` } : { adopt: true });
+  if (phase !== "apply") fatal("OATS_UPGRADE_PHASE must be plan or apply");
+  if (reason) fatal(reason);
+
+  let settings = {};
+  try { const parsed = JSON.parse(process.env.OATS_SETTINGS || "{}"); if (object(parsed)) settings = parsed; } catch { /* use the default delivery */ }
+  let runtime, fd;
+  const warnings = [];
+  try {
+    // Open the record itself without following a symlink outside this home.
+    fd = openSync(join(process.env.OATS_INSTANCE_HOME, "instance.json"), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) throw new Error("not a file");
+    const record = JSON.parse(readFileSync(fd, "utf8"));
+    const field = typeof record?.launch?.harness === "string" ? "launch.harness" : "harness";
+    const harness = field === "launch.harness" ? record.launch.harness : record?.harness;
+    if (["pi", "claude", "codex"].includes(harness)) runtime = harness;
+    else warnings.push(`instance.json ${field} is not a supported harness; keeping runtime as recorded`);
+  } catch {
+    warnings.push("instance.json launch.harness or harness could not be read; keeping runtime as recorded");
+  } finally { if (fd !== undefined) closeSync(fd); }
+  if (meta.identity?.mode === "global" && meta.identity.grant && settings.identity?.renew === "off") warnings.push(`renewal is off: the next start keeps grant ${meta.identity.grant.id} and its expiry`);
+  out({ meta: deliveryRuntimeMeta(meta, configuredDelivery(settings), runtime), ...(warnings.length ? { warning: warnings.join(" | ") } : {}) });
+}
+
+// Upgrade adopts only recorded metadata, even when captured execution markers
+// are present. It must run before any settings gate or aw availability check.
+if ((process.env.OATS_EVENT || process.argv[2]) === "upgrade") upgrade();
+
 // Any selected snapshot enters the captured consumer BEFORE legacy settings,
 // root discovery or identity handling. Invalid-present never falls back.
 try {
@@ -272,10 +329,7 @@ if (settings === null && event === 'setup' && process.argv.slice(3).some(arg => 
 const TEAM_SETTING_MESSAGE = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
 const hasStaleTeamSetting = settings && typeof settings === "object" && !Array.isArray(settings) && Object.hasOwn(settings, "team");
 if (hasStaleTeamSetting && ["spawn", "launch", "setup", "connect", "teams", "join", "leave", "roster"].includes(event)) fatal(TEAM_SETTING_MESSAGE);
-const deliveryMode = (() => {
-  const v = settings.delivery === undefined || settings.delivery === null || settings.delivery === "" ? "channel" : String(settings.delivery);
-  return v === "session" ? "session" : "channel";
-})();
+const deliveryMode = configuredDelivery(settings);
 // Reject explicit bad values before any mint, membership or broker operation,
 // including launch preview. Retirement must still clean up captured effects.
 let claudeChannel;
@@ -487,7 +541,7 @@ function wakeStillRegistered(instanceHome) {
 const startedMeta = (meta = {}) => {
   const {claudeChannelMode: previousMode, ...retained} = meta;
   const runtime = process.env.OATS_RUNTIME || "";
-  return {...retained, delivery: deliveryMode, runtime, ...(deliveryMode === "channel" && runtime === "claude" ? {claudeChannelMode: claudeChannel.mode} : {})};
+  return {...deliveryRuntimeMeta(retained, deliveryMode, runtime), ...(deliveryMode === "channel" && runtime === "claude" ? {claudeChannelMode: claudeChannel.mode} : {})};
 };
 /** wakeDeregister as a child that runs while the hook does other work (retire
  *  overlaps it with the self-delete). Settles to whether it succeeded. */
