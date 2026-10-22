@@ -1,9 +1,67 @@
 # oats-aweb
 
-Official [OATS](https://github.com/awebai/oats) messaging-layer integration for
+Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations for
 [aweb](https://aweb.ai). It provides per-instance native identities, mail/chat
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
+
+## 1.31.0 — aweb tasks
+
+One `oats.aweb` package release supplies two independently selected capabilities:
+
+| Capability | Slot | Responsibility |
+| --- | --- | --- |
+| `oats.aweb` | messaging | identities, mail/chat, roster and receive delivery |
+| `oats.aweb-tasks` | tasks | assignment, claims, status, blockers and handoff |
+
+To opt an existing workspace into aweb tasks, pin the package and select both
+slots in `oats-workspace.yaml`, then run `oats sync`:
+
+```yaml
+packages:
+  oats.aweb: v1.31.0
+defaults:
+  messaging: { oats.aweb: { from: package } }
+  tasks: { oats.aweb-tasks: { from: package } }
+```
+
+A soul can instead select `oats.aweb-tasks: { from: package }` in its
+`capabilities:` map. Its `tasks:` key is a provider payload (or `none`), not a
+capability selection. Replace the workspace's existing tasks selection; each
+soul has at most one tasks provider. Messaging and tasks occupy different slots.
+
+Tasks use the instance's own messaging identity in its default team. For an
+already joined team, use its explicit identity home as taught by
+[/aweb-tasks](oats-package/capabilities/oats-aweb-tasks/skills/aweb-tasks/SKILL.md).
+The tasks capability creates no identities or memberships. Its spawn hook emits
+a fixed advisory brief and makes no reads or aw calls. Before using tasks, the
+agent checks `aw whoami`; if that fails, it reports the failure to its human and
+does not use tasks. Conversation stays with the messaging provider.
+
+Readiness has no tasks-slot item for this provider, by design, in this version.
+The OATS >=0.52.0 and aw >=1.36.33 floors are unchanged. The task protocol and
+file flags are verified against aw 1.36.47.
+
+### Developing the tasks capability
+
+The distributed payload lives in `oats-package/`; both capabilities are copied
+whole into separate instance modules. Keep hooks self-contained within their
+own capability. The manifest validator checks the two exported IDs and their
+shared package version and kernel floor. No npm dependencies are needed for
+provider tests or validation.
+
+```bash
+env -i HOME="$HOME" PATH="$PATH" node --test test/aweb-tasks.test.mjs test/aweb-tasks-skill.test.mjs
+env -i HOME="$HOME" PATH="$PATH" npm run validate
+env -i HOME="$HOME" PATH="$PATH" node scripts/check-aweb-tasks-argv.mjs
+```
+
+The argv checker parses the skill and runs only help against aw 1.36.47.
+`test/aweb-tasks-kernel.test.mjs` is an opt-in real-kernel selection check:
+set `OATS_TASKS_KERNEL_ROOT` to the kernel source and
+`OATS_TASKS_SCRATCH_ROOT` to a scratch parent, then run that test file. It creates
+local bare package/workspace repositories, an isolated HOME and cache, and
+previews a soul with both providers. It calls no live service or aw command.
 
 ## 1.30.0 — Codex readiness from the kernel's launch record
 

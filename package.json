@@ -1,7 +1,7 @@
 {
   "name": "@awebai/oats-aweb",
-  "version": "1.30.0",
-  "description": "Official OATS messaging integration for team-scoped aweb identities, mail, chat, and roster discovery.",
+  "version": "1.31.0",
+  "description": "Official OATS messaging and tasks integrations for team-scoped aweb identities, mail, chat, roster discovery, and task coordination.",
   "license": "MIT",
   "type": "module",
   "private": true,
