@@ -1,10 +1,9 @@
 // A scratch OATS deployment driven by the real kernel on PATH or a selected
 // kernel checkout, isolated from the operator's: its own HOME, Git configuration
-// and tmux socket directory,
-// and an environment built from nothing, so no inherited TMUX or OATS_*
-// variable reaches a live server or a real instance. Its one soul composes no
-// capability; its harness is a script that sleeps, so a launched home is a
-// real tmux pane with a live process.
+// and tmux socket directory, and an environment built from nothing, so no
+// inherited TMUX or OATS_* variable reaches a live server or a real instance.
+// Its default soul composes no capability; the harness sleeps, so a launched
+// home is a real tmux pane with a live process.
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
