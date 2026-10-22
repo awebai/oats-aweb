@@ -61,4 +61,3 @@ export function fixture(t, { delivery, runtime = "claude", settings = {}, daemon
   };
   return { fake, ws, home, hook, spawn, launch, wakeCalls, record, readiness, registered: () => fake.registrations()[home] };
 }
-
