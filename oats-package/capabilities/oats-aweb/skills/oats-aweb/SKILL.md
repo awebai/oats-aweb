@@ -217,7 +217,7 @@ not receive.
 *Development fallback.* `development` passes
 `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
 and needs no managed policy. Claude shows its development-channel prompt, and
-OATS (0.52.0 and later, which this provider requires) confirms that prompt once
+OATS 0.52.0 and later confirm that prompt once
 at launch. `settings.oats.aweb.delivery: session` or
 `settings.oats.aweb.claudeChannelMode: approved` stop the prompt.
 Provider, broker and ordinary agents never send prompt keys.
@@ -464,6 +464,7 @@ These are source-qualified cards, not an installation or live-acceptance receipt
 | Released provider 1.26.0, OATS >=0.42, aw >=1.36.33 | `oats aweb resident create <name>` creates or adopts a GLOBAL resident in an existing hosted team from the dashboard's API key, installs its per-user custody unit and records `residents.<name>` ("GLOBAL residents and grant seats" below). One aw client floor, 1.36.33. |
 | Provider 1.26.1, OATS >=0.48 for `resident create` | `resident create` maps the resident's team without `--team-label` (under the team's name) and makes it the default team where there is none; another default is kept and `oats teams default <label>` is printed as the first step. That step moves the whole deployment's default team (every later spawn of a soul without its own default goes to the resident's team), so it is the operator's decision: an agent prints it and asks, and never runs it on its own. A grant seat gets `AWID_REGISTRY_URL` from its resident's identity when that registry is not aw's default. |
 | Provider 1.28.0, OATS >=0.52.0, aw >=1.36.33 | `oats aweb wake install`, `status` and `uninstall` install the host wake broker as a per-user service ("Host wake broker service" below). Readiness warns `claude-channel-mode-default` for a Claude channel home whose mode nobody chose, and checks the broker at soul scope when the spawn will need it (section 7). |
+| Provider 1.31.0, OATS >=0.68.0, aw >=1.36.33 | A stopped seat moves to the locked package with `oats instance upgrade`. Upgrade preserves identity and grant state without host calls; the next start re-registers and renews according to the seat's settings. |
 | Future provider #56 / #60 | Token-only setup and GLOBAL wider-team join are not installed procedures here. Stop at their named owner boundary. |
 
 `D` = selected absolute deployment, `S` = resolved messaging soul, `L` = label,
