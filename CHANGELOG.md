@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Session-delivered GLOBAL grant seats now name the broker's foreign grant home
+  and the seat's current one in `wake-target-binding`. Quarantined streams and
+  explicit stream errors retain `wake-stream-unavailable`, with safe HTTP/grant
+  denial detail and a restart remedy. Admitted `starting`/`retrying` primaries
+  without an error warn while other readiness checks continue. Readiness remains
+  read-only. Regression tests pin renewal registration before old-grant revoke
+  and rollback when registration fails. No aw floor or pin changes.
 - Accept a finite mint receipt for `identity.ttl: never` when the team or
   issuing certificate caps the grant. Keep the requested TTL for renewal;
   readiness, health and the brief use the recorded finite expiry. The expiry

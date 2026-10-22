@@ -1,0 +1,69 @@
+{
+  "daemon_version": "1.36.37",
+  "daemon_commit": "74684f7350d8e692a440a5fe9bdd72e835020eea",
+  "instances": [
+    {
+      "backend": "tmux",
+      "channel_core": {
+        "ambient_dropped": 0,
+        "ambient_queued": 0,
+        "bundle_path": "/fixture/aw/wake/channel-core/runner.mjs",
+        "evicted_events": 0,
+        "last_input_at": "2026-10-22T03:29:04.328Z",
+        "last_run_at": "2026-10-17T06:18:40.392835Z",
+        "last_success_at": "2026-10-22T03:29:04.328Z",
+        "next_retry_at": "0001-01-01T00:00:00Z",
+        "node_path": "/opt/homebrew/bin/node",
+        "readiness_state": "unknown",
+        "readiness_waiting": "inspect_done",
+        "restart_count": 0,
+        "running": true,
+        "trace_binding_id": "/fixture/home/.aweb-identity-1792217848|jro:jro.aweb.ai",
+        "trace_stage": "lane_job_completed"
+      },
+      "delivery": "session",
+      "evicted_events": 0,
+      "home": "/fixture/home",
+      "identity_home": "/fixture/home/.aweb-identity-1792217848",
+      "last_inspect_at": "2026-10-22T03:29:03.251324Z",
+      "last_state": "unknown",
+      "managed_receiver": {
+        "generation": 0,
+        "registration": {
+          "backend": "tmux",
+          "delivery": "session",
+          "home": "/fixture/home",
+          "identity_home": "/fixture/home/.aweb-identity-1792217848",
+          "receive_identities": [
+            {
+              "controls": true,
+              "delivery_owner": "session-hints",
+              "identity_home": "/fixture/home/.aweb-identity-1792217848",
+              "team_id": "jro:jro.aweb.ai"
+            }
+          ],
+          "registered_at": "2026-10-17T06:18:40.3622Z",
+          "runtime_delivery": "external-session"
+        }
+      },
+      "paused": false,
+      "phase": "active",
+      "receive_identities": [
+        {
+          "connected_at": "2026-10-17T06:18:40.615499Z",
+          "controls": true,
+          "delivery_owner": "session-hints",
+          "identity_home": "/fixture/home/.aweb-identity-1792217848",
+          "stream_admitted": true,
+          "stream_error": "aweb: http 403: {\"detail\":\"grant revoked\"}",
+          "stream_phase": "quarantined",
+          "team_id": "jro:jro.aweb.ai",
+          "unread_count": 1
+        }
+      ],
+      "registered_at": "2026-10-17T06:18:40.3622Z",
+      "runtime_delivery": "external-session",
+      "stream_admitted": true
+    }
+  ]
+}
