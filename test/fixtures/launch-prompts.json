@@ -1,6 +1,6 @@
 {
   "source": {
-    "kernel": "awebai/oats main d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c (0.52.0; the CI kernel pin).",
+    "kernel": "Captured from awebai/oats main d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c (0.52.0).",
     "writer": "lib/core.mjs: notEngaged(startId) :662 {status, startId, at}; channelsUnavailable(startId, result) :665 {status: flag-ignored, reason: channels-unavailable, signatureId, startId, at}. Spawn writes not-engaged (:4653), the controller result mapped through channelsUnavailable (:4681) and the retained blocked/incomplete (:4717). Start/restart writes not-engaged (:7100), the controller result mapped (:7163-7164), incomplete on a dispatch or recording failure (:7167), into planExtra (:7173), which record() writes (:6813-6817) and returns in the start result (:6821). --no-launch writes nothing.",
     "outcome": "lib/launch-prompts.mjs finish(): {status, answers, reason, receipt}; only flag-ignored adds signatureId (a completed answer's signatureId is in answers); a blocked result adds differed (devChannelDifference() in lib/launch-prompt-fixtures.mjs, {nearest, firstDifference: {index, expected, found}}, 40-character snippets) and, before any Enter, claudeSessionShown.",
     "completed": "lib/launch-prompts.mjs:164",
