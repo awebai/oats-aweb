@@ -5,7 +5,7 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
-## 1.31.0 — aweb tasks
+## Tasks
 
 One `oats.aweb` package release supplies two independently selected capabilities:
 
@@ -25,9 +25,10 @@ defaults:
   tasks: { oats.aweb-tasks: { from: package } }
 ```
 
-On kernel `593255d9`, once `oats.aweb` is pinned and synced, its exported
-`oats.aweb-tasks` resolves through the lock without a catalog alias. A scratch
-spawn preview selects both capabilities without `E_SLOT_CONFLICT`.
+Selection without a catalog alias is verified on OATS 0.67.1 and main
+`593255d9`. Once `oats.aweb` is pinned and synced, its exported
+`oats.aweb-tasks` resolves through the lock. Scratch spawn previews select both
+capabilities without `E_SLOT_CONFLICT`.
 
 A soul can instead select `oats.aweb-tasks: { from: package }` in its
 `capabilities:` map. Its `tasks:` key is a provider payload (or `none`), not a
@@ -43,8 +44,8 @@ agent checks `aw whoami`; if that fails, it reports the failure to its human and
 does not use tasks. Conversation stays with the messaging provider.
 
 Readiness has no tasks-slot item for this provider, by design, in this version.
-The OATS >=0.52.0 and aw >=1.36.33 floors are unchanged. The task protocol and
-file flags are verified against aw 1.36.47.
+The messaging package's OATS >=0.52.0 and aw >=1.36.33 floors are unchanged.
+The task protocol and file flags are verified against aw 1.36.47.
 
 ### Developing the tasks capability
 

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.31.0 — 2026-10-22
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.
 
 - Session-delivered GLOBAL grant seats now name the broker's foreign grant home
   and the seat's current one in `wake-target-binding`. Quarantined streams
@@ -22,10 +24,6 @@
   before its recorded expiry, including `"never"`; readiness cannot predict
   this without certificate polling, so aw reports the runtime grant error
   and a restart remints.
-
-## 1.31.0 — 2026-10-22
-
-Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.
 
 - The oats.aweb package now exports `oats.aweb-tasks` for the tasks slot
   alongside `oats.aweb` for messaging. The `/aweb-tasks` skill covers claims,
