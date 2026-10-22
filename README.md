@@ -25,6 +25,10 @@ defaults:
   tasks: { oats.aweb-tasks: { from: package } }
 ```
 
+On kernel `593255d9`, once `oats.aweb` is pinned and synced, its exported
+`oats.aweb-tasks` resolves through the lock without a catalog alias. A scratch
+spawn preview selects both capabilities without `E_SLOT_CONFLICT`.
+
 A soul can instead select `oats.aweb-tasks: { from: package }` in its
 `capabilities:` map. Its `tasks:` key is a provider payload (or `none`), not a
 capability selection. Replace the workspace's existing tasks selection; each

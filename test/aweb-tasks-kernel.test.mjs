@@ -17,6 +17,7 @@ test('real kernel selects messaging and tasks together with no catalog alias', {
   const home = join(base, 'home'), bin = join(base, 'bin'), marker = join(base, 'aw-called');
   mkdirSync(home); mkdirSync(bin);
   writeFileSync(join(bin, 'aw'), `#!/bin/sh\necho called >> '${marker}'\nexit 97\n`, { mode: 0o755 });
+  writeFileSync(join(bin, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0',
     OATS_REMOTE_CACHE: join(base, 'cache'), OATS_HOME_DIR: join(base, 'data'),
@@ -27,6 +28,10 @@ test('real kernel selects messaging and tasks together with no catalog alias', {
     const r = spawnSync('git', ['-c', 'commit.gpgsign=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', ...args], { cwd, env, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr); return r.stdout.trim();
   };
+  // The scratch parent may be a linked worktree. Its own Git boundary keeps
+  // kernel canonical-deployment lookup from mapping fixtures to that repo's
+  // primary checkout and inheriting the real deployment's launch settings.
+  git(base, 'init', '-q', '--initial-branch=fixture');
   function remote(name, files, payload) {
     const seed = join(base, `${name}-seed`), bare = join(base, `${name}.git`);
     mkdirSync(seed); git(seed, 'init', '-q', '--initial-branch=main');
@@ -42,10 +47,11 @@ test('real kernel selects messaging and tasks together with no catalog alias', {
     return pathToFileURL(bare).href;
   }
   const packageRef = remote('package', {}, fileURLToPath(new URL('../oats-package', import.meta.url)));
+  const packageCommit = git(base, '--git-dir', fileURLToPath(packageRef), 'rev-parse', 'HEAD');
   const workspaceRef = pathToFileURL(join(base, 'workspace.git')).href;
   const workspace = {
     schemaVersion: 2, name: 'aweb-tasks-fixture', members: [workspaceRef],
-    packages: { 'oats.aweb': `git:${packageRef}@main` },
+    packages: { 'oats.aweb': `git:${packageRef}@${packageCommit}` },
     defaults: { knowledge: 'none', messaging: { 'oats.aweb': { from: 'package' } }, tasks: { 'oats.aweb-tasks': { from: 'package' } } },
   };
   remote('workspace', {
@@ -55,15 +61,23 @@ test('real kernel selects messaging and tasks together with no catalog alias', {
     'souls/worker/AGENTS.md': '# Inert fixture\n',
   });
   const deployment = join(base, 'deployment'); mkdirSync(deployment);
+  git(base, 'clone', '-q', fileURLToPath(workspaceRef), join(deployment, 'workspace'));
   writeFileSync(join(deployment, 'oats-local.yaml'), JSON.stringify({ schemaVersion: 2, workspace: workspaceRef }));
   const cli = (...args) => spawnSync(process.execPath, [join(kernel, 'bin/oats.mjs'), ...args, '--dir', deployment, '--json'], { cwd: deployment, env, encoding: 'utf8', timeout: 60000 });
   const synced = cli('sync'); assert.equal(synced.status, 0, synced.stdout + synced.stderr);
-  const result = cli('spawn', 'worker', '--preview');
+  const result = cli('spawn', 'worker', '--work', 'directory', '--harness', 'codex', '--launch-config', 'none', '--preview');
   // Emit the exact public answer for handoff, including any alias refusal.
   t.diagnostic(`No-alias spawn preview: ${result.stdout.trim()}${result.stderr.trim()}`);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const answer = JSON.parse(result.stdout);
   assert.equal(answer.ok, true);
+  assert.ok(answer.result.home.startsWith(base + '/'), 'planned home stays inside the scratch fixture');
+  assert.equal(answer.result.work, 'directory');
+  const selected = answer.result.modules.map(({ name, layer }) => ({ name, layer }));
+  assert.deepEqual(selected, [
+    { name: 'oats.aweb', layer: 'messaging' },
+    { name: 'oats.aweb-tasks', layer: 'tasks' },
+  ]);
   const text = JSON.stringify(answer.result);
   assert.match(text, /oats\.aweb-tasks/);
   assert.match(text, /oats\.aweb/);
@@ -71,4 +85,5 @@ test('real kernel selects messaging and tasks together with no catalog alias', {
   assert.equal(existsSync(marker), false, 'selection must never call aw');
   const catalog = JSON.parse(readFileSync(join(kernel, 'package-catalog.json')));
   assert.equal(catalog.capabilities['oats.aweb-tasks'], undefined, 'test must use an unamended catalog');
+  t.diagnostic(`Selection: ${JSON.stringify({ ok: answer.ok, modules: selected, catalogAlias: false })}`);
 });
