@@ -1,4 +1,31 @@
-# Wake status timestamp evidence
+# Wake status evidence
+
+`daemon-1.36.37-grant-quarantined.json` retains the one affected row from the
+operator's reduced capture for awebai/oats#1450. The broker reports daemon
+1.36.37, commit `74684f7350d8e692a440a5fe9bdd72e835020eea`, and a primary
+grant stream in `quarantined` with
+`aweb: http 403 (x-request-id: redacted, cf-ray: redacted): {"detail":"grant revoked"}`.
+Home paths use `/fixture/home`; the channel bundle path uses `/fixture/aw`.
+The request ID and cf-ray values were replaced with `redacted`, preserving the
+parenthesized header shape, and `owner_id` was removed. Field names, phases,
+timestamps and the remaining error shape are unchanged; there is no identity
+material or other home row. The capture omits `daemon_running` and
+`daemon_version_state`; integration tests explicitly add those prerequisites
+synthetically, relocate the home, and mutate the receive locator or phase.
+
+The phase vocabulary comes from
+[`wake/stream.go` at aw v1.36.37](https://github.com/awebai/aw/blob/v1.36.37/wake/stream.go):
+`starting`, `streaming`, `retrying`, `quarantined`, `stopped`. `starting` and
+`retrying` are transient warnings for a session grant seat.
+[Lines 269-279](https://github.com/awebai/aw/blob/v1.36.37/wake/stream.go#L269-L279)
+quarantine 401/403/404/422 refusals and send other errors to `retrying`;
+[line 326](https://github.com/awebai/aw/blob/v1.36.37/wake/stream.go#L326)
+also enters `retrying` on a recoverable consume error. Every real retry
+therefore carries error text, which the warning summarizes safely. Phase,
+not the presence of that text, determines readiness. Unknown phases fail
+closed and are named in the problem.
+
+## Timestamps
 
 `client-1.36.40-daemon-1.36.37.json` is a sanitized, reduced capture of a real
 read-only `aw wake status --json` run on 2026-10-17. The separately observed

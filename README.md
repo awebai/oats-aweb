@@ -586,6 +586,19 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   when recorded provenance consistently establishes an empty joined set.
   Grant readiness uses the final recorded `identity.grant.home`, never the newest
   directory or the caller's `AWEB_IDENTITY_HOME`.
+  For a GLOBAL grant seat captured with `delivery: session`, a foreign broker
+  binding reports `wake-target-binding` with both grant-home basenames. A
+  quarantined primary reports
+  `wake-stream-unavailable`, including the HTTP status and recognized grant
+  denial detail when supplied. Arbitrary error text, headers and response bodies
+  are not echoed. Both diagnostics explain that restarting the seat re-registers
+  the broker with its current grant home; readiness itself never re-registers.
+  An admitted primary in aw's `starting` or `retrying` phase gives a
+  `wake-stream-unavailable` warning, including safe HTTP/service detail or a
+  recognized network failure phrase from its error text. The broker reconnects
+  automatically. Phase determines the outcome even when `stream_error` is set.
+  Worker, binding and all other readiness checks still apply; stopped, unknown
+  or missing phases remain problems; an unknown phase is named in the problem.
 
 - `claudeChannelMode`: `development` (default) or explicit `approved`, **host-only** in
   `oats-local.yaml` under `settings.oats.aweb`. Committed soul/workspace settings

@@ -22,8 +22,8 @@ function csv(name, fallback) { return String(process.env[name] || fallback).spli
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { console.error("grant command refuses external identity home"); process.exit(2); }
 if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.33")); process.exit(0); }
-if (s.startsWith("wake status")) { console.log(j({ instances: [] })); process.exit(0); }
-if (a[0] === "wake" && a[1] === "register" && process.env.FAKE_WAKE_REGISTER_FAIL) { console.error("broker socket refused"); process.exit(1); }
+if (s.startsWith("wake status")) { console.log(process.env.FAKE_WAKE_STATUS || j({ instances: [] })); process.exit(0); }
+if (a[0] === "wake" && a[1] === "register" && (process.env.FAKE_WAKE_REGISTER_FAIL || (process.env.FAKE_WAKE_REGISTER_FAIL_UNLESS && val("--identity-home") !== process.env.FAKE_WAKE_REGISTER_FAIL_UNLESS))) { console.error("broker socket refused"); process.exit(1); }
 if (s.startsWith("wake ")) process.exit(0);
 // Retained-seat responses are opt-in and stay inside the temporary fixture.
 if (process.env.FAKE_RETAINED === "1") {

@@ -398,6 +398,36 @@ test("session launch renewal registers the wake broker with the new grant before
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
+test("session launch renewal keeps the old grant and revokes the new one when broker registration fails", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
+  try {
+    const { bin, root, home, custody, r: spawned } = spawnGrant(base, { delivery: "session", identity: { renew: "launch" } });
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const old = spawned.doc.meta, oldHome = old.identity.grant.home;
+    writeFileSync(join(base, "aw.log"), "");
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+      OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }),
+      FAKE_WAKE_REGISTER_FAIL_UNLESS: oldHome });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.identity.grant.id, old.identity.grant.id);
+    assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: oldHome });
+    assert.match(r.doc.warning, /renewal session delivery registration failed.*keeping previous grant/);
+    const lines = logLines(base);
+    const mint = lines.find(l => l.argv.slice(0, 3).join(" ") === "id grant mint");
+    assert.ok(mint, "renewal minted a new grant before the registration failure");
+    const newHome = argvValue(mint.argv, "--out");
+    const registers = lines.filter(l => l.argv.slice(0, 2).join(" ") === "wake register");
+    assert.deepEqual(registers.map(l => argvValue(l.argv, "--identity-home")), [oldHome, newHome]);
+    const grants = JSON.parse(readFileSync(join(base, "grants.json"), "utf8"));
+    assert.equal(grants.find(g => g.grant_id === old.identity.grant.id).status, "active");
+    const fresh = grants.find(g => g.grant_id !== old.identity.grant.id);
+    assert.equal(fresh.status, "revoked");
+    assert.deepEqual(lines.filter(l => l.argv.slice(0, 3).join(" ") === "id grant revoke").map(l => l.argv[3]), [fresh.grant_id]);
+    assert.equal(existsSync(newHome), false, "failed new grant home removed");
+    assert.equal(existsSync(join(oldHome, "grant.yaml")), true, "previous grant home retained");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
 test("a launch preview with renew=launch names the current grant home as volatile and mints nothing", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
