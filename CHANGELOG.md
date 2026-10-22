@@ -27,6 +27,22 @@
   that the event stream is up. The agent status reads `channel-not-connected` as
   `oats.channel_not_loaded`. No floor changes.
 
+## 1.32.0 — 2026-10-22
+
+Requires OATS >=0.68.0. The aw floor and pin are unchanged.
+
+- Declare a non-required `upgrade` hook for `oats instance upgrade` on
+  stopped local, global grant and retained seats, including 1.17.1 metadata.
+  Plan is read-only; apply preserves identity and grant state, refreshes
+  delivery from settings and runtime from the recorded kernel harness, and
+  preserves channel-mode proof until launch. An unreadable or unknown harness
+  keeps the recorded runtime and warns. No host registration or `aw` call
+  occurs during upgrade: the next start re-registers and, where configured,
+  renews the grant before revoking the old one. Renewal off warns that the
+  existing grant and expiry remain.
+- Refresh the capability manifest schema from OATS `593255d9`, including the
+  upgrade event.
+
 ## 1.31.0 — 2026-10-22
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.

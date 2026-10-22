@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# Review pin for the upgrade contract; replace with the v0.68.0 release commit
+# before merging. This source still reports 0.67.1, so spawn compatibility
+# checks remain red until that release pin is selected.
+env:
+  OATS_KERNEL_COMMIT: 593255d945c9039860cfa986f4192499e73cd12f
+
 jobs:
   validate-and-test:
     runs-on: ubuntu-latest
@@ -18,14 +24,12 @@ jobs:
           node-version: 22
       - name: Validate manifests, vendored skills, and hooks
         run: npm test
-      # Both kernel pins: the awebai/oats main commit d27de605 (0.52.0, this
-      # package's floor), not a release tag.
       - name: Provision pinned generic hostOnly validator
         shell: bash
         run: |
           git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-hostonly-kernel"
-          git -C "$RUNNER_TEMP/oats-hostonly-kernel" checkout --detach d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
-          test "$(git -C "$RUNNER_TEMP/oats-hostonly-kernel" rev-parse HEAD)" = d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
+          git -C "$RUNNER_TEMP/oats-hostonly-kernel" checkout --detach "$OATS_KERNEL_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/oats-hostonly-kernel" rev-parse HEAD)" = "$OATS_KERNEL_COMMIT"
           cd "$RUNNER_TEMP/oats-hostonly-kernel"
           npm ci --ignore-scripts --no-audit --no-fund
       - name: Require actual hostOnly refusal and host-local controls
@@ -37,8 +41,8 @@ jobs:
         shell: bash
         run: |
           git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-preview-kernel"
-          git -C "$RUNNER_TEMP/oats-preview-kernel" checkout --detach d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
-          test "$(git -C "$RUNNER_TEMP/oats-preview-kernel" rev-parse HEAD)" = d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
+          git -C "$RUNNER_TEMP/oats-preview-kernel" checkout --detach "$OATS_KERNEL_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/oats-preview-kernel" rev-parse HEAD)" = "$OATS_KERNEL_COMMIT"
           cd "$RUNNER_TEMP/oats-preview-kernel"
           npm ci --ignore-scripts --no-audit --no-fund
       - name: Require the decision statement in a real start preview
@@ -62,9 +66,6 @@ jobs:
     env:
       AWEB_STACK_COMMIT: 1d7ee6bb3519a3c940ebeb12afc86d921dc13e27
       AW_VERSION: 1.36.33
-      # An OATS kernel with teams-conditional-default that this package admits
-      # (the awebai/oats main commit d27de605, 0.52.0).
-      CONDITIONAL_DEFAULT_KERNEL_COMMIT: d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -83,8 +84,8 @@ jobs:
         shell: bash
         run: |
           git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/conditional-default-kernel"
-          git -C "$RUNNER_TEMP/conditional-default-kernel" checkout --detach "$CONDITIONAL_DEFAULT_KERNEL_COMMIT"
-          test "$(git -C "$RUNNER_TEMP/conditional-default-kernel" rev-parse HEAD)" = "$CONDITIONAL_DEFAULT_KERNEL_COMMIT"
+          git -C "$RUNNER_TEMP/conditional-default-kernel" checkout --detach "$OATS_KERNEL_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/conditional-default-kernel" rev-parse HEAD)" = "$OATS_KERNEL_COMMIT"
           cd "$RUNNER_TEMP/conditional-default-kernel"
           npm ci --ignore-scripts --no-audit --no-fund
       - name: Install the released aw in an isolated prefix

@@ -374,12 +374,20 @@ test("launch renewal mints into a fresh grant home, emits the new locator, and r
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("session launch renewal registers the wake broker with the new grant before revoking the old grant", () => {
+test("upgraded 1.17.1 session launch renewal registers the wake broker with the new grant before revoking the old grant", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
-    const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"], home: oldHome } } };
+    const historical = JSON.parse(readFileSync(new URL('./fixtures/upgrade/v1.17.1-global.json', import.meta.url)));
+    historical.identity.grant.home = oldHome;
+    writeFileSync(join(home, 'instance.json'), JSON.stringify({ launch: { harness: 'codex' } }));
+    const applied = runHook(bin, 'upgrade', { OATS_INSTANCE: 'probe', OATS_HOME: home, OATS_INSTANCE_HOME: home,
+      OATS_UPGRADE_PHASE: 'apply', OATS_META: JSON.stringify(historical), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: 'launch' }), delivery: 'session' }) });
+    assert.equal(applied.status, 0, applied.stdout + applied.stderr);
+    assert.deepEqual(applied.doc.meta, { ...historical, runtime: 'codex' });
+    assert.equal(existsSync(join(base, 'aw.log')), false, 'upgrade made no host calls');
+    const old = applied.doc.meta;
     const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: r.doc.meta.identity.grant.home });
@@ -398,13 +406,23 @@ test("session launch renewal registers the wake broker with the new grant before
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("session launch renewal keeps the old grant and revokes the new one when broker registration fails", () => {
+test("upgraded 1.17.1 session launch renewal keeps the old grant and revokes the new one when broker registration fails", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
     const { bin, root, home, custody, r: spawned } = spawnGrant(base, { delivery: "session", identity: { renew: "launch" } });
     assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-    const old = spawned.doc.meta, oldHome = old.identity.grant.home;
+    const oldHome = spawned.doc.meta.identity.grant.home;
+    const historical = JSON.parse(readFileSync(new URL('./fixtures/upgrade/v1.17.1-global.json', import.meta.url)));
+    historical.identity.grant.home = oldHome;
+    historical.identity.grant.id = spawned.doc.meta.identity.grant.id;
+    writeFileSync(join(home, 'instance.json'), JSON.stringify({ launch: { harness: 'codex' } }));
     writeFileSync(join(base, "aw.log"), "");
+    const applied = runHook(bin, 'upgrade', { OATS_INSTANCE: 'probe', OATS_HOME: home, OATS_INSTANCE_HOME: home,
+      OATS_UPGRADE_PHASE: 'apply', OATS_META: JSON.stringify(historical), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: 'launch' }), delivery: 'session' }) });
+    assert.equal(applied.status, 0, applied.stdout + applied.stderr);
+    assert.deepEqual(applied.doc.meta, { ...historical, runtime: 'codex' });
+    assert.deepEqual(logLines(base), [], 'upgrade made no host calls');
+    const old = applied.doc.meta;
     const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
       OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }),
       FAKE_WAKE_REGISTER_FAIL_UNLESS: oldHome });
