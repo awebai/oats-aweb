@@ -277,7 +277,7 @@ function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||
 /** The first executable `cmd` on env's PATH, as an absolute path, or undefined. */
 export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const p=resolve(join(dir,cmd));const st=statSync(p);if(st.isFile()&&(st.mode&0o111))return p;}catch{}}return undefined;}
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
-async function awFloorObservation({env=process.env}={}) {
+export async function awFloorObservation({env=process.env}={}) {
   if(!onPath('aw',env)) return {message:`aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
   const version=await readAwVersion({env});
   if(!version) return {message:`aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};

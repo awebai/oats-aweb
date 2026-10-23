@@ -3,13 +3,12 @@
 // custody unit and records it in the deployment. aw answers come from real
 // aw 1.36.33 captures (test/fixtures/resident); see helpers/fake-aw-resident.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
-import { AWEB_URL, HOOK, KEY, LABEL, NAME, initCalls, setup } from "./helpers/resident-harness.mjs";
+import { AWEB_URL, KEY, LABEL, NAME, initCalls, setup } from "./helpers/resident-harness.mjs";
 import { derivedTeamLabel } from "../oats-package/capabilities/oats-aweb/lib/resident.mjs";
 
 function filesUnder(dir) {
@@ -36,13 +35,13 @@ test("usage documents the env form and no key flag; every key flag is refused as
   for (const args of [["create", NAME, "--key", KEY], ["create", NAME, `--key=${KEY}`], ["create", NAME, "--key-file", "/k"], ["create", NAME, "--key-stdin"], ["create", NAME, "--api-key", KEY], ["create", NAME, "--aweb-url", AWEB_URL], [], ["create"], ["delete", NAME]]) {
     const r = s.run(args);
     assert.equal(r.status, 2, JSON.stringify(args));
-    assert.equal(r.stderr, "usage: AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]\n");
+    assert.equal(r.stderr, "usage: [AWEB_API_KEY=<key> AWEB_URL=<url>] oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]\n");
     assert.ok(!r.stdout.includes(KEY) && !r.stderr.includes(KEY));
   }
   assert.deepEqual(initCalls(s.fake), []);
   const json = s.run(["create", NAME, "--key-stdin", "--json"]);
   assert.equal(json.status, 2);
-  assert.deepEqual(json.doc, { schemaVersion: 1, ok: false, error: { code: "E_RESIDENT_ARGUMENT", message: "usage: AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]", details: { stage: "arguments" } } });
+  assert.deepEqual(json.doc, { schemaVersion: 1, ok: false, error: { code: "E_RESIDENT_ARGUMENT", message: "usage: [AWEB_API_KEY=<key> AWEB_URL=<url>] oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]", details: { stage: "arguments" } } });
 });
 
 test("an invalid resident name is refused before anything runs", (t) => {
@@ -55,73 +54,22 @@ test("an invalid resident name is refused before anything runs", (t) => {
 
 // ------------------------------------------------------------------ the key
 
-test("no TTY and no key refuses at once, before aw init", (t) => {
+test("no key and no team root refuses at once, before aw init", (t) => {
   const s = setup(t);
   const r = s.run(["create", NAME], {}, { unset: ["AWEB_API_KEY"] });
   assert.equal(r.status, 1);
   assert.ok(r.ms < 10000, `took ${r.ms} ms`);
-  assert.equal(r.stderr, `FAIL key: no AWEB_API_KEY in the environment and no terminal to ask for it on: run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${NAME}\n`);
+  assert.equal(r.stderr, `FAIL key: no AWEB_API_KEY in the environment and no team root to authorize the resident: for the root route, set settings.oats.aweb.root (or settings.oats.aweb.roots[<team>]) to the directory holding the team root's .aw, or pass --authority-root <dir>; for the key route, run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${NAME}\n`);
   assert.deepEqual(initCalls(s.fake), []);
   assert.equal(existsSync(s.root), false);
 });
 
-// Runs the command on a real pseudo-terminal, types `input` after the prompt,
-// and returns everything the terminal showed.
-const PTY_DRIVER = `
-import base64, os, pty, select, sys, time
-argv, typed = sys.argv[2:], sys.argv[1].encode()
-pid, fd = pty.fork()
-if pid == 0:
-    os.execvp(argv[0], argv)
-shown, sent, deadline = b"", False, time.time() + 30
-while time.time() < deadline:
-    r, _, _ = select.select([fd], [], [], 0.2)
-    if fd in r:
-        try: chunk = os.read(fd, 4096)
-        except OSError: break
-        if not chunk: break
-        shown += chunk
-    if not sent and b"(input hidden): " in shown:
-        os.write(fd, typed); sent = True
-_, status = os.waitpid(pid, 0)
-print(base64.b64encode(shown).decode()); print(os.waitstatus_to_exitcode(status))
-`;
-function onTerminal(s, args, typed, env) {
-  const r = spawnSync("python3", ["-I", "-c", PTY_DRIVER, typed, process.execPath, HOOK, "resident", ...args], { env, encoding: "utf8", timeout: 60000 });
-  assert.equal(r.status, 0, r.stderr);
-  const [shown, code] = r.stdout.trim().split("\n");
-  return { shown: Buffer.from(shown, "base64").toString("utf8"), code: Number(code) };
-}
-
-test("with no key in the environment, a terminal prompt reads it without echo and hands it to the init child", (t) => {
-  if (spawnSync("python3", ["-c", "import pty"]).status !== 0) { t.skip("python3 with pty is required to drive a terminal"); return; }
+test("--plan on the key route without AWEB_URL shows a placeholder for it; a real create still refuses", (t) => {
   const s = setup(t);
-  const env = { ...s.env }; delete env.AWEB_API_KEY;
-  const { shown, code } = onTerminal(s, ["create", NAME], `${KEY}\r`, env);
-  assert.equal(code, 0, shown);
-  assert.match(shown, /aweb API key \(input hidden\): /);
-  assert.ok(!shown.includes(KEY), shown);
-  assert.match(shown, new RegExp(`PASS resident ${CAPTURED.address}`));
-  assert.equal(initCalls(s.fake)[0].env.AWEB_API_KEY, KEY);
-  assert.deepEqual(keyHits(s.base), []);
-});
-
-test("an empty answer at the prompt refuses without running init", (t) => {
-  if (spawnSync("python3", ["-c", "import pty"]).status !== 0) { t.skip("python3 with pty is required to drive a terminal"); return; }
-  const s = setup(t);
-  const env = { ...s.env }; delete env.AWEB_API_KEY;
-  const { shown, code } = onTerminal(s, ["create", NAME], "\r", env);
-  assert.equal(code, 1);
-  assert.match(shown, /FAIL key: no API key was entered/);
-  assert.deepEqual(initCalls(s.fake), []);
-});
-
-test("--plan without AWEB_URL shows a placeholder for it; a real create still refuses", (t) => {
-  const s = setup(t);
-  const plan = s.run(["create", NAME, "--plan", "--json"], {}, { unset: ["AWEB_URL", "AWEB_API_KEY"] });
+  const plan = s.run(["create", NAME, "--plan", "--json"], {}, { unset: ["AWEB_URL"] });
   assert.equal(plan.status, 0, plan.stdout + plan.stderr);
   assert.equal(plan.doc.result.init.awebUrl, "AWEB_URL from your dashboard line");
-  const text = s.run(["create", NAME, "--plan"], {}, { unset: ["AWEB_URL", "AWEB_API_KEY"] });
+  const text = s.run(["create", NAME, "--plan"], {}, { unset: ["AWEB_URL"] });
   assert.equal(text.status, 0, text.stderr);
   assert.ok(text.stdout.includes("against AWEB_URL from your dashboard line"), text.stdout);
   assert.equal(s.run(["create", NAME, "--plan", "--json"]).doc.result.init.awebUrl, AWEB_URL);
@@ -357,7 +305,7 @@ test("--plan changes nothing and names the steps without the key", (t) => {
   const plan = r.doc.result;
   assert.equal(plan.outcome, "plan");
   assert.equal(plan.state, "create");
-  assert.deepEqual(plan.init, { argv: ["aw", "init", "--global", "--name", NAME, "--do-not-touch-agents-md", "--json"], cwd: s.root, awebUrl: AWEB_URL, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK"] });
+  assert.deepEqual(plan.init, { route: "key", argv: ["aw", "init", "--global", "--name", NAME, "--do-not-touch-agents-md", "--json"], cwd: s.root, awebUrl: AWEB_URL, env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK"] });
   assert.equal(plan.custody.label, `ai.aweb.custody.<domain of the returned address>.${NAME}`);
   assert.equal(plan.record, `settings.oats.aweb.residents.${NAME}: ${s.root} in ${join(s.deployment, "oats-local.yaml")}`);
   assert.ok(!r.stdout.includes(KEY));
