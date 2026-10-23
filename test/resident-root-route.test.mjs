@@ -86,12 +86,14 @@ test("--authority-root overrides the settings", (t) => {
   assert.deepEqual(createCalls(s.fake)[0].argv, createArgv(s, given));
 });
 
-test("--authority-root with AWEB_API_KEY set is refused: the two routes do not combine", (t) => {
+test("--authority-root or --org with AWEB_API_KEY set is refused: the two routes do not combine", (t) => {
   const s = setup(t, ROOT_AW);
-  const r = s.run(["create", NAME, "--authority-root", teamRoot(s), "--json"]);
-  assert.equal(r.status, 1);
-  assert.equal(r.doc.error.code, "E_RESIDENT_ARGUMENT");
-  assert.equal(r.doc.error.message, "--authority-root selects the root route, and AWEB_API_KEY selects the key route: unset AWEB_API_KEY or drop --authority-root");
+  for (const [flag, value] of [["--authority-root", teamRoot(s)], ["--org", "acme"]]) {
+    const r = s.run(["create", NAME, flag, value, "--json"]);
+    assert.equal(r.status, 1);
+    assert.equal(r.doc.error.code, "E_RESIDENT_ARGUMENT");
+    assert.equal(r.doc.error.message, `${flag} belongs to the root route, and AWEB_API_KEY selects the key route: unset AWEB_API_KEY or drop ${flag}`);
+  }
   assert.deepEqual(s.fake.calls().filter((c) => c.cmd === "aw" && c.argv[0] !== "version"), []);
 });
 
