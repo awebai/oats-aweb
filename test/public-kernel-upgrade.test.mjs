@@ -74,17 +74,17 @@ test("a real stopped 1.17.1 grant seat upgrades and starts with registration bef
 
   rmSync(join(source, "oats-package"), { recursive: true });
   cpSync(join(ROOT, "oats-package"), join(source, "oats-package"), { recursive: true });
-  git(source, "add", "-A"); git(source, "commit", "-qm", "current branch package bytes"); git(source, "tag", "v1.31.0");
-  writeFileSync(workspaceFile, readFileSync(workspaceFile, "utf8").replace("oats.aweb: v1.17.1", "oats.aweb: v1.31.0"));
+  git(source, "add", "-A"); git(source, "commit", "-qm", "current branch package bytes"); git(source, "tag", "v1.32.0");
+  writeFileSync(workspaceFile, readFileSync(workspaceFile, "utf8").replace("oats.aweb: v1.17.1", "oats.aweb: v1.32.0"));
   git(scratch.workspace, "add", "."); git(scratch.workspace, "commit", "-qm", "select upgrade destination");
   run(["sync"]);
-  assert.equal(json(join(scratch.deployment, "oats-lock.json")).packages["oats.aweb"].version, "1.31.0");
+  assert.equal(json(join(scratch.deployment, "oats-lock.json")).packages["oats.aweb"].version, "1.32.0");
   scratch.stop("upgrade-seat");
   const plan = run(["instance", "upgrade", "upgrade-seat", "--plan"]);
   run(["instance", "upgrade", "upgrade-seat", "--plan-revision", plan.planRevision, "--idempotency-key", "historical-grant-upgrade"]);
   const upgraded = record();
-  assert.equal(json(join(home, ".oats/modules/oats.aweb/oats.json")).version, "1.31.0");
-  assert.equal(upgraded.modules["oats.aweb"].from.version, "1.31.0");
+  assert.equal(json(join(home, ".oats/modules/oats.aweb/oats.json")).version, "1.32.0");
+  assert.equal(upgraded.modules["oats.aweb"].from.version, "1.32.0");
   assert.equal(upgraded.modules["oats.aweb"].previous.from.version, "1.17.1");
   assert.equal(upgraded.modules["oats.aweb"].previous.commit, oldCommit);
   assert.deepEqual(upgraded.capabilityMeta["oats.aweb"], { ...before, delivery: "session", runtime: "pi" });

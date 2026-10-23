@@ -64,7 +64,8 @@ agent checks `aw whoami`; if that fails, it reports the failure to its human and
 does not use tasks. Conversation stays with the messaging provider.
 
 Readiness has no tasks-slot item for this provider, by design, in this version.
-The messaging package's OATS >=0.52.0 and aw >=1.36.33 floors are unchanged.
+Provider 1.31.0 requires OATS >=0.52.0 and aw >=1.36.33; the upgrade
+release above raises the kernel floor to >=0.68.0.
 The task protocol and file flags are verified against aw 1.36.47.
 
 ### Developing the tasks capability
