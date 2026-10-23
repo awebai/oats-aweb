@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { AUTHORITY_TEAM_ID, CAPTURED } from "./helpers/fake-aw-resident.mjs";
+import { AUTHORITY_TEAM_ID, CAPTURED, fakeResidentAw } from "./helpers/fake-aw-resident.mjs";
 import { HOOK, KEY, NAME, createCalls, initCalls, setup, teamRoot } from "./helpers/resident-harness.mjs";
 import { AW_RESIDENT_ROOT_MIN } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 
@@ -200,6 +200,35 @@ test("an inbound mode read back other than the requested one fails verify", (t) 
   assert.equal(r.doc.error.details.stage, "verify");
   assert.equal(r.doc.error.message, "aw inbound-mode answered inbound_mode \"team_and_contacts\", not contacts_only (requested with --inbound-mode contacts-only)");
   assert.equal(s.fake.loaded(), false, "no custody for an unverified resident");
+});
+
+test("a rerun after a refused read-back still refuses it, until the mode reads back, then adopts with no second create", (t) => {
+  const s = setup(t, { ...ROOT_AW, inbound: "team_and_contacts" });
+  const env = settings({ root: teamRoot(s) });
+  const residentReads = () => s.fake.calls().filter((c) => c.cmd === "aw" && c.argv[0] === "inbound-mode").length;
+  for (const attempt of [1, 2]) {
+    const r = s.run(["create", NAME, "--json"], env, KEYLESS);
+    assert.equal(r.doc.error.code, "E_RESIDENT_VERIFY", `attempt ${attempt}: ${r.stdout}`);
+    assert.equal(r.doc.error.message, "aw inbound-mode answered inbound_mode \"team_and_contacts\", not contacts_only (requested with --inbound-mode contacts-only)");
+    assert.equal(residentReads(), attempt);
+    assert.equal(s.fake.loaded(), false, "no custody");
+    assert.ok(!s.localYaml().includes("residents"), "not recorded");
+  }
+  const plan = s.run(["create", NAME, "--plan", "--json"], env, KEYLESS);
+  assert.equal(plan.doc.result.state, "adopt");
+  assert.ok(plan.doc.result.verify.some((v) => v.startsWith("aw inbound-mode --json, which must read back contacts_only")), JSON.stringify(plan.doc.result.verify));
+  // The mode is fixed on the aweb side: the rerun reads it back and adopts.
+  fakeResidentAw(s.base, { ...ROOT_AW, inbound: "contacts_only" });
+  const fixed = s.run(["create", NAME, "--json"], env, KEYLESS);
+  assert.equal(fixed.status, 0, fixed.stdout + fixed.stderr);
+  assert.equal(fixed.doc.result.outcome, "adopted");
+  assert.equal(residentReads(), 3);
+  assert.equal(createCalls(s.fake).length, 1);
+  assert.equal(existsSync(join(s.root, ".oats-resident", "root-route-pending")), false);
+  // Once verified, a rerun is the ordinary verify, with no mode read.
+  const again = s.run(["create", NAME, "--json"], { OATS_SETTINGS: JSON.stringify({ root: join(s.base, "team-root"), residents: { [NAME]: s.root } }) }, KEYLESS);
+  assert.equal(again.doc.result.outcome, "already-exists");
+  assert.equal(residentReads(), 3);
 });
 
 test("aw's refusal of the create passes through as E_RESIDENT_INIT, and a rerun creates again", (t) => {
