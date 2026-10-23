@@ -19,7 +19,7 @@ slots in `oats-workspace.yaml`, then run `oats sync`:
 
 ```yaml
 packages:
-  oats.aweb: v1.31.0
+  oats.aweb: v1.33.0
 defaults:
   messaging: { oats.aweb: { from: package } }
   tasks: { oats.aweb-tasks: { from: package } }
@@ -67,6 +67,35 @@ set `OATS_TASKS_KERNEL_ROOT` to the kernel source and
 `OATS_TASKS_SCRATCH_ROOT` to a scratch parent, then run that test file. It creates
 local bare package/workspace repositories, an isolated HOME and cache, and
 previews a soul with both providers. It calls no live service or aw command.
+
+## 1.33.0 — a GLOBAL resident without an API key
+
+```
+oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]
+```
+
+- **`oats aweb resident create` needs no API key.** Without `AWEB_API_KEY`,
+  the deployment's team root authorizes the create:
+  `aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team UUID> --name <name> --inbound-mode contacts-only --json`,
+  run once in T with `PATH`, `HOME`, `AW_NO_UPDATE_CHECK` and, when set,
+  `AWID_REGISTRY_URL`. T is `--authority-root`, else
+  `settings.oats.aweb.roots[<team>]` for the resident's team, else
+  `settings.oats.aweb.root`. The team UUID is the `team_id` of T's
+  `aw inbound-mode --json`. `<org>` is `--org <slug or id>`, else the slug of
+  T's `<slug>.aweb.ai` namespace; any other namespace asks for `--org`. The
+  inbound mode must read back `contacts_only` (`E_RESIDENT_VERIFY` otherwise).
+  This route needs aw 1.36.48 or later (`E_RESIDENT_AW_FLOOR` below it); the
+  key route keeps the 1.36.33 floor.
+- **Contract change: the key prompt is gone.** Nothing asks for a key on a
+  terminal. With `AWEB_API_KEY` set, the key route runs as before. With
+  neither a key nor a team root, the command refuses at once with
+  `E_RESIDENT_KEY`, naming both routes. A partial `aw init` is continued only
+  by the key route. `--plan` without a key shows the root route; `init.route`
+  (`key` or `root`) says which.
+- The root route is tested against a fake aw with synthetic answers: no
+  released aw had the call when it was built. Its live acceptance is the first
+  run against the released aw.
+- Details: [docs/resident-create.md](docs/resident-create.md#the-root-route).
 
 ## 1.30.0 — Codex readiness from the kernel's launch record
 

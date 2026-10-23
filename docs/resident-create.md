@@ -43,6 +43,7 @@ command that home's recorded settings instead of the deployment's.
 - `--org <slug or id>` names the organization of the root route's
   `aw id create --org`, as its slug or its UUID, never a domain. Without it the
   slug is derived from the team root's namespace (see [The root route](#the-root-route)).
+  Like `--authority-root`, it does not combine with `AWEB_API_KEY`.
 - `<name>` is the resident's name, an aweb alias; its address is
   `<namespace>/<name>`.
 - `--root <dir>` is the resident's directory, R. It defaults to
@@ -736,7 +737,64 @@ captured text joins these examples.
 
 <!-- envelope: plan-root -->
 ```json
-{}
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "outcome": "plan",
+    "name": "carol",
+    "root": "/srv/deploy/.aweb-residents/carol",
+    "state": "create",
+    "init": {
+      "route": "root",
+      "argv": [
+        "aw",
+        "--identity-home",
+        "/srv/deploy/.aweb-residents/carol/.aw",
+        "id",
+        "create",
+        "--owner-identity-home",
+        "/srv/deploy/.aweb-roots/default/.aw",
+        "--org",
+        "acme",
+        "--team-id",
+        "<team UUID>",
+        "--name",
+        "carol",
+        "--inbound-mode",
+        "contacts-only",
+        "--json"
+      ],
+      "cwd": "/srv/deploy/.aweb-roots/default",
+      "authorityRoot": "/srv/deploy/.aweb-roots/default",
+      "authorityFrom": "settings.oats.aweb.root",
+      "env": [
+        "PATH",
+        "HOME",
+        "AW_NO_UPDATE_CHECK"
+      ]
+    },
+    "verify": [
+      "aw whoami --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+      "aw inbound-mode --json, which must read back contacts_only (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+      "aw doctor identity --offline --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+      "aw doctor registry --online --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)"
+    ],
+    "custody": {
+      "manager": "<launchd or systemd>",
+      "label": "ai.aweb.custody.<domain of the returned address>.carol",
+      "path": "<unit path>",
+      "runs": "/usr/local/bin/aw custody serve",
+      "workingDirectory": "/srv/deploy/.aweb-residents/carol",
+      "env": [
+        "PATH",
+        "HOME"
+      ]
+    },
+    "record": "settings.oats.aweb.residents.carol: /srv/deploy/.aweb-residents/carol in /srv/deploy/oats-local.yaml",
+    "teamLabel": "derived from the returned team's name after aw id create, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after aw id create, with the identity, its custody and the residents setting in place, and names the --team-label rerun"
+  }
+}
 ```
 
 No key and no team root:

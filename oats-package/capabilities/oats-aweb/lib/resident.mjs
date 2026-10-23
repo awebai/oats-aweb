@@ -341,7 +341,8 @@ export async function createResident(opts, { env, platform }) {
     // ---- preflight: nothing here has a remote effect
     const where = { platform, uid: process.getuid?.(), home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
     let apiKey = envKey(env);
-    if (opts.authorityRoot !== undefined && apiKey) throw failure("E_RESIDENT_ARGUMENT", "preflight", "--authority-root selects the root route, and AWEB_API_KEY selects the key route: unset AWEB_API_KEY or drop --authority-root");
+    const rootFlag = opts.authorityRoot !== undefined ? "--authority-root" : opts.org !== undefined ? "--org" : undefined;
+    if (rootFlag && apiKey) throw failure("E_RESIDENT_ARGUMENT", "preflight", `${rootFlag} belongs to the root route, and AWEB_API_KEY selects the key route: unset AWEB_API_KEY or drop ${rootFlag}`);
     if (opts.authorityRoot !== undefined && samePath(resolve(opts.authorityRoot), root)) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is the team root that authorizes it: choose another --root for the resident`);
     const { state, rejected } = rootState(root);
     const awebUrl = typeof env.AWEB_URL === "string" && env.AWEB_URL.trim() ? env.AWEB_URL : undefined;
@@ -412,6 +413,7 @@ export async function createResident(opts, { env, platform }) {
     }
 
     if (opts.plan) {
+      const created = route?.kind === "root" ? "aw id create" : "aw init";
       const label = known ? custodyLabel(known.address, name) : `ai.aweb.custody.<domain of the returned address>.${name}`;
       return {
         outcome: "plan", name, root, state,
@@ -419,14 +421,14 @@ export async function createResident(opts, { env, platform }) {
         init: route?.kind === "key" ? { route: "key", argv: ["aw", ...INIT_ARGS(name)], cwd: root, awebUrl: awebUrl ?? "AWEB_URL from your dashboard line", env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] }
           : route?.kind === "root" ? { route: "root", argv: ["aw", ...CREATE_ARGS({ resident: root, owner: route.owner, org: route.org, teamId: route.teamId, name })], cwd: route.owner, authorityRoot: route.owner, authorityFrom: route.from, env: Object.keys(readEnv) }
           : null,
-        verify: ["aw whoami --json", "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
+        verify: ["aw whoami --json", ...(route?.kind === "root" ? [`aw inbound-mode --json, which must read back ${RESIDENT_INBOUND.wire}`] : []), "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
         custody: manager
           ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
           : { manager: null, handStep: handStep(root, name) },
         record: `settings.oats.aweb.residents.${name}: ${root} in ${localYaml}`,
         teamLabel: opts.teamLabel
           ? `${opts.teamLabel} → the returned team, with oats teams add --no-default where the workspace allows local teams; it becomes the default team only where there is none`
-          : "derived from the returned team's name after aw init, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after aw init, with the identity, its custody and the residents setting in place, and names the --team-label rerun",
+          : `derived from the returned team's name after ${created}, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after ${created}, with the identity, its custody and the residents setting in place, and names the --team-label rerun`,
       };
     }
 
