@@ -153,7 +153,10 @@ for (const [name, spec] of Object.entries(configs)) {
 }
 
 const declaredCapabilities = Array.isArray(packageManifest?.capabilities) ? packageManifest.capabilities : [];
-if (declaredCapabilities.length !== 1) {
+if (packageManifest?.package === 'oats.aweb') {
+  const expected = ['capabilities/oats-aweb', 'capabilities/oats-aweb-tasks'];
+  if (JSON.stringify(declaredCapabilities) !== JSON.stringify(expected)) report('oats-package.json.capabilities', 'oats.aweb must enumerate its messaging and tasks capability directories');
+} else if (declaredCapabilities.length !== 1) {
   report("oats-package.json.capabilities", `official single-capability package must enumerate exactly one capability directory (found ${declaredCapabilities.length})`);
 }
 
@@ -201,6 +204,15 @@ for (const [index, capabilityDir] of declaredCapabilities.entries()) {
     }
   }
   for (const forbidden of ["global", "agent-types", "souls"]) if (forbidden in manifest) report(`${capabilityDir}/oats.json.${forbidden}`, "deployment targeting belongs to config, not a capability manifest");
+}
+
+if (packageManifest?.package === 'oats.aweb') {
+  const expectedIds = ['oats.aweb', 'oats.aweb-tasks'];
+  for (const [index, capability] of capabilities.entries()) {
+    if (capability.capability !== expectedIds[index]) report(`oats-package.json.capabilities[${index}]`, `must export ${expectedIds[index]}`);
+    if (capability.version !== packageManifest.version) report(`${declaredCapabilities[index]}/oats.json.version`, 'must match the package version');
+    if (capability.compatibility?.oats !== packageManifest.compatibility?.oats) report(`${declaredCapabilities[index]}/oats.json.compatibility.oats`, 'must match the package compatibility floor');
+  }
 }
 
 if (capabilities.length === 1 && packageManifest) {

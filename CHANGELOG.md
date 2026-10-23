@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.31.0 — 2026-10-22
+
+Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.
 
 - Session-delivered GLOBAL grant seats now name the broker's foreign grant home
   and the seat's current one in `wake-target-binding`. Quarantined streams
@@ -22,6 +24,18 @@
   before its recorded expiry, including `"never"`; readiness cannot predict
   this without certificate polling, so aw reports the runtime grant error
   and a restart remints.
+
+- The oats.aweb package now exports `oats.aweb-tasks` for the tasks slot
+  alongside `oats.aweb` for messaging. The `/aweb-tasks` skill covers claims,
+  assignment, status, dependencies, handoff and epics using the instance's
+  messaging identity in its default team, or an explicitly joined identity.
+- The tasks spawn hook is advisory and config-only: it never calls aw, mints
+  an identity or joins a team. Its fixed brief directs agents to check their
+  identity with `aw whoami` before task use. This version has no tasks
+  binding/readiness item.
+- Task descriptions, notes, comments and closing reasons use file flags;
+  titles are read from a file. Messaging instructions defer task state to
+  the selected tasks provider.
 
 ## 1.30.0 — 2026-10-19
 

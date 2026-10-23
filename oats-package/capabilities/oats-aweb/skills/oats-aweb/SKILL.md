@@ -82,6 +82,10 @@ membership certificates (`aw id team members`) and its workspaces
   (default-team or joined) whose team holds the recipient. aw resolves names
   through its service, so a name can resolve without being on the roster.
 
+Task coordination belongs to the deployment's tasks layer. When it is
+`oats.aweb-tasks`, load `/aweb-tasks` for `aw task` and `aw work`.
+`aw lock` and `aw roles` stay outside OATS. Conversation stays in messaging.
+
 ## 3. Send, reply, chat
 
 Always put the body in a file: inline `--body "…"` breaks on quotes,
