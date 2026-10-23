@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The upgrade fixture reads v1.17.1 locally; tests never fetch tags.
+          # The upgrade fixture reads v1.17.1 and v1.31.0 locally; tests never fetch tags.
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
