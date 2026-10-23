@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
+import { AUTHORITY_TEAM_ID, CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
+import { AW_RESIDENT_ROOT_MIN } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 import { AWEB_URL, DOMAIN, NAME, setup } from "./helpers/resident-harness.mjs";
 
 const DOC = readFileSync(new URL("../docs/resident-create.md", import.meta.url), "utf8");
@@ -28,6 +29,7 @@ function normalized(s, doc) {
   swap(CAPTURED.stableId, "did:aw:<stable id>");
   swap(DOMAIN, "acme.aweb.ai");
   swap(AWEB_URL, "<AWEB_URL>");
+  swap(AUTHORITY_TEAM_ID, "<team UUID>");
   const out = JSON.parse(text.replace(/init-\d{8}T\d{6}Z\./g, "init-20261010T120000Z."));
   // The unit's manager and path are the platform's: launchd on macOS, systemd on Linux.
   if (out.result?.custody?.manager) out.result.custody.manager = "<launchd or systemd>";
@@ -43,6 +45,11 @@ const cases = {
   adopted: { prepare: complete, run: (s) => s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }) },
   "already-exists": { prepare: complete, run: (s) => s.run(["create", NAME, "--json"], { OATS_SETTINGS: JSON.stringify({ residents: { [NAME]: s.root } }) }, { unset: ["AWEB_API_KEY", "AWEB_URL"] }) },
   plan: { run: (s) => s.run(["create", NAME, "--plan", "--json"]) },
+  "plan-root": {
+    fake: { version: AW_RESIDENT_ROOT_MIN },
+    prepare: (s) => { s.teamRoot = join(s.deployment, ".aweb-roots", "default"); mkdirSync(join(s.teamRoot, ".aw"), { recursive: true }); },
+    run: (s) => s.run(["create", NAME, "--plan", "--json"], { OATS_SETTINGS: JSON.stringify({ root: s.teamRoot }) }, { unset: ["AWEB_API_KEY", "AWEB_URL"] }),
+  },
   "init-partial": { fake: { init: "partial-404" }, run: (s) => s.run(["create", NAME, "--json"]) },
   "init-quarantined": { fake: { init: "rejected" }, prepare: (s) => { mkdirSync(join(s.root, ".aw"), { recursive: true }); writeFileSync(join(s.root, ".aw", "partial-init.yaml.20261010T000000.000000000Z.1.rejected"), ""); }, run: (s) => s.run(["create", NAME, "--json"]) },
   "nothing-to-continue": { fake: { init: "nothing" }, run: (s) => s.run(["create", NAME, "--json"]) },

@@ -1,28 +1,49 @@
 # `oats aweb resident create`
 
 `oats aweb resident create <name>` makes a GLOBAL resident identity in an
-existing hosted aweb team from the team's dashboard API key. It serves the
-resident with a per-user custody service and records it in the deployment, so
-that grant seats can be spawned on it. It ships in oats.aweb 1.26.0 and needs
-aw 1.36.33 or later (the provider's single floor) and OATS 0.48.0 or later.
+existing hosted aweb team. It serves the resident with a per-user custody
+service and records it in the deployment, so that grant seats can be spawned
+on it. It ships in oats.aweb 1.26.0 and needs aw 1.36.33 or later (the
+provider's single floor) and OATS 0.48.0 or later.
+
+Two routes create the identity:
+
+- **The root route** (oats.aweb 1.33.0, aw 1.36.48 or later): with no API key,
+  the deployment's team root authorizes `aw id create` for the resident. This
+  is the route for a deployment made by `oats aweb setup --username`: the team
+  root is its signup principal, the owner of the namespace's organization. It
+  asks the person for nothing.
+- **The key route:** with `AWEB_API_KEY` set, `aw init --global` runs with the
+  team's dashboard API key.
 
 ## Invocation
 
 ```
+oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]
 AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]
 ```
 
-This is the line the aweb dashboard gives, with the team's key. Run it from
-the OATS deployment directory (or pass `--dir`). Run inside an instance home,
-the kernel hands the command that home's recorded settings instead of the
-deployment's.
+The first line is the root route; the second, the line the aweb dashboard
+gives with the team's key, is the key route. Run it from the OATS deployment
+directory (or pass `--dir`). Run inside an instance home, the kernel hands the
+command that home's recorded settings instead of the deployment's.
 
-- `AWEB_API_KEY` is the team's provisioning key. When it is not in the
-  environment and the command runs on a terminal, it asks for the key without
-  echoing it. With no key and no terminal it refuses at once. No flag takes a
-  key.
-- `AWEB_URL` is the aweb service. `AWID_REGISTRY_URL` is passed on only when
-  it is set (a local stack uses it; hosted aweb does not need it).
+- `AWEB_API_KEY` selects the key route: it is the team's provisioning key.
+  Nothing ever prompts for a key, and no flag takes one. With no key and no
+  team root the command refuses at once, naming both routes
+  (`E_RESIDENT_KEY`).
+- `AWEB_URL` is the aweb service of the key route. `AWID_REGISTRY_URL` is
+  passed on only when it is set (a local stack uses it; hosted aweb does not
+  need it).
+- `--authority-root <dir>` names the team root of the root route, a directory
+  holding the root's `.aw`. Without it the root is
+  `settings.oats.aweb.roots[<team>]` for the resident's team (the team
+  `--team-label` maps to, else the default team), else `settings.oats.aweb.root`.
+  It does not combine with `AWEB_API_KEY`.
+- `--org <slug or id>` names the organization of the root route's
+  `aw id create --org`, as its slug or its UUID, never a domain. Without it the
+  slug is derived from the team root's namespace (see [The root route](#the-root-route)).
+  Like `--authority-root`, it does not combine with `AWEB_API_KEY`.
 - `<name>` is the resident's name, an aweb alias; its address is
   `<namespace>/<name>`.
 - `--root <dir>` is the resident's directory, R. It defaults to
@@ -46,9 +67,9 @@ deployment's.
 | deployment | Finds the deployment and its `oats-local.yaml`. | None. |
 | aw | `aw version` must be 1.36.33 or later. | None. |
 | preflight | Reads R and the custody units; on Linux, `loginctl show-user <user> --property=Linger`; the kernel's `oats --version --json`, and with `--team-label` before an init, its teams; for a complete identity, `aw whoami --json` and `aw custody status --json` in R. | None, local or remote. |
-| key | Takes the key from `AWEB_API_KEY`, or the prompt. | None. |
-| init | Exactly `aw init --global --name <name> --do-not-touch-agents-md --json` in R, once. | aw registers the identity at awid and asks aweb to create it in the key's team. |
-| verify | `aw whoami --json` (adopting only), `aw doctor identity --offline --json` and `aw doctor registry --online --json` in R. | None. |
+| key | Chooses the route: the key route with `AWEB_API_KEY`, else the root route. For the root route: its aw floor, then `aw inbound-mode --json` and, without `--org`, `aw whoami --json` in the team root. | None, local or remote. |
+| init | Key route: exactly `aw init --global --name <name> --do-not-touch-agents-md --json` in R, once. Root route: exactly the `aw id create` of [The root route](#the-root-route), once. | aw registers the identity at awid and asks aweb to create it in the team. |
+| verify | `aw whoami --json` (adopting, and after the root route's create), `aw inbound-mode --json` (root route), `aw doctor identity --offline --json` and `aw doctor registry --online --json` in R. | None. |
 | custody | Writes and loads the custody unit, then waits for `aw custody status --json` to be ready. | A per-user service. |
 | record | Writes `settings.oats.aweb.residents.<name>: R` in `oats-local.yaml`; maps the resident's team under its label, and makes that label the default team where there is none. | Deployment configuration. |
 
@@ -58,10 +79,11 @@ decides from what R holds:
 
 | R holds | Then |
 | --- | --- |
-| nothing, or does not exist | init creates the resident |
-| `.aw/partial-init.yaml` (an earlier init that failed part way) | init continues it: aw reuses the saved key, so the DID is the same |
+| nothing, or does not exist | init creates the resident, by either route |
+| `.aw/partial-init.yaml` (an earlier init that failed part way) | the key route's init continues it: aw reuses the saved key, so the DID is the same. Without a key it is refused (`E_RESIDENT_KEY`): only the key route continues a partial |
 | `.aw/partial-init.yaml.<time>.<n>.rejected` (aw quarantined the key) | init runs once, and aw refuses with its own reconciliation message; there is no rerun |
-| a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded |
+| a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded. With the root route's pending marker, the inbound mode must read back first |
+| only the root route's pending marker (aw refused the create) | the root route creates the resident |
 | a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 
@@ -83,9 +105,56 @@ keys ready, and both floor ops listed: `mail_reply_continuation.v1` and
 `grant_never_ttl.v1`. A custody whose status cannot be read, one that lacks
 the ops and one that is not ready each fail with their own message.
 
+## The root route
+
+With no `AWEB_API_KEY`, the team root T (from `--authority-root`, else the
+settings above) authorizes the create. It holds no API key: aw signs the
+request with T's own identity, which aweb accepts when T owns the organization
+of the namespace (for a deployment made by `oats aweb setup --username`, T is
+the signup principal). The run is exactly:
+
+```
+aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team UUID> --name <name> --inbound-mode contacts-only --json
+```
+
+- Both `--identity-home` and `--owner-identity-home` take the credential
+  directory itself: R's `.aw` (fresh) and T's `.aw`. R is created, empty, first.
+- It runs in T, once, with an environment built from nothing: `PATH`, `HOME`,
+  `AW_NO_UPDATE_CHECK=1`, and `AWID_REGISTRY_URL` when set. No key, and no
+  `AWEB_URL`: aw takes the service from T's workspace binding.
+- `<team UUID>` is the `team_id` of `aw --identity-home T/.aw inbound-mode --json`,
+  aweb Cloud's id for T's team. A canonical `<name>:<namespace>` id there is
+  refused (`E_RESIDENT_VERIFY`, stage `preflight`).
+- `<org>` is `--org`, else the slug of T's namespace: the `domain` of
+  `aw --identity-home T/.aw whoami --json` when it is `<slug>.aweb.ai`, with
+  exactly one label before `.aweb.ai`. Any other namespace (a customer-held
+  domain, say) is refused, asking for `--org` (`E_RESIDENT_VERIFY`, stage
+  `preflight`). aweb still checks that T owns that organization.
+- The requested inbound mode is `contacts-only`. After the create,
+  `aw inbound-mode --json` in R must read back `contacts_only`; anything else,
+  `team_and_contacts` included, is a downgrade and fails `E_RESIDENT_VERIFY`
+  before custody.
+- Its aw floor is 1.36.48, the first aw whose `id create` takes
+  `--owner-identity-home` and keeps `contacts_only` distinct. Below it the
+  route refuses (`E_RESIDENT_AW_FLOOR`, stage `aw`), and so does its plan. The
+  key route keeps the provider's floor.
+- Before the create it writes `R/.oats-resident/root-route-pending`, and
+  removes it once the inbound mode has read back. While it is there, a rerun
+  that finds a complete identity in R reads the mode back before custody and
+  record, so a refused or interrupted read-back is never adopted silently.
+- A refusal is aw's text, as `E_RESIDENT_INIT`. The route keeps no captures:
+  nothing in it is secret. When aw left nothing in R but that marker, the
+  rerun is the same command.
+- Then verify, custody and record run as on the key route.
+
+The root route's tests replay a fake aw whose answers for `id create` and the
+team root's reads are synthetic (`test/helpers/fake-aw-resident.mjs`): no
+released aw had the call when it was built. Its live acceptance is the first
+run against the released aw.
+
 ## The key
 
-- It is read only from `AWEB_API_KEY` or the no-echo prompt.
+- It is read only from `AWEB_API_KEY`. Nothing prompts for it.
 - It is in the environment of one child process only: the init run. That
   environment is built from nothing: `PATH`, `HOME`, `AWEB_URL`,
   `AWEB_API_KEY`, `AW_NO_UPDATE_CHECK=1`, and `AWID_REGISTRY_URL` when set. No
@@ -330,18 +399,18 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 
 | Code | Stage | Meaning |
 | --- | --- | --- |
-| `E_RESIDENT_ARGUMENT` | arguments, preflight | usage, an invalid name or label, or no `AWEB_URL` for an init |
+| `E_RESIDENT_ARGUMENT` | arguments, preflight | usage, an invalid name, label or `--org`, no `AWEB_URL` for a key-route init, or `--authority-root` with `AWEB_API_KEY` |
 | `E_RESIDENT_DEPLOYMENT` | deployment | no readable deployment |
-| `E_RESIDENT_AW_FLOOR` | aw | aw missing or older than 1.36.33 |
-| `E_RESIDENT_ROOT` | preflight | R holds something else, or the name is recorded at another R |
+| `E_RESIDENT_AW_FLOOR` | aw | aw missing or older than 1.36.33; for the root route, older than 1.36.48 |
+| `E_RESIDENT_ROOT` | preflight | R holds something else, R is the team root, or the name is recorded at another R |
 | `E_RESIDENT_UNIT_CONFLICT` | preflight, custody | a custody unit of this name serves another directory, or serves R under another label |
 | `E_RESIDENT_LINGER` | preflight | Linux user without systemd lingering |
 | `E_RESIDENT_CUSTODY_RUNNING` | preflight, custody | a custody already serves R, and not from this command's unit |
 | `E_RESIDENT_RECORD` | preflight, record | `oats-local.yaml` cannot be updated safely |
-| `E_RESIDENT_KEY` | key | no key and no terminal, an empty answer, or a malformed key |
-| `E_RESIDENT_INIT` | init | aw init failed; aw's text |
+| `E_RESIDENT_KEY` | key | no key and no team root (naming both routes), a team root without `.aw`, a partial without a key, or a malformed key |
+| `E_RESIDENT_INIT` | init | aw init or aw id create failed; aw's text |
 | `E_RESIDENT_NOTHING_TO_CONTINUE` | init | aw init failed and left nothing to continue |
-| `E_RESIDENT_VERIFY` | verify | the identity is not the connected global `<name>`, or an offline check is not ok |
+| `E_RESIDENT_VERIFY` | preflight, verify | the team root gives no team UUID or no `<org>.aweb.ai` namespace (preflight); the identity is not the connected global `<name>`, an offline check is not ok, or the root route's inbound mode reads back other than `contacts_only` |
 | `E_RESIDENT_UNIT` | custody | a launchctl or systemctl command failed |
 | `E_RESIDENT_UNIT_UNSUPPORTED` | custody | no unit on this host and custody is not running: the hand step |
 | `E_RESIDENT_CUSTODY` | custody | custody not ready in 30 s: not running, team not ready, or ops missing |
@@ -547,6 +616,7 @@ verification: no init, no new key, custody re-ensured and its unit refreshed if 
     "root": "/srv/deploy/.aweb-residents/carol",
     "state": "create",
     "init": {
+      "route": "key",
       "argv": [
         "aw",
         "init",
@@ -667,7 +737,72 @@ passes through unchanged as an `E_RESIDENT_INIT` failure, like the two above.
 The aw release with that preflight is pending; when the floor moves to it, its
 captured text joins these examples.
 
-No key and no terminal:
+`--plan` on an empty R by the root route, with `settings.oats.aweb.root` at
+`/srv/deploy/.aweb-roots/default`:
+
+<!-- envelope: plan-root -->
+```json
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "outcome": "plan",
+    "name": "carol",
+    "root": "/srv/deploy/.aweb-residents/carol",
+    "state": "create",
+    "init": {
+      "route": "root",
+      "argv": [
+        "aw",
+        "--identity-home",
+        "/srv/deploy/.aweb-residents/carol/.aw",
+        "id",
+        "create",
+        "--owner-identity-home",
+        "/srv/deploy/.aweb-roots/default/.aw",
+        "--org",
+        "acme",
+        "--team-id",
+        "<team UUID>",
+        "--name",
+        "carol",
+        "--inbound-mode",
+        "contacts-only",
+        "--json"
+      ],
+      "cwd": "/srv/deploy/.aweb-roots/default",
+      "authorityRoot": "/srv/deploy/.aweb-roots/default",
+      "authorityFrom": "settings.oats.aweb.root",
+      "env": [
+        "PATH",
+        "HOME",
+        "AW_NO_UPDATE_CHECK"
+      ]
+    },
+    "verify": [
+      "aw whoami --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+      "aw inbound-mode --json, which must read back contacts_only (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+      "aw doctor identity --offline --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+      "aw doctor registry --online --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)"
+    ],
+    "custody": {
+      "manager": "<launchd or systemd>",
+      "label": "ai.aweb.custody.<domain of the returned address>.carol",
+      "path": "<unit path>",
+      "runs": "/usr/local/bin/aw custody serve",
+      "workingDirectory": "/srv/deploy/.aweb-residents/carol",
+      "env": [
+        "PATH",
+        "HOME"
+      ]
+    },
+    "record": "settings.oats.aweb.residents.carol: /srv/deploy/.aweb-residents/carol in /srv/deploy/oats-local.yaml",
+    "teamLabel": "derived from the returned team's name after aw id create, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after aw id create, with the identity, its custody and the residents setting in place, and names the --team-label rerun"
+  }
+}
+```
+
+No key and no team root:
 
 <!-- envelope: key -->
 ```json
@@ -676,7 +811,7 @@ No key and no terminal:
   "ok": false,
   "error": {
     "code": "E_RESIDENT_KEY",
-    "message": "no AWEB_API_KEY in the environment and no terminal to ask for it on: run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create carol",
+    "message": "no AWEB_API_KEY in the environment and no team root to authorize the resident: for the root route, set settings.oats.aweb.root (or settings.oats.aweb.roots[<team>]) to the directory holding the team root's .aw, or pass --authority-root <dir>; for the key route, run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create carol",
     "details": {
       "stage": "key",
       "root": "/srv/deploy/.aweb-residents/carol"
@@ -896,7 +1031,7 @@ What each acceptance item exercises here:
 
 | Item | This command's part |
 | --- | --- |
-| 1. the dashboard line runs verbatim in a fresh deployment | the env form above; the key also works from the prompt |
+| 1. the dashboard line runs verbatim in a fresh deployment | the env form above |
 | 2. custody serves the resident; a seat spawn mints a grant | the custody unit and its readiness check |
 | 3. the seat sends and receives verified mail | none (the seat's grant and custody) |
 | 4. kill during init, rerun, same DID | init continues aw's own `.aw/partial-init.yaml`; OATS has no fault hook (the kill point is below) |
@@ -922,9 +1057,11 @@ the answer.
 | Registration at awid, a forced failure with the key in no output and no file, and a rerun with the same DID | CI: real aw 1.36.33 against aweb's local stack (`test/resident-journey.test.mjs`) |
 | aw's refusal when `AWID_REGISTRY_URL` changes, passed through unchanged | CI: the same journeys |
 | Adopting a complete identity, a real custody unit (systemd --user on Linux, launchd on macOS) until custody is ready, and a pure-verify rerun | CI: the same journeys (macOS when run locally) |
-| The child environment, argv, the prompt, refusals, the unit files, the custody op checks, the envelopes | Unit tests replaying real aw 1.36.33 captures (`test/resident-create.test.mjs`, `test/custody-unit.test.mjs`, `test/resident-docs.test.mjs`) |
+| The child environment, argv, refusals, the unit files, the custody op checks, the envelopes | Unit tests replaying real aw 1.36.33 captures (`test/resident-create.test.mjs`, `test/custody-unit.test.mjs`, `test/resident-docs.test.mjs`) |
 | The hosted init's success answer, the trees a success and a killed run leave, and two hosted refusals that keep the partial (a different `--name`; a name taken since, aweb's 409) | Unit tests replaying aweb's captures from its local Cloud preview (`test/resident-cloud-captures.test.mjs`) |
 | A complete create from the API key | Only the joint E2E: aweb Cloud's `/api/v1/workspaces/init` is not in the OSS stack |
+| The root route's argv, environment, route selection, floor, `--org` derivation, inbound read-back and plan | Unit tests against a fake aw with synthetic answers (`test/resident-root-route.test.mjs`) |
+| A complete create by the root route | Only a live run against the released aw 1.36.48 and aweb Cloud |
 | Continuing a partial to a complete identity | Only the joint E2E |
 | A quarantined (`.rejected`) partial made by aw | No stack: aw makes one only when aweb answers with a different identity than it registered, which no honest server does. Unit tests replay aw's real refusal of a quarantine file |
 | A customer-held (BYOT) team's refusal | Only the joint E2E, once aw's preflight is released |

@@ -39,3 +39,11 @@ export function setup(t, fakeOptions = {}, { localYaml = "schemaVersion: 2\nwork
   return { base, deployment, home, root, env, fake, kernel, run, unitPath, localYaml: () => readFileSync(join(deployment, "oats-local.yaml"), "utf8") };
 }
 export const initCalls = (fake) => fake.calls().filter((c) => c.cmd === "aw" && c.argv[0] === "init");
+/** A team root for the root route: a directory holding a `.aw`, as `oats aweb
+ *  setup` leaves it (its contents are the fake aw's business). */
+export function teamRoot(s, name = "team-root") {
+  const dir = join(s.base, name);
+  mkdirSync(join(dir, ".aw"), { recursive: true });
+  return dir;
+}
+export const createCalls = (fake) => fake.calls().filter((c) => c.cmd === "aw" && c.argv.includes("id") && c.argv.includes("create"));

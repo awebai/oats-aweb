@@ -1,19 +1,23 @@
 // `oats aweb resident create <name>`: provisions a GLOBAL resident identity in
-// an existing hosted team from the dashboard's API key, serves it with a
-// per-user custody unit, and records it as settings.oats.aweb.residents.<name>.
+// an existing hosted team, serves it with a per-user custody unit, and records
+// it as settings.oats.aweb.residents.<name>.
 //
-// The key is read from AWEB_API_KEY, or, with no key in the environment and a
-// terminal, from a prompt that does not echo. It goes into the environment of
-// one child only, `aw init`, whose environment is built from nothing, and it is
-// scrubbed from everything written or printed. No flag takes a key.
+// Two routes create the identity. The key route runs `aw init --global` with
+// the dashboard's API key, read from AWEB_API_KEY only: it goes into the
+// environment of that one child, built from nothing, and is scrubbed from
+// everything written or printed. No flag takes a key and nothing prompts for
+// one. Without a key, the root route runs `aw id create` authorized by the
+// deployment's team root (--owner-identity-home), with no key at all.
 //
 // Stages, each with its own error codes: arguments, deployment, aw, preflight
-// (no remote effect), key, init (one run, no retry), verify, custody, record.
+// (no remote effect), key (the route), init (one run, no retry), verify,
+// custody, record.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join, resolve } from "node:path";
-import { awFloorMessage, onPath } from "./binding-wire.mjs";
+import { awFloorObservation, onPath } from "./binding-wire.mjs";
+import { AW_RESIDENT_ROOT_MIN, versionAtLeast } from "./aw-floor.mjs";
 import { parseAwJson } from "./grant-custody.mjs";
 import { assertAwebSettingRecordable, recordAwebSetting } from "./local-settings.mjs";
 import { querySelectedKernel } from "./session-readiness.mjs";
@@ -21,16 +25,30 @@ import { selectedTeamKernel } from "./setup-team-default.mjs";
 import { normalizeAwebTeamName, selectedDeployment } from "./team-roots.mjs";
 import { conflictMessage, custodyLabel, ensureCustodyUnit, foreignUnitMessage, handStep, lingerProblem, ownUnitServes, residentUnits, retireUnitStep, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
 
-export const RESIDENT_USAGE = "usage: AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]";
+export const RESIDENT_USAGE = "usage: [AWEB_API_KEY=<key> AWEB_URL=<url>] oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]";
 const ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const ALIAS_RULE = "aweb aliases must be 1-64 characters, start with a letter or digit, and then contain only letters, digits, '-' or '_'";
 const LABEL_RE = /^[a-z0-9][a-z0-9._-]*$/;
 const INIT_ARGS = (name) => ["init", "--global", "--name", name, "--do-not-touch-agents-md", "--json"];
+/** The inbound mode the root route requests, and the value aw reads back for it. */
+const RESIDENT_INBOUND = { flag: "contacts-only", wire: "contacts_only" };
+/** aw's --identity-home and --owner-identity-home take the credential
+ *  directory itself, the `.aw` of a root. */
+const credentialHome = (root) => join(root, ".aw");
+const CREATE_ARGS = ({ resident, owner, org, teamId, name }) => ["--identity-home", credentialHome(resident), "id", "create", "--owner-identity-home", credentialHome(owner), "--org", org, "--team-id", teamId, "--name", name, "--inbound-mode", RESIDENT_INBOUND.flag, "--json"];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ORG_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}$/i;
+/** The managed namespace suffix: `<org>.aweb.ai` belongs to organization <org>. */
+const MANAGED_SUFFIX = ".aweb.ai";
 const INIT_TIMEOUT_MS = 300000;
 const MAX_KEY_LENGTH = 4096; // aw's own limit for a workspace API key
 /** The files a complete identity has in its .aw (aw init's certificate connect). */
 const COMPLETE = ["identity.yaml", "signing.key", "workspace.yaml"];
 const CAPTURE_DIR = ".oats-resident";
+/** Written before the root route's create, removed once its inbound mode has
+ *  read back: while it is there, every adopt reads the mode back first. */
+const PENDING = "root-route-pending";
+const pendingMarker = (root) => join(root, CAPTURE_DIR, PENDING);
 
 const failure = (code, stage, message, details = {}) => Object.assign(new Error(message), { code, stage, details });
 const hostname = (s) => typeof s === "string" && s.length <= 253 && s.split(".").every((l) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(l));
@@ -51,15 +69,18 @@ export function parseResidentArgs(argv) {
     seen.add(flag);
     if (flag === "--plan" || flag === "--json") { if (inline.length) throw usage(); opts[flag.slice(2)] = true; continue; }
     // --soul is the kernel's operator dispatch, forwarded to every command.
-    if (!["--dir", "--root", "--team-label", "--soul"].includes(flag)) throw usage();
+    if (!["--dir", "--root", "--authority-root", "--org", "--team-label", "--soul"].includes(flag)) throw usage();
     const value = inline.length ? inline.join("=") : rest[++i];
     if (!value || value.startsWith("--")) throw usage();
     if (flag === "--dir") opts.dir = value;
     if (flag === "--root") opts.root = value;
     if (flag === "--team-label") opts.teamLabel = value;
+    if (flag === "--authority-root") opts.authorityRoot = value;
+    if (flag === "--org") opts.org = value;
   }
   if (opts.name === undefined) throw usage();
   if (!ALIAS_RE.test(opts.name)) throw failure("E_RESIDENT_ARGUMENT", "arguments", `invalid resident name ${JSON.stringify(opts.name)}: ${ALIAS_RULE}`);
+  if (opts.org !== undefined && !ORG_SLUG_RE.test(opts.org) && !UUID_RE.test(opts.org)) throw failure("E_RESIDENT_ARGUMENT", "arguments", `invalid --org ${JSON.stringify(opts.org)}: an organization is its slug (letters, digits and '-', starting with a letter or digit) or its UUID, never a domain`);
   if (opts.teamLabel !== undefined && !LABEL_RE.test(opts.teamLabel)) throw failure("E_RESIDENT_ARGUMENT", "arguments", `invalid --team-label ${JSON.stringify(opts.teamLabel)}: a team label is lowercase letters, digits, '.', '_' or '-', starting with a letter or digit`);
   return opts;
 }
@@ -72,6 +93,9 @@ export function rootState(root) {
   if (!statSync(root).isDirectory()) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is not a directory`);
   const entries = readdirSync(root).sort();
   if (!entries.length) return { state: "create" };
+  const pending = existsSync(pendingMarker(root));
+  // A root-route create that aw refused leaves only its marker.
+  if (pending && entries.length === 1 && readdirSync(join(root, CAPTURE_DIR)).length === 1) return { state: "create", pending };
   const dotAw = join(root, ".aw");
   const inAw = existsSync(dotAw) && statSync(dotAw).isDirectory() ? readdirSync(dotAw) : [];
   const rejected = inAw.filter((n) => n.startsWith("partial-init.yaml.") && n.endsWith(".rejected")).sort();
@@ -79,49 +103,49 @@ export function rootState(root) {
   const complete = COMPLETE.every((n) => inAw.includes(n));
   const others = entries.filter((n) => n !== ".aw" && n !== CAPTURE_DIR);
   if (rejected.length) return { state: "rejected", rejected: join(dotAw, rejected[0]) };
-  if (complete && !partial) return { state: "adopt" };
+  if (complete && !partial) return { state: "adopt", pending };
   if (partial && !complete && !others.length) return { state: "continue" };
   throw failure("E_RESIDENT_ROOT", "preflight", `${root} is neither empty, a partial aw init nor a complete global identity: it contains ${entries.join(", ")}; never init into it: choose another --root or empty it yourself`);
 }
 const needsInit = (state) => state === "create" || state === "continue" || state === "rejected";
 
-/** The key, from AWEB_API_KEY or a prompt that does not echo. */
-async function readKey({ env, stdin, stderr, name }) {
-  const fromEnv = typeof env.AWEB_API_KEY === "string" ? env.AWEB_API_KEY.trim() : "";
-  const key = fromEnv || (stdin.isTTY && stderr.isTTY ? await promptHidden(stdin, stderr) : undefined);
-  if (key === undefined) throw failure("E_RESIDENT_KEY", "key", `no AWEB_API_KEY in the environment and no terminal to ask for it on: run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
-  if (!key) throw failure("E_RESIDENT_KEY", "key", "no API key was entered");
+const KEY_ROUTE = (name) => `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`;
+/** The key from AWEB_API_KEY, or undefined. Nothing asks for one. */
+function envKey(env) {
+  const key = typeof env.AWEB_API_KEY === "string" ? env.AWEB_API_KEY.trim() : "";
+  if (!key) return undefined;
   if (key.length > MAX_KEY_LENGTH || /[\x00-\x1f\x7f]/.test(key)) throw failure("E_RESIDENT_KEY", "key", `the API key must be one line of at most ${MAX_KEY_LENGTH} characters`);
   return key;
 }
-/** Reads one line from the terminal in raw mode, echoing nothing. */
-function promptHidden(stdin, stderr) {
-  return new Promise((done, reject) => {
-    let value = "";
-    const finish = (error) => {
-      stdin.removeListener("data", onData);
-      stdin.setRawMode(false);
-      stdin.pause();
-      stderr.write("\n");
-      // Terminals in bracketed-paste mode wrap a paste in these markers.
-      if (error) reject(error); else done(value.replace(/\x1b\[20[01]~/g, "").trim());
-    };
-    const onData = (chunk) => {
-      for (const ch of String(chunk)) {
-        if (ch === "\r" || ch === "\n") return finish();
-        if (ch === "\u0003") return finish(failure("E_RESIDENT_KEY", "key", "cancelled"));
-        if (ch === "\u0004") { if (!value) return finish(failure("E_RESIDENT_KEY", "key", "no API key was entered")); continue; }
-        if (ch === "\u007f" || ch === "\b") { value = value.slice(0, -1); continue; }
-        value += ch;
-      }
-    };
-    // Echo goes off before the prompt shows, so nothing typed after it is echoed.
-    stdin.setEncoding("utf8");
-    stdin.setRawMode(true);
-    stdin.on("data", onData);
-    stdin.resume();
-    stderr.write("aweb API key (input hidden): ");
-  });
+
+/** The team root that authorizes the root route: --authority-root, else the
+ *  deployment's root for the resident's team (the team of --team-label, else
+ *  the default team), else its root. Fails E_RESIDENT_KEY, naming both routes,
+ *  when there is none. */
+function authorityRoot(opts, settings, team) {
+  const roots = object(settings.roots) ? settings.roots : {};
+  const [raw, from] = opts.authorityRoot !== undefined ? [opts.authorityRoot, "--authority-root"]
+    : team && typeof roots[team] === "string" ? [roots[team], `settings.oats.aweb.roots[${JSON.stringify(team)}]`]
+    : typeof settings.root === "string" ? [settings.root, "settings.oats.aweb.root"] : [];
+  if (raw === undefined) throw failure("E_RESIDENT_KEY", "key", `no AWEB_API_KEY in the environment and no team root to authorize the resident: for the root route, set settings.oats.aweb.root (or settings.oats.aweb.roots[<team>]) to the directory holding the team root's .aw, or pass --authority-root <dir>; for the key route, run ${KEY_ROUTE(opts.name)}`);
+  const root = resolve(raw);
+  const home = credentialHome(root);
+  if (!existsSync(home) || !statSync(home).isDirectory()) throw failure("E_RESIDENT_KEY", "key", `no AWEB_API_KEY in the environment, and ${from} (${root}) holds no .aw to authorize the resident: point it at the team root, pass --authority-root <dir>, or run ${KEY_ROUTE(opts.name)}`);
+  return { root, from };
+}
+
+/** What `aw id create` needs from the team root: its team's Cloud UUID (the
+ *  `team_id` of `inbound-mode`, never the canonical id) and the organization,
+ *  --org or the slug of the root's `<org>.aweb.ai` namespace. */
+function authorityFacts(owner, org, readJson) {
+  const read = (cmd) => readJson(["--identity-home", credentialHome(owner), cmd, "--json"], `aw ${cmd} in the team root ${owner}`, "preflight", owner);
+  const inbound = read("inbound-mode");
+  if (!object(inbound) || typeof inbound.team_id !== "string" || !UUID_RE.test(inbound.team_id)) throw failure("E_RESIDENT_VERIFY", "preflight", `aw inbound-mode in the team root ${owner} answered team_id ${JSON.stringify(inbound?.team_id ?? null)}, not the team's UUID`);
+  if (org !== undefined) return { teamId: inbound.team_id, org };
+  const domain = read("whoami")?.domain;
+  const slug = typeof domain === "string" && domain.endsWith(MANAGED_SUFFIX) ? domain.slice(0, -MANAGED_SUFFIX.length) : "";
+  if (!ORG_SLUG_RE.test(slug)) throw failure("E_RESIDENT_VERIFY", "preflight", `aw whoami in the team root ${owner} answered domain ${JSON.stringify(domain ?? null)}, not <org>${MANAGED_SUFFIX}, so the organization cannot be derived from it: pass --org <slug or id>`);
+  return { teamId: inbound.team_id, org: slug };
 }
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
@@ -287,7 +311,7 @@ function recordTeam(deployment, env, opts, team, { root, custody, localYaml }) {
 }
 
 /** The whole command. Returns the result document; throws a staged failure. */
-export async function createResident(opts, { env, stdin, stderr, platform }) {
+export async function createResident(opts, { env, platform }) {
   const { name } = opts;
   let deployment;
   try { deployment = selectedDeployment(env, opts.dir); }
@@ -307,26 +331,28 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     // Every aw child but init runs with PATH and HOME, and the init's registry
     // when one is set: no key, no identity selector.
     const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
-    const floor = await awFloorMessage({ env: readEnv });
+    const { message: floor, version: awVersion } = await awFloorObservation({ env: readEnv });
     if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
     const aw = onPath("aw", env);
     if (!aw) throw failure("E_RESIDENT_AW_FLOOR", "aw", "aw is not on PATH");
-    const read = (args) => {
-      const r = spawnSync(aw, args, { cwd: root, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
+    const read = (args, cwd = root) => {
+      const r = spawnSync(aw, args, { cwd, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
       if (r.status !== 0) throw new Error(`aw ${args.slice(0, 2).join(" ")} ${r.error ? `failed: ${r.error.code}` : `exited ${r.status}`}${r.stderr ? `: ${String(r.stderr).trim().slice(0, 300)}` : ""}`);
       return r.stdout;
     };
-    const readJson = (args, what, stage = "verify") => {
-      try { return parseAwJson(read(args), what); }
+    const readJson = (args, what, stage = "verify", cwd = root) => {
+      try { return parseAwJson(read(args, cwd), what); }
       catch (e) { throw failure("E_RESIDENT_VERIFY", stage, `${what}: ${e.message}`); }
     };
 
     // ---- preflight: nothing here has a remote effect
     const where = { platform, uid: process.getuid?.(), home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
-    const { state, rejected } = rootState(root);
+    let apiKey = envKey(env);
+    const rootFlag = opts.authorityRoot !== undefined ? "--authority-root" : opts.org !== undefined ? "--org" : undefined;
+    if (rootFlag && apiKey) throw failure("E_RESIDENT_ARGUMENT", "preflight", `${rootFlag} belongs to the root route, and AWEB_API_KEY selects the key route: unset AWEB_API_KEY or drop ${rootFlag}`);
+    if (opts.authorityRoot !== undefined && samePath(resolve(opts.authorityRoot), root)) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is the team root that authorizes it: choose another --root for the resident`);
+    const { state, rejected, pending } = rootState(root);
     const awebUrl = typeof env.AWEB_URL === "string" && env.AWEB_URL.trim() ? env.AWEB_URL : undefined;
-    // A plan has no remote effect: it names the URL the init would use.
-    if (needsInit(state) && !awebUrl && !opts.plan) throw failure("E_RESIDENT_ARGUMENT", "preflight", `AWEB_URL is not set: copy the dashboard line, AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
     const manager = unitManager(platform);
     if (manager) {
       const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
@@ -337,7 +363,23 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     try { assertAwebSettingRecordable("residents", name, root, { start: deployment }); }
     catch (e) { throw failure("E_RESIDENT_RECORD", "preflight", e.message); }
     preflightKernel(deployment, env);
-    if (opts.teamLabel && needsInit(state)) preflightTeamLabel(deployment, env, opts.teamLabel);
+
+    // The route: the key route with AWEB_API_KEY, else the root route, whose
+    // team root authorizes the create. Only the key route continues aw init's partial.
+    let route;
+    if (needsInit(state) && apiKey) route = { kind: "key" };
+    else if (needsInit(state)) {
+      if (state !== "create") throw failure("E_RESIDENT_KEY", "key", `${root} holds a partial aw init, which only the key route continues: run ${KEY_ROUTE(name)}, or choose another --root for the root route`);
+      const teams = teamKernel(deployment, env, "preflight").read();
+      const team = opts.teamLabel !== undefined ? teams.teams.find((r) => r.label === opts.teamLabel)?.team : teams.defaultTeam?.team;
+      const owner = authorityRoot(opts, settings, team);
+      if (!versionAtLeast(awVersion, AW_RESIDENT_ROOT_MIN)) throw failure("E_RESIDENT_AW_FLOOR", "aw", `aw ${awVersion} is older than ${AW_RESIDENT_ROOT_MIN}, the first aw whose id create takes --owner-identity-home: creating a resident without an API key needs it; upgrade with \`npm i -g @awebai/aw@latest\``);
+      route = { kind: "root", owner: owner.root, from: owner.from, ...authorityFacts(owner.root, opts.org, readJson) };
+    }
+    // A plan has no remote effect: it names the URL the init would use.
+    if (route?.kind === "key" && !awebUrl && !opts.plan) throw failure("E_RESIDENT_ARGUMENT", "preflight", `AWEB_URL is not set: copy the dashboard line, ${KEY_ROUTE(name)}`);
+    // On the root route the label's team is known before the create: it selects the team root.
+    if (opts.teamLabel && route?.kind === "key") preflightTeamLabel(deployment, env, opts.teamLabel);
     /** Why the custody answering in R is not this command's unit, or nothing
      *  when our unit's process is what serves it. */
     const notOurCustody = async (label, status) => {
@@ -378,26 +420,37 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     }
 
     if (opts.plan) {
+      const created = route?.kind === "root" ? "aw id create" : "aw init";
       const label = known ? custodyLabel(known.address, name) : `ai.aweb.custody.<domain of the returned address>.${name}`;
       return {
         outcome: "plan", name, root, state,
         ...(rejected ? { rejected } : {}),
-        init: needsInit(state) ? { argv: ["aw", ...INIT_ARGS(name)], cwd: root, awebUrl: awebUrl ?? "AWEB_URL from your dashboard line", env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] } : null,
-        verify: ["aw whoami --json", "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
+        init: route?.kind === "key" ? { route: "key", argv: ["aw", ...INIT_ARGS(name)], cwd: root, awebUrl: awebUrl ?? "AWEB_URL from your dashboard line", env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] }
+          : route?.kind === "root" ? { route: "root", argv: ["aw", ...CREATE_ARGS({ resident: root, owner: route.owner, org: route.org, teamId: route.teamId, name })], cwd: route.owner, authorityRoot: route.owner, authorityFrom: route.from, env: Object.keys(readEnv) }
+          : null,
+        verify: ["aw whoami --json", ...(route?.kind === "root" || pending ? [`aw inbound-mode --json, which must read back ${RESIDENT_INBOUND.wire}`] : []), "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
         custody: manager
           ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
           : { manager: null, handStep: handStep(root, name) },
         record: `settings.oats.aweb.residents.${name}: ${root} in ${localYaml}`,
         teamLabel: opts.teamLabel
           ? `${opts.teamLabel} → the returned team, with oats teams add --no-default where the workspace allows local teams; it becomes the default team only where there is none`
-          : "derived from the returned team's name after aw init, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after aw init, with the identity, its custody and the residents setting in place, and names the --team-label rerun",
+          : `derived from the returned team's name after ${created}, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after ${created}, with the identity, its custody and the residents setting in place, and names the --team-label rerun`,
       };
     }
 
-    // ---- key and init
+    /** The root route's mode must read back as requested before custody or
+     *  record; aw reads it back too, and a different answer is a downgrade. */
+    const verifyInbound = () => {
+      const mode = readJson(["inbound-mode", "--json"], "aw inbound-mode")?.inbound_mode;
+      if (mode !== RESIDENT_INBOUND.wire) throw failure("E_RESIDENT_VERIFY", "verify", `aw inbound-mode answered inbound_mode ${JSON.stringify(mode ?? null)}, not ${RESIDENT_INBOUND.wire} (requested with --inbound-mode ${RESIDENT_INBOUND.flag})`);
+      rmSync(pendingMarker(root), { force: true });
+    };
+    // ---- init: aw init with the key, or aw id create authorized by the team root
     let identity;
-    if (needsInit(state)) {
-      let key = await readKey({ env, stdin, stderr, name });
+    if (route?.kind === "key") {
+      let key = apiKey;
+      apiKey = undefined;
       let scrub = scrubber([key, env.AWEB_API_KEY]);
       const childEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AWEB_URL: env.AWEB_URL, AWEB_API_KEY: key, AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
       mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -423,8 +476,21 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       try { answer = parseAwJson(stdoutText, "aw init"); }
       catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
       identity = checkInitAnswer(answer, name);
+    } else if (route?.kind === "root") {
+      mkdirSync(join(root, CAPTURE_DIR), { recursive: true, mode: 0o700 });
+      writeFileSync(pendingMarker(root), `requested inbound mode ${RESIDENT_INBOUND.wire}\n`, { mode: 0o600 });
+      const r = spawnSync(aw, CREATE_ARGS({ resident: root, owner: route.owner, org: route.org, teamId: route.teamId, name }), { cwd: route.owner, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: INIT_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
+      if (r.error || r.status !== 0) {
+        const exit = r.error ? `failed: ${r.error.code || r.error.message}` : r.signal ? `signal ${r.signal}` : `exit ${r.status}`;
+        throw failure("E_RESIDENT_INIT", "init", String(r.stderr || "").trim() || String(r.stdout || "").trim() || `aw id create ${exit}`);
+      }
+      try { parseAwJson(r.stdout, "aw id create"); }
+      catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message); }
+      identity = expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami"), name, []);
+      verifyInbound();
     } else {
       identity = known;
+      if (pending) verifyInbound();
     }
 
     // ---- verify, with the key absent
@@ -488,7 +554,8 @@ function renderText(r) {
   if (r.outcome === "plan") {
     const lines = [`Plan for resident ${r.name} in ${r.root} (${r.state}). Nothing was changed.`];
     if (r.rejected) lines.push(`  ${r.rejected} is quarantined signing material: init runs once and aw refuses it with its own reconciliation message.`);
-    if (r.init) lines.push(`  init:    ${r.init.argv.join(" ")}  (in ${r.init.cwd}, against ${r.init.awebUrl}; environment ${r.init.env.join(", ")} only)`);
+    if (r.init?.route === "key") lines.push(`  init:    ${r.init.argv.join(" ")}  (in ${r.init.cwd}, against ${r.init.awebUrl}; environment ${r.init.env.join(", ")} only)`);
+    if (r.init?.route === "root") lines.push(`  create:  ${r.init.argv.join(" ")}  (in ${r.init.cwd}, authorized by the team root ${r.init.authorityRoot} from ${r.init.authorityFrom}; environment ${r.init.env.join(", ")} only)`);
     for (const v of r.verify) lines.push(`  verify:  ${v}`);
     lines.push(r.custody.manager ? `  custody: ${r.custody.manager} unit ${r.custody.label} at ${r.custody.path}: ${r.custody.runs} in ${r.custody.workingDirectory}, environment PATH and HOME only` : `  custody: ${r.custody.handStep}`);
     lines.push(`  record:  ${r.record}`);
@@ -515,12 +582,12 @@ function renderText(r) {
 /** The command's entrypoint: one JSON-v1 envelope with --json, else text.
  *  Exit 2 for a usage error, 1 for any other failure. Everything printed is
  *  scrubbed of AWEB_API_KEY's value as a last line of defence. */
-export async function residentMain(argv, { env = process.env, stdin = process.stdin, stderr = process.stderr, platform = process.platform } = {}) {
+export async function residentMain(argv, { env = process.env, platform = process.platform } = {}) {
   const json = argv.includes("--json");
   const scrub = scrubber([env.AWEB_API_KEY, String(env.AWEB_API_KEY ?? "").trim()]);
   const print = (fd, text) => writeSync(fd, scrub(text));
   try {
-    const result = await createResident(parseResidentArgs(argv), { env, stdin, stderr, platform });
+    const result = await createResident(parseResidentArgs(argv), { env, platform });
     print(1, json ? JSON.stringify({ schemaVersion: 1, ok: true, result }) + "\n" : renderText(result));
     return 0;
   } catch (e) {
