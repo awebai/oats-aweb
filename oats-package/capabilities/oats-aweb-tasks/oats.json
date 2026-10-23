@@ -18,6 +18,7 @@
   ],
   "inject": "injects/aweb-tasks.md",
   "hooks": {
-    "spawn": "bin/oats-aweb-tasks.mjs spawn"
+    "spawn": "bin/oats-aweb-tasks.mjs spawn",
+    "upgrade": "bin/oats-aweb-tasks.mjs upgrade"
   }
 }

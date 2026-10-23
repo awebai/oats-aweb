@@ -42,6 +42,9 @@ Requires OATS >=0.68.0. The aw floor and pin are unchanged.
   existing grant and expiry remain.
 - Refresh the capability manifest schema from OATS `593255d9`, including the
   upgrade event.
+- Add stateless upgrade adoption for `oats.aweb-tasks`, so a stopped home
+  composing messaging and tasks can move together. Plan always adopts;
+  apply preserves supplied metadata without home reads or aw calls.
 
 ## 1.31.0 — 2026-10-22
 

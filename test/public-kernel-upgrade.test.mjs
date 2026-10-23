@@ -17,10 +17,11 @@ if (process.env.OATS_PREVIEW_KERNEL_REQUIRED === "1") assert.ok(kernel, "require
 const json = path => JSON.parse(readFileSync(path, "utf8"));
 const value = (args, flag) => args.find(arg => arg.startsWith(flag + "="))?.slice(flag.length + 1) ?? args[args.indexOf(flag) + 1];
 
-test("a real stopped 1.17.1 grant seat upgrades and starts with registration before old-grant revoke", {
-  skip: !kernel && "requires the pinned public kernel checkout and local v1.17.1 tag",
+for (const version of ["1.17.1", "1.31.0"]) test(`a real stopped ${version} grant seat upgrades and starts with registration before old-grant revoke`, {
+  skip: !kernel && "requires the pinned public kernel checkout and local historical tags",
   timeout: 180000,
 }, t => {
+  const capabilities = version === "1.31.0" ? ["oats.aweb", "oats.aweb-tasks"] : ["oats.aweb"];
   assert.equal(execFileSync("git", ["-C", kernel, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), process.env.OATS_KERNEL_COMMIT || PINNED);
   const base = realpathSync(mkdtempSync(join(tmpdir(), "aweb-upgrade-acceptance-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
@@ -48,45 +49,53 @@ test("a real stopped 1.17.1 grant seat upgrades and starts with registration bef
   };
   const source = join(base, "package-source"); mkdirSync(source);
   // Read the historical tag from this checkout; never fetch in a test.
-  const archive = execFileSync("git", ["-C", ROOT, "archive", "v1.17.1", "oats-package"], { env: scratch.env, maxBuffer: 16 * 1024 * 1024 });
+  const archive = execFileSync("git", ["-C", ROOT, "archive", `v${version}`, "oats-package"], { env: scratch.env, maxBuffer: 16 * 1024 * 1024 });
   execFileSync("tar", ["-x", "-C", source], { env: scratch.env, input: archive });
-  git(source, "init", "-q", "-b", "main"); git(source, "add", "."); git(source, "commit", "-qm", "v1.17.1 package bytes"); git(source, "tag", "v1.17.1");
+  git(source, "init", "-q", "-b", "main"); git(source, "add", "."); git(source, "commit", "-qm", `v${version} package bytes`); git(source, "tag", `v${version}`);
   const oldCommit = git(source, "rev-parse", "HEAD");
   const catalog = join(base, "catalog.json");
-  writeFileSync(catalog, JSON.stringify({ packages: { "oats.aweb": { url: source, ref: "v1.17.1", path: "oats-package" } } }));
+  writeFileSync(catalog, JSON.stringify({ packages: { "oats.aweb": { url: source, ref: `v${version}`, path: "oats-package" } } }));
   scratch.env.OATS_PACKAGE_CATALOG = catalog;
   const workspaceFile = join(scratch.workspace, "oats-workspace.yaml");
-  appendFileSync(workspaceFile, "packages:\n  oats.aweb: v1.17.1\n");
-  appendFileSync(join(scratch.workspace, "souls/plain/soul.yaml"), "  oats.aweb: { from: package }\nmessaging:\n  delivery: session\n  identity:\n    mode: global\n    resident: merlin\n    renew: launch\n");
+  appendFileSync(workspaceFile, `packages:\n  oats.aweb: v${version}\n`);
+  appendFileSync(join(scratch.workspace, "souls/plain/soul.yaml"), capabilities.map(name => `  ${name}: { from: package }\n`).join("") + "messaging:\n  delivery: session\n  identity:\n    mode: global\n    resident: merlin\n    renew: launch\n");
   git(scratch.workspace, "add", "."); git(scratch.workspace, "commit", "-qm", "declare historical grant seat");
   run(["sync"]);
   const spawned = run(["spawn", "plain", "--name", "upgrade-seat", "--launch-config", "fake"]);
   assert.equal(spawned.launched, true);
   const home = spawned.home, record = () => json(join(home, "instance.json"));
-  assert.equal(json(join(home, ".oats/modules/oats.aweb/oats.json")).version, "1.17.1");
-  assert.equal(record().modules["oats.aweb"].from.version, "1.17.1");
-  assert.equal(record().modules["oats.aweb"].commit, oldCommit);
+  for (const name of capabilities) {
+    assert.equal(json(join(home, '.oats/modules', name, 'oats.json')).version, version);
+    assert.equal(record().modules[name].from.version, version);
+    assert.equal(record().modules[name].commit, oldCommit);
+  }
+  const beforeTasks = record().capabilityMeta['oats.aweb-tasks'] ?? {};
   const before = record().capabilityMeta["oats.aweb"];
   assert.equal(before.identity.mode, "global");
   assert.equal(before.delivery, "session");
   assert.ok(before.identity.grant.id);
-  t.diagnostic("real kernel spawned the v1.17.1 global-grant session seat with the fake harness");
+  t.diagnostic(`real kernel spawned v${version} with ${capabilities.join(" and ")} using the fake harness`);
 
   rmSync(join(source, "oats-package"), { recursive: true });
   cpSync(join(ROOT, "oats-package"), join(source, "oats-package"), { recursive: true });
   git(source, "add", "-A"); git(source, "commit", "-qm", "current branch package bytes"); git(source, "tag", "v1.32.0");
-  writeFileSync(workspaceFile, readFileSync(workspaceFile, "utf8").replace("oats.aweb: v1.17.1", "oats.aweb: v1.32.0"));
+  writeFileSync(workspaceFile, readFileSync(workspaceFile, "utf8").replace(`oats.aweb: v${version}`, "oats.aweb: v1.32.0"));
   git(scratch.workspace, "add", "."); git(scratch.workspace, "commit", "-qm", "select upgrade destination");
   run(["sync"]);
   assert.equal(json(join(scratch.deployment, "oats-lock.json")).packages["oats.aweb"].version, "1.32.0");
   scratch.stop("upgrade-seat");
+  const callsBeforeUpgrade = readFileSync(join(base, "aw.log"), "utf8");
   const plan = run(["instance", "upgrade", "upgrade-seat", "--plan"]);
   run(["instance", "upgrade", "upgrade-seat", "--plan-revision", plan.planRevision, "--idempotency-key", "historical-grant-upgrade"]);
   const upgraded = record();
-  assert.equal(json(join(home, ".oats/modules/oats.aweb/oats.json")).version, "1.32.0");
-  assert.equal(upgraded.modules["oats.aweb"].from.version, "1.32.0");
-  assert.equal(upgraded.modules["oats.aweb"].previous.from.version, "1.17.1");
-  assert.equal(upgraded.modules["oats.aweb"].previous.commit, oldCommit);
+  for (const name of capabilities) {
+    assert.equal(json(join(home, '.oats/modules', name, 'oats.json')).version, '1.32.0');
+    assert.equal(upgraded.modules[name].from.version, '1.32.0');
+    assert.equal(upgraded.modules[name].previous.from.version, version);
+    assert.equal(upgraded.modules[name].previous.commit, oldCommit);
+  }
+  if (capabilities.includes('oats.aweb-tasks')) assert.deepEqual(upgraded.capabilityMeta['oats.aweb-tasks'], beforeTasks);
+  assert.equal(readFileSync(join(base, 'aw.log'), 'utf8'), callsBeforeUpgrade, 'neither upgrade hook calls aw');
   assert.deepEqual(upgraded.capabilityMeta["oats.aweb"], { ...before, delivery: "session", runtime: "pi" });
   const events = readFileSync(join(home, ".oats-events.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
   assert.equal(events.filter(event => event.kind === "modules-upgraded").length, 1);
