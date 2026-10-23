@@ -45,8 +45,9 @@ test('package exports messaging and tasks at 1.32.0 with the same floors', () =>
   assert.equal(tasks.requires[0].command, 'aw');
   assert.match(tasks.requires[0].why, /aw >= 1\.36\.33/);
   assert.match(messaging.requires.find(row => row.command === 'aw').why, /aw >= 1\.36\.33/);
-  assert.deepEqual(Object.keys(tasks.hooks), ['spawn']);
+  assert.deepEqual(Object.keys(tasks.hooks), ['spawn', 'upgrade']);
   assert.equal(typeof tasks.hooks.spawn, 'string');
+  assert.equal(tasks.hooks.upgrade, 'bin/oats-aweb-tasks.mjs upgrade');
   assert.equal(tasks.binding, undefined, 'readiness does not qualify bound preparation');
   assert.equal(tasks.environment, undefined, 'tasks reuse messaging identity without setting environment');
 });

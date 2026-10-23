@@ -25,6 +25,11 @@ unsupported harness keeps the recorded runtime and warns. Recorded
 `claudeChannelMode` stays unchanged until a launch can prove it. A plan that
 cannot recognize the metadata names the respawn remedy.
 
+The tasks capability also declares stateless adoption: every plan adopts and
+apply passes its supplied metadata through, defaulting absent or empty metadata
+to `{}`, without home reads or `aw` calls. A seat composing messaging and tasks
+moves both modules together.
+
 ## Tasks
 
 One `oats.aweb` package release supplies two independently selected capabilities:
@@ -1197,8 +1202,9 @@ and temporary homes. Run `npm run validate` for the manifests and schema.
 CI also requires `test/public-kernel-upgrade.test.mjs` against the kernel at
 `OATS_KERNEL_COMMIT`, with `OATS_PREVIEW_KERNEL_ROOT` selecting its checkout
 and `OATS_PREVIEW_KERNEL_REQUIRED=1`. It uses the scratch-deployment helper,
-fake aw and a sleeping harness: acquire the local v1.17.1 package bytes,
-spawn a global-grant session seat, re-lock to this branch, stop, plan/apply
+fake aw and a sleeping harness: acquire local v1.17.1 package bytes for a
+messaging seat and v1.31.0 bytes for a seat composing messaging and tasks,
+spawn each global-grant session seat, re-lock to this branch, stop, plan/apply
 upgrade, and start again. It checks the module, migrated metadata, previous
 version, upgrade event and registration-before-revocation ordering. CI fetches
 the provider tags at checkout; the test never fetches or uses a live identity.
