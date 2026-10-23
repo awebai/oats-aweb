@@ -82,7 +82,8 @@ decides from what R holds:
 | nothing, or does not exist | init creates the resident, by either route |
 | `.aw/partial-init.yaml` (an earlier init that failed part way) | the key route's init continues it: aw reuses the saved key, so the DID is the same. Without a key it is refused (`E_RESIDENT_KEY`): only the key route continues a partial |
 | `.aw/partial-init.yaml.<time>.<n>.rejected` (aw quarantined the key) | init runs once, and aw refuses with its own reconciliation message; there is no rerun |
-| a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded |
+| a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded. With the root route's pending marker, the inbound mode must read back first |
+| only the root route's pending marker (aw refused the create) | the root route creates the resident |
 | a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 
@@ -137,9 +138,13 @@ aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --tea
   `--owner-identity-home` and keeps `contacts_only` distinct. Below it the
   route refuses (`E_RESIDENT_AW_FLOOR`, stage `aw`), and so does its plan. The
   key route keeps the provider's floor.
+- Before the create it writes `R/.oats-resident/root-route-pending`, and
+  removes it once the inbound mode has read back. While it is there, a rerun
+  that finds a complete identity in R reads the mode back before custody and
+  record, so a refused or interrupted read-back is never adopted silently.
 - A refusal is aw's text, as `E_RESIDENT_INIT`. The route keeps no captures:
-  nothing in it is secret. When aw left nothing in R, the rerun is the same
-  command.
+  nothing in it is secret. When aw left nothing in R but that marker, the
+  rerun is the same command.
 - Then verify, custody and record run as on the key route.
 
 The root route's tests replay a fake aw whose answers for `id create` and the

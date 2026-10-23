@@ -13,7 +13,7 @@
 // (no remote effect), key (the route), init (one run, no retry), verify,
 // custody, record.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { awFloorObservation, onPath } from "./binding-wire.mjs";
@@ -45,6 +45,10 @@ const MAX_KEY_LENGTH = 4096; // aw's own limit for a workspace API key
 /** The files a complete identity has in its .aw (aw init's certificate connect). */
 const COMPLETE = ["identity.yaml", "signing.key", "workspace.yaml"];
 const CAPTURE_DIR = ".oats-resident";
+/** Written before the root route's create, removed once its inbound mode has
+ *  read back: while it is there, every adopt reads the mode back first. */
+const PENDING = "root-route-pending";
+const pendingMarker = (root) => join(root, CAPTURE_DIR, PENDING);
 
 const failure = (code, stage, message, details = {}) => Object.assign(new Error(message), { code, stage, details });
 const hostname = (s) => typeof s === "string" && s.length <= 253 && s.split(".").every((l) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(l));
@@ -89,6 +93,9 @@ export function rootState(root) {
   if (!statSync(root).isDirectory()) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is not a directory`);
   const entries = readdirSync(root).sort();
   if (!entries.length) return { state: "create" };
+  const pending = existsSync(pendingMarker(root));
+  // A root-route create that aw refused leaves only its marker.
+  if (pending && entries.length === 1 && readdirSync(join(root, CAPTURE_DIR)).length === 1) return { state: "create", pending };
   const dotAw = join(root, ".aw");
   const inAw = existsSync(dotAw) && statSync(dotAw).isDirectory() ? readdirSync(dotAw) : [];
   const rejected = inAw.filter((n) => n.startsWith("partial-init.yaml.") && n.endsWith(".rejected")).sort();
@@ -96,7 +103,7 @@ export function rootState(root) {
   const complete = COMPLETE.every((n) => inAw.includes(n));
   const others = entries.filter((n) => n !== ".aw" && n !== CAPTURE_DIR);
   if (rejected.length) return { state: "rejected", rejected: join(dotAw, rejected[0]) };
-  if (complete && !partial) return { state: "adopt" };
+  if (complete && !partial) return { state: "adopt", pending };
   if (partial && !complete && !others.length) return { state: "continue" };
   throw failure("E_RESIDENT_ROOT", "preflight", `${root} is neither empty, a partial aw init nor a complete global identity: it contains ${entries.join(", ")}; never init into it: choose another --root or empty it yourself`);
 }
@@ -344,7 +351,7 @@ export async function createResident(opts, { env, platform }) {
     const rootFlag = opts.authorityRoot !== undefined ? "--authority-root" : opts.org !== undefined ? "--org" : undefined;
     if (rootFlag && apiKey) throw failure("E_RESIDENT_ARGUMENT", "preflight", `${rootFlag} belongs to the root route, and AWEB_API_KEY selects the key route: unset AWEB_API_KEY or drop ${rootFlag}`);
     if (opts.authorityRoot !== undefined && samePath(resolve(opts.authorityRoot), root)) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is the team root that authorizes it: choose another --root for the resident`);
-    const { state, rejected } = rootState(root);
+    const { state, rejected, pending } = rootState(root);
     const awebUrl = typeof env.AWEB_URL === "string" && env.AWEB_URL.trim() ? env.AWEB_URL : undefined;
     const manager = unitManager(platform);
     if (manager) {
@@ -421,7 +428,7 @@ export async function createResident(opts, { env, platform }) {
         init: route?.kind === "key" ? { route: "key", argv: ["aw", ...INIT_ARGS(name)], cwd: root, awebUrl: awebUrl ?? "AWEB_URL from your dashboard line", env: ["PATH", "HOME", "AWEB_URL", "AWEB_API_KEY", "AW_NO_UPDATE_CHECK", ...(env.AWID_REGISTRY_URL ? ["AWID_REGISTRY_URL"] : [])] }
           : route?.kind === "root" ? { route: "root", argv: ["aw", ...CREATE_ARGS({ resident: root, owner: route.owner, org: route.org, teamId: route.teamId, name })], cwd: route.owner, authorityRoot: route.owner, authorityFrom: route.from, env: Object.keys(readEnv) }
           : null,
-        verify: ["aw whoami --json", ...(route?.kind === "root" ? [`aw inbound-mode --json, which must read back ${RESIDENT_INBOUND.wire}`] : []), "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
+        verify: ["aw whoami --json", ...(route?.kind === "root" || pending ? [`aw inbound-mode --json, which must read back ${RESIDENT_INBOUND.wire}`] : []), "aw doctor identity --offline --json", "aw doctor registry --online --json"].map((c) => `${c} (in ${root}, environment ${env.AWID_REGISTRY_URL ? "PATH, HOME and AWID_REGISTRY_URL" : "PATH and HOME"} only)`),
         custody: manager
           ? { manager, label, path: unitPath(where, known ? label : `ai.aweb.custody.<domain>.${name}`), runs: `${aw} custody serve`, workingDirectory: root, env: ["PATH", "HOME"] }
           : { manager: null, handStep: handStep(root, name) },
@@ -432,6 +439,13 @@ export async function createResident(opts, { env, platform }) {
       };
     }
 
+    /** The root route's mode must read back as requested before custody or
+     *  record; aw reads it back too, and a different answer is a downgrade. */
+    const verifyInbound = () => {
+      const mode = readJson(["inbound-mode", "--json"], "aw inbound-mode")?.inbound_mode;
+      if (mode !== RESIDENT_INBOUND.wire) throw failure("E_RESIDENT_VERIFY", "verify", `aw inbound-mode answered inbound_mode ${JSON.stringify(mode ?? null)}, not ${RESIDENT_INBOUND.wire} (requested with --inbound-mode ${RESIDENT_INBOUND.flag})`);
+      rmSync(pendingMarker(root), { force: true });
+    };
     // ---- init: aw init with the key, or aw id create authorized by the team root
     let identity;
     if (route?.kind === "key") {
@@ -463,7 +477,8 @@ export async function createResident(opts, { env, platform }) {
       catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
       identity = checkInitAnswer(answer, name);
     } else if (route?.kind === "root") {
-      mkdirSync(root, { recursive: true, mode: 0o700 });
+      mkdirSync(join(root, CAPTURE_DIR), { recursive: true, mode: 0o700 });
+      writeFileSync(pendingMarker(root), `requested inbound mode ${RESIDENT_INBOUND.wire}\n`, { mode: 0o600 });
       const r = spawnSync(aw, CREATE_ARGS({ resident: root, owner: route.owner, org: route.org, teamId: route.teamId, name }), { cwd: route.owner, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: INIT_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
       if (r.error || r.status !== 0) {
         const exit = r.error ? `failed: ${r.error.code || r.error.message}` : r.signal ? `signal ${r.signal}` : `exit ${r.status}`;
@@ -472,11 +487,10 @@ export async function createResident(opts, { env, platform }) {
       try { parseAwJson(r.stdout, "aw id create"); }
       catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message); }
       identity = expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami"), name, []);
-      // aw reads the mode back too; a different answer here is a downgrade.
-      const mode = readJson(["inbound-mode", "--json"], "aw inbound-mode")?.inbound_mode;
-      if (mode !== RESIDENT_INBOUND.wire) throw failure("E_RESIDENT_VERIFY", "verify", `aw inbound-mode answered inbound_mode ${JSON.stringify(mode ?? null)}, not ${RESIDENT_INBOUND.wire} (requested with --inbound-mode ${RESIDENT_INBOUND.flag})`);
+      verifyInbound();
     } else {
       identity = known;
+      if (pending) verifyInbound();
     }
 
     // ---- verify, with the key absent
