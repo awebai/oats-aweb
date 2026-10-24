@@ -1,0 +1,15 @@
+{
+  "team": "t:example.test",
+  "alias": "resident-alias",
+  "retained": true,
+  "source": "/fixture/source/.aw",
+  "lock": "/fixture/source/.aw.oats-seat.lock",
+  "delivery": "channel",
+  "identity": {
+    "mode": "global",
+    "alias": "resident-alias",
+    "team": "t:example.test",
+    "address": null,
+    "resident": null
+  }
+}

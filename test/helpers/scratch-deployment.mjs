@@ -1,9 +1,9 @@
-// A scratch OATS deployment driven by the real kernel on PATH, isolated from
-// the operator's: its own HOME, Git configuration and tmux socket directory,
-// and an environment built from nothing, so no inherited TMUX or OATS_*
-// variable reaches a live server or a real instance. Its one soul composes no
-// capability; its harness is a script that sleeps, so a launched home is a
-// real tmux pane with a live process.
+// A scratch OATS deployment driven by the real kernel on PATH or a selected
+// kernel checkout, isolated from the operator's: its own HOME, Git configuration
+// and tmux socket directory, and an environment built from nothing, so no
+// inherited TMUX or OATS_* variable reaches a live server or a real instance.
+// Its default soul composes no capability; the harness sleeps, so a launched
+// home is a real tmux pane with a live process.
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,7 +20,9 @@ const CAPABILITY = new URL("../../oats-package/capabilities/oats-aweb", import.m
  *  `home` (a HOME holding that team's authority, kept on dispose), `path` (a
  *  directory put first on PATH, for its aw), `env` (more variables), `teams`
  *  (YAML appended to oats-workspace.yaml) and `local` (YAML appended to
- *  oats-local.yaml). */
+ *  oats-local.yaml). `kernel` selects an absolute kernel checkout instead of
+ *  the installed oats. The returned workspace and bin paths let a test add
+ *  committed fixture sources and isolated executables before spawning. */
 export function createScratchDeployment(options = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "aweb-health-scratch-")));
   // tmux refuses socket paths over about 100 bytes: keep its directory short.
@@ -33,7 +35,7 @@ export function createScratchDeployment(options = {}) {
   }
 }
 
-function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome, path, env: extraEnv = {}, teams = "", local = "" }) {
+function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome, path, env: extraEnv = {}, teams = "", local = "", kernel }) {
   const home = givenHome ?? join(root, "home"), ws = join(root, "ws"), deployment = join(root, "dep"), bin = join(root, "bin");
   for (const d of [home, ws, bin]) mkdirSync(d, { recursive: true });
   const gitConfig = join(root, "gitconfig");
@@ -56,7 +58,9 @@ function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome,
   writeFileSync(harness, "#!/bin/sh\nexec sleep 3600\n");
   chmodSync(harness, 0o755);
 
-  const oats = (args, { cwd = deployment, input } = {}) => spawnSync("oats", args, { cwd, env, input, encoding: "utf8", timeout: 60000 });
+  // Provider acceptance tests select a real pinned kernel without depending on
+  // an installed oats or changing the operator's PATH installation.
+  const oats = (args, { cwd = deployment, input } = {}) => spawnSync(kernel ? process.execPath : "oats", kernel ? [join(kernel, "bin/oats.mjs"), ...args] : args, { cwd, env, input, encoding: "utf8", timeout: 60000 });
   const onboard = oats(["onboard", deployment, "--workspace", WORKSPACE, "--json"], { cwd: root });
   if (onboard.status !== 0) throw new Error(`oats onboard failed: ${onboard.stdout}${onboard.stderr}`);
   appendFileSync(join(deployment, "oats-local.yaml"), `launch-configs:\n  fake:\n    harness: pi\n    executable: "${harness}"\n${local}`);
@@ -65,7 +69,7 @@ function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome,
   const sockets = () => readdirSync(tmux, { recursive: true }).map((p) => join(tmux, p)).filter((p) => p.endsWith("/oats"));
 
   return {
-    root, deployment, env, homeOf, oats, json,
+    root, deployment, workspace: ws, bin, env, homeOf, oats, json,
     spawn(name, { launch = true } = {}) {
       const r = json(["spawn", "plain", "--name", name, ...(launch ? ["--launch-config", "fake"] : ["--no-launch"])]);
       if (!r.ok) throw new Error(`spawn ${name}: ${JSON.stringify(r.error)}`);

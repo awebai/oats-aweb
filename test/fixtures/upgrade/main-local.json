@@ -1,0 +1,30 @@
+{
+  "team": "t:example.test",
+  "alias": "probe",
+  "delivery": "channel",
+  "defaultTeam": {
+    "label": "default",
+    "team": "t:example.test",
+    "from": "deployment"
+  },
+  "left": [],
+  "runtime": "claude",
+  "identity": {
+    "mode": "local",
+    "alias": "probe",
+    "team": "t:example.test",
+    "address": null,
+    "resident": null
+  },
+  "claudeChannelMode": "approved",
+  "joinedTeams": [
+    {
+      "label": "alpha",
+      "team": "alpha:example.test",
+      "alias": "probe",
+      "identityHome": "/fixture/home/.aweb-identity-alpha",
+      "receive": "native"
+    }
+  ],
+  "wakeJoined": true
+}
