@@ -1205,6 +1205,12 @@ and `OATS_PREVIEW_KERNEL_REQUIRED=1`. It uses the scratch-deployment helper,
 fake aw and a sleeping harness: acquire local v1.17.1 package bytes for a
 messaging seat and v1.31.0 bytes for a seat composing messaging and tasks,
 spawn each global-grant session seat, re-lock to this branch, stop, plan/apply
-upgrade, and start again. It checks the module, migrated metadata, previous
-version, upgrade event and registration-before-revocation ordering. CI fetches
-the provider tags at checkout; the test never fetches or uses a live identity.
+upgrade, start and restart. It checks the module, migrated metadata, previous
+version and upgrade event, and on each start that the new grant home is
+registered before the previous grant is revoked and is the last registration.
+For the same two versions it upgrades a local-identity Codex seat recorded
+under `delivery: channel`, which 1.17.1 never registers with the broker: the
+start and the restart each register `<home>/.aw` as a session home, and the
+harness, a fake that records its argv and environment, launches with
+`AWEB_DELIVERY=session` and no channel flag. CI fetches the provider tags at
+checkout; the test never fetches or uses a live identity.
