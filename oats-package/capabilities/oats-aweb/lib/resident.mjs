@@ -49,6 +49,10 @@ const CAPTURE_DIR = ".oats-resident";
  *  read back: while it is there, every adopt reads the mode back first. */
 const PENDING = "root-route-pending";
 const pendingMarker = (root) => join(root, CAPTURE_DIR, PENDING);
+/** aw id create's recovery state in R/.aw, written before any remote call and
+ *  removed on success, and its lock, which stays. Only the same create resumes it. */
+const RECOVERY = "hosted-identity-create.json";
+const RECOVERY_LOCK = `${RECOVERY}.lock`;
 
 const failure = (code, stage, message, details = {}) => Object.assign(new Error(message), { code, stage, details });
 const hostname = (s) => typeof s === "string" && s.length <= 253 && s.split(".").every((l) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(l));
@@ -86,28 +90,31 @@ export function parseResidentArgs(argv) {
 }
 
 /** What R holds: create (empty or missing), continue (aw's partial init),
- *  rejected (quarantined signing material), adopt (a complete identity), or
- *  anything else, which is refused naming what is there. */
+ *  rejected (quarantined signing material), recover (an interrupted aw id
+ *  create, installed or not), adopt (a complete identity), or anything else,
+ *  which is refused naming what is there. */
 export function rootState(root) {
   if (!existsSync(root)) return { state: "create" };
   if (!statSync(root).isDirectory()) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is not a directory`);
   const entries = readdirSync(root).sort();
   if (!entries.length) return { state: "create" };
   const pending = existsSync(pendingMarker(root));
-  // A root-route create that aw refused leaves only its marker.
-  if (pending && entries.length === 1 && readdirSync(join(root, CAPTURE_DIR)).length === 1) return { state: "create", pending };
   const dotAw = join(root, ".aw");
   const inAw = existsSync(dotAw) && statSync(dotAw).isDirectory() ? readdirSync(dotAw) : [];
+  // A root-route create that aw refused before its recovery state leaves only
+  // the marker, and at most aw's lock.
+  if (pending && readdirSync(join(root, CAPTURE_DIR)).length === 1 && entries.every((n) => n === CAPTURE_DIR || n === ".aw") && inAw.every((n) => n === RECOVERY_LOCK)) return { state: "create", pending };
   const rejected = inAw.filter((n) => n.startsWith("partial-init.yaml.") && n.endsWith(".rejected")).sort();
   const partial = inAw.includes("partial-init.yaml");
   const complete = COMPLETE.every((n) => inAw.includes(n));
   const others = entries.filter((n) => n !== ".aw" && n !== CAPTURE_DIR);
   if (rejected.length) return { state: "rejected", rejected: join(dotAw, rejected[0]) };
+  if (inAw.includes(RECOVERY) && !partial && !others.length) return { state: "recover", pending, recovery: join(dotAw, RECOVERY) };
   if (complete && !partial) return { state: "adopt", pending };
   if (partial && !complete && !others.length) return { state: "continue" };
   throw failure("E_RESIDENT_ROOT", "preflight", `${root} is neither empty, a partial aw init nor a complete global identity: it contains ${entries.join(", ")}; never init into it: choose another --root or empty it yourself`);
 }
-const needsInit = (state) => state === "create" || state === "continue" || state === "rejected";
+const needsInit = (state) => state === "create" || state === "continue" || state === "rejected" || state === "recover";
 
 const KEY_ROUTE = (name) => `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`;
 /** The key from AWEB_API_KEY, or undefined. Nothing asks for one. */
@@ -352,7 +359,7 @@ export async function createResident(opts, { env, platform }) {
     const rootFlag = opts.authorityRoot !== undefined ? "--authority-root" : opts.org !== undefined ? "--org" : undefined;
     if (rootFlag && apiKey) throw failure("E_RESIDENT_ARGUMENT", "preflight", `${rootFlag} belongs to the root route, and AWEB_API_KEY selects the key route: unset AWEB_API_KEY or drop ${rootFlag}`);
     if (opts.authorityRoot !== undefined && samePath(resolve(opts.authorityRoot), root)) throw failure("E_RESIDENT_ROOT", "preflight", `${root} is the team root that authorizes it: choose another --root for the resident`);
-    const { state, rejected, pending } = rootState(root);
+    const { state, rejected, pending, recovery } = rootState(root);
     const awebUrl = typeof env.AWEB_URL === "string" && env.AWEB_URL.trim() ? env.AWEB_URL : undefined;
     const manager = unitManager(platform);
     if (manager) {
@@ -368,9 +375,10 @@ export async function createResident(opts, { env, platform }) {
     // The route: the key route with AWEB_API_KEY, else the root route, whose
     // team root authorizes the create. Only the key route continues aw init's partial.
     let route;
+    if (state === "recover" && apiKey) throw failure("E_RESIDENT_KEY", "key", `${root} holds an interrupted aw id create (${recovery}), which only the root route resumes: unset AWEB_API_KEY and rerun with the same team root, --org and --team-label; never empty ${root}, the identity may already exist`);
     if (needsInit(state) && apiKey) route = { kind: "key" };
     else if (needsInit(state)) {
-      if (state !== "create") throw failure("E_RESIDENT_KEY", "key", `${root} holds a partial aw init, which only the key route continues: run ${KEY_ROUTE(name)}, or choose another --root for the root route`);
+      if (state !== "create" && state !== "recover") throw failure("E_RESIDENT_KEY", "key", `${root} holds a partial aw init, which only the key route continues: run ${KEY_ROUTE(name)}, or choose another --root for the root route`);
       const teams = teamKernel(deployment, env, "preflight").read();
       const team = opts.teamLabel !== undefined ? teams.teams.find((r) => r.label === opts.teamLabel)?.team : teams.defaultTeam?.team;
       const owner = authorityRoot(opts, settings, team);

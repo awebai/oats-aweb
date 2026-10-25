@@ -15,6 +15,7 @@ const KEYLESS = { unset: ["AWEB_API_KEY", "AWEB_URL"] };
 const ROOT_AW = { version: AW_RESIDENT_ROOT_MIN };
 const settings = (doc) => ({ OATS_SETTINGS: JSON.stringify(doc) });
 const createArgv = (s, authority, org = "acme", teamId = AUTHORITY_TEAM_ID) => ["--identity-home", join(s.root, ".aw"), "id", "create", "--owner-identity-home", join(authority, ".aw"), "--org", org, "--team-id", teamId, "--name", NAME, "--inbound-mode", "contacts-only", "--json"];
+const recovery = (s) => join(s.root, ".aw", "hosted-identity-create.json");
 const envKeys = (call) => Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort();
 
 test("the root route runs exactly aw id create with the team root's .aw as owner, in the team root, with no key and no aweb variable", (t) => {
@@ -231,16 +232,64 @@ test("a rerun after a refused read-back still refuses it, until the mode reads b
   assert.equal(residentReads(), 3);
 });
 
-test("aw's refusal of the create passes through as E_RESIDENT_INIT, and a rerun creates again", (t) => {
+test("aw's refusal of the create passes through as E_RESIDENT_INIT, and a rerun resumes it with the same command", (t) => {
   const s = setup(t, { ...ROOT_AW, create: "refused" });
-  const env = settings({ root: teamRoot(s) });
+  const authority = teamRoot(s);
+  const env = settings({ root: authority });
   const r = s.run(["create", NAME, "--json"], env, KEYLESS);
   assert.equal(r.status, 1);
   assert.equal(r.doc.error.code, "E_RESIDENT_INIT");
   assert.equal(r.doc.error.details.stage, "init");
   assert.equal(r.doc.error.message, "fake aw: the owner identity is not the owner of this organization");
-  s.run(["create", NAME, "--json"], env, KEYLESS);
+  assert.ok(existsSync(recovery(s)), "aw keeps its recovery state");
+  const again = s.run(["create", NAME, "--json"], env, KEYLESS);
+  assert.equal(again.doc.error.message, "fake aw: the owner identity is not the owner of this organization");
+  assert.deepEqual(createCalls(s.fake).map((c) => c.argv), [createArgv(s, authority), createArgv(s, authority)]);
+});
+
+test("a create aw refused before its recovery state leaves only aw's lock; the rerun creates", (t) => {
+  const s = setup(t, { ...ROOT_AW, create: "invalid-owner" });
+  const authority = teamRoot(s);
+  const env = settings({ root: authority });
+  assert.equal(s.run(["create", NAME, "--json"], env, KEYLESS).doc.error.code, "E_RESIDENT_INIT");
+  assert.equal(s.run(["create", NAME, "--plan", "--json"], env, KEYLESS).doc.result.state, "create");
+  fakeResidentAw(s.base, ROOT_AW);
+  const r = s.run(["create", NAME, "--json"], env, KEYLESS);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.result.outcome, "created");
   assert.equal(createCalls(s.fake).length, 2);
+});
+
+for (const [create, when] of [["lost-response", "before"], ["interrupted-install", "after"]]) {
+  test(`a create interrupted ${when} aw installed the identity is resumed by the same aw id create, never adopted`, (t) => {
+    const s = setup(t, { ...ROOT_AW, create });
+    const authority = teamRoot(s);
+    const env = settings({ root: authority });
+    const first = s.run(["create", NAME, "--json"], env, KEYLESS);
+    assert.equal(first.doc.error.code, "E_RESIDENT_INIT", first.stdout);
+    assert.ok(existsSync(recovery(s)));
+    const plan = s.run(["create", NAME, "--plan", "--json"], env, KEYLESS);
+    assert.equal(plan.doc.result.state, "recover");
+    assert.deepEqual(plan.doc.result.init.argv, ["aw", ...createArgv(s, authority)]);
+    const r = s.run(["create", NAME, "--json"], env, KEYLESS);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.result.outcome, "resumed");
+    assert.deepEqual(createCalls(s.fake).map((c) => c.argv), [createArgv(s, authority), createArgv(s, authority)]);
+    assert.equal(existsSync(recovery(s)), false, "aw removed its recovery state");
+    assert.ok(existsSync(`${recovery(s)}.lock`), "aw keeps its lock");
+    assert.equal(existsSync(join(s.root, ".oats-resident", "root-route-pending")), false);
+    assert.ok(s.localYaml().includes(`"${NAME}": ${JSON.stringify(s.root)}`));
+  });
+}
+
+test("the key route refuses aw's root-route recovery state, naming the rerun without the key", (t) => {
+  const s = setup(t, { ...ROOT_AW, create: "lost-response" });
+  s.run(["create", NAME, "--json"], settings({ root: teamRoot(s) }), KEYLESS);
+  const r = s.run(["create", NAME, "--json"]);
+  assert.equal(r.doc.error.code, "E_RESIDENT_KEY");
+  assert.equal(r.doc.error.message, `${s.root} holds an interrupted aw id create (${recovery(s)}), which only the root route resumes: unset AWEB_API_KEY and rerun with the same team root, --org and --team-label; never empty ${s.root}, the identity may already exist`);
+  assert.deepEqual(initCalls(s.fake), []);
+  assert.equal(createCalls(s.fake).length, 1);
 });
 
 test("--org is the slug of a <slug>.aweb.ai namespace; any other namespace is refused before the create", (t) => {

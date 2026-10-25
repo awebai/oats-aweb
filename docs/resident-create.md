@@ -83,7 +83,8 @@ decides from what R holds:
 | `.aw/partial-init.yaml` (an earlier init that failed part way) | the key route's init continues it: aw reuses the saved key, so the DID is the same. Without a key it is refused (`E_RESIDENT_KEY`): only the key route continues a partial |
 | `.aw/partial-init.yaml.<time>.<n>.rejected` (aw quarantined the key) | init runs once, and aw refuses with its own reconciliation message; there is no rerun |
 | a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded. With the root route's pending marker, the inbound mode must read back first |
-| only the root route's pending marker (aw refused the create) | the root route creates the resident |
+| only the root route's pending marker, and at most aw's `.aw/hosted-identity-create.json.lock` (aw refused the create before writing its recovery state) | the root route creates the resident |
+| `.aw/hosted-identity-create.json` (an `aw id create` that was refused or interrupted, before or after it installed the identity) | the root route's create runs again with the same arguments (resumed), and aw resumes it with the same key and removes that file on success. With a key it is refused (`E_RESIDENT_KEY`): only the root route resumes it. Never empty R: the identity may already exist |
 | a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 
@@ -143,9 +144,14 @@ aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --tea
   removes it once the inbound mode has read back. While it is there, a rerun
   that finds a complete identity in R reads the mode back before custody and
   record, so a refused or interrupted read-back is never adopted silently.
-- A refusal is aw's text, as `E_RESIDENT_INIT`. The route keeps no captures:
-  nothing in it is secret. When aw left nothing in R but that marker, the
-  rerun is the same command.
+- A refusal is aw's text, as `E_RESIDENT_INIT`. The route keeps no captures.
+  The rerun is the same command. aw writes `R/.aw/hosted-identity-create.json`
+  (its recovery state, holding the signing seed) and its `.lock` before any
+  remote call. While that file is there, the rerun runs the same create, never
+  an adopt, even when the identity files are installed; aw checks that the
+  parameters are the original ones, resumes with the same key, and removes
+  the file once its own inbound read-back succeeds. The lock stays. So the
+  rerun needs the same team root, `--org` and `--team-label`.
 - Then verify, custody and record run as on the key route.
 
 The root route's tests replay a fake aw whose answers for `id create` and the
@@ -408,7 +414,7 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_LINGER` | preflight | Linux user without systemd lingering |
 | `E_RESIDENT_CUSTODY_RUNNING` | preflight, custody | a custody already serves R, and not from this command's unit |
 | `E_RESIDENT_RECORD` | preflight, record | `oats-local.yaml` cannot be updated safely |
-| `E_RESIDENT_KEY` | key | no key and no team root (naming both routes), a team root without `.aw`, a partial without a key, or a malformed key |
+| `E_RESIDENT_KEY` | key | no key and no team root (naming both routes), a team root without `.aw`, a partial without a key, aw id create's recovery state with a key, or a malformed key |
 | `E_RESIDENT_INIT` | init | aw init or aw id create failed; aw's text |
 | `E_RESIDENT_NOTHING_TO_CONTINUE` | init | aw init failed and left nothing to continue |
 | `E_RESIDENT_VERIFY` | preflight, verify | the team root gives no team id or no `<org>.aweb.ai` namespace (preflight); the identity is not the connected global `<name>`, an offline check is not ok, or the root route's inbound mode reads back other than `contacts_only` |
@@ -1062,6 +1068,7 @@ the answer.
 | The hosted init's success answer, the trees a success and a killed run leave, and two hosted refusals that keep the partial (a different `--name`; a name taken since, aweb's 409) | Unit tests replaying aweb's captures from its local Cloud preview (`test/resident-cloud-captures.test.mjs`) |
 | A complete create from the API key | Only the joint E2E: aweb Cloud's `/api/v1/workspaces/init` is not in the OSS stack |
 | The root route's argv, environment, route selection, floor, `--org` derivation, inbound read-back and plan | Unit tests against a fake aw answering in the JSON shape of aw 1.36.49's source (`test/resident-root-route.test.mjs`) |
+| Resuming aw's recovery state (refused, lost response, interrupted after installation) and the lock-only root | Unit tests against a fake aw that follows aw 1.36.49's recovery file layout (`test/resident-root-route.test.mjs`) |
 | A complete create by the root route | Only a live run against the released aw 1.36.48 and aweb Cloud |
 | Continuing a partial to a complete identity | Only the joint E2E |
 | A quarantined (`.rejected`) partial made by aw | No stack: aw makes one only when aweb answers with a different identity than it registered, which no honest server does. Unit tests replay aw's real refusal of a quarantine file |

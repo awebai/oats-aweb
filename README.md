@@ -85,6 +85,10 @@ oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [
   aweb resolves either). `<org>` is `--org <slug or id>`, else the slug of
   T's `<slug>.aweb.ai` namespace; any other namespace asks for `--org`. The
   inbound mode must read back `contacts_only` (`E_RESIDENT_VERIFY` otherwise).
+  A refused or interrupted create leaves aw's recovery state
+  (`R/.aw/hosted-identity-create.json`): the rerun, with the same team root,
+  `--org` and `--team-label`, runs the same create and aw resumes it, even
+  when the identity files are already installed; the key route refuses it.
   This route needs aw 1.36.48 or later (`E_RESIDENT_AW_FLOOR` below it); the
   key route keeps the 1.36.33 floor.
 - **Contract change: the key prompt is gone.** Nothing asks for a key on a
