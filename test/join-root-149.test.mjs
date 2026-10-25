@@ -3,7 +3,7 @@
 // are never minting roots for it; `join --plan` resolves as the join would and
 // changes nothing; a withheld invite failure still names its class.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -101,14 +101,28 @@ test('(iv) spawn-time join with no captured root for the joined team refuses, wi
 test('(iv) spawn-time join refuses a captured root that is not a member of the joined team', t=>{
  const f=spawnFixture(t,{settings:({defaultRoot,joinedRoot})=>({roots:{[DEFAULT]:defaultRoot,[TEAM]:joinedRoot}})});member(f.joinedRoot,DEFAULT);
  const r=f.spawn();assert.equal(r.status,1,r.stdout+r.stderr);
- assert.match(JSON.parse(r.stdout).warning,/does not list joined:example\.invalid among its memberships/);
+ assert.match(JSON.parse(r.stdout).warning,/aw team list there: not a member of joined:example\.invalid/);
  assert.deepEqual(f.invites(),[]);
 });
 test('(iv) spawn-time join refuses the instance home as a captured root', t=>{
  const f=spawnFixture(t,{settings:({defaultRoot,home})=>({roots:{[DEFAULT]:defaultRoot,[TEAM]:home}})});
  const r=f.spawn();assert.equal(r.status,1,r.stdout+r.stderr);
- assert.match(JSON.parse(r.stdout).warning,/instance home/);
+ assert.match(JSON.parse(r.stdout).warning,/the instance home's own identity/);
  assert.deepEqual(f.invites(),[]);
+});
+for(const kind of ['a symlink to the home','a root whose .aw links to the home .aw']) test(`(iv) spawn-time join refuses ${kind} as a captured root`,t=>{
+ const f=spawnFixture(t,{settings:({defaultRoot,base})=>({roots:{[DEFAULT]:defaultRoot,[TEAM]:join(base,'alias')}})});
+ if(kind==='a symlink to the home') symlinkSync(f.home,join(f.base,'alias'));
+ else { mkdirSync(join(f.base,'alias'));symlinkSync(join(f.home,'.aw'),join(f.base,'alias','.aw')); }
+ const r=f.spawn();assert.equal(r.status,1,r.stdout+r.stderr);
+ assert.match(JSON.parse(r.stdout).warning,/the instance home's own identity/);
+ assert.deepEqual(f.invites(),[]);
+ assert.ok(!f.calls().some(c=>c.cwd===join(f.base,'alias')),'no aw call runs as the home identity');
+});
+test('(iv) a spawn-time refusal keeps its remedy when the captured root path is long', t=>{
+ const f=spawnFixture(t,{settings:({defaultRoot,base})=>({roots:{[DEFAULT]:defaultRoot,[TEAM]:join(base,'r'.repeat(150))}})});member(join(f.base,'r'.repeat(150)),DEFAULT);
+ const r=f.spawn();assert.equal(r.status,1,r.stdout+r.stderr);
+ assert.match(JSON.parse(r.stdout).warning,/oats aweb setup --join joined --invite-stdin/);
 });
 for(const [name,settings,root] of [
  ['captured roots[team]',({defaultRoot,joinedRoot})=>({roots:{[DEFAULT]:defaultRoot,[TEAM]:joinedRoot}}),f=>f.joinedRoot],

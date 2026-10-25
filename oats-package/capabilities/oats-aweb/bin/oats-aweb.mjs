@@ -1368,17 +1368,21 @@ function awebRootForTeam(team) {
  *  are never tried, and the instance home's .aw, an identity of its own, never mints
  *  (awebai/oats-aweb#149). */
 function joinedTeamRootProblem(team, declared = declaredRootCandidate(team)) {
-  if (!declared) return `none recorded (settings.oats.aweb.roots[${JSON.stringify(team)}] and settings.oats.aweb.root are unset)`;
-  const tried = `${declared.key} = ${declared.root}`;
-  if (!isAbsolute(declared.root)) return `${tried} is not an absolute directory`;
+  if (!declared) return `settings.oats.aweb.roots[${JSON.stringify(team)}] and settings.oats.aweb.root (neither is set)`;
+  // The reason precedes the path, so a long path is what a bounded message loses.
+  const tried = (reason) => `${declared.key} (${reason}): ${declared.root}`;
+  if (!isAbsolute(declared.root)) return tried("not an absolute directory");
   const root = resolve(declared.root);
-  if (root === resolve(home)) return `${tried} is the instance home, whose .aw is this instance's own identity`;
-  if (!existsSync(join(root, ".aw"))) return `${tried} holds no .aw`;
-  if (!teamIdsOf(readTeamsAt(root)).map(String).includes(team)) return `${tried}: aw team list there does not list ${team} among its memberships`;
+  // Canonical paths: a symlink to the home, or a .aw linking to the home's, is still the home's identity.
+  const canonical = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+  if (canonical(root) === canonical(home) || (existsSync(join(home, ".aw")) && canonical(join(root, ".aw")) === canonical(join(home, ".aw")))) return tried("the instance home's own identity");
+  if (!existsSync(join(root, ".aw"))) return tried("no .aw");
+  if (!teamIdsOf(readTeamsAt(root)).map(String).includes(team)) return tried(`aw team list there: not a member of ${team}`);
   return undefined;
 }
 function joinedTeamRootRefusal(team, label) {
-  return `team ${label} (${team}) has no member root on this host: tried ${joinedTeamRootProblem(team)}; set up its root in the deployment with oats aweb setup --join ${label} --invite-stdin, then respawn this instance`;
+  // The remedy precedes the diagnosis: fatal() keeps only the first 300 characters.
+  return `team ${label} (${team}) has no member root; run oats aweb setup --join ${label} --invite-stdin in the deployment, then respawn; tried ${joinedTeamRootProblem(team)}`;
 }
 /** The roster (awebai/oats-aweb#46): the union of the team's membership certificates and its
  *  workspace presence, one entry per alias, each saying which source reported it. Neither view is
