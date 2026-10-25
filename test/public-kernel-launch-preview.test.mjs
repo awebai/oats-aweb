@@ -22,7 +22,7 @@ const DECISION = "oats-aweb: channel-dev-confirmation — Claude's development-c
 // A spawn's hook cannot see its launch's Claude config dir, and a spawn's own
 // launch runs no launch hook, so every Claude channel spawn says so.
 const CACHE_UNCHECKED = "oats-aweb: channel-cache-unchecked — a spawn does not know its launch's Claude config dir, so Claude's MCP failure cache was not checked; if Claude skips the channel, readiness reports channel-not-connected";
-// The kernel joins one provider's warnings into one line with ' | '.
+// The provider joins its warnings into one line with ' | '.
 const statements = (warnings) => (warnings ?? []).flatMap((w) => w.split(' | '));
 
 // A deployment whose `probe` soul (work: directory) activates oats.aweb from a
