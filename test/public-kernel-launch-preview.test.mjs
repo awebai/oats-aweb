@@ -19,6 +19,11 @@ const kernel = process.env.OATS_PREVIEW_KERNEL_ROOT;
 if (process.env.OATS_PREVIEW_KERNEL_REQUIRED === '1') assert.ok(kernel, 'required launch-preview test needs OATS_PREVIEW_KERNEL_ROOT');
 const DEV_FLAG = '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace';
 const DECISION = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.";
+// A spawn's hook cannot see its launch's Claude config dir, and a spawn's own
+// launch runs no launch hook, so every Claude channel spawn says so.
+const CACHE_UNCHECKED = "oats-aweb: channel-cache-unchecked — a spawn does not know its launch's Claude config dir, so Claude's MCP failure cache was not checked; if Claude skips the channel, readiness reports channel-not-connected";
+// The provider joins its warnings into one line with ' | '.
+const statements = (warnings) => (warnings ?? []).flatMap((w) => w.split(' | '));
 
 // A deployment whose `probe` soul (work: directory) activates oats.aweb from a
 // local git member, with the host-only mode set in oats-local.yaml. The inert
@@ -57,12 +62,15 @@ function deployment(t, mode) {
 test('the start preview of a development Claude home carries the decision statement', { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {
   const f = deployment(t, 'development');
   const spawned = f.oats(['spawn', 'probe', '--name', 'dev-probe', '--no-launch', '--harness', 'claude', '--dir', f.dep]);
-  assert.ok(spawned.warnings.includes(DECISION), JSON.stringify(spawned.warnings));
+  assert.ok(statements(spawned.warnings).includes(DECISION), JSON.stringify(spawned.warnings));
+  assert.ok(statements(spawned.warnings).includes(CACHE_UNCHECKED), JSON.stringify(spawned.warnings));
   const preview = f.oats(['launch-config', 'preview', '--home', spawned.home]);
   assert.deepEqual(preview.argv.slice(0, 2), DEV_FLAG.split(' '));
   assert.ok(preview.preflight.some((c) => c.check === 'capabilities' && /refreshed by launch hooks: oats\.aweb/.test(c.detail)), JSON.stringify(preview.preflight));
   // Kernels carrying oats#886 add their own launch-prompt line beside it.
-  assert.equal(preview.warnings.filter((w) => w === DECISION).length, 1, JSON.stringify(preview.warnings));
+  assert.equal(statements(preview.warnings).filter((w) => w === DECISION).length, 1, JSON.stringify(preview.warnings));
+  // The preview is the launch hook's preview pass: it reads and clears no cache.
+  assert.doesNotMatch(JSON.stringify(preview.warnings ?? []), /channel-cache-|channel-failure-cleared/);
 });
 
 test('the start preview of an approved Claude home carries no decision statement', { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {

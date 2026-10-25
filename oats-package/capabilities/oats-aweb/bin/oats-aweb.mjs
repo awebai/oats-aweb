@@ -71,6 +71,7 @@ import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
+import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -1577,6 +1578,11 @@ if (event === "launch") {
     const renews = renewalPath && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
     out({ ...retainedLaunchOutput(started), ...(globalLaunch ? { warning: grantInventoryAdvisory(started.identity?.grant, { retained: true, pending: renews }) } : {}), ...(renews ? { volatileEnv: ["AWEB_IDENTITY_HOME"] } : {}) });
   }
+  if (deliveryFor().launch) {
+    const configDir = recordedClaudeConfigDir(home);
+    const note = channelCacheNote(configDir && clearChannelFailure(configDir), "this start's Claude config dir is not known (the home's recorded CLAUDE_CONFIG_DIR is not a literal path)");
+    if (note) outNotes.push(note);
+  }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
   if (renewalPath) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
@@ -1613,6 +1619,9 @@ if (event === "launch") {
   }
   out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
 } else if (event === "spawn") {
+  // The kernel runs the spawn hook before the home records its launch, and
+  // gives hooks no resolved config dir, so a spawn cannot find the cache.
+  if (deliveryFor().launch) outNotes.push(channelCacheNote(undefined, "a spawn does not know its launch's Claude config dir"));
   if (identityMode === "global" && identitySettings.source) fatal('identity.mode "global" cannot be combined with identity.source; use identity.mode "local" with identity.source for a retained seat, or identity.mode "global" with identity.resident for a resident grant');
   if (identityMode === "global" && requestedJoinLabels().length) fatal('settings.oats.aweb.join is supported only with local per-team identities; identity.mode "global" is explicit resident-grant mode');
   if (identityMode === "global") globalGrantSpawn();

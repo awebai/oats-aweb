@@ -388,6 +388,17 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
 | `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
+| `channel-not-connected` (Claude channel homes) | Claude's MCP log for the home's project has no `Channel notifications registered` line since the home's last start, and that start is more than 2 minutes old: the session is not on the aweb channel and hears no mail, even though it shows the channel banner. Usually Claude skipped the plugin because a recent failure was cached in `<CLAUDE_CONFIG_DIR>/mcp-needs-auth-cache.json` (one failed start anywhere on the account makes every Claude launched in the next 15 minutes skip it), or the plugin failed to start | operator: restart the session (`oats session restart --home <home>`) |
+| `channel-connection-pending` (warning) | the home started less than 2 minutes ago and Claude has not registered the channel yet | nobody; it becomes `channel-not-connected` if no registration arrives |
+| `channel-connection-unproven` (warning) | the home has no recorded start (a `--no-launch` spawn) or Claude's log location is unknown on this platform, so registration cannot be checked; the home is never reported on the channel | nobody |
+| `channel-failure-cleared` (start) | a Claude channel start removed Claude's cached recent failure of the aweb-channel plugin, leaving every other entry, so the launch connects | nobody: something failed the plugin within the last 15 minutes |
+| `channel-cache-unrecognized` (start) | the failure cache is not in the shape the provider reads (Claude Code 2.1.300's), so it was left alone | nobody; `channel-not-connected` follows if Claude skips the channel |
+| `channel-cache-changed` (start) | another Claude kept writing the failure cache while the start read it, so it was left alone rather than overwrite that write | nobody; `channel-not-connected` follows if Claude skips the channel |
+| `channel-cache-unchecked` (spawn, start) | the start's Claude config dir is not known: every spawn (the kernel gives hooks no resolved config dir, awebai/oats#1503), or a start whose recorded `CLAUDE_CONFIG_DIR` is not a literal path. The cache was not checked | nobody; `channel-not-connected` follows if Claude skips the channel |
+
+A registered channel still reads `native-receive-unproven`: registration proves
+Claude took the channel for this start, not that the plugin's aweb event stream
+is up.
 
 **Errors from `oats aweb join|leave|roster`:**
 

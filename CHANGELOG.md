@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- A Claude channel start no longer inherits a deaf channel from Claude's MCP
+  failure cache (awebai/oats#981). One failed aweb-channel start anywhere on an
+  account made every Claude launched in the next 15 minutes skip the channel
+  ("recent failure cached") without retrying. Before a start or restart, the
+  launch hook now removes a live `plugin:aweb-channel:aweb-channel` entry from
+  `<config dir>/mcp-needs-auth-cache.json`, atomically and leaving every other
+  entry, and warns `channel-failure-cleared`. The config dir is the home's
+  recorded literal `CLAUDE_CONFIG_DIR`, else `$HOME/.claude`. A file in another
+  shape is left alone (`channel-cache-unrecognized`). The file is read again
+  just before the rename: a write by another Claude since the read sends the
+  clear back to the new contents, and a file that keeps changing is left alone
+  (`channel-cache-changed`). Claude does not lock the file, so a write in the
+  instant between that check and the rename can still be lost. A spawn, or a start whose
+  config dir is not a literal path, does not look (`channel-cache-unchecked`):
+  the kernel gives hooks no resolved config dir (awebai/oats#1503).
+- Readiness proves a Claude channel home is on the channel. It needs Claude's
+  `Channel notifications registered` line in its MCP log for the home's
+  project, written after the home's last start. Without it, the home reads
+  `unavailable` with `channel-not-connected` and the restart remedy, once the
+  start is 2 minutes old; before that it warns `channel-connection-pending`.
+  With no recorded start it warns `channel-connection-unproven`. A registered
+  home keeps `native-receive-unproven`, which now says registration is not proof
+  that the event stream is up. The agent status reads `channel-not-connected` as
+  `oats.channel_not_loaded`. No floor changes.
+
 ## 1.31.0 — 2026-10-22
 
 Both floors are unchanged: OATS >=0.52.0 and aw >=1.36.33.

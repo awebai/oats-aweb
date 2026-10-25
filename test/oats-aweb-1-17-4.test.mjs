@@ -140,10 +140,12 @@ function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, cl
   const launch = runtime === "claude" && !broker ? { launch: { claude: `${claudeChannelMode === "approved" ? "--channels" : "--dangerously-load-development-channels"} plugin:aweb-channel@awebai-marketplace` } } : {};
   if (launch.launch) meta.claudeChannelMode = claudeChannelMode;
   // Development is the default; explicit approved requests still need admission.
-  const warnings = [mismatch ? `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` : extraWarning, launch.launch ? (claudeChannelMode === "approved" ? APPROVED_WARNING : DEV_CONFIRMATION_WARNING) : undefined].filter(Boolean);
+  // A Claude channel spawn cannot check Claude's MCP failure cache (awebai/oats#981).
+  const warnings = [mismatch ? `oats-aweb: team mismatch — joined ${team}, expected ${TEAM}` : extraWarning, launch.launch ? CACHE_UNCHECKED_WARNING : undefined, launch.launch ? (claudeChannelMode === "approved" ? APPROVED_WARNING : DEV_CONFIRMATION_WARNING) : undefined].filter(Boolean);
   const warning = warnings.length ? { warning: warnings.join(" | ") } : {};
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
+const CACHE_UNCHECKED_WARNING = "oats-aweb: channel-cache-unchecked — a spawn does not know its launch's Claude config dir, so Claude's MCP failure cache was not checked; if Claude skips the channel, readiness reports channel-not-connected";
 const DEV_CONFIRMATION_WARNING = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.";
 // The hook reads this host's real managed-settings file, so the approved launch
 // warning is whatever verdict this host yields (none when the file admits).
@@ -202,7 +204,7 @@ test("a token echoed back as the alias never reaches meta, the brief or any outp
     assert.equal(r.doc.meta.alias, "probe");
     assert.equal(r.doc.meta.identity.alias, "probe");
     assert.match(r.doc.brief, /alias "probe" on team/);
-    assert.equal(r.doc.warning, delivery === "channel" ? `${ALIAS_WARNING("probe")} | ${DEV_CONFIRMATION_WARNING}` : ALIAS_WARNING("probe"));
+    assert.equal(r.doc.warning, delivery === "channel" ? `${ALIAS_WARNING("probe")} | ${CACHE_UNCHECKED_WARNING} | ${DEV_CONFIRMATION_WARNING}` : ALIAS_WARNING("probe"));
     assert.doesNotMatch(r.stdout + r.stderr, /SUPERSECRET/);
     assert.equal(r.stdout, expected117(fx.home, { alias: "probe", delivery, runtime, warning: ALIAS_WARNING("probe") }));
   }
