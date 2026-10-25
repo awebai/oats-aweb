@@ -12,14 +12,15 @@
 // {debug|error, timestamp, sessionId, cwd} under
 // <cache>/claude-cli-nodejs/<cwd, non-alphanumerics as "-">/mcp-logs-plugin-aweb-channel-aweb-channel/.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
-import { CHANNEL_SERVER, channelConnection, claudeLogRoot, clearChannelFailure, recordedClaudeConfigDir } from "../oats-package/capabilities/oats-aweb/lib/claude-channel.mjs";
+import { CHANNEL_SERVER, channelCacheNote, channelConnection, claudeLogRoot, clearChannelFailure, recordedClaudeConfigDir } from "../oats-package/capabilities/oats-aweb/lib/claude-channel.mjs";
 import { assessHealth } from "../oats-package/capabilities/oats-aweb/lib/health-vocabulary.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -102,6 +103,43 @@ test("a file in any other shape is never touched and is reported", (t) => {
     assert.ok(result.detail, name);
     assert.equal(readFileSync(cacheFile(dir), "utf8"), text, `${name}: untouched`);
   }
+});
+
+/** Run `fn` while every read of `file` after the first `after` reads is
+ *  followed by another writer's completed write of `next(n)`. */
+function withConcurrentWriter(file, after, next, fn) {
+  const realRead = fs.readFileSync;
+  let reads = 0, writes = 0;
+  fs.readFileSync = function (path, ...args) {
+    const text = realRead.call(this, path, ...args);
+    const doc = path === file && ++reads > after ? next(++writes) : undefined;
+    if (doc !== undefined) fs.writeFileSync(file, JSON.stringify(doc));
+    return text;
+  };
+  syncBuiltinESMExports();
+  try { return fn(); } finally { fs.readFileSync = realRead; syncBuiltinESMExports(); }
+}
+
+test("another writer's entry, written while the start reads the cache, survives the clear", (t) => {
+  const dir = tempDir(t);
+  const original = { ...OTHER, [CHANNEL_SERVER]: { timestamp: NOW - 3 * MIN } };
+  writeCache(dir, original);
+  const added = { ...original, "new-server": { timestamp: NOW } };
+  const result = withConcurrentWriter(cacheFile(dir), 0, (n) => (n === 1 ? added : undefined), () => clearChannelFailure(dir, { now: NOW }));
+  assert.equal(result.state, "cleared");
+  const { [CHANNEL_SERVER]: _gone, ...expected } = added;
+  assert.deepEqual(JSON.parse(readFileSync(cacheFile(dir), "utf8")), expected);
+});
+
+test("a cache that keeps changing while the start reads it is left as its last writer wrote it", (t) => {
+  const dir = tempDir(t);
+  writeCache(dir, { ...OTHER, [CHANNEL_SERVER]: { timestamp: NOW - 3 * MIN } });
+  const version = (n) => ({ ...OTHER, [CHANNEL_SERVER]: { timestamp: NOW - 3 * MIN }, [`server-${n}`]: { timestamp: NOW } });
+  let last;
+  const result = withConcurrentWriter(cacheFile(dir), 0, (n) => (last = version(n)), () => clearChannelFailure(dir, { now: NOW }));
+  assert.equal(result.state, "changed");
+  assert.deepEqual(JSON.parse(readFileSync(cacheFile(dir), "utf8")), last);
+  assert.match(channelCacheNote(result), /^channel-cache-changed — .* left it alone/);
 });
 
 test("the launch's config dir is the home's recorded literal CLAUDE_CONFIG_DIR, else HOME's .claude; anything else is unknown", (t) => {

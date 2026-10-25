@@ -393,6 +393,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `channel-connection-unproven` (warning) | the home has no recorded start (a `--no-launch` spawn) or Claude's log location is unknown on this platform, so registration cannot be checked; the home is never reported on the channel | nobody |
 | `channel-failure-cleared` (start) | a Claude channel start removed Claude's cached recent failure of the aweb-channel plugin, leaving every other entry, so the launch connects | nobody: something failed the plugin within the last 15 minutes |
 | `channel-cache-unrecognized` (start) | the failure cache is not in the shape the provider reads (Claude Code 2.1.300's), so it was left alone | nobody; `channel-not-connected` follows if Claude skips the channel |
+| `channel-cache-changed` (start) | another Claude kept writing the failure cache while the start read it, so it was left alone rather than overwrite that write | nobody; `channel-not-connected` follows if Claude skips the channel |
 | `channel-cache-unchecked` (spawn, start) | the start's Claude config dir is not known: every spawn (the kernel gives hooks no resolved config dir, awebai/oats#1503), or a start whose recorded `CLAUDE_CONFIG_DIR` is not a literal path. The cache was not checked | nobody; `channel-not-connected` follows if Claude skips the channel |
 
 A registered channel still reads `native-receive-unproven`: registration proves

@@ -10,7 +10,10 @@
   `<config dir>/mcp-needs-auth-cache.json`, atomically and leaving every other
   entry, and warns `channel-failure-cleared`. The config dir is the home's
   recorded literal `CLAUDE_CONFIG_DIR`, else `$HOME/.claude`. A file in another
-  shape is left alone (`channel-cache-unrecognized`). A spawn, or a start whose
+  shape is left alone (`channel-cache-unrecognized`). The file is read again
+  just before the rename, so another Claude's write since the read is never
+  overwritten; a file that keeps changing is left alone
+  (`channel-cache-changed`). A spawn, or a start whose
   config dir is not a literal path, does not look (`channel-cache-unchecked`):
   the kernel gives hooks no resolved config dir (awebai/oats#1503).
 - Readiness proves a Claude channel home is on the channel. It needs Claude's

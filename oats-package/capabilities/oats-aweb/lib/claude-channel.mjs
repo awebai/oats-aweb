@@ -26,6 +26,7 @@ const FAILURE_CACHE = 'mcp-needs-auth-cache.json';
 const FAILURE_TTL_MS = 15 * 60 * 1000;
 const FUTURE_SKEW_MS = 60 * 1000;
 const ENTRY_KEYS = ['timestamp', 'id', 'ttlMs'];
+const CLEAR_ATTEMPTS = 3;
 /** How long after a start Claude has to register the channel before readiness
  *  calls the home not connected: Claude's MCP connect timeout is 30 s. */
 export const CHANNEL_CONNECT_WINDOW_MS = 2 * 60 * 1000;
@@ -47,33 +48,51 @@ function entryProblem(name, entry) {
   return undefined;
 }
 
+/** What one read of the cache allows: remove the live entry (`next` is the
+ *  rest of the document), or leave the file alone with the reason. */
+function clearPlan(text, now) {
+  let doc;
+  try { doc = JSON.parse(text); } catch { return {state: 'unrecognized', detail: 'it is not JSON'}; }
+  if (!object(doc)) return {state: 'unrecognized', detail: 'it is not a JSON object'};
+  for (const [name, entry] of Object.entries(doc)) {
+    const problem = entryProblem(name, entry);
+    if (problem) return {state: 'unrecognized', detail: problem};
+  }
+  const entry = doc[CHANNEL_SERVER];
+  if (!entry) return {state: 'none'};
+  const age = now - entry.timestamp;
+  if (!(age > -FUTURE_SKEW_MS && age < (entry.ttlMs ?? FAILURE_TTL_MS))) return {state: 'none'};
+  const {[CHANNEL_SERVER]: _removed, ...rest} = doc;
+  return {state: 'clear', next: JSON.stringify(rest), stampedAt: new Date(entry.timestamp).toISOString()};
+}
+
 /** Remove a live aweb-channel failure from the cache in `configDir`, leaving
  *  every other entry as it was. The file is rewritten atomically with its own
  *  mode, and only when that entry is live and the whole file is in the
  *  verified shape; anything else is reported and left alone.
- *  Answers {state: cleared|none|absent|unrecognized, file, stampedAt?, detail?}. */
+ *  Claude's processes write the file without a lock, so the file is read
+ *  again just before the rename: a write that landed since the snapshot sends
+ *  the clear back to the new contents, and a file that keeps changing is left
+ *  alone. Only the instant between that check and the rename stays open.
+ *  Answers {state: cleared|none|absent|unrecognized|changed, file, stampedAt?, detail?}. */
 export function clearChannelFailure(configDir, {now = Date.now()} = {}) {
   const file = join(configDir, FAILURE_CACHE);
-  let text, mode;
-  try { text = readFileSync(file, 'utf8'); mode = statSync(file).mode & 0o777; }
-  catch (error) {
-    if (error.code === 'ENOENT') return {state: 'absent', file};
-    return {state: 'unrecognized', file, detail: `it could not be read (${error.code || 'error'})`};
+  for (let attempt = 0; attempt < CLEAR_ATTEMPTS; attempt++) {
+    let text, mode;
+    try { mode = statSync(file).mode & 0o777; text = readFileSync(file, 'utf8'); }
+    catch (error) {
+      if (error.code === 'ENOENT') return {state: 'absent', file};
+      return {state: 'unrecognized', file, detail: `it could not be read (${error.code || 'error'})`};
+    }
+    const plan = clearPlan(text, now);
+    if (plan.state !== 'clear') return {state: plan.state, file, ...(plan.detail ? {detail: plan.detail} : {})};
+    let current;
+    try { current = readFileSync(file, 'utf8'); } catch { continue; }
+    if (current !== text) continue;
+    atomicWrite(file, plan.next, mode);
+    return {state: 'cleared', file, stampedAt: plan.stampedAt};
   }
-  let doc;
-  try { doc = JSON.parse(text); } catch { return {state: 'unrecognized', file, detail: 'it is not JSON'}; }
-  if (!object(doc)) return {state: 'unrecognized', file, detail: 'it is not a JSON object'};
-  for (const [name, entry] of Object.entries(doc)) {
-    const problem = entryProblem(name, entry);
-    if (problem) return {state: 'unrecognized', file, detail: problem};
-  }
-  const entry = doc[CHANNEL_SERVER];
-  if (!entry) return {state: 'none', file};
-  const age = now - entry.timestamp;
-  if (!(age > -FUTURE_SKEW_MS && age < (entry.ttlMs ?? FAILURE_TTL_MS))) return {state: 'none', file};
-  const {[CHANNEL_SERVER]: _removed, ...rest} = doc;
-  atomicWrite(file, JSON.stringify(rest), mode);
-  return {state: 'cleared', file, stampedAt: new Date(entry.timestamp).toISOString()};
+  return {state: 'changed', file};
 }
 
 /** The Claude config dir of the home's recorded launch: its literal absolute
@@ -98,6 +117,7 @@ export function channelCacheNote(result, why) {
   if (!result) return `channel-cache-unchecked — ${why}, so Claude's MCP failure cache was not checked; ${consequence}`;
   if (result.state === 'cleared') return `channel-failure-cleared — removed Claude's cached recent failure of the aweb-channel plugin (stamped ${result.stampedAt}) from ${result.file}, so this start connects to the channel`;
   if (result.state === 'unrecognized') return `channel-cache-unrecognized — ${result.file} is not in the shape OATS reads (${result.detail}), so OATS left it alone; ${consequence}`;
+  if (result.state === 'changed') return `channel-cache-changed — ${result.file} kept changing while OATS read it (another Claude writing it), so OATS left it alone; ${consequence}`;
   return undefined;
 }
 
