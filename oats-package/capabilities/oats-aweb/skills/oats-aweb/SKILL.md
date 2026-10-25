@@ -320,6 +320,7 @@ minting authority for its canonical T. Run from H, not the caller's worktree.
 | Act | Command | Writes / success / one next step | Error → remedy |
 |---|---|---|---|
 | Inspect | `oats aweb teams --json` | Read-only default/eligible/joined/left facts; success: intended target is identified. Next: selected authorized join or leave. | Unknown label → `/oats-teams` resolves policy, never a guessed team. |
+| Plan a join | `oats aweb join --labels L --plan [--json]` | Read-only: per label, team, root, the setting that chose it (`roots[team]` or `root`) and whether membership was confirmed; no invite or state. Next: the join below. | `refused: …` names why the join would refuse → section 8 LOCAL join. |
 | Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; root failure → section 8 LOCAL join. |
 | Leave | `oats aweb leave --labels L` | Releases membership/receive registration; success: joined entry is absent after confirmed release. Next: `oats aweb teams --json` readback. | `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop; policy change does not migrate this identity. |
 

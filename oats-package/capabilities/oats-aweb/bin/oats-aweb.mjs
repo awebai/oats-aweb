@@ -59,7 +59,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
-import { selectedDeployment, currentJoinRoot, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRoot, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -92,7 +92,23 @@ const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
   for (const name of unsetEnv) delete childEnv[name];
   return childEnv;
 };
-const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env: extraEnv, unsetEnv = [], input } = {}) => {
+/** The HTTP status and server `detail` of a failed aw call, as one bounded
+ *  phrase with every token-shaped value redacted: what a withheld failure may
+ *  still say (awebai/oats-aweb#149). aw reports a server refusal as
+ *  `aweb: http <status> (<headers>): <body>`; only a string `detail` of a JSON
+ *  body is taken, never the headers or any other text. */
+const TOKEN_SHAPED_RE = /[A-Za-z0-9_\-.~+/=]{20,}/g;
+function failureClass(e) {
+  const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
+  const http = /\bhttp (\d{3})\b/.exec(text);
+  if (!http) return "";
+  let detail;
+  const body = text.indexOf("{", http.index);
+  if (body >= 0) { try { const doc = leadingJsonObject(text.slice(body)); if (typeof doc?.detail === "string") detail = doc.detail; } catch { /* no JSON body */ } }
+  const redacted = detail === undefined ? undefined : detail.replace(TOKEN_SHAPED_RE, "<redacted>").replace(/\s+/g, " ").trim().slice(0, 200);
+  return `http ${http[1]}${redacted ? `, detail: ${JSON.stringify(redacted)}` : ""}`;
+}
+const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
   try {
     const childEnv = childEnvFor({ env: extraEnv, unsetEnv });
     return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, env: childEnv }).trim();
@@ -115,7 +131,9 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env
     // is not its output, so even a secretSafe command reports it.
     const outcome = childOutcome(e, timeout);
     const output = secretSafe ? "" : scrub(e.stderr).trim();
-    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
+    // failureDetail: a secretSafe command may still name its sanitized class.
+    const cls = secretSafe && failureDetail ? failureClass({ stderr: scrub(e.stderr), stdout: scrub(e.stdout) }) : "";
+    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? ` (output withheld: this command handles credentials${cls ? `; ${cls}` : ""})` : ""}`);
     err.outcome = outcome;
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
@@ -1302,13 +1320,31 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
   const identityHome = identityHomeForLabel(row.label);
-  const root = current ? currentJoinRoot(row.team, home, { membership: (root, team) => teamIdsOf(readTeamsAt(root)).includes(team) }) : awebRootForTeam(row.team);
-  if (!root) throw new Error(`${awebRootProblem(rootSettingCandidate(row.team))}, so team ${row.label} could not be joined`);
-  const inv = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true }), "aw team invite");
+  const root = current ? currentJoinRoot(row.team, home, { membership: rootListsTeam }) : awebRootForTeam(row.team);
+  if (!root) throw new Error(joinedTeamRootRefusal(row.team, row.label));
+  const inv = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }), "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
   const { joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias: instance || meta.alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] });
   const next = { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] };
   return { meta: next, joined, changed: true };
+}
+const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).includes(team);
+/** `join --plan`: the root each label's join would mint from, chosen exactly as
+ *  the join chooses it, with no invite, identity or state written. */
+function joinPlan(rows, meta) {
+  return rows.map((row) => {
+    if (joinedTeamsOf(meta).some((j) => j.label === row.label)) return { label: row.label, team: row.team, joined: true };
+    try { return { label: row.label, team: row.team, ...currentJoinRootChoice(row.team, home, { membership: rootListsTeam }), member: true }; }
+    catch (e) { return { label: row.label, team: row.team, root: null, source: null, member: false, problem: e.message || String(e) }; }
+  });
+}
+function outputJoinPlan(plan, json) {
+  if (json) { console.log(JSON.stringify({ plan })); return; }
+  for (const p of plan) {
+    if (p.joined) console.log(`${p.label} (${p.team}): already joined; nothing to do`);
+    else if (p.member) console.log(`${p.label} (${p.team}): root ${p.root} from ${p.source}, membership confirmed`);
+    else console.log(`${p.label} (${p.team}): refused: ${p.problem}`);
+  }
 }
 function leaveJoinedTeam(label, meta) {
   const joined = joinedTeamsOf(meta);
@@ -1319,11 +1355,30 @@ function leaveJoinedTeam(label, meta) {
 }
 function awebRootForTeam(team) {
   const declared = declaredRootCandidate(team);
+  if (team && team !== defaultTeamId()) return joinedTeamRootProblem(team, declared) ? undefined : resolve(declared.root);
   if (declared && isAbsolute(declared.root) && existsSync(join(resolve(declared.root), ".aw"))) return resolve(declared.root);
   if (declared?.declared) return undefined;
   const candidate = rootSettingCandidate(team);
   if (candidate && isAbsolute(candidate.root) && existsSync(join(resolve(candidate.root), ".aw"))) return resolve(candidate.root);
   return undefined;
+}
+/** Why a team other than the default has no minting root here, or undefined when
+ *  it has one. Only a declared root (roots[team], else root) counts, and only when
+ *  `aw team list --json` run in it lists that exact team: the cwd and OATS_WORKSPACE
+ *  are never tried, and the instance home's .aw, an identity of its own, never mints
+ *  (awebai/oats-aweb#149). */
+function joinedTeamRootProblem(team, declared = declaredRootCandidate(team)) {
+  if (!declared) return `none recorded (settings.oats.aweb.roots[${JSON.stringify(team)}] and settings.oats.aweb.root are unset)`;
+  const tried = `${declared.key} = ${declared.root}`;
+  if (!isAbsolute(declared.root)) return `${tried} is not an absolute directory`;
+  const root = resolve(declared.root);
+  if (root === resolve(home)) return `${tried} is the instance home, whose .aw is this instance's own identity`;
+  if (!existsSync(join(root, ".aw"))) return `${tried} holds no .aw`;
+  if (!teamIdsOf(readTeamsAt(root)).map(String).includes(team)) return `${tried}: aw team list there does not list ${team} among its memberships`;
+  return undefined;
+}
+function joinedTeamRootRefusal(team, label) {
+  return `team ${label} (${team}) has no member root on this host: tried ${joinedTeamRootProblem(team)}; set up its root in the deployment with oats aweb setup --join ${label} --invite-stdin, then respawn this instance`;
 }
 /** The roster (awebai/oats-aweb#46): the union of the team's membership certificates and its
  *  workspace presence, one entry per alias, each saying which source reported it. Neither view is
@@ -1424,10 +1479,11 @@ function stripForwardedSoul(argv = process.argv.slice(3)) {
 function parseHomeCommandArgs(argv = process.argv.slice(3)) {
   argv = stripForwardedSoul(argv);
   const rest = [];
-  let json = false, labels;
+  let json = false, plan = false, labels;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--json") { json = true; continue; }
+    if (arg === "--plan") { plan = true; continue; }
     if (arg === "--home" && argv[i + 1]) { home = resolve(argv[++i]); process.env.OATS_HOME = home; continue; }
     if (arg.startsWith("--home=")) { home = resolve(arg.slice("--home=".length)); process.env.OATS_HOME = home; continue; }
     if (arg === "--labels" && argv[i + 1]) { labels = argv[++i]; continue; }
@@ -1435,7 +1491,7 @@ function parseHomeCommandArgs(argv = process.argv.slice(3)) {
     rest.push(arg);
   }
   if (!labels && rest[0]) labels = rest[0];
-  return { json, labels: labelsCsv(labels) };
+  return { json, plan, labels: labelsCsv(labels) };
 }
 function outputTeamsDocument(doc, json) {
   if (json) { console.log(JSON.stringify(doc)); return; }
@@ -1527,6 +1583,12 @@ function runTeamsCommand(kind) {
     }
     const rows = validateJoinLabels(args.labels, { action: kind });
     if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
+    if (args.plan) {
+      if (kind !== "join") { const error = new Error("--plan is supported by join only"); error.code = "E_BAD_ARGS"; throw error; }
+      const plan = joinPlan(rows, meta);
+      outputJoinPlan(plan, args.json);
+      process.exit(plan.every((p) => p.joined || p.member) ? 0 : 1);
+    }
     // Record every completed label even when a later one fails: a confirmed
     // leave deleted its home, and a join created a remote identity.
     try {
@@ -1905,7 +1967,7 @@ if (event === "launch") {
     const row = eligibleTeams().find((t) => t.label === label);
     if (!row) { console.error(`E_TEAM_NOT_ELIGIBLE: ${label} is not an eligible team label for this instance (eligible: ${eligibleTeams().map((t) => t.label).join(", ") || "(none)"})`); process.exit(1); }
     team = row.team; root = awebRootForTeam(team);
-    if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate(team))}, so the roster of ${label} cannot be read from this host`); process.exit(1); }
+    if (!root) { console.error(`oats aweb roster: ${joinedTeamRootRefusal(team, label)}, so the roster of ${label} cannot be read from this host`); process.exit(1); }
   } else {
     team = meta.defaultTeam?.team || meta.identity?.team || meta.team || defaultTeamId();
     root = awebRootForTeam(team);
