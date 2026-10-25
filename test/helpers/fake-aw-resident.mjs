@@ -66,16 +66,17 @@ ${body}`;
  * lsof: false leaves the fake lsof out, as on a host without it.
  * version: the version `aw version` reports (default the captured 1.36.33).
  *
- * The root route (`aw --identity-home <R>/.aw id create --owner-identity-home
- * <A>/.aw ...`) is not in any released aw: its answers below are synthetic,
- * shaped by the frozen arguments of awebai/oats-aweb#146, until a release
- * can be captured. Reads given `--identity-home` are the authority root's:
- * authority.domain is its `whoami` domain, authority.teamId the `team_id` of its
- * `inbound-mode`. create: "connected" (the complete identity, as init leaves
+ * The root route's answers (`aw --identity-home <R>/.aw id create
+ * --owner-identity-home <A>/.aw ...` and the authority root's reads) are not
+ * captures: they have the JSON shape of aw 1.36.49's source
+ * (cmd/aw/id_create_hosted.go and inbound_mode.go), since no run against a
+ * real server is made from a test. Reads given `--identity-home` are the
+ * authority root's: authority.domain is its `whoami` domain, authority.teamId
+ * the `team_id` of its `inbound-mode` (the canonical id, as aw answers it). create: "connected" (the complete identity, as init leaves
  * it) or "refused" (aw's refusal, nothing written). inbound: the resident's
  * `inbound_mode` read back after the create.
  */
-export const AUTHORITY_TEAM_ID = "6f1d2c3b-4a59-4e8f-9b7a-0c1d2e3f4a5b";
+export const AUTHORITY_TEAM_ID = "default:acme.aweb.ai";
 export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true, version, authority = {}, create = "connected", inbound = "contacts_only" } = {}) {
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
@@ -98,7 +99,7 @@ if (argv[0] === "id" && argv[1] === "create") {
   fs.mkdirSync(identityHome, { recursive: true, mode: 0o700 });
   for (const n of ["identity.yaml", "signing.key", "workspace.yaml"]) fs.writeFileSync(path.join(identityHome, n), "");
   const name = argv[argv.indexOf("--name") + 1];
-  json({ status: "created", alias: name, identity_scope: "global", address: state.owner.domain + "/" + name, inbound_mode: state.inbound });
+  json({ status: "created", team_id: "default:" + state.owner.domain, service_team_id: "6f1d2c3b-4a59-4e8f-9b7a-0c1d2e3f4a5b", identity_home: identityHome, identity_scope: "global", custody: "self", did_key: "did:key:z6Mkresident", did_aw: "did:aw:resident", address: state.owner.domain + "/" + name, inbound_mode: "contacts_only" });
 }
 if (identityHome && argv[0] === "inbound-mode") json({ agent_id: "agent-root", team_id: state.owner.teamId, alias: "root", identity_scope: "local", inbound_mode: "open", label: "All", configurable: false });
 if (identityHome && argv[0] === "whoami") json({ address: state.owner.domain + "/root", alias: "root", did: "did:key:z6Mkroot", domain: state.owner.domain, identity_scope: "local", inbound_configurable: false, inbound_mode: "open", inbound_mode_label: "All", name: "root" });

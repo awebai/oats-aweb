@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { AUTHORITY_TEAM_ID, CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
+import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
 import { AW_RESIDENT_ROOT_MIN } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 import { AWEB_URL, DOMAIN, NAME, setup } from "./helpers/resident-harness.mjs";
 
@@ -29,7 +29,6 @@ function normalized(s, doc) {
   swap(CAPTURED.stableId, "did:aw:<stable id>");
   swap(DOMAIN, "acme.aweb.ai");
   swap(AWEB_URL, "<AWEB_URL>");
-  swap(AUTHORITY_TEAM_ID, "<team UUID>");
   const out = JSON.parse(text.replace(/init-\d{8}T\d{6}Z\./g, "init-20261010T120000Z."));
   // The unit's manager and path are the platform's: launchd on macOS, systemd on Linux.
   if (out.result?.custody?.manager) out.result.custody.manager = "<launchd or systemd>";

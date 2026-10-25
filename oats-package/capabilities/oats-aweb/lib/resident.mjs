@@ -134,13 +134,14 @@ function authorityRoot(opts, settings, team) {
   return { root, from };
 }
 
-/** What `aw id create` needs from the team root: its team's Cloud UUID (the
- *  `team_id` of `inbound-mode`, never the canonical id) and the organization,
- *  --org or the slug of the root's `<org>.aweb.ai` namespace. */
+/** What `aw id create` needs from the team root: its team, the `team_id` of
+ *  `inbound-mode` passed unchanged (Cloud resolves a canonical id or a service
+ *  UUID), and the organization, --org or the slug of the root's
+ *  `<org>.aweb.ai` namespace. */
 function authorityFacts(owner, org, readJson) {
   const read = (cmd) => readJson(["--identity-home", credentialHome(owner), cmd, "--json"], `aw ${cmd} in the team root ${owner}`, "preflight", owner);
   const inbound = read("inbound-mode");
-  if (!object(inbound) || typeof inbound.team_id !== "string" || !UUID_RE.test(inbound.team_id)) throw failure("E_RESIDENT_VERIFY", "preflight", `aw inbound-mode in the team root ${owner} answered team_id ${JSON.stringify(inbound?.team_id ?? null)}, not the team's UUID`);
+  if (!object(inbound) || typeof inbound.team_id !== "string" || !inbound.team_id) throw failure("E_RESIDENT_VERIFY", "preflight", `aw inbound-mode in the team root ${owner} answered no team_id`);
   if (org !== undefined) return { teamId: inbound.team_id, org };
   const domain = read("whoami")?.domain;
   const slug = typeof domain === "string" && domain.endsWith(MANAGED_SUFFIX) ? domain.slice(0, -MANAGED_SUFFIX.length) : "";

@@ -11,7 +11,7 @@ AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label
 ```
 
 The root route runs exactly one
-`aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team UUID> --name <name> --inbound-mode contacts-only --json`
+`aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team id> --name <name> --inbound-mode contacts-only --json`
 in the deployment's team root T, with no key, then reads the inbound mode
 back (`contacts_only`). The rest of this paragraph is the key route, and what
 both share from verify on.

@@ -1,7 +1,7 @@
 // oats aweb resident create without an API key (awebai/oats-aweb#146): the
 // deployment's team root authorizes `aw id create` for the resident, through
-// aw's --owner-identity-home. No released aw has that call yet, so its answers
-// are the fake's synthetic ones (helpers/fake-aw-resident.mjs).
+// aw's --owner-identity-home. The fake answers it in aw's own JSON shape
+// (helpers/fake-aw-resident.mjs); no test runs it against a real server.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import { AW_RESIDENT_ROOT_MIN } from "../oats-package/capabilities/oats-aweb/lib
 const KEYLESS = { unset: ["AWEB_API_KEY", "AWEB_URL"] };
 const ROOT_AW = { version: AW_RESIDENT_ROOT_MIN };
 const settings = (doc) => ({ OATS_SETTINGS: JSON.stringify(doc) });
-const createArgv = (s, authority, org = "acme") => ["--identity-home", join(s.root, ".aw"), "id", "create", "--owner-identity-home", join(authority, ".aw"), "--org", org, "--team-id", AUTHORITY_TEAM_ID, "--name", NAME, "--inbound-mode", "contacts-only", "--json"];
+const createArgv = (s, authority, org = "acme", teamId = AUTHORITY_TEAM_ID) => ["--identity-home", join(s.root, ".aw"), "id", "create", "--owner-identity-home", join(authority, ".aw"), "--org", org, "--team-id", teamId, "--name", NAME, "--inbound-mode", "contacts-only", "--json"];
 const envKeys = (call) => Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort();
 
 test("the root route runs exactly aw id create with the team root's .aw as owner, in the team root, with no key and no aweb variable", (t) => {
@@ -282,13 +282,25 @@ test("an --org that is neither a slug nor an id is refused before anything runs"
   assert.deepEqual(s.fake.calls(), []);
 });
 
-test("--team-id is the team root's Cloud UUID; a canonical team id is refused before the create", (t) => {
-  const s = setup(t, { ...ROOT_AW, authority: { teamId: "default:acme.aweb.ai" } });
-  const authority = teamRoot(s);
-  const r = s.run(["create", NAME, "--json"], settings({ root: authority }), KEYLESS);
-  assert.equal(r.doc.error.code, "E_RESIDENT_VERIFY");
-  assert.equal(r.doc.error.message, `aw inbound-mode in the team root ${authority} answered team_id "default:acme.aweb.ai", not the team's UUID`);
-  assert.deepEqual(createCalls(s.fake), []);
+test("--team-id is the team root's inbound-mode team_id unchanged, canonical or a service UUID", (t) => {
+  for (const teamId of ["default:acme.aweb.ai", "6f1d2c3b-4a59-4e8f-9b7a-0c1d2e3f4a5b"]) {
+    const s = setup(t, { ...ROOT_AW, authority: { teamId } });
+    const authority = teamRoot(s);
+    const r = s.run(["create", NAME, "--json"], settings({ root: authority }), KEYLESS);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(createCalls(s.fake)[0].argv, createArgv(s, authority, "acme", teamId));
+  }
+});
+
+test("a team root whose inbound-mode answers no team_id is refused before the create", (t) => {
+  for (const teamId of [undefined, ""]) {
+    const s = setup(t, { ...ROOT_AW, authority: { teamId } });
+    const authority = teamRoot(s);
+    const r = s.run(["create", NAME, "--json"], settings({ root: authority }), KEYLESS);
+    assert.equal(r.doc.error.code, "E_RESIDENT_VERIFY");
+    assert.equal(r.doc.error.message, `aw inbound-mode in the team root ${authority} answered no team_id`);
+    assert.deepEqual(createCalls(s.fake), []);
+  }
 });
 
 // ------------------------------------------------------------------ aw floor

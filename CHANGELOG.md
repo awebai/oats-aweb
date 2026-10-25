@@ -34,12 +34,13 @@ route of `resident create` needs aw >=1.36.48.
 
 - **`oats aweb resident create` needs no API key.** Without `AWEB_API_KEY`,
   the deployment's team root authorizes the create:
-  `aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team UUID> --name <name> --inbound-mode contacts-only --json`,
+  `aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team id> --name <name> --inbound-mode contacts-only --json`,
   run once in T with `PATH`, `HOME`, `AW_NO_UPDATE_CHECK` and, when set,
   `AWID_REGISTRY_URL`. T is `--authority-root`, else
   `settings.oats.aweb.roots[<team>]` for the resident's team, else
-  `settings.oats.aweb.root`. The team UUID is the `team_id` of T's
-  `aw inbound-mode --json`. `<org>` is `--org <slug or id>`, else the slug of
+  `settings.oats.aweb.root`. The team id is the `team_id` of T's
+  `aw inbound-mode --json`, passed unchanged (canonical or a service UUID;
+  aweb resolves either). `<org>` is `--org <slug or id>`, else the slug of
   T's `<slug>.aweb.ai` namespace; any other namespace asks for `--org`. The
   inbound mode must read back `contacts_only` (`E_RESIDENT_VERIFY` otherwise).
   This route needs aw 1.36.48 or later (`E_RESIDENT_AW_FLOOR` below it); the
@@ -50,9 +51,9 @@ route of `resident create` needs aw >=1.36.48.
   `E_RESIDENT_KEY`, naming both routes. A partial `aw init` is continued only
   by the key route. `--plan` without a key shows the root route; `init.route`
   (`key` or `root`) says which.
-- The root route is tested against a fake aw with synthetic answers: no
-  released aw had the call when it was built. Its live acceptance is the first
-  run against the released aw.
+- The root route is tested against a fake aw whose answers have the JSON
+  shape of aw 1.36.49's source. Its live acceptance is a real run on the
+  released aw.
 
 ## 1.31.0 — 2026-10-22
 

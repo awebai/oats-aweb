@@ -114,7 +114,7 @@ of the namespace (for a deployment made by `oats aweb setup --username`, T is
 the signup principal). The run is exactly:
 
 ```
-aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team UUID> --name <name> --inbound-mode contacts-only --json
+aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team id> --name <name> --inbound-mode contacts-only --json
 ```
 
 - Both `--identity-home` and `--owner-identity-home` take the credential
@@ -122,9 +122,10 @@ aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --tea
 - It runs in T, once, with an environment built from nothing: `PATH`, `HOME`,
   `AW_NO_UPDATE_CHECK=1`, and `AWID_REGISTRY_URL` when set. No key, and no
   `AWEB_URL`: aw takes the service from T's workspace binding.
-- `<team UUID>` is the `team_id` of `aw --identity-home T/.aw inbound-mode --json`,
-  aweb Cloud's id for T's team. A canonical `<name>:<namespace>` id there is
-  refused (`E_RESIDENT_VERIFY`, stage `preflight`).
+- `<team id>` is the `team_id` of `aw --identity-home T/.aw inbound-mode --json`,
+  passed unchanged: aweb Cloud resolves it, whether it is the canonical
+  `<name>:<namespace>` id (what aw answers) or a service UUID. An answer with
+  no `team_id` is refused (`E_RESIDENT_VERIFY`, stage `preflight`).
 - `<org>` is `--org`, else the slug of T's namespace: the `domain` of
   `aw --identity-home T/.aw whoami --json` when it is `<slug>.aweb.ai`, with
   exactly one label before `.aweb.ai`. Any other namespace (a customer-held
@@ -148,9 +149,9 @@ aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --tea
 - Then verify, custody and record run as on the key route.
 
 The root route's tests replay a fake aw whose answers for `id create` and the
-team root's reads are synthetic (`test/helpers/fake-aw-resident.mjs`): no
-released aw had the call when it was built. Its live acceptance is the first
-run against the released aw.
+team root's reads have the JSON shape of aw 1.36.49's source, not captures
+(`test/helpers/fake-aw-resident.mjs`): no test runs the create against a real
+server. Its live acceptance is a real run on the released aw.
 
 ## The key
 
@@ -410,7 +411,7 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_KEY` | key | no key and no team root (naming both routes), a team root without `.aw`, a partial without a key, or a malformed key |
 | `E_RESIDENT_INIT` | init | aw init or aw id create failed; aw's text |
 | `E_RESIDENT_NOTHING_TO_CONTINUE` | init | aw init failed and left nothing to continue |
-| `E_RESIDENT_VERIFY` | preflight, verify | the team root gives no team UUID or no `<org>.aweb.ai` namespace (preflight); the identity is not the connected global `<name>`, an offline check is not ok, or the root route's inbound mode reads back other than `contacts_only` |
+| `E_RESIDENT_VERIFY` | preflight, verify | the team root gives no team id or no `<org>.aweb.ai` namespace (preflight); the identity is not the connected global `<name>`, an offline check is not ok, or the root route's inbound mode reads back other than `contacts_only` |
 | `E_RESIDENT_UNIT` | custody | a launchctl or systemctl command failed |
 | `E_RESIDENT_UNIT_UNSUPPORTED` | custody | no unit on this host and custody is not running: the hand step |
 | `E_RESIDENT_CUSTODY` | custody | custody not ready in 30 s: not running, team not ready, or ops missing |
@@ -763,7 +764,7 @@ captured text joins these examples.
         "--org",
         "acme",
         "--team-id",
-        "<team UUID>",
+        "default:acme.aweb.ai",
         "--name",
         "carol",
         "--inbound-mode",
@@ -1060,7 +1061,7 @@ the answer.
 | The child environment, argv, refusals, the unit files, the custody op checks, the envelopes | Unit tests replaying real aw 1.36.33 captures (`test/resident-create.test.mjs`, `test/custody-unit.test.mjs`, `test/resident-docs.test.mjs`) |
 | The hosted init's success answer, the trees a success and a killed run leave, and two hosted refusals that keep the partial (a different `--name`; a name taken since, aweb's 409) | Unit tests replaying aweb's captures from its local Cloud preview (`test/resident-cloud-captures.test.mjs`) |
 | A complete create from the API key | Only the joint E2E: aweb Cloud's `/api/v1/workspaces/init` is not in the OSS stack |
-| The root route's argv, environment, route selection, floor, `--org` derivation, inbound read-back and plan | Unit tests against a fake aw with synthetic answers (`test/resident-root-route.test.mjs`) |
+| The root route's argv, environment, route selection, floor, `--org` derivation, inbound read-back and plan | Unit tests against a fake aw answering in the JSON shape of aw 1.36.49's source (`test/resident-root-route.test.mjs`) |
 | A complete create by the root route | Only a live run against the released aw 1.36.48 and aweb Cloud |
 | Continuing a partial to a complete identity | Only the joint E2E |
 | A quarantined (`.rejected`) partial made by aw | No stack: aw makes one only when aweb answers with a different identity than it registered, which no honest server does. Unit tests replay aw's real refusal of a quarantine file |
