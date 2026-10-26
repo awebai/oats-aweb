@@ -47,15 +47,19 @@ function stripComment(line) {
   return line;
 }
 
-/** A block-style scalar value: `"quoted"`, `'quoted'` or bare; `undefined` when it is not one. */
+/** A block-style scalar value (its comment already stripped): one `"quoted"` or
+ *  `'quoted'` string with nothing after its closing quote, or a bare scalar;
+ *  `undefined` for anything else (a flow or block collection, an anchor, a tag,
+ *  null, an unterminated quote or text after the closing quote). */
 function scalarOf(raw) {
   const text = raw.trim();
   if (!text) return undefined;
   if (text.startsWith('"')) {
+    if (!/^"(?:[^"\\]|\\.)*"$/.test(text)) return undefined;
     try { const parsed = JSON.parse(text); return typeof parsed === "string" ? parsed : undefined; } catch { return undefined; }
   }
   if (text.startsWith("'")) {
-    if (!text.endsWith("'") || text.length < 2) return undefined;
+    if (!/^'(?:[^']|'')*'$/.test(text)) return undefined;
     return text.slice(1, -1).replace(/''/g, "'");
   }
   if (/^[|>&*!{[]/.test(text) || text === "~" || text === "null") return undefined;
@@ -63,18 +67,25 @@ function scalarOf(raw) {
 }
 
 /** `host.name` from a block-style oats-local.yaml text: a top-level `host:` line,
- *  then an indented `name:` scalar inside its block. Anything else → `undefined`
- *  (no YAML dependency: the package has none, like lib/local-settings.mjs). */
+ *  then a `name:` scalar that is a DIRECT child of that block (at the block's
+ *  own indentation, which its first entry sets); a `name` nested deeper is
+ *  another key. Anything else → `undefined` (no YAML dependency: the package
+ *  has none, like lib/local-settings.mjs). */
 export function hostNameFromLocalYaml(text) {
   if (typeof text !== "string") return undefined;
   const lines = text.split(/\r?\n/).map(stripComment);
   const start = lines.findIndex((line) => line.trimEnd() === "host:");
   if (start < 0) return undefined;
+  let indent; // the host block's child indentation, set by its first entry
   for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i].trimEnd();
     if (!line.trim()) continue;
-    if (!/^\s/.test(line)) break; // the host: block ended
-    const match = /^\s+name\s*:(.*)$/.exec(line.trimEnd());
+    const depth = line.length - line.trimStart().length;
+    if (depth === 0) break; // the host: block ended
+    if (indent === undefined) indent = depth;
+    if (depth < indent) break; // a shallower line ends the block as well
+    if (depth > indent) continue; // nested under another entry
+    const match = /^name\s*:(.*)$/.exec(line.trimStart());
     if (!match) continue;
     const value = scalarOf(match[1]);
     return value && value.trim() ? value.trim() : undefined;

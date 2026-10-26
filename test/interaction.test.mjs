@@ -53,7 +53,7 @@ test("the manifest declares settings.interaction with exactly terminal|threads, 
 // ------------------------------------------------------------ the local mint path
 
 /** A local-mint spawn fixture on the 1.15 fake aw: a deployment whose oats-local.yaml records `host.name: <host>`. */
-function localFixture(t, { host = "Falcon", delivery = "channel" } = {}) {
+function localFixture(t, { host = "Lyra", delivery = "channel" } = {}) {
   const fake = fakeAwWake(t);
   const ws = tempDir(t), home = join(ws, "agents", "dev", "instances", "dev-1"), user = join(ws, "user");
   mkdirSync(home, { recursive: true });
@@ -84,7 +84,7 @@ test("a threads spawn records interaction: threads, briefs the paragraph with th
   assert.equal(a.doc.meta.delivery, "channel");
   const match = THREADS_BRIEF_RE.exec(a.doc.brief);
   assert.ok(match, a.doc.brief);
-  assert.equal(match[1], expectedAlias("Falcon"));
+  assert.equal(match[1], expectedAlias("Lyra"));
   assert.match(match[1], AWEB_ALIAS_RE);
   assert.ok(a.doc.brief.indexOf("Interaction: threads") > a.doc.brief.indexOf("Notification delivery:"), "the paragraph follows the delivery brief");
   assert.equal(a.doc.brief.replace(match[0], ""), b.doc.brief, "the threads brief is the terminal brief plus the paragraph");
@@ -179,7 +179,7 @@ console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
   return { path: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, calls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l).args.join(" ")) : [] };
 }
 
-function retainedSpawn(t, interaction, { host = "Falcon" } = {}) {
+function retainedSpawn(t, interaction, { host = "Lyra" } = {}) {
   const fake = fakeAwRetained(t);
   const root = tempDir(t), home = join(root, "home"), source = join(root, "source", ".aw");
   mkdirSync(home, { recursive: true });
@@ -205,7 +205,7 @@ test("the retained seat brief carries the paragraph for threads and is unchanged
   assert.equal(threads.doc.meta.interaction, "threads");
   const match = THREADS_BRIEF_RE.exec(threads.doc.brief);
   assert.ok(match, threads.doc.brief);
-  assert.equal(match[1], expectedAlias("Falcon"));
+  assert.equal(match[1], expectedAlias("Lyra"));
   assert.ok(threads.doc.brief.indexOf("Interaction: threads") > threads.doc.brief.indexOf("Notification delivery:"));
   assert.equal(threads.doc.brief.replace(match[0], ""), terminal.doc.brief);
   assert.equal(terminal.doc.brief, absent.doc.brief);
@@ -221,7 +221,7 @@ test("the retained seat brief carries the paragraph for threads and is unchanged
 
 // ------------------------------------------------------------ the global grant path
 
-function globalSpawn(t, interaction, { host = "Falcon" } = {}) {
+function globalSpawn(t, interaction, { host = "Lyra" } = {}) {
   const base = tempDir(t), bin = fakeAwGrant(base);
   const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
   const home = join(root, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
@@ -245,7 +245,7 @@ test("the global grant seat brief carries the paragraph for threads and is uncha
   assert.equal(terminal.doc.meta.interaction, "terminal");
   const match = THREADS_BRIEF_RE.exec(threads.doc.brief);
   assert.ok(match, threads.doc.brief);
-  assert.equal(match[1], expectedAlias("Falcon"), "host.name read through quotes and a trailing comment");
+  assert.equal(match[1], expectedAlias("Lyra"), "host.name read through quotes and a trailing comment");
   assert.equal(threads.doc.brief.replace(match[0], ""), terminal.doc.brief);
   assert.doesNotMatch(terminal.doc.brief, /Interaction: threads/);
   assert.deepEqual(shape(threads.calls()), shape(terminal.calls()));
@@ -266,49 +266,55 @@ test("the hook has exactly one threads brief builder, used on the three Comms br
 
 test("the alias is <os-user>-<host>, lowercased and reduced to [a-z0-9-]", (t) => {
   const deployment = tempDir(t);
-  writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nhost:\n  name: Falcon\n");
-  assert.equal(humanAlias({ deployment, user: "Joan" }), "joan-falcon");
-  assert.equal(humanAlias({ deployment, user: "j.oan", hostname: "ignored.example" }), "j-oan-falcon", "the recorded host.name wins over the hostname");
-  assert.equal(humanAlias({ deployment: tempDir(t), user: "j.oan", hostname: "my host_1" }), "j-oan-my-host-1");
-  assert.equal(humanAlias({ deployment: tempDir(t), user: "Joan", hostname: "Falcon.local.example" }), "joan-falcon", "the hostname is cut at its first dot");
-  assert.equal(humanAlias({ deployment: tempDir(t), user: "--Joan--", hostname: "  falcon  " }), "joan-falcon");
+  writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nhost:\n  name: Lyra\n");
+  assert.equal(humanAlias({ deployment, user: "Alice" }), "alice-lyra");
+  assert.equal(humanAlias({ deployment, user: "al.ice", hostname: "ignored.example" }), "al-ice-lyra", "the recorded host.name wins over the hostname");
+  assert.equal(humanAlias({ deployment: tempDir(t), user: "al.ice", hostname: "my host_1" }), "al-ice-my-host-1");
+  assert.equal(humanAlias({ deployment: tempDir(t), user: "Alice", hostname: "Lyra.local.example" }), "alice-lyra", "the hostname is cut at its first dot");
+  assert.equal(humanAlias({ deployment: tempDir(t), user: "--Alice--", hostname: "  lyra  " }), "alice-lyra");
   assert.equal(aliasPart("Ünïcode Näme!"), "n-code-n-me");
 });
 
 test("with no oats-local.yaml, or no usable host.name, the host part is the short OS hostname", (t) => {
   const short = hostname().split(".")[0];
   assert.equal(shortHostname(), short);
-  assert.equal(humanAlias({ deployment: tempDir(t), user: "joan" }), `joan-${aliasPart(short)}`);
-  assert.equal(humanAlias({ deployment: join(tempDir(t), "missing"), user: "joan", hostname: "h1" }), "joan-h1");
+  assert.equal(humanAlias({ deployment: tempDir(t), user: "alice" }), `alice-${aliasPart(short)}`);
+  assert.equal(humanAlias({ deployment: join(tempDir(t), "missing"), user: "alice", hostname: "h1" }), "alice-h1");
   for (const [name, text] of [
     ["no host block", "schemaVersion: 2\nsettings:\n  oats.aweb:\n    delivery: channel\n"],
-    ["host is a scalar", "host: falcon\n"],
+    ["host is a scalar", "host: lyra\n"],
     ["host block without name", "host:\n  id: abc\n"],
     ["name is a flow mapping", "host:\n  name: { a: 1 }\n"],
     ["name is empty", "host:\n  name:\n"],
     ["name is a comment only", "host:\n  name: # nothing\n"],
     ["name outside the host block", "host:\n  id: abc\nname: elsewhere\n"],
+    ["name nested under another host entry", "host:\n  metadata:\n    name: nested\n"],
+    ["quoted scalar with text after the closing quote", "host:\n  name: 'machine' junk 'other'\n"],
+    ["double-quoted scalar with text after the closing quote", "host:\n  name: \"machine\" junk\n"],
     ["host block nested", "settings:\n  host:\n    name: nested\n"],
-    ["unterminated quote", "host:\n  name: \"falcon\n"],
+    ["unterminated quote", "host:\n  name: \"lyra\n"],
     ["not yaml", "{\n"],
   ]) {
     const deployment = tempDir(t);
     writeFileSync(join(deployment, "oats-local.yaml"), text);
     assert.equal(recordedHostName(deployment), undefined, name);
-    assert.equal(humanAlias({ deployment, user: "joan", hostname: "fallback.example" }), "joan-fallback", name);
+    assert.equal(humanAlias({ deployment, user: "alice", hostname: "fallback.example" }), "alice-fallback", name);
   }
-  assert.equal(humanAlias({ deployment: tempDir(t), user: "joan", hostname: "h", readFile: () => { throw new Error("EACCES"); }, exists: () => true }), "joan-h", "an unreadable file falls back, never throws");
+  assert.equal(humanAlias({ deployment: tempDir(t), user: "alice", hostname: "h", readFile: () => { throw new Error("EACCES"); }, exists: () => true }), "alice-h", "an unreadable file falls back, never throws");
 });
 
 test("host.name is read quoted or bare, with comments stripped outside quotes", () => {
-  assert.equal(hostNameFromLocalYaml("host:\n  name: Falcon\n"), "Falcon");
-  assert.equal(hostNameFromLocalYaml("host:\n  name: \"Falcon\" # the recorded host\n"), "Falcon");
+  assert.equal(hostNameFromLocalYaml("host:\n  name: Lyra\n"), "Lyra");
+  assert.equal(hostNameFromLocalYaml("host:\n  name: \"Lyra\" # the recorded host\n"), "Lyra");
   assert.equal(hostNameFromLocalYaml("host:\n  name: 'Fal''con'\n"), "Fal'con");
   assert.equal(hostNameFromLocalYaml("host:\n  name: \"fal#con\"\n"), "fal#con");
-  assert.equal(hostNameFromLocalYaml("host:\n  name: falcon # trailing\n"), "falcon");
-  assert.equal(hostNameFromLocalYaml("host:\n  name: falcon#notacomment\n"), "falcon#notacomment");
-  assert.equal(hostNameFromLocalYaml("# leading comment\nhost:\n  # a comment line\n  id: x\n  name:   Falcon  \n"), "Falcon");
+  assert.equal(hostNameFromLocalYaml("host:\n  name: lyra # trailing\n"), "lyra");
+  assert.equal(hostNameFromLocalYaml("host:\n  name: lyra#notacomment\n"), "lyra#notacomment");
+  assert.equal(hostNameFromLocalYaml("# leading comment\nhost:\n  # a comment line\n  id: x\n  name:   Lyra  \n"), "Lyra");
   assert.equal(hostNameFromLocalYaml("host:\n    name: deep\n"), "deep");
+  assert.equal(hostNameFromLocalYaml("host:\n  metadata:\n    name: nested\n  name: correct\n"), "correct", "a direct child name wins over a nested one, whatever the order");
+  assert.equal(hostNameFromLocalYaml("host:\n  name: correct\n  metadata:\n    name: nested\n"), "correct");
+  assert.equal(hostNameFromLocalYaml("host:\n  metadata:\n    name: nested\n"), undefined, "a nested name is another key");
   assert.equal(hostNameFromLocalYaml("host:\r\n  name: crlf\r\n"), "crlf");
   assert.equal(hostNameFromLocalYaml(undefined), undefined);
 });
@@ -324,8 +330,8 @@ test("an overlong alias is cut to 64 characters and still matches aw's alias rul
 });
 
 test("the OS user comes from userInfo, falling back to $USER only when it throws", () => {
-  assert.equal(osUser({ userInfo: () => ({ username: "Joan" }), env: { USER: "other" } }), "Joan");
+  assert.equal(osUser({ userInfo: () => ({ username: "Alice" }), env: { USER: "other" } }), "Alice");
   assert.equal(osUser({ userInfo: () => { throw new Error("ENOENT"); }, env: { USER: "env-user" } }), "env-user");
   assert.equal(osUser({ userInfo: () => { throw new Error("ENOENT"); }, env: {} }), "");
-  assert.equal(humanAlias({ deployment: "/nonexistent", user: "", hostname: "falcon" }), "falcon", "a part that cannot be derived is left out, never a throw");
+  assert.equal(humanAlias({ deployment: "/nonexistent", user: "", hostname: "lyra" }), "lyra", "a part that cannot be derived is left out, never a throw");
 });
