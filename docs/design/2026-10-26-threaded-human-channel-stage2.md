@@ -2,7 +2,7 @@
 
 Status: specification, 2026-10-26, by the package's expert for the lane's coordinator
 (`lane:ux`). Implements awebai/oats#1538 (`docs/design/2026-10-26-threaded-human-channel.md`
-@ `2b673df8`) §2–§4 for this package. Stage 1 (the `interaction` setting, brief and meta) is
+@ `bc774a3e`, its final head) §2–§4 for this package. Stage 1 (the `interaction` setting, brief and meta) is
 merged in #154. **Nothing here is built until the coordinator relays (a) the `aw` release that
 ships `aw mail conversations` and (b) the wake variable's final name and the client versions
 that honour it.** Where the record fixes an interface (verb names, flags, answer shapes, the
@@ -59,7 +59,9 @@ meta key) this document repeats it and adds only what the implementation needs.
 
 ## 3. The subject: `--home <abs>` (record §3)
 
-Every verb takes `--home <abs instance home>` and reads `<home>/instance.json` only:
+Every verb takes `--home <abs instance home>` and reads `<home>/instance.json` only, and of it
+only the fields `docs/desktop-cli-api.md` documents (`capabilityMeta`, `providers`); a kernel
+JSON read (`oats inspect --home … --json`) is preferred at build time if it covers the need:
 
 - `capabilityMeta["oats.aweb"]`: `alias`, `team`, `interaction`, `identity.mode`,
   `identity.grant.home` (global seats). Missing meta → `E_HOME_NOT_MESSAGING` ("this home has
@@ -79,8 +81,17 @@ all read `--json` (the CLI form without `--json` prints a short table; Desktop a
 ### 4.1 `threads list --home <h> [--limit n] [--cursor c]`
 
 As the human. Runs `aw --identity-home <human> mail conversations --json [--limit n] [--cursor c]`
-(flags as the shipped `aw` names them; pinned at build time) and keeps the conversations whose
-other participant is the agent's alias in the team. Answer:
+(the shipped CLI's flags, expected to mirror the Go client's `ConversationListParams`: `--limit`,
+`--cursor`, `--conversation-type`, `--participant-did`, `--participant-address`; pinned at build
+time) and keeps the conversations whose other participant **is the agent's identity**: matched on
+the agent's did or address (`participant_dids[]` / `participant_addresses[]`, or the
+`--participant-did|--participant-address` filter when the CLI has it), never on the alias
+string, which is display only. The listing item is the client's `ConversationItem`
+(`conversation_type`, `conversation_id`, `status`, `participants[]`, `participant_dids[]`,
+`participant_addresses[]`, `subject`, `last_message_at`, `last_message_from`,
+`last_message_preview`, `unread_count`; response `{ conversations[], next_cursor }`). The
+agent's did/address come from a kernel or `aw` JSON read as the agent (`aw --identity-home
+<agent> whoami --json`), never from parsing `.aw`. Answer:
 
 ```json
 { "human": { "alias": "<alias>" } | null,
@@ -206,8 +217,8 @@ declaring these names (record §3), never on a version.
   over: mint the human identity on first send, `threads list/show/send` round trip with a
   throwaway `threads` instance, `inbox show` leaves `read_at` null (checked as the agent with
   `aw mail show --message-id`), the agent's one-line wake observed in a pi session, then retire
-  the instance; the human identity stays (by design) — the rehearsal uses the operator's real
-  alias on this computer and says only "a real alias was minted" in any committed text.
+  the instance; the human identity stays (by design). Committed text about the rehearsal says
+  only that a real alias was minted, never which, on which host or for whom (lane rule).
 
 ## 7. Release
 
@@ -216,14 +227,17 @@ One `oats.aweb` release (1.32.0) with its own notes naming: the delivery-contrac
 nothing removes it), the `readAt` = presented caveat, and the known limits (#155 captured
 allow-list; awebai/oats#1540). Released together with the Desktop panel per the coordinator.
 
-## 8. Open points for the coordinator (answer before build)
+## 8. Points answered by the coordinator (2026-10-26) and what remains
 
-1. The `aw mail conversations` flag names and JSON fields (participants, last message, read
-   counts) — the shapes above assume `conversation_id`, `subject`, `participants[]`,
-   `last_message{…}`, `unread_count`; adjust to the shipped CLI.
-2. Whether `aw mail send --conversation-id` requires `--to` (the rehearsal decides; the spec
-   passes it).
-3. The variable's final name and the three client versions.
-4. Desktop's preferred form: `oats aweb threads … --home …` (CLI) or
-   `oats operation run messaging:threads-… --home … --arg …` (declared operation). Both are
-   provided; the operation form is the gate.
+1. **Answered.** The listing's shapes are the Go client's for `/v1/conversations`
+   (`ConversationItem`, `ConversationListParams`), as §4.1 now states; pinned to the shipped CLI
+   when its version is relayed. Filtering is by the agent's identity (did/address), not alias.
+2. **Answered.** `--to` is passed with `--conversation-id`; the rehearsal decides and the fake
+   models the pinned `aw` exactly.
+3. **Pending** from aweb: the variable's final name and the three client versions. No build
+   before it and before the `aw` listing release.
+4. **Answered.** Desktop invokes the CLI form (`oats aweb threads … --home … --json`, routed
+   with `--server` through `capability-route`, the path it already uses for `oats aweb connect`)
+   and gates on the declared operation names from `oats inspect` `capabilities[].operations`.
+   Both forms stay. Shape details are agreed with the Desktop expert directly once named, and
+   reported to the coordinator.
