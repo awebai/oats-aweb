@@ -26,12 +26,8 @@
   home keeps `native-receive-unproven`, which now says registration is not proof
   that the event stream is up. The agent status reads `channel-not-connected` as
   `oats.channel_not_loaded`. No floor changes.
-
-## 1.33.0 — 2026-10-23
-
-The provider floor is unchanged: OATS >=0.52.0 and aw >=1.36.33. The root
-route of `resident create` needs aw >=1.36.48.
-
+- The provider floor is unchanged: OATS >=0.52.0 and aw >=1.36.33. The root
+  route of `resident create` needs aw >=1.36.48.
 - **`oats aweb resident create` needs no API key.** Without `AWEB_API_KEY`,
   the deployment's team root authorizes the create:
   `aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team id> --name <name> --inbound-mode contacts-only --json`,
