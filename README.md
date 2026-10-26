@@ -19,7 +19,7 @@ slots in `oats-workspace.yaml`, then run `oats sync`:
 
 ```yaml
 packages:
-  oats.aweb: v1.33.0
+  oats.aweb: v1.31.0
 defaults:
   messaging: { oats.aweb: { from: package } }
   tasks: { oats.aweb-tasks: { from: package } }
@@ -68,7 +68,7 @@ set `OATS_TASKS_KERNEL_ROOT` to the kernel source and
 local bare package/workspace repositories, an isolated HOME and cache, and
 previews a soul with both providers. It calls no live service or aw command.
 
-## 1.33.0 — a GLOBAL resident without an API key
+## Unreleased — a GLOBAL resident without an API key
 
 ```
 oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]

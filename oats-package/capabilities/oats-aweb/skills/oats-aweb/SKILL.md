@@ -684,7 +684,7 @@ oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [
 AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label <label>] [--plan] [--json]
 ```
 
-The first is the root route (provider 1.33.0, aw >=1.36.48): with no API key,
+The first is the root route (aw >=1.36.48): with no API key,
 the deployment's team root T authorizes `aw id create` for the resident
 (`--owner-identity-home T/.aw`). T is `--authority-root`, else
 `settings.oats.aweb.roots[<team>]`, else `settings.oats.aweb.root`; a deployment

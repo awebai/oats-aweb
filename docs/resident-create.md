@@ -8,7 +8,7 @@ provider's single floor) and OATS 0.48.0 or later.
 
 Two routes create the identity:
 
-- **The root route** (oats.aweb 1.33.0, aw 1.36.48 or later): with no API key,
+- **The root route** (aw 1.36.48 or later): with no API key,
   the deployment's team root authorizes `aw id create` for the resident. This
   is the route for a deployment made by `oats aweb setup --username`: the team
   root is its signup principal, the owner of the namespace's organization. It

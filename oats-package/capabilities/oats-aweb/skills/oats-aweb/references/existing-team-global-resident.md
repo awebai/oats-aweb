@@ -2,8 +2,8 @@
 
 ## The one command (provider 1.26.0, aw >=1.36.33)
 
-In an OATS deployment, run it by the root route (provider 1.33.0, aw
->=1.36.48), with no API key, or by the aweb dashboard's key route:
+In an OATS deployment, run it by the root route (aw >=1.36.48), with no API
+key, or by the aweb dashboard's key route:
 
 ```text
 oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]
