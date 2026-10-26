@@ -668,38 +668,6 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   and spawn-provider overrides are rejected by the kernel. Explicit null, empty,
   wrong-type or unknown values fail before provider effects. This setting changes
   only Claude/channel arguments; Pi, Codex and `delivery: session` are unchanged.
-- `interaction`: `terminal` (default) or `threads`. It declares how the soul's
-  human talks to it; it is **not** host-only: a soul sets it in `soul.yaml` as
-  `messaging: { interaction: threads }`, and `oats-local.yaml`
-  `settings.oats.aweb.interaction` and `oats spawn --provider oats.aweb
-  interaction=threads` are the ordinary layers, merged as every setting is.
-  `terminal` is today's behaviour; a `terminal` soul's spawn brief is
-  byte-identical to before. `threads` means the human talks to the soul in
-  threads, each thread one aweb mail conversation and one effort, and adds one
-  paragraph to the brief's `Comms:` line: read a thread with `aw mail show
-  --conversation-id <id>`, answer in it with `aw mail reply <message-id>`
-  (which marks that message read), never start a second thread for the same
-  effort, and the human's alias on this computer. That alias is deterministic:
-  `<os-user>-<host>`, the OS user running the command plus `host.name` from the
-  deployment's `oats-local.yaml` (else the OS hostname cut at its first `.`),
-  both lowercased and reduced to `[a-z0-9-]`, at most 64 characters (OS user
-  `Alice` on a host named `Lyra` gives `alice-lyra`). The spawn only computes
-  the alias and names it in the brief: nothing is minted, joined, written or
-  checked for the human at spawn, and the spawn never asks the human for
-  anything. The spawn and launch meta record `interaction` beside `delivery`,
-  so `oats status --json` rows show `capabilityMeta["oats.aweb"].interaction`
-  (the effective value, `terminal` or `threads`). Any other value (null, empty,
-  a number, an unknown string) refuses the spawn and the launch with
-  `settings.oats.aweb.interaction must be "terminal" or "threads" (got
-  <value>)`, before any `aw` call or mint. This is stage 1 of the threaded
-  human-to-agent channel (awebai/oats
-  `docs/design/2026-10-26-threaded-human-channel.md`). Not in this release,
-  and shipped by a later oats.aweb: the one-line wake (a `threads` soul's
-  in-session delivery becomes one line naming the thread and the command that
-  reads it, not the body; until then a `threads` soul gets today's full
-  delivery, the same as `terminal`), the `threads`/`inbox` JSON verbs for
-  Desktop (`oats aweb threads ...`), and the minting of the human's alias on
-  first send.
 - `root`: absolute directory whose `.aw` is the default team's minting root.
   This root is for one aweb team only. A seat with `identity.mode: global` and
   an `identity.resident` acts through that resident's grant and needs no
