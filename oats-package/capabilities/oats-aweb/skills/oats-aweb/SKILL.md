@@ -312,6 +312,35 @@ native requirement. Codex uses the broker; joined `receive: native`
 also means broker, distinct from Claude/Pi primary native delivery. After uncertain
 restart, recover exact IDs as above before retrying any effects.
 
+## 4b. Threads: when your human talks to you in threads
+
+`settings.oats.aweb.interaction` declares how your human talks to you:
+`terminal` (the default; nothing in this skill changes) or `threads`. A soul
+sets it in `soul.yaml` as `messaging: { interaction: threads }`;
+`oats-local.yaml` `settings.oats.aweb.interaction` and `oats spawn --provider
+oats.aweb interaction=threads` are the ordinary layers and merge as every
+setting does. Any other value fails the spawn with
+`settings.oats.aweb.interaction must be "terminal" or "threads" (got <value>)`,
+before any `aw` call or mint. `oats status --json` shows the effective value as
+`capabilityMeta["oats.aweb"].interaction`.
+
+Under `threads`, your `Comms:` brief carries an `Interaction: threads.`
+paragraph. **One thread is one aweb mail conversation and one effort.** Read a
+thread with `aw mail show --conversation-id <id>`; answer in it with `aw mail
+reply <message-id>` (which marks that message read); never start a second
+thread for the same effort. Your human's alias on this computer is
+deterministic and the brief names it: `<os-user>-<host>`, the OS user plus the
+host's `host.name` from `oats-local.yaml` (else the short hostname), lowercased
+and reduced to `[a-z0-9-]`. The spawn only computes that alias: nothing is
+minted, joined or written for your human at spawn, and you never ask your human
+for a name or a step.
+
+**Not shipped yet.** A later oats.aweb release will wake a `threads` soul with
+one line naming the thread and the command that reads it, not the body. Today
+the brief says so (`the one-line wake for threads souls is not shipped yet`),
+and a `threads` soul receives mail exactly as section 4 describes, the same as
+a `terminal` soul: handle what is presented.
+
 ## 5. Teams: join and leave
 
 Card: released provider 1.21.1, LOCAL selected H, authorized eligible L and
@@ -496,6 +525,9 @@ broker, Claude/Pi primary channels remain distinct from joined broker delivery.
 `claudeChannelMode` is development by default in 1.22.0, or explicit approved
 (the recommended route once the host's managed policy admits the plugin, section
 4), set only in `oats-local.yaml`; no arbitrary arguments or plugin IDs.
+`interaction` is `terminal` (default) or `threads` (section 4b), not host-only:
+`soul.yaml` `messaging: { interaction: threads }`, `oats-local.yaml` and the
+spawn `--provider oats.aweb` override are its ordinary layers.
 `join` selects eligible LOCAL labels at spawn; `identity` defaults to local.
 There is no `settings.oats.aweb.team`: the emitted refusal is
 `teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams`.
