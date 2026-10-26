@@ -84,7 +84,7 @@ decides from what R holds:
 | `.aw/partial-init.yaml.<time>.<n>.rejected` (aw quarantined the key) | init runs once, and aw refuses with its own reconciliation message; there is no rerun |
 | a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded. With the root route's pending marker, the inbound mode must read back first |
 | only the root route's pending marker, and at most aw's `.aw/hosted-identity-create.json.lock` (aw refused the create before writing its recovery state) | the root route creates the resident |
-| `.aw/hosted-identity-create.json` (an `aw id create` that was refused or interrupted, before or after it installed the identity) | the root route's create runs again with the same arguments (resumed), and aw resumes it with the same key and removes that file on success. With a key it is refused (`E_RESIDENT_KEY`): only the root route resumes it. Never empty R: the identity may already exist |
+| `.aw/hosted-identity-create.json` (an `aw id create` that was refused or interrupted, before or after it installed the identity), whatever else R holds | the root route's create runs again with the same arguments (resumed), and aw resumes it with the same key and removes that file on success. With a key it is refused (`E_RESIDENT_KEY`): only the root route resumes it. Never empty R: the identity may already exist |
 | a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 

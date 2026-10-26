@@ -282,6 +282,19 @@ for (const [create, when] of [["lost-response", "before"], ["interrupted-install
   });
 }
 
+test("aw's recovery state is resumed, never adopted, even beside another file in R", (t) => {
+  const s = setup(t, { ...ROOT_AW, create: "interrupted-install" });
+  const authority = teamRoot(s);
+  const env = settings({ root: authority });
+  s.run(["create", NAME, "--json"], env, KEYLESS);
+  writeFileSync(join(s.root, ".DS_Store"), "");
+  const r = s.run(["create", NAME, "--json"], env, KEYLESS);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.result.outcome, "resumed");
+  assert.equal(createCalls(s.fake).length, 2);
+  assert.equal(existsSync(recovery(s)), false, "aw removed its recovery state");
+});
+
 test("the key route refuses aw's root-route recovery state, naming the rerun without the key", (t) => {
   const s = setup(t, { ...ROOT_AW, create: "lost-response" });
   s.run(["create", NAME, "--json"], settings({ root: teamRoot(s) }), KEYLESS);

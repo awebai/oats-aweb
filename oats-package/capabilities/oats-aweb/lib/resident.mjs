@@ -108,8 +108,10 @@ export function rootState(root) {
   const partial = inAw.includes("partial-init.yaml");
   const complete = COMPLETE.every((n) => inAw.includes(n));
   const others = entries.filter((n) => n !== ".aw" && n !== CAPTURE_DIR);
+  // aw's recovery state decides whatever else R holds: aw reads only R/.aw,
+  // and only its create removes the signing seed it keeps there.
+  if (inAw.includes(RECOVERY)) return { state: "recover", pending, recovery: join(dotAw, RECOVERY) };
   if (rejected.length) return { state: "rejected", rejected: join(dotAw, rejected[0]) };
-  if (inAw.includes(RECOVERY) && !partial && !others.length) return { state: "recover", pending, recovery: join(dotAw, RECOVERY) };
   if (complete && !partial) return { state: "adopt", pending };
   if (partial && !complete && !others.length) return { state: "continue" };
   throw failure("E_RESIDENT_ROOT", "preflight", `${root} is neither empty, a partial aw init nor a complete global identity: it contains ${entries.join(", ")}; never init into it: choose another --root or empty it yourself`);
