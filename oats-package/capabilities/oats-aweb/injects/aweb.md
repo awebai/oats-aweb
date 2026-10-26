@@ -32,7 +32,14 @@ it. Under the default `delivery: channel`, Claude Code is woken by the aweb
 channel plugin and pi by its aweb extension, both pushing into the session;
 Codex, which has no aweb channel, is woken by the host wake broker
 (`Notification delivery: external`). Under `delivery: session` the host wake
-broker wakes every runtime. One path per session, never both.
+broker wakes every runtime. One path per session, never both. Which souls
+are addressed in threads is declared by `settings.oats.aweb.interaction`: a
+soul with `interaction: threads` is addressed by its human in threads, each
+thread one aweb mail conversation and one effort, and its human's alias is in
+its `Comms:` brief (see /oats-aweb section 4b). Once a later oats.aweb release
+ships it, such a soul is woken by one line naming the thread and the command
+that reads it, instead of the body; until then it gets today's delivery exactly
+as described above, and `terminal` souls (the default) are unchanged.
 
 New Claude/channel compositions select development mode. The recommended
 unattended route is explicit approved mode: Claude admits aweb-channel, with no

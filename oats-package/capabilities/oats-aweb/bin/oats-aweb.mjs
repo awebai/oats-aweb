@@ -73,6 +73,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
+import { humanAlias } from "../lib/human-identity.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -284,6 +285,18 @@ if (["spawn", "launch"].includes(event)) {
   try { claudeChannel = selectClaudeChannel(settings.claudeChannelMode); }
   catch (error) { fatal(error.message); }
 }
+// interaction: how the soul's human talks to it (threaded human channel, stage
+// 1). "terminal" (default) changes nothing; "threads" adds one paragraph to the
+// spawn brief (threadsBrief) and is recorded in the meta beside delivery.
+// Absent means terminal; anything else (null, "", a number, an unknown string)
+// refuses the spawn or launch before any aw call, root resolution or mint.
+const INTERACTION_VALUES = ["terminal", "threads"];
+const interactionMode = (() => {
+  if (settings.interaction === undefined) return "terminal";
+  if (INTERACTION_VALUES.includes(settings.interaction)) return settings.interaction;
+  if (["spawn", "launch"].includes(event)) fatal(`settings.oats.aweb.interaction must be ${INTERACTION_VALUES.map((v) => JSON.stringify(v)).join(" or ")} (got ${JSON.stringify(settings.interaction)})`);
+  return "terminal";
+})();
 const identitySettings = settings.identity && typeof settings.identity === "object" && !Array.isArray(settings.identity) ? settings.identity : {};
 const identityMode = identitySettings.mode === undefined || identitySettings.mode === null || identitySettings.mode === "" ? "local" : String(identitySettings.mode);
 if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
@@ -484,12 +497,21 @@ function wakeStillRegistered(instanceHome) {
   try { status = JSON.parse(String(run(["aw", "wake", "status", "--json"], instanceHome, 60000))); } catch { return true; }
   return statusListsHome(status, instanceHome);
 }
-/** The meta a start records: the delivery setting it ran under and its runtime. */
+/** The meta a start records: the delivery setting it ran under, how its human
+ *  talks to it (interaction) and its runtime. */
 const startedMeta = (meta = {}) => {
   const {claudeChannelMode: previousMode, ...retained} = meta;
   const runtime = process.env.OATS_RUNTIME || "";
-  return {...retained, delivery: deliveryMode, runtime, ...(deliveryMode === "channel" && runtime === "claude" ? {claudeChannelMode: claudeChannel.mode} : {})};
+  return {...retained, delivery: deliveryMode, interaction: interactionMode, runtime, ...(deliveryMode === "channel" && runtime === "claude" ? {claudeChannelMode: claudeChannel.mode} : {})};
 };
+/** The spawn brief's paragraph for a `threads` soul (threaded human channel §1),
+ *  appended after the delivery brief on every spawn path that briefs `Comms:`;
+ *  a `terminal` soul's brief is byte-identical to before. The human's alias is
+ *  computed from the deterministic scheme (lib/human-identity.mjs), never looked
+ *  up: nothing is minted, joined, written or checked for the human at spawn. */
+const threadsBrief = () => interactionMode === "threads"
+  ? ` Interaction: threads. Your human talks to you in threads: each thread is one aweb mail conversation and one effort. Read a thread with \`aw mail show --conversation-id <id>\`; answer in it with \`aw mail reply <message-id>\` (which marks that message read); never start a second thread for the same effort. Your human's alias on this computer is "${humanAlias()}". This oats.aweb still delivers incoming mail in full; the one-line wake for threads souls is not shipped yet.`
+  : "";
 /** wakeDeregister as a child that runs while the hook does other work (retire
  *  overlaps it with the self-delete). Settles to whether it succeeded. */
 function wakeDeregisterStarted(instanceHome) {
@@ -849,7 +871,7 @@ function globalGrantSpawn() {
     out({
       meta,
       env,
-      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; ${expiresAt === "never" ? "never expires (it ends only when revoked)" : `expires: ${expiresAt}`}. ${grantInventoryAdvisory(meta.identity.grant)} This Comms snapshot is fixed at spawn; use \`oats inspect --home <home> --json\` for the current recorded grant. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. At session start, run \`aw whoami\`, then \`aw mail inbox\` and \`aw chat pending\`; do not run \`aw workspace status\` or \`aw id show\` from this grant seat. Grant inspection (\`aw id grant list/show\`) runs from the resident custody \`.aw\`, not from this grant home. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
+      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; ${expiresAt === "never" ? "never expires (it ends only when revoked)" : `expires: ${expiresAt}`}. ${grantInventoryAdvisory(meta.identity.grant)} This Comms snapshot is fixed at spawn; use \`oats inspect --home <home> --json\` for the current recorded grant. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. At session start, run \`aw whoami\`, then \`aw mail inbox\` and \`aw chat pending\`; do not run \`aw workspace status\` or \`aw id show\` from this grant seat. Grant inspection (\`aw id grant list/show\`) runs from the resident custody \`.aw\`, not from this grant home. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief}${threadsBrief()} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
@@ -1044,7 +1066,7 @@ function retainedSeatSpawn(source, takeOver) {
     out({
       meta: startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "global", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }),
       env,
-      brief: `Comms: you are the retained seat of the existing aweb identity "${alias}" on team ${team} (same did and address as the seat you replace; its contacts, routes and conversations are yours).${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill).`,
+      brief: `Comms: you are the retained seat of the existing aweb identity "${alias}" on team ${team} (same did and address as the seat you replace; its contacts, routes and conversations are yours).${deliveryBrief}${threadsBrief()} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill).`,
       ...(launch ? { launch } : {}),
       ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
@@ -1716,7 +1738,7 @@ if (event === "launch") {
     out({
       meta,
       env,
-      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}, ${defaultTeamBrief}.${mismatch}${deliveryBrief}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` the team's members and workspaces, each labelled. Coordination stays in your deployment's task layer.`,
+      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}, ${defaultTeamBrief}.${mismatch}${deliveryBrief}${threadsBrief()}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` the team's members and workspaces, each labelled. Coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(joined.team_id !== team ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
