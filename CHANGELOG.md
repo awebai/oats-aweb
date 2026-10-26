@@ -26,28 +26,6 @@
   home keeps `native-receive-unproven`, which now says registration is not proof
   that the event stream is up. The agent status reads `channel-not-connected` as
   `oats.channel_not_loaded`. No floor changes.
-- New provider setting `settings.oats.aweb.interaction`, `terminal` (default)
-  or `threads`, stage 1 of the threaded human-to-agent channel (awebai/oats
-  `docs/design/2026-10-26-threaded-human-channel.md` §1–2). It is not
-  host-only: a soul sets `messaging: { interaction: threads }` in `soul.yaml`,
-  and `oats-local.yaml` and `spawn --provider oats.aweb interaction=threads`
-  merge as every setting does. `terminal` changes nothing: a `terminal` soul's
-  spawn brief is byte-identical to before. `threads` adds one paragraph to the
-  `Comms:` brief on all three spawn paths (local mint, retained seat, global
-  grant seat): each thread is one aweb mail conversation and one effort, read
-  with `aw mail show --conversation-id <id>`, answered with `aw mail reply
-  <message-id>`, never a second thread for the same effort, and the human's
-  alias on this computer. The alias is computed, never minted:
-  `<os-user>-<host>` (the OS user plus `host.name` from `oats-local.yaml`,
-  else the short hostname, lowercased, `[a-z0-9-]`, at most 64 characters), in
-  the new `lib/human-identity.mjs`; nothing is created, joined, written or
-  checked for the human at spawn. The spawn and launch meta record
-  `interaction` beside `delivery` (`capabilityMeta["oats.aweb"].interaction` on
-  `oats status --json`). Any other value refuses the spawn and the launch
-  before any `aw` call or mint with `settings.oats.aweb.interaction must be
-  "terminal" or "threads" (got <value>)`. The one-line wake for `threads`
-  souls and the `threads`/`inbox` verbs are a later release; until then a
-  `threads` soul receives mail exactly as a `terminal` one. No floor changes.
 
 ## 1.31.0 — 2026-10-22
 

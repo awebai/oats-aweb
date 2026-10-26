@@ -132,8 +132,7 @@ const CHANNEL_BRIEF = {
 };
 const TAIL = " Load the oats-aweb skill before messaging: `oats aweb teams --json` shows your teams, `oats aweb roster` the team's members and workspaces, each labelled. Coordination stays in your deployment's task layer.";
 function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, claudeChannelMode = "development", mismatch, warning: extraWarning }) {
-  // interaction (how the human talks to the soul) sits beside delivery since the threaded human channel's stage 1; terminal is the default.
-  const meta = { team, alias, delivery, defaultTeam: { label: "default", team, from: "deployment" }, left: [], runtime, identity: { mode: "local", alias, team, address: null, resident: null }, interaction: "terminal" };
+  const meta = { team, alias, delivery, defaultTeam: { label: "default", team, from: "deployment" }, left: [], runtime, identity: { mode: "local", alias, team, address: null, resident: null } };
   // Under channel, Claude and pi use their own channel; every other runtime the broker.
   const broker = delivery === "session" || !["claude", "pi"].includes(runtime);
   const env = { ...(broker ? { AWEB_DELIVERY: "session" } : {}), AWEB_IDENTITY_HOME: join(home, ".aw") };
