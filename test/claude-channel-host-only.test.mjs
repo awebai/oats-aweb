@@ -1,12 +1,12 @@
 // Actual generic kernel hostOnly contract, opt-in locally and REQUIRED in CI.
-// Upgrade review pin reports 0.67.1; replace the expected version at release.
+// The OATS v0.68.1 release pin reports 0.68.1.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {selectClaudeChannel} from '../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs';
-const PINNED_VERSION = '0.67.1';
+const PINNED_VERSION = '0.68.1';
 const root=process.env.OATS_HOST_ONLY_KERNEL_ROOT;
 if(process.env.OATS_HOST_ONLY_REQUIRED==='1') assert.ok(root,'required hostOnly test needs OATS_HOST_ONLY_KERNEL_ROOT');
 const manifest=JSON.parse(readFileSync(new URL('../oats-package/capabilities/oats-aweb/oats.json',import.meta.url),'utf8'));

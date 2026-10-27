@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
 
-const PINNED = '593255d945c9039860cfa986f4192499e73cd12f'; // upgrade review pin; replace with v0.68.0 release commit
+const PINNED = '13f8f133808f5932bf461108703c1bada4b3f3d3'; // OATS v0.68.1 release pin
 const packageRoot = fileURLToPath(new URL('../oats-package', import.meta.url));
 const DECLARED = ['.aw', '.aweb-identity', '.aweb-identity-*', '.oats-aweb'];
 const kernel = process.env.OATS_HOST_ONLY_KERNEL_ROOT;

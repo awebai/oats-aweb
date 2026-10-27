@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
 
 const packageRoot = fileURLToPath(new URL('../oats-package', import.meta.url));
-const PINNED = '593255d945c9039860cfa986f4192499e73cd12f'; // upgrade review pin; source version 0.67.1 until the release pin
+const PINNED = '13f8f133808f5932bf461108703c1bada4b3f3d3'; // OATS v0.68.1 release pin
 const kernel = process.env.OATS_PREVIEW_KERNEL_ROOT;
 if (process.env.OATS_PREVIEW_KERNEL_REQUIRED === '1') assert.ok(kernel, 'required launch-preview test needs OATS_PREVIEW_KERNEL_ROOT');
 const DEV_FLAG = '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace';

@@ -8,11 +8,10 @@ on:
 permissions:
   contents: read
 
-# Review pin for the upgrade contract; replace with the v0.68.0 release commit
-# before merging. This source still reports 0.67.1, so spawn compatibility
-# checks remain red until that release pin is selected.
+# Release pin: the OATS v0.68.1 release commit (tag v0.68.1). It reports
+# 0.68.1, which satisfies oats.aweb's floor of OATS >=0.68.0.
 env:
-  OATS_KERNEL_COMMIT: 593255d945c9039860cfa986f4192499e73cd12f
+  OATS_KERNEL_COMMIT: 13f8f133808f5932bf461108703c1bada4b3f3d3
 
 jobs:
   validate-and-test:
