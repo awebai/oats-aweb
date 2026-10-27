@@ -1,4 +1,4 @@
-// Retirement recovery against the pinned public kernel (d27de605, 0.52.0): an
+// Retirement recovery against the pinned public kernel: an
 // aweb instance spawned in local mode with the fake aw, then retired through
 // the real `oats retire`. The provider's home state (.aw, .aweb-identity,
 // .aweb-identity-*, .oats-aweb) is declared in retirement.disposable.home, so
@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
 
+const PINNED = '13f8f133808f5932bf461108703c1bada4b3f3d3'; // OATS v0.68.1 release pin
 const packageRoot = fileURLToPath(new URL('../oats-package', import.meta.url));
 const DECLARED = ['.aw', '.aweb-identity', '.aweb-identity-*', '.oats-aweb'];
 const kernel = process.env.OATS_HOST_ONLY_KERNEL_ROOT;
@@ -22,7 +23,7 @@ if (process.env.OATS_HOST_ONLY_REQUIRED === '1') assert.ok(kernel, 'required dis
 // local git member, minting from a root for the default team and from a second
 // root for the eligible team `joined`.
 function deployment(t, { prefix = 'public-disposable-home-' } = {}) {
-  assert.equal(execFileSync('git', ['-C', kernel, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), 'd27de605c7f6a5df4c3e7eb8566cc37a33d34c0c');
+  assert.equal(execFileSync('git', ['-C', kernel, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), PINNED);
   const base = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const host = join(base, 'source'), dep = join(base, 'deployment'), privateHome = join(base, 'home');
@@ -86,15 +87,15 @@ const notCopiedRows = (names) => names.map((path) => ({ scope: 'home', path, own
 test('manifest declares the provider home state and the kernel floor that honours it', () => {
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'capabilities/oats-aweb/oats.json'), 'utf8'));
   assert.deepEqual(manifest.retirement, { disposable: { home: DECLARED } });
-  assert.equal(manifest.compatibility.oats, '>=0.52.0');
+  assert.equal(manifest.compatibility.oats, '>=0.68.0');
 });
 
-test('retire leaves the provider home state out of recovery, after the hook ran with the keys in place', { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {
+test('retire leaves the provider home state out of recovery, after the hook ran with the keys in place', { skip: !kernel && 'requires pinned upgrade-contract public kernel checkout', timeout: 180000 }, (t) => {
   const f = deployment(t);
   const home = spawnProbe(f, 'disposable-probe');
   const r = f.oats(['retire', 'disposable-probe']);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  // 0.52.0 `oats retire --json` prints the retire result itself, unenveloped.
+  // `oats retire --json` prints the retire result itself, unenveloped.
   const retired = JSON.parse(r.stdout);
   assert.equal(retired.retired, 'disposable-probe');
   assert.equal(retired.removedDir, true);
@@ -117,7 +118,7 @@ test('retire leaves the provider home state out of recovery, after the hook ran 
   assert.equal(joined.signingKey, true, 'the joined identity key existed when it left');
 });
 
-test('a refused self-delete keeps the home with its keys for the retry, and the recovery still holds none', { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {
+test('a refused self-delete keeps the home with its keys for the retry, and the recovery still holds none', { skip: !kernel && 'requires pinned upgrade-contract public kernel checkout', timeout: 180000 }, (t) => {
   const f = deployment(t);
   const home = spawnProbe(f, 'refused-probe');
   const r = f.oats(['retire', 'refused-probe'], { AW_DELETE_FAIL: '1' });
@@ -143,7 +144,7 @@ test('a refused self-delete keeps the home with its keys for the retry, and the 
 // The variants put "team_not_hosted" in an ancestor of every identity home, or
 // at the end of the HTTP error's prose: neither is aw's own refusal, and the
 // key must still stay.
-for (const [variant, prefix, suffix] of [['plain', 'public-disposable-home-', ''], ['path', 'team_not_hosted-', ''], ['prose', 'public-disposable-home-', ' (reason: team_not_hosted)']]) test(`a failed joined-team leave keeps the home with its key; the retry leaves the team without a second self-delete (${variant})`, { skip: !kernel && 'requires pinned d27de605 public kernel checkout', timeout: 180000 }, (t) => {
+for (const [variant, prefix, suffix] of [['plain', 'public-disposable-home-', ''], ['path', 'team_not_hosted-', ''], ['prose', 'public-disposable-home-', ' (reason: team_not_hosted)']]) test(`a failed joined-team leave keeps the home with its key; the retry leaves the team without a second self-delete (${variant})`, { skip: !kernel && 'requires pinned upgrade-contract public kernel checkout', timeout: 180000 }, (t) => {
   const f = deployment(t, { prefix });
   const home = spawnProbe(f, 'leave-probe');
   const deletes = () => f.fake.readCalls().filter((c) => c.args[0] === 'workspace' && c.args[1] === 'delete');

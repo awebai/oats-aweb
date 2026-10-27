@@ -1,0 +1,23 @@
+{
+  "delivery": "session",
+  "defaultTeam": {
+    "label": "default",
+    "team": "t:example.test",
+    "from": "deployment"
+  },
+  "identity": {
+    "mode": "global",
+    "alias": "resident-alias",
+    "team": "t:example.test",
+    "address": null,
+    "resident": "merlin",
+    "grant": {
+      "id": "grant-old",
+      "expiresAt": "2026-10-24T07:00:00Z",
+      "scopes": [
+        "mail.read"
+      ],
+      "home": "/fixture/home/.aweb-identity"
+    }
+  }
+}

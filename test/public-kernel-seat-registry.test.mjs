@@ -1,4 +1,4 @@
-// The oldest admitted kernel, the pinned public 0.52.0 (d27de605), takes this
+// The pinned public kernel takes this
 // manifest, with AWID_REGISTRY_URL declared under the AWID_ namespace, and a
 // GLOBAL seat's spawn hook output that sets it: the capability lists, the
 // spawn previews, and a --no-launch scaffold records the resident's registry in
@@ -14,14 +14,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeAw } from './helpers/fake-aw-grant.mjs';
 
+const PINNED = '13f8f133808f5932bf461108703c1bada4b3f3d3'; // OATS v0.68.1 release pin
 const capability = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb', import.meta.url));
 const identity = fileURLToPath(new URL('./fixtures/resident/identity-global.yaml', import.meta.url));
 const kernel = process.env.OATS_HOST_ONLY_KERNEL_ROOT;
 const OPS = 'status.v1,sign_plain_message.v1,sign_app_request.v1,grant_never_ttl.v1,create_e2ee_envelope.v1,unwrap_e2ee_message.v1,mail_reply_continuation.v1';
 
-test('the 0.52.0 kernel admits the AWID_ namespace and a grant seat that carries its resident\'s registry', { timeout: 180000 }, (t) => {
-  if (!kernel) { if (process.env.OATS_HOST_ONLY_REQUIRED === '1') assert.fail('pinned kernel required'); t.skip('requires pinned d27de605 public kernel checkout'); return; }
-  assert.equal(execFileSync('git', ['-C', kernel, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), 'd27de605c7f6a5df4c3e7eb8566cc37a33d34c0c');
+test('the pinned kernel admits the AWID_ namespace and a grant seat that carries its resident\'s registry', { timeout: 180000 }, (t) => {
+  if (!kernel) { if (process.env.OATS_HOST_ONLY_REQUIRED === '1') assert.fail('pinned kernel required'); t.skip('requires pinned upgrade-contract public kernel checkout'); return; }
+  assert.equal(execFileSync('git', ['-C', kernel, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), PINNED);
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'public-seat-registry-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const bin = fakeAw(base);
@@ -46,7 +47,7 @@ test('the 0.52.0 kernel admits the AWID_ namespace and a grant seat that carries
     return JSON.parse(r.stdout);
   };
   const listed = oats(['capabilities']).result.capabilities.find((c) => c.name === 'oats.aweb');
-  assert.ok(listed, 'the 0.52.0 kernel lists oats.aweb');
+  assert.ok(listed, 'the pinned kernel lists oats.aweb');
   const seat = ['spawn', 'probe', '--harness', 'codex', '--provider', 'oats.aweb', 'identity.mode=global', '--provider', 'oats.aweb', 'identity.resident=merlin'];
   assert.equal(oats([...seat, '--preview']).ok, true);
   const { instance, home: seatHome } = oats([...seat, '--no-launch']).result;

@@ -55,6 +55,18 @@ function bindingFixture(t) {
   return {manifest,run(){writeFileSync(path,JSON.stringify(manifest));return spawnSync(process.execPath,[join(dir,'scripts/validate-manifests.mjs')],{cwd:dir,encoding:'utf8',timeout:10000});}};
 }
 
+test('upgrade and unknown optional hooks validate; unknown required hooks fail', t => {
+  const f = bindingFixture(t);
+  assert.equal(f.manifest.hooks.upgrade, 'bin/oats-aweb.mjs upgrade');
+  assert.equal(f.run().status, 0);
+  f.manifest.hooks.unknown = 'bin/oats-aweb.mjs unknown';
+  assert.equal(f.run().status, 0);
+  f.manifest.hooks.unknown = { command: 'bin/oats-aweb.mjs unknown', required: true };
+  const r = f.run();
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /hooks.unknown/);
+});
+
 test('binding metadata accepts the declared fixed reasons, optional omission and shape-only key declarations',t=>{
   const f=bindingFixture(t);assert.equal(f.run().status,0);
   delete f.manifest.binding.reasons;delete f.manifest.binding.keys;assert.equal(f.run().status,0);

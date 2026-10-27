@@ -5,6 +5,31 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.32.0 — upgrade a stopped seat
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33. Upgrade the kernel
+first, then select and sync the package version in the workspace.
+
+A stopped seat moves to the locked package with `oats instance upgrade`:
+stop it, inspect `oats instance upgrade <instance> --plan`, then apply with
+the returned plan revision and an idempotency key. Start it again with
+`oats session start`. Upgrade preserves the identity, grant, seat and joined
+teams. It makes no `aw` calls: the next start re-registers the wake broker
+and renews grants according to the seat's settings. With `identity.renew: off`,
+that start keeps the existing grant and its expiry.
+
+The hook adopts metadata from local, global grant and retained seats,
+including 1.17.1. Plan is read-only; apply refreshes only delivery from settings
+and runtime from the home's recorded `instance.json` harness. An unreadable or
+unsupported harness keeps the recorded runtime and warns. Recorded
+`claudeChannelMode` stays unchanged until a launch can prove it. A plan that
+cannot recognize the metadata names the respawn remedy.
+
+The tasks capability also declares stateless adoption: every plan adopts and
+apply passes its supplied metadata through, defaulting absent or empty metadata
+to `{}`, without home reads or `aw` calls. A seat composing messaging and tasks
+moves both modules together.
+
 ## Tasks
 
 One `oats.aweb` package release supplies two independently selected capabilities:
@@ -44,7 +69,8 @@ agent checks `aw whoami`; if that fails, it reports the failure to its human and
 does not use tasks. Conversation stays with the messaging provider.
 
 Readiness has no tasks-slot item for this provider, by design, in this version.
-The messaging package's OATS >=0.52.0 and aw >=1.36.33 floors are unchanged.
+Provider 1.31.0 requires OATS >=0.52.0 and aw >=1.36.33; the upgrade
+release above raises the kernel floor to >=0.68.0.
 The task protocol and file flags are verified against aw 1.36.47.
 
 ### Developing the tasks capability
@@ -841,15 +867,14 @@ time as the delete.
 ## Isolated hostOnly contract verification
 
 `test/claude-channel-host-only.test.mjs` imports the real generic `resolveSoul`
-validator from public OATS source `bb2ba8c9a254edb745913b9c5a9d9b833fda932d`
-(package 0.42.0), using this checkout's actual provider manifest. It checks both
+validator from the public OATS source pinned in `.github/workflows/ci.yml`,
+using this checkout's actual provider manifest. It checks both
 mode values at soul, workspace and spawn-provider layers, the existing
 `host-only-key` diagnostic and `oats-local.yaml` remedy, plus host-local origin
 and omission controls. Unexpected fixture remote reads fail.
 
-CI provisions that exact source outside test discovery and installs only its
-required `yaml@2.9.1` dependency in a separate directory, with lifecycle scripts
-disabled. It runs `OATS_HOST_ONLY_REQUIRED=1` with `OATS_HOST_ONLY_KERNEL_ROOT`
+CI provisions that exact source outside test discovery and installs its
+locked dependencies with lifecycle scripts disabled. It runs `OATS_HOST_ONLY_REQUIRED=1` with `OATS_HOST_ONLY_KERNEL_ROOT`
 pointing to the pinned checkout. Missing roots/dependencies and import failures
 fail this required gate. Local `npm test` explicitly skips this opt-in file when
 the root is absent; to exercise it, provision the same source/dependency and run
@@ -1163,3 +1188,29 @@ same pinned kernel as the launch-preview tests.
 
 The sanitized live status sample and limits are recorded in
 [test/fixtures/codex-delivery/README.md](test/fixtures/codex-delivery/README.md).
+
+### Upgrade regression verification
+
+`node --test test/oats-aweb-upgrade.test.mjs` checks literal historical and
+current metadata, read-only planning, idempotent apply, safe runtime reads and
+dispatch without `aw`. It shares the delivery fake-home fixture with the
+1.18 tests. `test/oats-aweb-hook-1-13.test.mjs` checks the historical grant
+upgrade followed by launch: registration precedes old-grant revocation, and a
+failed registration keeps the old grant. All lifecycle effects use fake `aw`
+and temporary homes. Run `npm run validate` for the manifests and schema.
+
+CI also requires `test/public-kernel-upgrade.test.mjs` against the kernel at
+`OATS_KERNEL_COMMIT`, with `OATS_PREVIEW_KERNEL_ROOT` selecting its checkout
+and `OATS_PREVIEW_KERNEL_REQUIRED=1`. It uses the scratch-deployment helper,
+fake aw and a sleeping harness: acquire local v1.17.1 package bytes for a
+messaging seat and v1.31.0 bytes for a seat composing messaging and tasks,
+spawn each global-grant session seat, re-lock to this branch, stop, plan/apply
+upgrade, start and restart. It checks the module, migrated metadata, previous
+version and upgrade event, and on each start that the new grant home is
+registered before the previous grant is revoked and is the last registration.
+For the same two versions it upgrades a local-identity Codex seat recorded
+under `delivery: channel`, which 1.17.1 never registers with the broker: the
+start and the restart each register `<home>/.aw` as a session home, and the
+harness, a fake that records its argv and environment, launches with
+`AWEB_DELIVERY=session` and no channel flag. CI fetches the provider tags at
+checkout; the test never fetches or uses a live identity.

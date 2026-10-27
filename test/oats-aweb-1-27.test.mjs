@@ -12,10 +12,10 @@ const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const SKILL_DIR = join(CAPABILITY, "skills", "oats-aweb");
 const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
 
-test("the kernel floor is the release that confirms the prompt", () => {
+test("the kernel floor admits stopped-home upgrades", () => {
   const distribution = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.compatibility.oats, ">=0.52.0");
-  assert.equal(distribution.compatibility.oats, ">=0.52.0");
+  assert.equal(manifest.compatibility.oats, ">=0.68.0");
+  assert.equal(distribution.compatibility.oats, ">=0.68.0");
 });
 
 test("the changelog leads 1.27.0 with the host order and the kernel floor, quoting the kernel's refusal", () => {
@@ -43,7 +43,7 @@ test("the skill drops the exact-home consent and its reference, and says where t
   const skill = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
   for (const gone of [/launchPromptAnswers/, /launch-consent\.md/, /exact-home/, /awebDevelopmentChannel/]) assert.doesNotMatch(skill, gone);
   assert.match(skill, /\*\*Channel selection and the development-channel prompt\*\*/);
-  assert.match(skill, /OATS \(0\.52\.0 and later, which this provider requires\) confirms that prompt once\nat launch\. `settings\.oats\.aweb\.delivery: session` or\n`settings\.oats\.aweb\.claudeChannelMode: approved` stop the prompt\./);
+  assert.match(skill, /OATS 0\.52\.0 and later confirm that prompt once\nat launch\. `settings\.oats\.aweb\.delivery: session` or\n`settings\.oats\.aweb\.claudeChannelMode: approved` stop the prompt\./);
   const devRow = skill.split("\n").find((line) => line.startsWith("| `channel-dev-confirmation` |"));
   assert.match(devRow, /to stop the prompt, operator: section 4's approved route or `settings\.oats\.aweb\.delivery: session`, then respawn/);
   assert.match(skill, /decision at spawn apply, at start and restart, in the start preview\n\(`oats launch-config preview`\) and at readiness\./);

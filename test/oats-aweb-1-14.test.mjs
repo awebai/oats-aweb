@@ -115,17 +115,17 @@ test("1.14 refuses classic OATS environments consistently", (t) => {
   assert.deepEqual(fake.readCalls(), [], "classic refusal happens before aw is invoked");
 });
 
-test("manifest declares 1.17 floor, no provider team setting, commands and home operations", () => {
+test("manifest declares the current floor, no provider team setting, commands and home operations", () => {
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.31.0");
-  assert.equal(dist.version, "1.31.0");
-  assert.equal(manifest.version, "1.31.0");
+  assert.equal(pkg.version, "1.32.0");
+  assert.equal(dist.version, "1.32.0");
+  assert.equal(manifest.version, "1.32.0");
   assert.equal(manifest.settings.team, undefined);
-  assert.equal(dist.compatibility.oats, ">=0.52.0");
-  assert.equal(manifest.compatibility.oats, ">=0.52.0");
+  assert.equal(dist.compatibility.oats, ">=0.68.0");
+  assert.equal(manifest.compatibility.oats, ">=0.68.0");
   assert.ok(manifest.settings.join.description.includes("comma-separated eligible team labels"));
   assert.equal(manifest.commands.teams, "bin/oats-aweb.mjs teams");
   assert.equal(manifest.commands.join, "bin/oats-aweb.mjs join");

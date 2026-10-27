@@ -1,17 +1,18 @@
 // Actual generic kernel hostOnly contract, opt-in locally and REQUIRED in CI.
-// Pinned source d27de605 (0.52.0); no claim about another installed kernel.
+// The OATS v0.68.1 release pin reports 0.68.1.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {selectClaudeChannel} from '../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs';
+const PINNED_VERSION = '0.68.1';
 const root=process.env.OATS_HOST_ONLY_KERNEL_ROOT;
 if(process.env.OATS_HOST_ONLY_REQUIRED==='1') assert.ok(root,'required hostOnly test needs OATS_HOST_ONLY_KERNEL_ROOT');
 const manifest=JSON.parse(readFileSync(new URL('../oats-package/capabilities/oats-aweb/oats.json',import.meta.url),'utf8'));
 const kernel=root?await import(pathToFileURL(join(root,'lib/resolve.mjs'))):null;
 const remoteModule=root?await import(pathToFileURL(join(root,'lib/remote.mjs'))):null;
-if(root) assert.equal(JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,'0.52.0');
+if(root) assert.equal(JSON.parse(readFileSync(join(root,'package.json'),'utf8')).version,PINNED_VERSION);
 function fixture(){
   const key='github.com/example/fixture',commit='a'.repeat(40);
   const soul={name:'dev',repoKey:key,commit,path:'souls/dev',definition:{schemaVersion:2,name:'dev',work:'directory',capabilities:{'oats.aweb':{from:'here'}}}};

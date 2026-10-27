@@ -7,11 +7,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
+const PINNED = '13f8f133808f5932bf461108703c1bada4b3f3d3'; // OATS v0.68.1 release pin
 const packageRoot=fileURLToPath(new URL('../oats-package',import.meta.url));
 test('pinned public operator dispatch supplies deployment independently of nested minting root', {timeout:120000}, t=>{
  const kernel=process.env.OATS_HOST_ONLY_KERNEL_ROOT;
- if(!kernel){if(process.env.OATS_HOST_ONLY_REQUIRED==='1')assert.fail('pinned kernel required');t.skip('requires pinned d27de605 public kernel checkout');return;}
- assert.equal(execFileSync('git',['-C',kernel,'rev-parse','HEAD'],{encoding:'utf8'}).trim(),'d27de605c7f6a5df4c3e7eb8566cc37a33d34c0c');
+ if(!kernel){if(process.env.OATS_HOST_ONLY_REQUIRED==='1')assert.fail('pinned kernel required');t.skip('requires pinned upgrade-contract public kernel checkout');return;}
+ assert.equal(execFileSync('git',['-C',kernel,'rev-parse','HEAD'],{encoding:'utf8'}).trim(),PINNED);
  const base=realpathSync(mkdtempSync(join(tmpdir(),'public-team-roots-')));t.after(()=>rmSync(base,{recursive:true,force:true}));
  const host=join(base,'source'),dep=join(base,'deployment'),root=join(dep,'.aweb-roots','default'),privateHome=join(base,'home');
  mkdirSync(join(host,'souls','probe'),{recursive:true});mkdirSync(join(root,'.aw'),{recursive:true});mkdirSync(privateHome);
