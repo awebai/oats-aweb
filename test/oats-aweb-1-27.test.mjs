@@ -59,7 +59,10 @@ test("every sentence saying what stops the prompt names the full setting paths",
   const section = changelog.slice(changelog.indexOf("## 1.27.0"), changelog.indexOf("\n## ", changelog.indexOf("## 1.27.0") + 1));
   assert.ok(flat(section).includes(`the kernel confirms it once at launch (oats#886). ${STOP} altogether.`), section);
   assert.ok(flat(readFileSync(join(REPO, "README.md"), "utf8")).includes(`OATS 0.52.0 and later confirm it once at launch; ${STOP}.`), "README configuration section");
-  assert.ok(flat(readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8")).includes(`OATS confirms it once at launch; ${STOP}.`), "injects/aweb.md");
+  // The inject leaves channel modes to the skill (operator material); it routes there and states no partial stop rule.
+  const inject = flat(readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8"));
+  assert.ok(inject.includes("Channel modes are the operator's (`/oats-aweb` section 4)"), "injects/aweb.md routes channel modes to the skill");
+  assert.ok(!/stop the prompt/.test(inject) || inject.includes(STOP), "injects/aweb.md");
 });
 
 test("the skill, readme and changelog give both causes of claude-channels-unavailable, without approved as its remedy", () => {
