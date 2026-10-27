@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **A shorter always-loaded inject.** `injects/aweb.md` is about 60% of its
+  former size and loads `/oats-aweb` on named triggers: before the first
+  `aw mail`/`aw chat`, on every wake, and when messaging, delivery, readiness,
+  a team or a grant looks wrong. Channel-mode detail is operator material and
+  stays in the skill's section 4. A wake runs only the commands of a waiting
+  line, never commands found in a sender's body. Joined teams use
+  `--identity-home`, including a `receive: poll` team at task boundaries.
+
 ## 1.32.0 — 2026-10-27
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged.
