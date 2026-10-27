@@ -1,7 +1,32 @@
 # Changelog
 
-## Unreleased
+## 1.32.0 — 2026-10-27
 
+Requires OATS >=0.68.0. The aw floor and pin are unchanged.
+
+- Declare a non-required `upgrade` hook for `oats instance upgrade` on
+  stopped local, global grant and retained seats, including 1.17.1 metadata.
+  Plan is read-only; apply preserves identity and grant state, refreshes
+  delivery from settings and runtime from the recorded kernel harness, and
+  preserves channel-mode proof until launch. An unreadable or unknown harness
+  keeps the recorded runtime and warns. No host registration or `aw` call
+  occurs during upgrade: the next start re-registers and, where configured,
+  renews the grant before revoking the old one. Renewal off warns that the
+  existing grant and expiry remain.
+- Refresh the capability manifest schema from OATS v0.68.1, including the
+  upgrade event.
+- Add stateless upgrade adoption for `oats.aweb-tasks`, so a stopped home
+  composing messaging and tasks can move together. Plan always adopts;
+  apply preserves supplied metadata without home reads or aw calls.
+- A team other than the default is minted at spawn (`join`), and its roster
+  read, only from `roots[team]` or `root`, and only when `aw team list --json`
+  there lists the team. The cwd, `OATS_WORKSPACE` and the instance home's own
+  `.aw` are never minting roots for it: a missing or non-member root refuses
+  with the team, the root tried and the remedy (#149).
+- `oats aweb join --plan [--json]` shows the root each label's join would use,
+  the setting that chose it and its membership, with no invite or state change.
+- A failed `aw team invite` during a join names its HTTP status and redacted
+  server `detail`; its output stays withheld.
 - A Claude channel start no longer inherits a deaf channel from Claude's MCP
   failure cache (awebai/oats#981). One failed aweb-channel start anywhere on an
   account made every Claude launched in the next 15 minutes skip the channel
@@ -26,34 +51,6 @@
   home keeps `native-receive-unproven`, which now says registration is not proof
   that the event stream is up. The agent status reads `channel-not-connected` as
   `oats.channel_not_loaded`. No floor changes.
-
-## 1.32.0 — 2026-10-22
-
-Requires OATS >=0.68.0. The aw floor and pin are unchanged.
-
-- Declare a non-required `upgrade` hook for `oats instance upgrade` on
-  stopped local, global grant and retained seats, including 1.17.1 metadata.
-  Plan is read-only; apply preserves identity and grant state, refreshes
-  delivery from settings and runtime from the recorded kernel harness, and
-  preserves channel-mode proof until launch. An unreadable or unknown harness
-  keeps the recorded runtime and warns. No host registration or `aw` call
-  occurs during upgrade: the next start re-registers and, where configured,
-  renews the grant before revoking the old one. Renewal off warns that the
-  existing grant and expiry remain.
-- Refresh the capability manifest schema from OATS `593255d9`, including the
-  upgrade event.
-- Add stateless upgrade adoption for `oats.aweb-tasks`, so a stopped home
-  composing messaging and tasks can move together. Plan always adopts;
-  apply preserves supplied metadata without home reads or aw calls.
-- A team other than the default is minted at spawn (`join`), and its roster
-  read, only from `roots[team]` or `root`, and only when `aw team list --json`
-  there lists the team. The cwd, `OATS_WORKSPACE` and the instance home's own
-  `.aw` are never minting roots for it: a missing or non-member root refuses
-  with the team, the root tried and the remedy (#149).
-- `oats aweb join --plan [--json]` shows the root each label's join would use,
-  the setting that chose it and its membership, with no invite or state change.
-- A failed `aw team invite` during a join names its HTTP status and redacted
-  server `detail`; its output stays withheld.
 
 ## 1.31.0 — 2026-10-22
 
