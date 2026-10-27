@@ -45,6 +45,15 @@ Requires OATS >=0.68.0. The aw floor and pin are unchanged.
 - Add stateless upgrade adoption for `oats.aweb-tasks`, so a stopped home
   composing messaging and tasks can move together. Plan always adopts;
   apply preserves supplied metadata without home reads or aw calls.
+- A team other than the default is minted at spawn (`join`), and its roster
+  read, only from `roots[team]` or `root`, and only when `aw team list --json`
+  there lists the team. The cwd, `OATS_WORKSPACE` and the instance home's own
+  `.aw` are never minting roots for it: a missing or non-member root refuses
+  with the team, the root tried and the remedy (#149).
+- `oats aweb join --plan [--json]` shows the root each label's join would use,
+  the setting that chose it and its membership, with no invite or state change.
+- A failed `aw team invite` during a join names its HTTP status and redacted
+  server `detail`; its output stays withheld.
 
 ## 1.31.0 — 2026-10-22
 

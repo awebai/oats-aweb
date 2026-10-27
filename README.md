@@ -739,7 +739,12 @@ team, setup creates a real per-team root such as
 `<deployment>/.aweb-roots/<label>`, accepts the invite into
 `<root>/.aw`, connects the workspace, and records
 `settings.oats.aweb.roots[<team id>] = <root>` in `oats-local.yaml`. Minting for
-team `T` uses `roots[T]` when present, otherwise `root`.
+team `T` uses `roots[T]` when present, otherwise `root`. For a team other than
+the default, a spawn-time join (`join`) and `oats aweb roster --label` accept
+that root only when `aw team list --json` run in it lists `T`; the cwd,
+`OATS_WORKSPACE` and the instance home's own `.aw` are never tried. Otherwise
+they refuse, naming the team, the root tried and the remedy (`oats aweb setup
+--join <label> --invite-stdin` in the deployment, then a respawn).
 
 The general OATS >=0.42.0 compatibility floor applies to the remaining provider
 behavior; explicit wider-team LOCAL join additionally requires the selected same
@@ -759,6 +764,14 @@ a shared current root must prove membership in that team. Query, configuration,
 compatibility or membership failures refuse before an invite is minted. Captured
 module, identity and delivery settings remain unchanged; spawn, launch and retire
 do not use this current-root lookup.
+
+`oats aweb join --labels <labels> --plan [--json]` resolves each label's root
+exactly as the join would and prints its team, root, the setting that chose it
+(`roots[team]` or `root`) and whether membership was confirmed, or the refusal.
+It mints no invite, accepts nothing and writes no identity or provider state;
+it exits 1 when any label would be refused. When `aw team invite` fails, its
+output stays withheld, and the failure names the HTTP status and the server's
+`detail` with token-shaped values redacted.
 
 Setup selects the deployment from `OATS_TEAM_SCOPE`, with `OATS_WORKSPACE` as an
 older-dispatch fallback. Supplied deployment facts must agree and the selected
