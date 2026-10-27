@@ -62,7 +62,7 @@ test("every sentence saying what stops the prompt names the full setting paths",
   // The inject leaves channel modes to the skill (operator material); it routes there and states no partial stop rule.
   const inject = flat(readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8"));
   assert.ok(inject.includes("Channel modes are the operator's (`/oats-aweb` section 4)"), "injects/aweb.md routes channel modes to the skill");
-  assert.ok(!/stop the prompt/.test(inject) || inject.includes(STOP), "injects/aweb.md");
+  assert.ok(!/stops? the prompt/i.test(inject) || inject.includes(STOP), "injects/aweb.md");
 });
 
 test("the skill, readme and changelog give both causes of claude-channels-unavailable, without approved as its remedy", () => {
