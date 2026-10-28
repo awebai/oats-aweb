@@ -6,6 +6,14 @@ import test from "node:test";
 const skill = readFileSync(new URL("../oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md", import.meta.url), "utf8");
 const recovery = skill.split("**Mail recovery: session delivery and affected Pi channel versions**")[1]?.split("### Receive verification and recovery")[0]?.replace(/\s+/g, " ");
 
+test("the always-loaded inject triggers recovery even when the skill or wake is absent", () => {
+  const inject = readFileSync(new URL("../oats-package/capabilities/oats-aweb/injects/aweb.md", import.meta.url), "utf8").replace(/\s+/g, " ");
+  assert.match(inject, /on pi with `@awebai\/pi` 0\.4\.0 after any interrupted turn and at task boundaries/);
+  assert.match(inject, /at task boundaries \(load `\/oats-aweb` section 4\), reconcile/);
+  assert.match(inject, /STATE and task records against exact (?:delivered )?ids/);
+  assert.match(inject, /`aw mail inbox --show-all --json` (?:paged )?with `--cursor`/);
+});
+
 test("Pi recovery is scoped to the reported extension version with a fixed-pin removal condition", () => {
   assert.ok(recovery, "extend the shared recovery procedure in section 4");
   assert.match(recovery, /`@awebai\/pi` 0\.4\.0.*Pi 1\.3\.0/);

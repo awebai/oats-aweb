@@ -42,8 +42,9 @@ no wake, so check it that way at task boundaries.
 
 Delivery may mark mail read, so
 delivered mail may not appear in unread `aw mail inbox`. After an uncertain
-crash, compaction or restart, reconcile STATE and task records against exact
-ids: `aw mail show --message-id <id> --json`, or
+crash, compaction or restart, and on pi with `@awebai/pi` 0.4.0 after any
+interrupted turn and at task boundaries (load `/oats-aweb` section 4), reconcile
+STATE and task records against exact ids: `aw mail show --message-id <id> --json`, or
 `aw mail inbox --show-all --json` paged with `--cursor`.
 Read state is not completion; `--conversation-id` is not a recovery check.
 
