@@ -32,12 +32,12 @@ function fixture(t) {
   } };
 }
 
-test('package exports messaging and tasks at 1.32.0 with the same floors', () => {
+test('package exports messaging and tasks at 1.32.1 with the same floors', () => {
   const pkg = json(join(root, 'oats-package/oats-package.json'));
   assert.deepEqual(pkg.capabilities, ['capabilities/oats-aweb', 'capabilities/oats-aweb-tasks']);
   const messaging = json(join(root, 'oats-package/capabilities/oats-aweb/oats.json'));
   const tasks = json(join(cap, 'oats.json'));
-  for (const manifest of [pkg, messaging, tasks, json(join(root, 'package.json'))]) assert.equal(manifest.version, '1.32.0');
+  for (const manifest of [pkg, messaging, tasks, json(join(root, 'package.json'))]) assert.equal(manifest.version, '1.32.1');
   assert.equal(tasks.capability, 'oats.aweb-tasks');
   assert.equal(tasks.layer, 'tasks');
   assert.deepEqual(tasks.compatibility, messaging.compatibility);

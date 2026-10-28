@@ -120,9 +120,9 @@ test("manifest declares the current floor, no provider team setting, commands an
   const dist = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const schema = JSON.parse(readFileSync(join(REPO, "schemas", "capability-manifest.schema.json"), "utf8"));
-  assert.equal(pkg.version, "1.32.0");
-  assert.equal(dist.version, "1.32.0");
-  assert.equal(manifest.version, "1.32.0");
+  assert.equal(pkg.version, "1.32.1");
+  assert.equal(dist.version, "1.32.1");
+  assert.equal(manifest.version, "1.32.1");
   assert.equal(manifest.settings.team, undefined);
   assert.equal(dist.compatibility.oats, ">=0.68.0");
   assert.equal(manifest.compatibility.oats, ">=0.68.0");

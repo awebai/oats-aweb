@@ -23,7 +23,7 @@ const capabilitiesAt = version => version === "1.31.0" ? ["oats.aweb", "oats.awe
 /** A scratch deployment whose locked oats.aweb is the local v<version> tag,
  *  with one instance spawned from a soul composing it. `fakeBin` is the fake
  *  aw's directory, `local` and `soul` YAML appended to oats-local.yaml and to
- *  the soul. `upgrade()` re-locks to this checkout's package bytes as v1.32.0,
+ *  the soul. `upgrade()` re-locks to this checkout's package bytes as v1.32.1,
  *  stops the instance and plans and applies `oats instance upgrade`. */
 function historicalSeat(t, { base, version, fakeBin, local = "", soul, launchConfig, env = {} }) {
   const capabilities = capabilitiesAt(version);
@@ -74,19 +74,19 @@ function historicalSeat(t, { base, version, fakeBin, local = "", soul, launchCon
   const upgrade = (awCalls) => {
     rmSync(join(source, "oats-package"), { recursive: true });
     cpSync(join(ROOT, "oats-package"), join(source, "oats-package"), { recursive: true });
-    git(source, "add", "-A"); git(source, "commit", "-qm", "current branch package bytes"); git(source, "tag", "v1.32.0");
-    writeFileSync(workspaceFile, readFileSync(workspaceFile, "utf8").replace(`oats.aweb: v${version}`, "oats.aweb: v1.32.0"));
+    git(source, "add", "-A"); git(source, "commit", "-qm", "current branch package bytes"); git(source, "tag", "v1.32.1");
+    writeFileSync(workspaceFile, readFileSync(workspaceFile, "utf8").replace(`oats.aweb: v${version}`, "oats.aweb: v1.32.1"));
     git(scratch.workspace, "add", "."); git(scratch.workspace, "commit", "-qm", "select upgrade destination");
     run(["sync"]);
-    assert.equal(json(join(scratch.deployment, "oats-lock.json")).packages["oats.aweb"].version, "1.32.0");
+    assert.equal(json(join(scratch.deployment, "oats-lock.json")).packages["oats.aweb"].version, "1.32.1");
     scratch.stop("upgrade-seat");
     const callsBeforeUpgrade = awCalls();
     const plan = run(["instance", "upgrade", "upgrade-seat", "--plan"]);
     run(["instance", "upgrade", "upgrade-seat", "--plan-revision", plan.planRevision, "--idempotency-key", `historical-${version}-upgrade`]);
     const upgraded = record();
     for (const name of capabilities) {
-      assert.equal(json(join(home, '.oats/modules', name, 'oats.json')).version, '1.32.0');
-      assert.equal(upgraded.modules[name].from.version, '1.32.0');
+      assert.equal(json(join(home, '.oats/modules', name, 'oats.json')).version, '1.32.1');
+      assert.equal(upgraded.modules[name].from.version, '1.32.1');
       assert.equal(upgraded.modules[name].previous.from.version, version);
       assert.equal(upgraded.modules[name].previous.commit, oldCommit);
     }
