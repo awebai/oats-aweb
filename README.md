@@ -5,6 +5,17 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.32.1 — recover Pi mail lost on an interrupted turn
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33. Guidance only: hooks,
+manifest fields and pins are as in 1.32.0. With `@awebai/pi` 0.4.0, mail that
+arrives during a turn can be lost when the human interrupts it
+([aweb#68](https://github.com/awebai/aweb/issues/68)). The inject and
+`/oats-aweb` section 4 now have affected Pi instances scan
+`aw mail inbox --show-all --json` after any interrupted turn and at task
+boundaries, and reconcile by message id. Remove the workaround once a fixed
+`@awebai/pi` is pinned for those instances.
+
 ## 1.32.0 — upgrade a stopped seat
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33. Upgrade the kernel
