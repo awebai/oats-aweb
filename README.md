@@ -94,6 +94,40 @@ set `OATS_TASKS_KERNEL_ROOT` to the kernel source and
 local bare package/workspace repositories, an isolated HOME and cache, and
 previews a soul with both providers. It calls no live service or aw command.
 
+## Unreleased — a GLOBAL resident without an API key
+
+```
+oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]
+```
+
+- **`oats aweb resident create` needs no API key.** Without `AWEB_API_KEY`,
+  the deployment's team root authorizes the create:
+  `aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team id> --name <name> --inbound-mode contacts-only --json`,
+  run once in T with `PATH`, `HOME`, `AW_NO_UPDATE_CHECK` and, when set,
+  `AWID_REGISTRY_URL`. T is `--authority-root`, else
+  `settings.oats.aweb.roots[<team>]` for the resident's team, else
+  `settings.oats.aweb.root`. The team id is the `team_id` of T's
+  `aw inbound-mode --json`, passed unchanged (canonical or a service UUID;
+  aweb resolves either). `<org>` is `--org <slug or id>`, else the slug of
+  T's `<slug>.aweb.ai` namespace; any other namespace asks for `--org`. The
+  inbound mode must read back `contacts_only` (`E_RESIDENT_VERIFY` otherwise).
+  A refused or interrupted create leaves aw's recovery state
+  (`R/.aw/hosted-identity-create.json`): the rerun, with the same team root,
+  `--org` and `--team-label`, runs the same create and aw resumes it, even
+  when the identity files are already installed; the key route refuses it.
+  This route needs aw 1.36.48 or later (`E_RESIDENT_AW_FLOOR` below it); the
+  key route keeps the 1.36.33 floor.
+- **Contract change: the key prompt is gone.** Nothing asks for a key on a
+  terminal. With `AWEB_API_KEY` set, the key route runs as before. With
+  neither a key nor a team root, the command refuses at once with
+  `E_RESIDENT_KEY`, naming both routes. A partial `aw init` is continued only
+  by the key route. `--plan` without a key shows the root route; `init.route`
+  (`key` or `root`) says which.
+- The root route is tested against a fake aw whose answers have the JSON
+  shape of aw 1.36.49's source. Its live acceptance is a real run on the
+  released aw.
+- Details: [docs/resident-create.md](docs/resident-create.md#the-root-route).
+
 ## 1.30.0 — Codex readiness from the kernel's launch record
 
 Readiness now takes a home's runtime from the kernel's recorded launch

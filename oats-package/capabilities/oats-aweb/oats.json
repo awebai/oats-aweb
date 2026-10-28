@@ -154,11 +154,11 @@
     },
     "root": {
       "hostOnly": true,
-      "description": "Host-owned absolute directory whose .aw is the aweb minting root. Put this only in oats-local.yaml settings.oats.aweb.root; use oats aweb setup to initialize it."
+      "description": "Host-owned absolute directory whose .aw is the aweb minting root. Put this only in oats-local.yaml settings.oats.aweb.root; use oats aweb setup to initialize it. Without AWEB_API_KEY, oats aweb resident create uses it as the team root that authorizes the resident."
     },
     "roots": {
       "hostOnly": true,
-      "description": "Host-owned map of aweb team id to absolute directory whose .aw is that team's minting root, for deployments that mint into several teams. Put this only in oats-local.yaml settings.oats.aweb.roots. Keys are team ids only."
+      "description": "Host-owned map of aweb team id to absolute directory whose .aw is that team's minting root, for deployments that mint into several teams. Put this only in oats-local.yaml settings.oats.aweb.roots. Keys are team ids only. Without AWEB_API_KEY, oats aweb resident create uses the resident's team's root as the team root that authorizes it."
     },
     "identity": {
       "default": {

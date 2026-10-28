@@ -2,11 +2,22 @@
 
 ## The one command (provider 1.26.0, aw >=1.36.33)
 
-In an OATS deployment, run the aweb dashboard's line:
+In an OATS deployment, run it by the root route (aw >=1.36.48), with no API
+key, or by the aweb dashboard's key route:
 
 ```text
+oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]
 AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label <label>] [--plan] [--json]
 ```
+
+The root route runs exactly one
+`aw --identity-home R/.aw id create --owner-identity-home T/.aw --org <org> --team-id <team id> --name <name> --inbound-mode contacts-only --json`
+in the deployment's team root T, with no key, then reads the inbound mode
+back (`contacts_only`). A refused or interrupted create leaves aw's recovery
+state (`R/.aw/hosted-identity-create.json`): rerun the same command with the
+same team root, `--org` and `--team-label`, and aw resumes it; never empty R.
+The rest of this paragraph is the key route, and what
+both share from verify on.
 
 It does every step of this card that OATS can: the preflight of the resident
 parent R (`<deployment>/.aweb-residents/<name>`, or `--root`), exactly one
@@ -21,8 +32,8 @@ readiness check, and
 under `--team-label` or the team's name, made the default team where the
 deployment has none (provider 1.26.1, OATS >=0.48.0). A complete identity already in R is
 verified and adopted, not re-created; a partial init is continued with the same
-DID; a quarantined partial is refused with aw's own message. With no
-`AWEB_API_KEY` it asks for the key on the terminal without echo. Its stages,
+DID; a quarantined partial is refused with aw's own message. Nothing ever
+prompts for a key. Its stages,
 `--json` envelopes and custody unit controls are in the package's
 `docs/resident-create.md`.
 

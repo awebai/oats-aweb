@@ -14,7 +14,7 @@ function snapshot(dir) {
     e.isDirectory() ? snapshot(join(dir, e.name)) : readFileSync(join(dir, e.name), "utf8")]));
 }
 const create = (s, platform, { plan = false, env = {} } = {}) => createResident({ name: NAME, plan }, {
-  env: { ...s.env, ...env }, platform, stdin: { isTTY: false }, stderr: { isTTY: false },
+  env: { ...s.env, ...env }, platform,
 });
 function complete(s) {
   mkdirSync(join(s.root, ".aw"), { recursive: true });

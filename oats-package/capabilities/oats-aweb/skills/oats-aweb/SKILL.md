@@ -679,20 +679,31 @@ unavailable inventory is not no authority or readiness. This grants no automatic
 installation/relaunch permission and does not expand LOCAL app access.
 
 **Create or adopt a resident: one command** (provider 1.26.0, aw >=1.36.33;
-provider 1.26.1 needs OATS >=0.48.0 for it).
-Run the dashboard's line in D:
+provider 1.26.1 needs OATS >=0.48.0 for it). Run it in D, by one of two routes:
 
 ```text
+oats aweb resident create <name> [--authority-root <dir>] [--org <slug or id>] [--team-label <label>] [--plan] [--json]
 AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label <label>] [--plan] [--json]
 ```
 
+The first is the root route (aw >=1.36.48): with no API key,
+the deployment's team root T authorizes `aw id create` for the resident
+(`--owner-identity-home T/.aw`). T is `--authority-root`, else
+`settings.oats.aweb.roots[<team>]`, else `settings.oats.aweb.root`; a deployment
+made by `oats aweb setup --username` has one. `--org` is the organization's
+slug or id, else the slug of T's `<slug>.aweb.ai` namespace; any other
+namespace asks for `--org`. The resident's inbound mode must read back
+`contacts_only`. The second is the dashboard's key route. Never ask the person
+for an API key: nothing prompts for one, and with neither a key nor a team
+root the command refuses (`E_RESIDENT_KEY`), naming both routes.
+
 | Act | Writes / success / one next step | Error → remedy |
 |---|---|---|
-| Create, continue or adopt resident `<name>` in R (`D/.aweb-residents/<name>`, or `--root`) | One `aw init --global` run whose environment is built from nothing, the key in it only; a per-user custody unit `ai.aweb.custody.<namespace>.<name>` (launchd on macOS, systemd --user on Linux) running `aw custody serve` in R; `settings.oats.aweb.residents.<name>`. Success: `PASS resident <address> team <id> custody running`. The resident's team is mapped under `--team-label`, else under the team's name, and becomes the default team where the deployment has none; another default is never changed. Next: the printed steps, in order: `oats teams default <label>` when another default was kept (a seat's grant is minted in the default team; this moves the whole deployment's default, so every later spawn of a soul without its own default goes to the resident's team: the operator decides, an agent prints it and asks and never runs it itself), then `oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=<name>`. |  `FAIL <stage>: …`: an init failure is aw's own text, "rerun" only when aw kept a partial; `E_RESIDENT_LINGER` → an admin runs `loginctl enable-linger <user>`; `E_RESIDENT_UNIT_CONFLICT` → retire the named foreign unit using the printed platform steps, then rerun (same-root units under another label also conflict); `E_RESIDENT_CUSTODY_RUNNING` (the resident's custody already runs, started by hand or another supervisor) → follow the retirement steps for another recognised unit when named; if no other recognised unit was found, find and stop any supervisor outside the recognised units (`aw custody stop` in R or stop whatever supervises it), then rerun; `E_RESIDENT_TEAM_LABEL` at record (the label maps to another team; the resident is in place) → rerun with `--team-label <other>`, no key needed; at preflight with an OATS below 0.48.0 → upgrade OATS. |
+| Create, continue or adopt resident `<name>` in R (`D/.aweb-residents/<name>`, or `--root`) | One `aw id create` run in T (root route) or one `aw init --global` run (key route), each with an environment built from nothing, the key in the key route's only; a per-user custody unit `ai.aweb.custody.<namespace>.<name>` (launchd on macOS, systemd --user on Linux) running `aw custody serve` in R; `settings.oats.aweb.residents.<name>`. Success: `PASS resident <address> team <id> custody running`. The resident's team is mapped under `--team-label`, else under the team's name, and becomes the default team where the deployment has none; another default is never changed. Next: the printed steps, in order: `oats teams default <label>` when another default was kept (a seat's grant is minted in the default team; this moves the whole deployment's default, so every later spawn of a soul without its own default goes to the resident's team: the operator decides, an agent prints it and asks and never runs it itself), then `oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=<name>`. |  `FAIL <stage>: …`: an init failure is aw's own text, "rerun" only when aw kept a partial; `E_RESIDENT_LINGER` → an admin runs `loginctl enable-linger <user>`; `E_RESIDENT_UNIT_CONFLICT` → retire the named foreign unit using the printed platform steps, then rerun (same-root units under another label also conflict); `E_RESIDENT_CUSTODY_RUNNING` (the resident's custody already runs, started by hand or another supervisor) → follow the retirement steps for another recognised unit when named; if no other recognised unit was found, find and stop any supervisor outside the recognised units (`aw custody stop` in R or stop whatever supervises it), then rerun; `E_RESIDENT_TEAM_LABEL` at record (the label maps to another team; the resident is in place) → rerun with `--team-label <other>`, no key needed; at preflight with an OATS below 0.48.0 → upgrade OATS. |
 
-With no `AWEB_API_KEY` it asks for the key on the terminal without echo; with
-no key and no terminal it refuses. A rerun after a failure continues aw's
-partial (the same DID); a rerun after success verifies and rewrites/reloads the custody unit when its recorded aw or node path changes. Its stages,
+`E_RESIDENT_AW_FLOOR` on the root route → upgrade aw to 1.36.48 or later.
+A rerun after a key-route failure continues aw's partial (the same DID; only
+the key route continues one); a rerun after success verifies and rewrites/reloads the custody unit when its recorded aw or node path changes. Its stages,
 envelopes, unit controls and what CI proves are in the package's
 `docs/resident-create.md`. Plain-aw users keep the dashboard's plain command.
 

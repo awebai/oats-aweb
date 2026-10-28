@@ -64,20 +64,68 @@ ${body}`;
  * Our unit's process is pid 4242 and owns the custody socket (fake lsof);
  * another custody is pid 999.
  * lsof: false leaves the fake lsof out, as on a host without it.
+ * version: the version `aw version` reports (default the captured 1.36.33).
+ *
+ * The root route's answers (`aw --identity-home <R>/.aw id create
+ * --owner-identity-home <A>/.aw ...` and the authority root's reads) are not
+ * captures: they have the JSON shape of aw 1.36.49's source
+ * (cmd/aw/id_create_hosted.go and inbound_mode.go), since no run against a
+ * real server is made from a test. Reads given `--identity-home` are the
+ * authority root's: authority.domain is its `whoami` domain, authority.teamId
+ * the `team_id` of its `inbound-mode` (the canonical id, as aw answers it).
+ * create follows aw's recovery layout in <R>/.aw: the lock, then
+ * hosted-identity-create.json before any remote call, which a rerun with the
+ * same parameters resumes and success removes (the lock stays); a root holding
+ * anything else is refused as occupied. create: "connected" (the complete
+ * identity), "refused" (Cloud's refusal, the recovery state kept),
+ * "invalid-owner" (refused before the recovery state: only the lock),
+ * "lost-response" or "interrupted-install" (the first create fails, before or
+ * after installing the identity, keeping the recovery state; reruns complete).
+ * inbound: the resident's `inbound_mode` read back after the create.
  */
-export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true } = {}) {
+export const AUTHORITY_TEAM_ID = "default:acme.aweb.ai";
+export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true, version, authority = {}, create = "connected", inbound = "contacts_only" } = {}) {
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
   const fixtures = {};
   for (const name of ["init-certificate-connect", "init-apikey-workspace-init-404", "init-apikey-registry-mismatch", "init-apikey-registry-local", "init-apikey-rejected", "whoami", "doctor-identity-offline", "doctor-registry-online", "custody-status-not-running", "custody-status-running"]) fixtures[name] = fixture(name);
   const running = JSON.parse(fixtures["custody-status-running"].stdout);
   const missingOps = { ...fixtures["custody-status-running"], stdout: JSON.stringify({ ...running, ops: running.ops.filter((op) => op !== "grant_never_ttl.v1" && op !== "mail_reply_continuation.v1") }, null, 2) + "\n" };
-  const state = JSON.stringify({ base, init, linger, custody, fixtures, missingOps, version: AW_VERSION_OUTPUT });
+  const versionOutput = version ? AW_VERSION_OUTPUT.replace(/^aw \S+/, `aw ${version}`) : AW_VERSION_OUTPUT;
+  const owner = { domain: "acme.aweb.ai", teamId: AUTHORITY_TEAM_ID, ...authority };
+  const state = JSON.stringify({ base, init, linger, custody, fixtures, missingOps, version: versionOutput, owner, create, inbound });
   const write = (name, body) => { const file = join(bin, name); writeFileSync(file, script(state, body)); chmodSync(file, 0o755); };
   if (aw) write("aw", `
 const f = state.fixtures, cwd = process.cwd(), dotAw = path.join(cwd, ".aw");
 const mark = (...names) => { fs.mkdirSync(dotAw, { recursive: true, mode: 0o700 }); for (const n of names) fs.writeFileSync(path.join(dotAw, n), ""); };
+const json = (doc) => { process.stdout.write(JSON.stringify(doc, null, 2) + "\\n"); process.exit(0); };
+const identityHome = argv[0] === "--identity-home" ? argv.splice(0, 2)[1] : undefined;
 if (argv[0] === "version") { process.stdout.write(state.version); process.exit(0); }
+if (argv[0] === "id" && argv[1] === "create") {
+  // aw's layout: the lock, then the recovery state (with the signing seed)
+  // before any remote call; on success the state goes and the lock stays.
+  const value = (f) => argv[argv.indexOf(f) + 1];
+  const context = JSON.stringify({ org: value("--org"), team_id: value("--team-id"), name: value("--name"), inbound_mode: value("--inbound-mode") });
+  const recovery = path.join(identityHome, "hosted-identity-create.json"), lock = recovery + ".lock";
+  const refuse = (text) => { process.stderr.write(text + "\\n"); process.exit(1); };
+  fs.mkdirSync(identityHome, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(lock, "");
+  if (state.create === "invalid-owner") refuse("fake aw: the owner root holds no usable identity");
+  if (fs.existsSync(recovery)) { if (JSON.parse(fs.readFileSync(recovery, "utf8")).context !== context) refuse("hosted identity root belongs to different creation parameters; retry the original account, organization, team, name, mode and registry"); }
+  else if (fs.readdirSync(identityHome).some((n) => n !== path.basename(lock))) refuse("hosted identity creation requires a fresh root or its original recovery state; selected root is occupied");
+  else fs.writeFileSync(recovery, JSON.stringify({ version: 1, context }), { mode: 0o600 });
+  const once = (mode) => state.create === mode && !flag("create-interrupted") && (touch("create-interrupted"), true);
+  if (state.create === "refused") refuse("fake aw: the owner identity is not the owner of this organization");
+  if (once("lost-response")) refuse("fake aw: lost response");
+  for (const n of ["identity.yaml", "signing.key", "workspace.yaml"]) fs.writeFileSync(path.join(identityHome, n), "");
+  if (once("interrupted-install")) refuse("fake aw: inbound mode read-back interrupted");
+  fs.rmSync(recovery);
+  const name = value("--name");
+  json({ status: "created", team_id: "default:" + state.owner.domain, service_team_id: "6f1d2c3b-4a59-4e8f-9b7a-0c1d2e3f4a5b", identity_home: identityHome, identity_scope: "global", custody: "self", did_key: "did:key:z6Mkresident", did_aw: "did:aw:resident", address: state.owner.domain + "/" + name, inbound_mode: "contacts_only" });
+}
+if (identityHome && argv[0] === "inbound-mode") json({ agent_id: "agent-root", team_id: state.owner.teamId, alias: "root", identity_scope: "local", inbound_mode: "open", label: "All", configurable: false });
+if (identityHome && argv[0] === "whoami") json({ address: state.owner.domain + "/root", alias: "root", did: "did:key:z6Mkroot", domain: state.owner.domain, identity_scope: "local", inbound_configurable: false, inbound_mode: "open", inbound_mode_label: "All", name: "root" });
+if (argv[0] === "inbound-mode") json({ agent_id: "agent-resident", team_id: state.owner.teamId, alias: "carol", identity_scope: "global", inbound_mode: state.inbound, label: "Contacts only", configurable: true });
 if (argv[0] === "init") {
   if (state.init === "connected") { if (fs.existsSync(path.join(dotAw, "partial-init.yaml"))) fs.rmSync(path.join(dotAw, "partial-init.yaml")); mark("identity.yaml", "signing.key", "workspace.yaml"); replay(f["init-certificate-connect"]); }
   if (state.init === "partial-404") { mark("partial-init.yaml"); replay(f["init-apikey-workspace-init-404"]); }

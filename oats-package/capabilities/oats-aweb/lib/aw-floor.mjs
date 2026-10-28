@@ -22,3 +22,9 @@ export function versionAtLeast(version, floor) {
   for (let i = 0; i < 3; i++) if (v[i] !== f[i]) return v[i] > f[i];
   return true;
 }
+
+/** The floor of `oats aweb resident create`'s root route: the first aw whose
+ *  `id create` takes --owner-identity-home (aweb-acke.2) and keeps
+ *  `contacts_only` a distinct inbound mode (aweb-ackf). Below it the route
+ *  refuses; the key route keeps AW_MIN. */
+export const AW_RESIDENT_ROOT_MIN = '1.36.48';
