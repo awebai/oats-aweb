@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Interim Pi interrupted-turn mail recovery** (awebai/aweb#68).
+  The always-loaded inject triggers `/oats-aweb`'s shared recovery procedure for
+  `@awebai/pi` 0.4.0 (reported with Pi 1.3.0): after any interrupted turn and at
+  task boundaries, scan `aw mail inbox --show-all --json`, page with `--cursor`
+  and reconcile by message id against recorded handling before repeating any
+  side effects. Queued mail can be lost on interrupt despite being marked read.
+  The Pi-specific workaround can be removed once a fixed extension is pinned
+  for the affected instances; this changes guidance only, not delivery or pins.
+
 - **A shorter always-loaded inject.** `injects/aweb.md` is about 60% of its
   former size and loads `/oats-aweb` on named triggers: before the first
   `aw mail`/`aw chat`, on every wake, and when messaging, delivery, readiness,
