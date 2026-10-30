@@ -16,6 +16,9 @@
   before you resume it. Resuming a Claude home afterwards does nothing and isn't
   needed; a `--yolo` or Codex home stays paused until you resume it.
 
+- A local home with `identity.renew: launch` now reaches the joined-team sync at
+  every start. It used to return early and skip it.
+
 - **The approved route is now the guidance for stopping the development prompt
   and for unattended Claude homes.** The warnings, the README and `/oats-aweb`
   name `claudeChannelMode: approved` for both. `delivery: session` stays a
