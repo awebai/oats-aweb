@@ -21,7 +21,7 @@ function deployment(t) {
 
 /** aw as the steward setup sees it: --help lists --human-parent, `id create`
  *  writes a key into the steward home, and `who` answers with `chain`. */
-function fakeAw({ who = { id: STEWARD, outcome: "nearest_human", human_id: HUMAN, identity_valid: true, reason: "verified" }, createStatus = 0, help = "--human-parent string" } = {}) {
+function fakeAw({ who = { id: STEWARD, outcome: "nearest_human", human_id: HUMAN, identity_valid: true, reason: "verified" }, createStatus = 0, help = "--human-parent string", partial = false } = {}) {
   const calls = [];
   return {
     calls,
@@ -33,7 +33,9 @@ function fakeAw({ who = { id: STEWARD, outcome: "nearest_human", human_id: HUMAN
     },
     runInteractive: (argv, cwd) => {
       calls.push({ argv, cwd, interactive: true });
-      if (createStatus === 0) { mkdirSync(join(cwd, ".aw"), { recursive: true }); writeFileSync(join(cwd, ".aw", "signing.key"), "k"); }
+      // aw saves the key before it installs the chain: a failed install leaves the key.
+      if (createStatus === 0 || partial) { mkdirSync(join(cwd, ".aw"), { recursive: true }); writeFileSync(join(cwd, ".aw", "signing.key"), "k"); }
+      if (createStatus === 0) writeFileSync(join(cwd, ".aw", "id-chain.json"), "{}");
       return createStatus;
     },
   };
@@ -103,4 +105,15 @@ test("records nothing when aw fails or the chain does not verify to the human", 
   const wrongHuman = deployment(t);
   await assert.rejects(setupSteward(parseStewardArgs(ARGS), { env: env(wrongHuman), kernelVersion: kernel(), ...fakeAw({ who: { id: STEWARD, outcome: "nearest_human", human_id: "did:aw:other", identity_valid: true } }) }), { code: "E_STEWARD_VERIFY", message: /does not verify to did:aw:human1/ });
   for (const dir of [failedCreate, wrongHuman]) assert.equal(readFileSync(join(dir, "oats-local.yaml"), "utf8"), LOCAL_YAML);
+});
+
+test("a create that saved the key but not the chain is resumed by rerunning the same aw id create", async (t) => {
+  const dir = deployment(t);
+  await assert.rejects(setupSteward(parseStewardArgs(ARGS), { env: env(dir), kernelVersion: kernel(), ...fakeAw({ createStatus: 1, partial: true }) }), { code: "E_STEWARD_CREATE", message: /a rerun continues from/ });
+  const aw = fakeAw();
+  const result = await setupSteward(parseStewardArgs(ARGS), { env: env(dir), kernelVersion: kernel(), ...aw });
+  const creates = aw.calls.filter((c) => c.interactive);
+  assert.equal(creates.length, 1, "the rerun resumes through aw, not around it");
+  assert.deepEqual(creates[0].argv, ["aw", "id", "create", "--human-parent", HUMAN, "--domain", "awtest-demo.example", "--name", "awtest-steward"]);
+  assert.equal(result.created, true);
 });

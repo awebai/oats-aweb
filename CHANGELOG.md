@@ -18,13 +18,15 @@
   - It refuses, naming each fix, on a revoked, replaced, malformed or stale
     chain, unavailable registry evidence, a chain over 8 certificates or 6144
     bytes, a spawner whose recorded chain files are gone, a resident-grant
-    spawner, a kernel without `spawn-attribution`, or no bound human.
+    spawner, a chained minting root or a steward at the minting root, a kernel
+    without `spawn-attribution`, or no bound human.
   - A spawner with no chain gets a chainless child that reports `unknown`,
     with a warning.
   - The spawn meta records `identity.attribution` and `chainInstalled`.
-    `setup --check-only --json` reports `attribution`: the mode, and the count
-    of spawners without a chain.
-  - Costs: a registry outage of more than 60 s stops chained spawning, and a
+    Home readiness carries one `attribution` warning (information, never a
+    failure), and `setup --check-only --json` reports `attribution`: the mode,
+    and the count of spawners without a chain.
+  - Costs: a registry outage stops chained spawning for as long as it lasts, and a
     `--server` spawn from another host counts as a person's. The steward's key
     custody is a convention under the same OS user, where misuse changes the
     recorded parent and never the human.

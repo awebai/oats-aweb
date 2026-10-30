@@ -10,6 +10,7 @@ import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
 import { childOutcome } from './child-outcome.mjs';
+import { attributionHomeReadiness } from './attribution.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
 import {
   MESSAGING_CONTRACT,
@@ -93,7 +94,7 @@ function settings(value,{phase}={}) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
   if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join']:['delivery','claudeChannelMode','root','roots','join'],[]);
+  keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join','attribution','human','steward']:['delivery','claudeChannelMode','root','roots','join'],[]);
   if(phase!=='check') {try {selectClaudeChannel(value.claudeChannelMode);} catch {wireError('needs-configuration');}}
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
@@ -103,6 +104,8 @@ function settings(value,{phase}={}) {
   if(value.identity!==undefined && !obj(value.identity)) wireError('needs-configuration');
   if(value.residents!==undefined && !obj(value.residents)) wireError('needs-configuration');
   if(obj(value.residents)) for(const [name,custody] of Object.entries(value.residents)) if(!name || typeof custody!=='string' || !custody.trim()) wireError('needs-configuration');
+  if(value.attribution!==undefined && value.attribution!==null && !['','none','human'].includes(value.attribution)) wireError('needs-configuration');
+  for(const record of ['human','steward']) if(value[record]!==undefined && !obj(value[record])) wireError('needs-configuration');
   return value;
 }
 function request(value,phase) {
@@ -376,6 +379,12 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     const daemon=wakeDaemonAssessment(status,{minimumVersion:AW_MIN});
     receiveProblems.push(...daemon.problems);warnings.push(...daemon.warnings);
   }
+  // Attribution is information: the mode and the binding, never a failure.
+  warnings.push(attributionHomeReadiness({
+    settings:req.settings,home:ctx.home,
+    hasChain:home=>existsSync(join(home,'.aw','id-chain.json')),
+    isLocal:home=>{const identity=recordedStart(home).meta?.identity;return !(identity?.mode==='global' && identity?.grant);},
+  }));
   const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
   return {...result,problems:[...result.problems,...receiveProblems],warnings};
 }

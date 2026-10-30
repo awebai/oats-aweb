@@ -1688,9 +1688,10 @@ function syncWakeReceive(meta) {
 }
 
 /** Spawn attribution (lib/attribution.mjs): in mode human, decide BEFORE the
- *  mint who issues the child and whether the spawn refuses, so a refusal leaves
- *  no remote identity behind. Null in mode none: today's spawn, untouched. */
-function attributionPreflight() {
+ *  mint, from the minting root the mint will use, who issues the child and
+ *  whether the spawn refuses, so a refusal leaves no remote identity behind.
+ *  Null in mode none: today's spawn, untouched. */
+function attributionPreflight(root) {
   let mode;
   try { mode = attributionMode(settings); } catch (e) { fatal(e.message); }
   if (mode !== "human") return null;
@@ -1698,6 +1699,7 @@ function attributionPreflight() {
   try { version = querySelectedKernel(["--version", "--json"]); } catch { version = undefined; }
   const refusal = kernelRefusal(version);
   if (refusal) fatal(refusal);
+  assertMintingRootIssuesNothing(root);
   let issuer;
   try { issuer = issuerSelection({ spawnerHome: process.env.OATS_SPAWNER_HOME, steward: settings.steward }); } catch (e) { fatal(e.message); }
   let recordedChainInstalled = false;
@@ -1736,6 +1738,15 @@ function issueChildChain(issuer) {
   const problem = chainLimitProblem(response?.chain);
   if (problem) fail(problem);
   step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--json"], home));
+}
+/** aw's local team invite makes a chained inviter the new identity's ID
+ *  parent, so `aw init --join-from` from a chained minting root would chain
+ *  every child to the root before the spawner or steward could issue it. The
+ *  root mints and the steward issues: they stay separate, chainless homes. */
+function assertMintingRootIssuesNothing(root) {
+  const steward = settings.steward?.home;
+  if (typeof steward === "string" && resolve(steward) === resolve(root)) fatal(`the steward's home ${steward} is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → a human reruns \`oats aweb setup --steward\` with its own steward home`);
+  if (existsSync(join(root, ".aw", "id-chain.json"))) fatal(`this deployment's minting root ${root} carries an identity chain, so aw would make it every child's parent → use a chainless minting root`);
 }
 /** A child that reuses an existing identity (a resident grant or a retained
  *  seat) gets no new chain: in mode human it records unknown and says so. */
@@ -1820,7 +1831,6 @@ if (event === "launch") {
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
-  const attribution = attributionPreflight();
   let minted;                 // external identity, once the mint succeeds
   let spawnMeta;              // with joined teams, once any is accepted
   try {
@@ -1831,6 +1841,7 @@ if (event === "launch") {
     // cross-machine instance directory).
     const primary = resolvePrimaryTeam();
     const { team, root } = primary;
+    const attribution = attributionPreflight(root);
     const warnings = [...primary.warnings];
     let raw;
     try {

@@ -888,22 +888,33 @@ prints it for the human and asks.
 **Spawn refusals in mode `human`** are the existing spawn-hook refusal, each
 naming its fix:
 - a revoked, replaced or malformed issuer chain;
-- unavailable registry evidence for a known chain (a registry outage of more
-  than 60 s stops chained spawning);
+- unavailable registry evidence for a known chain (a CLI process holds no
+  shared cache, so a registry outage stops chained spawning for as long as it
+  lasts);
 - a chain stale after its parent rotated its key: re-sign with your parent
   first, `aw id parent request --resign`;
 - a resulting chain over 8 certificates or 6144 decoded bytes;
 - a spawner whose spawn meta records a chain whose files are gone;
 - a resident-grant spawner;
+- a minting root that carries a chain (aw would make it every child's parent),
+  or a steward at the minting root: the root mints and the steward issues;
 - a kernel without `spawn-attribution`;
 - no human bound.
 
-A spawner with no chain, where that absence is evidence (a local instance
-with no chain files and no recorded chain), gets a **chainless** child that
+A spawner with no chain, where that absence is evidence, gets a
+**chainless** child that
 reports `unknown`, with a spawn warning. A chain that exists but fails never
-falls back to a chainless child. Readiness (`setup --check-only --json`
-`attribution`) is information, never a failure: in mode `none` it names the
-one act that binds a human; in mode `human` it counts `chainlessSpawners`.
+falls back to a chainless child. Readiness is information, never a failure:
+a home's readiness carries one warning with code `attribution` (the mode, and
+in mode `human` whether this instance has a chain), and `setup --check-only
+--json` reports `attribution`. In mode `none` both name the one act that binds
+a human; in mode `human` the deployment report counts `chainlessSpawners`.
+
+Absence is evidence for a local instance with no chain files and no recorded
+chain (`aw who`: `legacy_no_chain`), and for a `did:aw` the registry reports
+unregistered (`unregistered_identity`). In a domain without an identity-tree
+root (most BYOT domains, and hosted namespaces for now), a chainless `did:aw`
+answers `evidence_unavailable` and refuses (aweb-acpa).
 
 Limits: a `--server` spawn from a home on another host counts as a person's.
 The steward's key custody is a convention under the same OS user, where misuse
