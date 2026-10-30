@@ -83,10 +83,10 @@ spawn-hook refusal, and names its fix.
 The spawn meta records `identity.attribution: {mode, human: {id, label},
 parent: {id}}`, with opaque ids, `mode` one of `human`, `none` (a chain with
 no human in it) and `unknown`. It also records `chainInstalled: true|false`.
-Readiness reports attribution as information, never as a failure. A home's
-readiness carries one warning with code `attribution`: the mode, and in mode
-`human` whether this instance has a chain. `oats aweb setup --check-only --json`
-reports `attribution`: the mode, and in mode `none` the one act that binds a
+Attribution never fails readiness. A home's readiness warns `attribution` only
+when there is something to do: in mode `human`, no human bound yet, or this
+instance has no chain (respawn it). `oats aweb setup --check-only --json`
+reports `attribution` as information in both modes: the mode, and in mode `none` the one act that binds a
 human. In mode `human` it also reports the bound human, the steward, and
 `chainlessSpawners`, the number of local instances without a chain.
 

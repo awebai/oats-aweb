@@ -215,8 +215,8 @@ test("refuses before minting when the steward is the minting root: they stay sep
   assert.equal(minted(fake), false);
 });
 
-test("home readiness through binding check carries the attribution information as a warning, never a problem", (t) => {
-  for (const [attribution, expected] of [[null, /^attribution: none — no human bound; one act binds one/], ["human", /^attribution: human — bound to Juan \(did:aw:human1\) through steward did:aw:steward1; this instance has no chain/]]) {
+test("home readiness through binding check warns attribution only in mode human with something to act on, never as a problem", (t) => {
+  for (const [attribution, expected] of [[null, null], ["human", /^attribution: human — bound to Juan \(did:aw:human1\) through steward did:aw:steward1; this instance has no chain/]]) {
     const fx = fixture(t, { attribution, steward: attribution === "human" });
     writeIdentity(fx.home, {});
     const fake = fakeAwChain(t);
@@ -229,6 +229,7 @@ test("home readiness through binding check carries the attribution information a
     const result = answer.result;
     assert.ok(result, r.stdout);
     const item = result.warnings.find((w) => w.code === "attribution");
+    if (expected === null) { assert.equal(item, undefined, "mode none has nothing to act on, so readiness stays silent"); continue; }
     assert.ok(item, JSON.stringify(result));
     assert.match(item.message, expected);
     assert.equal(result.problems.some((p) => p.code === "attribution"), false);
