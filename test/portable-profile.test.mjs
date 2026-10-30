@@ -10,7 +10,7 @@ import {spawnSync} from 'node:child_process';
 import {parseBindingJson} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 import {invocationFor} from './helpers/invocation-fixture.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),cap=join(root,'oats-package/capabilities/oats-aweb');
-const OBSERVER_OFF = {code:'unread-attention-observer',message:"Unread-delivery attention claims require the operator to enable oats aweb health and its per-minute host timer. Without that opt-in no such claim appears. Run oats aweb health status to check live coverage."};
+const OBSERVER_OFF = {code:'unread-attention-observer',message:"Unread mail with broker errors has no attention claim while health publishing is off. Enable oats aweb health and its per-minute host timer; check live coverage with oats aweb health status."};
 const declaredReasons=new Set(JSON.parse(fs.readFileSync(join(cap,'oats.json'))).binding.reasons);
 const origin=(kind,path='soul.yaml')=>({kind,document:{kind:'source',source:'git:https://example.invalid/source.git',revision:'a'.repeat(40),path,integrity:{format:'oats.bytes.v1',value:'sha256-'+'b'.repeat(64)}},pointer:''});
 const operator={kind:'operator',document:{kind:'operator',id:'fixture-operator'},pointer:''};

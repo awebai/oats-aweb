@@ -389,7 +389,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   }
   const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
   if (primaryBroker && !excludedGrantSeat && !problems.length) {
-    if (req.settings.health?.publish !== true) warnings.push({code:'unread-attention-observer',message:'Unread-delivery attention claims require the operator to enable oats aweb health and its per-minute host timer. Without that opt-in no such claim appears. Run oats aweb health status to check live coverage.'});
+    if (req.settings.health?.publish !== true) warnings.push({code:'unread-attention-observer',message:'Unread mail with broker errors has no attention claim while health publishing is off. Enable oats aweb health and its per-minute host timer; check live coverage with oats aweb health status.'});
     else {
       let countOnly = false;
       try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
