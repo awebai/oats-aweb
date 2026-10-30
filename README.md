@@ -63,8 +63,9 @@ spawn-hook refusal, and names its fix.
   - a resident-grant spawner, which holds no identity key to issue with;
   - a minting root that carries a chain: aw's team invite makes a chained
     inviter the new identity's parent, so the root would become every child's
-    parent. The root mints and the steward issues; they stay separate,
-    chainless homes, and a steward at the minting root refuses too.
+    parent. The root mints and the steward issues: they use separate homes,
+    the minting root stays chainless and the steward carries the
+    human-issued chain. A steward at the minting root refuses too.
 
   A chain that exists but fails never falls back to a chainless child. A
   refusal after the mint hands the minted identity back for compensation.

@@ -1742,7 +1742,8 @@ function issueChildChain(issuer) {
 /** aw's local team invite makes a chained inviter the new identity's ID
  *  parent, so `aw init --join-from` from a chained minting root would chain
  *  every child to the root before the spawner or steward could issue it. The
- *  root mints and the steward issues: they stay separate, chainless homes. */
+ *  root mints and the steward issues: they use separate homes, the minting
+ *  root stays chainless and the steward carries the human-issued chain. */
 function assertMintingRootIssuesNothing(root) {
   const steward = settings.steward?.home;
   if (typeof steward === "string" && resolve(steward) === resolve(root)) fatal(`the steward's home ${steward} is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → a human reruns \`oats aweb setup --steward\` with its own steward home`);
