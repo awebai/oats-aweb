@@ -268,7 +268,7 @@ test("oats aweb join on a Claude home reads the recorded start, not the caller's
   const env = { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws }) };
   const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
   writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ launch: { harness: "claude" }, capabilityMeta: { "oats.aweb": doc.meta } }));
-  const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "join", OATS_META: JSON.stringify(doc.meta) }, encoding: "utf8" });
+  const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "join", OATS_META: JSON.stringify(doc.meta), OATS_RUNTIME: "pi" }, encoding: "utf8" });
   assert.equal(joined.status, 0, joined.stdout + joined.stderr);
   assert.equal(fake.registrations()[fx.home], undefined);
   assert.equal(JSON.parse(joined.stdout).joined[0].receive, "poll");
