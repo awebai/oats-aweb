@@ -876,6 +876,66 @@ cannot send the encrypted reply to such a sender.
   by design ("source sender key is missing, expired or invalid; ask them to send
   a new message"): ask them to send a new message.
 
+### Spawn attribution: an identity chain to a human
+
+`settings.oats.aweb.attribution` is `none` (the default, and what absence means:
+spawns are unchanged) or `human`. In mode `human`, every spawned instance gets
+an aw identity chain to the deployment's bound human (aw's
+`docs/id-certificates.md`; oats#1665):
+- an instance spawned by an instance (`OATS_SPAWNER_HOME`, set by the kernel)
+  is issued by that instance;
+- one spawned by a person is issued by the deployment's **steward**.
+
+`aw who` in a child shows the human, the steward, each spawning instance, then
+the child. The README's "Spawn attribution" section is the full reference.
+
+| Act | Command in D, outside an instance | Writes / success / one next step | Error → remedy |
+|---|---|---|---|
+| Bind the human (the human, at a terminal) | `oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias> [--json]` | Runs `aw id create --human-parent`; aw asks for the human's passphrase and signs, and OATS never signs as a human. The steward lives in `D/.aweb-stewards/<alias>`, never in an instance's environment. Records host-only `human` and `steward`, then `attribution: human`. Success: `PASS bound …`; the steward's chain verifies to that human. Next: spawn; `oats aweb setup --check-only --json` shows `attribution`. | `E_STEWARD_ONE_HUMAN`: another human is bound (one per deployment). `E_STEWARD_KERNEL`: upgrade OATS to a kernel listing `spawn-attribution`. `E_STEWARD_AW`: upgrade aw to one with identity chains. `E_STEWARD_INSIDE_HOME`: an agent never binds a human. `E_STEWARD_VERIFY`: check the human's registration, then rerun. |
+
+The human must already exist (`aw id human init` in a namespace they control);
+the steward claims a global address there. An agent never runs this act. It
+prints it for the human and asks.
+
+**Spawn refusals in mode `human`** are the existing spawn-hook refusal, each
+naming its fix:
+- a revoked, replaced or malformed issuer chain;
+- unavailable registry evidence for a known chain (a CLI process holds no
+  shared cache, so a registry outage stops chained spawning for as long as it
+  lasts);
+- a chain stale after its parent rotated its key: re-sign with your parent
+  first, `aw id parent request --resign`;
+- a resulting chain over 8 certificates or 6144 decoded bytes;
+- a spawner whose spawn meta records a chain whose files are gone;
+- a resident-grant spawner;
+- a minting root that carries a chain (aw would make it every child's parent),
+  or a steward at the minting root: the root mints and the steward issues;
+- a kernel without `spawn-attribution`;
+- no human bound.
+
+A spawner with no chain, where that absence is evidence, gets a
+**chainless** child that
+reports `unknown`, with a spawn warning. A chain that exists but fails never
+falls back to a chainless child. Attribution never fails readiness. A home's
+readiness warns `attribution` only when there is something to do: in mode
+`human`, no human bound yet, or this instance has no chain (respawn it).
+`setup --check-only --json` reports `attribution` as information: in mode
+`none` it names the one act that binds a human; in mode `human` it counts
+`chainlessSpawners`.
+
+Absence is evidence for a local instance with no chain files and no recorded
+chain (`aw who`: `legacy_no_chain`), and for a `did:aw` the registry reports
+unregistered (`unregistered_identity`). In a domain without an identity-tree
+root (most BYOT domains, and hosted namespaces for now), a chainless `did:aw`
+answers `evidence_unavailable` and refuses (aweb-acpa).
+
+Limits: a `--server` spawn from a home on another host counts as a person's.
+Captured execution's binding phases accept no attribution settings, so a
+mode-`human` deployment that uses captured execution is refused there.
+The steward's key custody is a convention under the same OS user, where misuse
+changes the recorded parent and never the human. Revocation at retire, chains
+across hosts, and deployments shared by several people are out of scope.
+
 ### What retire's recovery keeps
 
 Provider 1.24.0 on OATS >=0.42.0 declares `.aw`, `.aweb-identity`,

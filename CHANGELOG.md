@@ -24,6 +24,38 @@
   name `claudeChannelMode: approved` for both. `delivery: session` stays a
   supported value; only the advice to reach for it is gone.
 
+- **Spawn attribution: each spawned instance carries an identity chain to a
+  human** (aweb-acmj.21, oats#1665). New setting `attribution: human | none`;
+  absent means `none`, and spawns are unchanged. `oats aweb setup --steward`
+  lets the human, at a terminal, issue the deployment's steward with
+  `aw id create --human-parent`. It records host-only `human` and `steward`,
+  one human per deployment. In mode `human` the spawn hook issues the child
+  through aw's agent-child exchange: from the spawning instance
+  (`OATS_SPAWNER_HOME`), or from the steward for a person's spawn.
+  - It refuses, naming each fix, on a revoked, replaced, malformed or stale
+    chain, unavailable registry evidence, a chain over 8 certificates or 6144
+    bytes, a spawner whose recorded chain files are gone, a resident-grant
+    spawner, a chained minting root or a steward at the minting root, a kernel
+    without `spawn-attribution`, or no bound human.
+  - A spawner with no chain gets a chainless child that reports `unknown`,
+    with a warning.
+  - The spawn meta records `identity.attribution` and `chainInstalled`.
+    Home readiness warns `attribution` only when there is something to do (mode
+    human: no human bound, or this instance has no chain). `setup --check-only
+    --json` reports `attribution`: the mode, and the count of spawners without
+    a chain.
+  - Costs: a registry outage stops chained spawning for as long as it lasts, and a
+    `--server` spawn from another host counts as a person's. The steward's key
+    custody is a convention under the same OS user, where misuse changes the
+    recorded parent and never the human.
+  - **aw floor: 1.36.52**, the release with `aw id create --human-parent` and
+    `aw id parent request --parent` accepting the `did:key` parent of an
+    instance-issued child; the release sets the provider's aw floor to it.
+    Needs a kernel listing `spawn-attribution`.
+  - Limit: captured execution's binding phases accept no attribution
+    settings, so a mode-`human` deployment that uses captured execution is
+    refused there.
+
 - **Interim Pi interrupted-turn mail recovery** (awebai/aweb#68).
   The always-loaded inject triggers `/oats-aweb`'s shared recovery procedure for
   `@awebai/pi` 0.4.0 (reported with Pi 1.3.0): after any interrupted turn and at

@@ -5,6 +5,111 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## Spawn attribution — an identity chain to a human
+
+`settings.oats.aweb.attribution` decides whether a spawned instance carries an
+aw identity chain back to the human it belongs to (aw's `docs/id-certificates.md`;
+oats#1665).
+
+- **`none`** (the default, and what an absent setting means): spawns are
+  unchanged. No chain is issued and the spawn meta records no attribution.
+- **`human`**: every spawned instance gets a chain. An instance spawned by
+  another instance (the kernel's `OATS_SPAWNER_HOME`) is issued by that
+  instance, so it inherits the nearest human. An instance spawned by a person
+  (a shell, Desktop or an automation) is issued by the deployment's
+  **steward**: the agent identity the human issued once, at setup. `aw who` in
+  a child shows the human, then the steward, then each spawning instance, then
+  the child.
+
+**Binding a human** is one act, by the human at their own terminal, in the
+deployment and outside any instance:
+
+```text
+oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>
+```
+
+- It runs `aw id create --human-parent <did:aw>`. aw asks for the human's
+  passphrase and signs; no OATS code signs as a human.
+- The human must already exist: `aw id human init` in a namespace (`--domain`)
+  they control. The steward claims a global address in that namespace.
+- The steward lives in `<deployment>/.aweb-stewards/<alias>`, outside instance
+  homes, and is never passed in an instance's environment.
+- It records host-only `human: {id, label}` and `steward: {id, home}`, then
+  `attribution: human`, in `oats-local.yaml`.
+- One bound human per deployment: a second, different human is refused.
+  Rerunning for the same human verifies the steward and creates nothing.
+
+It needs a kernel that lists the `spawn-attribution` feature, and an aw with
+identity chains. Without them, setup and bound-mode spawns refuse, naming the
+upgrade.
+
+**What a bound spawn does.** Before minting, the spawn reads the issuer's chain
+status with `aw who`, through aw's cached status client. A CLI process holds
+no shared cache, so every spawn reads fresh evidence, and a failed read
+refuses. After
+minting, it issues the child through aw's agent-child exchange (`aw id child
+invite` / `aw id parent request` / `aw id child receive` / `approve` /
+`aw id parent import`), which needs no terminal. Every refusal is the existing
+spawn-hook refusal, and names its fix.
+
+- **Refuses:**
+  - a revoked, replaced or malformed issuer chain;
+  - a known chain whose registry evidence is unavailable;
+  - a chain stale after its parent rotated its key ("re-sign with your parent
+    first");
+  - a resulting chain over 8 certificates or 6144 decoded bytes;
+  - a spawner whose own spawn meta records an installed chain while its chain
+    files are gone;
+  - a resident-grant spawner, which holds no identity key to issue with;
+  - a minting root that carries a chain: aw's team invite makes a chained
+    inviter the new identity's parent, so the root would become every child's
+    parent. The root mints and the steward issues: they use separate homes,
+    the minting root stays chainless and the steward carries the
+    human-issued chain. A steward at the minting root refuses too.
+
+  A chain that exists but fails never falls back to a chainless child. A
+  refusal after the mint hands the minted identity back for compensation.
+- **Creates a chainless child**, reporting `unknown`, with a spawn warning:
+  when the spawner has no chain and that absence is evidence. For a local
+  instance (a `did:key`, never enrolled in the registry), that means no chain
+  files and no recorded chain in its spawn meta (`aw who`: `legacy_no_chain`).
+  For a `did:aw` spawner, only the registry's authoritative "no enrollment"
+  counts (`aw who`: `unregistered_identity`); anything else refuses.
+  Instances running before the binding keep working this way until they are
+  respawned.
+- **Reuses an identity:** a resident-grant or retained-seat child keeps its
+  existing identity and is issued nothing. It reports `unknown`, with a
+  warning.
+
+The spawn meta records `identity.attribution: {mode, human: {id, label},
+parent: {id}}`, with opaque ids, `mode` one of `human`, `none` (a chain with
+no human in it) and `unknown`. It also records `chainInstalled: true|false`.
+Attribution never fails readiness. A home's readiness warns `attribution` only
+when there is something to do: in mode `human`, no human bound yet, or this
+instance has no chain (respawn it). `oats aweb setup --check-only --json`
+reports `attribution` as information in both modes: the mode, and in mode `none` the one act that binds a
+human. In mode `human` it also reports the bound human, the steward, and
+`chainlessSpawners`, the number of local instances without a chain.
+
+**Costs and limits.**
+- A registry outage stops chained spawning for as long as it lasts: reviewers,
+  harvesters and trigger spawns included. A trigger's event stays pending, as
+  for any failed spawn. Deployments with no human bound are not affected.
+- A `--server` spawn from a home on another host counts as a person's, so the
+  steward of the host it runs on issues it.
+- **Key custody:** the steward's key sits outside instance homes and is never
+  in their environment. That is a convention under the same OS user, where
+  misuse changes the recorded parent and never the human.
+- In a domain without an identity-tree root (most BYOT domains, and hosted
+  namespaces for now), `aw who` on a chainless `did:aw` answers
+  `evidence_unavailable`, so a chainless global spawner refuses there. It fails
+  closed; aweb-acpa tracks the fix.
+- Captured execution's binding phases (bind and normalize) accept no
+  `attribution`, `human` or `steward` settings, as they accept no `identity`:
+  a mode-`human` deployment that uses captured execution is refused there.
+- Out of scope in this release: revocation at retire, chains across hosts,
+  and deployments shared by several people.
+
 ## 1.32.0 — upgrade a stopped seat
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33. Upgrade the kernel
