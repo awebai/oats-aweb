@@ -1,6 +1,7 @@
 // Display-only broker failure observation. Never acknowledge mail or copy any
 // external error text into the claim shared by CLI/Desktop clients.
-import {isAbsolute, resolve} from 'node:path';
+import {createHash} from 'node:crypto';
+import {isAbsolute, join, resolve} from 'node:path';
 
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const path = v => typeof v === 'string' && isAbsolute(v) && !v.includes('\0');
@@ -8,16 +9,43 @@ const sameHome = (a, b) => path(a) && path(b) && resolve(a) === resolve(b);
 const present = v => v !== undefined && v !== null && v !== '';
 const errorShape = v => v === undefined || v === null || typeof v === 'string';
 const validErrors = row => object(row.channel_core) && errorShape(row.channel_core.last_error) &&
+  errorShape(row.registered_at) && errorShape(row.channel_core.last_input_at) && errorShape(row.channel_core.last_success_at) &&
   (row.channel_core.binding_errors === undefined || (object(row.channel_core.binding_errors) && Object.values(row.channel_core.binding_errors).every(errorShape))) &&
   row.receive_identities.every(b => errorShape(b.stream_error));
 
 /** Fixed classes, never extracted substrings: errors may contain mail content,
  * paths, sender aliases, tokens or trace ids, even when they resemble codes. */
 export function brokerFailure(row) {
-  if (present(row?.channel_core?.last_error)) return 'broker-worker-error';
   if (object(row?.channel_core?.binding_errors) && Object.values(row.channel_core.binding_errors).some(present)) return 'broker-binding-error';
   if (row?.receive_identities?.some(b => present(b?.stream_error))) return 'broker-stream-error';
   return null;
+}
+
+const observationFile = home => join(home, '.oats-aweb', 'unread-observation.json');
+/** Historical last_error alone is not active failure evidence. Require two
+ * successive minute observations, no unread drop and no input/success progress.
+ * Keep only a digest, never the potentially sensitive diagnostic itself. */
+async function workerFailure(row, target, unread, host, now) {
+  const file = observationFile(row.home);
+  if (!present(target.channel_core.last_error) || unread === 0) {
+    await host.writeCache(file, {}).catch(() => {});
+    return null;
+  }
+  const fingerprint = createHash('sha256').update(JSON.stringify([
+    target.channel_core.last_error, target.registered_at ?? null,
+    target.channel_core.last_input_at ?? null, target.channel_core.last_success_at ?? null,
+    target.receive_identities.map(b => b.identity_home).sort(),
+  ])).digest('hex');
+  const previous = await host.readCache(file);
+  const at = now(), tick = Math.floor(at / 60000);
+  const age = at - previous?.at;
+  const persisted = previous?.fingerprint === fingerprint && age >= 0 && age <= 120000 &&
+    ((previous.tick === tick - 1 && age >= 30000) ||
+      (previous.qualified === true && [tick, tick - 1].includes(previous.tick))) &&
+    Number.isSafeInteger(previous.unread) && previous.unread > 0 && unread >= previous.unread;
+  const observedAt = previous?.tick === tick && previous.fingerprint === fingerprint && unread >= previous.unread ? previous.at : at;
+  await host.writeCache(file, {fingerprint, tick, at: observedAt, unread, qualified: persisted});
+  return persisted ? 'broker-worker-error' : null;
 }
 
 /** One tick, covering roster homes independently of publication eligibility:
@@ -49,8 +77,14 @@ export async function observeUnreadAttention({host, rows, clear = false, budgetM
         const target = targets[0];
         // Channel homes have no external-session registration. A mixed native
         // row (joined-team streams) is also outside this observer's scope.
-        if (clear || row.retirePending || !target || ['native-channel', 'native-pi'].includes(target.delivery)) {
-          await host.waiting(row.home, null); result.cleared++; continue;
+        const meta = row.capabilityMeta['oats.aweb'];
+        // A read-only grant can present mail without server acknowledgement.
+        // Until ack authority is exposed explicitly, exclude all grant seats.
+        const grantSeat = meta.identity?.mode === 'global' && !meta.retained;
+        if (clear || row.retirePending || !target || grantSeat || ['native-channel', 'native-pi'].includes(target.delivery)) {
+          await host.waiting(row.home, null);
+          await host.writeCache(observationFile(row.home), {}).catch(() => {});
+          result.cleared++; continue;
         }
         if (target.delivery !== 'session' || !Array.isArray(target.receive_identities) || !target.receive_identities.length ||
             target.receive_identities.some(b => !path(b?.identity_home)) || !validErrors(target)) { result.unknown++; continue; }
@@ -66,8 +100,9 @@ export async function observeUnreadAttention({host, rows, clear = false, budgetM
           unread += count;
         }
         if (unknown) { result.unknown++; continue; }
-        const code = brokerFailure(target);
-        const message = unread > 0 && code ? `aweb: ${unread} unread, not delivered (${code})` : null;
+        const code = unread === 0 ? await workerFailure(row, target, unread, host, now)
+          : brokerFailure(target) ?? await workerFailure(row, target, unread, host, now);
+        const message = unread > 0 && code ? `aweb: ${unread} unread; broker error (${code})` : null;
         await host.waiting(row.home, message);
         result[message ? 'set' : 'cleared']++;
       } catch { result.failed++; } // no external output in shared tick summaries

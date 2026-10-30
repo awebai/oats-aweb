@@ -19,7 +19,7 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   const host = healthHost({deployment: scratch.deployment, env});
   assert.equal(await host.supportsWaiting(), true, 'selected real kernel needs waiting-on-you');
   const rows = [{home, capabilityMeta: {'oats.aweb': {}}}];
-  const target = {home, delivery: 'session', channel_core: {last_error: 'private content'}, receive_identities: [{identity_home: `${home}/.aw`}]};
+  const target = {home, delivery: 'session', channel_core: {binding_errors: {lane: 'private content'}}, receive_identities: [{identity_home: `${home}/.aw`}]};
   host.wakeStatus = async () => ({instances: [target]});
   host.unreadCount = async () => 3;
   const status = () => JSON.stringify(scratch.json(['status']));
@@ -27,7 +27,7 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   const other = scratch.json(['instance', 'waiting', 'set', '--producer', 'agent', '--reason', 'attention', '--message', 'Other producer claim', '--home', home]);
   assert.equal(other.ok, true, JSON.stringify(other));
   assert.equal((await observeUnreadAttention({host, rows})).set, 1);
-  assert.match(status(), /aweb: 3 unread, not delivered \(broker-worker-error\)/);
+  assert.match(status(), /aweb: 3 unread; broker error \(broker-binding-error\)/);
   assert.doesNotMatch(status(), /private content/);
   const afterSet = events().length;
   await observeUnreadAttention({host, rows});

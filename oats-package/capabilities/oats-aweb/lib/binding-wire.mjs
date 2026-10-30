@@ -387,7 +387,8 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     if(session) receiveProblems.push(...daemon.problems);
     else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home. A Claude channel home reads its joined teams at task boundaries and needs no broker.'});
   }
-  if (primaryBroker) {
+  const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
+  if (primaryBroker && !excludedGrantSeat) {
     if (req.settings.health?.publish !== true) warnings.push({code:'unread-attention-observer',message:'Unread-delivery attention claims require the operator to enable oats aweb health and its per-minute host timer. Without that opt-in no such claim appears. Run oats aweb health status to check live coverage.'});
     else {
       let countOnly = false;

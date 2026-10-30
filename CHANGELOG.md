@@ -2,10 +2,13 @@
 
 ## Unreleased
 
-- **Unread mail whose broker delivery fails can raise an attention flag.**
+- **Unread mail with an observed broker error can raise an attention flag.**
   The opt-in `oats aweb health publish` tick counts unread mail without reading
   or acknowledging it, and sets an `oats.aweb` attention claim for registered
-  session-delivery homes with broker worker, binding or stream errors. CLI and
+  session-delivery homes with active binding/stream errors or a persistent
+  worker error across consecutive ticks without unread or delivery progress.
+  Grant-backed resident seats are excluded because read-only grants can leave
+  presented mail unread. CLI and
   Desktop see only counts and fixed error classes. Recovery, unregistration,
   retirement and health disable clear this producer's claim; a count failure
   preserves it. Runtime `waiting-on-you` support and aw's read-only

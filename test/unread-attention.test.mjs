@@ -4,30 +4,33 @@ import {brokerFailure, observeUnreadAttention} from '../oats-package/capabilitie
 
 const HOME = '/scratch/agents/plain/instances/unread';
 const row = {home: HOME, capabilityMeta: {'oats.aweb': {}}};
-const target = () => ({home: HOME, delivery: 'session', channel_core: {last_error: 'unsafe sender content'}, receive_identities: [{identity_home: `${HOME}/.aw`, unread_count: 999}]});
+const target = () => ({home: HOME, delivery: 'session', channel_core: {last_error: 'unsafe sender content', binding_errors: {lane: 'active error'}}, receive_identities: [{identity_home: `${HOME}/.aw`, unread_count: 999}]});
 function fixture({targets = [target()], counts = [2], supported = true, rows = [row]} = {}) {
-  const calls = [], reads = [];
+  const calls = [], reads = [], cache = {};
   const host = {
     supportsWaiting: async () => supported,
     status: async () => ({agents: [{instances: rows}]}),
     wakeStatus: async () => ({instances: targets}),
-    unreadCount: async h => { reads.push(h); return counts[reads.length - 1]; },
+    unreadCount: async h => { reads.push(h); return counts[Math.min(reads.length - 1, counts.length - 1)]; },
+    readCache: async file => cache[file] ?? null,
+    writeCache: async (file, value) => { cache[file] = value; },
     waiting: async (home, message) => calls.push({home, message}),
   };
-  return {host, calls, reads};
+  return {host, calls, reads, cache};
 }
 
-test('fresh count and worker error set a content-free attention message', async () => {
+test('fresh count and active binding error set a content-free attention message', async () => {
   const f = fixture();
   assert.equal((await observeUnreadAttention(f)).set, 1);
-  assert.deepEqual(f.calls, [{home: HOME, message: 'aweb: 2 unread, not delivered (broker-worker-error)'}]);
+  assert.deepEqual(f.calls, [{home: HOME, message: 'aweb: 2 unread; broker error (broker-binding-error)'}]);
 });
 
 test('error classes never extract codes, trace ids, or any other sender-controlled bytes', () => {
   const t = target();
+  t.channel_core.binding_errors = {};
   t.channel_core.last_error = 'E_SECRET_subject\n\u001b[31m';
   t.channel_core.trace_message_id = 'do not copy';
-  assert.equal(brokerFailure(t), 'broker-worker-error');
+  assert.equal(brokerFailure(t), null);
   delete t.channel_core.last_error;
   t.channel_core.binding_errors = {'private-id': 'private content'};
   assert.equal(brokerFailure(t), 'broker-binding-error');
@@ -60,7 +63,7 @@ test('partial successful counts cannot set or clear a claim', async () => {
 
 for (const mode of ['empty', 'delivered', 'unregistered', 'retiring', 'native-channel', 'native-pi']) test(`clears only this producer on ${mode}`, async () => {
   const t = target();
-  if (mode === 'delivered') delete t.channel_core.last_error;
+  if (mode === 'delivered') {delete t.channel_core.last_error; t.channel_core.binding_errors = {};}
   if (mode.startsWith('native-')) t.delivery = mode;
   const f = fixture({targets: mode === 'unregistered' ? [] : [t], counts: [mode === 'empty' ? 0 : 2], rows: [{...row, retirePending: mode === 'retiring'}]});
   assert.equal((await observeUnreadAttention(f)).cleared, 1);
@@ -119,4 +122,60 @@ test('budgeted ticks rotate the roster; explicit disable visits every home', asy
   const r = await observeUnreadAttention({...f, clear: true, budgetMs: 0});
   assert.equal(r.cleared, rows.length);
   assert.equal(r.unknown, 0);
+});
+
+test('historical worker error alone needs two consecutive minute observations without progress', async () => {
+  const t = target(); t.channel_core.binding_errors = {};
+  const f = fixture({targets: [t]});
+  assert.equal((await observeUnreadAttention({...f, now: () => 60000})).set, 0);
+  assert.equal((await observeUnreadAttention({...f, now: () => 120000})).set, 1);
+  assert.equal(f.calls.at(-1).message, 'aweb: 2 unread; broker error (broker-worker-error)');
+  assert.doesNotMatch(JSON.stringify(f.cache), /unsafe sender content/);
+});
+
+for (const progress of ['unread-drop', 'input', 'success', 'error-change', 'gap']) test(`stale worker error cannot flag across ${progress}`, async () => {
+  const t = target(); t.channel_core.binding_errors = {};
+  const f = fixture({targets: [t], counts: progress === 'unread-drop' ? [3, 2] : [2]});
+  await observeUnreadAttention({...f, now: () => 60000});
+  if (progress === 'input') t.channel_core.last_input_at = '2026-10-30T00:01:00Z';
+  if (progress === 'success') t.channel_core.last_success_at = '2026-10-30T00:01:00Z';
+  if (progress === 'error-change') t.channel_core.last_error = 'different error';
+  assert.equal((await observeUnreadAttention({...f, now: () => progress === 'gap' ? 180000 : 120000})).set, 0);
+  assert.equal(f.calls.at(-1).message, null);
+});
+
+for (const grant of [{scopes: ['mail.read']}, {scopes: ['mail.read', 'mail.send']}, {}]) test('grant-backed home is excluded before reading counts', async () => {
+  const granted = {...row, capabilityMeta: {'oats.aweb': {identity: {mode: 'global', grant}}}};
+  const f = fixture({rows: [granted]});
+  await observeUnreadAttention(f);
+  assert.deepEqual(f.reads, []);
+  assert.deepEqual(f.calls, [{home: HOME, message: null}]);
+});
+
+test('same-minute repeated publish preserves an established worker-error claim', async () => {
+  const t = target(); t.channel_core.binding_errors = {};
+  const f = fixture({targets: [t]});
+  await observeUnreadAttention({...f, now: () => 60000});
+  assert.equal((await observeUnreadAttention({...f, now: () => 120000})).set, 1);
+  assert.equal((await observeUnreadAttention({...f, now: () => 121000})).set, 1);
+  assert.equal(f.calls.at(-1).message, 'aweb: 2 unread; broker error (broker-worker-error)');
+});
+
+test('same-minute repeats retain initial baseline time and qualification across minute boundaries', async () => {
+  const t = target(); t.channel_core.binding_errors = {};
+  const f = fixture({targets: [t]});
+  await observeUnreadAttention({...f, now: () => 60000});
+  await observeUnreadAttention({...f, now: () => 119000});
+  assert.equal((await observeUnreadAttention({...f, now: () => 120000})).set, 1);
+  await observeUnreadAttention({...f, now: () => 179000});
+  assert.equal((await observeUnreadAttention({...f, now: () => 180000})).set, 1);
+});
+
+for (const recovery of ['empty', 'no-error']) test(`cache invalidation failure cannot block clear on ${recovery}`, async () => {
+  const t = target(); t.channel_core.binding_errors = {};
+  if (recovery === 'no-error') delete t.channel_core.last_error;
+  const f = fixture({targets: [t], counts: [recovery === 'empty' ? 0 : 2]});
+  f.host.writeCache = async () => { throw Error('read-only cache'); };
+  assert.equal((await observeUnreadAttention(f)).cleared, 1);
+  assert.equal(f.calls.at(-1).message, null);
 });
