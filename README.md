@@ -104,6 +104,9 @@ human. In mode `human` it also reports the bound human, the steward, and
   namespaces for now), `aw who` on a chainless `did:aw` answers
   `evidence_unavailable`, so a chainless global spawner refuses there. It fails
   closed; aweb-acpa tracks the fix.
+- Captured execution's binding phases (bind and normalize) accept no
+  `attribution`, `human` or `steward` settings, as they accept no `identity`:
+  a mode-`human` deployment that uses captured execution is refused there.
 - Out of scope in this release: revocation at retire, chains across hosts,
   and deployments shared by several people.
 
