@@ -14,9 +14,9 @@ const kernel = process.env.OATS_PREVIEW_KERNEL_ROOT;
 test('observer uses real kernel claims, idempotence and producer isolation', {skip}, async t => {
   const scratch = createScratchDeployment({kernel});
   t.after(() => scratch.dispose());
-  // Even --no-launch resolves a harness. Select the fixture's executable so
-  // admission does not depend on a real pi installation on the CI runner.
-  const spawned = scratch.json(['spawn', 'plain', '--name', 'unread', '--no-launch', '--launch-config', 'fake']);
+  // Waiting claims are scoped to a launched session. Select the fixture's
+  // executable so admission needs no real pi installation on the CI runner.
+  const spawned = scratch.json(['spawn', 'plain', '--name', 'unread', '--launch-config', 'fake']);
   assert.equal(spawned.ok, true, JSON.stringify(spawned));
   const home = scratch.homeOf('unread');
   const env = {...scratch.env, ...(kernel ? {OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: join(kernel, 'bin/oats.mjs')} : {})};
@@ -28,7 +28,7 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   host.unreadCount = async () => 3;
   const status = () => JSON.stringify(scratch.json(['status']));
   const events = () => scratch.json(['instance', 'events', 'unread', '--home', home]).result.events;
-  const other = scratch.json(['instance', 'waiting', 'set', '--producer', 'agent', '--reason', 'attention', '--message', 'Other producer claim', '--home', home]);
+  const other = scratch.json(['instance', 'waiting', 'set', '--producer', 'oats.core', '--reason', 'attention', '--message', 'Other producer claim', '--home', home]);
   assert.equal(other.ok, true, JSON.stringify(other));
   assert.equal((await observeUnreadAttention({host, rows})).set, 1);
   assert.match(status(), /aweb: 3 unread; broker error \(broker-binding-error\)/);
@@ -71,7 +71,7 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   assert.match(status(), /Other producer claim/);
 
   await observeUnreadAttention({host, rows});
-  const started = scratch.json(['session', 'start', '--home', home, '--launch-config', 'fake']);
+  const started = scratch.json(['session', 'restart', '--home', home, '--launch-config', 'fake']);
   assert.equal(started.ok, true, JSON.stringify(started));
   assert.doesNotMatch(status(), /aweb: 1 unread/);
   await observeUnreadAttention({host, rows});
