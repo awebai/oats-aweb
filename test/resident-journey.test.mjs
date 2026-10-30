@@ -3,7 +3,7 @@
 // server) and a real OATS kernel, with no fixture and no fake. CI runs them
 // (see ci.yml); locally, bring the stack up and set:
 //
-//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 executable
+//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 or 1.36.51 executable
 //   OATS_RESIDENT_JOURNEY_AWEB_URL  e.g. http://127.0.0.1:18000
 //   OATS_RESIDENT_JOURNEY_AWID_URL  e.g. http://127.0.0.1:18010
 //   OATS_RESIDENT_JOURNEY_KERNEL    a checkout of an OATS kernel with the
@@ -51,7 +51,7 @@ function journey(t) {
   writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: local\n");
   symlinkSync(realpathSync(AW), join(bin, "aw"));
   const version = spawnSync(join(bin, "aw"), ["version"], { encoding: "utf8" });
-  assert.match(version.stdout, /^aw 1\.36\.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4 /, "the journeys are qualified on aw 1.36.33 (877bbee9)");
+  assert.match(version.stdout, /^aw (1\.36\.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4|1\.36\.51\n  commit: 8325ef68ecae502523253b43575570144dd46297) /, "the journeys are qualified on aw 1.36.33 (877bbee9) and 1.36.51 (8325ef68)");
   // The printed steps start with `oats`; a spawn's preflight looks for the
   // harness, which --preview and --no-launch never start.
   writeFileSync(join(bin, "oats"), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(OATS)} "$@"\n`, { mode: 0o755 });
