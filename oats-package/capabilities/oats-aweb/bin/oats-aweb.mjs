@@ -10,6 +10,8 @@
  *                     of live instances (alias = instance name) and humans
  *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the
  *                     messaging root with aw init / id team accept-invite, verify team
+ *   oats-aweb setup --steward  the human binds this deployment by issuing its
+ *                     steward identity (lib/steward.mjs)
  *   oats-aweb connect  give a registered server's deployment membership in its
  *                     default team, through the kernel's --server capability route
  *   oats-aweb wake     install | status | uninstall the host wake broker's per-user
@@ -26,6 +28,10 @@
  *   OATS_DEFAULT_TEAM/OATS_DEFAULT_TEAM_ID/OATS_DEFAULT_TEAM_FROM default team facts
  *   OATS_TEAMS     JSON rows {label, team, default, from} for mapped eligible teams
  *   OATS_META      JSON persisted from this hook's previous output
+ *   OATS_SPAWNER_HOME spawn only: the home of the instance whose session ran the
+ *                  spawn, absent for a person's spawn (meaningful only on a kernel
+ *                  listing spawn-attribution); with attribution: human it issues
+ *                  the child's identity chain (lib/attribution.mjs)
  *
  * Output (spawn, stdout JSON):
  *   { "meta": {...persisted to instance.json + OATS_META at retire},
