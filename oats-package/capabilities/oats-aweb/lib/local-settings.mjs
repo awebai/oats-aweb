@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 
 /** The singular a map's messages use for one of its entries. */
-const ENTRY_NOUN = { roots: "root", residents: "resident", health: "health setting" };
+const ENTRY_NOUN = { roots: "root", residents: "resident", health: "health setting", human: "bound human field", steward: "steward field" };
 
 export const yamlQuote = (value) => JSON.stringify(String(value));
 /** A setting's YAML scalar: a boolean as itself, anything else quoted. */
@@ -134,5 +134,34 @@ export function recordAwebSetting(map, entryKey, entryValue, { start = process.e
     }
     lines.splice(existing, end - existing, row + (comment ? " " + comment : ""));
   } else lines.splice(blockEndIndex, 0, row);
+  atomicWrite(file, `${lines.join("\n")}\n`);
+}
+/** Sets the scalar `settings.oats.aweb.<name>: value` (such as `attribution`)
+ *  in the deployment's oats-local.yaml. A one-line plain or quoted value is
+ *  replaced in place, keeping a trailing comment; anything else refuses. */
+export function recordAwebScalar(name, value, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
+  const file = join(start, "oats-local.yaml");
+  const row = `    ${name}: ${yamlScalar(value)}`;
+  const refuse = (detail) => { throw new Error(`${file}: cannot safely update settings.oats.aweb.${name} automatically (${detail}); add this line by hand under block-style settings.oats.aweb: ${name}: ${yamlScalar(value)}`); };
+  const lines = existsSync(file) ? readFileSync(file, "utf8").split(/\r?\n/) : ["schemaVersion: 2", "workspace: local"];
+  while (lines.length && lines.at(-1) === "") lines.pop();
+  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
+  if (typeof settings === "object") refuse(`line ${settings.unsupported + 1} is not a block-style settings: mapping`);
+  if (settings < 0) { lines.push("settings:"); settings = lines.length - 1; }
+  const settingsEnd = blockEnd(lines, settings, 0);
+  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
+  if (typeof aweb === "object") refuse(`line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`);
+  if (aweb < 0) aweb = ensureYamlBlock(lines, settings, settingsEnd, 2, "oats.aweb");
+  const awebEnd = blockEnd(lines, aweb, 2);
+  const matches = [];
+  for (let i = aweb + 1; i < awebEnd; i++) if (lines[i].startsWith(`    ${name}:`)) matches.push(i);
+  if (matches.length > 1) refuse(`duplicate ${name} key`);
+  if (!matches.length) { lines.splice(awebEnd, 0, row); atomicWrite(file, `${lines.join("\n")}\n`); return; }
+  const at = matches[0];
+  const scalar = lines[at].slice(`    ${name}:`.length).trim();
+  const parsed = /^("[^"\\]*"|'[^']*'|[A-Za-z0-9_-]+)(\s+#.*)?$/.exec(scalar);
+  if (!parsed) refuse(`unsupported ${name} value`);
+  if (at + 1 < awebEnd && lines[at + 1].startsWith("     ") && lines[at + 1].trim() && !lines[at + 1].trimStart().startsWith("#")) refuse(`ambiguous ${name} continuation`);
+  lines[at] = row + (parsed[2] ? ` ${parsed[2].trim()}` : "");
   atomicWrite(file, `${lines.join("\n")}\n`);
 }

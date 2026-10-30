@@ -47,8 +47,10 @@ import { inviteMain } from '../lib/invite.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'invite') process.exit(inviteMain(process.argv.slice(3)));
 import { residentMain } from '../lib/resident.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'resident') process.exit(await residentMain(process.argv.slice(3)));
-import { wakeMain } from '../lib/wake-service.mjs';
+import { deploymentHomes, wakeMain } from '../lib/wake-service.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await wakeMain(process.argv.slice(3)));
+import { stewardMain } from '../lib/steward.mjs';
+if ((process.env.OATS_EVENT || process.argv[2]) === 'setup' && process.argv.slice(3).includes('--steward')) process.exit(await stewardMain(process.argv.slice(3)));
 // Loaded only for `health`: the publisher is opt-in, and no other command or
 // hook depends on its modules.
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
@@ -64,6 +66,7 @@ import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
+import { attributionMode, attributionReadiness, attributionRecord, chainLimitProblem, classifyIssuer, issuerSelection, kernelRefusal } from "../lib/attribution.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
@@ -917,6 +920,7 @@ function globalGrantSpawn() {
       }
     }
     const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : []), ...(registry.problem ? [`oats-aweb: ${registry.problem}`] : [])];
+    meta = reusedIdentityAttribution(meta, warnings);
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     out({
       meta,
@@ -1113,8 +1117,9 @@ function retainedSeatSpawn(source, takeOver) {
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
+    const seatMeta = reusedIdentityAttribution(startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "global", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }), warnings);
     out({
-      meta: startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "global", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }),
+      meta: seatMeta,
       env,
       brief: `Comms: you are the retained seat of the existing aweb identity "${alias}" on team ${team} (same did and address as the seat you replace; its contacts, routes and conversations are yours).${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill).`,
       ...(launch ? { launch } : {}),
@@ -1676,6 +1681,66 @@ function syncWakeReceive(meta) {
   return { meta: next, warnings };
 }
 
+/** Spawn attribution (lib/attribution.mjs): in mode human, decide BEFORE the
+ *  mint who issues the child and whether the spawn refuses, so a refusal leaves
+ *  no remote identity behind. Null in mode none: today's spawn, untouched. */
+function attributionPreflight() {
+  let mode;
+  try { mode = attributionMode(settings); } catch (e) { fatal(e.message); }
+  if (mode !== "human") return null;
+  let version;
+  try { version = querySelectedKernel(["--version", "--json"]); } catch { version = undefined; }
+  const refusal = kernelRefusal(version);
+  if (refusal) fatal(refusal);
+  let issuer;
+  try { issuer = issuerSelection({ spawnerHome: process.env.OATS_SPAWNER_HOME, steward: settings.steward }); } catch (e) { fatal(e.message); }
+  let recordedChainInstalled = false;
+  if (issuer.kind === "spawner") {
+    let spawnerMeta = {};
+    try { spawnerMeta = JSON.parse(readFileSync(join(issuer.home, "instance.json"), "utf8")).capabilityMeta?.["oats.aweb"] || {}; } catch { spawnerMeta = {}; }
+    if (spawnerMeta.identity?.mode === "global" && spawnerMeta.identity?.grant) fatal("the spawner acts through a session grant and holds no identity key to issue with → spawn it from a local-mode instance or from a shell");
+    recordedChainInstalled = spawnerMeta.chainInstalled === true;
+  }
+  let who, whoError;
+  try { who = parseAwJson(run(["aw", "who", "--json"], issuer.home, 60000), "aw who"); } catch (e) { whoError = String(e.message || e).slice(0, 200); }
+  const verdict = classifyIssuer({ issuer, who, whoError, chainFiles: existsSync(join(issuer.home, ".aw", "id-chain.json")), recordedChainInstalled });
+  if (verdict.action === "refuse") fatal(verdict.message);
+  return { issuer, verdict };
+}
+/** aw's agent-child exchange (id-certificates §6), between the issuer's home
+ *  and this one: the issuer fixes an invitation, this identity exports its
+ *  request, the issuer receives and approves it, and this identity imports the
+ *  response once the resulting chain is within aw's limits. Each aw runs in its
+ *  identity's own directory; no AWEB_IDENTITY_HOME is ever passed. */
+function issueChildChain(issuer) {
+  const fail = (m) => { throw new Error(`identity chain issuance failed: ${String(m).slice(0, 300)}`); };
+  const step = (what, f) => { try { return f(); } catch (e) { return fail(`${what}: ${e.message || e}`); } };
+  const dir = join(providerStateDir(), "attribution");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const requestFile = join(dir, "request.json"), responseFile = join(dir, "response.json");
+  for (const f of [requestFile, responseFile]) rmSync(f, { force: true });
+  const invite = step("aw id child invite", () => parseAwJson(run(["aw", "id", "child", "invite", "--kind", "agent", "--recipient", instance, "--expires", "10m", "--json"], issuer.home), "aw id child invite"));
+  if (typeof invite?.invitation_id !== "string" || typeof invite?.parent?.id !== "string" || typeof invite?.domain !== "string") fail("aw id child invite answered no invitation");
+  step("aw id parent request", () => run(["aw", "id", "parent", "request", "--invitation-id", invite.invitation_id, "--parent", invite.parent.id, "--domain", invite.domain, "--out", requestFile], home));
+  const received = step("aw id child receive", () => parseAwJson(run(["aw", "id", "child", "receive", requestFile, "--json"], issuer.home), "aw id child receive"));
+  if (typeof received?.request_id !== "string") fail("aw id child receive answered no request id");
+  step("aw id child approve", () => run(["aw", "id", "child", "approve", received.request_id, "--out", responseFile], issuer.home));
+  let response;
+  try { response = JSON.parse(readFileSync(responseFile, "utf8")); } catch { fail("the issuer's response is not readable JSON"); }
+  const problem = chainLimitProblem(response?.chain);
+  if (problem) fail(problem);
+  step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--json"], home));
+}
+/** A child that reuses an existing identity (a resident grant or a retained
+ *  seat) gets no new chain: in mode human it records unknown and says so. */
+function reusedIdentityAttribution(meta, warnings) {
+  let mode;
+  try { mode = attributionMode(settings); } catch (e) { fatal(e.message); }
+  if (mode !== "human") return meta;
+  warnings.push("oats-aweb: this instance reuses an existing identity, so it is issued no chain and its attribution reports unknown");
+  return { ...meta, identity: { ...meta.identity, attribution: attributionRecord({ action: "chainless" }) }, chainInstalled: false };
+}
+
 if (event === "launch") {
   // The delivery path is decided afresh at every start: the runtime may have
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
@@ -1749,6 +1814,7 @@ if (event === "launch") {
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
+  const attribution = attributionPreflight();
   let minted;                 // external identity, once the mint succeeds
   let spawnMeta;              // with joined teams, once any is accepted
   try {
@@ -1811,6 +1877,7 @@ if (event === "launch") {
     // still report it for compensation.
     minted = { team: joined.team_id, alias: joined.alias };
     const alias = joined.alias;
+    if (attribution?.verdict.action === "issue") issueChildChain(attribution.issuer);
     const mismatch = joined.team_id !== team
       ? ` [WARNING: joined ${joined.team_id}, expected ${team}]` : "";
     // Runtime integration: for Claude Code sessions the aweb-channel plugin
@@ -1827,6 +1894,10 @@ if (event === "launch") {
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) wakeRegister(home, join(home, ".aw"));
     let meta = startedMeta({ team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: identityMeta({ mode: "local", alias, team: joined.team_id }) });
+    if (attribution) {
+      meta = { ...meta, identity: { ...meta.identity, attribution: attributionRecord(attribution.verdict, settings.human) }, chainInstalled: attribution.verdict.action === "issue" };
+      if (attribution.verdict.action === "chainless") warnings.push(`oats-aweb: ${attribution.verdict.warning}`);
+    }
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
     if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
     writeProviderTeamsState(meta);
@@ -2256,7 +2327,13 @@ ${JSON.stringify(problem.details || {})}`);
       const awUsable = aw.status === "ok" || aw.status === "done";
       const teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
       const member = awUsable ? !!teamRoot && teamIdsOf(readTeamsAt(teamRoot)).map(String).includes(team) : null;
-      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot }));
+      const attribution = attributionReadiness({
+        settings,
+        homes: settings.attribution === "human" ? deploymentHomes(process.env, setupDir) : undefined,
+        hasChain: (h) => existsSync(join(h, ".aw", "id-chain.json")),
+        isLocal: (h) => existsSync(join(h, ".aw", "signing.key")),
+      });
+      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, attribution }));
       process.exit(aw.status === "failed" ? 1 : 0);
     }
     if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }

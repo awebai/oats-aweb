@@ -7,6 +7,31 @@
   name `claudeChannelMode: approved` for both. `delivery: session` stays a
   supported value; only the advice to reach for it is gone.
 
+- **Spawn attribution: each spawned instance carries an identity chain to a
+  human** (aweb-acmj.21, oats#1665). New setting `attribution: human | none`;
+  absent means `none`, and spawns are unchanged. `oats aweb setup --steward`
+  lets the human, at a terminal, issue the deployment's steward with
+  `aw id create --human-parent`. It records host-only `human` and `steward`,
+  one human per deployment. In mode `human` the spawn hook issues the child
+  through aw's agent-child exchange: from the spawning instance
+  (`OATS_SPAWNER_HOME`), or from the steward for a person's spawn.
+  - It refuses, naming each fix, on a revoked, replaced, malformed or stale
+    chain, unavailable registry evidence, a chain over 8 certificates or 6144
+    bytes, a spawner whose recorded chain files are gone, a resident-grant
+    spawner, a kernel without `spawn-attribution`, or no bound human.
+  - A spawner with no chain gets a chainless child that reports `unknown`,
+    with a warning.
+  - The spawn meta records `identity.attribution` and `chainInstalled`.
+    `setup --check-only --json` reports `attribution`: the mode, and the count
+    of spawners without a chain.
+  - Costs: a registry outage of more than 60 s stops chained spawning, and a
+    `--server` spawn from another host counts as a person's. The steward's key
+    custody is a convention under the same OS user, where misuse changes the
+    recorded parent and never the human.
+  - Needs a kernel listing `spawn-attribution`, and an aw with identity chains
+    whose `aw id parent request --parent` accepts a `did:key` parent, for
+    instance-issued children.
+
 - **Interim Pi interrupted-turn mail recovery** (awebai/aweb#68).
   The always-loaded inject triggers `/oats-aweb`'s shared recovery procedure for
   `@awebai/pi` 0.4.0 (reported with Pi 1.3.0): after any interrupted turn and at
