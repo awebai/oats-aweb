@@ -330,12 +330,15 @@ function realAw(t) {
   const ok = m && (() => { const a = m.slice(1, 4).map(Number); for (let i = 0; i < 3; i++) if (a[i] !== REAL_AW_MIN[i]) return a[i] > REAL_AW_MIN[i]; return true; })();
   if (!ok) { t.skip(`needs a published aw >= ${REAL_AW_MIN.join(".")} on PATH (found ${m ? m[0] : "none"})`); return false; }
   t.diagnostic(`aw version fixture: ${`${v.stdout}`.trim().split("\n")[0]}`);
-  return true;
+  return m.slice(1, 4).map(Number);
 }
 const POLICY = "not yet identity-home-aware";
 
 test("real aw: admission table for the 1.15 commands under --identity-home", (t) => {
-  if (!realAw(t)) return;
+  const aw = realAw(t);
+  if (!aw) return;
+  // From aw 1.36.43 every command takes the selected identity home.
+  const selected = aw[0] > 1 || aw[1] > 36 || aw[2] >= 43;
   const root = tempDir(t), empty = join(root, "empty"), idh = join(root, ".aweb-identity-alpha"), home = join(root, "home"), state = join(root, "wake-state");
   mkdirSync(idh, { recursive: true }); mkdirSync(home, { recursive: true }); mkdirSync(join(home, ".aw"), { recursive: true });
   const env = { ...process.env, AW_WAKE_STATE_DIR: state };
@@ -349,11 +352,11 @@ test("real aw: admission table for the 1.15 commands under --identity-home", (t)
     { name: "chat send-and-leave", args: ["--identity-home", idh, "chat", "send-and-leave", "nobody", "hi"], admitted: true, expect: /initialized|identity|workspace/i },
     { name: "workspace delete", args: ["--identity-home", idh, "workspace", "delete", "nobody", "--json"], admitted: true, expect: /initialized|identity|workspace|alias/i },
     { name: "whoami", args: ["--identity-home", idh, "whoami"], admitted: true, expect: /initialized|identity|workspace|not found/i },
-    // refused by aw: why minting roots invite from their own directory (cwd), not --identity-home
-    { name: "team invite", args: ["--identity-home", idh, "team", "invite", "--team-id", "x:example.invalid", "--json"], admitted: false, expect: new RegExp(POLICY) },
+    // refused below aw 1.36.43: why minting roots invite from their own directory (cwd), not --identity-home
+    { name: "team invite", args: ["--identity-home", idh, "team", "invite", "--team-id", "x:example.invalid", "--json"], admitted: selected, expect: selected ? /selected identity home/ : new RegExp(POLICY) },
     // aw made `id team members` identity-home-aware (1.36.23 admits it): either aw's policy
     // refusal, or admission failing on its own terms (no team in the empty identity home).
-    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], oneOf: [new RegExp(POLICY), /--team-id or both --team and --namespace are required when no active team can be inferred[\s\S]*teams\.yaml/] },
+    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], oneOf: [new RegExp(POLICY), /selected identity home .*teams\.yaml: no such file or directory/, /--team-id or both --team and --namespace are required when no active team can be inferred[\s\S]*teams\.yaml/] },
   ];
   for (const row of rows) {
     const r = spawnSync("aw", row.args, { cwd: home, env, encoding: "utf8", timeout: 15000 });

@@ -512,8 +512,16 @@ test("real aw 1.36 identity-home policy admits provider subcommands and pins cur
   mkdirSync(home, { recursive: true });
 
   const oldForm = spawnSync("aw", ["--identity-home", identityHome, "team", "join", "not-a-token", "--name", "probe", "--json"], { cwd: home, encoding: "utf8", timeout: 10000 });
-  assert.equal(oldForm.status, 2, oldForm.stdout + oldForm.stderr);
-  assert.match(`${oldForm.stdout}${oldForm.stderr}`, new RegExp(TEAM_JOIN_POLICY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const oldText = `${oldForm.stdout}${oldForm.stderr}`;
+  // From aw 1.36.43 every command takes the selected identity home, so only an older aw refuses.
+  if (Number(/aw\s+1\.36\.(\d+)/.exec(text)[1]) >= 43) {
+    assert.notEqual(oldForm.status, 0, oldText);
+    assert.doesNotMatch(oldText, new RegExp(IDENTITY_HOME_POLICY));
+    assert.match(oldText, /invalid invite token/);
+  } else {
+    assert.equal(oldForm.status, 2, oldText);
+    assert.match(oldText, new RegExp(TEAM_JOIN_POLICY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
 
   const accept = spawnSync("aw", ["--identity-home", identityHome, "id", "team", "accept-invite", "not-a-token", "--name", "probe", "--local", "--json"], { cwd: home, encoding: "utf8", timeout: 10000 });
   const acceptText = `${accept.stdout}${accept.stderr}`;

@@ -70,9 +70,14 @@ jobs:
   resident-journey:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # The provider's floor and the newest aw checked against it.
+        aw: ['1.36.33', '1.36.51']
     env:
       AWEB_STACK_COMMIT: 1d7ee6bb3519a3c940ebeb12afc86d921dc13e27
-      AW_VERSION: 1.36.33
+      AW_VERSION: ${{ matrix.aw }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -100,6 +105,11 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/aw" --no-audit --no-fund "@awebai/aw@$AW_VERSION"
           "$RUNNER_TEMP/aw/node_modules/.bin/aw" version
+      - name: Real-aw tests at this version
+        shell: bash
+        run: |
+          PATH="$RUNNER_TEMP/aw/node_modules/.bin:$PATH" node --test --test-reporter=tap --test-name-pattern='real aw|published aw' test/oats-aweb-1-14.test.mjs test/oats-aweb-1-15.test.mjs | tee "$RUNNER_TEMP/real-aw.tap"
+          grep -q '^# skipped 0$' "$RUNNER_TEMP/real-aw.tap"
       - name: Give the runner a systemd user manager
         shell: bash
         run: |
