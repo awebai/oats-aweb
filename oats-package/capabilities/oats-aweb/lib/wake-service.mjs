@@ -429,7 +429,7 @@ export function uninstallWake(opts, ctx) {
 
 /** The deployment's instance homes, from one read-only `oats status --json`
  *  through the kernel that dispatched this command (OATS_CLI_BIN). */
-function deploymentHomes(env, dir) {
+export function deploymentHomes(env, dir) {
   let deployment;
   try { deployment = selectedDeployment(env, dir); } catch { return { known: false, reason: "the deployment is not selected: run oats aweb wake status from the deployment directory, or pass --dir <deployment>" }; }
   const cli = env.OATS_CLI_BIN;

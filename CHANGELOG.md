@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **Spawn attribution: each spawned instance carries an identity chain to a
+  human** (aweb-acmj.21, oats#1665). New setting `attribution: human | none`;
+  absent means `none`, and spawns are unchanged. `oats aweb setup --steward`
+  lets the human, at a terminal, issue the deployment's steward with
+  `aw id create --human-parent`. It records host-only `human` and `steward`,
+  one human per deployment. In mode `human` the spawn hook issues the child
+  through aw's agent-child exchange: from the spawning instance
+  (`OATS_SPAWNER_HOME`), or from the steward for a person's spawn.
+  - It refuses, naming each fix, on a revoked, replaced, malformed or stale
+    chain, unavailable registry evidence, a chain over 8 certificates or 6144
+    bytes, a spawner whose recorded chain files are gone, a resident-grant
+    spawner, a kernel without `spawn-attribution`, or no bound human.
+  - A spawner with no chain gets a chainless child that reports `unknown`,
+    with a warning.
+  - The spawn meta records `identity.attribution` and `chainInstalled`.
+    `setup --check-only --json` reports `attribution`: the mode, and the count
+    of spawners without a chain.
+  - Costs: a registry outage of more than 60 s stops chained spawning, and a
+    `--server` spawn from another host counts as a person's. The steward's key
+    custody is a convention under the same OS user, where misuse changes the
+    recorded parent and never the human.
+  - Needs a kernel listing `spawn-attribution`, and an aw with identity chains
+    whose `aw id parent request --parent` accepts a `did:key` parent, for
+    instance-issued children.
+
 ## 1.38.0 — 2026-11-04
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. Only pi homes see a difference. With @awebai/pi 0.5.0 or later installed in the launch's pi folder, `pi-extension-skills-loaded` no longer asks for the skills filter, because that extension bundles no skills; below 0.5.0, or with an unreadable version, it warns as before. The new warning `pi-skills-package-loaded` fires when that pi folder lists @awebai/claude-skills unfiltered. Remove the entry, or filter it with `"skills": []`. Never install @awebai/claude-skills in a pi folder that OATS homes use.
