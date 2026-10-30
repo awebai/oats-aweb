@@ -356,7 +356,7 @@ test("real aw: admission table for the 1.15 commands under --identity-home", (t)
     { name: "team invite", args: ["--identity-home", idh, "team", "invite", "--team-id", "x:example.invalid", "--json"], admitted: selected, expect: selected ? /selected identity home/ : new RegExp(POLICY) },
     // aw made `id team members` identity-home-aware (1.36.23 admits it): either aw's policy
     // refusal, or admission failing on its own terms (no team in the empty identity home).
-    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], oneOf: [new RegExp(POLICY), /selected identity home .*teams\.yaml: no such file or directory/, /--team-id or both --team and --namespace are required when no active team can be inferred[\s\S]*teams\.yaml/] },
+    { name: "id team members", args: ["--identity-home", idh, "id", "team", "members", "--json"], oneOf: selected ? [/selected identity home .*teams\.yaml: no such file or directory/] : [new RegExp(POLICY), /--team-id or both --team and --namespace are required when no active team can be inferred[\s\S]*teams\.yaml/] },
   ];
   for (const row of rows) {
     const r = spawnSync("aw", row.args, { cwd: home, env, encoding: "utf8", timeout: 15000 });
