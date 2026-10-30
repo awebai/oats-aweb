@@ -150,7 +150,7 @@ the host wake broker wakes every runtime. A session is on one path, never both.
 | `Notification delivery: the aweb channel plugin` (Claude Code) or `the aweb pi extension` (pi) | the configured channel plugin / pi extension is intended to push events; this line does not prove connection |
 | `Notification delivery: external` | the host wake broker presents incoming mail/chat in your terminal, either as a waiting-items line or as the full event |
 | joined team with `receive: native` | the host wake broker presents that identity's mail/chat, either as a line with `aw --identity-home <path> …` commands or as the full event |
-| joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries |
+| joined team with `receive: poll` | nothing: check that team's inbox and pending chat at task boundaries. On a Claude home this is expected (see below) |
 
 **Channel selection and the development-channel prompt**
 
@@ -245,16 +245,29 @@ replay spawn, replace or restart because of that result or `launched:false`.
 Start only after inspection proves the session gone; live prompt intervention
 needs separate explicit operator authorization.
 
-For an unattended Claude home, use the approved route.
+For an unattended Claude home, the approved route is recommended.
 
 **The host wake broker** (`aw wake run`, one per host user) wakes every Codex
-home, every `delivery: session` home and every joined team. The provider
-registers a home at spawn and launch. `aw wake register` accepts a
+home, every `delivery: session` home and every joined team, except a Claude
+channel home's joined teams (below). The provider registers a home at spawn and
+launch. `aw wake register` accepts a
 registration even while the daemon is down, and the registration takes
 effect when the daemon starts. Readiness reads the daemon's own status
 (section 7). Without a running daemon, every such home reads `unavailable`
 with `wake-daemon-not-running`, and each joined team adds
 `joined-team-poll-only`.
+
+**Joined teams on a Claude home.** A Claude channel home reads its joined teams
+at task boundaries, as `receive: poll`, unless it runs with `--yolo`. That is
+expected: readiness says `joined-team-polled` and needs no broker for those
+teams, so don't install or start one for this. Its default team is unchanged.
+The provider decides at every start, from the kernel's `OATS_YOLO`; a kernel
+that doesn't set it polls on every Claude home. `oats aweb join` reads what the
+last start recorded.
+
+Nothing wakes an idle Claude home for joined-team mail. Read that inbox at task
+boundaries. A wake job starts a turn; use one only where
+`oats session inspect --json` shows `wakeHold: on-claims`.
 
 The operator installs it as a per-user service with `oats aweb wake install`,
 run in their own shell (provider 1.28.0; section 8, "Host wake broker
@@ -388,6 +401,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | Code | Meaning | Who fixes it |
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
+| `joined-team-polled` | a Claude home reads this joined team at task boundaries, as expected | nobody: expected. Don't install or start the broker for this |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; operator: install or start the broker (`/oats-host-delivery`, Choice 2); if readiness then shows `wake-target-missing` or `wake-stream-missing`, restart the home with the operator's word |
 | `wake-status-timestamp-unknown` | supplied `status.updated_at` is malformed; observation time is unknown, with observed client/daemon versions in the diagnostic | operator: inspect `aw version` and `aw wake status --json`; preserve a sanitized capture for a provider compatibility report |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | operator: install or start its service, or upgrade aw and restart it (`/oats-host-delivery`, Choice 2) |

@@ -48,6 +48,7 @@ const ROWS = [
   ["warnings that do not affect receive", { readiness: { status: "ready", problems: [], warnings: ["e2ee-disabled", "wake-daemon-outdated", "grant-revoke-pending", "channel-dev-confirmation", "claude-channel-policy-admitted"].map((code) => ({ code, message: "x" })) } }, ["yes", null, null]],
   ["a joined-team warning does not degrade the primary identity", { readiness: warning("joined-team-poll-only") }, ["yes", null, null]],
   ["a joined identity that polls", { identity: { kind: "joined", receive: "poll" } }, ["degraded", "oats.joined_team_poll_only", "operator"]],
+  ["a joined identity that polls by design", { identity: { kind: "joined", receive: "poll", expectedPoll: true } }, ["yes", null, null]],
   ["a joined identity with native receive", { identity: { kind: "joined", receive: "native" } }, ["yes", null, null]],
   ["all good", {}, ["yes", null, null]],
   ["a native home with a live receipt has proven receive, even with no record that the channel loaded", { readiness: warning("native-receive-unproven"), launchPrompts: null, receive: { native: true, receipt: "proven" } }, ["yes", null, null]],

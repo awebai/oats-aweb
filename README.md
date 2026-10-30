@@ -495,8 +495,8 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   platform). An approved launch warns the same
   verdict, and nothing when the file admits the plugin. The file is evidence,
   not proof: server-managed settings or MDM override it, and only the nonce
-  exchange proves receive. For an unattended Claude home, use the approved
-  route.
+  exchange proves receive. For an unattended Claude home, the approved route
+  is recommended.
 
   Both modes contribute exactly one fixed plugin argument;
   `settings.oats.aweb.claudeChannelMode` selects argv, never consent. No automatic
@@ -655,7 +655,9 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   when current settings say `session`. An explicit Codex runtime requires broker
   prerequisites even when captured delivery is absent, while complete-set
   ownership remains unproven. A retained empty runtime string keeps its
-  existing external-broker meaning. Any known joined path requires broker checks.
+  existing external-broker meaning. Any known joined path requires broker checks,
+  except a Claude channel home's joined teams, which it reads at task boundaries
+  unless it runs with `--yolo`: readiness reports `joined-team-polled` for those.
   Retained joined identities still receive target/worker/stream and known-policy
   checks. Malformed JSON, unreadable records, wrong types, invalid values and
   contradictory retained facts are problems, not legacy absence.

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Joined teams on a Claude home are now read at task boundaries.** A Claude
+  home takes no live wakes for its joined teams unless it runs with `--yolo`;
+  its default team is unchanged. An idle session doesn't read that mail until
+  something else wakes it. `oats aweb teams` shows `receive: poll`, and
+  readiness reports it as expected. Claude homes only: pi and Codex homes are
+  unchanged. Needs a kernel that sets `OATS_YOLO`; on an older kernel every
+  Claude home polls its joined teams.
+
+  Upgrade: a home you paused with `aw wake pause`: start it under this version
+  before you resume it. Resuming a Claude home afterwards does nothing and isn't
+  needed; a `--yolo` or Codex home stays paused until you resume it.
+
 - **The approved route is now the guidance for stopping the development prompt
   and for unattended Claude homes.** The warnings, the README and `/oats-aweb`
   name `claudeChannelMode: approved` for both. `delivery: session` stays a

@@ -73,7 +73,7 @@ import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../l
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
-import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
+import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -1646,12 +1646,20 @@ function instanceRuntime(meta = {}) {
   if (["spawn", "launch"].includes(event)) return process.env.OATS_RUNTIME || "";
   return recordedRuntime(meta, recordedStart(home).harness) ?? (process.env.OATS_RUNTIME || undefined);
 }
+/** Whether this home runs with --yolo. Spawn and launch read this start's own
+ *  value; a join or leave reads what the last start recorded. Anything else is
+ *  not known, so a kernel that gives hooks no OATS_YOLO reads as false. */
+function instanceYolo() {
+  if (["spawn", "launch"].includes(event)) return process.env.OATS_YOLO === "1";
+  return recordedStart(home).yolo;
+}
 function primaryIdentityHomeOf(meta = {}) {
   return meta.identity?.mode === "global" && meta.identity?.grant?.id ? priorGrantHome(meta) : join(home, ".aw");
 }
 /** Keep the host wake broker's registration for this home in step with the
  *  joined teams, and record each joined team's receive mode. Never throws: a
- *  refused registration leaves that team poll-only with a warning. */
+ *  refused registration leaves that team poll-only with a warning. A home that
+ *  polls them by design registers nothing and records that it expects to. */
 function syncWakeReceive(meta) {
   // A joined home that no longer exists would make aw refuse the whole
   // registration; it is stale provider state, not a receive identity.
@@ -1659,7 +1667,8 @@ function syncWakeReceive(meta) {
   const delivery = meta.delivery || deliveryMode;
   const runtime = instanceRuntime(meta);
   const primary = primaryIdentityHomeOf(meta);
-  const doc = wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend: process.env.OATS_BACKEND });
+  const polled = joinedTeamsPolled({ delivery, runtime, yolo: instanceYolo() });
+  const doc = polled ? null : wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend: process.env.OATS_BACKEND });
   const warnings = [];
   let receive = "poll", wakeJoined = false;
   if (doc) {
@@ -1672,7 +1681,7 @@ function syncWakeReceive(meta) {
     if (brokerDelivers({ delivery, runtime })) { try { wakeRegister(home, primary); } catch (e) { warnings.push(String(e.message || e)); } }
     else if (!wakeDeregister(home)) warnings.push("aw wake deregister failed; the broker treats a stale registration as inactive on its own");
   }
-  const next = { ...meta, ...(typeof runtime === "string" ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => ({ ...j, receive: joined.includes(j) ? receive : "poll" })) };
+  const next = { ...meta, ...(typeof runtime === "string" ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => { const { expectedPoll: _last, ...team } = j; return { ...team, receive: joined.includes(j) ? receive : "poll", ...(polled ? { expectedPoll: true } : {}) }; }) };
   return { meta: next, warnings };
 }
 

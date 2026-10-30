@@ -345,6 +345,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     const expected=expectedReceive(ctx.home,{delivery:req.settings.delivery||'channel'});
     receiveProblems.push(...expected.problems);
     warnings.push(...(expected.warnings||[]));
+    for(const team of expected.polled||[]) warnings.push({code:'joined-team-polled',message:`joined team ${team.label} is read at task boundaries on this Claude home, as expected. An idle session doesn't read its mail until something else wakes it. No wake broker is needed for this team.`});
     if(!expected.problems.length) {
       // A Claude channel home is on the channel only with Claude's own
       // registration line from after its last start (awebai/oats#981).

@@ -65,7 +65,7 @@ function identitiesOf(row, settings) {
   const skips = [];
   for (const j of meta.joinedTeams ?? []) {
     if (!j.identityHome) { skips.push(`joined team ${j.team} has no identity home recorded`); continue; }
-    if (rootFor(j.team)) identities.push({kind: 'local', team: j.team, alias: j.alias ?? alias, id: {identityHome: j.identityHome}, host: {cwd: rootFor(j.team)}, cacheFile, identity: {kind: 'joined', receive: j.receive}, receive: {native: false}});
+    if (rootFor(j.team)) identities.push({kind: 'local', team: j.team, alias: j.alias ?? alias, id: {identityHome: j.identityHome}, host: {cwd: rootFor(j.team)}, cacheFile, identity: {kind: 'joined', receive: j.receive, expectedPoll: j.expectedPoll}, receive: {native: false}});
   }
   return {identities, skips};
 }

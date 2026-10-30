@@ -38,7 +38,9 @@ identity that received the message, then return to your task.
 **NEVER sleep, poll or busy-wait for a reply**: send, end your turn, let the
 wake bring it. Act as a joined team only with
 `aw --identity-home <identityHome> …`; a joined team with `receive: poll` gets
-no wake, so check it that way at task boundaries.
+no wake, so check it that way at task boundaries. If you've joined a team on
+`receive: native` (`oats aweb teams`), ask a person in plain text, then end your
+turn. Don't open a question dialog.
 
 Delivery may mark mail read, so
 delivered mail may not appear in unread `aw mail inbox`. After an uncertain

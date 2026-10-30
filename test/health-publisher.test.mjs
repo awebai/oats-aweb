@@ -130,6 +130,15 @@ test("a failed designation is logged and that agent is not published this tick",
   assert.deepEqual(result.refused, [{ alias: "dev-1", team: TEAM, status: 422, code: "invalid_host", message: "host_did is not an active member of this team" }]);
 });
 
+test("a joined identity that polls by design publishes as reachable", async () => {
+  const home = "/d/agents/a/instances/dev-1";
+  const row = localRow("dev-1");
+  row.capabilityMeta["oats.aweb"].joinedTeams = [{ label: "ops", team: OTHER, identityHome: `${home}/.aweb-identity-ops`, receive: "poll", expectedPoll: true, alias: "dev-1" }];
+  const host = fakeHost({ rows: [row], ids: idsFor });
+  await publishTick({ settings, now: () => NOW, host });
+  assert.equal(host.calls.publish.find((p) => p.document.team_id === OTHER).document.reachable, "yes");
+});
+
 test("a joined identity is its own agent, published by that team's root, degraded when it polls", async () => {
   const home = "/d/agents/a/instances/dev-1";
   const row = localRow("dev-1");

@@ -179,7 +179,7 @@ test("channel: a codex home's joined team receives through the broker with the p
 });
 
 test("launch codex -> claude with a joined team: the broker keeps only the joined identity", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: { join: "alpha" } });
+  const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: { join: "alpha" }, yolo: true });
   const meta = fx.spawn().meta;
   assert.equal(fx.registered()?.runtime_delivery, "external-session", "the codex home starts on the broker with its primary");
   const r = fx.launch(meta, "claude");
@@ -514,7 +514,7 @@ test("the skill's readiness table and the changelog name channel-dev-confirmatio
 
 // Released status fields; no worker or successful-prompt telemetry invented.
 for (const runtime of ["codex", "claude"]) test(`target readiness rejects daemon-green paused ${runtime} target`, (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
+  const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" }, yolo: true });
   fx.record(fx.spawn().meta, runtime);
   const reg = fx.registered();
   fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.33", instances: [{ ...reg, phase: "active", paused: true, receive_identities: reg.receive_identities.map(r => ({ ...r, stream_admitted: true, stream_phase: "streaming" })) }] });
@@ -712,7 +712,7 @@ test("null-home readiness reads only the host daemon, once", (t) => {
 });
 
 test("mixed native primary retains failed joined problem and confirmation guidance", (t) => {
-  const fx = fixture(t, {delivery:"channel",runtime:"claude",settings:{join:"alpha",claudeChannelMode:"development"}});
+  const fx = fixture(t, {delivery:"channel",runtime:"claude",settings:{join:"alpha",claudeChannelMode:"development"},yolo:true});
   fx.record(fx.spawn().meta,"claude"); const status=transportStatus(fx,"claude"); status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
   const result=fx.readiness(); assert.equal(result.status,"unavailable");
   assert.ok(result.warnings.some(p=>p.code==='native-receive-unproven'));
