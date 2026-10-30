@@ -61,22 +61,24 @@ function refusalFor(issuer, reason) {
   return `${who}'s identity chain is malformed or fails verification (${reason || "no reason"}) → ${fixFor(issuer)}`;
 }
 
-const unavailable = (detail) => `registry evidence for the issuer's chain is unavailable (${detail}) → retry once the identity registry answers; chained spawning stops while it has been unreachable for over 60 s`;
+const unavailable = (detail) => `registry evidence for the issuer's chain is unavailable (${detail}) → retry once the identity registry answers; chained spawning stops while the registry is unreachable`;
 
 /**
  * What the spawn does with this issuer, from its `aw who --json` (aw's cached
- * status client: evidence up to 60 s old is reused, older is refreshed once):
+ * status client; its cache lives in one process, so every spawn reads fresh
+ * evidence and a registry outage refuses at once):
  * - issue: a verified chain (with or without a human) signs its child;
  * - chainless: a spawner with no chain, where that absence is evidence, gets a
  *   chainless child and a warning;
  * - refuse: everything else. A chain that exists but fails never falls back
  *   to a chainless child.
  * Absence counts as evidence only when the spawner holds no chain files, its
- * own spawn meta does not record that a chain was installed, and, for a
- * did:aw, the registry says authoritatively that it has no enrollment. A local
- * did:key is never enrolled, so its files and meta are all there is.
+ * own spawn meta does not record that a chain was installed, and `aw who`
+ * says so: legacy_no_chain for a did:key (never enrolled, so aw looks nothing
+ * up), unregistered_identity for a did:aw (the registry's authoritative "no
+ * enrollment"). Any other answer for a chainless spawner refuses.
  */
-export function classifyIssuer({ issuer, who, whoError, chainFiles, recordedChainInstalled = false, enrollment }) {
+export function classifyIssuer({ issuer, who, whoError, chainFiles, recordedChainInstalled = false }) {
   if (whoError) return { action: "refuse", message: `could not read the issuer's chain status (${whoError}) → retry once the identity registry answers` };
   if (who?.identity_valid === true && (who.outcome === "nearest_human" || who.outcome === "no_human")) {
     return { action: "issue", outcome: who.outcome, humanId: who.outcome === "nearest_human" ? who.human_id : null, issuerId: who.id };
@@ -85,9 +87,9 @@ export function classifyIssuer({ issuer, who, whoError, chainFiles, recordedChai
   if (!NO_CHAIN.has(who?.reason) || chainFiles) return { action: "refuse", message: refusalFor(issuer, who?.reason) };
   if (issuer.kind === "steward") return { action: "refuse", message: `the deployment's steward has no verified chain (${who.reason}) → ${fixFor(issuer)}` };
   if (recordedChainInstalled) return { action: "refuse", message: "the spawner's spawn meta records an installed chain but its chain files are gone → respawn the spawner; missing files never make a chained instance chainless" };
-  if (String(who.id || "").startsWith("did:aw:") && enrollment?.enrolled !== false) {
-    return { action: "refuse", message: `the registry does not establish that the spawner has no enrollment (${who.id}) → retry once the identity registry answers, or respawn the spawner` };
-  }
+  const id = String(who.id || "");
+  const absent = (id.startsWith("did:key:") && who.reason === "legacy_no_chain") || (id.startsWith("did:aw:") && who.reason === "unregistered_identity");
+  if (!absent) return { action: "refuse", message: `the registry does not establish that the spawner has no enrollment (${id}, ${who.reason}) → retry once the identity registry answers, or respawn the spawner` };
   return { action: "chainless", warning: "the spawner has no identity chain (it predates the human binding), so this child is created without one and reports unknown; respawn the spawner to give its children a chain" };
 }
 
@@ -129,23 +131,39 @@ export function attributionRecord(verdict, boundHuman) {
   return { mode: "human", human: { id: verdict.humanId, label }, parent };
 }
 
-/** Readiness information about attribution: the mode, never a failure. In
- *  mode none it names the one act that binds a human; in mode human it names
- *  the human and counts the local instances without a chain, whose children
- *  are created chainless until they are respawned. A resident-grant instance
- *  is not counted: it holds no identity key and never issues. */
-export function attributionReadiness({ settings, homes, hasChain, isLocal }) {
+/** The mode and the binding, as readiness reports them: never a failure. */
+function attributionSummary(settings) {
   let mode;
-  try { mode = attributionMode(settings); } catch (e) { return { mode: null, human: null, steward: null, chainlessSpawners: null, status: "info", message: `attribution: ${e.message}` }; }
-  if (mode === "none") return { mode, human: null, steward: null, chainlessSpawners: null, status: "info", message: `attribution: none — no human bound; one act binds one: a human runs \`${STEWARD_SETUP_COMMAND}\` at a terminal` };
+  try { mode = attributionMode(settings); } catch (e) { return { mode: null, human: null, steward: null, text: `attribution: ${e.message}` }; }
+  if (mode === "none") return { mode, human: null, steward: null, text: `attribution: none — no human bound; one act binds one: a human runs \`${STEWARD_SETUP_COMMAND}\` at a terminal` };
   const human = settings.human?.id ? { id: settings.human.id, label: settings.human.label ?? settings.human.id } : null;
   const steward = settings.steward?.id ? { id: settings.steward.id } : null;
   const bound = human && steward ? `bound to ${human.label} (${human.id}) through steward ${steward.id}` : `no human bound yet: a human runs \`${STEWARD_SETUP_COMMAND}\` at a terminal`;
-  if (!homes?.known) return { mode, human, steward, chainlessSpawners: null, status: "info", message: `attribution: human — ${bound}; instances without a chain: unknown (${homes?.reason || "no deployment homes"})` };
+  return { mode, human, steward, text: `attribution: human — ${bound}` };
+}
+
+/** Deployment readiness (`setup --check-only`): the summary, and in mode
+ *  human the local instances without a chain, whose children are created
+ *  chainless until they are respawned. A resident-grant instance is not
+ *  counted: it holds no identity key and never issues. */
+export function attributionReadiness({ settings, homes, hasChain, isLocal }) {
+  const { mode, human, steward, text } = attributionSummary(settings);
+  const base = { mode, human, steward, chainlessSpawners: null, status: "info" };
+  if (mode !== "human") return { ...base, message: text };
+  if (!homes?.known) return { ...base, message: `${text}; instances without a chain: unknown (${homes?.reason || "no deployment homes"})` };
   const chainless = homes.rows.filter((r) => isLocal(r.home) && !hasChain(r.home));
   const names = chainless.map((r) => (typeof r.instance === "string" ? r.instance : basename(r.home))).join(", ");
   const count = chainless.length === 1 ? `1 instance has no chain (${names}), so its children are created chainless and report unknown until it is respawned`
     : chainless.length ? `${chainless.length} instances have no chain (${names}), so their children are created chainless and report unknown until they are respawned`
     : "every instance has a chain";
-  return { mode, human, steward, chainlessSpawners: chainless.length, status: "info", message: `attribution: human — ${bound}; ${count}` };
+  return { ...base, chainlessSpawners: chainless.length, message: `${text}; ${count}` };
+}
+
+/** Home readiness: one warning with code `attribution`, information only. A
+ *  readiness answer has no other non-failing channel. */
+export function attributionHomeReadiness({ settings, home, hasChain, isLocal }) {
+  const { mode, text } = attributionSummary(settings);
+  if (mode !== "human" || !home) return { code: "attribution", message: text };
+  if (!isLocal(home)) return { code: "attribution", message: `${text}; this instance acts through a session grant and issues no children's chains` };
+  return { code: "attribution", message: hasChain(home) ? `${text}; this instance has a chain` : `${text}; this instance has no chain, so its children are created chainless and report unknown until it is respawned` };
 }

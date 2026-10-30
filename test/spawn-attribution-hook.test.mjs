@@ -14,6 +14,7 @@ import { fakeAwChain, writeIdentity } from "./helpers/fake-aw-chain.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const HOOK = join(REPO, "oats-package", "capabilities", "oats-aweb", "bin", "oats-aweb.mjs");
+const BINDING = join(REPO, "oats-package", "capabilities", "oats-aweb", "bin", "oats-aweb-binding.mjs");
 const HUMAN = "did:aw:human1", STEWARD = "did:aw:steward1", LEAD = "did:key:zlead-1";
 const HUMAN_CERT = { id: HUMAN, kind: "human", parent: { kind: "namespace", id: "awtest-demo.example" } };
 const STEWARD_CERT = { id: STEWARD, kind: "agent", parent: { kind: "identity", id: HUMAN } };
@@ -135,7 +136,7 @@ test("refuses before minting when the registry evidence is unavailable", (t) => 
   const fake = fakeAwChain(t);
   const { status, doc } = spawn(fx, fake, { OATS_SPAWNER_HOME: lead });
   assert.equal(status, 1);
-  assert.match(doc.warning, /chained spawning stops while it has been unreachable for over 60 s/);
+  assert.match(doc.warning, /chained spawning stops while the registry is unreachable/);
   assert.equal(minted(fake), false);
 });
 
@@ -192,4 +193,76 @@ test("refuses a resulting chain over the limits before the child installs it", (
     assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), false);
     assert.equal(chainCalls(fake).some((c) => c.startsWith("parent import")), false);
   }
+});
+
+test("refuses before minting when the minting root carries a chain: aw's team invite would make it the child's parent", (t) => {
+  const fx = fixture(t);
+  writeIdentity(fx.ws, { chain: [HUMAN_CERT, { id: "did:key:zroot", kind: "agent", parent: { kind: "identity", id: HUMAN } }] });
+  const fake = fakeAwChain(t);
+  const { status, doc } = spawn(fx, fake);
+  assert.equal(status, 1);
+  assert.match(doc.warning, /this deployment's minting root .* carries an identity chain, so aw would make it every child's parent → use a chainless minting root/);
+  assert.equal(minted(fake), false);
+});
+
+test("refuses before minting when the steward is the minting root: they stay separate homes", (t) => {
+  const fx = fixture(t);
+  const settings = { ...JSON.parse(fx.env.OATS_SETTINGS), steward: { id: STEWARD, home: fx.ws } };
+  const fake = fakeAwChain(t);
+  const { status, doc } = spawn(fx, fake, { OATS_SETTINGS: JSON.stringify(settings) });
+  assert.equal(status, 1);
+  assert.match(doc.warning, /the steward's home .* is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → /);
+  assert.equal(minted(fake), false);
+});
+
+test("home readiness through binding check carries the attribution information as a warning, never a problem", (t) => {
+  for (const [attribution, expected] of [[null, /^attribution: none — no human bound; one act binds one/], ["human", /^attribution: human — bound to Juan \(did:aw:human1\) through steward did:aw:steward1; this instance has no chain/]]) {
+    const fx = fixture(t, { attribution, steward: attribution === "human" });
+    writeIdentity(fx.home, {});
+    const fake = fakeAwChain(t);
+    const settings = JSON.parse(fx.env.OATS_SETTINGS);
+    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: fx.env.OATS_WORKSPACE_KEY, deployment: fx.ws, soul: "dev", team: "default", instance: "dev-1", home: fx.home } } };
+    const { OATS_SETTINGS, OATS_HOME, OATS_RUNTIME, ...rest } = fx.env;
+    const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: fx.home, input: JSON.stringify(input), env: { ...rest, PATH: fake.path, OATS_INSTANCE_HOME: fx.home }, encoding: "utf8", timeout: 20000 });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const answer = JSON.parse(r.stdout.trim().split("\n").pop());
+    const result = answer.result;
+    assert.ok(result, r.stdout);
+    const item = result.warnings.find((w) => w.code === "attribution");
+    assert.ok(item, JSON.stringify(result));
+    assert.match(item.message, expected);
+    assert.equal(result.problems.some((p) => p.code === "attribution"), false);
+  }
+});
+
+test("a did:aw spawner the registry reports unregistered gets a chainless child; without that evidence it refuses", (t) => {
+  const meta = { identity: { mode: "global", alias: "lead" } };
+  const unregistered = { id: "did:aw:lead", outcome: "unknown", human_id: null, identity_valid: null, kind: null, reason: "unregistered_identity" };
+  const fx = fixture(t);
+  const lead = spawner(fx, { chain: null, who: unregistered, meta });
+  const fake = fakeAwChain(t);
+  const ok = spawn(fx, fake, { OATS_SPAWNER_HOME: lead });
+  assert.equal(ok.status, 0, JSON.stringify(ok.doc));
+  assert.deepEqual(ok.doc.meta.identity.attribution, { mode: "unknown", human: null, parent: null });
+  assert.equal(ok.doc.meta.chainInstalled, false);
+
+  const fx2 = fixture(t);
+  const lead2 = spawner(fx2, { chain: null, who: { ...unregistered, reason: "legacy_no_chain" }, meta });
+  const fake2 = fakeAwChain(t);
+  const refused = spawn(fx2, fake2, { OATS_SPAWNER_HOME: lead2 });
+  assert.equal(refused.status, 1);
+  assert.match(refused.doc.warning, /the registry does not establish that the spawner has no enrollment/);
+  assert.equal(minted(fake2), false);
+});
+
+test("home readiness refuses a malformed attribution setting as configuration, not as a broken binding", (t) => {
+  const fx = fixture(t, { attribution: "humans", steward: false });
+  writeIdentity(fx.home, {});
+  const fake = fakeAwChain(t);
+  const settings = JSON.parse(fx.env.OATS_SETTINGS);
+  const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: fx.env.OATS_WORKSPACE_KEY, deployment: fx.ws, soul: "dev", team: "default", instance: "dev-1", home: fx.home } } };
+  const { OATS_SETTINGS, OATS_HOME, OATS_RUNTIME, ...rest } = fx.env;
+  const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: fx.home, input: JSON.stringify(input), env: { ...rest, PATH: fake.path, OATS_INSTANCE_HOME: fx.home }, encoding: "utf8", timeout: 20000 });
+  const answer = JSON.parse(r.stdout.trim().split("\n").pop());
+  assert.equal(answer.error?.code, "needs-configuration", r.stdout);
 });

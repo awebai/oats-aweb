@@ -83,7 +83,9 @@ export async function setupSteward(args, deps = {}) {
   const recorded = settings.steward;
   if (recorded?.home && recorded.home !== stewardHome) throw failure("E_STEWARD_ONE_HUMAN", `this deployment already records the steward ${recorded.id || "?"} at ${recorded.home}; one steward per deployment`);
   let created = false;
-  if (!existsSync(join(stewardHome, ".aw", "signing.key"))) {
+  // aw saves the key before it installs the chain, and finishes a partial
+  // create when the same command runs again: only an installed chain is done.
+  if (!existsSync(join(stewardHome, ".aw", "id-chain.json"))) {
     let help = "";
     try { help = runCaptured(["aw", "id", "create", "--help"], deployment); } catch { help = ""; }
     if (!help.includes("--human-parent")) throw failure("E_STEWARD_AW", "this aw has no `aw id create --human-parent`: upgrade aw to a release with identity chains (`npm i -g @awebai/aw@next`), then rerun");

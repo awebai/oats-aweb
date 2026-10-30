@@ -44,8 +44,9 @@ identity chains. Without them, setup and bound-mode spawns refuse, naming the
 upgrade.
 
 **What a bound spawn does.** Before minting, the spawn reads the issuer's chain
-status with `aw who`, through aw's cached client: evidence up to 60 s old is
-reused, older evidence is refreshed once, and a failed refresh refuses. After
+status with `aw who`, through aw's cached status client. A CLI process holds
+no shared cache, so every spawn reads fresh evidence, and a failed read
+refuses. After
 minting, it issues the child through aw's agent-child exchange (`aw id child
 invite` / `aw id parent request` / `aw id child receive` / `approve` /
 `aw id parent import`), which needs no terminal. Every refusal is the existing
@@ -59,17 +60,22 @@ spawn-hook refusal, and names its fix.
   - a resulting chain over 8 certificates or 6144 decoded bytes;
   - a spawner whose own spawn meta records an installed chain while its chain
     files are gone;
-  - a resident-grant spawner, which holds no identity key to issue with.
+  - a resident-grant spawner, which holds no identity key to issue with;
+  - a minting root that carries a chain: aw's team invite makes a chained
+    inviter the new identity's parent, so the root would become every child's
+    parent. The root mints and the steward issues; they stay separate,
+    chainless homes, and a steward at the minting root refuses too.
 
   A chain that exists but fails never falls back to a chainless child. A
   refusal after the mint hands the minted identity back for compensation.
 - **Creates a chainless child**, reporting `unknown`, with a spawn warning:
   when the spawner has no chain and that absence is evidence. For a local
   instance (a `did:key`, never enrolled in the registry), that means no chain
-  files and no recorded chain in its spawn meta. For a `did:aw` spawner, only
-  the registry's authoritative "no enrollment" counts. aw's CLI does not expose
-  that yet, so such a spawner refuses. Instances running before the binding
-  keep working this way until they are respawned.
+  files and no recorded chain in its spawn meta (`aw who`: `legacy_no_chain`).
+  For a `did:aw` spawner, only the registry's authoritative "no enrollment"
+  counts (`aw who`: `unregistered_identity`); anything else refuses.
+  Instances running before the binding keep working this way until they are
+  respawned.
 - **Reuses an identity:** a resident-grant or retained-seat child keeps its
   existing identity and is issued nothing. It reports `unknown`, with a
   warning.
@@ -77,13 +83,15 @@ spawn-hook refusal, and names its fix.
 The spawn meta records `identity.attribution: {mode, human: {id, label},
 parent: {id}}`, with opaque ids, `mode` one of `human`, `none` (a chain with
 no human in it) and `unknown`. It also records `chainInstalled: true|false`.
-`oats aweb setup --check-only --json` reports `attribution` as information,
-never as a failure: the mode, and in mode `none` the one act that binds a
+Readiness reports attribution as information, never as a failure. A home's
+readiness carries one warning with code `attribution`: the mode, and in mode
+`human` whether this instance has a chain. `oats aweb setup --check-only --json`
+reports `attribution`: the mode, and in mode `none` the one act that binds a
 human. In mode `human` it also reports the bound human, the steward, and
 `chainlessSpawners`, the number of local instances without a chain.
 
 **Costs and limits.**
-- A registry outage of more than 60 s stops chained spawning: reviewers,
+- A registry outage stops chained spawning for as long as it lasts: reviewers,
   harvesters and trigger spawns included. A trigger's event stays pending, as
   for any failed spawn. Deployments with no human bound are not affected.
 - A `--server` spawn from a home on another host counts as a person's, so the
@@ -91,6 +99,10 @@ human. In mode `human` it also reports the bound human, the steward, and
 - **Key custody:** the steward's key sits outside instance homes and is never
   in their environment. That is a convention under the same OS user, where
   misuse changes the recorded parent and never the human.
+- In a domain without an identity-tree root (most BYOT domains, and hosted
+  namespaces for now), `aw who` on a chainless `did:aw` answers
+  `evidence_unavailable`, so a chainless global spawner refuses there. It fails
+  closed; aweb-acpa tracks the fix.
 - Out of scope in this release: revocation at retire, chains across hosts,
   and deployments shared by several people.
 
