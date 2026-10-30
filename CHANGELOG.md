@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The approved route is now the guidance for stopping the development prompt
+  and for unattended Claude homes.** The warnings, the README and `/oats-aweb`
+  name `claudeChannelMode: approved` for both. `delivery: session` stays a
+  supported value; only the advice to reach for it is gone.
+
 - **Interim Pi interrupted-turn mail recovery** (awebai/aweb#68).
   The always-loaded inject triggers `/oats-aweb`'s shared recovery procedure for
   `@awebai/pi` 0.4.0 (reported with Pi 1.3.0): after any interrupted turn and at

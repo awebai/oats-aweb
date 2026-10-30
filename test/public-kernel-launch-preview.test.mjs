@@ -18,7 +18,7 @@ const PINNED = '13f8f133808f5932bf461108703c1bada4b3f3d3'; // OATS v0.68.1 relea
 const kernel = process.env.OATS_PREVIEW_KERNEL_ROOT;
 if (process.env.OATS_PREVIEW_KERNEL_REQUIRED === '1') assert.ok(kernel, 'required launch-preview test needs OATS_PREVIEW_KERNEL_ROOT');
 const DEV_FLAG = '--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace';
-const DECISION = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.";
+const DECISION = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.claudeChannelMode: approved` stops it.";
 // A spawn's hook cannot see its launch's Claude config dir, and a spawn's own
 // launch runs no launch hook, so every Claude channel spawn says so.
 const CACHE_UNCHECKED = "oats-aweb: channel-cache-unchecked — a spawn does not know its launch's Claude config dir, so Claude's MCP failure cache was not checked; if Claude skips the channel, readiness reports channel-not-connected";

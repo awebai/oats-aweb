@@ -154,8 +154,7 @@ Older kernels stay on oats.aweb 1.26.2.
 - **Development mode no longer stops at the prompt.** A Claude home in
   `claudeChannelMode: development` (the default) under `delivery: channel` shows
   Claude's development-channel prompt, and OATS confirms it once at launch.
-  `settings.oats.aweb.delivery: session` or
-  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt.
+  `settings.oats.aweb.claudeChannelMode: approved` stops the prompt.
 - **`channel-dev-confirmation` states that decision** at spawn apply, start and
   restart, the start preview (`oats launch-config preview`) and readiness.
   Readiness is quiet once the kernel recorded the home's last start as
@@ -165,8 +164,8 @@ Older kernels stay on oats.aweb 1.26.2.
   the flag (the kernel recorded `flag-ignored`): its launch environment opts out
   of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or the account or organization
-  has no channels. Remove the variable from the launch environment, use an
-  account with channels, or use `settings.oats.aweb.delivery: session`.
+  has no channels. Remove the variable from the launch environment, or use an
+  account with channels.
 - **The exact-home launch consent recipe is gone** from the skill: the kernel
   no longer reads that key.
 
@@ -496,9 +495,8 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   platform). An approved launch warns the same
   verdict, and nothing when the file admits the plugin. The file is evidence,
   not proof: server-managed settings or MDM override it, and only the nonce
-  exchange proves receive. Where broker delivery is authorized, an operator may
-  select `delivery: session` for an unattended home; this must not override an
-  explicit native-channel requirement.
+  exchange proves receive. For an unattended Claude home, use the approved
+  route.
 
   Both modes contribute exactly one fixed plugin argument;
   `settings.oats.aweb.claudeChannelMode` selects argv, never consent. No automatic
@@ -507,8 +505,7 @@ Host-owned settings live under `settings.oats.aweb` (normally in
 
   Development selection shows Claude Code's development-channel prompt, and
   OATS 0.52.0 and later confirm it once at launch;
-  `settings.oats.aweb.delivery: session` or
-  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt. The kernel
+  `settings.oats.aweb.claudeChannelMode: approved` stops the prompt. The kernel
   records the outcome in `instance.json` `launchPrompts.status` and explains a
   blocked start in its own `launch-prompt` readiness item;
   `channel-dev-confirmation` states the

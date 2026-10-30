@@ -146,7 +146,7 @@ function expected117(home, { team = TEAM, alias = "dev-1", delivery, runtime, cl
   return JSON.stringify({ meta, env, brief, ...launch, ...warning }) + "\n";
 }
 const CACHE_UNCHECKED_WARNING = "oats-aweb: channel-cache-unchecked — a spawn does not know its launch's Claude config dir, so Claude's MCP failure cache was not checked; if Claude skips the channel, readiness reports channel-not-connected";
-const DEV_CONFIRMATION_WARNING = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.";
+const DEV_CONFIRMATION_WARNING = "oats-aweb: channel-dev-confirmation — Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.claudeChannelMode: approved` stops it.";
 // The hook reads this host's real managed-settings file, so the approved launch
 // warning is whatever verdict this host yields (none when the file admits).
 const APPROVED_LAUNCH = launchChannelWarning("approved");

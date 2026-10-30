@@ -368,7 +368,7 @@ test("an outdated wake daemon over otherwise healthy broker evidence is ready, w
 // ------------------------------------------- channel-dev-confirmation (1.27.0)
 // Development selection states the kernel's decision at spawn and launch; at
 // readiness only the kernel's recorded outcome (launchPrompts.status) quiets it.
-const DEV_CONFIRMATION_MESSAGE = "Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.";
+const DEV_CONFIRMATION_MESSAGE = "Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.claudeChannelMode: approved` stops it.";
 // The shapes the kernel writes to instance.json launchPrompts (sources in the file).
 const LAUNCH_PROMPTS = JSON.parse(readFileSync(join(REPO, "test", "fixtures", "launch-prompts.json"), "utf8"));
 const DEV_CONFIRMATION = `channel-dev-confirmation — ${DEV_CONFIRMATION_MESSAGE}`;
@@ -473,7 +473,7 @@ test("a recorded launch prompt changes nothing on the approved, session or non-C
   }
 });
 
-const CHANNELS_UNAVAILABLE_MESSAGE = "Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `settings.oats.aweb.delivery: session`.";
+const CHANNELS_UNAVAILABLE_MESSAGE = "Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, or use an account with channels.";
 
 test("readiness warns claude-channels-unavailable, not the confirmation, when Claude ignored the development-channel flag", (t) => {
   // Keyed on the status alone: the record's reason is neither required nor echoed.

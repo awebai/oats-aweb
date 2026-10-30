@@ -218,8 +218,7 @@ not receive.
 `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
 and needs no managed policy. Claude shows its development-channel prompt, and
 OATS 0.52.0 and later confirm that prompt once
-at launch. `settings.oats.aweb.delivery: session` or
-`settings.oats.aweb.claudeChannelMode: approved` stop the prompt.
+at launch. `settings.oats.aweb.claudeChannelMode: approved` stops the prompt.
 Provider, broker and ordinary agents never send prompt keys.
 
 The kernel records each start's outcome in `instance.json` as
@@ -233,9 +232,8 @@ key; readiness then warns `claude-channels-unavailable` instead: the home has
 no channel delivery. Claude Code disables channels when its launch environment
 opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization
-has no channels. Remove the variable from the launch environment, use an
-account with channels, or use `settings.oats.aweb.delivery: session`; approved
-mode needs channels too. The provider never reads or changes those variables.
+has no channels. Remove the variable from the launch environment, or use an
+account with channels; approved mode needs channels too. The provider never reads or changes those variables.
 `oats spawn --preview` runs no provider hooks, so it shows no decision statement
 yet, from the provider or the kernel ([oats#912](https://github.com/awebai/oats/issues/912)).
 A confirmed prompt proves no admission, connection, message presentation or
@@ -247,9 +245,7 @@ replay spawn, replace or restart because of that result or `launched:false`.
 Start only after inspection proves the session gone; live prompt intervention
 needs separate explicit operator authorization.
 
-Where broker delivery is authorized, an operator may choose `delivery: session`
-for an unattended home instead, without overriding an explicit native-channel
-requirement.
+For an unattended Claude home, use the approved route.
 
 **The host wake broker** (`aw wake run`, one per host user) wakes every Codex
 home, every `delivery: session` home and every joined team. The provider
@@ -396,8 +392,8 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `wake-status-timestamp-unknown` | supplied `status.updated_at` is malformed; observation time is unknown, with observed client/daemon versions in the diagnostic | operator: inspect `aw version` and `aw wake status --json`; preserve a sanitized capture for a provider compatibility report |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | operator: install or start its service, or upgrade aw and restart it (`/oats-host-delivery`, Choice 2) |
 | `wake-daemon-outdated` (warning) | the running host wake broker is older than the aw floor (1.36.33); it still receives, and readiness still checks your route | operator: upgrade aw, then restart the broker's service (`/oats-host-delivery`, Choice 2) |
-| `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route or `settings.oats.aweb.delivery: session`, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
-| `claude-channels-unavailable` | development mode, readiness only: the home's last start recorded `launchPrompts.status: flag-ignored`. Claude ignored the development-channel flag, so the home has no channel delivery. Claude Code disables channels when its launch environment sets `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, or when the account or organization has no channels | operator: remove the variable from the launch environment, an account with channels, or `settings.oats.aweb.delivery: session` (then respawn). Approved mode needs channels too |
+| `channel-dev-confirmation` | the home runs in development mode: OATS confirms Claude's development-channel prompt at launch, and readiness warns until the last start recorded `launchPrompts.status: completed` | nobody, when the kernel confirms; to stop the prompt, operator: section 4's approved route, then respawn. A `blocked` start is explained by the kernel's `launch-prompt` item |
+| `claude-channels-unavailable` | development mode, readiness only: the home's last start recorded `launchPrompts.status: flag-ignored`. Claude ignored the development-channel flag, so the home has no channel delivery. Claude Code disables channels when its launch environment sets `DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, or when the account or organization has no channels | operator: remove the variable from the launch environment, or an account with channels (then respawn). Approved mode needs channels too |
 | `E_SPAWN_INCOMPLETE` / `launchPrompts` blocked or incomplete | home/target may still be live, even after a submitted Enter or with `launched:false` | inspect retained session first (section 4); no automatic input, replay, replacement or restart; no readiness inference |
 | `claude-channel-policy-admitted` | approved mode, readiness only (launch is silent): the machine managed-settings file admits aweb-channel. Evidence, not proof: server-managed settings or MDM would override it | nobody; the banner check of `/oats-host-delivery`, Choice 1, and the nonce exchange |
 | `claude-channel-policy-not-admitted` | approved mode: the machine file exists but does not set up the route as section 4 writes it; the message names the missing key (`channelsEnabled`, the entry, or the wrong marketplace). A missing `channelsEnabled` blocks API-key and Team/Enterprise accounts, not Pro/Max | admin: section 4 host step 1 (`/oats-host-delivery`, Choice 1) |
