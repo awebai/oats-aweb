@@ -14,7 +14,11 @@ const kernel = process.env.OATS_PREVIEW_KERNEL_ROOT;
 test('observer uses real kernel claims, idempotence and producer isolation', {skip}, async t => {
   const scratch = createScratchDeployment({kernel});
   t.after(() => scratch.dispose());
-  const home = scratch.spawn('unread', {launch: false});
+  // Even --no-launch resolves a harness. Select the fixture's executable so
+  // admission does not depend on a real pi installation on the CI runner.
+  const spawned = scratch.json(['spawn', 'plain', '--name', 'unread', '--no-launch', '--launch-config', 'fake']);
+  assert.equal(spawned.ok, true, JSON.stringify(spawned));
+  const home = scratch.homeOf('unread');
   const env = {...scratch.env, ...(kernel ? {OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: join(kernel, 'bin/oats.mjs')} : {})};
   const host = healthHost({deployment: scratch.deployment, env});
   assert.equal(await host.supportsWaiting(), true, 'selected real kernel needs waiting-on-you');
