@@ -235,17 +235,18 @@ test("session delivery registers every joined identity with the broker and repor
   assert.match(result.warnings.find((w) => w.code === "joined-team-poll-only").message, /alpha/);
 });
 
-test("channel homes use aw's mixed mode: the channel keeps the primary, the broker takes joined teams", (t) => {
+test("a pi channel home uses aw's mixed mode: the channel keeps the primary, the broker takes joined teams", (t) => {
   const fake = fakeAwWake(t);
-  const fx = fixture(t, { runtime: "claude" });
+  const fx = fixture(t, { runtime: "pi" });
   mkdirSync(join(fx.ws, ".aw"), { recursive: true });
   const env = { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws }) };
   let doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
   assert.equal(fake.registrations()[fx.home], undefined, "no joined team: a channel home is not registered");
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ launch: { harness: "pi" }, capabilityMeta: { "oats.aweb": doc.meta } }));
   const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "join", OATS_META: JSON.stringify(doc.meta) }, encoding: "utf8" });
   assert.equal(joined.status, 0, joined.stdout + joined.stderr);
   const reg = fake.registrations()[fx.home];
-  assert.equal(reg.runtime_delivery, "native-channel");
+  assert.equal(reg.runtime_delivery, "native-pi");
   assert.equal(reg.primary_identity_home, join(fx.home, ".aw"));
   assert.deepEqual(reg.receive_identities.map((r) => r.label), ["alpha"]);
   assert.equal(JSON.parse(joined.stdout).joined[0].receive, "native");
@@ -258,6 +259,19 @@ test("channel homes use aw's mixed mode: the channel keeps the primary, the brok
   const del = calls.findIndex((c) => c.args[0] === "workspace" && c.args[1] === "delete");
   const dereg = calls.findIndex((c) => c.args[0] === "wake" && c.args[1] === "deregister");
   assert.ok(dereg > del, "deregistration follows a confirmed release");
+});
+
+test("oats aweb join on a Claude home reads the recorded start, not the caller's environment", (t) => {
+  const fake = fakeAwWake(t);
+  const fx = fixture(t, { runtime: "claude" });
+  mkdirSync(join(fx.ws, ".aw"), { recursive: true });
+  const env = { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws }) };
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ launch: { harness: "claude" }, capabilityMeta: { "oats.aweb": doc.meta } }));
+  const joined = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "join", OATS_META: JSON.stringify(doc.meta), OATS_RUNTIME: "pi" }, encoding: "utf8" });
+  assert.equal(joined.status, 0, joined.stdout + joined.stderr);
+  assert.equal(fake.registrations()[fx.home], undefined);
+  assert.equal(JSON.parse(joined.stdout).joined[0].receive, "poll");
 });
 
 test("codex channel homes are broker homes: joined teams receive through the broker with the primary", (t) => {
@@ -277,10 +291,10 @@ test("codex channel homes are broker homes: joined teams receive through the bro
 
 test("readiness reports poll when the wake daemon is down for a registered joined team", (t) => {
   const fake = fakeAwWake(t);
-  const fx = fixture(t, { runtime: "claude" });
+  const fx = fixture(t, { runtime: "pi" });
   mkdirSync(join(fx.ws, ".aw"), { recursive: true });
   const spawned = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws, join: "alpha" }) } }));
-  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({capabilityMeta:{"oats.aweb":spawned.meta}}));
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({launch:{harness:"pi"},capabilityMeta:{"oats.aweb":spawned.meta}}));
   const down = { ...fake, path: fake.path };
   const result = spawnSync(process.execPath, [BINDING, "check"], {
     cwd: fx.home,
@@ -465,11 +479,12 @@ test("commands run from inside an instance session (AWEB_IDENTITY_HOME set) stil
 
 test("a partly failed multi-label leave records what already happened", (t) => {
   const fake = fakeAwWake(t);
-  const fx = fixture(t);
+  const fx = fixture(t, { runtime: "pi" });
   mkdirSync(join(fx.ws, ".aw"), { recursive: true });
   const env = { ...fx.env, PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root: fx.ws, join: "alpha,beta" }) };
   const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env }));
   assert.equal(doc.meta.joinedTeams.length, 2);
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ launch: { harness: "pi" }, capabilityMeta: { "oats.aweb": doc.meta } }));
   rmSync(join(fx.home, ".aweb-identity-beta", "team-certs"), { recursive: true, force: true });
   const left = spawnSync(process.execPath, [HOOK, "leave", "--labels", "alpha,beta", "--json"], { cwd: fx.home, env: { ...env, OATS_EVENT: "leave", OATS_META: JSON.stringify(doc.meta), FAKE_DELETE_FAIL_FOR: "beta" }, encoding: "utf8" });
   assert.notEqual(left.status, 0);

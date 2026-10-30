@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Joined teams on a Claude home are now read at task boundaries.** A Claude
+  home takes no live wakes for its joined teams; its default team is unchanged.
+  An idle session doesn't read that mail until something else wakes it. `oats
+  aweb teams` shows `receive: poll`, and readiness reports it as expected. `oats
+  readiness --soul` can't see the harness, so a join alone no longer reads
+  `unavailable` without a broker; it warns which launches need one. Claude homes
+  only: pi and Codex homes are unchanged. `--yolo` makes no difference, so on a
+  `--yolo` Claude home joined-team mail now waits for a task boundary.
+
+  Upgrade: a home you paused with `aw wake pause`: start it under this version
+  before you resume it. Resuming a Claude channel home afterwards does nothing
+  and isn't needed, with or without `--yolo`; a pi or Codex home stays paused
+  until you resume it.
+
+- A local home with `identity.renew: launch` now reaches the joined-team sync at
+  every start. It used to return early and skip it.
+
 - **The approved route is now the guidance for stopping the development prompt
   and for unattended Claude homes.** The warnings, the README and `/oats-aweb`
   name `claudeChannelMode: approved` for both. `delivery: session` stays a

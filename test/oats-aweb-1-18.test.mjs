@@ -178,14 +178,14 @@ test("channel: a codex home's joined team receives through the broker with the p
   assert.equal(doc.meta.joinedTeams[0].receive, "native");
 });
 
-test("launch codex -> claude with a joined team: the broker keeps only the joined identity", (t) => {
+test("launch codex -> pi with a joined team: the broker keeps only the joined identity", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "codex", settings: { join: "alpha" } });
   const meta = fx.spawn().meta;
   assert.equal(fx.registered()?.runtime_delivery, "external-session", "the codex home starts on the broker with its primary");
-  const r = fx.launch(meta, "claude");
+  const r = fx.launch(meta, "pi");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const reg = fx.registered();
-  assert.equal(reg.runtime_delivery, "native-channel");
+  assert.equal(reg.runtime_delivery, "native-pi");
   assert.equal(reg.primary_identity_home, join(fx.home, ".aw"));
   assert.deepEqual(reg.receive_identities.map((x) => x.label), ["alpha"], "the primary is the channel's, never the broker's");
 });
@@ -513,7 +513,7 @@ test("the skill's readiness table and the changelog name channel-dev-confirmatio
 });
 
 // Released status fields; no worker or successful-prompt telemetry invented.
-for (const runtime of ["codex", "claude"]) test(`target readiness rejects daemon-green paused ${runtime} target`, (t) => {
+for (const runtime of ["codex", "pi"]) test(`target readiness rejects daemon-green paused ${runtime} target`, (t) => {
   const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
   fx.record(fx.spawn().meta, runtime);
   const reg = fx.registered();
@@ -713,7 +713,9 @@ test("null-home readiness reads only the host daemon, once", (t) => {
 
 test("mixed native primary retains failed joined problem and confirmation guidance", (t) => {
   const fx = fixture(t, {delivery:"channel",runtime:"claude",settings:{join:"alpha",claudeChannelMode:"development"}});
-  fx.record(fx.spawn().meta,"claude"); const status=transportStatus(fx,"claude"); status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
+  // Left on the broker by a start before this version: pi's registration has the same shape.
+  const {meta}=fx.spawn(); fx.launch(meta,"pi");
+  fx.record({...meta,wakeJoined:true,joinedTeams:meta.joinedTeams.map(({expectedPoll,...team})=>({...team,receive:"native"}))},"claude"); const status=transportStatus(fx,"claude"); status.instances[0].delivery="native-channel"; status.instances[0].channel_core.running=false; fx.fake.setStatus(status);
   const result=fx.readiness(); assert.equal(result.status,"unavailable");
   assert.ok(result.warnings.some(p=>p.code==='native-receive-unproven'));
   assert.ok(result.problems.some(p=>p.code==='wake-worker-unavailable'));
