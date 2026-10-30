@@ -58,6 +58,32 @@ test("a later --yolo start puts the teams back and clears the expected poll", (t
   assert.equal("expectedPoll" in r.doc.meta.joinedTeams[0], false);
 });
 
+for (const source of ["live", "unknown"]) {
+  const local = { join: "alpha", identity: { mode: "local", renew: "launch" } };
+  test(`a local renew=launch home leaves the broker at a start without OATS_YOLO (teams ${source})`, (t) => {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: local, yolo: true });
+    const { meta } = fx.spawn();
+    const r = fx.launch(meta, "claude", { extra: { OATS_YOLO: "", OATS_TEAMS_SOURCE: source } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(fx.registered(), undefined);
+    assert.equal(r.doc.meta.joinedTeams[0].receive, "poll");
+    assert.equal(r.doc.meta.joinedTeams[0].expectedPoll, true);
+    fx.record(r.doc.meta, "claude");
+    const result = fx.readiness();
+    assert.ok(warningCodes(result).includes("joined-team-polled"), JSON.stringify(result));
+    assert.equal(warningCodes(result).includes("joined-team-poll-only"), false);
+  });
+  test(`a local renew=launch home goes on the broker at a start with OATS_YOLO (teams ${source})`, (t) => {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: local });
+    const { meta } = fx.spawn();
+    const r = fx.launch(meta, "claude", { extra: { OATS_YOLO: "1", OATS_TEAMS_SOURCE: source } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(fx.registered().receive_identities.map((x) => x.label), ["alpha"]);
+    assert.equal(r.doc.meta.joinedTeams[0].receive, "native");
+    assert.equal("expectedPoll" in r.doc.meta.joinedTeams[0], false);
+  });
+}
+
 for (const runtime of ["pi", "codex"]) test(`a ${runtime} home is unchanged: its joined teams stay on the broker without OATS_YOLO`, (t) => {
   const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
   const { meta } = fx.spawn();

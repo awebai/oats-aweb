@@ -1694,7 +1694,6 @@ if (event === "launch") {
   // must not enter the renewal helper's retained-grant early return.
   const globalLaunch = identityMode === "global" || started.identity?.mode === "global";
   if (globalLaunch) checkedGrantTTL(); // before preview, broker writes or retained returns
-  const renewalPath = globalLaunch || identitySettings.renew === "launch";
   // Under OATS_LAUNCH_PREVIEW=1 (the kernel's first pass of every start, and
   // `oats launch-config preview`) the hook changes nothing: no broker
   // registration, no renewal, no joined-team sync, no meta. It answers with
@@ -1704,7 +1703,7 @@ if (event === "launch") {
   // the preview names the current one and declares it volatile: the kernel
   // takes its value from the real pass and leaves it out of the comparison.
   if (process.env.OATS_LAUNCH_PREVIEW === "1") {
-    const renews = renewalPath && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
+    const renews = globalLaunch && checkedRenewMode() === "launch" && started.identity?.mode === "global" && !!started.identity?.grant?.id;
     out({ ...retainedLaunchOutput(started), ...(globalLaunch ? { warning: grantInventoryAdvisory(started.identity?.grant, { retained: true, pending: renews }) } : {}), ...(renews ? { volatileEnv: ["AWEB_IDENTITY_HOME"] } : {}) });
   }
   if (deliveryFor().launch) {
@@ -1713,7 +1712,7 @@ if (event === "launch") {
     if (note) outNotes.push(note);
   }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
-  if (renewalPath) globalGrantRenew(started);
+  if (globalLaunch) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
