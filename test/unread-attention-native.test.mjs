@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
-import {writeFileSync} from 'node:fs';
+import {readdirSync, writeFileSync} from 'node:fs';
 import {healthHost} from '../oats-package/capabilities/oats-aweb/lib/health-host.mjs';
 import {observeUnreadAttention} from '../oats-package/capabilities/oats-aweb/lib/unread-attention.mjs';
 import {createScratchDeployment} from './helpers/scratch-deployment.mjs';
@@ -19,6 +19,19 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   const spawned = scratch.json(['spawn', 'plain', '--name', 'unread', '--launch-config', 'fake']);
   assert.equal(spawned.ok, true, JSON.stringify(spawned));
   const home = scratch.homeOf('unread');
+  const waitForRunning = async () => {
+    let inspected;
+    const deadline = Date.now() + 10000;
+    do {
+      inspected = scratch.json(['session', 'inspect', '--home', home]);
+      if (inspected.ok && inspected.result.running === true) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } while (Date.now() < deadline);
+    const socket = readdirSync(scratch.env.TMUX_TMPDIR, {recursive: true}).find(p => p.endsWith('/oats'));
+    const pane = socket && inspected.result?.paneId ? spawnSync('tmux', ['-S', join(scratch.env.TMUX_TMPDIR, socket), 'capture-pane', '-p', '-t', inspected.result.paneId], {env: scratch.env, encoding: 'utf8', timeout: 5000}).stdout : '';
+    assert.fail(`fixture harness did not become running: ${JSON.stringify(inspected)}\n${pane}`);
+  };
+  await waitForRunning();
   const env = {...scratch.env, ...(kernel ? {OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: join(kernel, 'bin/oats.mjs')} : {})};
   const host = healthHost({deployment: scratch.deployment, env});
   assert.equal(await host.supportsWaiting(), true, 'selected real kernel needs waiting-on-you');
@@ -47,21 +60,25 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   await observeUnreadAttention({host, rows});
   assert.equal(events().length, afterClear, 'identical clear is idempotent');
   host.unreadCount = async () => 1;
-  await observeUnreadAttention({host, rows});
+  const setOne = async () => {
+    assert.equal((await observeUnreadAttention({host, rows})).set, 1);
+    assert.match(status(), /aweb: 1 unread; broker error/);
+  };
+  await setOne();
   host.wakeStatus = async () => ({instances: []});
   await observeUnreadAttention({host, rows});
   assert.doesNotMatch(status(), /aweb: 1 unread/);
 
   // Disable uses this exact all-home clear pass, without broker/count reads.
   host.wakeStatus = async () => ({instances: [target]});
-  await observeUnreadAttention({host, rows});
+  await setOne();
   await observeUnreadAttention({host, rows, clear: true, budgetMs: 0});
   assert.doesNotMatch(status(), /aweb: 1 unread/);
   assert.match(status(), /Other producer claim/);
 
   // The real retire hook must clear the target despite foreign ambient instance
   // selectors; no identity was minted, so retirement has no remote effects.
-  await observeUnreadAttention({host, rows});
+  await setOne();
   writeFileSync(join(scratch.bin, 'aw'), '#!/bin/sh\n[ "$1 $2" = "wake deregister" ] && exit 0\nexit 1\n', {mode: 0o755});
   const hook = spawnSync(process.execPath, [new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs', import.meta.url).pathname, 'retire'], {
     cwd: home, env: {...env, PATH: `${scratch.bin}:${env.PATH}`, OATS_EVENT: 'retire', OATS_HOME: home, OATS_INSTANCE_HOME: '/foreign', OATS_INSTANCE: 'foreign', OATS_TEAM_SCOPE: scratch.deployment, OATS_WORKSPACE: scratch.deployment, OATS_META: '{}'}, encoding: 'utf8', timeout: 30000,
@@ -70,11 +87,12 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   assert.doesNotMatch(status(), /aweb: 1 unread/);
   assert.match(status(), /Other producer claim/);
 
-  await observeUnreadAttention({host, rows});
+  await setOne();
   const started = scratch.json(['session', 'restart', '--home', home, '--launch-config', 'fake']);
   assert.equal(started.ok, true, JSON.stringify(started));
+  await waitForRunning();
   assert.doesNotMatch(status(), /aweb: 1 unread/);
-  await observeUnreadAttention({host, rows});
+  await setOne();
   scratch.stop('unread');
   assert.doesNotMatch(status(), /aweb: 1 unread/);
 });
