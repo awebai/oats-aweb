@@ -295,3 +295,39 @@ test("printed steps, the workspace's default team is another: it is kept, and `o
 test("printed steps, the derived label already maps to the resident's team and is the default: reused, and the spawn line alone works", (t) => {
   printedStepsJourney(t, { teams: (team) => `teams:\n  default: { team: '${team}' }\n`, defaultTeam: "default", expectStatus: "reused", expectDefault: "already" });
 });
+
+test("a real joined-team spawn: invite, accept, connect and register on this aw, and a retire leaves nothing", (t) => {
+  if (!configured(t)) return;
+  if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
+  const j = journey(t);
+  const ns = `joined-${randomBytes(4).toString("hex")}.test`;
+  const team = `default:${ns}`, joinedTeam = `alpha:${ns}`;
+  j.workspace({ teams: `teams:\n  default: { team: '${team}' }\n  alpha: { team: '${joinedTeam}' }\nsouls:\n  '*':\n    teams: any\n`, defaultTeam: "default" });
+  // The deployment's own root holds both teams' controller keys, as a minting root does.
+  globalIdentity(j, j.deployment, "root", ns);
+  const step = (args) => { const r = j.aw(j.deployment, args, { AWID_SKIP_DNS_VERIFY: "1" }); assert.equal(r.status, 0, `aw ${args.join(" ")}: ${r.stdout}${r.stderr}`); return r.stdout; };
+  step(["id", "team", "create", "--namespace", ns, "--name", "alpha", "--registry", AWID_URL, "--json"]);
+  const cert = JSON.parse(step(["id", "team", "add-member", "--namespace", ns, "--team", "alpha", "--member", `${ns}/root`, "--json"])).certificate_id;
+  step(["id", "team", "fetch-cert", "--namespace", ns, "--team", "alpha", "--cert-id", cert, "--registry", AWID_URL, "--json"]);
+  const local = join(j.deployment, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replace("    delivery: session\n", `    delivery: session\n    root: ${j.deployment}\n`));
+  Object.assign(j.env, { AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+
+  const spawned = j.shell("oats spawn probe --name joined-seat --provider oats.aweb join=alpha --no-launch --json");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const { home } = spawned.doc.result;
+  const record = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+  const [joined] = record.capabilityMeta["oats.aweb"].joinedTeams;
+  assert.deepEqual({ label: joined.label, team: joined.team, receive: joined.receive }, { label: "alpha", team: joinedTeam, receive: "native" });
+  const identityHome = join(home, ".aweb-identity-alpha");
+  assert.ok(existsSync(join(identityHome, "workspace.yaml")), "the joined identity is connected");
+  const listed = j.aw(home, ["--identity-home", identityHome, "id", "team", "list", "--json"]);
+  assert.equal(listed.status, 0, listed.stdout + listed.stderr);
+  assert.match(listed.stdout, new RegExp(joinedTeam.replace(/\./g, "\\.")));
+
+  const retired = j.shell("oats retire joined-seat --json");
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(existsSync(identityHome), false);
+  // Neither team is hosted here, so aw's refusal hands both memberships to the controller.
+  assert.deepEqual(JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup.map((c) => c.label).sort(), ["alpha", "default"]);
+});

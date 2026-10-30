@@ -1218,8 +1218,8 @@ function releaseReceiptStatus(doc) {
 // refusing an external-home self-release on a team that is not hosted, or
 // answering alias_released_reason "team_not_hosted". It decides whether retire
 // may let the member key go, so it is recognized only as aw states it: the
-// whole refusal aw 1.36.23 prints (exit 2, one stderr line, the principal
-// being the identity home it was given), or that JSON field. Never a part of
+// whole refusal (exit 2, one stderr line, the principal being this identity
+// home as aw names it), or that JSON field. Never a part of
 // stderr (an HTTP error's prose may end the same way) and never a message
 // this hook builds (those carry paths and labels). Anything else keeps the key.
 function teamNotHostedRefusal(e, identityHome) {
@@ -1227,6 +1227,12 @@ function teamNotHostedRefusal(e, identityHome) {
   const stderr = String(e?.stderr ?? "").trim();
   const principals = new Set([identityHome]);
   try { principals.add(realpathSync(identityHome)); } catch { /* the given path is the one aw names */ }
+  // aw names a home by the first of these its identity.yaml has, else by its path.
+  try {
+    const identity = readFileSync(join(identityHome, "identity.yaml"), "utf8");
+    const name = ["stable_id", "address", "did"].map((key) => yamlScalar(identity, key)).find(Boolean);
+    if (name) principals.add(name);
+  } catch { /* no identity to name: aw names the path */ }
   return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
 }
 function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {

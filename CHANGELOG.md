@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A retire on a team that isn't hosted hands a joined membership to its
+  controller again.** aw names the identity in that refusal by its stable id,
+  address or DID, and the provider only recognized its path. So the retire
+  stopped with `joined-team-leave-failed` and kept the home, with no
+  `aw id team remove-member` step.
+
 - **Joined teams on a Claude home are now read at task boundaries.** A Claude
   home takes no live wakes for its joined teams; its default team is unchanged.
   An idle session doesn't read that mail until something else wakes it. `oats
