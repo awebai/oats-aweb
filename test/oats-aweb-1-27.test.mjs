@@ -77,7 +77,7 @@ test("the skill, readme and changelog give both causes of claude-channels-unavai
   const row = skill.split("\n").find((line) => line.startsWith("| `claude-channels-unavailable` |"));
   assert.ok(row, "section 7 has a claude-channels-unavailable row");
   for (const name of ["DISABLE_TELEMETRY", "DO_NOT_TRACK", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"]) assert.match(row, new RegExp(`\`${name}\``));
-  assert.match(row, /remove the variable from the launch environment, or an account with channels/);
+  assert.match(row, /remove the variable from the launch environment, or use an account with channels/);
   assert.doesNotMatch(row, /claudeChannelMode: approved`? (stops|fixes)|approved route/);
   const readme = flat(readFileSync(join(REPO, "README.md"), "utf8"));
   assert.ok(readme.includes("when Claude ignored the flag (the kernel recorded `flag-ignored`): its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), or the account or organization has no channels. Remove the variable from the launch environment, or use an account with channels."), "README 1.27.0 bullet");
