@@ -31,9 +31,13 @@
     `--server` spawn from another host counts as a person's. The steward's key
     custody is a convention under the same OS user, where misuse changes the
     recorded parent and never the human.
-  - Needs a kernel listing `spawn-attribution`, and aw 1.36.52-rc.2 or later:
-    identity chains, and `aw id parent request --parent` accepting the
-    `did:key` parent of an instance-issued child.
+  - **aw floor: 1.36.52**, the release with `aw id create --human-parent` and
+    `aw id parent request --parent` accepting the `did:key` parent of an
+    instance-issued child; the release sets the provider's aw floor to it.
+    Needs a kernel listing `spawn-attribution`.
+  - Limit: captured execution's binding phases accept no attribution
+    settings, so a mode-`human` deployment that uses captured execution is
+    refused there.
 
 - **Interim Pi interrupted-turn mail recovery** (awebai/aweb#68).
   The always-loaded inject triggers `/oats-aweb`'s shared recovery procedure for

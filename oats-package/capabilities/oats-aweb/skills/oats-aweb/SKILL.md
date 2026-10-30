@@ -918,6 +918,8 @@ root (most BYOT domains, and hosted namespaces for now), a chainless `did:aw`
 answers `evidence_unavailable` and refuses (aweb-acpa).
 
 Limits: a `--server` spawn from a home on another host counts as a person's.
+Captured execution's binding phases accept no attribution settings, so a
+mode-`human` deployment that uses captured execution is refused there.
 The steward's key custody is a convention under the same OS user, where misuse
 changes the recorded parent and never the human. Revocation at retire, chains
 across hosts, and deployments shared by several people are out of scope.
