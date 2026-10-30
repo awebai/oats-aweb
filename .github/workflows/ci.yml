@@ -57,6 +57,11 @@ jobs:
           OATS_PREVIEW_KERNEL_REQUIRED: '1'
           OATS_PREVIEW_KERNEL_ROOT: ${{ runner.temp }}/oats-preview-kernel
         run: node --test test/public-kernel-upgrade.test.mjs
+      - name: Require real kernel unread-delivery attention claims
+        env:
+          OATS_AWEB_HEALTH_NATIVE: '1'
+          OATS_PREVIEW_KERNEL_ROOT: ${{ runner.temp }}/oats-preview-kernel
+        run: node --test test/unread-attention-native.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"
 

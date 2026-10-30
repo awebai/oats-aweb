@@ -111,6 +111,12 @@ status for every agent of a deployment to aweb once a minute (can it be
 reached, why not, who fixes it), which aweb's dashboard shows instead of its
 own guess. It is opt-in and host-only: a deployment that never enables it
 behaves as before. Publishing needs aw 1.36.38. Both floors are unchanged.
+The same opt-in tick flags unread mail whose broker delivery fails, using an
+`oats.aweb` attention claim visible in status and Desktop. It requires runtime
+`waiting-on-you` and aw's read-only `mail inbox --count-only`; count errors
+preserve claims. Without the tick no such claim appears. Channel-delivery
+homes are outside this observer. `health status` reports its live coverage.
+
 See [docs/health-publisher.md](docs/health-publisher.md) and
 [the changelog](CHANGELOG.md#1290--2026-10-16).
 

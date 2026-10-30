@@ -299,6 +299,12 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
   const details=await readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[...details.warnings];
+  warnings.push({code:'unread-attention-observer',message:'Unread-delivery attention claims require the operator to enable oats aweb health and its per-minute host timer. Without that opt-in no such claim appears. Run oats aweb health status to check live coverage; channel-delivery homes are outside this observer.'});
+  if (req.settings.health?.publish === true) {
+    let countOnly = false;
+    try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
+    if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});
+  }
   const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
   if(mode==='global') {
     const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);
