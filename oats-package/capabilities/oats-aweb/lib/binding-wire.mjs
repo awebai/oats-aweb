@@ -289,7 +289,7 @@ async function awFloorObservation({env=process.env}={}) {
 export async function awFloorMessage(options){return (await awFloorObservation(options)).message;}
 /** Whether a spawn from these soul-scope settings needs the host wake broker:
  *  session delivery, or a joined team (a Codex launch is not visible here). */
-function soulNeedsBroker(settings) {return settings.delivery==='session' || (typeof settings.join==='string' && settings.join.split(',').some(label=>label.trim()));}
+function soulJoinsTeams(settings) {return typeof settings.join==='string' && settings.join.split(',').some(label=>label.trim());}
 /** The kernel's captured per-leaf settings origins for a home (JSON pointer to
  *  {kind,at}); anything unparseable is no origin. */
 function settingsOrigins(env) {try {const origins=JSON.parse(env.OATS_SETTINGS_ORIGINS??'');return obj(origins)?origins:undefined;} catch {return undefined;}}
@@ -371,11 +371,15 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     }
   }
   // Soul scope has no target row: only the daemon a spawn will need, read once.
-  if(!ctx.home && !problems.length && soulNeedsBroker(req.settings)) {
+  // It sees no harness either, so a join alone can't say the daemon is needed.
+  const session=req.settings.delivery==='session';
+  if(!ctx.home && !problems.length && (session || soulJoinsTeams(req.settings))) {
     let status;
     try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.deployment));} catch { /* unavailable below */ }
     const daemon=wakeDaemonAssessment(status,{minimumVersion:AW_MIN});
-    receiveProblems.push(...daemon.problems);warnings.push(...daemon.warnings);
+    warnings.push(...daemon.warnings);
+    if(session) receiveProblems.push(...daemon.problems);
+    else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home and on a --yolo launch. A Claude channel home without --yolo reads its joined teams at task boundaries and needs no broker.'});
   }
   const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
   return {...result,problems:[...result.problems,...receiveProblems],warnings};

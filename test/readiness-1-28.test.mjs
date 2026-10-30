@@ -142,13 +142,32 @@ test("soul scope with a non-empty join reads aw wake status once; channel withou
   let before = fx.statusCalls().length;
   const joined = fx.readiness({ delivery: "channel", join: "alpha, beta" }, { targetHome: null });
   assert.equal(fx.statusCalls().length - before, 1);
-  assert.deepEqual(joined.problems.map((p) => p.code), ["wake-daemon-not-running"]);
+  assert.equal(joined.status, "ready", JSON.stringify(joined));
+  assert.deepEqual(joined.problems, []);
+  const unconfirmed = joined.warnings.find((w) => w.code === "joined-team-broker-unconfirmed");
+  assert.match(unconfirmed.message, /pi or Codex home and on a --yolo launch/);
+  assert.match(unconfirmed.message, /needs no broker/);
   for (const settings of [{ delivery: "channel" }, {}, { delivery: "channel", join: " , " }, { join: "" }]) {
     before = fx.statusCalls().length;
     const result = fx.readiness(settings, { targetHome: null });
     assert.equal(fx.statusCalls().length - before, 0, JSON.stringify(settings));
     assert.equal(result.status, "ready", JSON.stringify(result));
   }
+});
+
+test("soul scope: a join reads ready whatever the daemon says, and session delivery still needs it", (t) => {
+  const fx = fixture(t);
+  const session = { delivery: "session", join: "alpha" };
+  fx.fake.setStatus({ daemon_running: false, daemon_version_state: "not_running" });
+  assert.deepEqual(fx.readiness(session, { targetHome: null }).problems.map((p) => p.code), ["wake-daemon-not-running"]);
+  fx.fake.setStatus("not json");
+  const unreadable = fx.readiness({ delivery: "channel", join: "alpha" }, { targetHome: null });
+  assert.equal(unreadable.status, "ready", JSON.stringify(unreadable));
+  assert.ok(unreadable.warnings.some((w) => w.code === "joined-team-broker-unconfirmed"));
+  fx.fake.setStatus({ daemon_running: true, daemon_version_state: "reported", daemon_version: AW_MIN });
+  const running = fx.readiness({ delivery: "channel", join: "alpha" }, { targetHome: null });
+  assert.equal(running.status, "ready", JSON.stringify(running));
+  assert.equal(running.warnings.some((w) => w.code === "joined-team-broker-unconfirmed"), false);
 });
 
 test("soul scope reads no broker when configuration prerequisites already fail", (t) => {

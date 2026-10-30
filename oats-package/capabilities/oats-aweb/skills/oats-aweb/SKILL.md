@@ -402,6 +402,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
 | `joined-team-polled` | a Claude home reads this joined team at task boundaries, as expected | nobody: expected. Don't install or start the broker for this |
+| `joined-team-broker-unconfirmed` | soul readiness, with no home: the soul joins a team and no broker is confirmed running. It can't see the harness | operator: only if this soul launches on pi or Codex or with `--yolo`, start the broker. A Claude channel home needs nothing |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; operator: install or start the broker (`/oats-host-delivery`, Choice 2); if readiness then shows `wake-target-missing` or `wake-stream-missing`, restart the home with the operator's word |
 | `wake-status-timestamp-unknown` | supplied `status.updated_at` is malformed; observation time is unknown, with observed client/daemon versions in the diagnostic | operator: inspect `aw version` and `aw wake status --json`; preserve a sanitized capture for a provider compatibility report |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | operator: install or start its service, or upgrade aw and restart it (`/oats-host-delivery`, Choice 2) |

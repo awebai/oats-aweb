@@ -5,9 +5,9 @@
 systemd `--user` unit on Linux, labelled `ai.aweb.wake`. The broker delivers to
 every home that needs it (`delivery: session`, a Codex home, a joined team,
 except on a Claude channel home without `--yolo`, which reads that team at task
-boundaries and needs no broker for it). Without it, those homes are poll-only. aw has no install verb, so OATS writes
-the unit. It ships in oats.aweb 1.28.0 and needs aw 1.36.33 or later (the
-provider's single floor).
+boundaries and needs no broker for it). Without it, those homes are poll-only.
+aw has no install verb, so OATS writes the unit. It ships in oats.aweb 1.28.0
+and needs aw 1.36.33 or later (the provider's single floor).
 
 The whole host procedure (when a host needs the broker, in what order, and how
 to check delivery) lives in oats.setup: `/oats-host-delivery`, Choice 2

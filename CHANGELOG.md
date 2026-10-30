@@ -6,7 +6,9 @@
   home takes no live wakes for its joined teams unless it runs with `--yolo`;
   its default team is unchanged. An idle session doesn't read that mail until
   something else wakes it. `oats aweb teams` shows `receive: poll`, and
-  readiness reports it as expected. Claude homes only: pi and Codex homes are
+  readiness reports it as expected. `oats readiness --soul` can't see the
+  harness, so a join alone no longer reads `unavailable` without a broker; it
+  warns which launches need one. Claude homes only: pi and Codex homes are
   unchanged. Needs a kernel that sets `OATS_YOLO`; on an older kernel every
   Claude home polls its joined teams.
 
