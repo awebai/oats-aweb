@@ -268,18 +268,20 @@ test("setup without --install-aw keeps today's message when aw is missing; --che
   assert.deepEqual(npm.readCalls(), []);
 });
 
+// acmj.21: with no human bound, readiness reports the mode as information.
+const NO_HUMAN_BOUND = { mode: "none", human: null, steward: null, chainlessSpawners: null, status: "info", message: 'attribution: none — no human bound; one act binds one: a human runs `oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>` at a terminal' };
 test("setup --check-only reports membership of the default team from its root", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
   const before = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path }), root);
   assert.equal(before.code, 0, before.stderr);
-  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null });
+  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null, attribution: NO_HUMAN_BOUND });
   const teamRoot = join(root, ".aweb-roots", "joined");
   mkdirSync(join(teamRoot, ".aw"), { recursive: true });
   writeFileSync(join(teamRoot, ".aw", "teams.json"), JSON.stringify({ active_team: TEAM, memberships: [{ team_id: TEAM }] }));
   const after = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root, roots: { [TEAM]: teamRoot } }) }), root);
   assert.equal(after.code, 0, after.stderr);
-  assert.deepEqual(checkOnly(after.stdout), { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot });
+  assert.deepEqual(checkOnly(after.stdout), { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot, attribution: NO_HUMAN_BOUND });
 });
 
 test("setup --check-only cannot be combined with an onboarding action", async (t) => {

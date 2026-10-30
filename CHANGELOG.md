@@ -28,9 +28,9 @@
     `--server` spawn from another host counts as a person's. The steward's key
     custody is a convention under the same OS user, where misuse changes the
     recorded parent and never the human.
-  - Needs a kernel listing `spawn-attribution`, and an aw with identity chains
-    whose `aw id parent request --parent` accepts a `did:key` parent, for
-    instance-issued children.
+  - Needs a kernel listing `spawn-attribution`, and aw 1.36.52-rc.2 or later:
+    identity chains, and `aw id parent request --parent` accepting the
+    `did:key` parent of an instance-issued child.
 
 - **Interim Pi interrupted-turn mail recovery** (awebai/aweb#68).
   The always-loaded inject triggers `/oats-aweb`'s shared recovery procedure for

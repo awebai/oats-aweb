@@ -9,12 +9,13 @@ import { parseStewardArgs, setupSteward } from "../oats-package/capabilities/oat
 
 const HUMAN = "did:aw:human1";
 const STEWARD = "did:aw:steward1";
+const LOCAL_YAML = "schemaVersion: 2\nworkspace: local\n";
 const ARGS = ["--steward", "--human", HUMAN, "--label", "Juan", "--domain", "awtest-demo.example", "--name", "awtest-steward"];
 
 function deployment(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-steward-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  writeFileSync(join(dir, "oats-workspace.yaml"), "schemaVersion: 2\n");
+  writeFileSync(join(dir, "oats-local.yaml"), LOCAL_YAML);
   return dir;
 }
 
@@ -101,5 +102,5 @@ test("records nothing when aw fails or the chain does not verify to the human", 
   await assert.rejects(setupSteward(parseStewardArgs(ARGS), { env: env(failedCreate), kernelVersion: kernel(), ...fakeAw({ createStatus: 1 }) }), { code: "E_STEWARD_CREATE", message: /nothing was recorded/ });
   const wrongHuman = deployment(t);
   await assert.rejects(setupSteward(parseStewardArgs(ARGS), { env: env(wrongHuman), kernelVersion: kernel(), ...fakeAw({ who: { id: STEWARD, outcome: "nearest_human", human_id: "did:aw:other", identity_valid: true } }) }), { code: "E_STEWARD_VERIFY", message: /does not verify to did:aw:human1/ });
-  for (const dir of [failedCreate, wrongHuman]) assert.throws(() => readFileSync(join(dir, "oats-local.yaml")), /ENOENT/);
+  for (const dir of [failedCreate, wrongHuman]) assert.equal(readFileSync(join(dir, "oats-local.yaml"), "utf8"), LOCAL_YAML);
 });
