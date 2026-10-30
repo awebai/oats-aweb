@@ -1860,8 +1860,11 @@ if (event === "launch") {
   // or inherited instance selectors. Clear even on an incomplete retirement.
   try {
     const {healthHost} = await import('../lib/health-host.mjs');
-    const host = healthHost({deployment: selectedDeployment(process.env), env: process.env});
-    if (await host.supportsWaiting()) await host.waiting(home, null);
+    const probe = healthHost({deployment: home, env: process.env});
+    if (await probe.supportsWaiting()) {
+      const host = healthHost({deployment: selectedDeployment(process.env), env: process.env});
+      await host.waiting(home, null);
+    }
   } catch { retireWarnings.push('oats.aweb attention claim could not be cleared'); }
   const pendingControllerCleanup = [];
   const rememberControllerCleanup = (data) => {

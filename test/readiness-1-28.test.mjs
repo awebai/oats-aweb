@@ -225,6 +225,6 @@ for (const [phase, health, code] of [
 ]) test(`health settings stay validated and check-only (${phase}/${code})`, () => {
   const input = {schemaVersion: 1, phase, slot: 'messaging', capability: 'oats.aweb', settings: {health}, input: {}};
   const r = spawnSync(process.execPath, [BINDING, phase], {input: JSON.stringify(input), encoding: 'utf8'});
-  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.status, 0, r.stdout + r.stderr); // binding failures travel in the JSON envelope
   assert.equal(JSON.parse(r.stdout).error.code, code);
 });

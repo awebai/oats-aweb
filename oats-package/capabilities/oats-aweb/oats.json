@@ -91,6 +91,8 @@
       "wider"
     ],
     "reasons": [
+      "Unread-delivery attention claims require the operator to enable oats aweb health and its per-minute host timer. Without that opt-in no such claim appears. Run oats aweb health status to check live coverage.",
+      "aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.",
       "messaging-enabled standalone preparation needs an explicit context key",
       "messaging binding needs one soul declaration",
       "messaging workspace must declare private: per-human",
