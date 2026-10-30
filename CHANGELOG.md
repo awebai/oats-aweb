@@ -23,9 +23,10 @@
   - A spawner with no chain gets a chainless child that reports `unknown`,
     with a warning.
   - The spawn meta records `identity.attribution` and `chainInstalled`.
-    Home readiness carries one `attribution` warning (information, never a
-    failure), and `setup --check-only --json` reports `attribution`: the mode,
-    and the count of spawners without a chain.
+    Home readiness warns `attribution` only when there is something to do (mode
+    human: no human bound, or this instance has no chain). `setup --check-only
+    --json` reports `attribution`: the mode, and the count of spawners without
+    a chain.
   - Costs: a registry outage stops chained spawning for as long as it lasts, and a
     `--server` spawn from another host counts as a person's. The steward's key
     custody is a convention under the same OS user, where misuse changes the

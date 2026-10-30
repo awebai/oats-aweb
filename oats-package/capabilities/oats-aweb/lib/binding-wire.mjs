@@ -379,12 +379,13 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     const daemon=wakeDaemonAssessment(status,{minimumVersion:AW_MIN});
     receiveProblems.push(...daemon.problems);warnings.push(...daemon.warnings);
   }
-  // Attribution is information: the mode and the binding, never a failure.
-  warnings.push(attributionHomeReadiness({
+  // Attribution never fails readiness; it warns only when there is something to do.
+  const attribution=attributionHomeReadiness({
     settings:req.settings,home:ctx.home,
     hasChain:home=>existsSync(join(home,'.aw','id-chain.json')),
     isLocal:home=>{const identity=recordedStart(home).meta?.identity;return !(identity?.mode==='global' && identity?.grant);},
-  }));
+  });
+  if(attribution) warnings.push(attribution);
   const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
   return {...result,problems:[...result.problems,...receiveProblems],warnings};
 }

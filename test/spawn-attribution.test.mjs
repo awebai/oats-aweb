@@ -172,11 +172,16 @@ test("readiness: bound mode names the human and counts the local spawners withou
   assert.match(unknown.message, /instances without a chain: unknown \(oats status timed out\)/);
 });
 
-test("home readiness: one attribution warning, information only, naming the binding act or this home's chain", () => {
-  assert.deepEqual(attributionHomeReadiness({ settings: {}, home: "/h/a", hasChain: () => false, isLocal: () => true }), { code: "attribution", message: 'attribution: none — no human bound; one act binds one: a human runs `oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>` at a terminal' });
-  const settings = { attribution: "human", human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: "/d/.aweb-stewards/s" } };
-  assert.deepEqual(attributionHomeReadiness({ settings, home: "/h/a", hasChain: () => true, isLocal: () => true }), { code: "attribution", message: "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; this instance has a chain" });
-  assert.equal(attributionHomeReadiness({ settings, home: "/h/a", hasChain: () => false, isLocal: () => true }).message, "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; this instance has no chain, so its children are created chainless and report unknown until it is respawned");
-  assert.equal(attributionHomeReadiness({ settings, home: "/h/g", hasChain: () => false, isLocal: () => false }).message, "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; this instance acts through a session grant and issues no children's chains");
-  assert.equal(attributionHomeReadiness({ settings, home: undefined, hasChain: () => false, isLocal: () => true }).message, "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1");
+test("home readiness warns only when there is something to act on (oats#881); mode none stays silent", () => {
+  const ready = (settings, home, { chain = false, local = true } = {}) => attributionHomeReadiness({ settings, home, hasChain: () => chain, isLocal: () => local });
+  assert.equal(ready({}, "/h/a"), null);
+  assert.equal(ready({ attribution: "none", human: { id: HUMAN, label: "Juan" } }, "/h/a"), null);
+  const bound = { attribution: "human", human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: "/d/.aweb-stewards/s" } };
+  assert.equal(ready(bound, "/h/a", { chain: true }), null);
+  assert.equal(ready(bound, "/h/g", { local: false }), null);
+  assert.equal(ready(bound, undefined), null);
+  assert.deepEqual(ready(bound, "/h/a"), { code: "attribution", message: "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; this instance has no chain, so its children are created chainless and report unknown until it is respawned" });
+  for (const home of ["/h/a", undefined]) {
+    assert.deepEqual(ready({ attribution: "human" }, home), { code: "attribution", message: 'attribution: human — no human bound yet: a human runs `oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>` at a terminal' });
+  }
 });

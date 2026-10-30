@@ -904,11 +904,12 @@ naming its fix:
 A spawner with no chain, where that absence is evidence, gets a
 **chainless** child that
 reports `unknown`, with a spawn warning. A chain that exists but fails never
-falls back to a chainless child. Readiness is information, never a failure:
-a home's readiness carries one warning with code `attribution` (the mode, and
-in mode `human` whether this instance has a chain), and `setup --check-only
---json` reports `attribution`. In mode `none` both name the one act that binds
-a human; in mode `human` the deployment report counts `chainlessSpawners`.
+falls back to a chainless child. Attribution never fails readiness. A home's
+readiness warns `attribution` only when there is something to do: in mode
+`human`, no human bound yet, or this instance has no chain (respawn it).
+`setup --check-only --json` reports `attribution` as information: in mode
+`none` it names the one act that binds a human; in mode `human` it counts
+`chainlessSpawners`.
 
 Absence is evidence for a local instance with no chain files and no recorded
 chain (`aw who`: `legacy_no_chain`), and for a `did:aw` the registry reports

@@ -159,11 +159,16 @@ export function attributionReadiness({ settings, homes, hasChain, isLocal }) {
   return { ...base, chainlessSpawners: chainless.length, message: `${text}; ${count}` };
 }
 
-/** Home readiness: one warning with code `attribution`, information only. A
- *  readiness answer has no other non-failing channel. */
+/** Home readiness: a warning with code `attribution` only when someone has
+ *  something to do (readiness warns only about what someone must act on):
+ *  mode human with no human bound, or this instance without a chain, whose
+ *  children are created chainless until it is respawned. Otherwise null; the
+ *  informational report is `setup --check-only`'s. */
 export function attributionHomeReadiness({ settings, home, hasChain, isLocal }) {
-  const { mode, text } = attributionSummary(settings);
-  if (mode !== "human" || !home) return { code: "attribution", message: text };
-  if (!isLocal(home)) return { code: "attribution", message: `${text}; this instance acts through a session grant and issues no children's chains` };
-  return { code: "attribution", message: hasChain(home) ? `${text}; this instance has a chain` : `${text}; this instance has no chain, so its children are created chainless and report unknown until it is respawned` };
+  const { mode, human, steward, text } = attributionSummary(settings);
+  if (mode === null) return { code: "attribution", message: text };
+  if (mode !== "human") return null;
+  if (!human || !steward) return { code: "attribution", message: text };
+  if (!home || !isLocal(home) || hasChain(home)) return null;
+  return { code: "attribution", message: `${text}; this instance has no chain, so its children are created chainless and report unknown until it is respawned` };
 }
