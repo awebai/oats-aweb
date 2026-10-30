@@ -514,7 +514,8 @@ test("real aw 1.36 identity-home policy admits provider subcommands and pins cur
   const oldForm = spawnSync("aw", ["--identity-home", identityHome, "team", "join", "not-a-token", "--name", "probe", "--json"], { cwd: home, encoding: "utf8", timeout: 10000 });
   const oldText = `${oldForm.stdout}${oldForm.stderr}`;
   // From aw 1.36.43 every command takes the selected identity home, so only an older aw refuses.
-  if (Number(/aw\s+1\.36\.(\d+)/.exec(text)[1]) >= 43) {
+  const [major, minor, patch] = /aw\s+(\d+)\.(\d+)\.(\d+)/.exec(text).slice(1).map(Number);
+  if (major > 1 || minor > 36 || patch >= 43) {
     assert.notEqual(oldForm.status, 0, oldText);
     assert.doesNotMatch(oldText, new RegExp(IDENTITY_HOME_POLICY));
     assert.match(oldText, /invalid invite token/);
