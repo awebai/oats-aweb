@@ -36,7 +36,7 @@ export function recordedStart(home) {
   try { doc = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8')); } catch { return {}; }
   const meta = doc?.capabilityMeta?.['oats.aweb'];
   const harness = typeof doc?.launch?.harness === 'string' ? doc.launch.harness : typeof doc?.harness === 'string' ? doc.harness : undefined;
-  return {identityHome: doc?.launch?.hooks?.env?.AWEB_IDENTITY_HOME, meta: meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined, harness, yolo: doc?.launch?.yolo === true};
+  return {identityHome: doc?.launch?.hooks?.env?.AWEB_IDENTITY_HOME, meta: meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : undefined, harness};
 }
 
 /** The runtime a home's last start ran under: what this provider recorded
@@ -157,10 +157,9 @@ export function runtimeDeliveryFor({delivery, runtime}) {
 }
 
 /** Whether this home reads its joined teams at task boundaries instead of
- *  through the host wake broker: a Claude channel home does, unless it is known
- *  to run with --yolo. Unknown counts as not. */
-export function joinedTeamsPolled({delivery, runtime, yolo}) {
-  return runtimeDeliveryFor({delivery, runtime}) === 'native-channel' && yolo !== true;
+ *  through the host wake broker: a Claude channel home does. */
+export function joinedTeamsPolled({delivery, runtime}) {
+  return runtimeDeliveryFor({delivery, runtime}) === 'native-channel';
 }
 
 /** The multi-identity registration document for this home, or null when it

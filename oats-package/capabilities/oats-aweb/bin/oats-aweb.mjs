@@ -1646,13 +1646,6 @@ function instanceRuntime(meta = {}) {
   if (["spawn", "launch"].includes(event)) return process.env.OATS_RUNTIME || "";
   return recordedRuntime(meta, recordedStart(home).harness) ?? (process.env.OATS_RUNTIME || undefined);
 }
-/** Whether this home runs with --yolo. Spawn and launch read this start's own
- *  value; a join or leave reads what the last start recorded. Anything else is
- *  not known, so a kernel that gives hooks no OATS_YOLO reads as false. */
-function instanceYolo() {
-  if (["spawn", "launch"].includes(event)) return process.env.OATS_YOLO === "1";
-  return recordedStart(home).yolo;
-}
 function primaryIdentityHomeOf(meta = {}) {
   return meta.identity?.mode === "global" && meta.identity?.grant?.id ? priorGrantHome(meta) : join(home, ".aw");
 }
@@ -1667,7 +1660,7 @@ function syncWakeReceive(meta) {
   const delivery = meta.delivery || deliveryMode;
   const runtime = instanceRuntime(meta);
   const primary = primaryIdentityHomeOf(meta);
-  const polled = joinedTeamsPolled({ delivery, runtime, yolo: instanceYolo() });
+  const polled = joinedTeamsPolled({ delivery, runtime });
   const doc = polled ? null : wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend: process.env.OATS_BACKEND });
   const warnings = [];
   let receive = "poll", wakeJoined = false;

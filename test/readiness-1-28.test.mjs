@@ -145,7 +145,7 @@ test("soul scope with a non-empty join reads aw wake status once; channel withou
   assert.equal(joined.status, "ready", JSON.stringify(joined));
   assert.deepEqual(joined.problems, []);
   const unconfirmed = joined.warnings.find((w) => w.code === "joined-team-broker-unconfirmed");
-  assert.match(unconfirmed.message, /pi or Codex home and on a --yolo launch/);
+  assert.match(unconfirmed.message, /needs it on a pi or Codex home\./);
   assert.match(unconfirmed.message, /needs no broker/);
   for (const settings of [{ delivery: "channel" }, {}, { delivery: "channel", join: " , " }, { join: "" }]) {
     before = fx.statusCalls().length;

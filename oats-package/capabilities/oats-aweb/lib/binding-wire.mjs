@@ -378,7 +378,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     const daemon=wakeDaemonAssessment(status,{minimumVersion:AW_MIN});
     warnings.push(...daemon.warnings);
     if(session) receiveProblems.push(...daemon.problems);
-    else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home and on a --yolo launch. A Claude channel home without --yolo reads its joined teams at task boundaries and needs no broker.'});
+    else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home. A Claude channel home reads its joined teams at task boundaries and needs no broker.'});
   }
   const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
   return {...result,problems:[...result.problems,...receiveProblems],warnings};

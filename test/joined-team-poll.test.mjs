@@ -8,14 +8,12 @@ import { joinedTeamsPolled } from "../oats-package/capabilities/oats-aweb/lib/wa
 const CAPABILITY = new URL("../oats-package/capabilities/oats-aweb/", import.meta.url).pathname;
 const warningCodes = (result) => (result.warnings || []).map((w) => w.code);
 
-test("only a Claude channel home polls, and only a known --yolo keeps the broker", () => {
-  assert.equal(joinedTeamsPolled({ delivery: "channel", runtime: "claude", yolo: false }), true);
-  assert.equal(joinedTeamsPolled({ delivery: "channel", runtime: "claude" }), true, "unknown counts as not");
-  assert.equal(joinedTeamsPolled({ delivery: "channel", runtime: "claude", yolo: true }), false);
+test("only a Claude channel home polls", () => {
+  assert.equal(joinedTeamsPolled({ delivery: "channel", runtime: "claude" }), true);
   for (const home of [{ delivery: "channel", runtime: "pi" }, { delivery: "channel", runtime: "codex" }, { delivery: "session", runtime: "claude" }]) assert.equal(joinedTeamsPolled(home), false, JSON.stringify(home));
 });
 
-test("a Claude home spawned without OATS_YOLO stays off the broker and says it polls", (t) => {
+test("a Claude home stays off the broker and says it polls", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" } });
   const { meta } = fx.spawn();
   assert.equal(fx.registered(), undefined);
@@ -23,68 +21,56 @@ test("a Claude home spawned without OATS_YOLO stays off the broker and says it p
   assert.deepEqual(meta.joinedTeams.map(({ receive, expectedPoll }) => ({ receive, expectedPoll })), [{ receive: "poll", expectedPoll: true }]);
 });
 
-for (const value of ["0", "true", ""]) test(`OATS_YOLO=${JSON.stringify(value)} is not a known --yolo`, (t) => {
+test("OATS_YOLO changes nothing: a --yolo Claude home polls too", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" } });
-  assert.equal(fx.hook("spawn", { OATS_YOLO: value }).status, 0);
+  const r = fx.hook("spawn", { OATS_YOLO: "1" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(fx.registered(), undefined);
+  assert.equal(r.doc.meta.joinedTeams[0].expectedPoll, true);
 });
 
-test("a --yolo Claude home keeps its joined teams on the broker and records no expected poll", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" }, yolo: true });
-  const { meta } = fx.spawn();
-  assert.deepEqual(fx.registered().receive_identities.map((r) => r.label), ["alpha"]);
-  assert.equal(meta.joinedTeams[0].receive, "native");
-  assert.equal("expectedPoll" in meta.joinedTeams[0], false);
-});
+/** A home already on the broker, as a start before this version left it. */
+function brokered(t, settings) {
+  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings });
+  const r = fx.hook("spawn", { OATS_RUNTIME: "pi" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(fx.registered());
+  return { fx, meta: r.doc.meta };
+}
 
 test("the start after an upgrade takes a registered Claude home off the broker", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" }, yolo: true });
-  const { meta } = fx.spawn();
-  assert.ok(fx.registered());
-  const r = fx.launch(meta, "claude", { extra: { OATS_YOLO: "" } });
+  const { fx, meta } = brokered(t, { join: "alpha" });
+  const r = fx.launch(meta, "claude");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(fx.registered(), undefined);
   assert.equal(r.doc.meta.wakeJoined, false);
   assert.equal(r.doc.meta.joinedTeams[0].expectedPoll, true);
 });
 
-test("a later --yolo start puts the teams back and clears the expected poll", (t) => {
+test("a later start on pi puts the teams back and clears the expected poll", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" } });
   const { meta } = fx.spawn();
-  const r = fx.launch(meta, "claude", { extra: { OATS_YOLO: "1" } });
+  const r = fx.launch(meta, "pi");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(fx.registered().receive_identities.map((x) => x.label), ["alpha"]);
   assert.equal(r.doc.meta.joinedTeams[0].receive, "native");
   assert.equal("expectedPoll" in r.doc.meta.joinedTeams[0], false);
 });
 
-for (const source of ["live", "unknown"]) {
-  const local = { join: "alpha", identity: { mode: "local", renew: "launch" } };
-  test(`a local renew=launch home leaves the broker at a start without OATS_YOLO (teams ${source})`, (t) => {
-    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: local, yolo: true });
-    const { meta } = fx.spawn();
-    const r = fx.launch(meta, "claude", { extra: { OATS_YOLO: "", OATS_TEAMS_SOURCE: source } });
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.equal(fx.registered(), undefined);
-    assert.equal(r.doc.meta.joinedTeams[0].receive, "poll");
-    assert.equal(r.doc.meta.joinedTeams[0].expectedPoll, true);
-    fx.record(r.doc.meta, "claude");
-    const result = fx.readiness();
-    assert.ok(warningCodes(result).includes("joined-team-polled"), JSON.stringify(result));
-    assert.equal(warningCodes(result).includes("joined-team-poll-only"), false);
-  });
-  test(`a local renew=launch home goes on the broker at a start with OATS_YOLO (teams ${source})`, (t) => {
-    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: local });
-    const { meta } = fx.spawn();
-    const r = fx.launch(meta, "claude", { extra: { OATS_YOLO: "1", OATS_TEAMS_SOURCE: source } });
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(fx.registered().receive_identities.map((x) => x.label), ["alpha"]);
-    assert.equal(r.doc.meta.joinedTeams[0].receive, "native");
-    assert.equal("expectedPoll" in r.doc.meta.joinedTeams[0], false);
-  });
-}
+for (const source of ["live", "unknown"]) test(`a local renew=launch home leaves the broker at a start (teams ${source})`, (t) => {
+  const { fx, meta } = brokered(t, { join: "alpha", identity: { mode: "local", renew: "launch" } });
+  const r = fx.launch(meta, "claude", { extra: { OATS_TEAMS_SOURCE: source } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(fx.registered(), undefined);
+  assert.equal(r.doc.meta.joinedTeams[0].receive, "poll");
+  assert.equal(r.doc.meta.joinedTeams[0].expectedPoll, true);
+  fx.record(r.doc.meta, "claude");
+  const result = fx.readiness();
+  assert.ok(warningCodes(result).includes("joined-team-polled"), JSON.stringify(result));
+  assert.equal(warningCodes(result).includes("joined-team-poll-only"), false);
+});
 
-for (const runtime of ["pi", "codex"]) test(`a ${runtime} home is unchanged: its joined teams stay on the broker without OATS_YOLO`, (t) => {
+for (const runtime of ["pi", "codex"]) test(`a ${runtime} home is unchanged: its joined teams stay on the broker`, (t) => {
   const fx = fixture(t, { delivery: "channel", runtime, settings: { join: "alpha" } });
   const { meta } = fx.spawn();
   assert.ok(fx.registered().receive_identities.some((r) => r.label === "alpha"));
@@ -120,9 +106,7 @@ test("a stale expected poll doesn't excuse a home that now needs the broker", (t
   assert.equal(warningCodes(result).includes("joined-team-polled"), false);
 });
 
-test("the inject carries the plain-text rule and the skill tells nobody to start the broker for a poll", () => {
-  const inject = readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8").replace(/\s+/g, " ");
-  assert.match(inject, /If you've joined a team on `receive: native` \(`oats aweb teams`\), ask a person in plain text, then end your turn\. Don't open a question dialog\./);
+test("the skill tells nobody to start the broker for a poll", () => {
   const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
   assert.match(skill, /\| `joined-team-polled` \|.*nobody: expected\. Don't install or start the broker for this \|/);
   assert.match(skill.replace(/\s+/g, " "), /Nothing wakes an idle Claude home for joined-team mail\. .* use one only where `oats session inspect --json` shows `wakeHold: on-claims`\./);

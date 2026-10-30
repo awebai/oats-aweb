@@ -258,12 +258,9 @@ with `wake-daemon-not-running`, and each joined team adds
 `joined-team-poll-only`.
 
 **Joined teams on a Claude home.** A Claude channel home reads its joined teams
-at task boundaries, as `receive: poll`, unless it runs with `--yolo`. That is
-expected: readiness says `joined-team-polled` and needs no broker for those
-teams, so don't install or start one for this. Its default team is unchanged.
-The provider decides at every start, from the kernel's `OATS_YOLO`; a kernel
-that doesn't set it polls on every Claude home. `oats aweb join` reads what the
-last start recorded.
+at task boundaries, as `receive: poll`. That is expected: readiness says
+`joined-team-polled` and needs no broker for those teams, so don't install or
+start one for this. Its default team is unchanged.
 
 Nothing wakes an idle Claude home for joined-team mail. Read that inbox at task
 boundaries. A wake job starts a turn; use one only where
@@ -402,7 +399,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 |---|---|---|
 | `team-unmapped` | your soul's primary label is not mapped by the workspace; you are in the default team | workspace owner, if a shared team was meant |
 | `joined-team-polled` | a Claude home reads this joined team at task boundaries, as expected | nobody: expected. Don't install or start the broker for this |
-| `joined-team-broker-unconfirmed` | soul readiness, with no home: the soul joins a team and no broker is confirmed running. It can't see the harness | operator: only if this soul launches on pi or Codex or with `--yolo`, start the broker. A Claude channel home needs nothing |
+| `joined-team-broker-unconfirmed` | soul readiness, with no home: the soul joins a team and no broker is confirmed running. It can't see the harness | operator: only if this soul launches on pi or Codex, start the broker. A Claude channel home needs nothing |
 | `joined-team-poll-only` | a joined team does not wake you; the message says why | poll that team at task boundaries; operator: install or start the broker (`/oats-host-delivery`, Choice 2); if readiness then shows `wake-target-missing` or `wake-stream-missing`, restart the home with the operator's word |
 | `wake-status-timestamp-unknown` | supplied `status.updated_at` is malformed; observation time is unknown, with observed client/daemon versions in the diagnostic | operator: inspect `aw version` and `aw wake status --json`; preserve a sanitized capture for a provider compatibility report |
 | `wake-daemon-not-running` / `-version-unknown` | host wake broker is down, or does not report its version | operator: install or start its service, or upgrade aw and restart it (`/oats-host-delivery`, Choice 2) |
