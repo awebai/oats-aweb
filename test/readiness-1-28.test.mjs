@@ -185,3 +185,46 @@ test("wakeDaemonAssessment keeps the home-scope order: an instances-less status 
   assert.deepEqual(wakeDaemonAssessment(reported(AW_MIN), { minimumVersion: AW_MIN }), { problems: [], warnings: [] });
   assert.deepEqual(wakeDaemonAssessment(undefined, { minimumVersion: AW_MIN }).problems, [{ code: "wake-status-unavailable", message: "aw wake status is unavailable or malformed" }]);
 });
+
+const observerWarning = result => result.warnings.filter(w => w.code === 'unread-attention-observer');
+
+test('unread observer off warns only for a broker-delivered primary', t => {
+  const fx = fixture(t);
+  for (const [delivery, runtime] of [['session', 'claude'], ['session', 'pi'], ['channel', 'codex']]) {
+    fx.record({delivery, runtime});
+    assert.equal(observerWarning(fx.readiness({delivery})).length, 1, `${delivery}/${runtime}`);
+  }
+  assert.equal(observerWarning(fx.readiness({delivery: 'session'}, {targetHome: null})).length, 1, 'soul with explicit session delivery');
+});
+
+test('unread observer opt-in warning is silent when publishing is on', t => {
+  const fx = fixture(t);
+  fx.record({delivery: 'session', runtime: 'codex'});
+  for (const targetHome of [fx.home, null]) {
+    assert.deepEqual(observerWarning(fx.readiness({delivery: 'session', health: {publish: true}}, {targetHome})), []);
+  }
+});
+
+test('unread observer warnings are silent on channel-delivered primaries', t => {
+  const fx = fixture(t);
+  for (const runtime of ['claude', 'pi']) {
+    fx.record({delivery: 'channel', runtime});
+    for (const publish of [false, true]) {
+      const result = fx.readiness({delivery: 'channel', health: {publish}});
+      assert.deepEqual(result.warnings.filter(w => ['unread-attention-observer', 'unread-count-unavailable'].includes(w.code)), [], runtime);
+    }
+  }
+  assert.deepEqual(observerWarning(fx.readiness({delivery: 'channel'}, {targetHome: null})), [], 'channel soul without a captured broker runtime');
+});
+
+for (const [phase, health, code] of [
+  ['check', {publish: 'true'}, 'needs-configuration'],
+  ['check', {extra: true}, 'needs-configuration'],
+  ['normalize', {publish: true}, 'invalid-binding'],
+  ['bind', {publish: true}, 'invalid-binding'],
+]) test(`health settings stay validated and check-only (${phase}/${code})`, () => {
+  const input = {schemaVersion: 1, phase, slot: 'messaging', capability: 'oats.aweb', settings: {health}, input: {}};
+  const r = spawnSync(process.execPath, [BINDING, phase], {input: JSON.stringify(input), encoding: 'utf8'});
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).error.code, code);
+});

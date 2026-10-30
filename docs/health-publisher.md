@@ -255,7 +255,9 @@ The tick's JSON includes `unreadAttention` counters (`set`, `cleared`, `unknown`
 `failed`); these count operations requested, including idempotent ones.
 
 **Without `health.publish: true` and a running per-minute host timer, no such
-attention claim appears.** Provider readiness states this opt-in requirement;
+attention claim appears.** Provider readiness warns about this opt-in only when publishing is off and
+the primary uses the broker (Codex or session delivery). A soul has no captured
+harness, so its warning requires explicit session delivery;
 `health status` reports live observer coverage, missing count-only support and
 timer/job failures. This is a periodic observation,
 not proof that a model acted on a delivered message. The underlying broker
