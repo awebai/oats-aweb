@@ -328,4 +328,6 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   const retired = j.shell("oats retire joined-seat --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false);
+  // Neither team is hosted here, so aw's refusal hands both memberships to the controller.
+  assert.deepEqual(JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup.map((c) => c.label).sort(), ["alpha", "default"]);
 });
