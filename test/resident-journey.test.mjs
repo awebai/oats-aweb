@@ -309,6 +309,8 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   step(["id", "team", "create", "--namespace", ns, "--name", "alpha", "--registry", AWID_URL, "--json"]);
   const cert = JSON.parse(step(["id", "team", "add-member", "--namespace", ns, "--team", "alpha", "--member", `${ns}/root`, "--json"])).certificate_id;
   step(["id", "team", "fetch-cert", "--namespace", ns, "--team", "alpha", "--cert-id", cert, "--registry", AWID_URL, "--json"]);
+  const local = join(j.deployment, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replace("    delivery: session\n", `    delivery: session\n    root: ${j.deployment}\n`));
   Object.assign(j.env, { AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
 
   const spawned = j.shell("oats spawn probe --name joined-seat --provider oats.aweb join=alpha --no-launch --json");
