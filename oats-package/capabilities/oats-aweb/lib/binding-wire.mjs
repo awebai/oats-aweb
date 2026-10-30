@@ -287,8 +287,7 @@ async function awFloorObservation({env=process.env}={}) {
  *  wording every path that refuses below the floor uses. `env` is the PATH to
  *  search and the environment `aw version` runs in. */
 export async function awFloorMessage(options){return (await awFloorObservation(options)).message;}
-/** Whether a spawn from these soul-scope settings needs the host wake broker:
- *  session delivery, or a joined team (a Codex launch is not visible here). */
+/** Whether these soul-scope settings join a team: a non-empty `join`. */
 function soulJoinsTeams(settings) {return typeof settings.join==='string' && settings.join.split(',').some(label=>label.trim());}
 /** The kernel's captured per-leaf settings origins for a home (JSON pointer to
  *  {kind,at}); anything unparseable is no origin. */

@@ -1,6 +1,6 @@
 // oats.aweb readiness additions: soul-scope readiness checks the host wake
-// daemon a spawn will need (delivery: session or a joined team), with the
-// home-scope codes and messages; and a Claude channel home composed with
+// daemon: delivery: session needs it, with the home-scope codes and messages,
+// and a join alone warns which launches need it; and a Claude channel home composed with
 // claudeChannelMode unset warns claude-channel-mode-default.
 //
 // At home scope the kernel passes the home's captured settings payload and its
