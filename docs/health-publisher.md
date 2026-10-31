@@ -272,12 +272,11 @@ One failing home does not prevent sibling observations. The tick's JSON includes
 operations requested, including idempotent ones.
 
 **Without `health.publish: true` and a running per-minute host timer, no such
-attention claim appears.** Provider readiness warns about this opt-in only when
-publishing is off and an eligible primary uses the broker (Codex or session
-delivery, excluding grant-backed seats).
-A soul has no captured harness, so its warning requires explicit session delivery.
-`health status` reports live observer coverage, missing count-only support and
-timer/job failures. The underlying broker owns its retry budget; the observer
+attention claim appears.** `oats aweb health status` reports the observer as off
+while publishing is off; readiness says nothing about the observer while it is off.
+With publishing on, readiness warns when an eligible broker primary's aw lacks
+`--count-only` support. `health status` reports live observer coverage, missing
+count-only support and timer/job failures. The underlying broker owns its retry budget; the observer
 neither retries input nor changes that budget.
 
 ## Files

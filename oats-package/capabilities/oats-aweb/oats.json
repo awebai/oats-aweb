@@ -91,7 +91,6 @@
       "wider"
     ],
     "reasons": [
-      "Unread mail with broker errors has no attention claim while health publishing is off. Enable oats aweb health and its per-minute host timer; check live coverage with oats aweb health status.",
       "aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.",
       "messaging-enabled standalone preparation needs an explicit context key",
       "messaging binding needs one soul declaration",

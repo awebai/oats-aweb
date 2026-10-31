@@ -10,7 +10,6 @@ import {spawnSync} from 'node:child_process';
 import {parseBindingJson} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 import {invocationFor} from './helpers/invocation-fixture.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),cap=join(root,'oats-package/capabilities/oats-aweb');
-const OBSERVER_OFF = {code:'unread-attention-observer',message:"Unread mail with broker errors has no attention claim while health publishing is off. Enable oats aweb health and its per-minute host timer; check live coverage with oats aweb health status."};
 const declaredReasons=new Set(JSON.parse(fs.readFileSync(join(cap,'oats.json'))).binding.reasons);
 const origin=(kind,path='soul.yaml')=>({kind,document:{kind:'source',source:'git:https://example.invalid/source.git',revision:'a'.repeat(40),path,integrity:{format:'oats.bytes.v1',value:'sha256-'+'b'.repeat(64)}},pointer:''});
 const operator={kind:'operator',document:{kind:'operator',id:'fixture-operator'},pointer:''};
@@ -49,7 +48,7 @@ test('portable declarations retain explicit session delivery, private context an
 test('binding-less workspace readiness check follows settings roots, team labels and read-only custody',t=>{
  const f=fixture(t),workspaceContext={kind:'workspace',workspace:'fixture-workspace',deployment:f.root,soul:'example',team:'experts',instance:null,home:null},action={kind:'readiness'};
  let checked=invoke(f,'check',request('check',{context:workspaceContext,action},{delivery:'session',root:f.root}));
- assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[OBSERVER_OFF]});assert.equal(fs.existsSync(f.marker),false);assert.equal(wakeReads(f),1,'one wake status read, nothing else native');
+ assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]});assert.equal(fs.existsSync(f.marker),false);assert.equal(wakeReads(f),1,'one wake status read, nothing else native');
  checked=invoke(f,'check',request('check',{context:workspaceContext,action},{delivery:'channel',root:f.root}));
  assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]});assert.equal(wakeReads(f),1,'a channel spawn with no join needs no broker read');
  checked=invoke(f,'check',request('check',{context:workspaceContext,action},{delivery:'session',root:f.root}),{PATH:noAwPath(f)});
@@ -62,12 +61,12 @@ test('binding-less workspace readiness check follows settings roots, team labels
  assert.deepEqual(checked.value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:'aw 1.36.12 is older than required 1.36.33; upgrade with `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.33`)'}],warnings:[]});
  fs.writeFileSync(join(f.base,'bin','aw'),`#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.33"; exit 0; fi\n${shWake(f.base)}printf called >> '${f.marker}'\nexit 99\n`,{mode:0o755});
  checked=invoke(f,'check',request('check',{context:{...workspaceContext,team:null},action},{delivery:'session',root:f.root}));
- assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[OBSERVER_OFF]},'a teamless soul context is valid and settings/team env still drive readiness');
+ assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]},'a teamless soul context is valid and settings/team env still drive readiness');
  const absent=join(f.base,'absent-deployment');fs.mkdirSync(absent);
  checked=invoke(f,'check',request('check',{context:{...workspaceContext,deployment:absent},action},{delivery:'session'}));
  assert.deepEqual(checked.value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:`no messaging root at ${absent}: run oats aweb setup there or set settings.oats.aweb.root`}],warnings:[]});
  checked=invoke(f,'check',request('check',{context:workspaceContext,action},{delivery:'session',root:f.root}),{OATS_TEAM_LABEL:'experts'});
- assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[OBSERVER_OFF]});
+ assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]});
  const custody=join(f.base,'custody');fs.mkdirSync(join(custody,'.aw'),{recursive:true});fs.writeFileSync(join(custody,'.aw','identity.yaml'),'alias: resident\n');
  fs.writeFileSync(join(f.base,'bin','aw'),`#!${process.execPath}\n${jsWake(f.base)}const args=process.argv.slice(2);\nif(args[0]==='version'){console.log('aw 1.36.33');process.exit(0);}\nconst status=process.env.FAKE_CUSTODY_STATUS||'running';\nconst encryptionReady=process.env.FAKE_ENCRYPTION_READY!=='0';\nconsole.log(JSON.stringify({status,teams:[{team_id:'${team.id}',ready:true,certificate_present:true,grant_status_endpoint_ready:true}],keys:{signing_ready:true,encryption_ready:encryptionReady},ops:['status.v1','sign_plain_message.v1','sign_app_request.v1','grant_never_ttl.v1','create_e2ee_envelope.v1','unwrap_e2ee_message.v1','mail_reply_continuation.v1'],errors:status==='running'?[]:['custody_unavailable']}));\n`,{mode:0o755});
  checked=invoke(f,'check',request('check',{context:workspaceContext,action},{delivery:'session',root:f.root,identity:{mode:'global',resident:'merlin'},residents:{merlin:custody}}),{FAKE_CUSTODY_STATUS:'not_running'});
@@ -159,7 +158,7 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  const {keys,reasons,...phases}=m.binding;
  assert.deepEqual(phases,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});
  assert.deepEqual(keys,['responsibleHuman','privateTeam','wider']);
- assert.equal(reasons.length,32);assert.equal(new Set(reasons).size,32);assert.ok(reasons.every(reason=>typeof reason==='string'&&reason.length>0));
+ assert.equal(reasons.length,31);assert.equal(new Set(reasons).size,31);assert.ok(reasons.every(reason=>typeof reason==='string'&&reason.length>0));
  assert.equal(m.compatibility.oats,'>=0.68.0');
  for(const key of ['root','roots','residents'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
  assert.equal(Object.hasOwn(m,'helperInjection'),false);

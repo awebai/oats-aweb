@@ -388,13 +388,10 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home. A Claude channel home reads its joined teams at task boundaries and needs no broker.'});
   }
   const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
-  if (primaryBroker && !excludedGrantSeat && !problems.length) {
-    if (req.settings.health?.publish !== true) warnings.push({code:'unread-attention-observer',message:'Unread mail with broker errors has no attention claim while health publishing is off. Enable oats aweb health and its per-minute host timer; check live coverage with oats aweb health status.'});
-    else {
-      let countOnly = false;
-      try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
-      if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});
-    }
+  if (primaryBroker && !excludedGrantSeat && !problems.length && req.settings.health?.publish === true) {
+    let countOnly = false;
+    try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
+    if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});
   }
   const result=checkProblems(problems) || {status:receiveProblems.length?'unavailable':'ready',problems:[]};
   return {...result,problems:[...result.problems,...receiveProblems],warnings};

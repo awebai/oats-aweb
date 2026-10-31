@@ -186,22 +186,22 @@ test("wakeDaemonAssessment keeps the home-scope order: an instances-less status 
   assert.deepEqual(wakeDaemonAssessment(undefined, { minimumVersion: AW_MIN }).problems, [{ code: "wake-status-unavailable", message: "aw wake status is unavailable or malformed" }]);
 });
 
-const observerWarning = result => result.warnings.filter(w => w.code === 'unread-attention-observer');
+const countWarning = result => result.warnings.filter(w => w.code === 'unread-count-unavailable');
 
-test('unread observer off warns only for a broker-delivered primary', t => {
+test('unread observer off leaves broker-delivered primary readiness silent', t => {
   const fx = fixture(t);
   for (const [delivery, runtime] of [['session', 'claude'], ['session', 'pi'], ['channel', 'codex']]) {
     fx.record({delivery, runtime});
-    assert.equal(observerWarning(fx.readiness({delivery})).length, 1, `${delivery}/${runtime}`);
+    assert.deepEqual(fx.readiness({delivery}).warnings, [], `${delivery}/${runtime}`);
   }
-  assert.equal(observerWarning(fx.readiness({delivery: 'session'}, {targetHome: null})).length, 1, 'soul with explicit session delivery');
+  assert.deepEqual(fx.readiness({delivery: 'session'}, {targetHome: null}).warnings, [], 'soul with explicit session delivery');
 });
 
-test('unread observer opt-in warning is silent when publishing is on', t => {
+test('unread observer on warns when count-only support is unavailable', t => {
   const fx = fixture(t);
   fx.record({delivery: 'session', runtime: 'codex'});
   for (const targetHome of [fx.home, null]) {
-    assert.deepEqual(observerWarning(fx.readiness({delivery: 'session', health: {publish: true}}, {targetHome})), []);
+    assert.equal(countWarning(fx.readiness({delivery: 'session', health: {publish: true}}, {targetHome})).length, 1);
   }
 });
 
@@ -211,10 +211,10 @@ test('unread observer warnings are silent on channel-delivered primaries', t => 
     fx.record({delivery: 'channel', runtime});
     for (const publish of [false, true]) {
       const result = fx.readiness({delivery: 'channel', health: {publish}});
-      assert.deepEqual(result.warnings.filter(w => ['unread-attention-observer', 'unread-count-unavailable'].includes(w.code)), [], runtime);
+      assert.deepEqual(countWarning(result), [], runtime);
     }
   }
-  assert.deepEqual(observerWarning(fx.readiness({delivery: 'channel'}, {targetHome: null})), [], 'channel soul without a captured broker runtime');
+  assert.deepEqual(countWarning(fx.readiness({delivery: 'channel'}, {targetHome: null})), [], 'channel soul without a captured broker runtime');
 });
 
 for (const [phase, health, code] of [

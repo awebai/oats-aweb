@@ -12,7 +12,9 @@
   Desktop see only counts and fixed error classes. Recovery, unregistration,
   retirement and health disable clear this producer's claim; a count failure
   preserves it. Runtime `waiting-on-you` support and aw's read-only
-  `mail inbox --count-only` are required. Readiness explains the opt-in requirement and health status reports live coverage.
+  `mail inbox --count-only` are required. `oats aweb health status` reports the
+  observer as off while publishing is off; readiness says nothing about the
+  observer while it is off.
 
 - **A retire on a team that isn't hosted hands a joined membership to its
   controller again.** aw names the identity in that refusal by its stable id,
