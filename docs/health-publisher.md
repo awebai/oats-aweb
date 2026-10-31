@@ -218,6 +218,67 @@ at once. It prints counts, `published 4, refused 0, skipped 1, failed 0`. With
 selected, `oats status` giving no roster). With publishing off it does
 nothing.
 
+## Unread mail with an observed broker error
+
+The opt-in `publish` tick also observes **session-delivery homes registered
+with the host wake broker**, including their registered joined-team identities.
+It produces an `oats.aweb` waiting claim with reason `attention`, visible in
+`oats status` and Desktop. It never holds a wake or acknowledges mail.
+Channel-delivery homes (including mixed native registrations) are outside this
+observer.
+
+**Grant-backed resident seats are excluded as a whole.** A read-only `mail.read`
+grant cannot server-ack accepted presentation, so its unread count cannot support
+this observation. The observer does not infer acknowledgement authority from a
+scope list; until that authority is exposed explicitly it excludes every global
+seat without retained root custody, including grants with broader scopes. It
+clears this producer's claim for an excluded home without counting its mail.
+
+The tick requires the runtime kernel's `oats version --json` features to include
+`waiting-on-you`; otherwise it skips claims. For every registered identity it
+reads `aw --identity-home <identityHome> mail inbox --count-only --json`, a
+read-only count that acknowledges nothing. The command must succeed and return
+`{"unread_count": N}` with a nonnegative integer. Older aw builds without this
+flag yield unknown counts; the observer never falls back to reading the inbox.
+
+A positive fresh aggregate count plus `channel_core.binding_errors` or a
+registered `receive_identities[].stream_error` sets the claim. These become fixed
+classes (`broker-binding-error`, `broker-stream-error`). Cached stream unread
+counts and trace ids are never used.
+
+`channel_core.last_error` is historical and survives recovery. On its own it
+qualifies as `broker-worker-error` only after two observations in successive
+minute slots, 30–120 seconds apart, with the same error and registration/bindings,
+no drop in unread, and no change in `last_input_at` or `last_success_at`. A changed
+error, input/success progress, reduced count or missed minute starts a new baseline.
+The owner-only per-home cache holds a digest and count/timing facts, never raw
+error text. This persistence rule is an observation of a potentially stuck broker,
+not proof that particular mail failed to land or that a model consumed it.
+
+No sender, subject, body, raw diagnostic or trace identifier reaches clients:
+
+```
+aweb: 3 unread; broker error (broker-worker-error)
+```
+
+The next tick clears only this producer's claim when unread reaches zero,
+the active errors disappear without a qualifying persistent worker error,
+or the home is unregistered or excluded. Retirement also clears it; session
+start, restart and stop already void waiting claims. `disable` clears this
+producer's claims as it removes the tick. Count failures, malformed broker state
+and unavailable observations preserve an existing claim and cannot set a new one.
+One failing home does not prevent sibling observations. The tick's JSON includes
+`unreadAttention` counters (`set`, `cleared`, `unknown`, `failed`); these count
+operations requested, including idempotent ones.
+
+**Without `health.publish: true` and a running per-minute host timer, no such
+attention claim appears.** `oats aweb health status` reports the observer as off
+while publishing is off; readiness says nothing about the observer while it is off.
+With publishing on, readiness warns when an eligible broker primary's aw lacks
+`--count-only` support. `health status` reports live observer coverage, missing
+count-only support and timer/job failures. The underlying broker owns its retry budget; the observer
+neither retries input nor changes that budget.
+
 ## Files
 
 | Path | What |
@@ -225,6 +286,7 @@ nothing.
 | `oats-local.yaml`, `settings.oats.aweb.health` | the settings |
 | `<deployment>/.oats-aweb/health/last.json` | the last tick's time and counts, which `status` reads |
 | `<deployment>/.oats-aweb/health/log.jsonl` | one line per refusal, with its HTTP status, message and `retry_after`; at 1 MiB it becomes `log.jsonl.1` |
+| `<home>/.oats-aweb/unread-observation.json` | worker-error digest, unread count and observation timing baseline |
 | `<home>/.oats-aweb/health.json` | per home: the agent id, its host and whether it is designated, a cache of aw's answers |
 | `<custody>/.oats-resident/health.json` | the same for a resident |
 

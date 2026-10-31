@@ -1856,6 +1856,16 @@ if (event === "launch") {
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
   const retireWarnings = [];
+  // Use the selected kernel and authoritative hook scope; no event-log writes
+  // or inherited instance selectors. Clear even on an incomplete retirement.
+  try {
+    const {healthHost} = await import('../lib/health-host.mjs');
+    const probe = healthHost({deployment: home, env: process.env});
+    if (await probe.supportsWaiting()) {
+      const host = healthHost({deployment: selectedDeployment(process.env), env: process.env});
+      await host.waiting(home, null);
+    }
+  } catch { retireWarnings.push('oats.aweb attention claim could not be cleared'); }
   const pendingControllerCleanup = [];
   const rememberControllerCleanup = (data) => {
     if (data?.cleanup === "controller") pendingControllerCleanup.push({ label: data.label, team: data.team, alias: data.alias, certificateId: data.certificateId, ...(data.command ? { command: data.command } : {}) });

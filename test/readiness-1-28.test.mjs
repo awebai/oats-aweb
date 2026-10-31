@@ -185,3 +185,46 @@ test("wakeDaemonAssessment keeps the home-scope order: an instances-less status 
   assert.deepEqual(wakeDaemonAssessment(reported(AW_MIN), { minimumVersion: AW_MIN }), { problems: [], warnings: [] });
   assert.deepEqual(wakeDaemonAssessment(undefined, { minimumVersion: AW_MIN }).problems, [{ code: "wake-status-unavailable", message: "aw wake status is unavailable or malformed" }]);
 });
+
+const countWarning = result => result.warnings.filter(w => w.code === 'unread-count-unavailable');
+
+test('unread observer off leaves broker-delivered primary readiness silent', t => {
+  const fx = fixture(t);
+  for (const [delivery, runtime] of [['session', 'claude'], ['session', 'pi'], ['channel', 'codex']]) {
+    fx.record({delivery, runtime});
+    assert.deepEqual(fx.readiness({delivery}).warnings, [], `${delivery}/${runtime}`);
+  }
+  assert.deepEqual(fx.readiness({delivery: 'session'}, {targetHome: null}).warnings, [], 'soul with explicit session delivery');
+});
+
+test('unread observer on warns when count-only support is unavailable', t => {
+  const fx = fixture(t);
+  fx.record({delivery: 'session', runtime: 'codex'});
+  for (const targetHome of [fx.home, null]) {
+    assert.equal(countWarning(fx.readiness({delivery: 'session', health: {publish: true}}, {targetHome})).length, 1);
+  }
+});
+
+test('unread observer warnings are silent on channel-delivered primaries', t => {
+  const fx = fixture(t);
+  for (const runtime of ['claude', 'pi']) {
+    fx.record({delivery: 'channel', runtime});
+    for (const publish of [false, true]) {
+      const result = fx.readiness({delivery: 'channel', health: {publish}});
+      assert.deepEqual(countWarning(result), [], runtime);
+    }
+  }
+  assert.deepEqual(countWarning(fx.readiness({delivery: 'channel'}, {targetHome: null})), [], 'channel soul without a captured broker runtime');
+});
+
+for (const [phase, health, code] of [
+  ['check', {publish: 'true'}, 'needs-configuration'],
+  ['check', {extra: true}, 'needs-configuration'],
+  ['normalize', {publish: true}, 'invalid-binding'],
+  ['bind', {publish: true}, 'invalid-binding'],
+]) test(`health settings stay validated and check-only (${phase}/${code})`, () => {
+  const input = {schemaVersion: 1, phase, slot: 'messaging', capability: 'oats.aweb', settings: {health}, input: {}};
+  const r = spawnSync(process.execPath, [BINDING, phase], {input: JSON.stringify(input), encoding: 'utf8'});
+  assert.equal(r.status, 0, r.stdout + r.stderr); // binding failures travel in the JSON envelope
+  assert.equal(JSON.parse(r.stdout).error.code, code);
+});
