@@ -9,9 +9,12 @@
   `AGENTS.md` and a `CLAUDE.md` pointing to them in the deployment directory,
   and Claude Code loads both into every Claude instance under `agents/`, on top
   of OATS's own instructions. An existing deployment set up that way may still
-  have that stray `AGENTS.md`/`CLAUDE.md` in its deployment directory: they
-  are aw's, nothing in OATS reads them, and they are safe to remove. Setup
-  leaves them where they are.
+  carry aw's rules: at the root of its Git repository if it sits in one,
+  otherwise in its deployment directory. Nothing in OATS reads them, and setup
+  leaves them where they are. In a file that existed before setup, remove the
+  block between `<!-- AWEB:START -->` and `<!-- AWEB:END -->`. An `AGENTS.md`
+  holding only that block under `# Agent Instructions` is aw's, and it can go
+  with the `CLAUDE.md` symlink to it.
 
 - **Unread mail with an observed broker error can raise an attention flag.**
   The opt-in `oats aweb health publish` tick counts unread mail without reading
