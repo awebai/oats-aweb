@@ -18,26 +18,29 @@ const section = () => {
   return SKILL.slice(start, end === -1 ? undefined : end);
 };
 
-test("the claim-human section gives the person's command against the setup root's identity", () => {
-  assert.match(section(), /aw --identity-home "<root>\/\.aw" claim-human --email <your email>/);
+test("the claim-human section gives the command against the setup root's identity", () => {
+  assert.match(section(), /aw --identity-home "<root>\/\.aw" claim-human --email <their email>/);
 });
 
 test("the claim-human section says the account is theirs only once the link is clicked", () => {
   const text = section();
   assert.match(text, /`verification_sent`/);
-  assert.match(text, /only once they click the link/);
+  assert.match(text, /only\s+once\s+they\s+click\s+the\s+link/);
   assert.match(text, /`attached`/);
   assert.match(text, /`already_attached`/);
 });
 
 test("the claim-human section checks by one rerun after the click, since a rerun before it replaces the link", () => {
   const text = section();
-  assert.match(text, /click the link first, then run the same command once/);
-  assert.match(text, /a new link, and the earlier one stops working/);
-  assert.match(text, /use the newest mail/);
+  assert.match(text, /the\s+person\s+clicks\s+the\s+link\s+first;\s+then\s+run\s+the\s+same\s+command\s+once/);
+  assert.match(text, /a\s+new\s+link,\s+and\s+the\s+earlier\s+one\s+stops\s+working/);
+  assert.match(text, /use\s+the\s+newest\s+mail/);
 });
 
-test("the claim-human section is the person's own act, never run with a guessed email", () => {
-  assert.match(section(), /the person's own act/);
-  assert.match(section(), /never with a guessed email/);
+test("the claim-human section runs with exactly the address the person gives, and the click is theirs", () => {
+  const text = section();
+  assert.match(text, /ask\s+the\s+person\s+for\s+their\s+email\s+address\s+and\s+run\s+the\s+command\s+with\s+exactly\s+that\s+address/);
+  assert.match(text, /never\s+a\s+guessed\s+or\s+inferred\s+one/);
+  assert.match(text, /The\s+person's\s+own\s+act\s+is\s+clicking\s+the\s+link/);
+  assert.doesNotMatch(text, /in their own\s+shell|never\s+runs it for them/);
 });
