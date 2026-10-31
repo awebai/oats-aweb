@@ -5,10 +5,10 @@
 - **`oats aweb setup` no longer writes aw's agent rules into the
   deployment.** Its `aw init` (the `--username` account bootstrap and the
   `AWEB_API_KEY` path) now passes `--do-not-touch-agents-md`, as spawn, join
-  and resident creation already did. Without it aw wrote its aweb rules to
-  `AGENTS.md` and a `CLAUDE.md` pointing to them in the deployment directory,
-  and Claude Code loads both into every Claude instance under `agents/`, on top
-  of OATS's own instructions. An existing deployment set up that way may still
+  and resident creation already did. Without it, aw added its aweb rules to
+  `AGENTS.md` and `CLAUDE.md` (in the deployment directory, or at the root of
+  its Git repository when it sits in one), and Claude Code loads them into
+  every Claude instance under `agents/`. An existing deployment set up that way may still
   carry aw's rules: at the root of its Git repository if it sits in one,
   otherwise in its deployment directory. Nothing in OATS reads them, and setup
   leaves them where they are. In a file that existed before setup, remove the
