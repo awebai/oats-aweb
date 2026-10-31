@@ -30,6 +30,13 @@ test("the claim-human section says the account is theirs only once the link is c
   assert.match(text, /`already_attached`/);
 });
 
+test("the claim-human section checks by one rerun after the click, since a rerun before it replaces the link", () => {
+  const text = section();
+  assert.match(text, /click the link first, then run the same command once/);
+  assert.match(text, /a new link, and the earlier one stops working/);
+  assert.match(text, /use the newest mail/);
+});
+
 test("the claim-human section is the person's own act, never run with a guessed email", () => {
   assert.match(section(), /the person's own act/);
   assert.match(section(), /never with a guessed email/);

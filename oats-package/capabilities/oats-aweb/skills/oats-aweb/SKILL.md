@@ -575,9 +575,13 @@ or `settings.oats.aweb.root` names another directory.
 | `Human account <email> is attached` (`attached`) | The address was already verified, so it is attached with no mail. |
 | `Human account <email> is already attached` (`already_attached`) | It was attached before; nothing was sent. |
 
-To check afterwards, run the same command with the same email. `attached` or
-`already_attached` means it is done; `verification_sent` means the link is
-still unclicked, and asks for another mail. No other `aw` read shows it:
+To check, click the link first, then run the same command once with the same
+email: `already_attached` means it is done, and no mail is sent. Run before the
+click, it sends another mail and answers `verification_sent` again; that mail
+carries a new link, and the earlier one stops working. (Within 60 seconds of
+the last mail none is sent, and the answer is the same.) So don't rerun it to
+check before clicking; if you did, use the newest mail. No other `aw` read
+shows it:
 `aw whoami` does not name the account's person, and `aw auth status` is this
 host CLI's own login. Signing in to the dashboard with that email also shows it.
 
