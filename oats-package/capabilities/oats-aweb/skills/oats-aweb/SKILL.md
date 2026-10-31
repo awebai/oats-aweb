@@ -555,6 +555,39 @@ uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
 place; no automatic move, deletion or fresh acceptance is part of setup.
 
+### attach yourself to the account
+
+An aweb account that `oats aweb setup --username` created has no person on it:
+nobody can sign in to its dashboard, and the root's `.aw/signing.key` is its
+only recovery. The person it belongs to attaches their email to it: ask the
+person for their email address and run the command with exactly that address,
+never a guessed or inferred one.
+
+```bash
+aw --identity-home "<root>/.aw" claim-human --email <their email>
+```
+
+`<root>` is the setup root: `D`, unless `settings.oats.aweb.roots[default:<u>.aweb.ai]`
+or `settings.oats.aweb.root` names another directory.
+
+| aw answers | Meaning |
+|---|---|
+| `Verification email requested for <email>` (`verification_sent`) | aw mailed a link to that address. The account is theirs only once they click the link in that mail. |
+| `Human account <email> is attached` (`attached`) | The address was already verified, so it is attached with no mail. |
+| `Human account <email> is already attached` (`already_attached`) | It was attached before; nothing was sent. |
+
+To check, the person clicks the link first; then run the same command once
+with the same email: `already_attached` means it is done, and no mail is sent. Run before the
+click, it sends another mail and answers `verification_sent` again; that mail
+carries a new link, and the earlier one stops working. (Within 60 seconds of
+the last mail none is sent, and the answer is the same.) So don't rerun it to
+check before they have clicked; if it was rerun, they use the newest mail. No other `aw` read
+shows it:
+`aw whoami` does not name the account's person, and `aw auth status` is this
+host CLI's own login. Signing in to the dashboard with that email also shows it.
+
+The person's own act is clicking the link: the account is theirs only then.
+
 ### LOCAL team join and resume
 
 setup is an operator act: run one setup at a time per deployment.
