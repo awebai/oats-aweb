@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`/oats-aweb` says how a person attaches themselves to the account.** A new
+  section, "Attach yourself to the account", covers an account that `oats aweb
+  setup --username` created without a sign-in. The person runs `aw
+  --identity-home "<root>/.aw" claim-human --email <your email>`, and the
+  account is theirs once they click the link aw mails them. Running it again
+  shows whether that happened. An agent never runs it for them.
+
 - **`oats aweb setup` no longer writes aw's agent rules into the
   deployment.** Its `aw init` (the `--username` account bootstrap and the
   `AWEB_API_KEY` path) now passes `--do-not-touch-agents-md`, as spawn, join

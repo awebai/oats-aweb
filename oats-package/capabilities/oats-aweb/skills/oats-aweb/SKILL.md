@@ -555,6 +555,35 @@ uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
 place; no automatic move, deletion or fresh acceptance is part of setup.
 
+### Attach yourself to the account
+
+An aweb account that `oats aweb setup --username` created has no person on it:
+nobody can sign in to its dashboard, and the root's `.aw/signing.key` is its
+only recovery. The person it belongs to attaches their email, in their own
+shell:
+
+```bash
+aw --identity-home "<root>/.aw" claim-human --email <your email>
+```
+
+`<root>` is the setup root: `D`, unless `settings.oats.aweb.roots[default:<u>.aweb.ai]`
+or `settings.oats.aweb.root` names another directory.
+
+| aw answers | Meaning |
+|---|---|
+| `Verification email requested for <email>` (`verification_sent`) | aw mailed a link to that address. The account is theirs only once they click the link in that mail. |
+| `Human account <email> is attached` (`attached`) | The address was already verified, so it is attached with no mail. |
+| `Human account <email> is already attached` (`already_attached`) | It was attached before; nothing was sent. |
+
+To check afterwards, run the same command with the same email. `attached` or
+`already_attached` means it is done; `verification_sent` means the link is
+still unclicked, and asks for another mail. No other `aw` read shows it:
+`aw whoami` does not name the account's person, and `aw auth status` is this
+host CLI's own login. Signing in to the dashboard with that email also shows it.
+
+Claiming is the person's own act. An agent gives them the command and never
+runs it for them, and never with a guessed email.
+
 ### LOCAL team join and resume
 
 setup is an operator act: run one setup at a time per deployment.
