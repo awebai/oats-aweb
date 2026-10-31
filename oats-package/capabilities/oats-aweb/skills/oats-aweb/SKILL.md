@@ -555,7 +555,7 @@ uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
 place; no automatic move, deletion or fresh acceptance is part of setup.
 
-### Attach yourself to the account
+### attach yourself to the account
 
 An aweb account that `oats aweb setup --username` created has no person on it:
 nobody can sign in to its dashboard, and the root's `.aw/signing.key` is its

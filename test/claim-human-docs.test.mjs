@@ -12,8 +12,8 @@ const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SKILL = readFileSync(join(REPO, "oats-package", "capabilities", "oats-aweb", "skills", "oats-aweb", "SKILL.md"), "utf8");
 
 const section = () => {
-  const start = SKILL.indexOf("\n### Attach yourself to the account\n");
-  assert.notEqual(start, -1, "the skill has a section headed \"Attach yourself to the account\"");
+  const start = SKILL.indexOf("\n### attach yourself to the account\n");
+  assert.notEqual(start, -1, "the skill has a section headed \"attach yourself to the account\"");
   const end = SKILL.indexOf("\n#", start + 1);
   return SKILL.slice(start, end === -1 ? undefined : end);
 };

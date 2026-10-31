@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **`/oats-aweb` says how a person attaches themselves to the account.** A new
-  section, "Attach yourself to the account", covers an account that `oats aweb
+  section, "attach yourself to the account", covers an account that `oats aweb
   setup --username` created without a sign-in. The person runs `aw
   --identity-home "<root>/.aw" claim-human --email <your email>`, and the
   account is theirs once they click the link aw mails them. Running it again
