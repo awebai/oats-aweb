@@ -272,6 +272,13 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
   assert.doesNotMatch(result.stdout, /aw mail send <alias>/);
 });
 
+// aw init writes AGENTS.md and CLAUDE.md into its cwd unless told not to; in a
+// deployment directory every Claude instance below it would load them.
+const assertNoAgentsMd = (dir) => {
+  assert.equal(existsSync(join(dir, "AGENTS.md")), false, "aw init must not write AGENTS.md into the deployment");
+  assert.equal(existsSync(join(dir, "CLAUDE.md")), false, "aw init must not write CLAUDE.md into the deployment");
+};
+
 test("setup --username initializes a missing root and reports the hosted default team mapping", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
@@ -291,9 +298,10 @@ test("setup --username initializes a missing root and reports the hosted default
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /default:alice\.aweb\.ai/);
     assert.match(result.stdout, /mapping and deployment default alice read back successfully/);
+    assertNoAgentsMd(root);
     rmSync(join(root, ".aw"), { recursive: true, force: true });
   }
-  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--new-account", "--username", "alice", "--name", "deployment-root"], ["team", "list", "--json"], ["init", "--new-account", "--username", "alice", "--name", "deployment-root"], ["team", "list", "--json"]]);
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--new-account", "--username", "alice", "--name", "deployment-root", "--do-not-touch-agents-md"], ["team", "list", "--json"], ["init", "--new-account", "--username", "alice", "--name", "deployment-root", "--do-not-touch-agents-md"], ["team", "list", "--json"]]);
 });
 
 test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
@@ -310,8 +318,9 @@ test("setup uses AWEB_API_KEY without printing the secret", async (t) => {
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init"], ["team", "list", "--json"]]);
+  assert.deepEqual(fake.readCalls().map((c) => c.args), [["init", "--do-not-touch-agents-md"], ["team", "list", "--json"]]);
   assert.equal(fake.readCalls()[0].hasApiKey, true);
+  assertNoAgentsMd(root);
   assert.doesNotMatch(result.stdout + result.stderr, /SECRET-API-KEY/);
   assert.match(result.stdout, /readiness: ready/);
 });
@@ -943,5 +952,5 @@ test("username setup with explicit alias withholds credential-bearing native fai
   assert.match(r.stderr, /output withheld/);
   assert.doesNotMatch(r.stdout + r.stderr, /SECRET-SIGNUP-CREDENTIAL/);
   assert.equal(existsSync(join(root, ".aw")), false);
-  assert.deepEqual(fake.readCalls().map(c => c.args), [["init", "--new-account", "--username", "alice", "--name", "root-1"]]);
+  assert.deepEqual(fake.readCalls().map(c => c.args), [["init", "--new-account", "--username", "alice", "--name", "root-1", "--do-not-touch-agents-md"]]);
 });

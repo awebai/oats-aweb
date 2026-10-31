@@ -59,7 +59,7 @@ test('malformed/unsupported/query failures are configuration errors, not closed 
  }
 });
 test('explicit label overrides normalized username without rewriting native account input',t=>{
- const f=fixture(t),r=answer(f.run(['--label','chosen.label']));assert.equal(r.label,'chosen.label');assert.deepEqual(f.aw.readCalls().find(c=>c.args[0]==='init').args,['init','--new-account','--username','alice','--name','root-1']);
+ const f=fixture(t),r=answer(f.run(['--label','chosen.label']));assert.equal(r.label,'chosen.label');assert.deepEqual(f.aw.readCalls().find(c=>c.args[0]==='init').args,['init','--new-account','--username','alice','--name','root-1','--do-not-touch-agents-md']);
 });
 test('malformed settings, invalid explicit root and conflicting deployment refuse without effects',t=>{
  for(const settings of ['null','not-json','[]',JSON.stringify({roots:[]}),JSON.stringify({root:'relative'}),JSON.stringify({identity:{mode:'global'}})]) {
@@ -100,7 +100,7 @@ test('username setup on a closed workspace whose committed default already names
  const committed={label:'alice',team:'default:alice.aweb.ai',from:'workspace'};
  const f=fixture(t,{localTeams:false,teams:[committed],defaultTeam:committed});
  const r=answer(f.run());
- assert.deepEqual(f.aw.readCalls().find(c=>c.args[0]==='init').args,['init','--new-account','--username','alice','--name','root-1'],'the account bootstrap runs');
+ assert.deepEqual(f.aw.readCalls().find(c=>c.args[0]==='init').args,['init','--new-account','--username','alice','--name','root-1','--do-not-touch-agents-md'],'the account bootstrap runs');
  assert.deepEqual(f.kernel.calls().filter(c=>c.args[1]==='add'||c.args[1]==='default'),[],'no local team write on a closed workspace');
  assert.equal(f.kernel.read().lastMutation,undefined);
  assert.equal(r.label,'alice');

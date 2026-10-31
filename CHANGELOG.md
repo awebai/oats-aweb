@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`oats aweb setup` no longer writes aw's agent rules into the
+  deployment.** Its `aw init` (the `--username` account bootstrap and the
+  `AWEB_API_KEY` path) now passes `--do-not-touch-agents-md`, as spawn, join
+  and resident creation already did. Without it aw wrote its aweb rules to
+  `AGENTS.md` and a `CLAUDE.md` pointing to them in the deployment directory,
+  and Claude Code loads both into every Claude instance under `agents/`, on top
+  of OATS's own instructions. An existing deployment set up that way may still
+  have that stray `AGENTS.md`/`CLAUDE.md` in its deployment directory: they
+  are aw's, nothing in OATS reads them, and they are safe to remove. Setup
+  leaves them where they are.
+
 - **Unread mail with an observed broker error can raise an attention flag.**
   The opt-in `oats aweb health publish` tick counts unread mail without reading
   or acknowledging it, and sets an `oats.aweb` attention claim for registered

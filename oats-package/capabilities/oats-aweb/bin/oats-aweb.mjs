@@ -2457,8 +2457,8 @@ ${JSON.stringify(problem.details || {})}`);
     }
     console.log(`  Workspace initialized, but no membership matching "${want}".`);
     console.log(`  Existing team path: ask a member for an appropriate invite token, then run \`${setupInviteCommand(defaultTeamLabel())}\` (accepts into the selected per-team root; supply the token on stdin, never in logs or messages).`);
-    console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
-    console.log("  New hosted-account path: run `oats aweb setup --username <u> --name <alias>` (uses `aw init --new-account --username <u> --name <alias>` and creates default:<u>.aweb.ai).");
+    console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init --do-not-touch-agents-md` at the root; the key is never printed).");
+    console.log("  New hosted-account path: run `oats aweb setup --username <u> --name <alias>` (uses `aw init --new-account --username <u> --name <alias> --do-not-touch-agents-md` and creates default:<u>.aweb.ai).");
   };
 
   try {
@@ -2477,8 +2477,8 @@ ${JSON.stringify(problem.details || {})}`);
       console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
       if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
       console.log("  Choose one guided setup path:");
-      console.log("    oats aweb setup --username <u> --name <alias>     # runs `aw init --new-account --username <u> --name <alias>` and creates default:<u>.aweb.ai");
-      console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init` for the hosted team behind the key");
+      console.log("    oats aweb setup --username <u> --name <alias>     # runs `aw init --new-account --username <u> --name <alias> --do-not-touch-agents-md` and creates default:<u>.aweb.ai");
+      console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init --do-not-touch-agents-md` for the hosted team behind the key");
       console.log("    oats aweb setup --join <label> --invite <token>    # accepts into a new per-team root");
       console.log("  Or set settings.oats.aweb.root to an absolute directory whose .aw is the aweb minting root, then re-run setup.");
       console.log("  Own your domain? Use the aweb-team-membership skill for BYOT flows.");
@@ -2525,7 +2525,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
-        run(["aw", "init"], scope, 120000, { secretSafe: true });
+        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true });
       }
       teams = readTeams();
     }

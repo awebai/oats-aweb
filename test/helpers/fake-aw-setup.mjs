@@ -4,6 +4,9 @@
 // calls.jsonl beside the bin directory; a workspace delete also records whether
 // its identity's signing.key existed when it was called.
 //
+// Like real aw, an init without --do-not-touch-agents-md writes AGENTS.md and
+// CLAUDE.md into its cwd.
+//
 // Opt-in behaviour, selected by env:
 //   AW_FAKE_KEYS      every identity it writes holds the private key files real
 //                     aw writes (signing.key, encryption-keys/<id>.x25519.key)
@@ -61,6 +64,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }
   const i = args.indexOf("--username");
   writeTeams(i >= 0 ? "default:" + args[i + 1] + ".aweb.ai" : (process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)}), args.includes("--new-account") ? { alias: flag("--name"), identity_scope: "local" } : {});
+  if (!args.includes("--do-not-touch-agents-md")) { fs.writeFileSync("AGENTS.md", "aweb rules\\n"); fs.writeFileSync("CLAUDE.md", "@AGENTS.md\\n"); }
   console.log("initialized");
 } else if (args[0] === "team" && args[1] === "join") {
   if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }
