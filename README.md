@@ -806,8 +806,8 @@ Supported acts:
   for plan, policy, matching-root resume and partial-write recovery. This is not
   an installation or timed onboarding claim.
 - `oats aweb setup` with the selected team API key supplied only through the
-  operator's protected child environment (`AWEB_API_KEY`): runs plain `aw init`
-  for that hosted team. `--service` stays join-only; `--name` is supported for
+  operator's protected child environment (`AWEB_API_KEY`): runs `aw init
+  --do-not-touch-agents-md` for that hosted team. `--service` stays join-only; `--name` is supported for
   join and additionally required for `--username`. Neither flag extends the
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
