@@ -106,7 +106,9 @@ export function buildPlan({ deployment, settings, origins, homes, stewardStatus 
     if (own.status === "attach") {
       const parent = n.parent ? entries.get(n.parent.home) : null;
       entry.parent = parent ? { instance: parent.instance, home: parent.home, id: parent.did } : { steward: true, home: settings.steward.home, id: settings.steward.id };
-      if (parent?.code === "E_ATTACH_GRANT_SEAT") Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "grant_seat_parent", message: `its spawner ${parent.instance} acts through a session grant and holds no key, so it can never issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own key, or from a shell` });
+      // The spawner the record names, not the certificate parent: a did:aw
+      // child's ancestor rule would skip a keyless seat.
+      if (n.spawnParent?.facts?.grantSeat) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "grant_seat_parent", message: `its spawner ${n.spawnParent.instance} acts through a session grant and holds no key, so it can never issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own key, or from a shell` });
       else if (parent && !["attach", "attached", "attached-registry"].includes(parent.status)) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its parent ${parent.instance} is not attached (${parent.code || parent.status}) → attach its parent first, then plan again` });
       else if (parent?.verified === false) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: parent.reason, message: `its parent ${parent.instance} carries a chain that does not verify (${parent.reason || "no reason"}) → repair the parent's chain, then plan again` });
       if (f.refusal) entry.lastRefusal = { code: f.refusal.code, reason: f.refusal.reason ?? null };

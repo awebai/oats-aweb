@@ -203,3 +203,30 @@ test("a start under a grant-seat spawner records a lasting refusal naming the re
   assert.equal(fx.fake.calls().length, calls, "no aw call for a recorded refusal");
   assert.deepEqual(idCalls(fx.fake), []);
 });
+
+test("a grant seat's did:aw child is refused too: the check is on its recorded spawner, before any ancestor rule", (t) => {
+  const fx = deployment(t);
+  const seat = join(fx.ws, "agents", "dev", "instances", "seat");
+  mkdirSync(seat, { recursive: true });
+  writeFileSync(join(seat, "instance.json"), JSON.stringify({ instance: "seat", spawnedBy: null, capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "g1" } } } } }));
+  const g = fx.instance("g", { spawnedBy: { instance: "seat", home: seat } }, { global: true, who: UNREGISTERED });
+  const run = awInHome({ PATH: fx.fake.path });
+  const plan = buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "seat", home: seat }), homeFacts(run, { instance: "g", home: g.home })], stewardStatus: whoIn(run, fx.steward) });
+  const entry = plan.homes.find((h) => h.instance === "g");
+  assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
+  const r = startAttach({ home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
+  assert.deepEqual(idCalls(fx.fake), []);
+  assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), false);
+});
+
+test("a grant seat's child is refused through the legacy parent too (no spawnedBy recorded)", (t) => {
+  const fx = deployment(t);
+  const seat = join(fx.ws, "agents", "dev", "instances", "seat");
+  mkdirSync(seat, { recursive: true });
+  writeFileSync(join(seat, "instance.json"), JSON.stringify({ instance: "seat", capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "g1" } } } } }));
+  const g = fx.instance("g", { parentInstance: "seat" }, { global: true, who: UNREGISTERED });
+  const r = startAttach({ home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
+  assert.deepEqual(idCalls(fx.fake), []);
+});

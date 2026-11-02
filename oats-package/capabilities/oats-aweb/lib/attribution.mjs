@@ -99,7 +99,9 @@ const recordedSpawner = (s) => (s && typeof s === "object" && typeof s.instance 
  *   takes its nearest did:aw ancestor, else the steward.
  * nodes: [{instance, home, record (its instance.json), did}]. Returns the
  * nodes in attach order, parents first, each with `parent` (a node, or null
- * for the steward).
+ * for the steward) and `spawnParent`: the node its record names, before the
+ * did:aw rule (a rule about who spawned it, such as a grant seat's children
+ * never being issued, looks there).
  */
 export function attachParents(nodes) {
   const byHome = new Map(nodes.map((n) => [n.home, n])), byName = new Map(nodes.map((n) => [n.instance, n]));
@@ -127,7 +129,7 @@ export function attachParents(nodes) {
     const p = parents.get(n);
     if (p) place(p, path);
     placed.add(n);
-    ordered.push({ ...n, parent: p && placed.has(p) && p !== n ? p : null });
+    ordered.push({ ...n, parent: p && placed.has(p) && p !== n ? p : null, spawnParent: spawnParent(n) });
   };
   for (const n of nodes) place(n);
   return ordered;
