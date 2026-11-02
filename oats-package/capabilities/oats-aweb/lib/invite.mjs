@@ -1,12 +1,14 @@
 // Selected-deployment member invitation. Native/server issuance decides authority;
 // membership and a plan never claim an owner/admin role or permission to mint.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, realpathSync, statSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { selectedDeployment } from './team-roots.mjs';
 import { querySelectedKernel } from './session-readiness.mjs';
-import { yamlScalar } from './binding-wire.mjs';
+import { rootAwebUrl } from './binding-wire.mjs';
+// The member hands this service on beside the token.
+export { rootAwebUrl };
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -78,15 +80,6 @@ function selectedProblems(problems, label) {
       fail('E_INVITE_TEAM_QUERY', `selected kernel team problem ${code} prevents invitation; repair the selected configuration`);
     }
   }
-}
-/** The service the issuing root names (`aweb_url` in its workspace.yaml), as written, for the member to
- *  hand on beside the token. Only a plain service URL is handed on: http(s), a host, an optional port
- *  and no path but `/` or `/api`, the shape probe-support.mjs admits. Anything else could carry a
- *  credential (userinfo, a query, a path segment), so it answers null, as a root that names none does. */
-export function rootAwebUrl(root) {
-  let raw;
-  try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
-  return typeof raw === 'string' && raw.length <= 2048 && /^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(raw) ? raw : null;
 }
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);

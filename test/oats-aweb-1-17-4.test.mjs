@@ -30,7 +30,7 @@ function tempDir(t) {
 // aw 1.36.17's update check blocks (up to 3 s): past the 10 s ceiling, so only
 // a reader that stops at the line can succeed; "chunked" prints the line in two
 // writes before blocking; "nomatch" exits 0 without a version line; "old" is
-// below the floor.
+// below the floor. FAKE_AW_VERSION names the version any other mode prints.
 function fakeAw(t) {
   const base = tempDir(t), bin = join(base, "bin"), calls = join(base, "calls.jsonl"), registry = join(base, "wake-registry.json");
   mkdirSync(bin);
@@ -49,7 +49,7 @@ if (args[0] === "version") {
   const mode = process.env.FAKE_VERSION || "";
   if (mode === "nomatch") { console.log("no version here"); process.exit(0); }
   if (mode === "chunked") { fs.writeSync(1, "aw 1.3"); block(150); fs.writeSync(1, "6.30\\n  commit: abc\\n"); block(20000); process.exit(0); }
-  fs.writeSync(1, "aw " + (mode === "old" ? "1.36.12" : "1.36.33") + "\\n  commit: abc\\n");
+  fs.writeSync(1, "aw " + (process.env.FAKE_AW_VERSION || (mode === "old" ? "1.36.12" : "1.36.33")) + "\\n  commit: abc\\n");
   if (mode === "slow" || mode === "old") block(20000);
   process.exit(0);
 }
@@ -476,4 +476,59 @@ test("retire awaits the deregistration on every way out, including a failed self
   assert.equal(r.status, 1);
   assert.equal(r.doc.meta.reason, "self-delete-failed");
   assert.ok(fx2.fake.readCalls().some((c) => c.args[1] === "deregister" && c.span));
+});
+
+// ---------------------------------------------------------------- 1.33.2: aw newer than tested
+
+const SELF_HOSTED = "https://aweb.example.test/api";
+const writeRootService = (root, url) => { mkdirSync(join(root, ".aw"), { recursive: true }); writeFileSync(join(root, ".aw", "workspace.yaml"), `aweb_url: ${url}\n`); };
+
+test("spawn warns when aw is newer than tested on a self-hosted root, and not on the Cloud or at the tested aw", (t) => {
+  let fx = fixture(t);
+  writeRootService(fx.ws, SELF_HOSTED);
+  let r = fx.hook("spawn", { FAKE_AW_VERSION: "1.36.53" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /aw-newer-than-tested — aw 1\.36\.53 is newer than the aw this oats\.aweb is tested with \(1\.36\.51\)\. .*the server's aweb needs upgrading, or the host's aw pinned to 1\.36\.51 \(`npm i -g @awebai\/aw@1\.36\.51`\) if no deployment on this host needs a newer one\./);
+  assert.equal(fx.fake.readCalls().filter((c) => c.args[0] === "version").length, 1, "the floor's version read is reused");
+
+  for (const [url, version] of [["https://app.aweb.ai/api", "1.36.53"], [SELF_HOSTED, "1.36.51"], [SELF_HOSTED, "1.36.51-rc.9"]]) {
+    fx = fixture(t);
+    writeRootService(fx.ws, url);
+    r = fx.hook("spawn", { FAKE_AW_VERSION: version });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.doesNotMatch(r.doc.warning || "", /aw-newer-than-tested/, `${url} at ${version}`);
+  }
+});
+
+test("a mint refused by aw's unknown_or_invalid code names the server and the pin, and carries the tested-range warning", (t) => {
+  const fx = fixture(t);
+  writeRootService(fx.ws, SELF_HOSTED);
+  const r = fx.hook("spawn", { FAKE_AW_VERSION: "1.36.53-rc.3", FAKE_JOIN_FROM_PREVIEW: "1" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.meta, undefined);
+  assert.match(r.doc.warning, /^oats-aweb: aw refused the invite it made for default:example\.test \(unknown_or_invalid\), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to 1\.36\.51/);
+  assert.match(r.doc.warning, /\| oats-aweb: aw-newer-than-tested — aw 1\.36\.53-rc\.3 is newer/);
+  assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK|invite preview/);
+});
+
+test("readiness decides the Cloud per home, by its own team's root", async (t) => {
+  const fx = fixture(t);
+  const cloud = join(fx.ws, "cloud-root"), selfHosted = join(fx.ws, "self-root");
+  writeRootService(cloud, "https://app.aweb.ai/api");
+  writeRootService(selfHosted, SELF_HOSTED);
+  writeRootService(fx.ws, "https://app.aweb.ai/api");
+  const OTHER = "backend:self.example.test";
+  const check = (team) => {
+    const settings = { roots: { [TEAM]: cloud, [OTHER]: selfHosted }, root: fx.ws };
+    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: "fixture", deployment: fx.ws, soul: "dev", team: null, instance: null, home: null } } };
+    const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: fx.home, input: JSON.stringify(input), env: { ...fx.env, OATS_DEFAULT_TEAM_ID: team, OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]), FAKE_AW_VERSION: "1.36.53" }, encoding: "utf8", timeout: 20000 });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout).result;
+  };
+  const onCloud = check(TEAM), onSelf = check(OTHER);
+  assert.deepEqual((onCloud.warnings || []).filter((w) => w.code === "aw-newer-than-tested"), [], JSON.stringify(onCloud));
+  const warned = (onSelf.warnings || []).filter((w) => w.code === "aw-newer-than-tested");
+  assert.equal(warned.length, 1, JSON.stringify(onSelf));
+  assert.match(warned[0].message, /^aw 1\.36\.53 is newer than the aw this oats\.aweb is tested with \(1\.36\.51\)/);
+  assert.equal(onSelf.status, onCloud.status, "a warning, never a problem");
 });

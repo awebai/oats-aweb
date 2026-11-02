@@ -176,8 +176,17 @@ function workspaceReadinessContext(value) {
   return value;
 }
 export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
+/** The service the root's `.aw/workspace.yaml` names (`aweb_url`, as written),
+ *  only when it is a plain service URL: http(s), a host, an optional port and a
+ *  path of `/` or `/api` at most. Anything that could carry a credential, or a
+ *  root that names none, is null. Never the ambient environment. */
+export function rootAwebUrl(root) {
+  let raw;
+  try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
+  return typeof raw === 'string' && raw.length <= 2048 && /^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(raw) ? raw : null;
+}
 export { AW_MIN } from './aw-floor.mjs';
-import { AW_MIN, parseVersion, versionAtLeast } from './aw-floor.mjs';
+import { AW_MIN, awNewerThanTestedMessage, parseVersion, versionAtLeast } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
@@ -267,6 +276,9 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
   const aw=await awFloorObservation();if(aw.message) problems.push({code:'needs-configuration',message:aw.message});
+  // Decided by this home's own team root (roots[team]), not the deployment's default root.
+  const tested=!aw.message&&candidate.root&&isAbsolute(candidate.root)?awNewerThanTestedMessage(aw.version,rootAwebUrl(candidate.root)):undefined;
+  if(tested) warnings.push({code:'aw-newer-than-tested',message:tested});
   if(!team) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
     problems.push({code:'needs-configuration',message:label?unmappedDefaultMessage(label):NO_TEAMS_MESSAGE});
@@ -284,7 +296,9 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
 /** The first executable `cmd` on env's PATH, as an absolute path, or undefined. */
 export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const p=resolve(join(dir,cmd));const st=statSync(p);if(st.isFile()&&(st.mode&0o111))return p;}catch{}}return undefined;}
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
-async function awFloorObservation({env=process.env}={}) {
+/** The aw on PATH against AW_MIN: `{version, message}`, where message says why
+ *  it falls short and is undefined when it doesn't. */
+export async function awFloorObservation({env=process.env}={}) {
   if(!onPath('aw',env)) return {message:`aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
   const version=await readAwVersion({env});
   if(!version) return {message:`aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};

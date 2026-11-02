@@ -308,6 +308,16 @@ The rest:
   still receives, so readiness reports it with the remedy "upgrade aw, then
   restart the host wake daemon" and goes on to assess the target. A daemon that
   is not running or reports no version is still a problem.
+- **`aw-newer-than-tested` is a warning.** When the aw on PATH is above the
+  highest aw this provider's CI journeys pass on (`AW_TESTED`, 1.36.51), and
+  the home's own team root names a service other than the aweb Cloud (an exact
+  origin match on `https://app.aweb.ai`), readiness and spawn say so: a server
+  on an older aweb may refuse a newer aw, for example at the spawn's identity
+  mint. The fix it names first is the server's aweb; pinning the host's aw to
+  the tested release only suits a host where no deployment needs a newer one.
+  The Cloud never warns, because aw reaches npm `latest` only after the Cloud
+  supports it. A mint that aw refuses with its `unknown_or_invalid` error code
+  says the same instead of only "output withheld".
 - **Grant scopes.** Custody re-reads the source message to reply, so a reply
   needs `mail.read` as well as `mail.send`. The NORMAL grant profile carries
   both; a send-only custom grant fails closed with `grant_scope_denied`.

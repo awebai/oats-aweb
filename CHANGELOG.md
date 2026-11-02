@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **A warning when aw is newer than tested, off the Cloud.** Readiness
+  (`aw-newer-than-tested`) and spawn warn when the aw on PATH is above the
+  highest aw the provider's CI journeys pass on (1.36.51) and the home's own
+  team root names a service other than the aweb Cloud: a server on an older
+  aweb may refuse it. The fix it names first is upgrading the server's aweb.
+  Cloud homes never warn, since aw reaches npm `latest` only after the Cloud
+  supports it. Never a refusal.
+- **A mint refused for that reason says so.** When `aw init --join-from` fails
+  with aw's `unknown_or_invalid` error code (its `--json` envelope, aw
+  1.36.52-rc.3 and later), spawn names the code, the server's upgrade and the
+  tested aw instead of only "output withheld". Only that code is read; aw's
+  message is never shown.
+
 ## 1.33.1 — 2026-11-02
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged.
