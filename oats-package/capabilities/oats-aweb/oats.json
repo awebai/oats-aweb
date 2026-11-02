@@ -175,9 +175,10 @@
       "description": "comma-separated eligible team labels to join at spawn; values are workspace-defined labels and the default is absent. Joined teams receive live through the host wake broker where the runtime supports it, else by polling."
     },
     "attribution": {
+      "hostOnly": true,
       "default": "none",
       "values": ["none", "human"],
-      "description": "Spawn attribution. none (default): instances are spawned as before, with no identity chain. human: every spawned instance gets an aw identity chain to the deployment's bound human, issued by the instance that spawned it, or by the deployment's steward when a person spawned. Needs a kernel with the spawn-attribution feature and a bound human (the bind, a browser approval by the person driven by the setup expert, needs aweb Cloud and is not yet available); spawns refuse otherwise, naming the fix."
+      "description": "Spawn attribution, a per-deployment opt-in set only in this deployment's oats-local.yaml (never in oats-workspace.yaml, so one deployment never changes another). none (default): instances are spawned as before, with no identity chain. human: every spawned instance gets an aw identity chain to the deployment's bound human, issued by the instance that spawned it, or by the deployment's steward when a person spawned. Needs a kernel with the spawn-attribution feature and a bound human (the bind, a browser approval by the person driven by the setup expert, needs aweb Cloud and is not yet available); spawns refuse otherwise, naming the fix."
     },
     "human": {
       "hostOnly": true,

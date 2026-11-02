@@ -927,9 +927,10 @@ cannot send the encrypted reply to such a sender.
 ### Spawn attribution: an identity chain to a human
 
 `settings.oats.aweb.attribution` is `none` (the default, and what absence means:
-spawns are unchanged) or `human`. In mode `human`, every spawned instance gets
-an aw identity chain to the deployment's bound human (aw's
-`docs/id-certificates.md`; oats#1665):
+spawns are unchanged) or `human`. It is host-only, set per deployment in
+`oats-local.yaml`; a committed value is refused. In mode `human`, every
+spawned instance gets an aw identity chain to the deployment's bound human
+(aw's `docs/id-certificates.md`; oats#1665):
 - an instance spawned by an instance (`OATS_SPAWNER_HOME`, set by the kernel)
   is issued by that instance;
 - one spawned by a person is issued by the deployment's **steward**.
@@ -951,7 +952,7 @@ naming its fix:
 - a revoked, replaced or malformed issuer chain;
 - unavailable registry evidence for a known chain (a CLI process holds no
   shared cache, so a registry outage stops chained spawning for as long as it
-  lasts);
+  lasts; `attribution: none` on the host spawns without chains meanwhile);
 - a chain stale after its parent rotated its key: re-sign it with its parent
   first (`aw id parent request --resign` in its home, the parent approves,
   then `aw id parent import`);

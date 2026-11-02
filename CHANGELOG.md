@@ -3,8 +3,9 @@
 ## Unreleased
 
 - **Spawn attribution: each spawned instance carries an identity chain to a
-  human** (aweb-acmj.21, oats#1665). New setting `attribution: human | none`;
-  absent means `none`, and spawns are unchanged. The bound human and the
+  human** (aweb-acmj.21, oats#1665). New host-only setting `attribution:
+  human | none`, a per-deployment opt-in in `oats-local.yaml` (a committed value
+  is refused); absent means `none`, and spawns are unchanged. The bound human and the
   deployment's steward are read from host-only `human` and `steward`
   settings, one human per deployment. The bind that records them is a browser
   approval by the person, driven by the setup expert; it needs aweb Cloud and
@@ -25,7 +26,8 @@
     human: no human bound, or this instance has no chain). `setup --check-only
     --json` reports `attribution`: the mode, and the count of spawners without
     a chain.
-  - Costs: a registry outage stops chained spawning for as long as it lasts, and a
+  - Costs: a registry outage stops chained spawning for as long as it lasts
+    (`attribution: none` on the host spawns without chains meanwhile), and a
     `--server` spawn from another host counts as a person's. The steward's key
     custody is a convention under the same OS user, where misuse changes the
     recorded parent and never the human.

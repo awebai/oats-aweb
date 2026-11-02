@@ -9,7 +9,10 @@ is separate from durable task tracking; the selected tasks provider owns tasks.
 
 `settings.oats.aweb.attribution` decides whether a spawned instance carries an
 aw identity chain back to the human it belongs to (aw's `docs/id-certificates.md`;
-oats#1665).
+oats#1665). It is a per-deployment opt-in and host-only, like `human` and
+`steward`: it is set in the deployment's `oats-local.yaml`, and a value in
+`oats-workspace.yaml`, a soul or a spawn is refused, so one deployment turning
+it on never changes another.
 
 - **`none`** (the default, and what an absent setting means): spawns are
   unchanged. No chain is issued and the spawn meta records no attribution.
@@ -89,6 +92,7 @@ human. In mode `human` it also reports the bound human, the steward, and
 - A registry outage stops chained spawning for as long as it lasts: reviewers,
   harvesters and trigger spawns included. A trigger's event stays pending, as
   for any failed spawn. Deployments with no human bound are not affected.
+  Setting `attribution: none` on the host spawns without chains meanwhile.
 - A `--server` spawn from a home on another host counts as a person's, so the
   steward of the host it runs on issues it.
 - **Key custody:** the steward's key sits outside instance homes and is never

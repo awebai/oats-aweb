@@ -66,7 +66,7 @@ function refusalFor(issuer, reason) {
   return `${who}'s identity chain is malformed or fails verification (${reason || "no reason"}) → ${fixFor(issuer)}`;
 }
 
-const unavailable = (detail) => `registry evidence for the issuer's chain is unavailable (${detail}) → retry once the identity registry answers; chained spawning stops while the registry is unreachable`;
+const unavailable = (detail) => `registry evidence for the issuer's chain is unavailable (${detail}) → retry once the identity registry answers; chained spawning stops while the registry is unreachable, or set attribution: none on this host to spawn without chains meanwhile`;
 
 /**
  * What the spawn does with this issuer, from its `aw who --json` (aw's cached

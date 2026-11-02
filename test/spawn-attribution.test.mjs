@@ -81,7 +81,7 @@ for (const reason of ["status_expired", "evidence_unavailable", "rate_limited"])
   test(`refuse: unavailable evidence (${reason}) for a known chain refuses, saying spawning stops while the registry is unreachable`, () => {
     const verdict = classifyIssuer({ issuer: { kind: "spawner" }, who: failed(reason, "unavailable"), chainFiles: true });
     assert.equal(verdict.action, "refuse");
-    assert.match(verdict.message, /registry evidence for the issuer's chain is unavailable \(.+\) → retry once the identity registry answers; chained spawning stops while the registry is unreachable/);
+    assert.match(verdict.message, /registry evidence for the issuer's chain is unavailable \(.+\) → retry once the identity registry answers; chained spawning stops while the registry is unreachable, or set attribution: none on this host to spawn without chains meanwhile$/);
   });
 }
 
