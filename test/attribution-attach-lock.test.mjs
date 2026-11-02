@@ -4,7 +4,7 @@
 // concurrent recovery too.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -65,4 +65,26 @@ test("concurrent recovery of a dead lock: a contender paused mid-recovery never 
   assert.ok(events.includes("A enter"), events.join(", "));
   assert.ok(events.includes("B refused") || events.indexOf("B enter") > events.indexOf("A exit"), events.join(", "));
   assert.equal(existsSync(lock), false, "the last holder released its lock");
+});
+
+test("an abandoned gate (its holder ended inside it) is never recovered automatically: attach refuses, naming the gate and the remedy", (t) => {
+  const d = dir(t), lock = join(d, "attach.lock"), gate = `${lock}.gate`;
+  writeFileSync(lock, "999999999 dead\n");
+  writeFileSync(gate, "999999998 dead\n");
+  const old = new Date(Date.now() - 3600 * 1000);
+  utimesSync(gate, old, old);
+  assert.throws(() => exclusiveLock(lock, busy), (e) => e.code === "E_ATTACH_FAILED" && e.message.includes(gate) && /no attach is running/.test(e.message) && /remove/.test(e.message));
+  assert.equal(readFileSync(gate, "utf8"), "999999998 dead\n", "the gate is left for the person who checks");
+  assert.equal(readFileSync(lock, "utf8"), "999999999 dead\n");
+});
+
+test("concurrent contenders meeting an abandoned gate both refuse: never two holders", async (t) => {
+  const d = dir(t), lock = join(d, "attach.lock"), log = join(d, "log"), go = join(d, "go");
+  writeFileSync(lock, "999999999 dead\n");
+  writeFileSync(`${lock}.gate`, "999999998 dead\n");
+  const old = new Date(Date.now() - 3600 * 1000);
+  utimesSync(`${lock}.gate`, old, old);
+  writeFileSync(go, "");
+  await Promise.all([contender(d, [lock, log, "A", "0", go, "300"]), contender(d, [lock, log, "B", "0", go, "300"])]);
+  assert.deepEqual(lines(log).sort(), ["A refused", "B refused"]);
 });

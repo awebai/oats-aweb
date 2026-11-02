@@ -9,7 +9,7 @@
 // deployment. The launch hook attaches one home at its start the same way.
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds, pendingImport, resumeImport } from "./attribution.mjs";
 import { parseAwJson } from "./aw-json.mjs";
@@ -148,21 +148,21 @@ function holderOf(file) {
   try { const raw = readFileSync(file, "utf8"); return { raw, pid: Number.parseInt(raw, 10) }; }
   catch (e) { if (e.code === "ENOENT") return null; throw e; }
 }
-/** A gate is held only for the few file operations that change its lock, so
- *  one this old whose holder has ended was left by a process killed inside
- *  it. (Two contenders recovering such a gate at the same instant is the one
- *  case this doesn't exclude.) */
-const GATE_STALE_MS = 10000;
 /** Runs f while holding the lock's gate: `<lock>.gate`, created exclusively.
  *  Every change to the lock happens under it, so a contender acting on what
- *  it saw of the lock can't meet another's change in between. */
+ *  it saw of the lock can't meet another's change in between. A gate is held
+ *  only for those few file operations; one whose holder has ended was left by
+ *  a process killed inside it, and is never removed automatically (without
+ *  an OS lock, recovering it can't exclude a second recoverer): the caller
+ *  refuses, naming the gate, until someone who has checked removes it. */
 function underGate(lockFile, f, onGate) {
   const gate = `${lockFile}.gate`, token = `${process.pid} ${randomUUID()}\n`;
   for (const until = Date.now() + 5000; ;) {
     try { writeFileSync(gate, token, { flag: "wx", mode: 0o600 }); break; }
     catch (e) {
       if (e.code !== "EEXIST") throw e;
-      try { const h = holderOf(gate); if (h && !processAlive(h.pid) && Date.now() - statSync(gate).mtimeMs > GATE_STALE_MS) rmSync(gate, { force: true }); } catch { /* gone meanwhile */ }
+      const h = holderOf(gate);
+      if (h && !processAlive(h.pid)) throw failure("E_ATTACH_FAILED", `the lock gate ${gate} was left by process ${h.pid}, which has ended → check that no attach is running for it, remove ${gate}, then run it again`);
       if (Date.now() > until) throw failure("E_ATTACH_FAILED", `the lock ${lockFile} stayed busy → run it again`);
       sleepMs(25);
     }

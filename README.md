@@ -216,6 +216,11 @@ oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir
     that import (the plan shows it as `attach`, resuming).
   - One apply of an idempotency key runs at a time; its receipt, once
     written, is never replaced.
+  - A home's attach lock, or a key's, left by a killed attach is taken over.
+    Each lock's gate (`<lock>.gate`) is held only for a few file operations.
+    One left by a process killed inside it is never removed automatically:
+    attach refuses, naming it. The setup expert checks that no attach is
+    running for it, then removes it.
 
 **At start.** In mode `human`, a start attaches its own chainless local home
 the same way, once its parent holds a chain.
