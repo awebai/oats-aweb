@@ -3,11 +3,13 @@
 // rule would have chosen. These are the rules, one test per rule; the command
 // and the start-time attach are tested through the hook.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { attachParents, didKeyFromPublicKey, homeKeyIds, issuerSelection } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { attachParents, didKeyFromPublicKey, exchangeChain, homeKeyIds, issuerSelection } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { fakeAwChain, writeIdentity } from "./helpers/fake-aw-chain.mjs";
 
 const pem = (seedHex) => `-----BEGIN ED25519 PRIVATE KEY-----\n${Buffer.from(seedHex, "hex").toString("base64")}\n-----END ED25519 PRIVATE KEY-----\n`;
 function home(t, signingKey) {
@@ -105,4 +107,46 @@ test("a record that loops back on itself still places every home once, the stewa
   assert.deepEqual(order.map((r) => r.instance).sort(), ["p", "q"]);
   assert.equal(order[0].parent, null);
   assert.equal(order[1].parent?.instance, order[0].instance);
+});
+
+// The agent-child exchange, shared by spawn and attach.
+const HUMAN_CERT = { id: "did:aw:human1", kind: "human", parent: { kind: "namespace", id: "awtest-demo.example" } };
+const STEWARD_CERT = { id: "did:aw:steward1", kind: "agent", parent: { kind: "identity", id: "did:aw:human1" } };
+function exchangeFixture(t, env = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "oats-aweb-exchange-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const issuer = join(dir, "steward"), child = join(dir, "child");
+  writeIdentity(issuer, { did: "did:aw:steward1", chain: [HUMAN_CERT, STEWARD_CERT] });
+  writeIdentity(child, { did: "did:key:zchild" });
+  const fake = fakeAwChain(t);
+  const run = (argv, cwd) => execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", env: { PATH: fake.path, ...env }, stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const go = (expectedSubjectKey) => exchangeChain({ issuerHome: issuer, childHome: child, recipient: "child", stateDir: join(child, ".oats-aweb", "attribution"), run, parseJson: (text) => JSON.parse(text), expectedSubjectKey });
+  return { issuer, child, fake, go };
+}
+const steps = (fake) => fake.calls().filter((c) => c.args[0] === "id").map((c) => c.args.slice(1, 3).join(" "));
+
+test("exchange: the issuer approves only a request for the home's own key, then the home installs the chain", (t) => {
+  const fx = exchangeFixture(t);
+  fx.go("did:key:zchild");
+  assert.deepEqual(steps(fx.fake), ["child invite", "parent request", "child receive", "child approve", "parent import"]);
+  assert.equal(existsSync(join(fx.child, ".aw", "id-chain.json")), true);
+});
+
+test("key boundary: a request whose subject_key is not the home's key is refused before the issuer receives it", (t) => {
+  const fx = exchangeFixture(t);
+  assert.throws(() => fx.go("did:key:zsomeoneelse"), (e) => e.code === "E_ATTACH_KEY_MISMATCH" && /not this home's key/.test(e.message));
+  assert.deepEqual(steps(fx.fake), ["child invite", "parent request"]);
+  assert.equal(existsSync(join(fx.child, ".aw", "id-chain.json")), false);
+});
+
+test("exchange: aw's refusal reason is carried as E_ATTACH_PARENT_REFUSED, and nothing is installed", (t) => {
+  const fx = exchangeFixture(t, { FAKE_APPROVE_REFUSE: "parent_revoked" });
+  assert.throws(() => fx.go("did:key:zchild"), (e) => e.code === "E_ATTACH_PARENT_REFUSED" && e.reason === "parent_revoked");
+  assert.equal(existsSync(join(fx.child, ".aw", "id-chain.json")), false);
+});
+
+test("exchange: a resulting chain over aw's limits is refused before the home installs it", (t) => {
+  const fx = exchangeFixture(t, { FAKE_CHAIN_EXTRA: "7" });
+  assert.throws(() => fx.go("did:key:zchild"), (e) => e.code === "E_ATTACH_PARENT_REFUSED" && e.reason === "chain_limit");
+  assert.equal(existsSync(join(fx.child, ".aw", "id-chain.json")), false);
 });

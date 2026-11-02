@@ -76,7 +76,7 @@ import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, check
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
-import { attributionMode, attributionReadiness, attributionRecord, chainLimitProblem, classifyIssuer, issuerSelection, kernelRefusal } from "../lib/attribution.mjs";
+import { attributionMode, attributionReadiness, attributionRecord, classifyIssuer, exchangeChain, issuerSelection, kernelRefusal } from "../lib/attribution.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
@@ -1765,30 +1765,10 @@ function attributionPreflight(root) {
   if (verdict.action === "refuse") fatal(verdict.message);
   return { issuer, verdict };
 }
-/** aw's agent-child exchange (id-certificates §6), between the issuer's home
- *  and this one: the issuer fixes an invitation, this identity exports its
- *  request, the issuer receives and approves it, and this identity imports the
- *  response once the resulting chain is within aw's limits. Each aw runs in its
- *  identity's own directory; no AWEB_IDENTITY_HOME is ever passed. */
+/** The new identity's chain, from its issuer, through aw's agent-child
+ *  exchange (lib/attribution.mjs). */
 function issueChildChain(issuer) {
-  const fail = (m) => { throw new Error(`identity chain issuance failed: ${String(m).slice(0, 300)}`); };
-  const step = (what, f) => { try { return f(); } catch (e) { return fail(`${what}: ${e.message || e}`); } };
-  const dir = join(providerStateDir(), "attribution");
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const requestFile = join(dir, "request.json"), responseFile = join(dir, "response.json");
-  for (const f of [requestFile, responseFile]) rmSync(f, { force: true });
-  const invite = step("aw id child invite", () => parseAwJson(run(["aw", "id", "child", "invite", "--kind", "agent", "--recipient", instance, "--expires", "10m", "--json"], issuer.home), "aw id child invite"));
-  if (typeof invite?.invitation_id !== "string" || typeof invite?.parent?.id !== "string" || typeof invite?.domain !== "string") fail("aw id child invite answered no invitation");
-  step("aw id parent request", () => run(["aw", "id", "parent", "request", "--invitation-id", invite.invitation_id, "--parent", invite.parent.id, "--domain", invite.domain, "--out", requestFile], home));
-  const received = step("aw id child receive", () => parseAwJson(run(["aw", "id", "child", "receive", requestFile, "--json"], issuer.home), "aw id child receive"));
-  if (typeof received?.request_id !== "string") fail("aw id child receive answered no request id");
-  step("aw id child approve", () => run(["aw", "id", "child", "approve", received.request_id, "--out", responseFile], issuer.home));
-  let response;
-  try { response = JSON.parse(readFileSync(responseFile, "utf8")); } catch { fail("the issuer's response is not readable JSON"); }
-  const problem = chainLimitProblem(response?.chain);
-  if (problem) fail(problem);
-  // A chainless requester names its domain again: aw resolves it anew at import.
-  step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--domain", invite.domain, "--json"], home));
+  exchangeChain({ issuerHome: issuer.home, childHome: home, recipient: instance, stateDir: join(providerStateDir(), "attribution"), run, parseJson: parseAwJson });
 }
 // /aw-min
 /** aw's local team invite makes a chained inviter the new identity's ID

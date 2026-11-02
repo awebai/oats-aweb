@@ -7,7 +7,7 @@
 // steward are read from host settings (`human`, `steward`); the bind that
 // records them is the person's own approval and is not part of this package.
 import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { CONTROL_CHARACTER } from "./status-document.mjs";
 
@@ -202,6 +202,58 @@ export function chainLimitProblem(bundle) {
   const bytes = Buffer.byteLength(canonicalJson(bundle), "utf8");
   if (bytes > CHAIN_MAX_BYTES) return `the resulting chain is ${bytes} bytes, over the limit of ${CHAIN_MAX_BYTES} → spawn from an instance nearer the human, or from a shell`;
   return null;
+}
+
+/** The reasons aw and its registry refuse a certificate (id-certificates
+ *  §5–6), found in a failed step's error text. */
+const AW_REFUSALS = ["subject_mismatch", "unregistered_parent", "parent_revoked", "subject_revoked", "domain_mismatch", "identity_kind_immutable", "head_conflict", "issuer_key_not_current", "superseded_certificate", "human_issuer_is_agent", "request_binding_mismatch", "invitation_conflict", "invitation_mode_mismatch", "depth_exceeded", "stale_issuer_key", "unregistered_identity", "revoked"];
+const awRefusal = (text) => AW_REFUSALS.find((r) => new RegExp(`\\b${r}\\b`).test(text)) || null;
+
+/** A failed exchange: `code` is E_ATTACH_KEY_MISMATCH, E_ATTACH_PARENT_REFUSED
+ *  (with aw's `reason`) or E_ATTACH_FAILED. */
+function exchangeError(code, message, reason = null) {
+  return Object.assign(new Error(`identity chain issuance failed: ${String(message).slice(0, 300)}`), { code, reason });
+}
+
+/**
+ * aw's agent-child exchange (id-certificates §6), between the issuer's home
+ * and the child's: the issuer fixes an invitation, the child exports its
+ * request, the issuer receives and approves it, and the child imports the
+ * response once the resulting chain is within aw's limits. Each aw runs in its
+ * identity's own directory. It certifies the child's existing key, so it
+ * serves a fresh spawn and an attach alike.
+ * expectedSubjectKey: when given, the did:key of the child's current key; a
+ * request for any other key is refused before the issuer receives it, so the
+ * issuer approves only the key in the home OATS manages (Athena, oats#1665).
+ * run(argv, cwd): runs one aw step, returning stdout or throwing.
+ */
+export function exchangeChain({ issuerHome, childHome, recipient, stateDir, run, parseJson, expectedSubjectKey }) {
+  const step = (what, f) => {
+    try { return f(); } catch (e) {
+      const text = String(e.message || e), reason = awRefusal(text);
+      throw reason ? exchangeError("E_ATTACH_PARENT_REFUSED", `${what}: ${text}`, reason) : exchangeError("E_ATTACH_FAILED", `${what}: ${text}`);
+    }
+  };
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  const requestFile = join(stateDir, "request.json"), responseFile = join(stateDir, "response.json");
+  for (const f of [requestFile, responseFile]) rmSync(f, { force: true });
+  const invite = step("aw id child invite", () => parseJson(run(["aw", "id", "child", "invite", "--kind", "agent", "--recipient", recipient, "--expires", "10m", "--json"], issuerHome), "aw id child invite"));
+  if (typeof invite?.invitation_id !== "string" || typeof invite?.parent?.id !== "string" || typeof invite?.domain !== "string") throw exchangeError("E_ATTACH_FAILED", "aw id child invite answered no invitation");
+  step("aw id parent request", () => run(["aw", "id", "parent", "request", "--invitation-id", invite.invitation_id, "--parent", invite.parent.id, "--domain", invite.domain, "--out", requestFile], childHome));
+  if (expectedSubjectKey !== undefined) {
+    let subjectKey;
+    try { subjectKey = JSON.parse(readFileSync(requestFile, "utf8"))?.request?.subject_key; } catch { subjectKey = undefined; }
+    if (subjectKey !== expectedSubjectKey) throw exchangeError("E_ATTACH_KEY_MISMATCH", `the request's subject_key (${typeof subjectKey === "string" ? subjectKey : "none"}) is not this home's key (${expectedSubjectKey}), so it was never approved → check the home's .aw: its identity must be the one in its signing key`);
+  }
+  const received = step("aw id child receive", () => parseJson(run(["aw", "id", "child", "receive", requestFile, "--json"], issuerHome), "aw id child receive"));
+  if (typeof received?.request_id !== "string") throw exchangeError("E_ATTACH_FAILED", "aw id child receive answered no request id");
+  step("aw id child approve", () => run(["aw", "id", "child", "approve", received.request_id, "--out", responseFile], issuerHome));
+  let response;
+  try { response = JSON.parse(readFileSync(responseFile, "utf8")); } catch { throw exchangeError("E_ATTACH_FAILED", "the issuer's response is not readable JSON"); }
+  const problem = chainLimitProblem(response?.chain);
+  if (problem) throw exchangeError("E_ATTACH_PARENT_REFUSED", problem, "chain_limit");
+  // A chainless requester names its domain again: aw resolves it anew at import.
+  step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--domain", invite.domain, "--json"], childHome));
 }
 
 /** A human's label: one line, at most 120 bytes, no control characters. */
