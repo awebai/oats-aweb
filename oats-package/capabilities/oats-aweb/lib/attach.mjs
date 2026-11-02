@@ -107,11 +107,11 @@ function noChainParentRefusal(parent) {
  * (parents first), with what attach does to it. `homes` are the facts
  * gathered for each home `oats status` lists: {instance, home, record (its
  * instance.json), grantSeat, copiedIdentity, chainFile, who, whoError, keys, refusal}.
- * `stewardStatus` is `aw who` in the steward's home: {who, whoError}.
+ * `stewardStatus` is the steward's status (stewardFacts): {who, whoError, chainFile}.
  */
 export function buildPlan({ deployment, settings, origins, homes, stewardStatus }) {
   requireBoundHuman(settings, origins);
-  const steward = classifyIssuer({ issuer: { kind: "steward", home: settings.steward.home, id: settings.steward.id }, who: stewardStatus.who, whoError: stewardStatus.whoError, chainFiles: true });
+  const steward = classifyIssuer({ issuer: { kind: "steward", home: settings.steward.home, id: settings.steward.id }, who: stewardStatus.who, whoError: stewardStatus.whoError, chainFiles: stewardStatus.chainFile === true });
   // An unreadable or unavailable status is for now; a steward chain that fails is not.
   const transient = stewardStatus.whoError || stewardStatus.who?.outcome === "unavailable";
   if (steward.action !== "issue") throw failure(transient ? "E_ATTACH_FAILED" : "E_ATTACH_PARENT_REFUSED", steward.message);
@@ -270,6 +270,12 @@ export function whoIn(run, home, timeout) {
   try { return { who: parseAwJson(run(["aw", "who", "--json"], home, timeout), "aw who") }; } catch (e) { return { whoError: String(e.message || e).slice(0, 200) }; }
 }
 
+/** The steward's status, as the plan reads it: `aw who` in its home, and
+ *  whether it holds an installed chain to issue from. */
+export function stewardFacts(run, home, timeout) {
+  return { ...whoIn(run, home, timeout), chainFile: existsSync(join(home, ".aw", "id-chain.json")) };
+}
+
 /** The facts attach needs about one home. */
 export function homeFacts(run, row, timeout) {
   let record = {};
@@ -390,7 +396,7 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
     // read could change it, so the start waits rather than choose another.
     const unread = facts.slice(1).filter((f) => f.whoError || f.who?.outcome === "unavailable").map((f) => f.instance);
     if (unread.length) return later("E_ATTACH_FAILED", `the status of its recorded parents ${unread.join(", ")} could not be read, so its parent can't be chosen yet`);
-    plan = buildPlan({ deployment, settings, origins, homes: facts, stewardStatus: whoIn(run, settings.steward.home) });
+    plan = buildPlan({ deployment, settings, origins, homes: facts, stewardStatus: stewardFacts(run, settings.steward.home) });
     entry = plan.homes.find((h) => h.home === home);
   } catch (e) {
     // A refusal of the whole plan (no steward to issue, the registry
@@ -465,7 +471,7 @@ export async function attachMain(argv, env = process.env) {
     if (!listed.known) throw failure("E_ATTACH_DEPLOYMENT", `the deployment's homes could not be read: ${listed.reason}`);
     const run = awInHome(env);
     const homes = listed.rows.map((row) => homeFacts(run, row));
-    const plan = buildPlan({ deployment, settings, origins, homes, stewardStatus: whoIn(run, settings.steward.home) });
+    const plan = buildPlan({ deployment, settings, origins, homes, stewardStatus: stewardFacts(run, settings.steward.home) });
     if (args.plan) return emit({ ok: true, result: plan }, 0);
     const keysByHome = new Map(homes.map((h) => [h.home, h.keys]));
     const receipt = applyPlan({ plan, planRevision: args.planRevision, idempotencyKey: args.idempotencyKey, receiptsDir, attachOne: (entry) => attachHome({ entry, run, keys: keysByHome.get(entry.home) }) });

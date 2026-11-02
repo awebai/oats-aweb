@@ -11,7 +11,7 @@ import { applyPlan, buildPlan } from "../oats-package/capabilities/oats-aweb/lib
 
 const D = "/d";
 const SETTINGS = { attribution: "human", human: { id: "did:aw:human1", label: "Juan" }, steward: { id: "did:aw:steward1", home: "/d/.aweb-stewards/s" } };
-const STEWARD_OK = { who: { id: "did:aw:steward1", outcome: "nearest_human", human_id: "did:aw:human1", identity_valid: true, kind: "agent", reason: "verified" } };
+const STEWARD_OK = { who: { id: "did:aw:steward1", outcome: "nearest_human", human_id: "did:aw:human1", identity_valid: true, kind: "agent", reason: "verified" }, chainFile: true };
 const home = (instance) => `/d/agents/x/instances/${instance}`;
 const spawnedBy = (instance) => ({ spawnedBy: instance ? { instance, home: home(instance) } : null });
 const legacy = (instance) => ({ id: `did:key:z${instance}`, outcome: "unknown", human_id: null, identity_valid: null, kind: null, reason: "legacy_no_chain" });

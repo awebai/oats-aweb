@@ -7,7 +7,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { applyPlan, attachHome, awInHome, buildPlan, homeFacts, readPendingImport, startAttach, whoIn } from "../oats-package/capabilities/oats-aweb/lib/attach.mjs";
+import { applyPlan, attachHome, awInHome, buildPlan, homeFacts, readPendingImport, startAttach, stewardFacts, whoIn } from "../oats-package/capabilities/oats-aweb/lib/attach.mjs";
 import { homeKeyIds } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { fakeAwChain } from "./helpers/fake-aw-chain.mjs";
 
@@ -65,7 +65,7 @@ test("a did:aw whose registration fails after aw installed its chain is resumed 
   assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), true);
   assert.ok(readPendingImport(g.home));
   const run = awInHome({ PATH: fx.fake.path });
-  const plan = buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "g", home: g.home })], stewardStatus: whoIn(run, fx.steward) });
+  const plan = buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "g", home: g.home })], stewardStatus: stewardFacts(run, fx.steward) });
   assert.deepEqual([plan.homes[0].status, plan.homes[0].resume], ["attach", true]);
   const before = idCalls(fx.fake).length;
   attachHome({ entry: plan.homes[0], run });
@@ -113,7 +113,7 @@ test("a start leaves a did:aw the registry already certifies untouched", (t) => 
 
 // The receipt under concurrent applies of one idempotency key.
 const SETTINGS = { attribution: "human", human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: "/d/.aweb-stewards/s" } };
-const STEWARD_OK = { who: { id: STEWARD, outcome: "nearest_human", human_id: HUMAN, identity_valid: true, kind: "agent", reason: "verified" } };
+const STEWARD_OK = { who: { id: STEWARD, outcome: "nearest_human", human_id: HUMAN, identity_valid: true, kind: "agent", reason: "verified" }, chainFile: true };
 const chainless = (name) => ({ instance: name, home: `/d/agents/x/instances/${name}`, record: { spawnedBy: null }, grantSeat: false, chainFile: false, who: { id: `did:key:z${name}`, outcome: "unknown", reason: "legacy_no_chain" }, keys: { didKey: `did:key:z${name}`, stableId: `did:aw:${name}` }, refusal: null });
 function receipts(t) {
   const dir = mkdtempSync(join(tmpdir(), "oats-aweb-receipts-"));
@@ -216,7 +216,7 @@ test("a grant seat's did:aw child is refused too: the check is on its recorded s
   writeFileSync(join(seat, "instance.json"), JSON.stringify({ instance: "seat", spawnedBy: null, capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "g1" } } } } }));
   const g = fx.instance("g", { spawnedBy: { instance: "seat", home: seat } }, { global: true, who: UNREGISTERED });
   const run = awInHome({ PATH: fx.fake.path });
-  const plan = buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "seat", home: seat }), homeFacts(run, { instance: "g", home: g.home })], stewardStatus: whoIn(run, fx.steward) });
+  const plan = buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "seat", home: seat }), homeFacts(run, { instance: "g", home: g.home })], stewardStatus: stewardFacts(run, fx.steward) });
   const entry = plan.homes.find((h) => h.instance === "g");
   assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
   const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
@@ -242,7 +242,7 @@ const COPIED = (source) => ({ "oats.aweb": { retained: true, source, identity: {
 const VERIFIED = { outcome: "nearest_human", human_id: HUMAN, identity_valid: true, kind: "agent", reason: "verified" };
 const planOf = (fx, homes) => {
   const run = awInHome({ PATH: fx.fake.path });
-  return buildPlan({ deployment: fx.ws, settings: fx.settings, homes: homes.map((h) => homeFacts(run, { instance: h.name, home: h.home })), stewardStatus: whoIn(run, fx.steward) });
+  return buildPlan({ deployment: fx.ws, settings: fx.settings, homes: homes.map((h) => homeFacts(run, { instance: h.name, home: h.home })), stewardStatus: stewardFacts(run, fx.steward) });
 };
 
 test("a retained seat, did:key or unregistered did:aw, is skipped with E_ATTACH_COPIED_IDENTITY, naming its source, and never exchanged", (t) => {
@@ -324,4 +324,18 @@ test("a did:aw child of a retained did:key seat is refused whatever the listing 
   assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.deepEqual(idCalls(fx.fake), []);
   assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), false);
+});
+
+test("a steward the registry certifies but that holds no installed chain can't issue: the plan refuses, and a start only warns", (t) => {
+  const fx = deployment(t);
+  rmSync(join(fx.steward, ".aw", "id-chain.json"));
+  writeFileSync(join(fx.steward, ".aw", "fake-who.json"), JSON.stringify({ id: STEWARD, domain: "", ...VERIFIED }));
+  const a = fx.instance("a", { spawnedBy: null }, {});
+  const run = awInHome({ PATH: fx.fake.path });
+  assert.throws(() => buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "a", home: a.home })], stewardStatus: stewardFacts(run, fx.steward) }),
+    (e) => e.code === "E_ATTACH_PARENT_REFUSED" && /the deployment's steward is certified by the registry but holds no installed chain, so it can't issue → bind the human again/.test(e.message));
+  const r = startAttach({ listHomes: listAll(fx.ws), home: a.home, instance: "a", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(r.attach, undefined, "a plan-wide refusal is never recorded for the home");
+  assert.match(r.note, /holds no installed chain.*the next start tries again/);
+  assert.deepEqual(idCalls(fx.fake), []);
 });

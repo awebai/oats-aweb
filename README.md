@@ -200,7 +200,8 @@ oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir
   parent it takes its nearest `did:aw` ancestor, else the steward. A parent
   issues only from an installed chain, its own or one the same apply installs:
   a child of a parent the registry certifies but that holds no chain is
-  refused for now (`parent_has_no_chain`), naming the respawn.
+  refused for now (`parent_has_no_chain`), naming the respawn. A steward that
+  holds no installed chain refuses the whole plan, naming its fix.
 - **The apply** takes the plan's revision and an idempotency key, as
   `oats instance upgrade` does.
   - A changed deployment refuses with `E_ATTACH_PLAN_STALE`, carrying the fresh
