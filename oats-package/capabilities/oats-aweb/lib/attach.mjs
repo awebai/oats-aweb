@@ -9,7 +9,7 @@
 // deployment. The launch hook attaches one home at its start the same way.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds } from "./attribution.mjs";
 import { parseAwJson } from "./aw-json.mjs";
@@ -182,6 +182,72 @@ export function attachHome({ entry, run, keys, recipient = entry.instance }) {
     if (isLastingRefusal(e.code)) recordAttachRefusal(entry.home, { code: e.code, reason: e.reason ?? null, message: String(e.message || e).slice(0, 300), at: new Date().toISOString() });
     throw e;
   } finally { rmSync(lock, { force: true }); }
+}
+
+/** Starts never wait longer than this for an attach (oats#1665 C3): well
+ *  inside the kernel's 120 s launch-hook budget. */
+export const START_ATTACH_BUDGET_MS = 30000;
+const ATTACH_ACT = "the setup expert runs `oats aweb attribution attach`";
+
+/** An instance home's record, if `home` is one of the deployment's. */
+function instanceRecord(home) {
+  try { return JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch { return null; }
+}
+
+/**
+ * The attach a start makes for its own home (C3, C4): in mode human with a
+ * recorded human and steward, a local home without a chain is attached under
+ * the parent its spawn would have chosen, once that parent holds a chain. A
+ * failure never stops the start: it gives one warning with its reason. A
+ * lasting refusal is recorded and not retried at later starts, only by an
+ * attach apply. Returns null when the start has nothing to do with
+ * attribution (mode none included: no aw call, no file read); otherwise
+ * {attach (the meta's record of a lasting refusal, or undefined), note (the
+ * warning, or null)}.
+ */
+export function startAttach({ home, instance, settings, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS }) {
+  let mode;
+  try { mode = attributionMode(settings); } catch { return null; }
+  if (mode !== "human" || !settings.human?.id || !settings.steward?.id || !settings.steward?.home || !local) return null;
+  if (existsSync(join(home, ".aw", "id-chain.json"))) return { attach: undefined, note: null };
+  const recorded = readAttachRefusal(home);
+  if (recorded) return { attach: { refused: recorded.code, reason: recorded.reason ?? null, at: recorded.at ?? null }, note: `this home is not attached (${recorded.code}): ${recorded.message} (recorded ${recorded.at || "earlier"}; not retried at start) → fix that, then ${ATTACH_ACT}` };
+  // The parent by the spawn's rule, among this home and the instances its
+  // record names in this deployment.
+  const record = instanceRecord(home) || {};
+  const candidates = [];
+  const spawner = record.spawnedBy;
+  if (spawner && typeof spawner.home === "string" && spawner.home.startsWith(join(deployment, "agents") + "/")) {
+    const r = instanceRecord(spawner.home);
+    if (r) candidates.push({ instance: spawner.instance, home: spawner.home, record: r, did: "" });
+  }
+  if (!Object.hasOwn(record, "spawnedBy") && typeof record.parentInstance === "string") {
+    let soulDirs = [];
+    try { soulDirs = readdirSync(join(deployment, "agents")); } catch { soulDirs = []; }
+    for (const soul of soulDirs) {
+      const h = join(deployment, "agents", soul, "instances", record.parentInstance), r = instanceRecord(h);
+      if (r) { candidates.push({ instance: record.parentInstance, home: h, record: r, did: "" }); break; }
+    }
+  }
+  const self = { instance, home, record, did: "" };
+  const parent = attachParents([self, ...candidates]).find((n) => n.home === home).parent;
+  const parentHome = parent ? parent.home : settings.steward.home;
+  if (!existsSync(join(parentHome, ".aw", "id-chain.json"))) return { attach: undefined, note: null };
+  const deadline = Date.now() + budgetMs, base = awInHome(env);
+  const run = (argv, cwd) => {
+    const left = deadline - Date.now();
+    if (left < 1000) throw new Error(`the start's attach budget of ${budgetMs / 1000} s ran out`);
+    return base(argv, cwd, left);
+  };
+  try {
+    attachHome({ entry: { instance, home, parent: parent ? { instance: parent.instance, home: parent.home } : { steward: true, home: parentHome } }, run, keys: homeKeyIds(home) });
+    return { attach: undefined, note: null };
+  } catch (e) {
+    const lasting = isLastingRefusal(e.code), message = String(e.message || e).slice(0, 300);
+    return lasting
+      ? { attach: { refused: e.code, reason: e.reason ?? null, at: new Date().toISOString() }, note: `this home could not be attached at start (${e.code}): ${message}; not retried at start → fix that, then ${ATTACH_ACT}` }
+      : { attach: undefined, note: `this home could not be attached at start (${e.code || "E_ATTACH_FAILED"}): ${message}; the next start tries again, or ${ATTACH_ACT}` };
+  }
 }
 
 function parseArgs(argv) {
