@@ -184,7 +184,7 @@ export function classifyIssuer({ issuer, who, whoError, chainFiles, recordedChai
   const id = String(who.id || "");
   const absent = (id.startsWith("did:key:") && who.reason === "legacy_no_chain") || (id.startsWith("did:aw:") && who.reason === "unregistered_identity");
   if (!absent) return { action: "refuse", message: `the registry does not establish that the spawner has no enrollment (${id}, ${who.reason}) → retry once the identity registry answers, or respawn the spawner` };
-  return { action: "chainless", warning: "the spawner has no identity chain (it predates the human binding), so this child is created without one and reports unknown; respawn the spawner to give its children a chain" };
+  return { action: "chainless", warning: "the spawner has no identity chain (it predates the human binding), so this child is created without one and reports unknown; attach the spawner (the setup expert runs `oats aweb attribution attach`) to give its children a chain" };
 }
 
 /** aw's canonical JSON: keys sorted recursively, no whitespace. */
@@ -293,7 +293,7 @@ function attributionSummary(settings) {
  *  has not opted in (absent or none), so its answer carries no attribution
  *  key; otherwise the summary, and in mode
  *  human the local instances without a chain, whose children are created
- *  chainless until they are respawned. A resident-grant instance is not
+ *  chainless until they are attached. A resident-grant instance is not
  *  counted: it holds no identity key and never issues. */
 export function attributionReadiness({ settings, homes, hasChain, isLocal }) {
   const { mode, human, steward, text } = attributionSummary(settings);
@@ -303,8 +303,8 @@ export function attributionReadiness({ settings, homes, hasChain, isLocal }) {
   if (!homes?.known) return { ...base, message: `${text}; instances without a chain: unknown (${homes?.reason || "no deployment homes"})` };
   const chainless = homes.rows.filter((r) => isLocal(r.home) && !hasChain(r.home));
   const names = chainless.map((r) => (typeof r.instance === "string" ? r.instance : basename(r.home))).join(", ");
-  const count = chainless.length === 1 ? `1 instance has no chain (${names}), so its children are created chainless and report unknown until it is respawned`
-    : chainless.length ? `${chainless.length} instances have no chain (${names}), so their children are created chainless and report unknown until they are respawned`
+  const count = chainless.length === 1 ? `1 instance has no chain (${names}), so its children are created chainless and report unknown until it is attached: \`oats aweb attribution attach\``
+    : chainless.length ? `${chainless.length} instances have no chain (${names}), so their children are created chainless and report unknown until they are attached: \`oats aweb attribution attach\``
     : "every instance has a chain";
   return { ...base, chainlessSpawners: chainless.length, message: `${text}; ${count}` };
 }
@@ -312,7 +312,7 @@ export function attributionReadiness({ settings, homes, hasChain, isLocal }) {
 /** Home readiness: a warning with code `attribution` only when someone has
  *  something to do (readiness warns only about what someone must act on):
  *  mode human with no human bound, or this instance without a chain, whose
- *  children are created chainless until it is respawned. Otherwise null; the
+ *  children are created chainless until it is attached. Otherwise null; the
  *  informational report is `setup --check-only`'s. */
 export function attributionHomeReadiness({ settings, home, hasChain, isLocal }) {
   const { mode, human, steward, text } = attributionSummary(settings);
@@ -320,5 +320,5 @@ export function attributionHomeReadiness({ settings, home, hasChain, isLocal }) 
   if (mode !== "human") return null;
   if (!human || !steward) return { code: "attribution", message: text };
   if (!home || !isLocal(home) || hasChain(home)) return null;
-  return { code: "attribution", message: `${text}; this instance has no chain, so its children are created chainless and report unknown until it is respawned` };
+  return { code: "attribution", message: `${text}; this instance has no chain, so its children are created chainless and report unknown until it is attached: \`oats aweb attribution attach\`` };
 }
