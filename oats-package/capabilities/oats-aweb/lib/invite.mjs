@@ -1,11 +1,12 @@
 // Selected-deployment member invitation. Native/server issuance decides authority;
 // membership and a plan never claim an owner/admin role or permission to mint.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, statSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { selectedDeployment } from './team-roots.mjs';
 import { querySelectedKernel } from './session-readiness.mjs';
+import { yamlScalar } from './binding-wire.mjs';
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -78,6 +79,20 @@ function selectedProblems(problems, label) {
     }
   }
 }
+/** The service the issuing root names (`aweb_url` in its workspace.yaml), for the member to hand on
+ *  beside the token; null when it names none. Credentials never travel with it: userinfo, a query and
+ *  a fragment are stripped, and a URL that isn't http(s) is not handed on. */
+export function rootAwebUrl(root) {
+  let raw;
+  try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
+  if (!raw) return null;
+  let url;
+  try { url = new URL(raw); } catch { return null; }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  if (!url.username && !url.password && !url.search && !url.hash) return raw;
+  url.username = ''; url.password = ''; url.search = ''; url.hash = '';
+  return url.href;
+}
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
   let deployment;
@@ -109,7 +124,7 @@ export function issueInvite(argv, env = process.env) {
   try { membership = JSON.parse(isolatedNative(['team','list','--json'], root, env)); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
   if (!Array.isArray(membership?.memberships)) fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership');
   if (membership.memberships.filter(m => object(m) && m.team_id === team).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
-  const result = { label, team, root, authority: 'native/server decides at issuance' };
+  const result = { label, team, root, awebUrl: rootAwebUrl(root), authority: 'native/server decides at issuance' };
   if (opts.plan) return { ...result, plan: true, command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
   // Fresh native user state prevents an invoking-home BYOT controller key or
   // cached principal from silently replacing selected-root hosted authority.

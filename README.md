@@ -964,7 +964,11 @@ inherited credentials, controller state, external identity home or routing.
 Membership is not an owner/admin claim; the server decides issuance authority.
 
 Success prints the token once (plain stdout), or once at `result.token` inside
-`{schemaVersion:1,ok:true,result}` with `--json`. Capture it privately and pass
+`{schemaVersion:1,ok:true,result}` with `--json`. With `--json`, plan and apply
+also answer `result.awebUrl`: the service the issuing root names (its
+`.aw/workspace.yaml` `aweb_url`, as written, with any userinfo, query or
+fragment stripped), or `null` when it names none, never a guessed default. It
+is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
 only to the intended accepting operator's labelled `setup --invite-stdin`
 procedure in `/oats-aweb` §8, **Invitations and certificate ownership**. Never
 log, echo, put in argv/history, or send it as ordinary mail. Native acceptance

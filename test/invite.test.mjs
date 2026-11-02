@@ -21,6 +21,24 @@ test('with no root declared, invite uses the deployment\'s own root, as setup cr
 test('with no root declared and no .aw in the deployment, invite refuses and names the fix',t=>{
  const f=fixture(t,{settings:{}}),r=f.run(['--json']);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_ROOT');assert.match(e.message,/no team root is set/);assert.equal(f.read().some(c=>c.kind==='aw'),false);
 });
+test('the answer names the issuing root\'s service, as written there, for the member to hand on',t=>{
+ const f=fixture(t);writeFileSync(join(f.root,'.aw','workspace.yaml'),'aweb_url: https://app.aweb.ai\n');
+ for(const args of [['--json'],['--plan','--json']]){const r=f.run(args);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).result.awebUrl,'https://app.aweb.ai');}
+ const d=JSON.parse(f.run(['--json'],{OATS_SETTINGS:JSON.stringify({root:f.root}),AWEB_URL:'https://ambient.invalid'}).stdout).result;assert.equal(d.awebUrl,'https://app.aweb.ai','never the ambient locator');
+});
+test('a root that names no service answers awebUrl null, never a guessed default',t=>{
+ const f=fixture(t);const r=f.run(['--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout).result;assert.ok(Object.hasOwn(d,'awebUrl'));assert.equal(d.awebUrl,null);
+});
+test('awebUrl never carries credentials: userinfo, query and fragment are stripped; a non-http URL is not handed on',t=>{
+ for(const [written,expected] of [
+  ['https://user:secret@app.aweb.ai/','https://app.aweb.ai/'],
+  ['https://app.aweb.ai/?token=aw_sk_SECRET','https://app.aweb.ai/'],
+  ['https://app.aweb.ai/base#aw_sk_SECRET',null], // the root's reader stops at #: nothing is handed on
+  ['http://localhost:8000','http://localhost:8000'],
+  ['ftp://app.aweb.ai',null],
+  ['not a url',null],
+ ]){const f=fixture(t);writeFileSync(join(f.root,'.aw','workspace.yaml'),`aweb_url: ${written}\n`);const r=f.run(['--json']);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).result.awebUrl,expected,written);assert.doesNotMatch(r.stdout,/secret|SECRET/);}
+});
 test('invite plan only reads and makes no permission claim or native issuance',t=>{const f=fixture(t),r=f.run(['--plan','--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout).result;assert.equal(d.plan,true);assert.equal(d.token,undefined);assert.match(d.authority,/decides/);assert.equal(f.read().filter(c=>c.kind==='aw'&&c.args[1]==='invite').length,0);assert.deepEqual(readdirSync(f.root),['.aw']);assert.deepEqual(readdirSync(join(f.root,'.aw')),[]);});
 test('invite rejects positional recipient and malformed options before queries',t=>{for(const args of [['alice'],['--alias','alice'],['--label'],['--json','--json'],['--plan=true']]){const f=fixture(t),r=f.run([...args,'--json']);assert.equal(r.status,1);assert.equal(JSON.parse(r.stdout).error.code,'E_INVITE_ARGUMENT');assert.deepEqual(f.read(),[]);}});
 test('invite validates team/current deployment/membership before issuance',t=>{for(const [options,args,code] of [[{},['--label','unknown'],'E_INVITE_TEAM'],[{query:'wrong'},[],'E_INVITE_TEAM_QUERY'],[{member:'foreign:fixture.aweb.ai'},[],'E_INVITE_MEMBERSHIP']]){const f=fixture(t,options),r=f.run([...args,'--json']);assert.equal(JSON.parse(r.stdout).error.code,code);assert.equal(f.read().some(c=>c.args[1]==='invite'),false);}});

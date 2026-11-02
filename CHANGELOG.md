@@ -9,6 +9,12 @@
   team, invite now uses the deployment's own root. A declared root, even an
   invalid one, is still never replaced.
 
+- **`oats aweb invite --json` names the service to hand on.** `result.awebUrl`
+  is the `aweb_url` the issuing root's workspace.yaml names, so the member
+  hands over the token and the service without digging the URL out. It carries
+  no credentials: any userinfo, query or fragment is stripped. A root that
+  names no service answers `null`.
+
 ## 1.33.0 — 2026-11-02
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged. Cut from `main`;
