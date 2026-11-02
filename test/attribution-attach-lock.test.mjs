@@ -88,3 +88,40 @@ test("concurrent contenders meeting an abandoned gate both refuse: never two hol
   await Promise.all([contender(d, [lock, log, "A", "0", go, "300"]), contender(d, [lock, log, "B", "0", go, "300"])]);
   assert.deepEqual(lines(log).sort(), ["A refused", "B refused"]);
 });
+
+// A gate is created empty and then written with its holder, so a contender can
+// read it in between: an empty or unparseable holder is busy, not ended.
+test("a gate read before its holder is written is waited on, and attach proceeds once it is released", async (t) => {
+  const d = dir(t), lock = join(d, "attach.lock"), gate = `${lock}.gate`;
+  writeFileSync(gate, "");
+  const holder = spawn(process.execPath, ["-e", `
+    const { writeFileSync, rmSync } = require("node:fs");
+    const wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    wait(300); writeFileSync(${JSON.stringify(gate)}, process.pid + " holder\\n"); wait(300); rmSync(${JSON.stringify(gate)});
+  `], { stdio: "ignore" });
+  const exited = new Promise((done) => holder.on("exit", done));
+  const started = Date.now();
+  const release = exclusiveLock(lock, busy);
+  assert.ok(Date.now() - started >= 500, "attach waited for the gate's holder");
+  assert.match(readFileSync(lock, "utf8"), new RegExp(`^${process.pid} `));
+  release();
+  await exited;
+});
+
+for (const [what, content] of [["empty", ""], ["unparseable", "not-a-pid\n"]]) {
+  test(`a gate whose holder stays ${what} for the whole wait refuses, naming the gate and the remedy, never a NaN process`, (t) => {
+    const d = dir(t), lock = join(d, "attach.lock"), gate = `${lock}.gate`;
+    writeFileSync(gate, content);
+    assert.throws(() => exclusiveLock(lock, busy), (e) => e.code === "E_ATTACH_FAILED" && e.message.includes(`${gate} records no holder`) && /no attach is running for it, remove/.test(e.message) && !/NaN/.test(e.message));
+    assert.equal(readFileSync(gate, "utf8"), content, "the gate is left for the person who checks");
+  });
+}
+
+test("an empty lock is a writer that died under the gate: it is taken over", (t) => {
+  const d = dir(t), lock = join(d, "attach.lock");
+  writeFileSync(lock, "");
+  const release = exclusiveLock(lock, busy);
+  assert.match(readFileSync(lock, "utf8"), new RegExp(`^${process.pid} `));
+  release();
+  assert.equal(existsSync(lock), false);
+});

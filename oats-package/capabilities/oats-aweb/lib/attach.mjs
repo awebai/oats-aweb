@@ -154,16 +154,22 @@ function holderOf(file) {
  *  only for those few file operations; one whose holder has ended was left by
  *  a process killed inside it, and is never removed automatically (without
  *  an OS lock, recovering it can't exclude a second recoverer): the caller
- *  refuses, naming the gate, until someone who has checked removes it. */
+ *  refuses, naming the gate, until someone who has checked removes it. A
+ *  gate is created before its holder is written, so an empty or unparseable
+ *  holder is busy and waited on; one that stays so for the whole wait was
+ *  left the same way. */
 function underGate(lockFile, f, onGate) {
   const gate = `${lockFile}.gate`, token = `${process.pid} ${randomUUID()}\n`;
   for (const until = Date.now() + 5000; ;) {
     try { writeFileSync(gate, token, { flag: "wx", mode: 0o600 }); break; }
     catch (e) {
       if (e.code !== "EEXIST") throw e;
-      const h = holderOf(gate);
-      if (h && !processAlive(h.pid)) throw failure("E_ATTACH_FAILED", `the lock gate ${gate} was left by process ${h.pid}, which has ended → check that no attach is running for it, remove ${gate}, then run it again`);
-      if (Date.now() > until) throw failure("E_ATTACH_FAILED", `the lock ${lockFile} stayed busy → run it again`);
+      const h = holderOf(gate), recorded = h && Number.isInteger(h.pid) && h.pid > 0;
+      if (recorded && !processAlive(h.pid)) throw failure("E_ATTACH_FAILED", `the lock gate ${gate} was left by process ${h.pid}, which has ended → check that no attach is running for it, remove ${gate}, then run it again`);
+      if (Date.now() > until) {
+        if (h && !recorded) throw failure("E_ATTACH_FAILED", `the lock gate ${gate} records no holder → check that no attach is running for it, remove ${gate}, then run it again`);
+        throw failure("E_ATTACH_FAILED", `the lock ${lockFile} stayed busy → run it again`);
+      }
       sleepMs(25);
     }
   }
