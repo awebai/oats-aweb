@@ -313,6 +313,10 @@ echo $$ >> '${pids}'
 case "$FAKE_VERSION" in
   slow) printf 'aw 1.36.17\\n  commit: abc\\n'; exec sleep 5 ;;
   chunked) printf 'aw 1.3'; sleep 0.15; printf '6.17\\n'; exec sleep 5 ;;
+  prerelease) printf 'aw 1.36.33'; sleep 0.15; printf -- '-rc.1\\n'; exec sleep 5 ;;
+  inside) printf 'aw 1.36.53-rc'; sleep 0.15; printf '.3 0123abcd\\n'; exec sleep 5 ;;
+  unterminated) printf 'aw 1.36.53-rc.3' ;;
+  notsemver) printf 'aw 1.36.033\\n'; exec sleep 5 ;;
   nomatch) echo 'no version here' ;;
   silent) exec sleep 5 ;;
   *) echo 'aw 1.36.17' ;;
@@ -324,7 +328,10 @@ esac
   spawnSync(join(bin, "aw"), ["version"]);
   const { readAwVersion } = await import(BINDING_WIRE);
   const env = { ...process.env, PATH: `${bin}:/usr/bin:/bin` };
-  for (const [mode, want] of [["slow", "1.36.17"], ["chunked", "1.36.17"], ["nomatch", undefined], ["", "1.36.17"]]) {
+  // A token is read only once it is complete: a line cut before or inside its
+  // pre-release is not taken for the version it starts with.
+  for (const [mode, want] of [["slow", "1.36.17"], ["chunked", "1.36.17"], ["prerelease", "1.36.33-rc.1"], ["inside", "1.36.53-rc.3"],
+    ["unterminated", "1.36.53-rc.3"], ["notsemver", undefined], ["nomatch", undefined], ["", "1.36.17"]]) {
     const started = Date.now();
     const got = await readAwVersion({ env: { ...env, FAKE_VERSION: mode } });
     const took = Date.now() - started;
@@ -336,7 +343,7 @@ esac
   assert.equal(await readAwVersion({ env: { ...env, FAKE_VERSION: "silent" }, timeout: 300 }), undefined);
   assert.ok(Date.now() - started < 2000);
   const recorded = readFileSync(pids, "utf8").trim().split("\n").map(Number);
-  assert.equal(recorded.length, 6);
+  assert.equal(recorded.length, 10);
   for (const pid of recorded) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, `aw version pid ${pid} is gone`);
 });
 

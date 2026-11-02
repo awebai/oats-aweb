@@ -32,16 +32,24 @@ ${body}`;
  *   leaves tmux out; otherwise a fake tmux sits in <base>/tmux-bin, its own
  *   PATH entry, so its directory's place in the unit's PATH shows.
  * registered: homes `aw wake status` lists.
+ * versionSplit: `aw version` writes its line in two pieces, 150 ms apart,
+ *   split this many characters into the version.
  */
-export function fakeWakeHost(t, { awVersion = "1.36.35", daemonVersion = awVersion, daemon = "unit", linger = "yes", oats = true, tmux = true, registered = [] } = {}) {
+export function fakeWakeHost(t, { awVersion = "1.36.35", daemonVersion = awVersion, daemon = "unit", linger = "yes", oats = true, tmux = true, registered = [], versionSplit } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-wake-service-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
-  const state = { base, awVersion, daemonVersion, daemon, linger, registered };
+  const state = { base, awVersion, daemonVersion, daemon, linger, registered, versionSplit };
   const write = (name, body) => { const file = join(bin, name); writeFileSync(file, script(state, body)); chmodSync(file, 0o755); };
   write("aw", `
-if (argv[0] === "version") { process.stdout.write("aw " + state.awVersion + " 0123abcd\\n"); process.exit(0); }
+if (argv[0] === "version") {
+  const line = "aw " + state.awVersion + " 0123abcd\\n", at = state.versionSplit ? 3 + state.versionSplit : line.length;
+  fs.writeSync(1, line.slice(0, at));
+  if (at < line.length) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+  fs.writeSync(1, line.slice(at));
+  process.exit(0);
+}
 if (argv[0] === "wake" && argv[1] === "status") {
   const instances = state.registered.map((home) => ({ home }));
   if (state.daemon === "hand") { process.stdout.write(JSON.stringify({ daemon_running: true, daemon_pid: 999, daemon_version: state.daemonVersion, daemon_version_state: "reported", instances })); process.exit(0); }

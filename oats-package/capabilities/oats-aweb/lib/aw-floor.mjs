@@ -15,9 +15,10 @@ export function stableVersion(value) {
 }
 
 const IDENT = '(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)';
-const VERSION_RE = new RegExp(`^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(${IDENT}(?:\\.${IDENT})*))?$`);
+const VERSION_RE = new RegExp(`^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(${IDENT}(?:\\.${IDENT})*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`);
 /** A semver major.minor.patch with an optional pre-release (`1.36.53-rc.3`), as
- *  `{release, pre}`, or null for anything else (leading zeros, build metadata). */
+ *  `{release, pre}`, or null for anything else (leading zeros). Build metadata
+ *  (`+abc`) is accepted and, as semver says, has no precedence. */
 export function parseVersion(value) {
   const m = typeof value === 'string' ? VERSION_RE.exec(value) : null;
   if (!m) return null;
@@ -32,7 +33,9 @@ export function compareVersions(a, b) {
   for (let i = 0; i < Math.min(a.pre.length, b.pre.length); i++) {
     const x = a.pre[i], y = b.pre[i], xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
     if (x === y) continue;
-    if (xn && yn) return Number(x) - Number(y);
+    // Numeric identifiers have no leading zeros, so the longer is the larger;
+    // comparing as text keeps ids beyond Number.MAX_SAFE_INTEGER exact.
+    if (xn && yn) return x.length !== y.length ? x.length - y.length : x < y ? -1 : 1;
     if (xn !== yn) return xn ? -1 : 1;
     return x < y ? -1 : 1;
   }

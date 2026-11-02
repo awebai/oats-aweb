@@ -31,7 +31,7 @@ test("versionAtLeast compares numerically and only accepts semver", () => {
   assert.equal(versionAtLeast("1.36.100", "1.36.38"), true);
   assert.equal(versionAtLeast("1.36.9", "1.36.38"), false);
   assert.equal(versionAtLeast("1.37.0", "1.36.38"), true);
-  for (const odd of ["01.36.38", "1.36.038", "1.36", "dev", "", undefined, `1.36.${"9".repeat(20)}`, "1.36.38+build.1", "1.36.38-", "1.36.38-rc..1", "1.36.38-01"]) assert.equal(versionAtLeast(odd, "1.36.38"), false, String(odd));
+  for (const odd of ["01.36.38", "1.36.038", "1.36", "dev", "", undefined, `1.36.${"9".repeat(20)}`, "1.36.38+", "1.36.38+a..b", "1.36.38-", "1.36.38-rc..1", "1.36.38-01"]) assert.equal(versionAtLeast(odd, "1.36.38"), false, String(odd));
 });
 
 test("a pre-release meets a floor below its release, and never its own release's floor", () => {
@@ -49,6 +49,14 @@ test("a pre-release meets a floor below its release, and never its own release's
     ["1.36.53-beta", "1.36.53-alpha", true],
     ["1.36.53-1", "1.36.53-alpha", false],
     ["1.36.53", "1.36.53-rc.3", true],
+    // Build metadata has no precedence.
+    ["1.36.38+build.1", "1.36.38", true],
+    ["1.36.38-rc.1+abc", "1.36.38", false],
+    ["1.36.38", "1.36.38+zzz", true],
+    // Numeric ids past Number.MAX_SAFE_INTEGER stay exact.
+    ["1.36.53-rc.9007199254740992", "1.36.53-rc.9007199254740993", false],
+    ["1.36.53-rc.9007199254740993", "1.36.53-rc.9007199254740992", true],
+    ["1.36.53-rc.10000000000000000000", "1.36.53-rc.9999999999999999999", true],
   ]) assert.equal(versionAtLeast(version, floor), meets, `${version} >= ${floor}`);
 });
 

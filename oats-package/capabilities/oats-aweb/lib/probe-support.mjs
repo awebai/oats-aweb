@@ -45,7 +45,7 @@ export function probeAwVersion(bytes) {
   // versionReport() emits text, even with --json. Only the anchored
   // version line grants admission; malformed lines refuse. A pre-release is a version like any other:
   // the floor decides it (aw-floor.mjs).
-  const match = /^aw ([0-9][0-9A-Za-z.-]*)\r?\n(?:  (?:commit:|built:) [^\r\n]*\r?\n)*$/.exec(text);
+  const match = /^aw ([0-9][0-9A-Za-z.+-]*)\r?\n(?:  (?:commit:|built:) [^\r\n]*\r?\n)*$/.exec(text);
   return match && parseVersion(match[1]) ? match[1] : null;
 }
 export function observeProbeMetadata(url, budget, request = httpsRequest) {

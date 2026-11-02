@@ -177,17 +177,23 @@ function workspaceReadinessContext(value) {
 }
 export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export { AW_MIN } from './aw-floor.mjs';
-import { AW_MIN, versionAtLeast } from './aw-floor.mjs';
+import { AW_MIN, parseVersion, versionAtLeast } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
 export const unmappedDefaultMessage=(label)=>`the default team ${label} has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: \`oats teams default <label>\`, or \`defaultTeam:\` in oats-workspace.yaml when the workspace doesn't allow local teams`;
-const AW_VERSION_RE=/aw\s+v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)/;
+// The version token after `aw`: while output streams in, only a token something
+// has followed is complete (`aw 1.36.53` may still grow `-rc.3`); at close the
+// end of the text completes it too.
+const AW_VERSION_STREAM_RE=/aw\s+v?(\d[0-9A-Za-z.+-]*)(?=[^0-9A-Za-z.+-])/;
+const AW_VERSION_RE=/aw\s+v?(\d[0-9A-Za-z.+-]*)(?![0-9A-Za-z.+-])/;
+const versionToken=(re,text) => {const m=re.exec(text);return m && (parseVersion(m[1]) ? m[1] : undefined);};
 /** The installed aw version ("x.y.z", with its pre-release if any), or undefined when it cannot be read.
  *  `aw version` prints its version line first and then makes a blocking update
  *  check against GitHub (aw 1.36.17 cmd/aw/root.go versionCmd, which ignores
- *  AW_NO_UPDATE_CHECK), so the reader resolves at the first stdout match and
- *  kills the child instead of waiting for it. The ceiling still bounds a child
+ *  AW_NO_UPDATE_CHECK), so the reader resolves once the version token is
+ *  complete and kills the child instead of waiting for it. A token that isn't
+ *  semver is unreadable. The ceiling still bounds a child
  *  that never prints; a child that exits without a match is unreadable. The
  *  promise settles only after the child has exited, so no aw is left behind. */
 export function readAwVersion({timeout=10000,env=process.env}={}) {
@@ -201,9 +207,9 @@ export function readAwVersion({timeout=10000,env=process.env}={}) {
     timer=setTimeout(() => decide(undefined),timeout);
     child.on('error',() => {exited=true;decide(undefined);settle(answer);});
     child.on('exit',() => {exited=true;if(decided) settle(answer);});
-    child.on('close',() => decide(AW_VERSION_RE.exec(text)?.[1]));
+    child.on('close',() => decide(versionToken(AW_VERSION_RE,text)||undefined));
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data',(chunk) => {text=(text+chunk).slice(-4096);const m=AW_VERSION_RE.exec(text);if(m) decide(m[1]);});
+    child.stdout.on('data',(chunk) => {text=(text+chunk).slice(-4096);const v=versionToken(AW_VERSION_STREAM_RE,text);if(v!==null) decide(v);});
   });
 }
 const CLASSIC_REFUSAL = 'oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x';
