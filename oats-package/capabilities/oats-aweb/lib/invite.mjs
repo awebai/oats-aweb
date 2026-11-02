@@ -79,19 +79,14 @@ function selectedProblems(problems, label) {
     }
   }
 }
-/** The service the issuing root names (`aweb_url` in its workspace.yaml), for the member to hand on
- *  beside the token; null when it names none. Credentials never travel with it: userinfo, a query and
- *  a fragment are stripped, and a URL that isn't http(s) is not handed on. */
+/** The service the issuing root names (`aweb_url` in its workspace.yaml), as written, for the member to
+ *  hand on beside the token. Only a plain service URL is handed on: http(s), a host, an optional port
+ *  and no path but `/` or `/api`, the shape probe-support.mjs admits. Anything else could carry a
+ *  credential (userinfo, a query, a path segment), so it answers null, as a root that names none does. */
 export function rootAwebUrl(root) {
   let raw;
   try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
-  if (!raw) return null;
-  let url;
-  try { url = new URL(raw); } catch { return null; }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
-  if (!url.username && !url.password && !url.search && !url.hash) return raw;
-  url.username = ''; url.password = ''; url.search = ''; url.hash = '';
-  return url.href;
+  return typeof raw === 'string' && raw.length <= 2048 && /^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(raw) ? raw : null;
 }
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);

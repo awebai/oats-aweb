@@ -966,8 +966,11 @@ Membership is not an owner/admin claim; the server decides issuance authority.
 Success prints the token once (plain stdout), or once at `result.token` inside
 `{schemaVersion:1,ok:true,result}` with `--json`. With `--json`, plan and apply
 also answer `result.awebUrl`: the service the issuing root names (its
-`.aw/workspace.yaml` `aweb_url`, as written, with any userinfo, query or
-fragment stripped), or `null` when it names none, never a guessed default. It
+`.aw/workspace.yaml` `aweb_url`, as written), or `null`, never a guessed
+default. Only a plain service URL is handed on: http(s), a host, an optional
+port and a path of `/` or `/api` at most. A root that names none, or a URL
+that could carry a credential (userinfo, a query, any other path), answers
+`null`. It
 is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
 only to the intended accepting operator's labelled `setup --invite-stdin`
 procedure in `/oats-aweb` §8, **Invitations and certificate ownership**. Never

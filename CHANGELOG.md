@@ -11,9 +11,10 @@
 
 - **`oats aweb invite --json` names the service to hand on.** `result.awebUrl`
   is the `aweb_url` the issuing root's workspace.yaml names, so the member
-  hands over the token and the service without digging the URL out. It carries
-  no credentials: any userinfo, query or fragment is stripped. A root that
-  names no service answers `null`.
+  hands over the token and the service without digging the URL out. Only a
+  plain service URL is handed on (http(s), a host, an optional port, a path of
+  `/` or `/api` at most); anything that could carry a credential answers
+  `null`, as a root that names no service does.
 
 ## 1.33.0 — 2026-11-02
 

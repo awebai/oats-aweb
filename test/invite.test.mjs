@@ -29,15 +29,21 @@ test('the answer names the issuing root\'s service, as written there, for the me
 test('a root that names no service answers awebUrl null, never a guessed default',t=>{
  const f=fixture(t);const r=f.run(['--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout).result;assert.ok(Object.hasOwn(d,'awebUrl'));assert.equal(d.awebUrl,null);
 });
-test('awebUrl never carries credentials: userinfo, query and fragment are stripped; a non-http URL is not handed on',t=>{
+test('awebUrl hands on only a plain service URL: anything that could carry a credential answers null, in plan and apply',t=>{
  for(const [written,expected] of [
-  ['https://user:secret@app.aweb.ai/','https://app.aweb.ai/'],
-  ['https://app.aweb.ai/?token=aw_sk_SECRET','https://app.aweb.ai/'],
-  ['https://app.aweb.ai/base#aw_sk_SECRET',null], // the root's reader stops at #: nothing is handed on
+  ['https://app.aweb.ai','https://app.aweb.ai'],
+  ['https://app.aweb.ai/','https://app.aweb.ai/'],
+  ['https://app.aweb.ai/api','https://app.aweb.ai/api'],
   ['http://localhost:8000','http://localhost:8000'],
+  ['https://user:aw_sk_SECRET@app.aweb.ai/',null],
+  ['https://app.aweb.ai/?token=aw_sk_SECRET',null],
+  ['https://app.aweb.ai/api/aw_sk_SECRET',null],
+  ['https://app.aweb.ai/api/%61w_sk_SECRET',null],
+  ['https://app.aweb.ai/aw_sk_SECRET/../api',null],
+  ['https://app.aweb.ai/base#aw_sk_SECRET',null],
   ['ftp://app.aweb.ai',null],
   ['not a url',null],
- ]){const f=fixture(t);writeFileSync(join(f.root,'.aw','workspace.yaml'),`aweb_url: ${written}\n`);const r=f.run(['--json']);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).result.awebUrl,expected,written);assert.doesNotMatch(r.stdout,/secret|SECRET/);}
+ ])for(const args of [['--json'],['--plan','--json']]){const f=fixture(t);writeFileSync(join(f.root,'.aw','workspace.yaml'),`aweb_url: ${written}\n`);const r=f.run(args);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).result.awebUrl,expected,`${args.join(' ')} ${written}`);assert.doesNotMatch(r.stdout,/SECRET|%61w/);}
 });
 test('invite plan only reads and makes no permission claim or native issuance',t=>{const f=fixture(t),r=f.run(['--plan','--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout).result;assert.equal(d.plan,true);assert.equal(d.token,undefined);assert.match(d.authority,/decides/);assert.equal(f.read().filter(c=>c.kind==='aw'&&c.args[1]==='invite').length,0);assert.deepEqual(readdirSync(f.root),['.aw']);assert.deepEqual(readdirSync(join(f.root,'.aw')),[]);});
 test('invite rejects positional recipient and malformed options before queries',t=>{for(const args of [['alice'],['--alias','alice'],['--label'],['--json','--json'],['--plan=true']]){const f=fixture(t),r=f.run([...args,'--json']);assert.equal(r.status,1);assert.equal(JSON.parse(r.stdout).error.code,'E_INVITE_ARGUMENT');assert.deepEqual(f.read(),[]);}});
