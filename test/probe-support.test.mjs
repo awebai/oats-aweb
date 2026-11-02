@@ -33,9 +33,11 @@ test('workspace reader rejects symlink and directories without fallback', t => {
   mkdirSync(join(f.deployment,'bad'));mkdirSync(join(f.deployment,'bad','workspace.yaml'));
   assert.throws(()=>readWorkspaceService(join(f.deployment,'bad')));
 });
-test('version text is anchored to released output, never JSON or prerelease',()=>{
+test('version text is anchored to the version line, never JSON; a pre-release is read as one, and the floor decides it',()=>{
   assert.equal(probeAwVersion('aw 1.36.28\n'), '1.36.28');
-  for(const s of ['aw 1.36.28','v1.36.28\n','noise\naw 1.36.28\n','aw 1.36.28-dev\n','aw 01.36.28\n','{"version":"1.36.28"}','aw 1.36.28\naw 1.36.29\n']) assert.equal(probeAwVersion(s),null,s);
+  assert.equal(probeAwVersion('aw 1.36.53-rc.3\n'), '1.36.53-rc.3');
+  assert.equal(probeAwVersion('aw 1.36.28-dev\n'), '1.36.28-dev');
+  for(const s of ['aw 1.36.28','v1.36.28\n','noise\naw 1.36.28\n','aw 01.36.28\n','aw 1.36.28-\n','{"version":"1.36.28"}','aw 1.36.28\naw 1.36.29\n']) assert.equal(probeAwVersion(s),null,s);
 });
 test('executable selection ignores relative/empty PATH entries and pins real path',t=>{
   const f=configured(t);assert.equal(resolveProbeAw(`.:relative::${f.deployment}`),f.binary);

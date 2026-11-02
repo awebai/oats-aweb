@@ -22,6 +22,16 @@
   (output withheld)". It now names the alias conflict and the remedy, as it
   already did for a retired alias, and still withholds aw's output.
 
+- **A pre-release aw above a floor now passes.** Every aw and kernel version
+  gate in the provider compares by semver precedence: a pre-release is below
+  its own release and above every lower one, so aw 1.36.53-rc.3 meets 1.36.38
+  and 1.36.38-rc.1 still doesn't. Until now any pre-release was refused, which
+  kept `oats aweb health publish` and the probe off the aw release candidates.
+- **`oats aweb wake install` accepts a daemon running a pre-release aw.** It read
+  the installed aw without its pre-release and compared that with the daemon's
+  full version, so a running 1.36.53-rc.3 daemon failed with
+  `E_WAKE_NOT_RUNNING`.
+
 ## 1.33.0 — 2026-11-02
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged. Cut from `main`;

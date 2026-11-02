@@ -26,8 +26,9 @@ This page is the operator's reference.
 | pi extension (`@awebai/pi`) | 0.3.15 or later | proving a pi channel home receives |
 
 - **aw** is checked. While publishing is on, `enable`, `status` and every tick
-  compare `aw version` with 1.36.38. An older aw, or a pre-release such as
-  1.36.38-rc.1, is refused, and nothing is sent: `aw 1.36.37 has no status
+  compare `aw version` with 1.36.38 by semver precedence. An older aw, or a
+  pre-release of 1.36.38 itself such as 1.36.38-rc.1, is refused, and nothing
+  is sent (a pre-release of a later release, such as 1.36.53-rc.3, passes): `aw 1.36.37 has no status
   publish; needs aw >= 1.36.38 (aweb-acah.3.1)`. The provider's own aw floor
   stays 1.36.33, so a deployment that does not publish needs nothing newer.
 - **The server** is not checked. An older server refuses the requests, and the

@@ -340,6 +340,19 @@ test("verify: a daemon that never reports running, or runs another version, fail
   }
 });
 
+test("verify: a pre-release aw is the version its daemon must run, in full; another pre-release of the same release is not", async (t) => {
+  for (const platform of PLATFORMS) {
+    const host = fakeWakeHost(t, { awVersion: "1.36.53-rc.3" });
+    const ok = await wake(host, platform, ["install", "--json"]);
+    assert.equal(ok.code, 0, JSON.stringify(ok.json));
+    assert.equal(ok.json.daemon.version, "1.36.53-rc.3");
+    assert.equal((await wake(host, platform, ["status", "--json"])).json.daemon.floor.ok, true, "a pre-release above the floor meets it");
+    const other = await wake(fakeWakeHost(t, { awVersion: "1.36.53-rc.3", daemonVersion: "1.36.53-rc.2" }), platform, ["install", "--json"]);
+    assert.equal(other.json.error.code, "E_WAKE_NOT_RUNNING");
+    assert.match(other.json.error.message, /running aw 1\.36\.53-rc\.3 \(running: true, version: 1\.36\.53-rc\.2/);
+  }
+});
+
 test("--plan changes nothing: it prints the unit, the actions and any refusal", async (t) => {
   for (const platform of PLATFORMS) {
     const host = fakeWakeHost(t);

@@ -177,13 +177,13 @@ function workspaceReadinessContext(value) {
 }
 export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 export { AW_MIN } from './aw-floor.mjs';
-import { AW_MIN } from './aw-floor.mjs';
+import { AW_MIN, versionAtLeast } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
 export const unmappedDefaultMessage=(label)=>`the default team ${label} has no provider id yet: its owner runs oats aweb setup, then commits the id, or choose another default: \`oats teams default <label>\`, or \`defaultTeam:\` in oats-workspace.yaml when the workspace doesn't allow local teams`;
-const AW_VERSION_RE=/aw\s+v?(\d+\.\d+\.\d+)/;
-/** The installed aw version ("x.y.z"), or undefined when it cannot be read.
+const AW_VERSION_RE=/aw\s+v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)/;
+/** The installed aw version ("x.y.z", with its pre-release if any), or undefined when it cannot be read.
  *  `aw version` prints its version line first and then makes a blocking update
  *  check against GitHub (aw 1.36.17 cmd/aw/root.go versionCmd, which ignores
  *  AW_NO_UPDATE_CHECK), so the reader resolves at the first stdout match and
@@ -275,7 +275,6 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} ${childOutcome(e,timeout)}`);}
 }
-function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
 /** The first executable `cmd` on env's PATH, as an absolute path, or undefined. */
 export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const p=resolve(join(dir,cmd));const st=statSync(p);if(st.isFile()&&(st.mode&0o111))return p;}catch{}}return undefined;}
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
@@ -283,7 +282,7 @@ async function awFloorObservation({env=process.env}={}) {
   if(!onPath('aw',env)) return {message:`aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
   const version=await readAwVersion({env});
   if(!version) return {message:`aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
-  return {version,message:semverLt(version,AW_MIN)?`aw ${version} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined};
+  return {version,message:!versionAtLeast(version,AW_MIN)?`aw ${version} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined};
 }
 /** Why the aw on PATH does not meet AW_MIN, or undefined when it does: the one
  *  wording every path that refuses below the floor uses. `env` is the PATH to
