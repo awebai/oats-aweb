@@ -105,6 +105,12 @@ if (args[0] === "id" && args[1] === "parent" && args[2] === "import") {
 }
 if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: false, daemon_version_state: "not_running", instances: [] }); process.exit(0); }
 if (args[0] === "wake") { process.exit(0); }
+// A retained seat's spawn: it connects the copied identity and checks that the
+// seat acts as the identity its identity.yaml names.
+if ((args[0] === "workspace" && args[1] === "connect") || args[0] === "check" || args[0] === "heartbeat") process.exit(0);
+const yamlField = (k) => ((fs.existsSync(path.join(aw, "identity.yaml")) ? fs.readFileSync(path.join(aw, "identity.yaml"), "utf8") : "").match(new RegExp("^" + k + ": *(.+)$", "m")) || [])[1];
+if (args[0] === "workspace" && args[1] === "status") { emit({ workspace: { workspace_path: process.cwd(), alias: yamlField("alias") } }); process.exit(0); }
+if (args[0] === "whoami") { emit({ did: yamlField("did"), address: yamlField("address") }); process.exit(0); }
 console.error("fake aw (chain): unexpected aw " + args.join(" ")); process.exit(3);
 `);
   chmodSync(join(bin, "aw"), 0o755);

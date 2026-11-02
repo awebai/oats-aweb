@@ -296,3 +296,25 @@ test("home readiness refuses a malformed attribution setting as configuration, n
   const answer = JSON.parse(r.stdout.trim().split("\n").pop());
   assert.equal(answer.error?.code, "needs-configuration", r.stdout);
 });
+
+test("a retained seat copies an existing identity, so in mode human it is issued no chain, from a person or a chained spawner", (t) => {
+  for (const spawnedBy of ["person", "spawner"]) {
+    const fx = fixture(t);
+    const lead = spawnedBy === "spawner" ? spawner(fx) : null;
+    const source = join(fx.ws, "legacy", ".aw");
+    writeIdentity(join(fx.ws, "legacy"), { did: "did:key:zretained" });
+    writeFileSync(join(source, "identity.yaml"), "alias: retained\ndid: did:key:zretained\naddress: example.test/retained\n");
+    writeFileSync(join(source, "teams.yaml"), "active_team: legacy:example.test\n");
+    writeFileSync(join(source, "workspace.yaml"), "alias: retained\naweb_url: https://app.aweb.ai/api\n");
+    const fake = fakeAwChain(t);
+    const settings = { ...JSON.parse(fx.env.OATS_SETTINGS), identity: { mode: "local", source } };
+    const { status, doc } = spawn(fx, fake, { OATS_SETTINGS: JSON.stringify(settings), ...(lead ? { OATS_SPAWNER_HOME: lead } : {}) });
+    assert.equal(status, 0, `${spawnedBy}: ${JSON.stringify(doc)}`);
+    assert.equal(doc.meta.retained, true);
+    assert.deepEqual(chainCalls(fake), [], `${spawnedBy}: no exchange certifies the copied key`);
+    assert.equal(doc.meta.chainInstalled, false);
+    assert.equal(doc.meta.identity.attribution.mode, "unknown");
+    assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), false);
+    assert.match(doc.warning, /reuses an existing identity, so it is issued no chain/);
+  }
+});
