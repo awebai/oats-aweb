@@ -92,3 +92,12 @@ test("the start's attach is bounded: a slow aw ends it within the budget, with a
   assert.equal(readAttachRefusal(fx.home), null);
   assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), false);
 });
+
+test("an exhausted budget never runs aw without a timeout (Node reads a timeout of 0 as none)", (t) => {
+  const fx = fixture(t);
+  const began = Date.now();
+  const r = fx.start({ budgetMs: 0, env: { FAKE_SLOW_INVITE: "3" } });
+  assert.ok(Date.now() - began < 1500, `took ${Date.now() - began} ms`);
+  assert.match(r.note, /budget of 0 s ran out/);
+  assert.deepEqual(idCalls(fx.fake), []);
+});
