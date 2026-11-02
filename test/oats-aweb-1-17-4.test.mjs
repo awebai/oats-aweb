@@ -252,6 +252,15 @@ test("mint output that is not JSON is withheld and still compensated", (t) => {
   assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK/);
 });
 
+test("an alias another machine's self-custodial instance holds (aw 1.36.51's registry 403) names the conflict and the remedy, with no output leak", (t) => {
+  const fx = fixture(t);
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_SELF_CUSTODY: "1" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.meta, undefined);
+  assert.match(r.doc.warning, /alias "dev-1" already holds a certificate on default:example\.test \(another machine's instance of that name.*--name .*--purpose/);
+  assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK|holds its own key/);
+});
+
 test("an alias that still holds a certificate names the remedy, with no meta and no output leak", (t) => {
   const fx = fixture(t);
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_CONFLICT: "1" });
@@ -304,6 +313,10 @@ echo $$ >> '${pids}'
 case "$FAKE_VERSION" in
   slow) printf 'aw 1.36.17\\n  commit: abc\\n'; exec sleep 5 ;;
   chunked) printf 'aw 1.3'; sleep 0.15; printf '6.17\\n'; exec sleep 5 ;;
+  prerelease) printf 'aw 1.36.33'; sleep 0.15; printf -- '-rc.1\\n'; exec sleep 5 ;;
+  inside) printf 'aw 1.36.53-rc'; sleep 0.15; printf '.3 0123abcd\\n'; exec sleep 5 ;;
+  unterminated) printf 'aw 1.36.53-rc.3' ;;
+  notsemver) printf 'aw 1.36.033\\n'; exec sleep 5 ;;
   nomatch) echo 'no version here' ;;
   silent) exec sleep 5 ;;
   *) echo 'aw 1.36.17' ;;
@@ -315,7 +328,10 @@ esac
   spawnSync(join(bin, "aw"), ["version"]);
   const { readAwVersion } = await import(BINDING_WIRE);
   const env = { ...process.env, PATH: `${bin}:/usr/bin:/bin` };
-  for (const [mode, want] of [["slow", "1.36.17"], ["chunked", "1.36.17"], ["nomatch", undefined], ["", "1.36.17"]]) {
+  // A token is read only once it is complete: a line cut before or inside its
+  // pre-release is not taken for the version it starts with.
+  for (const [mode, want] of [["slow", "1.36.17"], ["chunked", "1.36.17"], ["prerelease", "1.36.33-rc.1"], ["inside", "1.36.53-rc.3"],
+    ["unterminated", "1.36.53-rc.3"], ["notsemver", undefined], ["nomatch", undefined], ["", "1.36.17"]]) {
     const started = Date.now();
     const got = await readAwVersion({ env: { ...env, FAKE_VERSION: mode } });
     const took = Date.now() - started;
@@ -327,7 +343,7 @@ esac
   assert.equal(await readAwVersion({ env: { ...env, FAKE_VERSION: "silent" }, timeout: 300 }), undefined);
   assert.ok(Date.now() - started < 2000);
   const recorded = readFileSync(pids, "utf8").trim().split("\n").map(Number);
-  assert.equal(recorded.length, 6);
+  assert.equal(recorded.length, 10);
   for (const pid of recorded) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, `aw version pid ${pid} is gone`);
 });
 

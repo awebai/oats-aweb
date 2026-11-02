@@ -956,13 +956,22 @@ GLOBAL invitation or local-controller/BYOT issuance.
 
 `--plan` only reads team/root/membership and states what would be requested; it
 neither mints nor proves permission. Apply uses `roots[T]`, or `root` only when
-that override is absent; invalid explicit roots refuse. Native invocation uses
+that override is absent; invalid explicit roots refuse. With neither set, it
+uses the deployment's own root, the one `oats aweb setup` creates and spawn
+reads, and refuses if the deployment has no `.aw`. Native invocation uses
 the selected root as cwd, explicit team ID, isolated disposable HOME and no
 inherited credentials, controller state, external identity home or routing.
 Membership is not an owner/admin claim; the server decides issuance authority.
 
 Success prints the token once (plain stdout), or once at `result.token` inside
-`{schemaVersion:1,ok:true,result}` with `--json`. Capture it privately and pass
+`{schemaVersion:1,ok:true,result}` with `--json`. With `--json`, plan and apply
+also answer `result.awebUrl`: the service the issuing root names (its
+`.aw/workspace.yaml` `aweb_url`, as written), or `null`, never a guessed
+default. Only a plain service URL is handed on: http(s), a host, an optional
+port and a path of `/` or `/api` at most. A root that names none, or a URL
+that could carry a credential (userinfo, a query, any other path), answers
+`null`. It
+is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
 only to the intended accepting operator's labelled `setup --invite-stdin`
 procedure in `/oats-aweb` §8, **Invitations and certificate ownership**. Never
 log, echo, put in argv/history, or send it as ordinary mail. Native acceptance

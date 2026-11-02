@@ -9,6 +9,7 @@
 // Refusals, selected by env:
 //   FAKE_JOIN_FROM_NOT_MEMBER  the root cannot mint an invite for the team
 //   FAKE_JOIN_FROM_CONFLICT    the alias still holds an active certificate
+//   FAKE_JOIN_FROM_SELF_CUSTODY  the alias belongs to another self-custodial agent (aw 1.36.51, as captured on a VM)
 //   FAKE_JOIN_FROM_LATE        the home is written, then the command fails
 //   FAKE_JOIN_FROM_GARBAGE     exit 0 with output that is not JSON
 //   FAKE_JOIN_FROM_HANG        the home is written, then the command hangs
@@ -28,6 +29,7 @@ export function joinFromFake(args) {
     console.error("Error: create invite for " + team + " from " + root + ": 403 forbidden: not a member of the team; alternatively use --admission-team-id " + team + " with host authorization");
     process.exit(1);
   }
+  if (process.env.FAKE_JOIN_FROM_SELF_CUSTODY) { console.error('accept hosted team invite: registry http 403: {"detail":{"code":"self_custody_reinit_unproven","message":"This alias belongs to an agent that holds its own key, and this request does not prove it holds that key. Use a new alias, or ask the team owner to remove the existing agent if a first init left it half-made. TOKEN-SHOULD-NOT-LEAK"}}'); process.exit(1); }
   if (process.env.FAKE_JOIN_FROM_CONFLICT) { console.error("Error: accept invite: 409 conflict: alias " + alias + " already has an active certificate (invite TOKEN-SHOULD-NOT-LEAK)"); process.exit(1); }
   const workspaceId = crypto.randomUUID(), service = "https://app.aweb.ai/api";
   const certPath = "team-certs/" + team.replace(/:/g, "__") + ".pem";

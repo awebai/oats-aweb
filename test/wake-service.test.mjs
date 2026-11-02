@@ -340,6 +340,36 @@ test("verify: a daemon that never reports running, or runs another version, fail
   }
 });
 
+test("verify: a pre-release aw is the version its daemon must run, in full; another pre-release of the same release is not", async (t) => {
+  for (const platform of PLATFORMS) {
+    const host = fakeWakeHost(t, { awVersion: "1.36.53-rc.3" });
+    const ok = await wake(host, platform, ["install", "--json"]);
+    assert.equal(ok.code, 0, JSON.stringify(ok.json));
+    assert.equal(ok.json.daemon.version, "1.36.53-rc.3");
+    assert.equal((await wake(host, platform, ["status", "--json"])).json.daemon.floor.ok, true, "a pre-release above the floor meets it");
+    const other = await wake(fakeWakeHost(t, { awVersion: "1.36.53-rc.3", daemonVersion: "1.36.53-rc.2" }), platform, ["install", "--json"]);
+    assert.equal(other.json.error.code, "E_WAKE_NOT_RUNNING");
+    assert.match(other.json.error.message, /running aw 1\.36\.53-rc\.3 \(running: true, version: 1\.36\.53-rc\.2/);
+  }
+});
+
+test("verify: a version line that arrives in pieces is read whole", async (t) => {
+  const platform = "linux";
+  // Split before the pre-release and inside it: the daemon must still match in full.
+  for (const versionSplit of ["1.36.53".length, "1.36.53-rc".length]) {
+    const host = fakeWakeHost(t, { awVersion: "1.36.53-rc.3", versionSplit });
+    const ok = await wake(host, platform, ["install", "--json"]);
+    assert.equal(ok.code, 0, JSON.stringify(ok.json));
+    assert.equal(ok.json.daemon.version, "1.36.53-rc.3");
+  }
+  // The floor's own pre-release is below it, however the line is cut.
+  const below = fakeWakeHost(t, { awVersion: `${AW_MIN}-rc.1`, versionSplit: AW_MIN.length });
+  const f = await wake(below, platform, ["install", "--json"]);
+  assert.equal(f.json.error.code, "E_AW_FLOOR");
+  assert.match(f.json.error.message, new RegExp(`^aw ${AW_MIN.replaceAll(".", "\\.")}-rc\\.1 is older than required`));
+  assert.deepEqual(below.changes(), []);
+});
+
 test("--plan changes nothing: it prints the unit, the actions and any refusal", async (t) => {
   for (const platform of PLATFORMS) {
     const host = fakeWakeHost(t);
