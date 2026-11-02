@@ -31,9 +31,10 @@ floor; no new native flag or fixed version is assumed here.
 The executable is resolved once from absolute PATH entries, observed through
 `aw version` with update checks disabled, and reused by absolute real path.
 The anchored `aw X.Y.Z` text line (a semver pre-release such as `-rc.3`
-included) identifies the version; malformed, missing or below-floor versions
+and build metadata included) identifies the version; malformed, missing or below-floor versions
 refuse. Floors compare by semver precedence, so a pre-release meets a floor
-below its release and not its own release's floor. Changes to that file's
+below its release and not its own release's floor; build metadata has no
+precedence. Changes to that file's
 identity/size/timestamps invalidate qualification.
 
 Both explicit identity homes must contain native-format `workspace.yaml`
