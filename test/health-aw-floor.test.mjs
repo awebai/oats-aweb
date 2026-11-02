@@ -6,10 +6,10 @@
 // prints a version and answers the commands it is given.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
+import { AW_MIN, AW_TESTED, awebCloudService, awNewerThanTestedMessage, versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 import { AW_STATUS_MIN, healthHost } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
 
 /** An aw whose `version` prints `versionText`; `statusHost` says whether it
@@ -83,4 +83,27 @@ test("the refusals hold none of the words that make the scheduler hold the job",
 test("designations can be cleared by any aw that has status-host clear, below the floor too", async (t) => {
   assert.deepEqual(await hostWithAw(t, "aw 1.36.37\n").awClearsDesignations(), { ok: true });
   assert.deepEqual(await hostWithAw(t, "aw 1.36.30\n", { statusHost: false }).awClearsDesignations(), { ok: false, message: "aw 1.36.30 has no status-host clear; upgrade aw to 1.36.38 or later and run `oats aweb health disable` again" });
+});
+
+test("the Cloud is an exact origin: scheme, host and port, no suffix match", () => {
+  for (const url of ["https://app.aweb.ai", "https://app.aweb.ai/api", "https://app.aweb.ai:443/api", "https://APP.aweb.ai/api"]) assert.equal(awebCloudService(url), true, url);
+  for (const url of ["http://app.aweb.ai/api", "https://app.aweb.ai:8443/api", "https://app.aweb.ai.example.test/api", "https://eu.app.aweb.ai/api", "https://aweb.ai/api", "not a url", "", undefined]) assert.equal(awebCloudService(url), false, String(url));
+});
+
+test("aw newer than tested warns only above AW_TESTED, and only off the Cloud", () => {
+  const self = "https://aweb.example.test/api";
+  for (const v of ["1.36.52", "1.36.52-rc.3", "1.37.0", "2.0.0-alpha"]) assert.match(awNewerThanTestedMessage(v, self) || "", new RegExp(`^aw ${v.replaceAll(".", "\\.")} is newer than the aw this oats\\.aweb is tested with \\(${AW_TESTED.replaceAll(".", "\\.")}\\)`), v);
+  for (const v of [AW_TESTED, `${AW_TESTED}+build.1`, `${AW_TESTED}-rc.1`, "1.36.33", "dev", undefined]) assert.equal(awNewerThanTestedMessage(v, self), undefined, String(v));
+  assert.equal(awNewerThanTestedMessage("1.36.53", "https://app.aweb.ai/api"), undefined, "the Cloud is covered by aw's release order");
+  assert.equal(awNewerThanTestedMessage("1.36.53", null), undefined, "no service named is aw's default, the Cloud");
+});
+
+test("the CI journey matrix spans exactly AW_MIN to AW_TESTED, so the tested range is what CI proves", () => {
+  const ci = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const m = /^\s*aw:\s*\[([^\]]*)\]/m.exec(ci);
+  assert.ok(m, "ci.yml names the aw versions its journeys run");
+  const versions = m[1].split(",").map((v) => v.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean);
+  const sorted = [...versions].sort((a, b) => (versionAtLeast(a, b) ? (versionAtLeast(b, a) ? 0 : 1) : -1));
+  assert.equal(sorted[0], AW_MIN, "the matrix's lowest aw is the floor");
+  assert.equal(sorted.at(-1), AW_TESTED, "AW_TESTED moves only once that aw is in the matrix");
 });

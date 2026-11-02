@@ -64,7 +64,8 @@ import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
-import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
+import { AW_TESTED } from "../lib/aw-floor.mjs";
+import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { mintedExpiryProblem } from "../lib/grant-expiry.mjs";
@@ -98,6 +99,16 @@ const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
  *  `aweb: http <status> (<headers>): <body>`; only a string `detail` of a JSON
  *  body is taken, never the headers or any other text. */
 const TOKEN_SHAPED_RE = /[A-Za-z0-9_\-.~+/=]{20,}/g;
+/** The refusal codes read from aw's --json error envelope
+ *  (`{"error":{"code":...}}`, aw 1.36.52-rc.3 and later). A code is a fixed
+ *  word, so naming it leaks nothing; anything else is never read. */
+const AW_ERROR_CODES = new Set(["unknown_or_invalid"]);
+function awErrorCode(stdout) {
+  try {
+    const code = leadingJsonObject(String(stdout ?? "").trim())?.error?.code;
+    return AW_ERROR_CODES.has(code) ? code : undefined;
+  } catch { return undefined; }
+}
 function failureClass(e) {
   const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
   const http = /\bhttp (\d{3})\b/.exec(text);
@@ -143,6 +154,7 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, fai
     // credential-handling command reaching a log.
     // self_custody_reinit_unproven: AWID's refusal when another agent that holds its own key has the alias.
     err.aliasConflict = /already|exists|conflict|422|active certificate|self_custody_reinit_unproven/i.test(String(e.stderr ?? "") + String(e.stdout ?? ""));
+    err.awErrorCode = awErrorCode(e.stdout);
     throw err;
   }
 };
@@ -462,8 +474,12 @@ if (!onPath("aw") && !setupHandlesAw) {
   if (event === "spawn") fatal(`aw CLI not on PATH, so no identity could be minted and this instance would have no messaging — ${AW_INSTALL}`);
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
+// The aw version spawn read for the floor, reused for the tested-range warning.
+let spawnAwVersion;
 if ((isCommand && !setupHandlesAw) || event === "spawn") {
-  const floorProblem = await awFloorMessage();
+  const floor = await awFloorObservation();
+  const floorProblem = floor.message;
+  spawnAwVersion = floor.version;
   if (floorProblem) {
     if (isCommand) { console.error(`oats aweb ${event}: ${floorProblem}`); process.exit(1); }
     fatal(`${floorProblem}, so no identity could be minted and this instance would not meet the messaging contract`);
@@ -1750,6 +1766,11 @@ if (event === "launch") {
   // The kernel runs the spawn hook before the home records its launch, and
   // gives hooks no resolved config dir, so a spawn cannot find the cache.
   if (deliveryFor().launch) outNotes.push(channelCacheNote(undefined, "a spawn does not know its launch's Claude config dir"));
+  // Before any spawn mode's dispatch, and carried on whatever this hook
+  // answers, so a failed mint comes with it.
+  const joinTeams = (() => { try { const labels = requestedJoinLabels(); return eligibleTeams().filter((t) => labels.includes(t.label)).map((t) => t.team); } catch { return []; } })();
+  const untested = awTestedWarning(settings, spawnAwVersion, { joinTeams });
+  if (untested) outNotes.push(`aw-newer-than-tested — ${untested}`);
   if (identityMode === "global" && identitySettings.source) fatal('identity.mode "global" cannot be combined with identity.source; use identity.mode "local" with identity.source for a retained seat, or identity.mode "global" with identity.resident for a resident grant');
   if (identityMode === "global" && requestedJoinLabels().length) fatal('settings.oats.aweb.join is supported only with local per-team identities; identity.mode "global" is explicit resident-grant mode');
   if (identityMode === "global") globalGrantSpawn();
@@ -1793,6 +1814,12 @@ if (event === "launch") {
       // on another machine, or a retired one, whose certificate stays until
       // aweb-abim ships. Say that, and the remedy, instead of relaying a bare
       // join error.
+      // aw's --json error envelope names the refusal by a fixed code; only
+      // codes on AW_ERROR_CODES are read, and never its message.
+      if (e.awErrorCode === "unknown_or_invalid") {
+        // The fixed diagnosis first: fatal keeps 300 characters, and a team id can be long.
+        fatal(`aw refused the invite it made (unknown_or_invalid), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`) if no deployment on this host needs a newer one. Team: ${team}`);
+      }
       if (e.aliasConflict) {
         fatal(`alias "${instance}" already holds a certificate on ${team} (another machine's instance of that name, or a retired one until aweb-abim ships), so no identity could be minted — ${ALIAS_REUSE_REMEDY}`);
       }
