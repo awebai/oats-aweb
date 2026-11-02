@@ -4,10 +4,12 @@
 //   <!-- aw-min 1.36.53 -->  …  <!-- /aw-min -->     (Markdown)
 //   // aw-min 1.36.53        …  // /aw-min           (JavaScript)
 //
-// Text outside every marker is always checked. A marker that is unclosed,
-// nested, unopened or has no version refuses, so a typo can't widen a gate.
-const OPEN = /(?:<!--|\/\/)\s*aw-min(?:\s+(\S+?))?\s*(?:-->)?\s*$/;
-const CLOSE = /(?:<!--|\/\/)\s*\/aw-min\s*(?:-->)?\s*$/;
+// Text outside every marker is always checked. A marker stands alone on its
+// line; one that is inline, unclosed, nested, unopened or has no version
+// refuses, so a typo can't widen a gate or drop the text beside it.
+const OPEN = /^\s*(?:<!--|\/\/)\s*aw-min(?:\s+(\S+?))?\s*(?:-->)?\s*$/;
+const CLOSE = /^\s*(?:<!--|\/\/)\s*\/aw-min\s*(?:-->)?\s*$/;
+const ANY_MARKER = /(?:<!--|\/\/)\s*\/?aw-min\b/;
 
 /** {ungated, gated: [{min, text}]}: `ungated` is the text outside every
  *  marked section, each `gated` entry one section's text and its version. */
@@ -15,6 +17,7 @@ export function splitByAwMin(text) {
   const ungated = [], gated = [];
   let open = null;
   for (const [i, line] of text.split("\n").entries()) {
+    if (ANY_MARKER.test(line) && !OPEN.test(line) && !CLOSE.test(line)) throw new Error(`line ${i + 1}: an aw-min marker must stand alone on its line`);
     if (CLOSE.test(line)) {
       if (!open) throw new Error(`line ${i + 1}: /aw-min closes no aw-min section`);
       gated.push({ min: open.min, text: open.lines.join("\n") });

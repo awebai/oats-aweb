@@ -57,3 +57,11 @@ test("every identity-chain command the shipped files cite is inside an aw-min 1.
     assert.deepEqual(outside, [], file.pathname);
   }
 });
+
+test("a marker must stand alone on its line: an inline one refuses, so it can't drop the text before it", () => {
+  for (const text of [
+    "`aw outside` <!-- aw-min 1.36.53 -->\n`aw who`\n<!-- /aw-min -->\n",
+    'run(["aw", "outside"]); // aw-min 1.36.53\nrun(["aw", "who"]);\n// /aw-min\n',
+    "<!-- aw-min 1.36.53 -->\n`aw who`\n`aw outside` <!-- /aw-min -->\n",
+  ]) assert.throws(() => splitByAwMin(text), /alone on its line/, JSON.stringify(text));
+});
