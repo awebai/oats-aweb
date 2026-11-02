@@ -61,6 +61,12 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await w
 // Loaded only for `health`: the publisher is opt-in, and no other command or
 // hook depends on its modules.
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
+// `attribution attach`: loaded only for that command (lib/attach.mjs).
+if ((process.env.OATS_EVENT || process.argv[2]) === 'attribution') {
+  const { ATTACH_USAGE, attachMain } = await import('../lib/attach.mjs');
+  if (process.argv[3] !== 'attach') { console.error(ATTACH_USAGE); process.exit(2); }
+  process.exit(await attachMain(process.argv.slice(4)));
+}
 
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";

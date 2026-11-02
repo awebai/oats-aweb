@@ -78,7 +78,8 @@
     "resident": "bin/oats-aweb.mjs resident",
     "wake": "bin/oats-aweb.mjs wake",
     "probe": "bin/oats-aweb-probe.mjs",
-    "health": "bin/oats-aweb.mjs health"
+    "health": "bin/oats-aweb.mjs health",
+    "attribution": "bin/oats-aweb.mjs attribution"
   },
   "binding": {
     "version": 1,
