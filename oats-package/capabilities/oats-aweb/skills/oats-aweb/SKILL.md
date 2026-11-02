@@ -1052,7 +1052,9 @@ if it fails. A lasting refusal is recorded (`.oats-aweb/attach.json`, and the
 meta's `attach`); starts don't retry it, but an apply does. Limits: one human
 per deployment; attribution is prospective only; the parent is chosen once,
 at attach, because moving a certified local key later needs a new key; a
-`did:aw` with a rotated key can't be attached (aw's `subject_mismatch`).
+`did:aw` with a rotated key can't be attached (aw's `subject_mismatch`); a
+child of a grant seat stays chainless (respawning it from a keyed instance or
+a shell gives it a chain).
 
 <!-- /aw-min -->
 

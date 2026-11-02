@@ -71,6 +71,9 @@ test("plan: a refused or skipped parent refuses its children, naming the parent"
     chainless("under-broken", spawnedBy("broken")),
   ]));
   assert.deepEqual([p["under-seat"].code, p["under-seat"].reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
+  // A grant seat holds no key, chained resident or not: no later plan attaches this child.
+  assert.match(p["under-seat"].message, /stays chainless and reports unknown.*respawn it from an instance that holds its own key, or from a shell/);
+  assert.doesNotMatch(p["under-seat"].message, /plan again/);
   assert.deepEqual([p["under-broken"].code, p["under-broken"].reason], ["E_ATTACH_PARENT_REFUSED", "parent_not_attached"]);
   assert.equal(p.broken.code, "E_ATTACH_FAILED");
 });

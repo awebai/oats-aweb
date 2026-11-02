@@ -251,6 +251,10 @@ host.
 - A `did:aw` whose key was rotated after it was made can't be attached:
   aw certifies a `did:aw` only for the key it was made from
   (`subject_mismatch`).
+- A child of a session-grant seat can't be attached: the seat holds no key,
+  so it never issues. The child stays chainless and reports `unknown`;
+  respawning it from an instance that holds its own key, or from a shell,
+  gives it a chain.
 
 <!-- /aw-min -->
 

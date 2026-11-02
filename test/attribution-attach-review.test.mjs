@@ -188,3 +188,18 @@ test("a refusal that can't be saved never stops the start: one warning says so",
   assert.equal(r.attach.refused, "E_ATTACH_KEY_MISMATCH");
   assert.match(r.note, /could not be saved/);
 });
+
+test("a start under a grant-seat spawner records a lasting refusal naming the respawn, and never tries again", (t) => {
+  const fx = deployment(t);
+  const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "g1" } } } } }, {});
+  const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
+  const first = startAttach({ home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.deepEqual([first.attach?.refused, first.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
+  assert.match(first.note, /respawn it from an instance that holds its own key, or from a shell/);
+  assert.doesNotMatch(first.note, /tries again|then the setup expert runs/);
+  const calls = fx.fake.calls().length;
+  const second = startAttach({ home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(second.attach.refused, "E_ATTACH_PARENT_REFUSED");
+  assert.equal(fx.fake.calls().length, calls, "no aw call for a recorded refusal");
+  assert.deepEqual(idCalls(fx.fake), []);
+});
