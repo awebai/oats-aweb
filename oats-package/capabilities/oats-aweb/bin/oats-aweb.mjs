@@ -76,6 +76,7 @@ import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, check
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
+import { parseAwJson } from "../lib/aw-json.mjs";
 import { attributionMode, attributionReadiness, attributionRecord, classifyIssuer, exchangeChain, issuerSelection, kernelRefusal } from "../lib/attribution.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
@@ -225,23 +226,6 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
-/** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
- *  prints progress before it. A top-level object (one opening at column 0) may also be followed
- *  by notes (`aw workspace status` appends its gone-workspace checks); an indented line is never
- *  taken for the start of the answer, since it can be an object nested inside a cut-off one. */
-const parseAwJson = (text, what) => {
-  const trimmed = String(text ?? "").trim();
-  if (!trimmed) throw new Error(`${what} returned no JSON result`);
-  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON or notes after it */ }
-  const lines = trimmed.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].trimStart().startsWith("{")) continue;
-    const rest = lines.slice(i).join("\n");
-    try { return JSON.parse(rest); } catch { /* not the whole remainder */ }
-    if (lines[i].startsWith("{")) { try { return leadingJsonObject(rest); } catch { /* keep looking */ } }
-  }
-  throw new Error(`${what} returned no JSON result`);
-};
 
 /** Delivery/runtime fields shared by launch and stopped-home adoption. Upgrade
  * preserves channel proof; only launch may replace claudeChannelMode. */
