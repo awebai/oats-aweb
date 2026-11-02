@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.33.1 — 2026-11-02
+
+Requires OATS >=0.68.0. The aw floor and pin are unchanged.
+
 - **`oats aweb invite` works on a workspace set up without a root setting.**
   `oats aweb setup --username` creates the team's root in the deployment and
   records no `root`, and spawn finds it there, but invite read only the

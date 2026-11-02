@@ -5,6 +5,13 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.33.1 — invites on a workspace set up without a sign-in
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33. `oats aweb invite`
+works on a workspace that `oats aweb setup --username` created, and its JSON
+answer names the service to hand on (`awebUrl`). An aw pre-release above the
+floor now passes the provider's version checks.
+
 ## 1.33.0 — a workspace without a browser sign-in
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33. `oats aweb setup
