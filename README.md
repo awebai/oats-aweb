@@ -197,7 +197,10 @@ oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir
   `null` (a person's spawn); for a home spawned before kernels recorded
   spawners, its `parentInstance`, else the steward. A parent that is no longer
   listed counts as none. A `did:aw` needs a registered parent, so under a local
-  parent it takes its nearest `did:aw` ancestor, else the steward.
+  parent it takes its nearest `did:aw` ancestor, else the steward. A parent
+  issues only from an installed chain, its own or one the same apply installs:
+  a child of a parent the registry certifies but that holds no chain is
+  refused for now (`parent_has_no_chain`), naming the respawn.
 - **The apply** takes the plan's revision and an idempotency key, as
   `oats instance upgrade` does.
   - A changed deployment refuses with `E_ATTACH_PLAN_STALE`, carrying the fresh
@@ -242,7 +245,7 @@ host.
 | Code | Meaning → fix |
 |---|---|
 | `E_ATTACH_NO_HUMAN` | no human is bound, or `attribution` isn't `human` in this host's `oats-local.yaml` → bind a human |
-| `E_ATTACH_PARENT_REFUSED` | the parent or aw's registry refused (aw's reason: `revoked`, `stale_issuer_key`, `unregistered_parent`, `domain_mismatch`, `subject_mismatch`…), or the parent isn't attached → fix the parent, then plan again |
+| `E_ATTACH_PARENT_REFUSED` | the parent or aw's registry refused (aw's reason: `revoked`, `stale_issuer_key`, `unregistered_parent`, `domain_mismatch`, `subject_mismatch`…), or the parent isn't attached → fix the parent, then plan again; `parent_has_no_chain`, `grant_seat_parent` and `copied_identity_parent` name a respawn instead |
 | `E_ATTACH_KEY_MISMATCH` | the request is not for the key in the home's signing key, which is never approved → check the home's `.aw` |
 | `E_ATTACH_GRANT_SEAT` | a session-grant seat holds no key → its resident's owner attaches the resident through aw |
 | `E_ATTACH_COPIED_IDENTITY` | a retained seat uses an identity copied from its source → the source's owner attaches the source; a `did:aw` copy then verifies through the registry, a `did:key` copy stays chainless |
@@ -263,12 +266,11 @@ host.
   gives it a chain.
 - A retained seat (`identity.source`) is never attached. Its key is a copy of
   one that lives on at its source, so its parent isn't this deployment's to
-  choose. Once the source's owner attaches the source, a `did:aw` copy
-  verifies through the registry and its children attach under it. A `did:key`
-  copy never carries a chain, because its chain file isn't copied: the seat
-  and its children stay chainless and report `unknown`. Respawning such a
-  child from an instance that holds its own identity, or from a shell, gives
-  it a chain.
+  choose: the source's owner attaches the source, and a `did:aw` copy then
+  verifies through the registry. A retained seat doesn't carry its source's
+  chain (oats-aweb#180), so it never issues: its children stay chainless and
+  report `unknown` until they are respawned from an instance that holds its
+  own chain, or from a shell.
 - The live acceptance exercises freshly minted `did:key` homes only;
   global-mode spawns use grant seats. The `did:aw` attach rules have
   automated-test coverage only.

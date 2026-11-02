@@ -30,7 +30,11 @@
     (`subject_mismatch`, aw's limit); a child of a grant seat stays chainless
     until it is respawned from a keyed instance or a shell; a retained seat
     (`identity.source`) is skipped with `E_ATTACH_COPIED_IDENTITY`, because its
-    key lives on at its source: its source's owner attaches the source.
+    key lives on at its source: its source's owner attaches the source. A
+    parent issues only from an installed chain: a child of a parent the
+    registry certifies but that holds no chain, a retained seat's among them
+    (oats-aweb#180), is refused until it is respawned (`parent_has_no_chain`,
+    `copied_identity_parent`).
 
 - **Spawn attribution: each spawned instance carries an identity chain to a
   human** (aweb-acmj.21, oats#1665). New host-only setting `attribution:

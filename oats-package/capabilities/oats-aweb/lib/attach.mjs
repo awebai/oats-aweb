@@ -89,12 +89,17 @@ function ownStatus(f) {
   return { status: "attach" };
 }
 
-/** A child of a retained seat that attach skipped: a did:key copy never
- *  carries a chain, so its child never attaches; a did:aw copy verifies once
- *  its source is attached, and its child attaches then. */
+const COPY_HOLDS_NO_CHAIN = "a retained seat doesn't carry its source's chain", COPY_CHAIN_ISSUE = "oats-aweb#180";
+const RESPAWN = "respawn it from an instance that holds its own chain, or from a shell";
+/** A child of a retained seat that attach skipped: the copy holds no chain,
+ *  so it never issues. */
 function copiedParentRefusal(spawner) {
-  if (String(spawner.did || "").startsWith("did:key:")) return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "copied_identity_parent", message: `its spawner ${spawner.instance} uses a copied did:key identity, which never carries a chain: this instance stays chainless and reports unknown → respawn it from an instance that holds its own identity, or from a shell` };
-  return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its spawner ${spawner.instance} uses an identity copied from ${spawner.facts.copiedIdentity.source || "another home"} → once its owner attaches the source, the copy verifies through the registry; then plan again` };
+  return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "copied_identity_parent", message: `its spawner ${spawner.instance} uses an identity copied from ${spawner.facts.copiedIdentity.source || "another home"}, and ${COPY_HOLDS_NO_CHAIN} (${COPY_CHAIN_ISSUE}), so it can't issue: this instance stays chainless and reports unknown → ${RESPAWN}` };
+}
+/** A child of a parent the registry certifies but that holds no installed
+ *  chain: aw issues only from an installed chain. */
+function noChainParentRefusal(parent) {
+  return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_has_no_chain", message: `its parent ${parent.instance} is certified by the registry but holds no installed chain, so it can't issue${parent.facts.copiedIdentity ? ` (${COPY_HOLDS_NO_CHAIN}, ${COPY_CHAIN_ISSUE})` : ""} → ${RESPAWN}` };
 }
 
 /**
@@ -124,6 +129,8 @@ export function buildPlan({ deployment, settings, origins, homes, stewardStatus 
       // From the spawner's own facts: a did:aw child's certificate parent may
       // skip the copy, so the copy can come after it in attach order.
       else if (n.spawnParent?.facts?.copiedIdentity && ownStatus(n.spawnParent.facts).code === "E_ATTACH_COPIED_IDENTITY") Object.assign(entry, copiedParentRefusal(n.spawnParent));
+      // A home issues only from an installed chain, or one this apply installs.
+      else if (parent?.status === "attached-registry") Object.assign(entry, noChainParentRefusal(n.parent));
       else if (parent && !["attach", "attached", "attached-registry"].includes(parent.status)) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its parent ${parent.instance} is not attached (${parent.code || parent.status}) → attach its parent first, then plan again` });
       else if (parent?.verified === false) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: parent.reason, message: `its parent ${parent.instance} carries a chain that does not verify (${parent.reason || "no reason"}) → repair the parent's chain, then plan again` });
       if (f.refusal) entry.lastRefusal = { code: f.refusal.code, reason: f.refusal.reason ?? null };

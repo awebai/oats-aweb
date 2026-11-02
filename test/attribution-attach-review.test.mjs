@@ -257,13 +257,30 @@ test("a retained seat, did:key or unregistered did:aw, is skipped with E_ATTACH_
   }
 });
 
-test("a retained did:aw seat the registry certifies plans attached-registry, and its child attaches under it", (t) => {
+test("a retained did:aw seat the registry certifies plans attached-registry, but holds no chain, so its child is refused for now with no exchange", (t) => {
   const fx = deployment(t);
   const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: COPIED("/legacy/.aw") }, { global: true, who: VERIFIED });
   const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
   const plan = planOf(fx, [seat, c]);
-  assert.deepEqual(plan.homes.map((h) => [h.instance, h.status]), [["seat", "attached-registry"], ["c", "attach"]]);
-  assert.equal(plan.homes[1].parent.home, seat.home);
+  assert.deepEqual(plan.homes.map((h) => [h.instance, h.status, h.reason ?? null]), [["seat", "attached-registry", null], ["c", "refused", "parent_has_no_chain"]]);
+  assert.match(plan.homes[1].message, /its parent seat is certified by the registry but holds no installed chain, so it can't issue \(a retained seat doesn't carry its source's chain, oats-aweb#180\) → respawn it from an instance that holds its own chain, or from a shell/);
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(r.attach, undefined, "not lasting");
+  assert.match(r.note, /parent_has_no_chain|holds no installed chain/);
+  assert.deepEqual(idCalls(fx.fake), []);
+});
+
+test("any registry-certified parent without an installed chain can't issue: its child is refused for now, at apply and at start", (t) => {
+  const fx = deployment(t);
+  const p = fx.instance("p", { spawnedBy: null }, { global: true, who: VERIFIED });
+  const c = fx.instance("c", { spawnedBy: { instance: "p", home: p.home } }, {});
+  const plan = planOf(fx, [p, c]);
+  const entry = plan.homes.find((h) => h.instance === "c");
+  assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "parent_has_no_chain"]);
+  assert.match(entry.message, /its parent p is certified by the registry but holds no installed chain, so it can't issue → respawn it from an instance that holds its own chain, or from a shell$/);
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(r.attach, undefined, "not lasting: an installed chain resolves it");
+  assert.match(r.note, /the next start tries again/);
   assert.deepEqual(idCalls(fx.fake), []);
 });
 
@@ -273,7 +290,7 @@ test("a child of a retained did:key seat is refused with copied_identity_parent,
   const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
   const entry = planOf(fx, [seat, c]).homes.find((h) => h.instance === "c");
   assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
-  assert.match(entry.message, /its spawner seat uses a copied did:key identity, which never carries a chain: this instance stays chainless and reports unknown → respawn it from an instance that holds its own identity, or from a shell/);
+  assert.match(entry.message, /its spawner seat uses an identity copied from \/legacy\/\.aw, and a retained seat doesn't carry its source's chain \(oats-aweb#180\), so it can't issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own chain, or from a shell/);
   const first = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual([first.attach?.refused, first.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.doesNotMatch(first.note, /tries again|then the setup expert runs/);
@@ -283,16 +300,15 @@ test("a child of a retained did:key seat is refused with copied_identity_parent,
   assert.deepEqual(idCalls(fx.fake), []);
 });
 
-test("a child of an unregistered retained did:aw seat waits for the source: refused for now, not lasting", (t) => {
+test("a child of an unregistered retained did:aw seat is refused with copied_identity_parent: the copy never carries its source's chain", (t) => {
   const fx = deployment(t);
   const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: COPIED("/legacy/.aw") }, { global: true, who: UNREGISTERED });
   const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
   const entry = planOf(fx, [seat, c]).homes.find((h) => h.instance === "c");
-  assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "parent_not_attached"]);
-  assert.match(entry.message, /its spawner seat uses an identity copied from \/legacy\/\.aw → once its owner attaches the source, the copy verifies through the registry; then plan again/);
+  assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
+  assert.match(entry.message, /its spawner seat uses an identity copied from \/legacy\/\.aw, and a retained seat doesn't carry its source's chain \(oats-aweb#180\), so it can't issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own chain, or from a shell/);
   const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
-  assert.equal(r.attach, undefined, "not recorded");
-  assert.match(r.note, /the next start tries again/);
+  assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.deepEqual(idCalls(fx.fake), []);
 });
 
