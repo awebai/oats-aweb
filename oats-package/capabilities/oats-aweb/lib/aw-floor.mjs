@@ -59,7 +59,9 @@ export function awebCloudService(url) {
 /** The warning for an aw above AW_TESTED on a service that isn't the Cloud, or
  *  undefined. A server on an older aweb may refuse a newer aw; the fix the
  *  warning names first is the server's, since a deployment on this host may
- *  need the newer aw. No service (aw's default, the Cloud) warns nothing. */
+ *  need the newer aw. No service named (aw's default, the Cloud) warns
+ *  nothing; a named service that isn't a Cloud origin, or isn't a URL at all,
+ *  warns. The service text only decides; it never reaches the message. */
 export function awNewerThanTestedMessage(version, awebUrl) {
   if (!awebUrl || awebCloudService(awebUrl)) return undefined;
   const v = parseVersion(version), tested = parseVersion(AW_TESTED);

@@ -64,8 +64,8 @@ import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
-import { AW_TESTED, awNewerThanTestedMessage } from "../lib/aw-floor.mjs";
-import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, grantYamlCustodySocket, parseBindingJson, readAwVersion, rootAwebUrl, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
+import { AW_TESTED } from "../lib/aw-floor.mjs";
+import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { mintedExpiryProblem } from "../lib/grant-expiry.mjs";
@@ -1766,6 +1766,10 @@ if (event === "launch") {
   // The kernel runs the spawn hook before the home records its launch, and
   // gives hooks no resolved config dir, so a spawn cannot find the cache.
   if (deliveryFor().launch) outNotes.push(channelCacheNote(undefined, "a spawn does not know its launch's Claude config dir"));
+  // Before any spawn mode's dispatch, and carried on whatever this hook
+  // answers, so a failed mint comes with it.
+  const untested = awTestedWarning(settings, spawnAwVersion);
+  if (untested) outNotes.push(`aw-newer-than-tested — ${untested}`);
   if (identityMode === "global" && identitySettings.source) fatal('identity.mode "global" cannot be combined with identity.source; use identity.mode "local" with identity.source for a retained seat, or identity.mode "global" with identity.resident for a resident grant');
   if (identityMode === "global" && requestedJoinLabels().length) fatal('settings.oats.aweb.join is supported only with local per-team identities; identity.mode "global" is explicit resident-grant mode');
   if (identityMode === "global") globalGrantSpawn();
@@ -1784,9 +1788,6 @@ if (event === "launch") {
     const primary = resolvePrimaryTeam();
     const { team, root } = primary;
     const warnings = [...primary.warnings];
-    // Carried on whatever this hook answers, so a failed mint comes with it.
-    const untested = awNewerThanTestedMessage(spawnAwVersion, rootAwebUrl(root));
-    if (untested) outNotes.push(`aw-newer-than-tested — ${untested}`);
     let raw;
     try {
       // ONE aw process mints the identity: it creates an invite from the root
@@ -1815,7 +1816,8 @@ if (event === "launch") {
       // aw's --json error envelope names the refusal by a fixed code; only
       // codes on AW_ERROR_CODES are read, and never its message.
       if (e.awErrorCode === "unknown_or_invalid") {
-        fatal(`aw refused the invite it made for ${team} (unknown_or_invalid), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`)`);
+        // The fixed diagnosis first: fatal keeps 300 characters, and a team id can be long.
+        fatal(`aw refused the invite it made (unknown_or_invalid), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`). Team: ${team}`);
       }
       if (e.aliasConflict) {
         fatal(`alias "${instance}" already holds a certificate on ${team} (another machine's instance of that name, or a retired one until aweb-abim ships), so no identity could be minted — ${ALIAS_REUSE_REMEDY}`);

@@ -176,15 +176,6 @@ function workspaceReadinessContext(value) {
   return value;
 }
 export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
-/** The service the root's `.aw/workspace.yaml` names (`aweb_url`, as written),
- *  only when it is a plain service URL: http(s), a host, an optional port and a
- *  path of `/` or `/api` at most. Anything that could carry a credential, or a
- *  root that names none, is null. Never the ambient environment. */
-export function rootAwebUrl(root) {
-  let raw;
-  try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
-  return typeof raw === 'string' && raw.length <= 2048 && /^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(raw) ? raw : null;
-}
 export { AW_MIN } from './aw-floor.mjs';
 import { AW_MIN, awNewerThanTestedMessage, parseVersion, versionAtLeast } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
@@ -254,6 +245,26 @@ function rootCandidate(settings,team,{deployment,env=process.env}={}) {
   for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};
   return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
 }
+/** The service a root's `.aw/workspace.yaml` names (`aweb_url`), read only to
+ *  classify it, never shown: a valid URL the invite's disclosure filter rejects
+ *  (IPv6, an IDN, a trailing comment) is still a service. undefined when the
+ *  root names none or can't be read; aw's default service is the Cloud. */
+function rootServiceForClassification(root) {
+  let text;
+  try { text=readFileSync(join(root,'.aw','workspace.yaml'),'utf8'); } catch { return undefined; }
+  const m=/^aweb_url:[ \t]*(.*)$/m.exec(text);
+  if(!m) return undefined;
+  let value=m[1].replace(/\s+#.*$/,'').trim();
+  if(/^(["']).*\1$/.test(value)) value=value.slice(1,-1).trim();
+  return value || undefined;
+}
+/** The aw-newer-than-tested warning for a home, or undefined. Decided by the
+ *  home's own team root (roots[team], as the minting root is chosen), not the
+ *  deployment's default root, so readiness and every spawn mode agree. */
+export function awTestedWarning(settings,version,{deployment,env=process.env}={}) {
+  const {root}=rootCandidate(settings,teamFromSettings(settings,null,{env}),{deployment,env});
+  return root && isAbsolute(root) ? awNewerThanTestedMessage(version,rootServiceForClassification(root)) : undefined;
+}
 function validHostname(value){const s=String(value||'');return s.length<=253&&s.split('.').every(label=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));}
 function validAwebTeamId(value){const m=/^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(value||''));return !!m&&validHostname(m[2]);}
 function invalidAwebTeamId(env=process.env){const id=typeof env.OATS_DEFAULT_TEAM_ID==='string'&&env.OATS_DEFAULT_TEAM_ID.trim()?env.OATS_DEFAULT_TEAM_ID.trim():null;if(id&&!validAwebTeamId(id))return id;try{const rows=JSON.parse(env.OATS_TEAMS||'[]');if(Array.isArray(rows))for(const r of rows)if(r&&typeof r.team==='string'&&r.team.trim()&&!validAwebTeamId(r.team.trim()))return r.team.trim();}catch{}return null;}
@@ -276,8 +287,7 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
   const aw=await awFloorObservation();if(aw.message) problems.push({code:'needs-configuration',message:aw.message});
-  // Decided by this home's own team root (roots[team]), not the deployment's default root.
-  const tested=!aw.message&&candidate.root&&isAbsolute(candidate.root)?awNewerThanTestedMessage(aw.version,rootAwebUrl(candidate.root)):undefined;
+  const tested=aw.message?undefined:awTestedWarning(settings,aw.version,{deployment,env});
   if(tested) warnings.push({code:'aw-newer-than-tested',message:tested});
   if(!team) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
