@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **An existing deployment switches to human attribution in place: bind,
+  then attach** (oats#1665 §3 slice 2). `oats aweb attribution attach` gives
+  each local instance without a chain a chain for its existing identity. Its key,
+  address, `identity.yaml` and memberships don't change, and nothing is
+  respawned. The setup expert runs it in two steps: `--plan`, then
+  `--plan-revision <rev> --idempotency-key <key>`, as `oats instance upgrade`
+  does.
+  - The parent is the one its spawn would have chosen (`spawnedBy`; the
+    steward for a person's spawn; `parentInstance` for a home spawned before
+    kernels recorded spawners). Homes attach parents first, through the same
+    agent-child exchange as a spawn.
+  - The parent approves only a request for the key in the home's own signing
+    key.
+  - A home `oats status` doesn't list is never touched. A failed home stays as
+    it was, and its descendants are skipped.
+  - In mode `human`, a start attaches its own chainless home once its parent
+    holds a chain: within 30 s, never stopping the start, with one warning if
+    it fails. A lasting refusal is recorded and not retried at start.
+  - Readiness now says "until it is attached", not "until it is respawned".
+  - With `attribution` absent or `none`, nothing changes: no aw call at start,
+    and attach refuses with `E_ATTACH_NO_HUMAN`.
+  - Limits: one human per deployment; attribution is prospective only; the
+    parent is chosen once, at attach (moving a certified local key later
+    needs a new key); a `did:aw` with a rotated key can't be attached
+    (`subject_mismatch`, aw's limit).
+
 - **Spawn attribution: each spawned instance carries an identity chain to a
   human** (aweb-acmj.21, oats#1665). New host-only setting `attribution:
   human | none`, a per-deployment opt-in in `oats-local.yaml` (a committed value

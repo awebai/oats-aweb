@@ -1017,7 +1017,7 @@ A spawner with no chain, where that absence is evidence, gets a
 reports `unknown`, with a spawn warning. A chain that exists but fails never
 falls back to a chainless child. Attribution never fails readiness. A home's
 readiness warns `attribution` only when there is something to do: in mode
-`human`, no human bound yet, or this instance has no chain (respawn it).
+`human`, no human bound yet, or this instance has no chain (attach it).
 `setup --check-only --json` reports `attribution` as information only in
 mode `human`, counting `chainlessSpawners`. **No `attribution` key means mode
 `none`**: the deployment has not opted in, and nothing about attribution
@@ -1035,6 +1035,24 @@ mode-`human` deployment that uses captured execution is refused there.
 The steward's key custody is a convention under the same OS user, where misuse
 changes the recorded parent and never the human. Revocation at retire, chains
 across hosts, and deployments shared by several people are out of scope.
+
+**An existing deployment switches in place: bind, then attach.** Attach
+certifies each local instance's existing key under the parent its spawn would
+have chosen. No identity, address or membership changes, and no instance is
+respawned. The README's "Attaching existing instances" is the full reference.
+
+| Act | Command in D | Writes / success / one next step | Error → remedy |
+|---|---|---|---|
+| Plan | `oats aweb attribution attach --plan --dir D --json` | Read-only. Every listed home, parents first: `attach` (under its parent), `attached`, `attached-registry`, `skipped` or `refused`, and `planRevision`. Next: apply that revision. | `E_ATTACH_NO_HUMAN` → bind a human, with `attribution: human` in this host's oats-local.yaml |
+| Apply | `oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir D --json` | Attaches each `attach` home through aw's agent-child exchange (`aw id child invite --kind agent`, `aw id parent request --invitation-id <id> --parent <id> --domain <d>`, `aw id child receive`, `aw id child approve`, `aw id parent import --domain <d>`). A failed home stays as it was; its descendants are skipped. Success: each home `attached`. Next: readiness clears. | `E_ATTACH_PLAN_STALE` → review the fresh plan (`error.details.plan`); `E_IDEMPOTENCY_CONFLICT` → the key's original arguments, or a new key; `E_ATTACH_KEY_MISMATCH`, `E_ATTACH_PARENT_REFUSED`, `E_ATTACH_GRANT_SEAT`, `E_ATTACH_FAILED` → the fix the message names |
+
+The setup expert runs both. A start in mode `human` also attaches its own
+chainless home once its parent holds a chain: within 30 s, with one warning
+if it fails. A lasting refusal is recorded (`.oats-aweb/attach.json`, and the
+meta's `attach`); starts don't retry it, but an apply does. Limits: one human
+per deployment; attribution is prospective only; the parent is chosen once,
+at attach, because moving a certified local key later needs a new key; a
+`did:aw` with a rotated key can't be attached (aw's `subject_mismatch`).
 
 <!-- /aw-min -->
 
