@@ -16,6 +16,12 @@
   `/` or `/api` at most); anything that could carry a credential answers
   `null`, as a root that names no service does.
 
+- **A spawn whose name another machine's instance holds says so.** aw 1.36.51
+  refuses that mint with a registry 403 (`self_custody_reinit_unproven`) that
+  the provider didn't recognise, so the spawn failed with only "aw init failed
+  (output withheld)". It now names the alias conflict and the remedy, as it
+  already did for a retired alias, and still withholds aw's output.
+
 ## 1.33.0 — 2026-11-02
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged. Cut from `main`;

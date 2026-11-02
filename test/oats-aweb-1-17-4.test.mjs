@@ -252,6 +252,15 @@ test("mint output that is not JSON is withheld and still compensated", (t) => {
   assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK/);
 });
 
+test("an alias another machine's self-custodial instance holds (aw 1.36.51's registry 403) names the conflict and the remedy, with no output leak", (t) => {
+  const fx = fixture(t);
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_SELF_CUSTODY: "1" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.meta, undefined);
+  assert.match(r.doc.warning, /alias "dev-1" already holds a certificate on default:example\.test \(another machine's instance of that name.*--name .*--purpose/);
+  assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK|holds its own key/);
+});
+
 test("an alias that still holds a certificate names the remedy, with no meta and no output leak", (t) => {
   const fx = fixture(t);
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_CONFLICT: "1" });
