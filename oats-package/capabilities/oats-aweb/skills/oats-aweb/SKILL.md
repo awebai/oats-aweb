@@ -959,6 +959,8 @@ naming its fix:
   then `aw id parent import`);
 - a resulting chain over 8 certificates or 6144 decoded bytes;
 - a spawner whose spawn meta records a chain whose files are gone;
+- a spawner or steward the registry certifies but that holds no installed
+  chain (aw issues only from an installed chain);
 - a resident-grant spawner;
 - a minting root that carries a chain (aw would make it every child's parent),
   or a steward at the minting root: the root mints and the steward issues;

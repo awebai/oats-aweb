@@ -16,7 +16,8 @@
   (`OATS_SPAWNER_HOME`), or from the steward for a person's spawn.
   - It refuses, naming each fix, on a revoked, replaced, malformed or stale
     chain, unavailable registry evidence, a chain over 8 certificates or 6144
-    bytes, a spawner whose recorded chain files are gone, a resident-grant
+    bytes, a spawner whose recorded chain files are gone, an issuer the
+    registry certifies but that holds no installed chain, a resident-grant
     spawner, a chained minting root or a steward at the minting root, a kernel
     without `spawn-attribution`, or no bound human.
   - A spawner with no chain gets a chainless child that reports `unknown`,

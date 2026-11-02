@@ -162,6 +162,25 @@ test("a spawner that predates the binding creates a chainless child that reports
   assert.deepEqual(chainCalls(fake), []);
 });
 
+test("refuses before minting a spawner or steward the registry certifies but that holds no installed chain", (t) => {
+  const verifiedWho = { outcome: "nearest_human", human_id: HUMAN, identity_valid: true, kind: "agent", reason: "verified" };
+  const fx = fixture(t);
+  const lead = spawner(fx, { chain: null, who: { id: LEAD, ...verifiedWho } });
+  const fake = fakeAwChain(t);
+  const bySpawner = spawn(fx, fake, { OATS_SPAWNER_HOME: lead });
+  assert.equal(bySpawner.status, 1);
+  assert.match(bySpawner.doc.warning, /the spawner is certified by the registry but holds no installed chain, so it can't issue/);
+  const fx2 = fixture(t);
+  rmSync(join(fx2.stewardHome, ".aw", "id-chain.json"));
+  writeFileSync(join(fx2.stewardHome, ".aw", "fake-who.json"), JSON.stringify({ id: STEWARD, ...verifiedWho }));
+  const fake2 = fakeAwChain(t);
+  const byPerson = spawn(fx2, fake2);
+  assert.equal(byPerson.status, 1);
+  assert.match(byPerson.doc.warning, /the deployment's steward is certified by the registry but holds no installed chain, so it can't issue/);
+  assert.equal(minted(fake) || minted(fake2), false);
+  assert.deepEqual([...chainCalls(fake), ...chainCalls(fake2)], []);
+});
+
 test("refuses a spawner whose meta records an installed chain but whose chain files are gone", (t) => {
   const fx = fixture(t);
   const lead = spawner(fx, { chain: null });

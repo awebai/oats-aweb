@@ -87,6 +87,8 @@ export function classifyIssuer({ issuer, who, whoError, chainFiles, recordedChai
   if (whoError && /unknown command "who"/.test(whoError)) return { action: "refuse", message: `this aw has no \`aw who\` → ${ATTRIBUTION_AW_UPGRADE}, then spawn again` };
   if (whoError) return { action: "refuse", message: `could not read the issuer's chain status (${whoError}) → retry once the identity registry answers` };
   if (who?.identity_valid === true && (who.outcome === "nearest_human" || who.outcome === "no_human")) {
+    // aw issues children only from an installed chain, never from the registry.
+    if (!chainFiles) return { action: "refuse", message: `${issuer.kind === "steward" ? "the deployment's steward" : "the spawner"} is certified by the registry but holds no installed chain, so it can't issue → ${fixFor(issuer)}` };
     return { action: "issue", outcome: who.outcome, humanId: who.outcome === "nearest_human" ? who.human_id : null, issuerId: who.id };
   }
   if (who?.outcome === "unavailable") return { action: "refuse", message: unavailable(who.reason || "no reason") };

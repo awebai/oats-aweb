@@ -53,6 +53,15 @@ test("issuer: a verified chain with no human still signs its child (a chain is n
   assert.deepEqual(classifyIssuer({ issuer: { kind: "spawner" }, who, chainFiles: true }), { action: "issue", outcome: "no_human", humanId: null, issuerId: SPAWNER });
 });
 
+test("issuer: a chain the registry certifies issues only from an installed chain, as aw does", () => {
+  const spawner = classifyIssuer({ issuer: { kind: "spawner" }, who: verified(), chainFiles: false });
+  assert.equal(spawner.action, "refuse");
+  assert.equal(spawner.message, "the spawner is certified by the registry but holds no installed chain, so it can't issue → retire the spawner and spawn from a valid instance, or from a shell so the deployment's steward issues");
+  const steward = classifyIssuer({ issuer: { kind: "steward" }, who: { ...verified(), id: STEWARD }, chainFiles: false });
+  assert.equal(steward.action, "refuse");
+  assert.match(steward.message, /^the deployment's steward is certified by the registry but holds no installed chain, so it can't issue → bind the human again/);
+});
+
 for (const [reason, fix] of [
   ["revoked", /revoked/],
   ["subject_revoked", /revoked/],

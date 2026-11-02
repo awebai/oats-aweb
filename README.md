@@ -58,6 +58,8 @@ spawn-hook refusal, and names its fix.
   - a resulting chain over 8 certificates or 6144 decoded bytes;
   - a spawner whose own spawn meta records an installed chain while its chain
     files are gone;
+  - a spawner or steward the registry certifies but that holds no installed
+    chain: aw issues only from an installed chain;
   - a resident-grant spawner, which holds no identity key to issue with;
   - a minting root that carries a chain: aw's team invite makes a chained
     inviter the new identity's parent, so the root would become every child's
