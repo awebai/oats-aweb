@@ -146,8 +146,8 @@ test("limits: a resulting chain over 8 certificates or 6144 canonical bytes refu
 
 test("labels: one line, bounded, control characters refused", () => {
   assert.equal(oneLineLabel("  Juan Reyero  "), "Juan Reyero");
-  assert.throws(() => oneLineLabel("a\nb"), /one line/);
-  assert.throws(() => oneLineLabel("a\u0007b"), /control characters/);
+  for (const text of ["a\nb", "a\rb", "a\u2028b", "a\u2029b", "a\u0085b"]) assert.throws(() => oneLineLabel(text), /one line/, JSON.stringify(text));
+  for (const text of ["a\u0007b", "a\u007fb", "a\u009bb"]) assert.throws(() => oneLineLabel(text), /control characters/, JSON.stringify(text));
   assert.throws(() => oneLineLabel(""), /required/);
   assert.throws(() => oneLineLabel("x".repeat(121)), /at most 120 bytes/);
 });
@@ -161,7 +161,7 @@ test("meta: identity.attribution records mode, human and parent, with opaque ids
 });
 
 test("meta: a recorded human label that is not one safe line is recorded as the human's id", () => {
-  for (const label of ["Juan\nReyero", "Juan\u0007", "", "x".repeat(121), undefined]) {
+  for (const label of ["Juan\nReyero", "Juan\u0007", "Alice\u2028Admin", "Alice\u2029Admin", "Alice\u0085Admin", "Alice\u009bAdmin", "", "x".repeat(121), undefined]) {
     assert.deepEqual(attributionRecord({ action: "issue", outcome: "nearest_human", humanId: HUMAN, issuerId: STEWARD }, { id: HUMAN, label }), { mode: "human", human: { id: HUMAN, label: HUMAN }, parent: { id: STEWARD } }, JSON.stringify(label));
   }
   assert.deepEqual(attributionRecord({ action: "issue", outcome: "nearest_human", humanId: HUMAN, issuerId: STEWARD }, { id: HUMAN, label: "  Juan  " }).human, { id: HUMAN, label: "Juan" });

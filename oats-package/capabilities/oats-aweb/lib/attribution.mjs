@@ -7,6 +7,7 @@
 // steward are read from host settings (`human`, `steward`); the bind that
 // records them is the person's own approval and is not part of this package.
 import { basename, isAbsolute } from "node:path";
+import { CONTROL_CHARACTER } from "./status-document.mjs";
 
 /** The kernel feature that makes an absent OATS_SPAWNER_HOME mean a person's spawn. */
 export const SPAWN_ATTRIBUTION_FEATURE = "spawn-attribution";
@@ -119,8 +120,8 @@ export function chainLimitProblem(bundle) {
 export function oneLineLabel(text) {
   const label = String(text ?? "").trim();
   if (!label) throw new Error("the human's label is required: their name, one line");
-  if (/[\r\n]/.test(label)) throw new Error("the human's label must be one line");
-  if (/[\u0000-\u001f\u007f]/.test(label)) throw new Error("the human's label must not contain control characters");
+  if (/[\r\n\u0085\u2028\u2029]/.test(label)) throw new Error("the human's label must be one line");
+  if (CONTROL_CHARACTER.test(label)) throw new Error("the human's label must not contain control characters");
   if (Buffer.byteLength(label, "utf8") > LABEL_MAX_BYTES) throw new Error(`the human's label must be at most ${LABEL_MAX_BYTES} bytes`);
   return label;
 }
