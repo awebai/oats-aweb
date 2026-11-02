@@ -101,3 +101,45 @@ test("an exhausted budget never runs aw without a timeout (Node reads a timeout 
   assert.match(r.note, /budget of 0 s ran out/);
   assert.deepEqual(idCalls(fx.fake), []);
 });
+
+// Through the hook's launch event, as the kernel starts a home.
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
+function launch(fx, { preview = false, attribution = "human" } = {}) {
+  const settings = { root: fx.ws, ...(attribution ? { attribution } : {}), human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: join(fx.ws, ".aweb-stewards", "s") } };
+  const meta = { team: "legacy:example.test", alias: "dev-1", delivery: "channel", runtime: "claude", identity: { mode: "local" }, defaultTeam: { label: "default", team: "legacy:example.test", from: "deployment" } };
+  const r = spawnSync(process.execPath, [HOOK, "launch"], { cwd: fx.home, encoding: "utf8", timeout: 60000, env: {
+    PATH: fx.fake.path, HOME: process.env.HOME, OATS_EVENT: "launch", OATS_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_RUNTIME: "claude", OATS_PREVIOUS_RUNTIME: "claude",
+    OATS_SETTINGS: JSON.stringify(settings), OATS_META: JSON.stringify(meta), OATS_TEAMS: "[]", OATS_TEAMS_SOURCE: "live", ...(preview ? { OATS_LAUNCH_PREVIEW: "1" } : {}),
+  } });
+  return { status: r.status, doc: JSON.parse(r.stdout.trim().split("\n").pop() || "{}"), stderr: r.stderr };
+}
+
+test("launch: the start attaches its chainless home; its preview pass never does", (t) => {
+  const fx = fixture(t);
+  const preview = launch(fx, { preview: true });
+  assert.equal(preview.status, 0, JSON.stringify(preview.doc) + preview.stderr);
+  assert.deepEqual(idCalls(fx.fake), []);
+  const real = launch(fx);
+  assert.equal(real.status, 0, JSON.stringify(real.doc) + real.stderr);
+  assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), true);
+  assert.equal(real.doc.meta.attach, undefined);
+  assert.doesNotMatch(real.doc.warning || "", /attach/);
+});
+
+test("launch: a recorded lasting refusal is in the start's meta and its one warning, and the start goes ahead", (t) => {
+  const fx = fixture(t, { did: "did:key:zsomeoneelse" });
+  const r = launch(fx);
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.equal(r.doc.meta.attach.refused, "E_ATTACH_KEY_MISMATCH");
+  assert.equal((r.doc.warning.match(/E_ATTACH_KEY_MISMATCH/g) || []).length, 1);
+});
+
+test("launch in mode none: no attach call and no attach in the meta", (t) => {
+  const fx = fixture(t, { attribution: "none" });
+  const r = launch(fx, { attribution: "none" });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual(idCalls(fx.fake), []);
+  assert.equal(Object.hasOwn(r.doc.meta, "attach"), false);
+});

@@ -83,6 +83,7 @@ import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-defa
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
 import { parseAwJson } from "../lib/aw-json.mjs";
+import { startAttach } from "../lib/attach.mjs";
 import { attributionMode, attributionReadiness, attributionRecord, classifyIssuer, exchangeChain, issuerSelection, kernelRefusal } from "../lib/attribution.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
@@ -1771,6 +1772,18 @@ function assertMintingRootIssuesNothing(root) {
   if (typeof steward === "string" && resolve(steward) === resolve(root)) fatal(`the steward's home ${steward} is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → bind the human again with a steward home of its own, separate from the minting root`);
   if (existsSync(join(root, ".aw", "id-chain.json"))) fatal(`this deployment's minting root ${root} carries an identity chain, so aw would make it every child's parent → use a chainless minting root`);
 }
+/** The attach a start makes for its own home (lib/attach.mjs startAttach):
+ *  one warning when it fails, and a lasting refusal kept in the meta. Mode
+ *  none returns the meta untouched, with no aw call. */
+function attachAtStart(meta, local) {
+  let origins;
+  try { origins = JSON.parse(process.env.OATS_SETTINGS_ORIGINS || "{}"); } catch { origins = undefined; }
+  const result = startAttach({ home, instance, settings, origins, deployment: process.env.OATS_WORKSPACE || "", local, env: process.env });
+  if (!result) return meta;
+  if (result.note) outNotes.push(result.note);
+  const { attach, ...rest } = meta;
+  return result.attach ? { ...rest, attach: result.attach } : rest;
+}
 /** A child that reuses an existing identity (a resident grant or a retained
  *  seat) gets no new chain: in mode human it records unknown and says so. */
 function reusedIdentityAttribution(meta, warnings) {
@@ -1809,7 +1822,7 @@ if (event === "launch") {
   }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
   if (globalLaunch) globalGrantRenew(started);
-  let oldMeta = withProviderTeams(started);
+  let oldMeta = attachAtStart(withProviderTeams(started), !globalLaunch);
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
     const eligible = new Set(eligibleTeams().map((t) => t.label));

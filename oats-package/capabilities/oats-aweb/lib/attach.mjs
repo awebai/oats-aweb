@@ -9,7 +9,7 @@
 // deployment. The launch hook attaches one home at its start the same way.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds } from "./attribution.mjs";
 import { parseAwJson } from "./aw-json.mjs";
@@ -223,7 +223,8 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
   const recorded = readAttachRefusal(home);
   if (recorded) return { attach: { refused: recorded.code, reason: recorded.reason ?? null, at: recorded.at ?? null }, note: `this home is not attached (${recorded.code}): ${recorded.message} (recorded ${recorded.at || "earlier"}; not retried at start) → fix that, then ${ATTACH_ACT}` };
   // The parent by the spawn's rule, among this home and the instances its
-  // record names in this deployment.
+  // record names in this deployment (spawnedBy holds canonical paths).
+  try { deployment = realpathSync(deployment); } catch { return { attach: undefined, note: null }; }
   const record = instanceRecord(home) || {};
   const candidates = [];
   const spawner = record.spawnedBy;

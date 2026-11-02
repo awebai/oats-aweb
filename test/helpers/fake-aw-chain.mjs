@@ -98,6 +98,7 @@ if (args[0] === "id" && args[1] === "parent" && args[2] === "import") {
   emit({ request_id: response.request_id, id: idOf(), registration: "" });
   process.exit(0);
 }
+if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: false, daemon_version_state: "not_running", instances: [] }); process.exit(0); }
 if (args[0] === "wake") { process.exit(0); }
 console.error("fake aw (chain): unexpected aw " + args.join(" ")); process.exit(3);
 `);
