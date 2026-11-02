@@ -936,7 +936,8 @@ an aw identity chain to the deployment's bound human (aw's
 
 `aw who` in a child shows the human, the steward, each spawning instance, then
 the child. The README's "Spawn attribution" section is the full reference.
-It needs aw 1.36.53 or later, the first release with identity chains.
+Mode `human` needs aw 1.36.53 or later, the first release with identity
+chains; the provider's aw floor stays 1.36.33.
 
 **The bind** records the human and the steward in host-only settings
 (`human: {id, label}`, `steward: {id, home}`) and sets `attribution: human`.

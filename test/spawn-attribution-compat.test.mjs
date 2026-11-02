@@ -4,10 +4,16 @@
 // the meta carries no attribution, no warning or problem mentions it, and an
 // explicit `none` is indistinguishable from an absent setting.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fixture } from "./helpers/delivery-fixture.mjs";
+import { AW_MIN } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 
 const ATTRIBUTION_TRACE = /attribution|identity chain|chainless|steward|bound human/i;
+
+test("the provider's aw floor stays 1.36.33: only mode human needs aw 1.36.53", () => {
+  assert.equal(AW_MIN, "1.36.33");
+});
 
 /** One journey, as the kernel drives it: spawn, record, start, readiness. */
 function journey(t, { delivery, runtime, settings }) {
@@ -40,6 +46,9 @@ for (const [delivery, runtime, wake] of [["channel", "claude", "wake deregister"
       const registration = `${wake} --home ${fx.home}` + (wake === "wake register" ? ` --identity-home ${fx.home}/.aw --delivery session` : "");
       assert.deepEqual(calls.filter((c) => !c.startsWith("version") && !c.startsWith("wake status")), wake === "wake register" ? [mint, registration, registration] : [mint, registration]);
       assert.equal(calls.some((c) => /^(who|id )/.test(c)), false);
+      // The journey runs on aw 1.36.33, the provider's floor.
+      assert.equal(fx.fake.readCalls().some((c) => c.args[0] === "version"), true);
+      assert.match(spawnSync("aw", ["version"], { env: { PATH: fx.fake.path }, encoding: "utf8" }).stdout, /^aw 1\.36\.33 /);
       assert.equal(spawned.doc.meta.identity.attribution, undefined);
       assert.equal(Object.hasOwn(spawned.doc.meta, "chainInstalled"), false);
       assert.equal(Object.hasOwn(launched.doc.meta, "chainInstalled"), false);

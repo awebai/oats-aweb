@@ -29,9 +29,10 @@
     `--server` spawn from another host counts as a person's. The steward's key
     custody is a convention under the same OS user, where misuse changes the
     recorded parent and never the human.
-  - **aw floor: 1.36.53**, the first release with `aw who` and with
-    `aw id parent request --parent` accepting the `did:key` parent of an
-    instance-issued child; the release sets the provider's aw floor to it.
+  - **Mode `human` needs aw 1.36.53 or later**, the first release with
+    `aw who` and with `aw id parent request --parent` accepting the `did:key`
+    parent of an instance-issued child. The provider's aw floor stays 1.36.33:
+    with attribution absent or `none`, nothing needs a newer aw.
     Needs a kernel listing `spawn-attribution`.
   - Limit: captured execution's binding phases accept no attribution
     settings, so a mode-`human` deployment that uses captured execution is

@@ -130,11 +130,11 @@ test("refuses before minting a revoked spawner chain, and never falls back to ch
   assert.equal(minted(fake), false);
 });
 
-test("refuses before minting on an aw without `aw who`, naming the aw upgrade", (t) => {
+test("mode human on aw 1.36.33, the provider's floor, refuses before minting, naming the aw upgrade", (t) => {
   const fx = fixture(t);
   const lead = spawner(fx);
   const fake = fakeAwChain(t);
-  const { status, doc } = spawn(fx, fake, { OATS_SPAWNER_HOME: lead, FAKE_NO_WHO: "1" });
+  const { status, doc } = spawn(fx, fake, { OATS_SPAWNER_HOME: lead, FAKE_NO_WHO: "1", FAKE_AW_VERSION: "1.36.33" });
   assert.equal(status, 1);
   assert.match(doc.warning, /this aw has no `aw who` → upgrade aw to 1\.36\.53 or later/);
   assert.equal(minted(fake), false);

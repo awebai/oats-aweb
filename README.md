@@ -34,7 +34,8 @@ by the setup expert; it needs aweb Cloud and is not yet available.
 
 Mode `human` needs a kernel that lists the `spawn-attribution` feature, and
 aw 1.36.53 or later, the first release with identity chains. Without them,
-bound-mode spawns refuse, naming the upgrade.
+bound-mode spawns refuse, naming the upgrade. The provider's aw floor stays
+1.36.33: with attribution absent or `none`, nothing needs a newer aw.
 
 **What a bound spawn does.** Before minting, the spawn reads the issuer's chain
 status with `aw who`, through aw's cached status client. A CLI process holds
