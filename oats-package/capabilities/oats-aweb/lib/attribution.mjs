@@ -82,6 +82,57 @@ export function issuerSelection({ spawnerHome, steward }) {
 /** A revoked steward's limit: aweb Cloud certifies an agent once, and replacing the steward is awebai/oats-aweb#204. */
 export const REVOKED_STEWARD_LIMIT = "aweb Cloud certifies an agent once, so this deployment can't be bound again yet (awebai/oats-aweb#204), and spawns refuse while its steward is revoked";
 
+/** The spawner the kernel recorded, read as the kernel reads it: exactly
+ *  {instance, home}, else none. */
+const recordedSpawner = (s) => (s && typeof s === "object" && typeof s.instance === "string" && typeof s.home === "string" ? s : null);
+
+/**
+ * The parent attach gives each of a deployment's homes: the issuer its spawn
+ * would have chosen (oats#1665 C1), so an attached tree equals a spawned one.
+ * - `spawnedBy` recorded: that instance; `null` is a person's spawn, issued by
+ *   the steward, whatever its `parentInstance`;
+ * - no `spawnedBy` key (a home spawned before the kernel recorded spawners):
+ *   its `parentInstance`, else the steward;
+ * - a parent that is not one of `nodes` (retired, or another deployment's) is
+ *   no parent: the steward issues;
+ * - a did:aw needs a registered parent: under a local (did:key) parent it
+ *   takes its nearest did:aw ancestor, else the steward.
+ * nodes: [{instance, home, record (its instance.json), did}]. Returns the
+ * nodes in attach order, parents first, each with `parent` (a node, or null
+ * for the steward).
+ */
+export function attachParents(nodes) {
+  const byHome = new Map(nodes.map((n) => [n.home, n])), byName = new Map(nodes.map((n) => [n.instance, n]));
+  const spawnParent = (n) => {
+    const record = n.record || {};
+    if (Object.hasOwn(record, "spawnedBy")) return byHome.get(recordedSpawner(record.spawnedBy)?.home) || null;
+    return (typeof record.parentInstance === "string" && byName.get(record.parentInstance)) || null;
+  };
+  const parentOf = (n) => {
+    let p = spawnParent(n);
+    if (!String(n.did).startsWith("did:aw:")) return p;
+    for (const seen = new Set([n]); p && !String(p.did).startsWith("did:aw:"); p = spawnParent(p)) {
+      if (seen.has(p)) return null;
+      seen.add(p);
+    }
+    return p;
+  };
+  const parents = new Map(nodes.map((n) => [n, parentOf(n)]));
+  // Parents first. A record that loops back on itself has no real spawner,
+  // so the steward issues where the loop closes.
+  const ordered = [], placed = new Set();
+  const place = (n, path = new Set()) => {
+    if (placed.has(n) || path.has(n)) return;
+    path.add(n);
+    const p = parents.get(n);
+    if (p) place(p, path);
+    placed.add(n);
+    ordered.push({ ...n, parent: p && placed.has(p) && p !== n ? p : null });
+  };
+  for (const n of nodes) place(n);
+  return ordered;
+}
+
 const REVOKED = new Set(["revoked", "subject_revoked", "parent_revoked"]);
 const NO_CHAIN = new Set(["legacy_no_chain", "unregistered_identity"]);
 

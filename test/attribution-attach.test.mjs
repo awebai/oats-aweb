@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { didKeyFromPublicKey, homeKeyIds } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { attachParents, didKeyFromPublicKey, homeKeyIds, issuerSelection } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 
 const pem = (seedHex) => `-----BEGIN ED25519 PRIVATE KEY-----\n${Buffer.from(seedHex, "hex").toString("base64")}\n-----END ED25519 PRIVATE KEY-----\n`;
 function home(t, signingKey) {
@@ -34,4 +34,75 @@ test("a home's current key is read from its signing key, never from a did (RFC 8
 
 test("a home without a readable signing key has no current key", (t) => {
   for (const key of [undefined, "not a pem\n", pem("00")]) assert.equal(homeKeyIds(home(t, key)), null, JSON.stringify(key));
+});
+
+// A deployment's homes as attach sees them: path, name, the kernel's record
+// (spawnedBy, parentInstance) and the identity's id.
+const STEWARD = { id: "did:aw:steward", home: "/d/.aweb-stewards/s" };
+const node = (instance, record, did = `did:key:z${instance}`) => ({ instance, home: `/d/agents/x/instances/${instance}`, record, did });
+const by = (nodes) => Object.fromEntries(attachParents(nodes).map((r) => [r.instance, r]));
+
+test("parent rule (C1): the recorded spawner; null means a person's spawn, issued by the steward", () => {
+  const r = by([
+    node("lead", { spawnedBy: null }),
+    node("dev", { spawnedBy: { instance: "lead", home: "/d/agents/x/instances/lead" }, parentInstance: "lead", relation: "child" }),
+    node("side", { spawnedBy: { instance: "lead", home: "/d/agents/x/instances/lead" }, relation: "unrelated" }),
+    node("manual", { spawnedBy: null, parentInstance: "lead", relation: "child" }),
+  ]);
+  assert.deepEqual([r.lead.parent, r.dev.parent?.instance, r.side.parent?.instance, r.manual.parent], [null, "lead", "lead", null]);
+});
+
+test("parent rule (C1): a home spawned before the kernel recorded spawners takes its OATS parent, else the steward", () => {
+  const r = by([node("lead", {}), node("dev", { parentInstance: "lead" }), node("orphan", { parentInstance: "gone" })]);
+  assert.deepEqual([r.lead.parent, r.dev.parent?.instance, r.orphan.parent], [null, "lead", null]);
+});
+
+test("parent rule: a spawner that is no longer listed, or a malformed record, falls to the steward", () => {
+  const r = by([node("dev", { spawnedBy: { instance: "gone", home: "/d/agents/x/instances/gone" } }), node("odd", { spawnedBy: { home: 3 }, parentInstance: "dev" })]);
+  assert.deepEqual([r.dev.parent, r.odd.parent], [null, null]);
+});
+
+test("C1: for every home whose spawner is recorded, attach chooses the issuer the spawn chose", () => {
+  const nodes = [
+    node("root", { spawnedBy: null }),
+    node("a", { spawnedBy: { instance: "root", home: "/d/agents/x/instances/root" }, parentInstance: "root" }),
+    node("b", { spawnedBy: { instance: "a", home: "/d/agents/x/instances/a" }, relation: "unrelated" }),
+    node("c", { spawnedBy: null, parentInstance: "a" }),
+    node("d", { spawnedBy: { instance: "b", home: "/d/agents/x/instances/b" }, siblingInstance: "c", relation: "sibling" }),
+  ];
+  const attach = by(nodes);
+  for (const n of nodes) {
+    const spawn = issuerSelection({ spawnerHome: n.record.spawnedBy?.home, steward: STEWARD });
+    assert.equal(attach[n.instance].parent?.home ?? STEWARD.home, spawn.home, n.instance);
+  }
+});
+
+test("a did:aw under a local parent takes its nearest registered ancestor, else the steward", () => {
+  const r = by([
+    node("glob", { spawnedBy: null }, "did:aw:glob"),
+    node("local", { spawnedBy: { instance: "glob", home: "/d/agents/x/instances/glob" } }),
+    node("seat", { spawnedBy: { instance: "local", home: "/d/agents/x/instances/local" } }, "did:aw:seat"),
+    node("lone", { spawnedBy: { instance: "local2", home: "/d/agents/x/instances/local2" } }, "did:aw:lone"),
+    node("local2", { spawnedBy: null }),
+  ]);
+  assert.deepEqual([r.seat.parent?.instance, r.lone.parent, r.local.parent?.instance], ["glob", null, "glob"]);
+});
+
+test("order: every parent comes before its children", () => {
+  const order = attachParents([
+    node("c", { spawnedBy: { instance: "b", home: "/d/agents/x/instances/b" } }),
+    node("b", { spawnedBy: { instance: "a", home: "/d/agents/x/instances/a" } }),
+    node("a", { spawnedBy: null }),
+  ]).map((r) => r.instance);
+  assert.deepEqual(order, ["a", "b", "c"]);
+});
+
+test("a record that loops back on itself still places every home once, the steward closing the loop", () => {
+  const order = attachParents([
+    node("p", { spawnedBy: { instance: "q", home: "/d/agents/x/instances/q" } }),
+    node("q", { spawnedBy: { instance: "p", home: "/d/agents/x/instances/p" } }),
+  ]);
+  assert.deepEqual(order.map((r) => r.instance).sort(), ["p", "q"]);
+  assert.equal(order[0].parent, null);
+  assert.equal(order[1].parent?.instance, order[0].instance);
 });
