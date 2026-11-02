@@ -3,13 +3,19 @@
 // refusal recorded and not retried until an attach apply.
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { readAttachRefusal, startAttach } from "../oats-package/capabilities/oats-aweb/lib/attach.mjs";
 import { homeKeyIds } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { fakeAwChain, writeIdentity } from "./helpers/fake-aw-chain.mjs";
+import { currentRootQuery } from "./helpers/current-root-query.mjs";
+
+/** `oats status` for a test deployment: every instance home under agents/. */
+function listAll(ws) {
+  return () => ({ known: true, rows: readdirSync(join(ws, "agents")).flatMap((soul) => { try { return readdirSync(join(ws, "agents", soul, "instances")).map((n) => ({ instance: n, home: join(ws, "agents", soul, "instances", n) })); } catch { return []; } }) });
+}
 
 const HUMAN = "did:aw:human1", STEWARD = "did:aw:steward1";
 const HUMAN_CERT = { id: HUMAN, kind: "human", parent: { kind: "namespace", id: "awtest-demo.example" } };
@@ -26,6 +32,7 @@ function keyedHome(dir, { did } = {}) {
 function fixture(t, { attribution = "human", record = { spawnedBy: null }, did, parentChained = true } = {}) {
   const ws = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-attach-start-")));
   t.after(() => rmSync(ws, { recursive: true, force: true }));
+  writeFileSync(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const stewardHome = join(ws, ".aweb-stewards", "s");
   writeIdentity(stewardHome, { did: STEWARD, chain: parentChained ? [HUMAN_CERT, STEWARD_CERT] : undefined });
   const lead = keyedHome(join(ws, "agents", "lead", "instances", "lead-1"));
@@ -34,7 +41,7 @@ function fixture(t, { attribution = "human", record = { spawnedBy: null }, did, 
   writeFileSync(join(home, "instance.json"), JSON.stringify(record));
   const settings = { ...(attribution ? { attribution } : {}), human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: stewardHome } };
   const fake = fakeAwChain(t);
-  const start = ({ env, ...extra } = {}) => startAttach({ home, instance: "dev-1", settings, deployment: ws, local: true, env: { PATH: fake.path, ...env }, ...extra });
+  const start = ({ env, ...extra } = {}) => startAttach({ home, instance: "dev-1", settings, deployment: ws, local: true, env: { PATH: fake.path, ...env }, listHomes: listAll(ws), ...extra });
   return { ws, home, lead, fake, start };
 }
 const idCalls = (fake) => fake.calls().filter((c) => c.args[0] === "id");
@@ -109,8 +116,10 @@ const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/o
 function launch(fx, { preview = false, attribution = "human" } = {}) {
   const settings = { root: fx.ws, ...(attribution ? { attribution } : {}), human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: join(fx.ws, ".aweb-stewards", "s") } };
   const meta = { team: "legacy:example.test", alias: "dev-1", delivery: "channel", runtime: "claude", identity: { mode: "local" }, defaultTeam: { label: "default", team: "legacy:example.test", from: "deployment" } };
+  const rows = listAll(fx.ws)().rows;
+  const kernel = currentRootQuery(fx.ws, { home: fx.home, deployment: fx.ws, settings, change: `if(args[0]==='status')doc={root:${JSON.stringify(fx.ws)},agents:[{instances:${JSON.stringify(rows)}}]};` });
   const r = spawnSync(process.execPath, [HOOK, "launch"], { cwd: fx.home, encoding: "utf8", timeout: 60000, env: {
-    PATH: fx.fake.path, HOME: process.env.HOME, OATS_EVENT: "launch", OATS_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_RUNTIME: "claude", OATS_PREVIOUS_RUNTIME: "claude",
+    PATH: fx.fake.path, HOME: process.env.HOME, OATS_EVENT: "launch", OATS_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_TEAM_SCOPE: fx.ws, OATS_CLI_BIN: kernel.cli, OATS_RUNTIME: "claude", OATS_PREVIOUS_RUNTIME: "claude",
     OATS_SETTINGS: JSON.stringify(settings), OATS_META: JSON.stringify(meta), OATS_TEAMS: "[]", OATS_TEAMS_SOURCE: "live", ...(preview ? { OATS_LAUNCH_PREVIEW: "1" } : {}),
   } });
   return { status: r.status, doc: JSON.parse(r.stdout.trim().split("\n").pop() || "{}"), stderr: r.stderr };

@@ -10,7 +10,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds, pendingImport, resumeImport } from "./attribution.mjs";
 import { parseAwJson } from "./aw-json.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
@@ -141,16 +141,17 @@ export function storedReceipt({ receiptsDir, idempotencyKey, planRevision, deplo
   return { ...stored, replayed: true };
 }
 
-/** The key's lock: one apply of a key at a time. A lock whose process has
- *  ended is taken over. */
-function lockKey(lockFile) {
+/** An exclusive lock file holding its owner's pid: one holder at a time. A
+ *  lock whose process has ended (a start or apply that was killed) is taken
+ *  over; one held by a running process refuses with `busy`. */
+function takeLock(lockFile, busy) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try { writeFileSync(lockFile, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); return; }
     catch (e) { if (e.code !== "EEXIST") throw e; }
     const pid = Number.parseInt(readFileSync(lockFile, "utf8"), 10);
     let running = false;
     try { if (pid > 0) { process.kill(pid, 0); running = true; } } catch (e) { running = e.code === "EPERM"; }
-    if (running) throw failure("E_ATTACH_FAILED", `an apply with this idempotency key is already running (pid ${pid}) → run it again once it has finished, to get its result`);
+    if (running) throw failure("E_ATTACH_FAILED", busy(pid));
     rmSync(lockFile, { force: true });
   }
   throw failure("E_ATTACH_FAILED", `could not take the lock ${lockFile} → run it again`);
@@ -168,7 +169,7 @@ export function applyPlan({ plan, planRevision, idempotencyKey, receiptsDir, att
   checkApplyArgs(planRevision, idempotencyKey);
   mkdirSync(receiptsDir, { recursive: true, mode: 0o700 });
   const receiptFile = join(receiptsDir, `receipt.${idempotencyKey}.json`), lockFile = join(receiptsDir, `receipt.${idempotencyKey}.lock`);
-  lockKey(lockFile);
+  takeLock(lockFile, (pid) => `an apply with this idempotency key is already running (pid ${pid}) → run it again once it has finished, to get its result`);
   try {
     const replay = storedReceipt({ receiptsDir, idempotencyKey, planRevision, deployment: plan.deployment });
     if (replay) return replay;
@@ -227,8 +228,7 @@ export function attachHome({ entry, run, keys, recipient = entry.instance }) {
   const stateDir = attachStateDir(entry.home);
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const lock = join(stateDir, "attach.lock");
-  try { writeFileSync(lock, `${process.pid}\n`, { flag: "wx" }); }
-  catch { throw failure("E_ATTACH_FAILED", `another attach of ${entry.instance} is running (${lock}) → retry once it has finished`); }
+  takeLock(lock, (pid) => `another attach of ${entry.instance} is running (pid ${pid}, ${lock}) → retry once it has finished`);
   try {
     if (resumeImport({ childHome: entry.home, stateDir, run })) { clearAttachRefusal(entry.home); return; }
     const current = keys ?? homeKeyIds(entry.home);
@@ -252,36 +252,30 @@ function instanceRecord(home) {
 }
 
 /** The instance a home's record names as its parent by the spawn's rule,
- *  if it is one of this deployment's homes: `spawnedBy`, or, for a home
- *  spawned before kernels recorded spawners, `parentInstance`. */
-function recordedParent(record, deployment) {
-  const agents = join(deployment, "agents");
+ *  among the homes `oats status` lists for the deployment (as the plan reads
+ *  them): `spawnedBy`, or, for a home spawned before kernels recorded
+ *  spawners, `parentInstance`. A parent it doesn't list is none. */
+function recordedParent(record, listed) {
+  let row = null;
   if (Object.hasOwn(record, "spawnedBy")) {
     const s = record.spawnedBy;
-    if (!s || typeof s.home !== "string" || typeof s.instance !== "string" || !s.home.startsWith(`${agents}/`)) return null;
-    const r = instanceRecord(s.home);
-    return r ? { instance: s.instance, home: s.home, record: r } : null;
-  }
-  if (typeof record.parentInstance !== "string") return null;
-  let souls = [];
-  try { souls = readdirSync(agents); } catch { souls = []; }
-  for (const soul of souls) {
-    const h = join(agents, soul, "instances", record.parentInstance), r = instanceRecord(h);
-    if (r) return { instance: record.parentInstance, home: h, record: r };
-  }
-  return null;
+    if (s && typeof s.home === "string" && typeof s.instance === "string") row = listed.byHome.get(resolve(s.home)) || null;
+  } else if (typeof record.parentInstance === "string") row = listed.byName.get(record.parentInstance) || null;
+  const r = row && instanceRecord(row.home);
+  return r ? { instance: row.instance, home: row.home, record: r } : null;
 }
 /** A line of recorded parents longer than any deployment holds is read as
  *  damaged: the start waits rather than guess. */
 const MAX_ANCESTRY = 1000;
-/** The home's line of recorded parents within the deployment, nearest first,
- *  to its end or a loop; `complete` is false when it stopped at the bound. */
-function ancestorRows(home, deployment) {
-  const rows = [], seen = new Set([home]);
+/** The home's line of recorded parents among the listed homes, nearest
+ *  first, to its end or a loop; `complete` is false when it stopped at the
+ *  bound. */
+function ancestorRows(home, listed) {
+  const rows = [], seen = new Set([resolve(home)]);
   let record = instanceRecord(home) || {};
-  for (let next; (next = recordedParent(record, deployment)) && !seen.has(next.home); record = next.record) {
+  for (let next; (next = recordedParent(record, listed)) && !seen.has(resolve(next.home)); record = next.record) {
     if (rows.length === MAX_ANCESTRY) return { rows, complete: false };
-    seen.add(next.home);
+    seen.add(resolve(next.home));
     rows.push({ instance: next.instance, home: next.home });
   }
   return { rows, complete: true };
@@ -299,7 +293,7 @@ function ancestorRows(home, deployment) {
  * read); otherwise {attach (the meta's record of a lasting refusal, or
  * undefined), note (the warning, or null)}.
  */
-export function startAttach({ home, instance, settings, origins, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS }) {
+export function startAttach({ home, instance, settings, origins, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS, listHomes = () => deploymentHomes(env, deployment) }) {
   let mode;
   try { mode = attributionMode(settings); } catch { return null; }
   if (hostOnlyViolation(origins)) return null;
@@ -326,7 +320,11 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
   const later = (code, message) => ({ attach: undefined, note: `this home could not be attached at start (${code}): ${String(message).slice(0, 300)}; the next start tries again, or ${ATTACH_ACT}` });
   let entry, plan;
   try {
-    const line = ancestorRows(home, deployment);
+    // The parents the plan would see: the homes `oats status` lists.
+    const listing = listHomes();
+    if (!listing?.known) return later("E_ATTACH_FAILED", `the deployment's homes could not be read (${listing?.reason || "no listing"}), so its parent can't be chosen`);
+    const listed = { byHome: new Map(listing.rows.map((r) => [resolve(r.home), r])), byName: new Map(listing.rows.map((r) => [r.instance, r])) };
+    const line = ancestorRows(home, listed);
     if (!line.complete) return later("E_ATTACH_FAILED", `its line of recorded parents is longer than ${MAX_ANCESTRY}, so its parent can't be chosen`);
     const facts = [{ instance, home }, ...line.rows].map((row) => homeFacts(run, row));
     // The parent is chosen from every recorded parent's id: one that can't be

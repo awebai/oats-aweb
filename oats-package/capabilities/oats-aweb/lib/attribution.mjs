@@ -8,7 +8,7 @@
 // records them is the person's own approval and is not part of this package.
 import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { CONTROL_CHARACTER } from "./status-document.mjs";
 
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -104,10 +104,11 @@ const recordedSpawner = (s) => (s && typeof s === "object" && typeof s.instance 
  * never being issued, looks there).
  */
 export function attachParents(nodes) {
-  const byHome = new Map(nodes.map((n) => [n.home, n])), byName = new Map(nodes.map((n) => [n.instance, n]));
+  // Paths compare resolved, so a recorded `..` can't name a home it isn't.
+  const byHome = new Map(nodes.map((n) => [resolve(n.home), n])), byName = new Map(nodes.map((n) => [n.instance, n]));
   const spawnParent = (n) => {
     const record = n.record || {};
-    if (Object.hasOwn(record, "spawnedBy")) return byHome.get(recordedSpawner(record.spawnedBy)?.home) || null;
+    if (Object.hasOwn(record, "spawnedBy")) { const s = recordedSpawner(record.spawnedBy); return (s && byHome.get(resolve(s.home))) || null; }
     return (typeof record.parentInstance === "string" && byName.get(record.parentInstance)) || null;
   };
   const parentOf = (n) => {
