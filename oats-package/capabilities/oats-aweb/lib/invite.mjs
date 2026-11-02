@@ -99,9 +99,12 @@ export function issueInvite(argv, env = process.env) {
   const team = rows[0].team;
   if (!validTeam(team)) fail('E_INVITE_TEAM', 'selected label has no valid canonical aweb team');
   if (!opts.label && env.OATS_DEFAULT_TEAM_ID !== team) fail('E_INVITE_TEAM', 'selected default team does not match current kernel declarations');
-  const raw = object(settings.roots) && Object.hasOwn(settings.roots,team) ? settings.roots[team] : settings.root;
+  // With no root declared, the team's root is the deployment's own, as setup creates it and spawn
+  // reads it. A declared root, even an invalid one, is never replaced.
+  const declared = (object(settings.roots) && Object.hasOwn(settings.roots,team)) || Object.hasOwn(settings,'root');
+  const raw = object(settings.roots) && Object.hasOwn(settings.roots,team) ? settings.roots[team] : declared ? settings.root : deployment;
   let root;
-  try { if (typeof raw !== 'string' || !isAbsolute(raw)) throw new Error(); root = realpathSync(raw); if (!statSync(join(root,'.aw')).isDirectory()) throw new Error(); } catch { fail('E_INVITE_ROOT', 'selected team root is missing, invalid or unreadable; repair its explicit root setting'); }
+  try { if (typeof raw !== 'string' || !isAbsolute(raw)) throw new Error(); root = realpathSync(raw); if (!statSync(join(root,'.aw')).isDirectory()) throw new Error(); } catch { fail('E_INVITE_ROOT', declared ? 'selected team root is missing, invalid or unreadable; repair its explicit root setting' : 'no team root is set and the deployment has no .aw root; run setup, or set settings.oats.aweb.root'); }
   let membership;
   try { membership = JSON.parse(isolatedNative(['team','list','--json'], root, env)); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
   if (!Array.isArray(membership?.memberships)) fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership');

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`oats aweb invite` works on a workspace set up without a root setting.**
+  `oats aweb setup --username` creates the team's root in the deployment and
+  records no `root`, and spawn finds it there, but invite read only the
+  setting and refused with `E_INVITE_ROOT`. With no root declared for the
+  team, invite now uses the deployment's own root. A declared root, even an
+  invalid one, is still never replaced.
+
 ## 1.33.0 — 2026-11-02
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged. Cut from `main`;

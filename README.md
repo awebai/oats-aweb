@@ -956,7 +956,9 @@ GLOBAL invitation or local-controller/BYOT issuance.
 
 `--plan` only reads team/root/membership and states what would be requested; it
 neither mints nor proves permission. Apply uses `roots[T]`, or `root` only when
-that override is absent; invalid explicit roots refuse. Native invocation uses
+that override is absent; invalid explicit roots refuse. With neither set, it
+uses the deployment's own root, the one `oats aweb setup` creates and spawn
+reads, and refuses if the deployment has no `.aw`. Native invocation uses
 the selected root as cwd, explicit team ID, isolated disposable HOME and no
 inherited credentials, controller state, external identity home or routing.
 Membership is not an owner/admin claim; the server decides issuance authority.
