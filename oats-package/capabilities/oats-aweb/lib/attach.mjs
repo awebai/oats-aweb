@@ -92,8 +92,8 @@ function ownStatus(f) {
 /** A child of a retained seat that attach skipped: a did:key copy never
  *  carries a chain, so its child never attaches; a did:aw copy verifies once
  *  its source is attached, and its child attaches then. */
-function copiedParentRefusal(spawner, spawnerEntry) {
-  if (String(spawnerEntry.did || "").startsWith("did:key:")) return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "copied_identity_parent", message: `its spawner ${spawner.instance} uses a copied did:key identity, which never carries a chain: this instance stays chainless and reports unknown → respawn it from an instance that holds its own identity, or from a shell` };
+function copiedParentRefusal(spawner) {
+  if (String(spawner.did || "").startsWith("did:key:")) return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "copied_identity_parent", message: `its spawner ${spawner.instance} uses a copied did:key identity, which never carries a chain: this instance stays chainless and reports unknown → respawn it from an instance that holds its own identity, or from a shell` };
   return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its spawner ${spawner.instance} uses an identity copied from ${spawner.facts.copiedIdentity.source || "another home"} → once its owner attaches the source, the copy verifies through the registry; then plan again` };
 }
 
@@ -121,7 +121,9 @@ export function buildPlan({ deployment, settings, origins, homes, stewardStatus 
       // The spawner the record names, not the certificate parent: a did:aw
       // child's ancestor rule would skip a keyless seat.
       if (n.spawnParent?.facts?.grantSeat) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "grant_seat_parent", message: `its spawner ${n.spawnParent.instance} acts through a session grant and holds no key, so it can never issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own key, or from a shell` });
-      else if (n.spawnParent?.facts?.copiedIdentity && entries.get(n.spawnParent.home)?.code === "E_ATTACH_COPIED_IDENTITY") Object.assign(entry, copiedParentRefusal(n.spawnParent, entries.get(n.spawnParent.home)));
+      // From the spawner's own facts: a did:aw child's certificate parent may
+      // skip the copy, so the copy can come after it in attach order.
+      else if (n.spawnParent?.facts?.copiedIdentity && ownStatus(n.spawnParent.facts).code === "E_ATTACH_COPIED_IDENTITY") Object.assign(entry, copiedParentRefusal(n.spawnParent));
       else if (parent && !["attach", "attached", "attached-registry"].includes(parent.status)) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its parent ${parent.instance} is not attached (${parent.code || parent.status}) → attach its parent first, then plan again` });
       else if (parent?.verified === false) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: parent.reason, message: `its parent ${parent.instance} carries a chain that does not verify (${parent.reason || "no reason"}) → repair the parent's chain, then plan again` });
       if (f.refusal) entry.lastRefusal = { code: f.refusal.code, reason: f.refusal.reason ?? null };

@@ -295,3 +295,17 @@ test("a child of an unregistered retained did:aw seat waits for the source: refu
   assert.match(r.note, /the next start tries again/);
   assert.deepEqual(idCalls(fx.fake), []);
 });
+
+test("a did:aw child of a retained did:key seat is refused whatever the listing order, and at start, with no exchange", (t) => {
+  const fx = deployment(t);
+  const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: COPIED("/legacy/.aw") }, {});
+  const g = fx.instance("g", { spawnedBy: { instance: "seat", home: seat.home } }, { global: true, who: UNREGISTERED });
+  for (const order of [[seat, g], [g, seat]]) {
+    const entry = planOf(fx, order).homes.find((h) => h.instance === "g");
+    assert.deepEqual([entry.status, entry.reason], ["refused", "copied_identity_parent"], `${order.map((h) => h.name)}: ${JSON.stringify(entry)}`);
+  }
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
+  assert.deepEqual(idCalls(fx.fake), []);
+  assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), false);
+});
