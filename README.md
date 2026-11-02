@@ -5,6 +5,14 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.33.2 — a warning when aw is newer than its server
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33. Off the aweb Cloud,
+readiness and spawn warn (`aw-newer-than-tested`) when the host's aw is newer
+than the provider is tested with, naming the server's upgrade first. A mint
+that aw refuses with `unknown_or_invalid` names that likely cause instead of
+only "output withheld".
+
 ## 1.33.1 — invites on a workspace set up without a sign-in
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33. `oats aweb invite`
