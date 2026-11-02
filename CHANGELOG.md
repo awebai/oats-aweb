@@ -12,9 +12,10 @@
   supports it. Never a refusal.
 - **A mint refused for that reason says so.** When `aw init --join-from` fails
   with aw's `unknown_or_invalid` error code (its `--json` envelope, aw
-  1.36.52-rc.3 and later), spawn names the code, the server's upgrade and the
-  tested aw (if no deployment on the host needs a newer one) instead of only
-  "output withheld". Only that code is read; aw's
+  1.36.52-rc.3 and later), spawn names the code, its most likely cause (an aw
+  newer than its server; the code can also mean a genuinely bad invite), the
+  server's upgrade and the tested aw (if no deployment on the host needs a
+  newer one) instead of only "output withheld". Only that code is read; aw's
   message is never shown.
 
 ## 1.33.1 — 2026-11-02

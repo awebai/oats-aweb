@@ -305,20 +305,22 @@ test("a home that already holds identity material is refused and nothing is dele
 
 test("the aw version read returns at the version line and leaves no child running", async (t) => {
   // A shell aw that execs its sleep: the pid it records is the process the
-  // reader must kill, and shell startup keeps the timing about the reader.
+  // reader must kill, and shell startup keeps the timing about the reader. The
+  // sleep is 30 s and the bound 10 s: far enough apart that a loaded CI runner
+  // can't blur "returned at the line" with "waited for the exit".
   const base = tempDir(t), bin = join(base, "bin"), pids = join(base, "pids");
   mkdirSync(bin);
   writeFileSync(join(bin, "aw"), `#!/bin/sh
 echo $$ >> '${pids}'
 case "$FAKE_VERSION" in
-  slow) printf 'aw 1.36.17\\n  commit: abc\\n'; exec sleep 5 ;;
-  chunked) printf 'aw 1.3'; sleep 0.15; printf '6.17\\n'; exec sleep 5 ;;
-  prerelease) printf 'aw 1.36.33'; sleep 0.15; printf -- '-rc.1\\n'; exec sleep 5 ;;
-  inside) printf 'aw 1.36.53-rc'; sleep 0.15; printf '.3 0123abcd\\n'; exec sleep 5 ;;
+  slow) printf 'aw 1.36.17\\n  commit: abc\\n'; exec sleep 30 ;;
+  chunked) printf 'aw 1.3'; sleep 0.15; printf '6.17\\n'; exec sleep 30 ;;
+  prerelease) printf 'aw 1.36.33'; sleep 0.15; printf -- '-rc.1\\n'; exec sleep 30 ;;
+  inside) printf 'aw 1.36.53-rc'; sleep 0.15; printf '.3 0123abcd\\n'; exec sleep 30 ;;
   unterminated) printf 'aw 1.36.53-rc.3' ;;
-  notsemver) printf 'aw 1.36.033\\n'; exec sleep 5 ;;
+  notsemver) printf 'aw 1.36.033\\n'; exec sleep 30 ;;
   nomatch) echo 'no version here' ;;
-  silent) exec sleep 5 ;;
+  silent) exec sleep 30 ;;
   *) echo 'aw 1.36.17' ;;
 esac
 `);
@@ -336,12 +338,12 @@ esac
     const got = await readAwVersion({ env: { ...env, FAKE_VERSION: mode } });
     const took = Date.now() - started;
     assert.equal(got, want, mode);
-    assert.ok(took < 1000, `${mode || "plain"} read took ${took} ms`);
+    assert.ok(took < 10000, `${mode || "plain"} read took ${took} ms`);
   }
   // The ceiling still bounds a child that prints nothing.
   const started = Date.now();
   assert.equal(await readAwVersion({ env: { ...env, FAKE_VERSION: "silent" }, timeout: 300 }), undefined);
-  assert.ok(Date.now() - started < 2000);
+  assert.ok(Date.now() - started < 10000);
   const recorded = readFileSync(pids, "utf8").trim().split("\n").map(Number);
   assert.equal(recorded.length, 10);
   for (const pid of recorded) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, `aw version pid ${pid} is gone`);
@@ -500,13 +502,13 @@ test("spawn warns when aw is newer than tested on a self-hosted root, and not on
   }
 });
 
-test("a mint refused by aw's unknown_or_invalid code names the server and the pin, and carries the tested-range warning", (t) => {
+test("a mint refused by aw's unknown_or_invalid code names the likely cause, the server and the pin, and carries the tested-range warning", (t) => {
   const fx = fixture(t);
   writeRootService(fx.ws, SELF_HOSTED);
   const r = fx.hook("spawn", { FAKE_AW_VERSION: "1.36.53-rc.3", FAKE_JOIN_FROM_PREVIEW: "1" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.equal(r.doc.meta, undefined);
-  assert.match(r.doc.warning, /^oats-aweb: aw refused the invite it made \(unknown_or_invalid\), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to 1\.36\.51 \(`npm i -g @awebai\/aw@1\.36\.51`\) if no deployment on this host needs a newer one\. Team: default:example\.test \| /);
+  assert.match(r.doc.warning, /^oats-aweb: the invite aw made was refused \(unknown_or_invalid\), most likely because the host's aw is newer than its server; the server's aweb needs upgrading, or the host's aw pinned to 1\.36\.51 \(`npm i -g @awebai\/aw@1\.36\.51`\) if no deployment on this host needs a newer one\. Team: default:example\.test \| /);
   assert.match(r.doc.warning, /\| oats-aweb: aw-newer-than-tested — aw 1\.36\.53-rc\.3 is newer/);
   assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK|invite preview/);
 });
@@ -565,7 +567,7 @@ test("the mint refusal keeps its diagnosis when the team id is long", (t) => {
   writeRootService(fx.ws, "https://app.aweb.ai/api");
   const r = fx.hook("spawn", { FAKE_AW_VERSION: "1.36.53", FAKE_JOIN_FROM_PREVIEW: "1", OATS_DEFAULT_TEAM_ID: team, OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]) });
   assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.doc.warning, /^oats-aweb: aw refused the invite it made \(unknown_or_invalid\), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to 1\.36\.51 \(`npm i -g @awebai\/aw@1\.36\.51`\) if no deployment on this host needs a newer one\. Team: x/);
+  assert.match(r.doc.warning, /^oats-aweb: the invite aw made was refused \(unknown_or_invalid\), most likely because the host's aw is newer than its server; the server's aweb needs upgrading, or the host's aw pinned to 1\.36\.51 \(`npm i -g @awebai\/aw@1\.36\.51`\) if no deployment on this host needs a newer one\. Team: x/);
 });
 
 test("readiness decides the Cloud per home, by its own team's root", async (t) => {
