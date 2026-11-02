@@ -6,8 +6,39 @@
 // meta records. No OATS code signs as a human. The bound human and the
 // steward are read from host settings (`human`, `steward`); the bind that
 // records them is the person's own approval and is not part of this package.
-import { basename, isAbsolute } from "node:path";
+import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { basename, isAbsolute, join } from "node:path";
 import { CONTROL_CHARACTER } from "./status-document.mjs";
+
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+/** base58btc, the alphabet aw's did:key and did:aw use. */
+function base58(bytes) {
+  let n = BigInt(`0x${Buffer.from(bytes).toString("hex") || "0"}`), out = "";
+  while (n > 0n) { out = BASE58[Number(n % 58n)] + out; n /= 58n; }
+  for (const b of bytes) { if (b !== 0) break; out = `1${out}`; }
+  return out;
+}
+/** An Ed25519 public key's did:key, as aw computes it (awid/didkey.go). */
+export function didKeyFromPublicKey(publicKey) {
+  return `did:key:z${base58(Buffer.concat([Buffer.from([0xed, 0x01]), Buffer.from(publicKey)]))}`;
+}
+/** The identity's current key, read from its own `.aw/signing.key` (a PEM
+ *  block holding the 32-byte Ed25519 seed, as aw writes it): its did:key and
+ *  the did:aw stable id that key would have. A did:aw that no longer equals
+ *  `stableId` has rotated its key. Null when there is no readable key. Reading
+ *  it signs nothing. */
+export function homeKeyIds(home) {
+  let seed;
+  try {
+    const pem = /-----BEGIN ED25519 PRIVATE KEY-----\r?\n([\s\S]+?)\r?\n-----END ED25519 PRIVATE KEY-----/.exec(readFileSync(join(home, ".aw", "signing.key"), "utf8"));
+    seed = pem && Buffer.from(pem[1].replace(/\s+/g, ""), "base64");
+  } catch { return null; }
+  if (!seed || seed.length !== 32) return null;
+  const key = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]), format: "der", type: "pkcs8" });
+  const publicKey = Buffer.from(createPublicKey(key).export({ format: "jwk" }).x, "base64url");
+  return { didKey: didKeyFromPublicKey(publicKey), stableId: `did:aw:${base58(createHash("sha256").update(publicKey).digest().subarray(0, 20))}` };
+}
 
 /** The kernel feature that makes an absent OATS_SPAWNER_HOME mean a person's spawn. */
 export const SPAWN_ATTRIBUTION_FEATURE = "spawn-attribution";
