@@ -39,6 +39,11 @@ export function recordAttachRefusal(home, refusal) {
   writeFileSync(refusalFile(home), `${JSON.stringify(refusal)}\n`, { mode: 0o600 });
 }
 export const clearAttachRefusal = (home) => rmSync(refusalFile(home), { force: true });
+/** Records a lasting refusal; a write that fails never stops anything, and
+ *  the returned phrase says so ("" when saved). */
+function saveRefusal(home, refusal) {
+  try { recordAttachRefusal(home, refusal); return ""; } catch (e) { return ` (this refusal could not be saved: ${String(e.message || e).slice(0, 120)}; it is checked again at the next start)`; }
+}
 /** Where a home's exchange keeps its request, response and pending import. */
 export const attachStateDir = (home) => join(home, ".oats-aweb", "attribution");
 export const readPendingImport = (home) => pendingImport(attachStateDir(home));
@@ -229,7 +234,7 @@ export function attachHome({ entry, run, keys, recipient = entry.instance }) {
     exchangeChain({ issuerHome: entry.parent.home, childHome: entry.home, recipient, stateDir, run, parseJson: parseAwJson, expectedSubjectKey: current.didKey });
     clearAttachRefusal(entry.home);
   } catch (e) {
-    if (isLastingRefusal(e.code)) recordAttachRefusal(entry.home, { code: e.code, reason: e.reason ?? null, message: String(e.message || e).slice(0, 300), at: new Date().toISOString() });
+    if (isLastingRefusal(e.code)) e.message += saveRefusal(entry.home, { code: e.code, reason: e.reason ?? null, message: String(e.message || e).slice(0, 300), at: new Date().toISOString() });
     throw e;
   } finally { rmSync(lock, { force: true }); }
 }
@@ -264,14 +269,20 @@ function recordedParent(record, deployment) {
   }
   return null;
 }
-/** The home's line of recorded parents within the deployment, nearest first. */
+/** A line of recorded parents longer than any deployment holds is read as
+ *  damaged: the start waits rather than guess. */
+const MAX_ANCESTRY = 1000;
+/** The home's line of recorded parents within the deployment, nearest first,
+ *  to its end or a loop; `complete` is false when it stopped at the bound. */
 function ancestorRows(home, deployment) {
   const rows = [], seen = new Set([home]);
-  for (let record = instanceRecord(home) || {}, next; (next = recordedParent(record, deployment)) && !seen.has(next.home) && rows.length < 16; record = next.record) {
+  let record = instanceRecord(home) || {};
+  for (let next; (next = recordedParent(record, deployment)) && !seen.has(next.home); record = next.record) {
+    if (rows.length === MAX_ANCESTRY) return { rows, complete: false };
     seen.add(next.home);
     rows.push({ instance: next.instance, home: next.home });
   }
-  return rows;
+  return { rows, complete: true };
 }
 
 /**
@@ -308,21 +319,30 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
     if (isLastingRefusal(code)) return { attach: { refused: code, reason: e.reason ?? null, at: new Date().toISOString() }, note: `this home could not be attached at start (${code}): ${message}; not retried at start → fix that, then ${ATTACH_ACT}` };
     return { attach: undefined, note: `this home could not be attached at start (${code}): ${message}; the next start tries again, or ${ATTACH_ACT}` };
   };
+  const later = (code, message) => ({ attach: undefined, note: `this home could not be attached at start (${code}): ${String(message).slice(0, 300)}; the next start tries again, or ${ATTACH_ACT}` });
   let entry, plan;
   try {
-    const rows = [{ instance, home }, ...ancestorRows(home, deployment)];
-    plan = buildPlan({ deployment, settings, origins, homes: rows.map((row) => homeFacts(run, row)), stewardStatus: whoIn(run, settings.steward.home) });
+    const line = ancestorRows(home, deployment);
+    if (!line.complete) return later("E_ATTACH_FAILED", `its line of recorded parents is longer than ${MAX_ANCESTRY}, so its parent can't be chosen`);
+    const facts = [{ instance, home }, ...line.rows].map((row) => homeFacts(run, row));
+    // The parent is chosen from every recorded parent's id: one that can't be
+    // read could change it, so the start waits rather than choose another.
+    const unread = facts.slice(1).filter((f) => f.whoError || f.who?.outcome === "unavailable").map((f) => f.instance);
+    if (unread.length) return later("E_ATTACH_FAILED", `the status of its recorded parents ${unread.join(", ")} could not be read, so its parent can't be chosen yet`);
+    plan = buildPlan({ deployment, settings, origins, homes: facts, stewardStatus: whoIn(run, settings.steward.home) });
     entry = plan.homes.find((h) => h.home === home);
   } catch (e) {
     // A refusal of the whole plan (no steward to issue, the registry
     // unreachable) is not this home's own, so it is never recorded for it.
     return { attach: undefined, note: `this home could not be attached at start (${e.code || "E_ATTACH_FAILED"}): ${String(e.message || e).slice(0, 300)}; the next start tries again, or ${ATTACH_ACT}` };
   }
-  if (entry.status === "refused" && ["E_ATTACH_KEY_MISMATCH"].includes(entry.code) || entry.reason === "subject_mismatch") {
-    recordAttachRefusal(home, { code: entry.code, reason: entry.reason ?? null, message: entry.message, at: new Date().toISOString() });
-    return failed(Object.assign(new Error(entry.message), { code: entry.code, reason: entry.reason }));
+  if (entry.status === "refused" || entry.status === "skipped") {
+    // Only a refusal of the home itself lasts; a refused parent or a status
+    // that can't be read now is checked again at the next start.
+    if (entry.code !== "E_ATTACH_KEY_MISMATCH" && entry.reason !== "subject_mismatch") return later(entry.code, entry.message);
+    const saved = saveRefusal(home, { code: entry.code, reason: entry.reason ?? null, message: entry.message, at: new Date().toISOString() });
+    return failed(Object.assign(new Error(`${entry.message}${saved}`), { code: entry.code, reason: entry.reason }));
   }
-  if (entry.status === "refused" && entry.code === "E_ATTACH_FAILED") return failed(Object.assign(new Error(entry.message), { code: entry.code }));
   if (entry.status !== "attach") return nothing;
   // Not before its parent holds a chain: the parent attaches first.
   const parent = entry.parent.steward ? null : plan.homes.find((h) => h.home === entry.parent.home);

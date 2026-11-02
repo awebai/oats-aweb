@@ -3,7 +3,7 @@
 // refusal recorded and not retried until an attach apply.
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -152,4 +152,14 @@ test("the steward's evidence unavailable at start is a warning for now, never a 
   assert.match(r.note, /\(E_ATTACH_FAILED\).*the next start tries again/);
   assert.equal(readAttachRefusal(fx.home), null);
   assert.deepEqual(idCalls(fx.fake), []);
+});
+
+test("launch: a refusal that can't be saved still lets the start go ahead, with one warning", (t) => {
+  const fx = fixture(t, { did: "did:key:zsomeoneelse" });
+  mkdirSync(join(fx.home, ".oats-aweb"), { mode: 0o500 });
+  const r = launch(fx);
+  chmodSync(join(fx.home, ".oats-aweb"), 0o700);
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.equal((r.doc.warning.match(/E_ATTACH_KEY_MISMATCH/g) || []).length, 1);
+  assert.match(r.doc.warning, /could not be saved/);
 });

@@ -1778,7 +1778,9 @@ function assertMintingRootIssuesNothing(root) {
 function attachAtStart(meta, local) {
   let origins;
   try { origins = JSON.parse(process.env.OATS_SETTINGS_ORIGINS || "{}"); } catch { origins = undefined; }
-  const result = startAttach({ home, instance, settings, origins, deployment: process.env.OATS_WORKSPACE || "", local, env: process.env });
+  let result;
+  try { result = startAttach({ home, instance, settings, origins, deployment: process.env.OATS_WORKSPACE || "", local, env: process.env }); }
+  catch (e) { outNotes.push(`this home could not be attached at start: ${String(e.message || e).slice(0, 200)}; the next start tries again`); return meta; }
   if (!result) return meta;
   if (result.note) outNotes.push(result.note);
   const { attach, ...rest } = meta;

@@ -3,7 +3,7 @@
 // registry already certifies, and the receipt under concurrent applies.
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -140,4 +140,51 @@ test("a lock left by an apply that is no longer running is taken over", (t) => {
   writeFileSync(join(dir, "receipt.k.lock"), "999999999\n");
   const r = applyPlan({ plan, planRevision: plan.planRevision, idempotencyKey: "k", receiptsDir: dir, attachOne: () => {} });
   assert.equal(r.homes[0].status, "attached");
+});
+
+test("a start reaches a did:aw ancestor however long the line of local parents before it", (t) => {
+  const fx = deployment(t);
+  const gp = fx.instance("gp", { spawnedBy: null }, { global: true, chain: [HUMAN_CERT, STEWARD_CERT] });
+  let above = gp;
+  for (let i = 0; i < 20; i++) above = fx.instance(`l${i}`, { spawnedBy: { instance: above.name, home: above.home } }, {});
+  const g = fx.instance("g", { spawnedBy: { instance: above.name, home: above.home } }, { global: true, who: UNREGISTERED });
+  const r = startAttach({ home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.deepEqual(r, { attach: undefined, note: null });
+  assert.equal(idCalls(fx.fake).find((c) => c.step === "child invite").cwd, gp.home);
+});
+
+test("a start whose parents' status can't all be read waits, warning, rather than choose another parent", (t) => {
+  const fx = deployment(t);
+  const gp = fx.instance("gp", { spawnedBy: null }, { global: true, chain: [HUMAN_CERT, STEWARD_CERT] });
+  writeFileSync(join(gp.home, ".aw", "fake-who.json"), "not json");
+  const sp = fx.instance("sp", { spawnedBy: { instance: "gp", home: gp.home } }, {});
+  const g = fx.instance("g", { spawnedBy: { instance: "sp", home: sp.home } }, { global: true, who: UNREGISTERED });
+  const r = startAttach({ home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(r.attach, undefined);
+  assert.match(r.note, /\(E_ATTACH_FAILED\).*gp.*the next start tries again/);
+  assert.deepEqual(idCalls(fx.fake), []);
+});
+
+test("a start under a refused parent warns with the parent's reason and its fix, recording nothing for the home", (t) => {
+  const fx = deployment(t);
+  const sp = fx.instance("sp", { spawnedBy: null }, { chain: [HUMAN_CERT, STEWARD_CERT] });
+  writeFileSync(join(sp.home, ".aw", "fake-who.json"), JSON.stringify({ id: sp.id, outcome: "unknown", human_id: null, identity_valid: false, kind: null, reason: "revoked" }));
+  const c = fx.instance("c", { spawnedBy: { instance: "sp", home: sp.home } }, {});
+  const r = startAttach({ home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(r.attach, undefined, JSON.stringify(r));
+  assert.match(r.note, /\(E_ATTACH_PARENT_REFUSED\).*revoked.*repair the parent's chain/);
+  assert.equal(existsSync(join(c.home, ".oats-aweb", "attach.json")), false);
+  assert.deepEqual(idCalls(fx.fake), []);
+});
+
+test("a refusal that can't be saved never stops the start: one warning says so", (t) => {
+  const fx = deployment(t);
+  const c = fx.instance("c", { spawnedBy: null }, {});
+  writeFileSync(join(c.home, ".aw", "did-key"), "did:key:zsomeoneelse");
+  writeFileSync(join(c.home, ".aw", "did"), "did:key:zsomeoneelse");
+  mkdirSync(join(c.home, ".oats-aweb"), { mode: 0o500 });
+  const r = startAttach({ home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  chmodSync(join(c.home, ".oats-aweb"), 0o700);
+  assert.equal(r.attach.refused, "E_ATTACH_KEY_MISMATCH");
+  assert.match(r.note, /could not be saved/);
 });
