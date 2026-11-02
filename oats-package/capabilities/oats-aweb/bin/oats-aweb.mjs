@@ -1818,7 +1818,7 @@ if (event === "launch") {
       // codes on AW_ERROR_CODES are read, and never its message.
       if (e.awErrorCode === "unknown_or_invalid") {
         // The fixed diagnosis first: fatal keeps 300 characters, and a team id can be long.
-        fatal(`aw refused the invite it made (unknown_or_invalid), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`) if no deployment on this host needs a newer one. Team: ${team}`);
+        fatal(`the invite aw made was refused (unknown_or_invalid), most likely because the host's aw is newer than its server; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`) if no deployment on this host needs a newer one. Team: ${team}`);
       }
       if (e.aliasConflict) {
         fatal(`alias "${instance}" already holds a certificate on ${team} (another machine's instance of that name, or a retired one until aweb-abim ships), so no identity could be minted — ${ALIAS_REUSE_REMEDY}`);
