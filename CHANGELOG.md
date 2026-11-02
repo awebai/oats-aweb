@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.33.2 — 2026-11-02
+
+Requires OATS >=0.68.0. The aw floor and pin are unchanged.
+
 - **A warning when aw is newer than tested, off the Cloud.** Readiness
   (`aw-newer-than-tested`) and spawn warn when the aw on PATH is above the
   highest aw the provider's CI journeys pass on (1.36.51) and the home's own
