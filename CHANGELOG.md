@@ -16,7 +16,8 @@
   - The parent approves only a request for the key in the home's own signing
     key.
   - A home `oats status` doesn't list is never touched. A failed home stays as
-    it was, and its descendants are skipped.
+    it was, and its descendants are skipped. A `did:aw` whose registration
+    fails after aw installed its chain is resumed by the next attach or start.
   - In mode `human`, a start attaches its own chainless home once its parent
     holds a chain: within 30 s, never stopping the start, with one warning if
     it fails. A lasting refusal is recorded and not retried at start.

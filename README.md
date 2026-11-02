@@ -209,7 +209,13 @@ oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir
     same one a spawn uses. The parent approves only a request whose
     `subject_key` is the key in that home's own signing key: OATS reads it
     from the home and never takes it from a did.
-  - A home that fails stays as it was, and its descendants are skipped.
+  - A home that fails stays as it was, and its descendants are skipped. The
+    one exception is aw's: it installs a `did:aw`'s chain before it registers
+    the certificate. When that registration fails, the home is recorded as a
+    pending import, its response kept, and the next attach or start resumes
+    that import (the plan shows it as `attach`, resuming).
+  - One apply of an idempotency key runs at a time; its receipt, once
+    written, is never replaced.
 
 **At start.** In mode `human`, a start attaches its own chainless local home
 the same way, once its parent holds a chain.
