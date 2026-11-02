@@ -110,12 +110,15 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/aw" --no-audit --no-fund "@awebai/aw@$AW_VERSION"
           "$RUNNER_TEMP/aw/node_modules/.bin/aw" version
+      # The journeys below run even when this step fails, so a red real-aw
+      # step never hides whether the resident journeys still pass.
       - name: Real-aw tests at this version
         shell: bash
         run: |
           PATH="$RUNNER_TEMP/aw/node_modules/.bin:$PATH" node --test --test-reporter=tap --test-name-pattern='real aw|published aw' test/oats-aweb-1-14.test.mjs test/oats-aweb-1-15.test.mjs | tee "$RUNNER_TEMP/real-aw.tap"
           grep -q '^# skipped 0$' "$RUNNER_TEMP/real-aw.tap"
       - name: Give the runner a systemd user manager
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           sudo loginctl enable-linger "$(id -un)"
@@ -129,11 +132,13 @@ jobs:
           echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
       - name: Make lsof available, so the journeys prove the socket-owner check
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           command -v lsof || { echo "lsof missing; installing it on this runner"; sudo apt-get install -y lsof; }
           command -v lsof
       - name: Real-stack resident create journeys
+        if: ${{ !cancelled() }}
         env:
           OATS_RESIDENT_JOURNEY_REQUIRED: '1'
           OATS_RESIDENT_JOURNEY_AW: ${{ runner.temp }}/aw/node_modules/.bin/aw
