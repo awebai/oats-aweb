@@ -884,7 +884,7 @@ test("spawn accepts a 64-character alias and rejects 65 before aw", async (t) =>
   assert.equal(fake.readCalls().length, callsBefore, "invalid alias must be refused before any aw call");
 });
 
-test("alias conflict remedy names --name and --purpose", async (t) => {
+test("alias conflict remedy names --name, with no kernel version", async (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"));
   mkdirSync(home);
@@ -894,8 +894,8 @@ test("alias conflict remedy names --name and --purpose", async (t) => {
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
-  assert.match(warning, /spawn with a different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
-  assert.doesNotMatch(warning, /fresh --purpose/);
+  assert.match(warning, /; spawn with a different --name\. Team: active:example\.invalid$/);
+  assert.doesNotMatch(warning, /kernels?|0\.26|aweb-abim|fresh --purpose/);
 });
 
 test("no-team readiness and spawn refuse without kernel default", async (t) => {

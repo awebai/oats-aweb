@@ -18,6 +18,8 @@ const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aw
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
 const BINDING_WIRE = new URL("../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs", import.meta.url).href;
 const TEAM = "default:example.test";
+/** The spawn refusal for an alias another agent's certificate holds, as the hook prints it. */
+const ALIAS_CONFLICT = (alias, team) => `oats-aweb: alias "${alias}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
 const ENV_SEEN = ["AW_NO_UPDATE_CHECK", "AWEB_URL", "AWEB_API_KEY", "AWEB_ROLE_NAME", "AWEB_ROLE", "AWEB_IDENTITY_HOME"];
 
 function tempDir(t) {
@@ -69,7 +71,8 @@ if (args[0] === "workspace" && args[1] === "delete") {
   if (target !== own && target !== alias) { console.error("workspace name " + JSON.stringify(target) + " not found"); process.exit(1); }
   if (process.env.FAKE_RETRY_401_AFTER_DELETE) fs.writeFileSync(path.join(process.cwd(), ".aw", "revoked"), "1\\n");
   else fs.rmSync(path.join(process.cwd(), ".aw"), { recursive: true, force: true });
-  console.log(JSON.stringify({ workspace_id: own, alias, deleted_at: "", identity_deleted: true, alias_released: true, alias_released_reason: "released" }));
+  const held = !!process.env.FAKE_DELETE_ALIAS_HELD;
+  console.log(JSON.stringify({ workspace_id: own, alias, deleted_at: "", identity_deleted: true, alias_released: !held, alias_released_reason: held ? "alias_held" : "released" }));
   process.exit(0);
 }
 // The 1.17.3 sequence, so a regression back to it is visible as a call.
@@ -257,7 +260,7 @@ test("an alias another machine's self-custodial instance holds (aw 1.36.51's reg
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_SELF_CUSTODY: "1" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.equal(r.doc.meta, undefined);
-  assert.match(r.doc.warning, /alias "dev-1" already holds a certificate on default:example\.test \(another machine's instance of that name.*--name .*--purpose/);
+  assert.equal(r.doc.warning, ALIAS_CONFLICT("dev-1", TEAM));
   assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK|holds its own key/);
 });
 
@@ -266,8 +269,35 @@ test("an alias that still holds a certificate names the remedy, with no meta and
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_CONFLICT: "1" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.equal(r.doc.meta, undefined);
-  assert.match(r.doc.warning, /alias "dev-1" already holds a certificate on default:example\.test .*--name .*--purpose/);
+  assert.equal(r.doc.warning, ALIAS_CONFLICT("dev-1", TEAM));
   assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK/);
+});
+
+test("the alias-conflict refusal names no ticket or kernel version, and a long alias and team id never cut its remedy", (t) => {
+  const fx = fixture(t);
+  const alias = "a".repeat(64), team = `${"t".repeat(128)}:${"n".repeat(63)}.example.test`;
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_CONFLICT: "1", OATS_INSTANCE: alias, OATS_DEFAULT_TEAM_ID: team, OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]) });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.meta, undefined);
+  assert.equal(r.doc.warning, `oats-aweb: ${ALIAS_CONFLICT(alias, team).slice("oats-aweb: ".length, "oats-aweb: ".length + 300)}`);
+  assert.match(r.doc.warning, /spawn with a different --name\. Team: t+$/);
+  assert.doesNotMatch(r.doc.warning, /aweb-[a-z]{4}|kernels? \d|0\.26/);
+  assert.doesNotMatch(r.stdout + r.stderr, /TOKEN-SHOULD-NOT-LEAK/);
+});
+
+test("a retire whose alias stays held names the remedy plainly, and so does its retry", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const remedy = "spawn successors with a different --name or --purpose until it is released";
+  const first = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DELETE_ALIAS_HELD: "1" });
+  assert.equal(first.status, 0, first.stdout + first.stderr);
+  assert.equal(first.doc.warning, `oats-aweb: workspace "dev-1" deleted but its alias was not released (alias_held); ${remedy}`);
+  assert.equal(first.doc.meta.aliasReusable, false);
+  const retry = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta) });
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.equal(retry.doc.warning, `oats-aweb: workspace "dev-1" was already deleted but its alias was not released (alias_held); ${remedy}`);
+  for (const r of [first, retry]) assert.doesNotMatch(r.doc.warning, /kernels?|0\.26/);
 });
 
 test("a root that cannot mint for the team is fatal with no meta", (t) => {

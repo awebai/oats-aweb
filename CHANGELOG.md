@@ -8,6 +8,14 @@
   does, instead of the settings captured at the home's spawn. A home spawned
   before `oats aweb health enable` warns once it is enabled; one spawned while
   it was on stops warning once it is disabled.
+- **The alias-conflict spawn refusal reads plainly.** When another agent's
+  certificate holds the alias, spawn says so with no ticket id or kernel
+  version: another machine's instance has that name, or a retired one still
+  holds it; spawn with a different `--name`. The fixed text comes before the
+  team id, so a long id never cuts the remedy.
+  Retire's warning for an alias the server has not released yet drops the
+  kernel version the same way: spawn successors with a different `--name` or
+  `--purpose` until it is released.
 
 ## 1.33.2 — 2026-11-02
 
