@@ -28,7 +28,9 @@
     parent is chosen once, at attach (moving a certified local key later
     needs a new key); a `did:aw` with a rotated key can't be attached
     (`subject_mismatch`, aw's limit); a child of a grant seat stays chainless
-    until it is respawned from a keyed instance or a shell.
+    until it is respawned from a keyed instance or a shell; a retained seat
+    (`identity.source`) is skipped with `E_ATTACH_COPIED_IDENTITY`, because its
+    key lives on at its source: its source's owner attaches the source.
 
 - **Spawn attribution: each spawned instance carries an identity chain to a
   human** (aweb-acmj.21, oats#1665). New host-only setting `attribution:

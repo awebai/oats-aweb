@@ -235,3 +235,63 @@ test("a grant seat's child is refused through the legacy parent too (no spawnedB
   assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
   assert.deepEqual(idCalls(fx.fake), []);
 });
+
+// A retained seat copies an existing identity's key, which lives on at its
+// source: attach never chooses a parent for it.
+const COPIED = (source) => ({ "oats.aweb": { retained: true, source, identity: { mode: "global" } } });
+const VERIFIED = { outcome: "nearest_human", human_id: HUMAN, identity_valid: true, kind: "agent", reason: "verified" };
+const planOf = (fx, homes) => {
+  const run = awInHome({ PATH: fx.fake.path });
+  return buildPlan({ deployment: fx.ws, settings: fx.settings, homes: homes.map((h) => homeFacts(run, { instance: h.name, home: h.home })), stewardStatus: whoIn(run, fx.steward) });
+};
+
+test("a retained seat, did:key or unregistered did:aw, is skipped with E_ATTACH_COPIED_IDENTITY, naming its source, and never exchanged", (t) => {
+  for (const global of [false, true]) {
+    const fx = deployment(t);
+    const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: COPIED("/legacy/.aw") }, global ? { global, who: UNREGISTERED } : {});
+    const entry = planOf(fx, [seat]).homes[0];
+    assert.deepEqual([entry.status, entry.code], ["skipped", "E_ATTACH_COPIED_IDENTITY"], JSON.stringify(entry));
+    assert.match(entry.message, /uses an identity copied from \/legacy\/\.aw → its owner attaches the source; a did:aw copy then verifies through the registry, a did:key copy stays chainless and reports unknown/);
+    assert.equal(fx.fake.calls().some((c) => c.args[0] === "who" && c.cwd === seat.home), true, "its status is read");
+    assert.deepEqual(idCalls(fx.fake), [], "no exchange");
+  }
+});
+
+test("a retained did:aw seat the registry certifies plans attached-registry, and its child attaches under it", (t) => {
+  const fx = deployment(t);
+  const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: COPIED("/legacy/.aw") }, { global: true, who: VERIFIED });
+  const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
+  const plan = planOf(fx, [seat, c]);
+  assert.deepEqual(plan.homes.map((h) => [h.instance, h.status]), [["seat", "attached-registry"], ["c", "attach"]]);
+  assert.equal(plan.homes[1].parent.home, seat.home);
+  assert.deepEqual(idCalls(fx.fake), []);
+});
+
+test("a child of a retained did:key seat is refused with copied_identity_parent, lasting at start, naming the respawn", (t) => {
+  const fx = deployment(t);
+  const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: COPIED("/legacy/.aw") }, {});
+  const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
+  const entry = planOf(fx, [seat, c]).homes.find((h) => h.instance === "c");
+  assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
+  assert.match(entry.message, /its spawner seat uses a copied did:key identity, which never carries a chain: this instance stays chainless and reports unknown → respawn it from an instance that holds its own identity, or from a shell/);
+  const first = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.deepEqual([first.attach?.refused, first.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
+  assert.doesNotMatch(first.note, /tries again|then the setup expert runs/);
+  const calls = fx.fake.calls().length;
+  startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(fx.fake.calls().length, calls, "not retried at start");
+  assert.deepEqual(idCalls(fx.fake), []);
+});
+
+test("a child of an unregistered retained did:aw seat waits for the source: refused for now, not lasting", (t) => {
+  const fx = deployment(t);
+  const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: COPIED("/legacy/.aw") }, { global: true, who: UNREGISTERED });
+  const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
+  const entry = planOf(fx, [seat, c]).homes.find((h) => h.instance === "c");
+  assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "parent_not_attached"]);
+  assert.match(entry.message, /its spawner seat uses an identity copied from \/legacy\/\.aw → once its owner attaches the source, the copy verifies through the registry; then plan again/);
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  assert.equal(r.attach, undefined, "not recorded");
+  assert.match(r.note, /the next start tries again/);
+  assert.deepEqual(idCalls(fx.fake), []);
+});

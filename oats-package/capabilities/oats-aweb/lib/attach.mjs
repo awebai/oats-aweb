@@ -22,6 +22,9 @@ const REVISION_RE = /^[a-f0-9]{24}$/;
 /** Refusals that last: retrying at the next start changes nothing until
  *  someone acts, so a start does not retry them; an attach apply does. */
 const LASTING = new Set(["E_ATTACH_KEY_MISMATCH", "E_ATTACH_PARENT_REFUSED", "E_ATTACH_GRANT_SEAT"]);
+// A child of a spawner that can never issue: a respawn, not an attach, gives
+// it a chain.
+const RESPAWN_ONLY = new Set(["grant_seat_parent", "copied_identity_parent"]);
 export const isLastingRefusal = (code) => LASTING.has(code);
 
 const failure = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
@@ -74,6 +77,7 @@ function ownStatus(f) {
     : { status: "refused", code: "E_ATTACH_FAILED", message: `its chain status could not be read (${f.whoError}) → retry once the identity registry answers` };
   const who = f.who || {};
   if (who.identity_valid === true) return { status: f.chainFile ? "attached" : "attached-registry" };
+  if (f.copiedIdentity) return { status: "skipped", code: "E_ATTACH_COPIED_IDENTITY", message: `it uses an identity copied from ${f.copiedIdentity.source || "another home"} → its owner attaches the source; a did:aw copy then verifies through the registry, a did:key copy stays chainless and reports unknown` };
   if (f.chainFile) return { status: "attached", verified: false, reason: who.reason || null, message: "it carries a chain that does not verify; attach never replaces an installed chain" };
   if (who.outcome === "unavailable") return { status: "refused", code: "E_ATTACH_FAILED", reason: who.reason || null, message: `registry evidence is unavailable (${who.reason || "no reason"}) → retry once the identity registry answers` };
   const id = String(who.id || "");
@@ -85,11 +89,19 @@ function ownStatus(f) {
   return { status: "attach" };
 }
 
+/** A child of a retained seat that attach skipped: a did:key copy never
+ *  carries a chain, so its child never attaches; a did:aw copy verifies once
+ *  its source is attached, and its child attaches then. */
+function copiedParentRefusal(spawner, spawnerEntry) {
+  if (String(spawnerEntry.did || "").startsWith("did:key:")) return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "copied_identity_parent", message: `its spawner ${spawner.instance} uses a copied did:key identity, which never carries a chain: this instance stays chainless and reports unknown → respawn it from an instance that holds its own identity, or from a shell` };
+  return { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its spawner ${spawner.instance} uses an identity copied from ${spawner.facts.copiedIdentity.source || "another home"} → once its owner attaches the source, the copy verifies through the registry; then plan again` };
+}
+
 /**
  * The attach plan for a deployment: every listed home, in attach order
  * (parents first), with what attach does to it. `homes` are the facts
  * gathered for each home `oats status` lists: {instance, home, record (its
- * instance.json), grantSeat, chainFile, who, whoError, keys, refusal}.
+ * instance.json), grantSeat, copiedIdentity, chainFile, who, whoError, keys, refusal}.
  * `stewardStatus` is `aw who` in the steward's home: {who, whoError}.
  */
 export function buildPlan({ deployment, settings, origins, homes, stewardStatus }) {
@@ -109,6 +121,7 @@ export function buildPlan({ deployment, settings, origins, homes, stewardStatus 
       // The spawner the record names, not the certificate parent: a did:aw
       // child's ancestor rule would skip a keyless seat.
       if (n.spawnParent?.facts?.grantSeat) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "grant_seat_parent", message: `its spawner ${n.spawnParent.instance} acts through a session grant and holds no key, so it can never issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own key, or from a shell` });
+      else if (n.spawnParent?.facts?.copiedIdentity && entries.get(n.spawnParent.home)?.code === "E_ATTACH_COPIED_IDENTITY") Object.assign(entry, copiedParentRefusal(n.spawnParent, entries.get(n.spawnParent.home)));
       else if (parent && !["attach", "attached", "attached-registry"].includes(parent.status)) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its parent ${parent.instance} is not attached (${parent.code || parent.status}) → attach its parent first, then plan again` });
       else if (parent?.verified === false) Object.assign(entry, { status: "refused", code: "E_ATTACH_PARENT_REFUSED", reason: parent.reason, message: `its parent ${parent.instance} carries a chain that does not verify (${parent.reason || "no reason"}) → repair the parent's chain, then plan again` });
       if (f.refusal) entry.lastRefusal = { code: f.refusal.code, reason: f.refusal.reason ?? null };
@@ -254,7 +267,9 @@ export function homeFacts(run, row, timeout) {
   try { record = JSON.parse(readFileSync(join(row.home, "instance.json"), "utf8")); } catch { record = {}; }
   const meta = record?.capabilityMeta?.["oats.aweb"] || {};
   const grantSeat = meta.identity?.mode === "global" && !!meta.identity?.grant;
-  const base = { instance: typeof row.instance === "string" ? row.instance : record.instance, home: row.home, record, grantSeat, chainFile: existsSync(join(row.home, ".aw", "id-chain.json")), keys: homeKeyIds(row.home), refusal: readAttachRefusal(row.home), pendingImport: readPendingImport(row.home) };
+  // A retained seat: a copy of an identity whose key lives on at its source.
+  const copiedIdentity = meta.retained === true ? { source: typeof meta.source === "string" ? meta.source : null } : null;
+  const base = { instance: typeof row.instance === "string" ? row.instance : record.instance, home: row.home, record, grantSeat, copiedIdentity, chainFile: existsSync(join(row.home, ".aw", "id-chain.json")), keys: homeKeyIds(row.home), refusal: readAttachRefusal(row.home), pendingImport: readPendingImport(row.home) };
   return grantSeat ? base : { ...base, ...whoIn(run, row.home, timeout) };
 }
 
@@ -336,7 +351,7 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
   if (mode !== "human" || !settings.human?.id || !settings.steward?.id || !settings.steward?.home || !local) return null;
   const nothing = { attach: undefined, note: null };
   const recorded = readAttachRefusal(home);
-  if (recorded) return { attach: { refused: recorded.code, reason: recorded.reason ?? null, at: recorded.at ?? null }, note: `this home is not attached (${recorded.code}): ${recorded.message} (recorded ${recorded.at || "earlier"}; not retried at start)${recorded.reason === "grant_seat_parent" ? "" : ` → fix that, then ${ATTACH_ACT}`}` };
+  if (recorded) return { attach: { refused: recorded.code, reason: recorded.reason ?? null, at: recorded.at ?? null }, note: `this home is not attached (${recorded.code}): ${recorded.message} (recorded ${recorded.at || "earlier"}; not retried at start)${RESPAWN_ONLY.has(recorded.reason) ? "" : ` → fix that, then ${ATTACH_ACT}`}` };
   const pending = readPendingImport(home);
   if (!pending && existsSync(join(home, ".aw", "id-chain.json"))) return nothing;
   try { deployment = realpathSync(deployment); } catch { return nothing; }
@@ -348,8 +363,7 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
   };
   const failed = (e) => {
     const code = e.code || "E_ATTACH_FAILED", message = String(e.message || e).slice(0, 300);
-    // A respawn, not an attach, gives a grant seat's child its chain.
-    const then = e.reason === "grant_seat_parent" ? "" : ` → fix that, then ${ATTACH_ACT}`;
+    const then = RESPAWN_ONLY.has(e.reason) ? "" : ` → fix that, then ${ATTACH_ACT}`;
     if (isLastingRefusal(code)) return { attach: { refused: code, reason: e.reason ?? null, at: new Date().toISOString() }, note: `this home could not be attached at start (${code}): ${message}; not retried at start${then}` };
     return { attach: undefined, note: `this home could not be attached at start (${code}): ${message}; the next start tries again, or ${ATTACH_ACT}` };
   };
@@ -378,7 +392,7 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
     // Only a refusal of the home itself lasts; a refused parent or a status
     // that can't be read now is checked again at the next start.
     // Lasting: its key, a rotated did:aw, or a spawner that can never issue.
-    if (entry.code !== "E_ATTACH_KEY_MISMATCH" && !["subject_mismatch", "grant_seat_parent"].includes(entry.reason)) return later(entry.code, entry.message);
+    if (entry.code !== "E_ATTACH_KEY_MISMATCH" && entry.reason !== "subject_mismatch" && !RESPAWN_ONLY.has(entry.reason)) return later(entry.code, entry.message);
     const saved = saveRefusal(home, { code: entry.code, reason: entry.reason ?? null, message: entry.message, at: new Date().toISOString() });
     return failed(Object.assign(new Error(`${entry.message}${saved}`), { code: entry.code, reason: entry.reason }));
   }

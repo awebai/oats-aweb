@@ -245,6 +245,7 @@ host.
 | `E_ATTACH_PARENT_REFUSED` | the parent or aw's registry refused (aw's reason: `revoked`, `stale_issuer_key`, `unregistered_parent`, `domain_mismatch`, `subject_mismatch`…), or the parent isn't attached → fix the parent, then plan again |
 | `E_ATTACH_KEY_MISMATCH` | the request is not for the key in the home's signing key, which is never approved → check the home's `.aw` |
 | `E_ATTACH_GRANT_SEAT` | a session-grant seat holds no key → its resident's owner attaches the resident through aw |
+| `E_ATTACH_COPIED_IDENTITY` | a retained seat uses an identity copied from its source → the source's owner attaches the source; a `did:aw` copy then verifies through the registry, a `did:key` copy stays chainless |
 | `E_ATTACH_PLAN_STALE` | the deployment changed since the plan → review the fresh plan |
 | `E_ATTACH_FAILED` | a step failed for now (registry unavailable, the start's time ran out) → try again |
 
@@ -260,6 +261,14 @@ host.
   so it never issues. The child stays chainless and reports `unknown`;
   respawning it from an instance that holds its own key, or from a shell,
   gives it a chain.
+- A retained seat (`identity.source`) is never attached. Its key is a copy of
+  one that lives on at its source, so its parent isn't this deployment's to
+  choose. Once the source's owner attaches the source, a `did:aw` copy
+  verifies through the registry and its children attach under it. A `did:key`
+  copy never carries a chain, because its chain file isn't copied: the seat
+  and its children stay chainless and report `unknown`. Respawning such a
+  child from an instance that holds its own identity, or from a shell, gives
+  it a chain.
 - The live acceptance exercises freshly minted `did:key` homes only;
   global-mode spawns use grant seats. The `did:aw` attach rules have
   automated-test coverage only.
