@@ -925,6 +925,7 @@ cannot send the encrypted reply to such a sender.
   a new message"): ask them to send a new message.
 
 ### Spawn attribution: an identity chain to a human
+<!-- aw-min 1.36.53 -->
 
 `settings.oats.aweb.attribution` is `none` (the default, and what absence means:
 spawns are unchanged) or `human`. It is host-only, set per deployment in
@@ -987,6 +988,8 @@ mode-`human` deployment that uses captured execution is refused there.
 The steward's key custody is a convention under the same OS user, where misuse
 changes the recorded parent and never the human. Revocation at retire, chains
 across hosts, and deployments shared by several people are out of scope.
+
+<!-- /aw-min -->
 
 ### What retire's recovery keeps
 

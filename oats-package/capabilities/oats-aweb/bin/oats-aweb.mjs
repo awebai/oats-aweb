@@ -1729,6 +1729,9 @@ function syncWakeReceive(meta) {
   return { meta: next, warnings };
 }
 
+// aw-min 1.36.53
+// The attribution preflight and the chain exchange use aw's identity-chain
+// commands, which first ship in aw 1.36.53 (above the provider's floor).
 /** Spawn attribution (lib/attribution.mjs): in mode human, decide BEFORE the
  *  mint, from the minting root the mint will use, who issues the child and
  *  whether the spawn refuses, so a refusal leaves no remote identity behind.
@@ -1782,6 +1785,7 @@ function issueChildChain(issuer) {
   // A chainless requester names its domain again: aw resolves it anew at import.
   step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--domain", invite.domain, "--json"], home));
 }
+// /aw-min
 /** aw's local team invite makes a chained inviter the new identity's ID
  *  parent, so `aw init --join-from` from a chained minting root would chain
  *  every child to the root before the spawner or steward could issue it. The

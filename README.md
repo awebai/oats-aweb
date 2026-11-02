@@ -6,6 +6,7 @@ skills, team roster discovery and session/channel delivery integration. Messagin
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
 ## Spawn attribution — an identity chain to a human
+<!-- aw-min 1.36.53 -->
 
 `settings.oats.aweb.attribution` decides whether a spawned instance carries an
 aw identity chain back to the human it belongs to (aw's `docs/id-certificates.md`;
@@ -107,6 +108,8 @@ human. In mode `human` it also reports the bound human, the steward, and
   a mode-`human` deployment that uses captured execution is refused there.
 - Out of scope in this release: revocation at retire, chains across hosts,
   and deployments shared by several people.
+
+<!-- /aw-min -->
 
 ## 1.38.0 — pi 0.5.0 without the skills filter
 
