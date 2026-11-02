@@ -259,11 +259,17 @@ function rootServiceForClassification(root) {
   return value || undefined;
 }
 /** The aw-newer-than-tested warning for a home, or undefined. Decided by the
- *  home's own team root (roots[team], as the minting root is chosen), not the
- *  deployment's default root, so readiness and every spawn mode agree. */
-export function awTestedWarning(settings,version,{deployment,env=process.env}={}) {
-  const {root}=rootCandidate(settings,teamFromSettings(settings,null,{env}),{deployment,env});
-  return root && isAbsolute(root) ? awNewerThanTestedMessage(version,rootServiceForClassification(root)) : undefined;
+ *  home's own team roots (roots[team], as each minting root is chosen), not the
+ *  deployment's default root, so readiness and every spawn mode agree: the
+ *  default team's, and any `joinTeams` a spawn also mints into. One warning,
+ *  whichever root is off the Cloud. */
+export function awTestedWarning(settings,version,{deployment,env=process.env,joinTeams=[]}={}) {
+  for(const team of [teamFromSettings(settings,null,{env}),...joinTeams]) {
+    const {root}=rootCandidate(settings,team,{deployment,env});
+    const message=root && isAbsolute(root) ? awNewerThanTestedMessage(version,rootServiceForClassification(root)) : undefined;
+    if(message) return message;
+  }
+  return undefined;
 }
 function validHostname(value){const s=String(value||'');return s.length<=253&&s.split('.').every(label=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));}
 function validAwebTeamId(value){const m=/^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(value||''));return !!m&&validHostname(m[2]);}

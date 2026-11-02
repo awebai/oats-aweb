@@ -1768,7 +1768,8 @@ if (event === "launch") {
   if (deliveryFor().launch) outNotes.push(channelCacheNote(undefined, "a spawn does not know its launch's Claude config dir"));
   // Before any spawn mode's dispatch, and carried on whatever this hook
   // answers, so a failed mint comes with it.
-  const untested = awTestedWarning(settings, spawnAwVersion);
+  const joinTeams = (() => { try { const labels = requestedJoinLabels(); return eligibleTeams().filter((t) => labels.includes(t.label)).map((t) => t.team); } catch { return []; } })();
+  const untested = awTestedWarning(settings, spawnAwVersion, { joinTeams });
   if (untested) outNotes.push(`aw-newer-than-tested — ${untested}`);
   if (identityMode === "global" && identitySettings.source) fatal('identity.mode "global" cannot be combined with identity.source; use identity.mode "local" with identity.source for a retained seat, or identity.mode "global" with identity.resident for a resident grant');
   if (identityMode === "global" && requestedJoinLabels().length) fatal('settings.oats.aweb.join is supported only with local per-team identities; identity.mode "global" is explicit resident-grant mode');
@@ -1817,7 +1818,7 @@ if (event === "launch") {
       // codes on AW_ERROR_CODES are read, and never its message.
       if (e.awErrorCode === "unknown_or_invalid") {
         // The fixed diagnosis first: fatal keeps 300 characters, and a team id can be long.
-        fatal(`aw refused the invite it made (unknown_or_invalid), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`). Team: ${team}`);
+        fatal(`aw refused the invite it made (unknown_or_invalid), as an aw newer than its server does; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`) if no deployment on this host needs a newer one. Team: ${team}`);
       }
       if (e.aliasConflict) {
         fatal(`alias "${instance}" already holds a certificate on ${team} (another machine's instance of that name, or a retired one until aweb-abim ships), so no identity could be minted — ${ALIAS_REUSE_REMEDY}`);
