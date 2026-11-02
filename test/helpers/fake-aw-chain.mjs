@@ -13,6 +13,7 @@
 //   FAKE_CHAIN_EXTRA=<n>          approve adds n extra certificates to the chain
 //   FAKE_NO_WHO=1                 `aw who` is unknown, as in an aw before identity chains
 //   FAKE_AW_VERSION=<v>           `aw version` reports v
+//   FAKE_SLOW_INVITE=<s>          `id child invite` takes s seconds
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -50,6 +51,7 @@ if (args[0] === "who") {
   process.exit(0);
 }
 if (args[0] === "id" && args[1] === "child" && args[2] === "invite") {
+  if (process.env.FAKE_SLOW_INVITE) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_SLOW_INVITE) * 1000);
   const c = chain();
   if (!c) refuse(idOf() + " has no installed chain, so it issues no children; select --as-root or --human");
   const inv = { invitation_id: crypto.randomUUID(), parent: { kind: "identity", id: idOf() }, domain: c.certificates[0].certificate.domain, kind: flag("--kind"), expires_at: "2026-10-30T23:59:59Z" };

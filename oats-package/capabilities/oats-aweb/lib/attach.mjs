@@ -214,9 +214,10 @@ function instanceRecord(home) {
  * {attach (the meta's record of a lasting refusal, or undefined), note (the
  * warning, or null)}.
  */
-export function startAttach({ home, instance, settings, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS }) {
+export function startAttach({ home, instance, settings, origins, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS }) {
   let mode;
   try { mode = attributionMode(settings); } catch { return null; }
+  if (hostOnlyViolation(origins)) return null;
   if (mode !== "human" || !settings.human?.id || !settings.steward?.id || !settings.steward?.home || !local) return null;
   if (existsSync(join(home, ".aw", "id-chain.json"))) return { attach: undefined, note: null };
   const recorded = readAttachRefusal(home);
