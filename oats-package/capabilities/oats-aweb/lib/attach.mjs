@@ -40,11 +40,20 @@ export function recordAttachRefusal(home, refusal) {
 }
 export const clearAttachRefusal = (home) => rmSync(refusalFile(home), { force: true });
 
-/** Attach needs mode human with a recorded human and steward; it depends on
- *  nothing else of the bind. */
-export function requireBoundHuman(settings) {
+/** A per-deployment setting read from anywhere but this host: a kernel that
+ *  enforces hostOnly never passes one, an older one may. */
+export function hostOnlyViolation(origins) {
+  const origin = origins?.["/attribution"];
+  return origin && origin.kind !== "host" && origin.kind !== "manifest-default" ? origin : null;
+}
+
+/** Attach needs mode human, set on this host, with a recorded human and
+ *  steward; it depends on nothing else of the bind. */
+export function requireBoundHuman(settings, origins) {
   let mode;
   try { mode = attributionMode(settings); } catch (e) { throw failure("E_ATTACH_NO_HUMAN", `${e.message} → set attribution: human once a human is bound`); }
+  const origin = hostOnlyViolation(origins);
+  if (mode === "human" && origin) throw failure("E_ATTACH_NO_HUMAN", `attribution: human came from ${origin.kind}${origin.at ? ` (${origin.at})` : ""}, and attribution is set per deployment in oats-local.yaml only → set it in this deployment's oats-local.yaml`);
   if (mode !== "human" || !settings.human?.id || !settings.steward?.id || !settings.steward?.home) throw failure("E_ATTACH_NO_HUMAN", `no human is bound to this deployment (attribution: ${mode}) → ${BIND_ACT}`);
 }
 
@@ -74,8 +83,8 @@ function ownStatus(f) {
  * instance.json), grantSeat, chainFile, who, whoError, keys, refusal}.
  * `stewardStatus` is `aw who` in the steward's home: {who, whoError}.
  */
-export function buildPlan({ deployment, settings, homes, stewardStatus }) {
-  requireBoundHuman(settings);
+export function buildPlan({ deployment, settings, origins, homes, stewardStatus }) {
+  requireBoundHuman(settings, origins);
   const steward = classifyIssuer({ issuer: { kind: "steward", home: settings.steward.home, id: settings.steward.id }, who: stewardStatus.who, whoError: stewardStatus.whoError, chainFiles: true });
   if (steward.action !== "issue") throw failure("E_ATTACH_PARENT_REFUSED", steward.message);
   const entries = new Map();
@@ -289,15 +298,16 @@ export async function attachMain(argv, env = process.env) {
     args = parseArgs(argv);
     let deployment;
     try { deployment = selectedDeployment(env, args.dir); } catch (e) { throw failure("E_ATTACH_DEPLOYMENT", e.message); }
-    let settings = {};
+    let settings = {}, origins;
     try { settings = JSON.parse(env.OATS_SETTINGS || "{}"); } catch { settings = {}; }
+    try { origins = JSON.parse(env.OATS_SETTINGS_ORIGINS || "{}"); } catch { origins = undefined; }
     // Refuse without a bound human before any aw call or home read.
-    requireBoundHuman(settings);
+    requireBoundHuman(settings, origins);
     const listed = deploymentHomes(env, deployment);
     if (!listed.known) throw failure("E_ATTACH_DEPLOYMENT", `the deployment's homes could not be read: ${listed.reason}`);
     const run = awInHome(env);
     const homes = listed.rows.map((row) => homeFacts(run, row));
-    const plan = buildPlan({ deployment, settings, homes, stewardStatus: whoIn(run, settings.steward.home) });
+    const plan = buildPlan({ deployment, settings, origins, homes, stewardStatus: whoIn(run, settings.steward.home) });
     if (args.plan) return emit({ ok: true, result: plan }, 0);
     const keysByHome = new Map(homes.map((h) => [h.home, h.keys]));
     const receipt = applyPlan({ plan, planRevision: args.planRevision, idempotencyKey: args.idempotencyKey, receiptsDir: join(deployment, ".oats-aweb", "attach"), attachOne: (entry) => attachHome({ entry, run, keys: keysByHome.get(entry.home) }) });

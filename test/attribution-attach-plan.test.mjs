@@ -123,3 +123,12 @@ test("apply: arguments outside the plan-revision and key formats refuse", (t) =>
   const p = plan([chainless("lead", spawnedBy(null))]);
   for (const [rev, key] of [["abc", "k"], [p.planRevision, "../x"], [p.planRevision, ""]]) assert.throws(() => applyPlan({ plan: p, planRevision: rev, idempotencyKey: key, receiptsDir: receipts(t), attachOne: () => {} }), (e) => e.code === "E_BAD_ARGS");
 });
+
+test("host settings only: attribution human from anywhere but oats-local.yaml refuses, naming where to set it", () => {
+  for (const kind of ["workspace", "soul", "spawn"]) {
+    assert.throws(() => buildPlan({ deployment: D, settings: SETTINGS, origins: { "/attribution": { kind, at: "oats-workspace.yaml#/messaging" } }, homes: [], stewardStatus: STEWARD_OK }),
+      (e) => e.code === "E_ATTACH_NO_HUMAN" && /set per deployment in oats-local\.yaml/.test(e.message) && e.message.includes(kind), kind);
+  }
+  assert.equal(buildPlan({ deployment: D, settings: SETTINGS, origins: { "/attribution": { kind: "host", at: "oats-local.yaml#/settings/oats.aweb" } }, homes: [], stewardStatus: STEWARD_OK }).homes.length, 0);
+  assert.equal(buildPlan({ deployment: D, settings: SETTINGS, origins: {}, homes: [], stewardStatus: STEWARD_OK }).homes.length, 0);
+});
