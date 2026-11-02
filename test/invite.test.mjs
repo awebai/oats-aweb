@@ -14,6 +14,37 @@ test('invite selects explicit team/root and emits token once with isolated nativ
  const f=fixture(t),r=f.run(['--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout);assert.equal(d.schemaVersion,1);assert.equal(d.ok,true);assert.equal(d.result.team,'team:fixture.aweb.ai');assert.equal(r.stdout.split('aw_inv_SYNTHETIC').length-1,1);assert.equal(r.stderr,'');
  const calls=f.read().filter(c=>c.kind==='aw'),mint=calls.find(c=>c.args[1]==='invite');assert.deepEqual(mint.args,['team','invite','--team-id','team:fixture.aweb.ai','--member-local','--json']);assert.equal(mint.cwd,f.root);assert.notEqual(mint.env.HOME,f.foreign);assert.equal(existsSync(mint.env.HOME),false);for(const key of ['AWEB_IDENTITY_HOME','AWEB_API_KEY','AWEB_URL','AWID_REGISTRY_URL','HTTP_PROXY','OATS_AGENT'])assert.equal(mint.env[key],undefined);assert.equal(readFileSync(join(f.foreign,'sentinel'),'utf8'),'untouched');
 });
+test('with no root declared, invite uses the deployment\'s own root, as setup creates it and spawn reads it',t=>{
+ const f=fixture(t,{settings:{}});mkdirSync(join(f.dep,'.aw'));const r=f.run(['--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout).result;assert.equal(d.root,f.dep);
+ const mint=f.read().find(c=>c.kind==='aw'&&c.args[1]==='invite');assert.equal(mint.cwd,f.dep);
+});
+test('with no root declared and no .aw in the deployment, invite refuses and names the fix',t=>{
+ const f=fixture(t,{settings:{}}),r=f.run(['--json']);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_ROOT');assert.match(e.message,/no team root is set/);assert.equal(f.read().some(c=>c.kind==='aw'),false);
+});
+test('the answer names the issuing root\'s service, as written there, for the member to hand on',t=>{
+ const f=fixture(t);writeFileSync(join(f.root,'.aw','workspace.yaml'),'aweb_url: https://app.aweb.ai\n');
+ for(const args of [['--json'],['--plan','--json']]){const r=f.run(args);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).result.awebUrl,'https://app.aweb.ai');}
+ const d=JSON.parse(f.run(['--json'],{OATS_SETTINGS:JSON.stringify({root:f.root}),AWEB_URL:'https://ambient.invalid'}).stdout).result;assert.equal(d.awebUrl,'https://app.aweb.ai','never the ambient locator');
+});
+test('a root that names no service answers awebUrl null, never a guessed default',t=>{
+ const f=fixture(t);const r=f.run(['--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout).result;assert.ok(Object.hasOwn(d,'awebUrl'));assert.equal(d.awebUrl,null);
+});
+test('awebUrl hands on only a plain service URL: anything that could carry a credential answers null, in plan and apply',t=>{
+ for(const [written,expected] of [
+  ['https://app.aweb.ai','https://app.aweb.ai'],
+  ['https://app.aweb.ai/','https://app.aweb.ai/'],
+  ['https://app.aweb.ai/api','https://app.aweb.ai/api'],
+  ['http://localhost:8000','http://localhost:8000'],
+  ['https://user:aw_sk_SECRET@app.aweb.ai/',null],
+  ['https://app.aweb.ai/?token=aw_sk_SECRET',null],
+  ['https://app.aweb.ai/api/aw_sk_SECRET',null],
+  ['https://app.aweb.ai/api/%61w_sk_SECRET',null],
+  ['https://app.aweb.ai/aw_sk_SECRET/../api',null],
+  ['https://app.aweb.ai/base#aw_sk_SECRET',null],
+  ['ftp://app.aweb.ai',null],
+  ['not a url',null],
+ ])for(const args of [['--json'],['--plan','--json']]){const f=fixture(t);writeFileSync(join(f.root,'.aw','workspace.yaml'),`aweb_url: ${written}\n`);const r=f.run(args);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).result.awebUrl,expected,`${args.join(' ')} ${written}`);assert.doesNotMatch(r.stdout,/SECRET|%61w/);}
+});
 test('invite plan only reads and makes no permission claim or native issuance',t=>{const f=fixture(t),r=f.run(['--plan','--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout).result;assert.equal(d.plan,true);assert.equal(d.token,undefined);assert.match(d.authority,/decides/);assert.equal(f.read().filter(c=>c.kind==='aw'&&c.args[1]==='invite').length,0);assert.deepEqual(readdirSync(f.root),['.aw']);assert.deepEqual(readdirSync(join(f.root,'.aw')),[]);});
 test('invite rejects positional recipient and malformed options before queries',t=>{for(const args of [['alice'],['--alias','alice'],['--label'],['--json','--json'],['--plan=true']]){const f=fixture(t),r=f.run([...args,'--json']);assert.equal(r.status,1);assert.equal(JSON.parse(r.stdout).error.code,'E_INVITE_ARGUMENT');assert.deepEqual(f.read(),[]);}});
 test('invite validates team/current deployment/membership before issuance',t=>{for(const [options,args,code] of [[{},['--label','unknown'],'E_INVITE_TEAM'],[{query:'wrong'},[],'E_INVITE_TEAM_QUERY'],[{member:'foreign:fixture.aweb.ai'},[],'E_INVITE_MEMBERSHIP']]){const f=fixture(t,options),r=f.run([...args,'--json']);assert.equal(JSON.parse(r.stdout).error.code,code);assert.equal(f.read().some(c=>c.args[1]==='invite'),false);}});

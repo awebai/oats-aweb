@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **`oats aweb invite` works on a workspace set up without a root setting.**
+  `oats aweb setup --username` creates the team's root in the deployment and
+  records no `root`, and spawn finds it there, but invite read only the
+  setting and refused with `E_INVITE_ROOT`. With no root declared for the
+  team, invite now uses the deployment's own root. A declared root, even an
+  invalid one, is still never replaced.
+
+- **`oats aweb invite --json` names the service to hand on.** `result.awebUrl`
+  is the `aweb_url` the issuing root's workspace.yaml names, so the member
+  hands over the token and the service without digging the URL out. Only a
+  plain service URL is handed on (http(s), a host, an optional port, a path of
+  `/` or `/api` at most); anything that could carry a credential answers
+  `null`, as a root that names no service does.
+
+- **A spawn whose name another machine's instance holds says so.** aw 1.36.51
+  refuses that mint with a registry 403 (`self_custody_reinit_unproven`) that
+  the provider didn't recognise, so the spawn failed with only "aw init failed
+  (output withheld)". It now names the alias conflict and the remedy, as it
+  already did for a retired alias, and still withholds aw's output.
+
+- **A pre-release aw above a floor now passes.** Every aw and kernel version
+  gate in the provider compares by semver precedence: a pre-release is below
+  its own release and above every lower one, so aw 1.36.53-rc.3 meets 1.36.38
+  and 1.36.38-rc.1 still doesn't. Build metadata (`+abc`) is accepted and
+  changes nothing. Until now any pre-release was refused, which kept
+  `oats aweb health publish` and the probe off the aw release candidates.
+- **`oats aweb wake install` accepts a daemon running a pre-release aw.** It read
+  the installed aw without its pre-release and compared that with the daemon's
+  full version, so a running 1.36.53-rc.3 daemon failed with
+  `E_WAKE_NOT_RUNNING`. It now reads the version only once the whole token
+  has arrived.
+
 ## 1.33.0 — 2026-11-02
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged. Cut from `main`;

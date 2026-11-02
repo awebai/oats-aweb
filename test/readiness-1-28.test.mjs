@@ -117,6 +117,9 @@ test("soul scope with delivery session reads aw wake status once and reports the
     ["unknown version", { daemon_running: true, daemon_version_state: "unknown" }, "unavailable", ["wake-daemon-version-unknown"], []],
     ["outdated", reported("1.36.31"), "ready", [], ["wake-daemon-outdated"]],
     ["healthy, no instances list", reported(AW_MIN), "ready", [], []],
+    ["a pre-release above the floor", reported("1.36.53-rc.3"), "ready", [], []],
+    ["a pre-release of the floor's own release", reported(`${AW_MIN}-rc.1`), "ready", [], ["wake-daemon-outdated"]],
+    ["not semver", reported("1.36"), "unavailable", ["wake-daemon-version-unknown"], []],
     ["unreadable", "not json", "unavailable", ["wake-status-unavailable"], []],
     ["not an object", "[]", "unavailable", ["wake-status-unavailable"], []],
   ]) {
