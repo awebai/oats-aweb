@@ -220,7 +220,11 @@ oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir
 **At start.** In mode `human`, a start attaches its own chainless local home
 the same way, once its parent holds a chain.
 - It runs on the start's real pass only, within 30 seconds.
-- It never stops the start: a failure is one warning with its reason.
+- It chooses the parent by the same plan as the command, over the home's
+  whole line of recorded parents. When one of them can't be read, it waits
+  for a later start rather than choose another parent.
+- It never stops the start: a failure is one warning with its reason, and a
+  refused parent's warning names the parent's fix.
 - A lasting refusal (`E_ATTACH_KEY_MISMATCH`, `E_ATTACH_PARENT_REFUSED`,
   `E_ATTACH_GRANT_SEAT`) is kept in the home's `.oats-aweb/attach.json` and in
   the start's meta (`attach`). A start doesn't retry it; an attach apply does,
