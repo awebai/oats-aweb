@@ -107,3 +107,15 @@ test("the CI journey matrix spans exactly AW_MIN to AW_TESTED, so the tested ran
   assert.equal(sorted[0], AW_MIN, "the matrix's lowest aw is the floor");
   assert.equal(sorted.at(-1), AW_TESTED, "AW_TESTED moves only once that aw is in the matrix");
 });
+
+test("validate-and-test installs AW_TESTED, read from aw-floor.mjs, before npm test, and requires the aw-verb guard", () => {
+  const ci = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const job = ci.slice(ci.indexOf("\n  validate-and-test:"), ci.indexOf("\n  resident-journey:"));
+  const install = job.indexOf("import {AW_TESTED} from './oats-package/capabilities/oats-aweb/lib/aw-floor.mjs'");
+  assert.ok(install > 0, "the install step reads AW_TESTED from aw-floor.mjs");
+  assert.match(job, /npm install --prefix "\$RUNNER_TEMP\/aw" --no-audit --no-fund "@awebai\/aw@\$version"/);
+  assert.doesNotMatch(job, new RegExp(`aw@\\d|${AW_TESTED.replaceAll(".", "\\.")}`), "no aw version is written twice");
+  const npmTest = job.indexOf("npm test");
+  assert.ok(npmTest > install, "aw is installed before npm test");
+  assert.match(job.slice(job.lastIndexOf("- name:", npmTest), npmTest + "npm test".length), /OATS_AW_VERBS_REQUIRED: '1'[\s\S]*PATH="\$RUNNER_TEMP\/aw\/node_modules\/\.bin:\$PATH" npm test$/);
+});

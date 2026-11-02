@@ -276,7 +276,15 @@ operations requested, including idempotent ones.
 attention claim appears.** `oats aweb health status` reports the observer as off
 while publishing is off; readiness says nothing about the observer while it is off.
 With publishing on, readiness warns when an eligible broker primary's aw lacks
-`--count-only` support. `health status` reports live observer coverage, missing
+`--count-only` support. A home's check reads whether publishing is on now, from
+its soul's current settings through the kernel (`oats inspect --soul`), not from
+the settings captured at its spawn: a home spawned before `health enable` warns
+once it is enabled, and one spawned while it was on stops warning once it is
+disabled. It asks the kernel before it probes aw, so a home pays one kernel
+call per check and runs no aw probe while publishing is off; it says nothing
+when the kernel can't answer. It asks the kernel's resolved view rather than
+reading `oats-local.yaml` itself: settings layering is the kernel's, and the
+observer reads the kernel's payload. `health status` reports live observer coverage, missing
 count-only support and timer/job failures. The underlying broker owns its retry budget; the observer
 neither retries input nor changes that budget.
 

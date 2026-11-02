@@ -938,6 +938,25 @@ the root is absent; to exercise it, provision the same source/dependency and run
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
 
+## aw-verb guard in CI
+
+`test/oats-aweb.test.mjs` "capability guidance names only real first-level aw
+verbs" runs `aw <verb> --help` for every aw verb the hook, the inject and this
+README name. It needs a real aw 1.36.6 or later on PATH and skips without one.
+CI's validate-and-test installs the aw the provider is tested with (`AW_TESTED`
+in `lib/aw-floor.mjs`, read in the step, never written twice) into an isolated
+prefix on the `npm test` step's PATH, and sets `OATS_AW_VERBS_REQUIRED=1`, so
+the guard fails there instead of skipping.
+
+With that aw on PATH, five more tests run in `npm test` instead of skipping:
+the real-aw tests in `test/oats-aweb-1-14.test.mjs` and
+`test/oats-aweb-1-15.test.mjs` that the resident-journey job already runs
+against this aw. They read aw's help, or act on throwaway identity homes and
+wake state directories: with no credentials, every call that would reach a
+service is refused locally (no identity, or an invalid invite token), and the
+wake calls write only their throwaway state directory. No other test changes
+outcome.
+
 ### Labelled join configuration (provider 1.23.1, #78/#82)
 
 setup is an operator act: run one setup at a time per deployment.

@@ -138,8 +138,11 @@ test("capability guidance names only real first-level aw verbs", (t) => {
     for (const match of text.matchAll(/`aw\s+([a-z][a-z0-9-]*)\b/g)) verbs.add(match[1]);
   }
   assert.ok(verbs.size > 0, "the test must enumerate printed/run aw verbs");
+  // CI installs the tested aw for this guard and sets OATS_AW_VERBS_REQUIRED, so it never skips there.
+  const required = process.env.OATS_AW_VERBS_REQUIRED === "1";
   const found = spawnSync("aw", ["--help"], { encoding: "utf8" });
   if (found.error?.code === "ENOENT") {
+    assert.ok(!required, "OATS_AW_VERBS_REQUIRED: the aw-verb guard needs aw on PATH");
     t.skip(`aw CLI not on PATH; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
     return;
   }
@@ -154,6 +157,7 @@ test("capability guidance names only real first-level aw verbs", (t) => {
   };
   t.diagnostic(`aw version fixture: ${(version.stdout + version.stderr).trim()}`);
   if (!atLeast("1.36.6")) {
+    assert.ok(!required, `OATS_AW_VERBS_REQUIRED: the aw-verb guard needs aw 1.36.6 or newer, not ${parsed?.[0] || "unknown"}`);
     t.skip(`aw ${parsed?.[0] || "unknown"} is older than published 1.36.6; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
     return;
   }
@@ -884,7 +888,7 @@ test("spawn accepts a 64-character alias and rejects 65 before aw", async (t) =>
   assert.equal(fake.readCalls().length, callsBefore, "invalid alias must be refused before any aw call");
 });
 
-test("alias conflict remedy names --name and --purpose", async (t) => {
+test("alias conflict remedy names --name, with no kernel version", async (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(join(root, ".aw"));
   mkdirSync(home);
@@ -894,8 +898,8 @@ test("alias conflict remedy names --name and --purpose", async (t) => {
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
-  assert.match(warning, /spawn with a different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
-  assert.doesNotMatch(warning, /fresh --purpose/);
+  assert.match(warning, /; spawn with a different --name\. Team: active:example\.invalid$/);
+  assert.doesNotMatch(warning, /kernels?|0\.26|aweb-abim|fresh --purpose/);
 });
 
 test("no-team readiness and spawn refuse without kernel default", async (t) => {
