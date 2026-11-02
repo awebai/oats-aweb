@@ -9,9 +9,9 @@
 // deployment. The launch hook attaches one home at its start the same way.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds } from "./attribution.mjs";
+import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds, pendingImport, resumeImport } from "./attribution.mjs";
 import { parseAwJson } from "./aw-json.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
 import { deploymentHomes } from "./wake-service.mjs";
@@ -39,6 +39,9 @@ export function recordAttachRefusal(home, refusal) {
   writeFileSync(refusalFile(home), `${JSON.stringify(refusal)}\n`, { mode: 0o600 });
 }
 export const clearAttachRefusal = (home) => rmSync(refusalFile(home), { force: true });
+/** Where a home's exchange keeps its request, response and pending import. */
+export const attachStateDir = (home) => join(home, ".oats-aweb", "attribution");
+export const readPendingImport = (home) => pendingImport(attachStateDir(home));
 
 /** A per-deployment setting read from anywhere but this host: a kernel that
  *  enforces hostOnly never passes one, an older one may. */
@@ -59,6 +62,7 @@ export function requireBoundHuman(settings, origins) {
 
 /** What `aw who` says of a home's own identity, as attach reads it. */
 function ownStatus(f) {
+  if (f.pendingImport) return { status: "attach", resume: true, message: "its import is pending (the chain is installed but not registered); attach resumes it" };
   if (f.grantSeat) return { status: "skipped", code: "E_ATTACH_GRANT_SEAT", message: "it acts through a session grant and holds no identity key → its resident's owner attaches the resident through aw" };
   if (f.whoError) return /unknown command "who"/.test(f.whoError)
     ? { status: "refused", code: "E_ATTACH_FAILED", message: `this aw has no \`aw who\` → ${ATTRIBUTION_AW_UPGRADE}` }
@@ -86,7 +90,9 @@ function ownStatus(f) {
 export function buildPlan({ deployment, settings, origins, homes, stewardStatus }) {
   requireBoundHuman(settings, origins);
   const steward = classifyIssuer({ issuer: { kind: "steward", home: settings.steward.home, id: settings.steward.id }, who: stewardStatus.who, whoError: stewardStatus.whoError, chainFiles: true });
-  if (steward.action !== "issue") throw failure("E_ATTACH_PARENT_REFUSED", steward.message);
+  // An unreadable or unavailable status is for now; a steward chain that fails is not.
+  const transient = stewardStatus.whoError || stewardStatus.who?.outcome === "unavailable";
+  if (steward.action !== "issue") throw failure(transient ? "E_ATTACH_FAILED" : "E_ATTACH_PARENT_REFUSED", steward.message);
   const entries = new Map();
   const nodes = homes.map((f) => ({ instance: f.instance, home: f.home, record: f.record, did: f.who?.id || f.keys?.didKey || "", facts: f }));
   for (const n of attachParents(nodes)) {
@@ -111,40 +117,74 @@ export function buildPlan({ deployment, settings, origins, homes, stewardStatus 
   return { ...plan, planRevision: hash(plan) };
 }
 
+const checkApplyArgs = (planRevision, idempotencyKey) => {
+  if (!REVISION_RE.test(planRevision || "") || !KEY_RE.test(idempotencyKey || "")) throw failure("E_BAD_ARGS", `attach needs --plan-revision <rev> (24 hex characters) and --idempotency-key <key> (1–128 safe characters)\n${ATTACH_USAGE}`);
+};
+
+/** The first result of an idempotency key, replayed, or null when the key is
+ *  new. The same key with another plan conflicts. Reads no aw and no home,
+ *  so a replay never depends on the registry. */
+export function storedReceipt({ receiptsDir, idempotencyKey, planRevision, deployment }) {
+  checkApplyArgs(planRevision, idempotencyKey);
+  const receiptFile = join(receiptsDir, `receipt.${idempotencyKey}.json`);
+  if (!existsSync(receiptFile)) return null;
+  let stored;
+  try { stored = JSON.parse(readFileSync(receiptFile, "utf8")); } catch { throw failure("E_ATTACH_FAILED", `the receipt ${receiptFile} is unreadable → use another idempotency key`); }
+  if (stored.planRevision !== planRevision || stored.deployment !== deployment) throw failure("E_IDEMPOTENCY_CONFLICT", "this idempotency key belongs to another attach plan; use its original arguments or another key");
+  return { ...stored, replayed: true };
+}
+
+/** The key's lock: one apply of a key at a time. A lock whose process has
+ *  ended is taken over. */
+function lockKey(lockFile) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { writeFileSync(lockFile, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); return; }
+    catch (e) { if (e.code !== "EEXIST") throw e; }
+    const pid = Number.parseInt(readFileSync(lockFile, "utf8"), 10);
+    let running = false;
+    try { if (pid > 0) { process.kill(pid, 0); running = true; } } catch (e) { running = e.code === "EPERM"; }
+    if (running) throw failure("E_ATTACH_FAILED", `an apply with this idempotency key is already running (pid ${pid}) → run it again once it has finished, to get its result`);
+    rmSync(lockFile, { force: true });
+  }
+  throw failure("E_ATTACH_FAILED", `could not take the lock ${lockFile} → run it again`);
+}
+
 /**
  * Apply a plan by its revision. `plan` is the plan built now; `planRevision`
  * is the one the caller reviewed. The same idempotency key replays the first
- * result. Homes are attached in plan order; one that fails stays as it was,
- * and its descendants are skipped. attachOne(entry) attaches one home or
- * throws an error with its E_ code.
+ * result, and one apply of a key runs at a time; a receipt once written is
+ * never replaced. Homes are attached in plan order; one that fails stays as
+ * it was, and its descendants are skipped. attachOne(entry) attaches one
+ * home or throws an error with its E_ code.
  */
 export function applyPlan({ plan, planRevision, idempotencyKey, receiptsDir, attachOne, now = () => new Date().toISOString() }) {
-  if (!REVISION_RE.test(planRevision || "") || !KEY_RE.test(idempotencyKey || "")) throw failure("E_BAD_ARGS", `attach needs --plan-revision <rev> (24 hex characters) and --idempotency-key <key> (1–128 safe characters)\n${ATTACH_USAGE}`);
-  const receiptFile = join(receiptsDir, `receipt.${idempotencyKey}.json`);
-  if (existsSync(receiptFile)) {
-    let stored;
-    try { stored = JSON.parse(readFileSync(receiptFile, "utf8")); } catch { throw failure("E_ATTACH_FAILED", `the receipt ${receiptFile} is unreadable → use another idempotency key`); }
-    if (stored.planRevision !== planRevision || stored.deployment !== plan.deployment) throw failure("E_IDEMPOTENCY_CONFLICT", "this idempotency key belongs to another attach plan; use its original arguments or another key");
-    return { ...stored, replayed: true };
-  }
-  if (plan.planRevision !== planRevision) throw failure("E_ATTACH_PLAN_STALE", `the attach plan changed (${planRevision} → ${plan.planRevision}); review the fresh plan`, { plan });
-  const failed = new Set(), homes = [];
-  for (const entry of plan.homes) {
-    if (entry.status !== "attach") { homes.push(entry); continue; }
-    if (entry.parent?.home && failed.has(entry.parent.home)) {
-      failed.add(entry.home);
-      homes.push({ ...entry, status: "skipped", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its parent ${entry.parent.instance} was not attached by this apply → fix its parent, then plan again` });
-      continue;
-    }
-    try { attachOne(entry); homes.push({ ...entry, status: "attached" }); }
-    catch (e) { failed.add(entry.home); homes.push({ ...entry, status: "refused", code: e.code || "E_ATTACH_FAILED", reason: e.reason ?? null, message: String(e.message || e) }); }
-  }
-  const receipt = { action: "attribution-attach", status: "complete", deployment: plan.deployment, idempotencyKey, planRevision, at: now(), failed: failed.size, homes };
+  checkApplyArgs(planRevision, idempotencyKey);
   mkdirSync(receiptsDir, { recursive: true, mode: 0o700 });
-  const temp = `${receiptFile}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
-  renameSync(temp, receiptFile);
-  return receipt;
+  const receiptFile = join(receiptsDir, `receipt.${idempotencyKey}.json`), lockFile = join(receiptsDir, `receipt.${idempotencyKey}.lock`);
+  lockKey(lockFile);
+  try {
+    const replay = storedReceipt({ receiptsDir, idempotencyKey, planRevision, deployment: plan.deployment });
+    if (replay) return replay;
+    if (plan.planRevision !== planRevision) throw failure("E_ATTACH_PLAN_STALE", `the attach plan changed (${planRevision} → ${plan.planRevision}); review the fresh plan`, { plan });
+    const failed = new Set(), homes = [];
+    for (const entry of plan.homes) {
+      if (entry.status !== "attach") { homes.push(entry); continue; }
+      if (entry.parent?.home && failed.has(entry.parent.home)) {
+        failed.add(entry.home);
+        homes.push({ ...entry, status: "skipped", code: "E_ATTACH_PARENT_REFUSED", reason: "parent_not_attached", message: `its parent ${entry.parent.instance} was not attached by this apply → fix its parent, then plan again` });
+        continue;
+      }
+      try { attachOne(entry); homes.push({ ...entry, status: "attached" }); }
+      catch (e) { failed.add(entry.home); homes.push({ ...entry, status: "refused", code: e.code || "E_ATTACH_FAILED", reason: e.reason ?? null, message: String(e.message || e) }); }
+    }
+    const receipt = { action: "attribution-attach", status: "complete", deployment: plan.deployment, idempotencyKey, planRevision, at: now(), failed: failed.size, homes };
+    const temp = `${receiptFile}.${process.pid}.tmp`;
+    writeFileSync(temp, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+    try { linkSync(temp, receiptFile); }
+    catch (e) { if (e.code !== "EEXIST") throw e; return storedReceipt({ receiptsDir, idempotencyKey, planRevision, deployment: plan.deployment }); }
+    finally { rmSync(temp, { force: true }); }
+    return receipt;
+  } finally { rmSync(lockFile, { force: true }); }
 }
 
 /** aw in one identity's home: the identity is the home's own `.aw`, never an
@@ -170,19 +210,20 @@ export function homeFacts(run, row, timeout) {
   try { record = JSON.parse(readFileSync(join(row.home, "instance.json"), "utf8")); } catch { record = {}; }
   const meta = record?.capabilityMeta?.["oats.aweb"] || {};
   const grantSeat = meta.identity?.mode === "global" && !!meta.identity?.grant;
-  const base = { instance: typeof row.instance === "string" ? row.instance : record.instance, home: row.home, record, grantSeat, chainFile: existsSync(join(row.home, ".aw", "id-chain.json")), keys: homeKeyIds(row.home), refusal: readAttachRefusal(row.home) };
+  const base = { instance: typeof row.instance === "string" ? row.instance : record.instance, home: row.home, record, grantSeat, chainFile: existsSync(join(row.home, ".aw", "id-chain.json")), keys: homeKeyIds(row.home), refusal: readAttachRefusal(row.home), pendingImport: readPendingImport(row.home) };
   return grantSeat ? base : { ...base, ...whoIn(run, row.home, timeout) };
 }
 
 /** One home's attach: the exchange with its parent, under the home's own
  *  lock; success clears a recorded refusal, a lasting refusal is recorded. */
 export function attachHome({ entry, run, keys, recipient = entry.instance }) {
-  const stateDir = join(entry.home, ".oats-aweb", "attribution");
+  const stateDir = attachStateDir(entry.home);
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const lock = join(stateDir, "attach.lock");
   try { writeFileSync(lock, `${process.pid}\n`, { flag: "wx" }); }
   catch { throw failure("E_ATTACH_FAILED", `another attach of ${entry.instance} is running (${lock}) → retry once it has finished`); }
   try {
+    if (resumeImport({ childHome: entry.home, stateDir, run })) { clearAttachRefusal(entry.home); return; }
     const current = keys ?? homeKeyIds(entry.home);
     if (!current) throw failure("E_ATTACH_KEY_MISMATCH", "it has no readable signing key, so there is no key to certify → check the home's .aw");
     exchangeChain({ issuerHome: entry.parent.home, childHome: entry.home, recipient, stateDir, run, parseJson: parseAwJson, expectedSubjectKey: current.didKey });
@@ -203,62 +244,90 @@ function instanceRecord(home) {
   try { return JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch { return null; }
 }
 
+/** The instance a home's record names as its parent by the spawn's rule,
+ *  if it is one of this deployment's homes: `spawnedBy`, or, for a home
+ *  spawned before kernels recorded spawners, `parentInstance`. */
+function recordedParent(record, deployment) {
+  const agents = join(deployment, "agents");
+  if (Object.hasOwn(record, "spawnedBy")) {
+    const s = record.spawnedBy;
+    if (!s || typeof s.home !== "string" || typeof s.instance !== "string" || !s.home.startsWith(`${agents}/`)) return null;
+    const r = instanceRecord(s.home);
+    return r ? { instance: s.instance, home: s.home, record: r } : null;
+  }
+  if (typeof record.parentInstance !== "string") return null;
+  let souls = [];
+  try { souls = readdirSync(agents); } catch { souls = []; }
+  for (const soul of souls) {
+    const h = join(agents, soul, "instances", record.parentInstance), r = instanceRecord(h);
+    if (r) return { instance: record.parentInstance, home: h, record: r };
+  }
+  return null;
+}
+/** The home's line of recorded parents within the deployment, nearest first. */
+function ancestorRows(home, deployment) {
+  const rows = [], seen = new Set([home]);
+  for (let record = instanceRecord(home) || {}, next; (next = recordedParent(record, deployment)) && !seen.has(next.home) && rows.length < 16; record = next.record) {
+    seen.add(next.home);
+    rows.push({ instance: next.instance, home: next.home });
+  }
+  return rows;
+}
+
 /**
- * The attach a start makes for its own home (C3, C4): in mode human with a
- * recorded human and steward, a local home without a chain is attached under
- * the parent its spawn would have chosen, once that parent holds a chain. A
- * failure never stops the start: it gives one warning with its reason. A
- * lasting refusal is recorded and not retried at later starts, only by an
- * attach apply. Returns null when the start has nothing to do with
- * attribution (mode none included: no aw call, no file read); otherwise
- * {attach (the meta's record of a lasting refusal, or undefined), note (the
- * warning, or null)}.
+ * The attach a start makes for its own home (C3, C4), by the same plan as
+ * `oats aweb attribution attach`, over the home and its line of parents: in
+ * mode human with a recorded human and steward, a local home the plan would
+ * attach is attached once its parent holds a chain; a pending import is
+ * resumed. A failure never stops the start: it gives one warning with its
+ * reason. A lasting refusal of the home itself is recorded and not retried at
+ * later starts, only by an attach apply. Returns null when the start has
+ * nothing to do with attribution (mode none included: no aw call, no file
+ * read); otherwise {attach (the meta's record of a lasting refusal, or
+ * undefined), note (the warning, or null)}.
  */
 export function startAttach({ home, instance, settings, origins, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS }) {
   let mode;
   try { mode = attributionMode(settings); } catch { return null; }
   if (hostOnlyViolation(origins)) return null;
   if (mode !== "human" || !settings.human?.id || !settings.steward?.id || !settings.steward?.home || !local) return null;
-  if (existsSync(join(home, ".aw", "id-chain.json"))) return { attach: undefined, note: null };
+  const nothing = { attach: undefined, note: null };
   const recorded = readAttachRefusal(home);
   if (recorded) return { attach: { refused: recorded.code, reason: recorded.reason ?? null, at: recorded.at ?? null }, note: `this home is not attached (${recorded.code}): ${recorded.message} (recorded ${recorded.at || "earlier"}; not retried at start) → fix that, then ${ATTACH_ACT}` };
-  // The parent by the spawn's rule, among this home and the instances its
-  // record names in this deployment (spawnedBy holds canonical paths).
-  try { deployment = realpathSync(deployment); } catch { return { attach: undefined, note: null }; }
-  const record = instanceRecord(home) || {};
-  const candidates = [];
-  const spawner = record.spawnedBy;
-  if (spawner && typeof spawner.home === "string" && spawner.home.startsWith(join(deployment, "agents") + "/")) {
-    const r = instanceRecord(spawner.home);
-    if (r) candidates.push({ instance: spawner.instance, home: spawner.home, record: r, did: "" });
-  }
-  if (!Object.hasOwn(record, "spawnedBy") && typeof record.parentInstance === "string") {
-    let soulDirs = [];
-    try { soulDirs = readdirSync(join(deployment, "agents")); } catch { soulDirs = []; }
-    for (const soul of soulDirs) {
-      const h = join(deployment, "agents", soul, "instances", record.parentInstance), r = instanceRecord(h);
-      if (r) { candidates.push({ instance: record.parentInstance, home: h, record: r, did: "" }); break; }
-    }
-  }
-  const self = { instance, home, record, did: "" };
-  const parent = attachParents([self, ...candidates]).find((n) => n.home === home).parent;
-  const parentHome = parent ? parent.home : settings.steward.home;
-  if (!existsSync(join(parentHome, ".aw", "id-chain.json"))) return { attach: undefined, note: null };
+  const pending = readPendingImport(home);
+  if (!pending && existsSync(join(home, ".aw", "id-chain.json"))) return nothing;
+  try { deployment = realpathSync(deployment); } catch { return nothing; }
   const deadline = Date.now() + budgetMs, base = awInHome(env);
   const run = (argv, cwd) => {
     const left = deadline - Date.now();
     if (left < 1000) throw new Error(`the start's attach budget of ${budgetMs / 1000} s ran out`);
     return base(argv, cwd, left);
   };
+  const failed = (e) => {
+    const code = e.code || "E_ATTACH_FAILED", message = String(e.message || e).slice(0, 300);
+    if (isLastingRefusal(code)) return { attach: { refused: code, reason: e.reason ?? null, at: new Date().toISOString() }, note: `this home could not be attached at start (${code}): ${message}; not retried at start → fix that, then ${ATTACH_ACT}` };
+    return { attach: undefined, note: `this home could not be attached at start (${code}): ${message}; the next start tries again, or ${ATTACH_ACT}` };
+  };
+  let entry, plan;
   try {
-    attachHome({ entry: { instance, home, parent: parent ? { instance: parent.instance, home: parent.home } : { steward: true, home: parentHome } }, run, keys: homeKeyIds(home) });
-    return { attach: undefined, note: null };
+    const rows = [{ instance, home }, ...ancestorRows(home, deployment)];
+    plan = buildPlan({ deployment, settings, origins, homes: rows.map((row) => homeFacts(run, row)), stewardStatus: whoIn(run, settings.steward.home) });
+    entry = plan.homes.find((h) => h.home === home);
   } catch (e) {
-    const lasting = isLastingRefusal(e.code), message = String(e.message || e).slice(0, 300);
-    return lasting
-      ? { attach: { refused: e.code, reason: e.reason ?? null, at: new Date().toISOString() }, note: `this home could not be attached at start (${e.code}): ${message}; not retried at start → fix that, then ${ATTACH_ACT}` }
-      : { attach: undefined, note: `this home could not be attached at start (${e.code || "E_ATTACH_FAILED"}): ${message}; the next start tries again, or ${ATTACH_ACT}` };
+    // A refusal of the whole plan (no steward to issue, the registry
+    // unreachable) is not this home's own, so it is never recorded for it.
+    return { attach: undefined, note: `this home could not be attached at start (${e.code || "E_ATTACH_FAILED"}): ${String(e.message || e).slice(0, 300)}; the next start tries again, or ${ATTACH_ACT}` };
   }
+  if (entry.status === "refused" && ["E_ATTACH_KEY_MISMATCH"].includes(entry.code) || entry.reason === "subject_mismatch") {
+    recordAttachRefusal(home, { code: entry.code, reason: entry.reason ?? null, message: entry.message, at: new Date().toISOString() });
+    return failed(Object.assign(new Error(entry.message), { code: entry.code, reason: entry.reason }));
+  }
+  if (entry.status === "refused" && entry.code === "E_ATTACH_FAILED") return failed(Object.assign(new Error(entry.message), { code: entry.code }));
+  if (entry.status !== "attach") return nothing;
+  // Not before its parent holds a chain: the parent attaches first.
+  const parent = entry.parent.steward ? null : plan.homes.find((h) => h.home === entry.parent.home);
+  if (!entry.resume && parent && parent.status === "attach") return nothing;
+  try { attachHome({ entry, run, keys: homeKeyIds(home) }); return nothing; } catch (e) { return failed(e); }
 }
 
 function parseArgs(argv) {
@@ -305,6 +374,11 @@ export async function attachMain(argv, env = process.env) {
     try { origins = JSON.parse(env.OATS_SETTINGS_ORIGINS || "{}"); } catch { origins = undefined; }
     // Refuse without a bound human before any aw call or home read.
     requireBoundHuman(settings, origins);
+    const receiptsDir = join(deployment, ".oats-aweb", "attach");
+    if (!args.plan) {
+      const replay = storedReceipt({ receiptsDir, idempotencyKey: args.idempotencyKey, planRevision: args.planRevision, deployment });
+      if (replay) return emit({ ok: true, result: replay }, replay.failed ? 1 : 0);
+    }
     const listed = deploymentHomes(env, deployment);
     if (!listed.known) throw failure("E_ATTACH_DEPLOYMENT", `the deployment's homes could not be read: ${listed.reason}`);
     const run = awInHome(env);
@@ -312,7 +386,7 @@ export async function attachMain(argv, env = process.env) {
     const plan = buildPlan({ deployment, settings, origins, homes, stewardStatus: whoIn(run, settings.steward.home) });
     if (args.plan) return emit({ ok: true, result: plan }, 0);
     const keysByHome = new Map(homes.map((h) => [h.home, h.keys]));
-    const receipt = applyPlan({ plan, planRevision: args.planRevision, idempotencyKey: args.idempotencyKey, receiptsDir: join(deployment, ".oats-aweb", "attach"), attachOne: (entry) => attachHome({ entry, run, keys: keysByHome.get(entry.home) }) });
+    const receipt = applyPlan({ plan, planRevision: args.planRevision, idempotencyKey: args.idempotencyKey, receiptsDir, attachOne: (entry) => attachHome({ entry, run, keys: keysByHome.get(entry.home) }) });
     return emit({ ok: true, result: receipt }, receipt.failed ? 1 : 0);
   } catch (e) {
     const code = e.code || "E_ATTACH_FAILED";

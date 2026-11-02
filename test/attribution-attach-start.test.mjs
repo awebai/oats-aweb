@@ -34,7 +34,7 @@ function fixture(t, { attribution = "human", record = { spawnedBy: null }, did, 
   writeFileSync(join(home, "instance.json"), JSON.stringify(record));
   const settings = { ...(attribution ? { attribution } : {}), human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: stewardHome } };
   const fake = fakeAwChain(t);
-  const start = (extra = {}) => startAttach({ home, instance: "dev-1", settings, deployment: ws, local: true, env: { PATH: fake.path, ...extra.env }, ...extra });
+  const start = ({ env, ...extra } = {}) => startAttach({ home, instance: "dev-1", settings, deployment: ws, local: true, env: { PATH: fake.path, ...env }, ...extra });
   return { ws, home, lead, fake, start };
 }
 const idCalls = (fake) => fake.calls().filter((c) => c.args[0] === "id");
@@ -87,7 +87,7 @@ test("the start's attach is bounded: a slow aw ends it within the budget, with a
   const began = Date.now();
   const r = fx.start({ budgetMs: 1500, env: { FAKE_SLOW_INVITE: "5" } });
   assert.ok(Date.now() - began < 3500, `took ${Date.now() - began} ms`);
-  assert.equal(r.attach, undefined);
+  assert.equal(r.attach, undefined, JSON.stringify(r));
   assert.match(r.note, /could not be attached at start \(E_ATTACH_FAILED\).*the next start tries again/);
   assert.equal(readAttachRefusal(fx.home), null);
   assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), false);
@@ -142,4 +142,14 @@ test("launch in mode none: no attach call and no attach in the meta", (t) => {
   assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
   assert.deepEqual(idCalls(fx.fake), []);
   assert.equal(Object.hasOwn(r.doc.meta, "attach"), false);
+});
+
+test("the steward's evidence unavailable at start is a warning for now, never a lasting refusal of the home", (t) => {
+  const fx = fixture(t);
+  writeFileSync(join(fx.ws, ".aweb-stewards", "s", ".aw", "fake-who.json"), JSON.stringify({ id: STEWARD, outcome: "unavailable", reason: "evidence_unavailable", identity_valid: null }));
+  const r = fx.start();
+  assert.equal(r.attach, undefined, JSON.stringify(r));
+  assert.match(r.note, /\(E_ATTACH_FAILED\).*the next start tries again/);
+  assert.equal(readAttachRefusal(fx.home), null);
+  assert.deepEqual(idCalls(fx.fake), []);
 });

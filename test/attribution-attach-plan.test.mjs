@@ -132,3 +132,9 @@ test("host settings only: attribution human from anywhere but oats-local.yaml re
   assert.equal(buildPlan({ deployment: D, settings: SETTINGS, origins: { "/attribution": { kind: "host", at: "oats-local.yaml#/settings/oats.aweb" } }, homes: [], stewardStatus: STEWARD_OK }).homes.length, 0);
   assert.equal(buildPlan({ deployment: D, settings: SETTINGS, origins: {}, homes: [], stewardStatus: STEWARD_OK }).homes.length, 0);
 });
+
+test("a steward whose evidence is unavailable refuses the plan for now (E_ATTACH_FAILED), not as a refused parent", () => {
+  for (const stewardStatus of [{ whoError: "aw who failed" }, { who: { id: "did:aw:steward1", outcome: "unavailable", reason: "evidence_unavailable", identity_valid: null } }]) {
+    assert.throws(() => buildPlan({ deployment: D, settings: SETTINGS, homes: [], stewardStatus }), (e) => e.code === "E_ATTACH_FAILED", JSON.stringify(stewardStatus));
+  }
+});

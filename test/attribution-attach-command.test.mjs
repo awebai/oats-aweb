@@ -110,3 +110,21 @@ test("usage: plan or apply, never both or neither", (t) => {
   const fake = fakeAwChain(t);
   for (const args of [[], ["--plan", "--plan-revision", "a".repeat(24)], ["--bogus"]]) assert.equal(attach(fx, fake, args).status, 2, JSON.stringify(args));
 });
+
+test("a completed key replays its stored result without asking aw or the registry again", (t) => {
+  const fx = deployment(t, { instances: { lead: { spawnedBy: null } } });
+  const fake = fakeAwChain(t);
+  const plan = attach(fx, fake, ["--plan"]);
+  const first = attach(fx, fake, ["--plan-revision", plan.doc.result.planRevision, "--idempotency-key", "replay"]);
+  assert.equal(first.status, 0, JSON.stringify(first.doc));
+  const steward = JSON.parse(fx.env.OATS_SETTINGS).steward.home;
+  writeFileSync(join(steward, ".aw", "fake-who.json"), JSON.stringify({ id: STEWARD, outcome: "unavailable", reason: "evidence_unavailable", identity_valid: null }));
+  const calls = fake.calls().length;
+  const again = attach(fx, fake, ["--plan-revision", plan.doc.result.planRevision, "--idempotency-key", "replay"]);
+  assert.equal(again.status, 0, JSON.stringify(again.doc));
+  assert.equal(again.doc.result.replayed, true);
+  assert.deepEqual(again.doc.result.homes, first.doc.result.homes);
+  assert.equal(fake.calls().length, calls, "a replay makes no aw call");
+  const conflict = attach(fx, fake, ["--plan-revision", "f".repeat(24), "--idempotency-key", "replay"]);
+  assert.equal(conflict.doc.error.code, "E_IDEMPOTENCY_CONFLICT");
+});

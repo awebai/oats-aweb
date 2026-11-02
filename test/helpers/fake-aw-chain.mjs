@@ -14,6 +14,8 @@
 //   FAKE_NO_WHO=1                 `aw who` is unknown, as in an aw before identity chains
 //   FAKE_AW_VERSION=<v>           `aw version` reports v
 //   FAKE_SLOW_INVITE=<s>          `id child invite` takes s seconds
+//   FAKE_REGISTER_FAIL=1          a did:aw's import installs the chain, then its registration fails
+// An identity's key (a request's subject_key) is `.aw/did-key` when present, else its id.
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -61,7 +63,8 @@ if (args[0] === "id" && args[1] === "child" && args[2] === "invite") {
 if (args[0] === "id" && args[1] === "parent" && args[2] === "request") {
   const parent = flag("--parent");
   if (!/^did:(aw|key):/.test(parent || "")) refuse("name the parent: --parent <did:aw> or --root-parent");
-  const request = { request: { v: 1, type: "aweb.id-certificate-request", request_id: crypto.randomUUID(), operation: "issue", id: idOf(), domain: flag("--domain"), parent: { kind: "identity", id: parent }, kind: "agent", subject_key: idOf(), invitation_id: flag("--invitation-id"), old_certificate: null }, signature: "sig" };
+  if (idOf().startsWith("did:aw:") && parent.startsWith("did:key:")) refuse("a local did:key parent can issue only a local did:key agent; use a registered parent for registered children");
+  const request = { request: { v: 1, type: "aweb.id-certificate-request", request_id: crypto.randomUUID(), operation: "issue", id: idOf(), domain: flag("--domain"), parent: { kind: "identity", id: parent }, kind: "agent", subject_key: fs.existsSync(path.join(aw, "did-key")) ? fs.readFileSync(path.join(aw, "did-key"), "utf8").trim() : idOf(), invitation_id: flag("--invitation-id"), old_certificate: null }, signature: "sig" };
   fs.writeFileSync(path.join(aw, "outgoing-" + request.request.request_id + ".json"), JSON.stringify(request));
   writeOut(flag("--out"), JSON.stringify(request));
   console.error("Request " + request.request.request_id + " for " + idOf() + " (agent).");
@@ -95,7 +98,9 @@ if (args[0] === "id" && args[1] === "parent" && args[2] === "import") {
   if (!chain() && !flag("--domain")) refuse("--domain is required");
   if (flag("--domain") && flag("--domain") !== leaf.domain) refuse("request_binding_mismatch");
   fs.writeFileSync(path.join(aw, "id-chain.json"), JSON.stringify(response.chain));
-  emit({ request_id: response.request_id, id: idOf(), registration: "" });
+  // aw saves the chain, then registers a did:aw's certificate (cmd/aw/id_parent.go:411, :431, :442).
+  if (process.env.FAKE_REGISTER_FAIL && idOf().startsWith("did:aw:")) refuse("register the certificate of " + idOf() + " (run import again to retry): registry http 503: unavailable");
+  emit({ request_id: response.request_id, id: idOf(), registration: idOf().startsWith("did:aw:") ? "registered" : "" });
   process.exit(0);
 }
 if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: false, daemon_version_state: "not_running", instances: [] }); process.exit(0); }
