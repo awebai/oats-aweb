@@ -260,6 +260,9 @@ host.
   so it never issues. The child stays chainless and reports `unknown`;
   respawning it from an instance that holds its own key, or from a shell,
   gives it a chain.
+- The live acceptance exercises `did:key` homes only. No spawn path makes a
+  `did:aw` home that holds its own key (a global seat is a grant seat), so the
+  `did:aw` rules are proven by tests alone.
 
 <!-- /aw-min -->
 
