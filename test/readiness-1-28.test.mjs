@@ -215,6 +215,24 @@ test('unread observer on warns when count-only support is unavailable', t => {
   }
 });
 
+test('unread observer warnings are silent on channel-delivered primaries', t => {
+  const fx = fixture(t);
+  // The kernel would say health publishes now: a channel primary still never asks it.
+  fx.current({delivery: 'channel', health: {publish: true}});
+  for (const runtime of ['claude', 'pi']) {
+    fx.record({delivery: 'channel', runtime});
+    for (const publish of [false, true]) {
+      const result = fx.readiness({delivery: 'channel', health: {publish}});
+      assert.deepEqual(countWarning(result), [], runtime);
+    }
+  }
+  assert.equal(fx.kernelCalls().length, 0, 'a channel home makes no kernel call');
+  for (const health of [undefined, {publish: true}]) {
+    assert.deepEqual(countWarning(fx.readiness({delivery: 'channel', ...(health ? {health} : {})}, {targetHome: null})), [], 'channel soul without a captured broker runtime');
+  }
+  assert.equal(fx.kernelCalls().length, 0, 'soul scope never queries the kernel');
+});
+
 // A home's settings are its spawn's capture; the observer reads the
 // deployment's current health setting each minute, and so does a home's check.
 test('a home spawned before health enable warns once health publishes now', t => {
