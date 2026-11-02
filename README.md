@@ -17,30 +17,23 @@ oats#1665).
   another instance (the kernel's `OATS_SPAWNER_HOME`) is issued by that
   instance, so it inherits the nearest human. An instance spawned by a person
   (a shell, Desktop or an automation) is issued by the deployment's
-  **steward**: the agent identity the human issued once, at setup. `aw who` in
-  a child shows the human, then the steward, then each spawning instance, then
-  the child.
+  **steward**: the agent identity the human approves once, at the bind.
+  `aw who` in a child shows the human, then the steward, then each spawning
+  instance, then the child.
 
-**Binding a human** is one act, by the human at their own terminal, in the
-deployment and outside any instance:
+**Binding a human** records who the deployment's instances trace to:
+host-only `human: {id, label}` and `steward: {id, home}` in `oats-local.yaml`,
+and `attribution: human`. The bind is a browser approval by the person, driven
+by the setup expert; it needs aweb Cloud and is not yet available.
 
-```text
-oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>
-```
+- With no human bound, everything works as today.
+- The steward lives outside instance homes and is never passed in an
+  instance's environment.
+- One bound human per deployment.
+- A self-custodial human can't be a steward parent.
 
-- It runs `aw id create --human-parent <did:aw>`. aw asks for the human's
-  passphrase and signs; no OATS code signs as a human.
-- The human must already exist: `aw id human init` in a namespace (`--domain`)
-  they control. The steward claims a global address in that namespace.
-- The steward lives in `<deployment>/.aweb-stewards/<alias>`, outside instance
-  homes, and is never passed in an instance's environment.
-- It records host-only `human: {id, label}` and `steward: {id, home}`, then
-  `attribution: human`, in `oats-local.yaml`.
-- One bound human per deployment: a second, different human is refused.
-  Rerunning for the same human verifies the steward and creates nothing.
-
-It needs a kernel that lists the `spawn-attribution` feature, and aw 1.36.53
-or later, the first release with identity chains. Without them, setup and
+Mode `human` needs a kernel that lists the `spawn-attribution` feature, and
+aw 1.36.53 or later, the first release with identity chains. Without them,
 bound-mode spawns refuse, naming the upgrade.
 
 **What a bound spawn does.** Before minting, the spawn reads the issuer's chain
@@ -55,8 +48,8 @@ spawn-hook refusal, and names its fix.
 - **Refuses:**
   - a revoked, replaced or malformed issuer chain;
   - a known chain whose registry evidence is unavailable;
-  - a chain stale after its parent rotated its key ("re-sign with your parent
-    first");
+  - a chain stale after its parent rotated its key (re-sign it with its parent
+    first);
   - a resulting chain over 8 certificates or 6144 decoded bytes;
   - a spawner whose own spawn meta records an installed chain while its chain
     files are gone;

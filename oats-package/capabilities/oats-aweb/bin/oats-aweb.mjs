@@ -10,8 +10,6 @@
  *                     of live instances (alias = instance name) and humans
  *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the
  *                     messaging root with aw init / id team accept-invite, verify team
- *   oats-aweb setup --steward  the human binds this deployment by issuing its
- *                     steward identity (lib/steward.mjs)
  *   oats-aweb connect  give a registered server's deployment membership in its
  *                     default team, through the kernel's --server capability route
  *   oats-aweb wake     install | status | uninstall the host wake broker's per-user
@@ -55,8 +53,6 @@ import { residentMain } from '../lib/resident.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'resident') process.exit(await residentMain(process.argv.slice(3)));
 import { deploymentHomes, wakeMain } from '../lib/wake-service.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await wakeMain(process.argv.slice(3)));
-import { stewardMain } from '../lib/steward.mjs';
-if ((process.env.OATS_EVENT || process.argv[2]) === 'setup' && process.argv.slice(3).includes('--steward')) process.exit(await stewardMain(process.argv.slice(3)));
 // Loaded only for `health`: the publisher is opt-in, and no other command or
 // hook depends on its modules.
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
@@ -1792,7 +1788,7 @@ function issueChildChain(issuer) {
  *  root stays chainless and the steward carries the human-issued chain. */
 function assertMintingRootIssuesNothing(root) {
   const steward = settings.steward?.home;
-  if (typeof steward === "string" && resolve(steward) === resolve(root)) fatal(`the steward's home ${steward} is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → a human reruns \`oats aweb setup --steward\` with its own steward home`);
+  if (typeof steward === "string" && resolve(steward) === resolve(root)) fatal(`the steward's home ${steward} is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → bind the human again with a steward home of its own, separate from the minting root`);
   if (existsSync(join(root, ".aw", "id-chain.json"))) fatal(`this deployment's minting root ${root} carries an identity chain, so aw would make it every child's parent → use a chainless minting root`);
 }
 /** A child that reuses an existing identity (a resident grant or a retained

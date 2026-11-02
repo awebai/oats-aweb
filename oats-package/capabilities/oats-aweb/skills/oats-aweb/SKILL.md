@@ -938,13 +938,12 @@ an aw identity chain to the deployment's bound human (aw's
 the child. The README's "Spawn attribution" section is the full reference.
 It needs aw 1.36.53 or later, the first release with identity chains.
 
-| Act | Command in D, outside an instance | Writes / success / one next step | Error → remedy |
-|---|---|---|---|
-| Bind the human (the human, at a terminal) | `oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias> [--json]` | Runs `aw id create --human-parent`; aw asks for the human's passphrase and signs, and OATS never signs as a human. The steward lives in `D/.aweb-stewards/<alias>`, never in an instance's environment. Records host-only `human` and `steward`, then `attribution: human`. Success: `PASS bound …`; the steward's chain verifies to that human. Next: spawn; `oats aweb setup --check-only --json` shows `attribution`. | `E_STEWARD_ONE_HUMAN`: another human is bound (one per deployment). `E_STEWARD_KERNEL`: upgrade OATS to a kernel listing `spawn-attribution`. `E_STEWARD_AW`: upgrade aw to 1.36.53 or later. `E_STEWARD_INSIDE_HOME`: an agent never binds a human. `E_STEWARD_VERIFY`: check the human's registration, then rerun. |
-
-The human must already exist (`aw id human init` in a namespace they control);
-the steward claims a global address there. An agent never runs this act. It
-prints it for the human and asks.
+**The bind** records the human and the steward in host-only settings
+(`human: {id, label}`, `steward: {id, home}`) and sets `attribution: human`.
+It is a browser approval by the person, driven by the setup expert; it needs
+aweb Cloud and is not yet available. With no human bound, everything works as
+today. One human per deployment; a self-custodial human can't be a steward
+parent. `oats aweb setup --check-only --json` reports `attribution`.
 
 **Spawn refusals in mode `human`** are the existing spawn-hook refusal, each
 naming its fix:
@@ -952,8 +951,9 @@ naming its fix:
 - unavailable registry evidence for a known chain (a CLI process holds no
   shared cache, so a registry outage stops chained spawning for as long as it
   lasts);
-- a chain stale after its parent rotated its key: re-sign with your parent
-  first, `aw id parent request --resign`;
+- a chain stale after its parent rotated its key: re-sign it with its parent
+  first (`aw id parent request --resign` in its home, the parent approves,
+  then `aw id parent import`);
 - a resulting chain over 8 certificates or 6144 decoded bytes;
 - a spawner whose spawn meta records a chain whose files are gone;
 - a resident-grant spawner;

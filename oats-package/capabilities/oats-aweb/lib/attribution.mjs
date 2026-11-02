@@ -3,8 +3,9 @@
 // deployment's bound human. The chain's rules are aw's (docs/id-certificates.md
 // in awebai/aweb); these are the provider's decisions about them: who issues,
 // when a spawn refuses, when a child is created chainless, and what the spawn
-// meta records. No OATS code signs as a human: the human signs once, at a
-// terminal, when `oats aweb setup --steward` issues the deployment's steward.
+// meta records. No OATS code signs as a human. The bound human and the
+// steward are read from host settings (`human`, `steward`); the bind that
+// records them is the person's own approval and is not part of this package.
 import { basename, isAbsolute } from "node:path";
 
 /** The kernel feature that makes an absent OATS_SPAWNER_HOME mean a person's spawn. */
@@ -13,10 +14,11 @@ export const SPAWN_ATTRIBUTION_FEATURE = "spawn-attribution";
 export const CHAIN_MAX_CERTIFICATES = 8;
 export const CHAIN_MAX_BYTES = 6144;
 const LABEL_MAX_BYTES = 120;
-/** The first aw release with identity chains (`aw who`, `aw id create --human-parent`, the agent-child exchange). */
+/** The first aw release with identity chains (`aw who`, the agent-child exchange). */
 export const ATTRIBUTION_AW_UPGRADE = "upgrade aw to 1.36.53 or later (`npm i -g @awebai/aw@latest`)";
 
-export const STEWARD_SETUP_COMMAND = 'oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>';
+/** The act that binds a human: the person approves the steward in a browser. */
+export const BIND_ACT = "bind a human to this deployment (a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available)";
 
 /** settings.oats.aweb.attribution: absent means none, today's behaviour. */
 export function attributionMode(settings = {}) {
@@ -31,7 +33,7 @@ export function attributionMode(settings = {}) {
 export function kernelRefusal(version) {
   if (Array.isArray(version?.features) && version.features.includes(SPAWN_ATTRIBUTION_FEATURE)) return null;
   const v = typeof version?.version === "string" ? version.version : "unknown";
-  return `attribution: human needs an OATS kernel that lists the ${SPAWN_ATTRIBUTION_FEATURE} feature; this kernel (${v}) does not: upgrade OATS with \`npm install -g @awebai/oats@latest\`, or set attribution: none`;
+  return `attribution: human needs an OATS kernel that lists the ${SPAWN_ATTRIBUTION_FEATURE} feature; this kernel (${v}) does not → upgrade OATS (\`npm install -g @awebai/oats@latest\`), or set attribution: none`;
 }
 
 /** Who issues the child: the instance that ran the spawn, else the steward
@@ -41,7 +43,7 @@ export function issuerSelection({ spawnerHome, steward }) {
     if (!isAbsolute(spawnerHome)) throw new Error(`OATS_SPAWNER_HOME must be an absolute path (got ${JSON.stringify(spawnerHome)})`);
     return { kind: "spawner", home: spawnerHome };
   }
-  if (!steward?.home || !steward?.id) throw new Error(`attribution: human but no human is bound to this deployment: a human runs \`${STEWARD_SETUP_COMMAND}\` at a terminal`);
+  if (!steward?.home || !steward?.id) throw new Error(`attribution: human but no human is bound to this deployment → ${BIND_ACT}, or set attribution: none`);
   return { kind: "steward", home: steward.home, id: steward.id };
 }
 
@@ -50,7 +52,7 @@ const NO_CHAIN = new Set(["legacy_no_chain", "unregistered_identity"]);
 
 /** The fix a failing issuer chain names, by who the issuer is. */
 const fixFor = (issuer) => issuer.kind === "steward"
-  ? `a human reruns \`${STEWARD_SETUP_COMMAND}\` at a terminal`
+  ? "bind the human again, which issues the steward again (a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available)"
   : "retire the spawner and spawn from a valid instance, or from a shell so the deployment's steward issues";
 
 /** One line saying why a chain refuses, then its fix after an arrow. */
@@ -59,7 +61,7 @@ function refusalFor(issuer, reason) {
   if (REVOKED.has(reason)) return `${who}'s identity chain is revoked (${reason}) → ${fixFor(issuer)}`;
   if (reason === "root_replaced") return `the namespace root was replaced after ${who}'s chain was registered (root_replaced) → the namespace owner re-admits it; ${fixFor(issuer)}`;
   if (reason === "superseded_certificate") return `${who}'s certificate was replaced by a newer certificate (superseded_certificate) → install the current chain, or ${fixFor(issuer)}`;
-  if (reason === "stale_issuer_key") return `${who}'s chain is stale after its parent rotated its key → re-sign with your parent first: \`aw id parent request --resign\` in its home, the parent approves, then \`aw id parent import\``;
+  if (reason === "stale_issuer_key") return `${who}'s chain is stale after its parent rotated its key → re-sign it with its parent first (\`aw id parent request --resign\` in its home, the parent approves, then \`aw id parent import\`)`;
   return `${who}'s identity chain is malformed or fails verification (${reason || "no reason"}) → ${fixFor(issuer)}`;
 }
 
@@ -116,10 +118,10 @@ export function chainLimitProblem(bundle) {
 /** A human's label: one line, at most 120 bytes, no control characters. */
 export function oneLineLabel(text) {
   const label = String(text ?? "").trim();
-  if (!label) throw new Error("--label is required: the bound human's name, one line");
-  if (/[\r\n]/.test(label)) throw new Error("--label must be one line");
-  if (/[\u0000-\u001f\u007f]/.test(label)) throw new Error("--label must not contain control characters");
-  if (Buffer.byteLength(label, "utf8") > LABEL_MAX_BYTES) throw new Error(`--label must be at most ${LABEL_MAX_BYTES} bytes`);
+  if (!label) throw new Error("the human's label is required: their name, one line");
+  if (/[\r\n]/.test(label)) throw new Error("the human's label must be one line");
+  if (/[\u0000-\u001f\u007f]/.test(label)) throw new Error("the human's label must not contain control characters");
+  if (Buffer.byteLength(label, "utf8") > LABEL_MAX_BYTES) throw new Error(`the human's label must be at most ${LABEL_MAX_BYTES} bytes`);
   return label;
 }
 
@@ -130,7 +132,8 @@ export function attributionRecord(verdict, boundHuman) {
   if (verdict.action === "chainless") return { mode: "unknown", human: null, parent: null };
   const parent = { id: verdict.issuerId };
   if (verdict.outcome !== "nearest_human") return { mode: "none", human: null, parent };
-  const label = verdict.humanId === boundHuman?.id ? boundHuman.label : verdict.humanId;
+  let label = verdict.humanId;
+  if (verdict.humanId === boundHuman?.id) { try { label = oneLineLabel(boundHuman.label); } catch { /* not one safe line: the id stands */ } }
   return { mode: "human", human: { id: verdict.humanId, label }, parent };
 }
 
@@ -138,10 +141,10 @@ export function attributionRecord(verdict, boundHuman) {
 function attributionSummary(settings) {
   let mode;
   try { mode = attributionMode(settings); } catch (e) { return { mode: null, human: null, steward: null, text: `attribution: ${e.message}` }; }
-  if (mode === "none") return { mode, human: null, steward: null, text: `attribution: none — no human bound; one act binds one: a human runs \`${STEWARD_SETUP_COMMAND}\` at a terminal` };
+  if (mode === "none") return { mode, human: null, steward: null, text: `attribution: none — no human bound; one act binds one: ${BIND_ACT}` };
   const human = settings.human?.id ? { id: settings.human.id, label: settings.human.label ?? settings.human.id } : null;
   const steward = settings.steward?.id ? { id: settings.steward.id } : null;
-  const bound = human && steward ? `bound to ${human.label} (${human.id}) through steward ${steward.id}` : `no human bound yet: a human runs \`${STEWARD_SETUP_COMMAND}\` at a terminal`;
+  const bound = human && steward ? `bound to ${human.label} (${human.id}) through steward ${steward.id}` : `no human bound yet: ${BIND_ACT}, or set attribution: none`;
   return { mode, human, steward, text: `attribution: human — ${bound}` };
 }
 

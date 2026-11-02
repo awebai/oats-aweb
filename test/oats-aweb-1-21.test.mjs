@@ -275,7 +275,7 @@ test("setup without --install-aw keeps today's message when aw is missing; --che
 });
 
 // acmj.21: with no human bound, readiness reports the mode as information.
-const NO_HUMAN_BOUND = { mode: "none", human: null, steward: null, chainlessSpawners: null, status: "info", message: 'attribution: none — no human bound; one act binds one: a human runs `oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>` at a terminal' };
+const NO_HUMAN_BOUND = { mode: "none", human: null, steward: null, chainlessSpawners: null, status: "info", message: 'attribution: none — no human bound; one act binds one: bind a human to this deployment (a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available)' };
 test("setup --check-only reports membership of the default team from its root", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });

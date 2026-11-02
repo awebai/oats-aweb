@@ -4,10 +4,13 @@
 
 - **Spawn attribution: each spawned instance carries an identity chain to a
   human** (aweb-acmj.21, oats#1665). New setting `attribution: human | none`;
-  absent means `none`, and spawns are unchanged. `oats aweb setup --steward`
-  lets the human, at a terminal, issue the deployment's steward with
-  `aw id create --human-parent`. It records host-only `human` and `steward`,
-  one human per deployment. In mode `human` the spawn hook issues the child
+  absent means `none`, and spawns are unchanged. The bound human and the
+  deployment's steward are read from host-only `human` and `steward`
+  settings, one human per deployment. The bind that records them is a browser
+  approval by the person, driven by the setup expert; it needs aweb Cloud and
+  is not yet available. With no human bound, everything works as today, and
+  a self-custodial human can't be a steward parent. In mode `human` the spawn
+  hook issues the child
   through aw's agent-child exchange: from the spawning instance
   (`OATS_SPAWNER_HOME`), or from the steward for a person's spawn.
   - It refuses, naming each fix, on a revoked, replaced, malformed or stale
@@ -26,10 +29,9 @@
     `--server` spawn from another host counts as a person's. The steward's key
     custody is a convention under the same OS user, where misuse changes the
     recorded parent and never the human.
-  - **aw floor: 1.36.53**, the first release with `aw who`, `aw id create
-    --human-parent` and `aw id parent request --parent` accepting the
-    `did:key` parent of an instance-issued child; the release sets the
-    provider's aw floor to it.
+  - **aw floor: 1.36.53**, the first release with `aw who` and with
+    `aw id parent request --parent` accepting the `did:key` parent of an
+    instance-issued child; the release sets the provider's aw floor to it.
     Needs a kernel listing `spawn-attribution`.
   - Limit: captured execution's binding phases accept no attribution
     settings, so a mode-`human` deployment that uses captured execution is

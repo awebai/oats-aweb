@@ -107,7 +107,7 @@ test("refuses before minting on a kernel without spawn-attribution, naming the u
   const fake = fakeAwChain(t);
   const { status, doc } = spawn(fx, fake);
   assert.equal(status, 1);
-  assert.match(doc.warning, /spawn-attribution feature; this kernel \(0\.80\.0\) does not: upgrade OATS/);
+  assert.match(doc.warning, /spawn-attribution feature; this kernel \(0\.80\.0\) does not → upgrade OATS \(`npm install -g @awebai\/oats@latest`\)/);
   assert.equal(minted(fake), false);
 });
 
@@ -116,7 +116,7 @@ test("refuses before minting when no human is bound, naming the binding act", (t
   const fake = fakeAwChain(t);
   const { status, doc } = spawn(fx, fake);
   assert.equal(status, 1);
-  assert.match(doc.warning, /no human is bound to this deployment: a human runs `oats aweb setup --steward/);
+  assert.match(doc.warning, /no human is bound to this deployment → bind a human to this deployment \(a browser approval/);
   assert.equal(minted(fake), false);
 });
 
@@ -221,7 +221,7 @@ test("refuses before minting when the steward is the minting root: they stay sep
   const fake = fakeAwChain(t);
   const { status, doc } = spawn(fx, fake, { OATS_SETTINGS: JSON.stringify(settings) });
   assert.equal(status, 1);
-  assert.match(doc.warning, /the steward's home .* is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → /);
+  assert.match(doc.warning, /the steward's home .* is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → bind the human again with a steward home of its own, separate from the minting root /);
   assert.equal(minted(fake), false);
 });
 
