@@ -91,6 +91,13 @@ test("refuse: the issuer's status could not be read at all", () => {
   assert.match(verdict.message, /could not read the issuer's chain status \(exit 1: lookup failed\) → retry once the identity registry answers/);
 });
 
+test("refuse: an aw without `aw who` names the aw upgrade, not a registry retry", () => {
+  const verdict = classifyIssuer({ issuer: { kind: "spawner" }, whoError: 'exit 1: Error: unknown command "who" for "aw"', chainFiles: true });
+  assert.equal(verdict.action, "refuse");
+  assert.match(verdict.message, /this aw has no `aw who` → upgrade aw to 1\.36\.53 or later/);
+  assert.doesNotMatch(verdict.message, /identity registry/);
+});
+
 test("chainless: a local spawner with no chain files and no recorded chain creates a chainless child with a warning", () => {
   const verdict = classifyIssuer({ issuer: { kind: "spawner" }, who: { ...failed("legacy_no_chain"), identity_valid: null }, chainFiles: false, recordedChainInstalled: false });
   assert.equal(verdict.action, "chainless");

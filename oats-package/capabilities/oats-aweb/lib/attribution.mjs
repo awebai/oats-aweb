@@ -13,6 +13,8 @@ export const SPAWN_ATTRIBUTION_FEATURE = "spawn-attribution";
 export const CHAIN_MAX_CERTIFICATES = 8;
 export const CHAIN_MAX_BYTES = 6144;
 const LABEL_MAX_BYTES = 120;
+/** The first aw release with identity chains (`aw who`, `aw id create --human-parent`, the agent-child exchange). */
+export const ATTRIBUTION_AW_UPGRADE = "upgrade aw to 1.36.53 or later (`npm i -g @awebai/aw@latest`)";
 
 export const STEWARD_SETUP_COMMAND = 'oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --name <alias>';
 
@@ -79,6 +81,7 @@ const unavailable = (detail) => `registry evidence for the issuer's chain is una
  * enrollment"). Any other answer for a chainless spawner refuses.
  */
 export function classifyIssuer({ issuer, who, whoError, chainFiles, recordedChainInstalled = false }) {
+  if (whoError && /unknown command "who"/.test(whoError)) return { action: "refuse", message: `this aw has no \`aw who\` → ${ATTRIBUTION_AW_UPGRADE}, then spawn again` };
   if (whoError) return { action: "refuse", message: `could not read the issuer's chain status (${whoError}) → retry once the identity registry answers` };
   if (who?.identity_valid === true && (who.outcome === "nearest_human" || who.outcome === "no_human")) {
     return { action: "issue", outcome: who.outcome, humanId: who.outcome === "nearest_human" ? who.human_id : null, issuerId: who.id };

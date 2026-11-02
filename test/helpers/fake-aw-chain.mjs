@@ -11,6 +11,7 @@
 //   FAKE_APPROVE_REFUSE=<reason>  `id child approve` refuses with that reason
 //   FAKE_CHAIN_PAD=<n>            approve pads the child certificate by n bytes
 //   FAKE_CHAIN_EXTRA=<n>          approve adds n extra certificates to the chain
+//   FAKE_NO_WHO=1                 `aw who` is unknown, as in an aw before identity chains
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -37,6 +38,7 @@ const refuse = (reason) => { console.error("Error: " + reason); process.exit(1);
 const emit = (o) => console.log(JSON.stringify(o));
 const writeOut = (file, data) => { if (fs.existsSync(file)) refuse("refusing to overwrite " + file); fs.writeFileSync(file, data); };
 if (args[0] === "version") { console.log("aw 1.36.52-rc.2 fixture"); process.exit(0); }
+if (args[0] === "who" && process.env.FAKE_NO_WHO) { console.error('Error: unknown command "who" for "aw"'); process.exit(1); }
 if (args[0] === "who") {
   if (fs.existsSync(path.join(aw, "fake-who.json"))) { console.log(fs.readFileSync(path.join(aw, "fake-who.json"), "utf8")); process.exit(0); }
   const c = chain();

@@ -8,7 +8,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { kernelRefusal, oneLineLabel } from "./attribution.mjs";
+import { ATTRIBUTION_AW_UPGRADE, kernelRefusal, oneLineLabel } from "./attribution.mjs";
 import { recordAwebScalar, recordAwebSetting } from "./local-settings.mjs";
 import { querySelectedKernel } from "./session-readiness.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
@@ -88,7 +88,7 @@ export async function setupSteward(args, deps = {}) {
   if (!existsSync(join(stewardHome, ".aw", "id-chain.json"))) {
     let help = "";
     try { help = runCaptured(["aw", "id", "create", "--help"], deployment); } catch { help = ""; }
-    if (!help.includes("--human-parent")) throw failure("E_STEWARD_AW", "this aw has no `aw id create --human-parent`: upgrade aw to a release with identity chains (`npm i -g @awebai/aw@next`), then rerun");
+    if (!help.includes("--human-parent")) throw failure("E_STEWARD_AW", `this aw has no \`aw id create --human-parent\`: ${ATTRIBUTION_AW_UPGRADE}, then rerun`);
     mkdirSync(stewardHome, { recursive: true, mode: 0o700 });
     const status = runInteractive(["aw", "id", "create", "--human-parent", args.human, "--domain", args.domain, "--name", args.name], stewardHome);
     if (status !== 0) throw failure("E_STEWARD_CREATE", `aw id create --human-parent exited ${status}; nothing was recorded → fix what aw reported, then rerun (a rerun continues from ${stewardHome})`);

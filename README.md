@@ -39,9 +39,9 @@ oats aweb setup --steward --human <did:aw> --label "<name>" --domain <domain> --
 - One bound human per deployment: a second, different human is refused.
   Rerunning for the same human verifies the steward and creates nothing.
 
-It needs a kernel that lists the `spawn-attribution` feature, and an aw with
-identity chains. Without them, setup and bound-mode spawns refuse, naming the
-upgrade.
+It needs a kernel that lists the `spawn-attribution` feature, and aw 1.36.53
+or later, the first release with identity chains. Without them, setup and
+bound-mode spawns refuse, naming the upgrade.
 
 **What a bound spawn does.** Before minting, the spawn reads the issuer's chain
 status with `aw who`, through aw's cached status client. A CLI process holds

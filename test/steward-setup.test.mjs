@@ -96,7 +96,7 @@ test("refuses before any effect on a kernel without spawn-attribution, naming th
 
 test("refuses on an aw without --human-parent, naming the upgrade", async (t) => {
   const dir = deployment(t);
-  await assert.rejects(setupSteward(parseStewardArgs(ARGS), { env: env(dir), kernelVersion: kernel(), ...fakeAw({ help: "--domain string" }) }), { code: "E_STEWARD_AW", message: /upgrade aw/ });
+  await assert.rejects(setupSteward(parseStewardArgs(ARGS), { env: env(dir), kernelVersion: kernel(), ...fakeAw({ help: "--domain string" }) }), { code: "E_STEWARD_AW", message: /upgrade aw to 1\.36\.53 or later/ });
 });
 
 test("records nothing when aw fails or the chain does not verify to the human", async (t) => {

@@ -130,6 +130,16 @@ test("refuses before minting a revoked spawner chain, and never falls back to ch
   assert.equal(minted(fake), false);
 });
 
+test("refuses before minting on an aw without `aw who`, naming the aw upgrade", (t) => {
+  const fx = fixture(t);
+  const lead = spawner(fx);
+  const fake = fakeAwChain(t);
+  const { status, doc } = spawn(fx, fake, { OATS_SPAWNER_HOME: lead, FAKE_NO_WHO: "1" });
+  assert.equal(status, 1);
+  assert.match(doc.warning, /this aw has no `aw who` → upgrade aw to 1\.36\.53 or later/);
+  assert.equal(minted(fake), false);
+});
+
 test("refuses before minting when the registry evidence is unavailable", (t) => {
   const fx = fixture(t);
   const lead = spawner(fx, { who: { id: LEAD, outcome: "unavailable", human_id: null, identity_valid: null, kind: null, reason: "status_expired" } });
