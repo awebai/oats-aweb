@@ -8,8 +8,8 @@
 // `--dir <deployment>`; it acts only on the homes `oats status` lists for that
 // deployment. The launch hook attaches one home at its start the same way.
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds, pendingImport, resumeImport } from "./attribution.mjs";
 import { parseAwJson } from "./aw-json.mjs";
@@ -141,20 +141,50 @@ export function storedReceipt({ receiptsDir, idempotencyKey, planRevision, deplo
   return { ...stored, replayed: true };
 }
 
-/** An exclusive lock file holding its owner's pid: one holder at a time. A
- *  lock whose process has ended (a start or apply that was killed) is taken
- *  over; one held by a running process refuses with `busy`. */
-function takeLock(lockFile, busy) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { writeFileSync(lockFile, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); return; }
-    catch (e) { if (e.code !== "EEXIST") throw e; }
-    const pid = Number.parseInt(readFileSync(lockFile, "utf8"), 10);
-    let running = false;
-    try { if (pid > 0) { process.kill(pid, 0); running = true; } } catch (e) { running = e.code === "EPERM"; }
-    if (running) throw failure("E_ATTACH_FAILED", busy(pid));
-    rmSync(lockFile, { force: true });
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const processAlive = (pid) => { try { if (pid > 0) { process.kill(pid, 0); return true; } } catch (e) { return e.code === "EPERM"; } return false; };
+/** A lock or gate file's holder, from its `<pid> <token>` line; null once gone. */
+function holderOf(file) {
+  try { const raw = readFileSync(file, "utf8"); return { raw, pid: Number.parseInt(raw, 10) }; }
+  catch (e) { if (e.code === "ENOENT") return null; throw e; }
+}
+/** A gate is held only for the few file operations that change its lock, so
+ *  one this old whose holder has ended was left by a process killed inside
+ *  it. (Two contenders recovering such a gate at the same instant is the one
+ *  case this doesn't exclude.) */
+const GATE_STALE_MS = 10000;
+/** Runs f while holding the lock's gate: `<lock>.gate`, created exclusively.
+ *  Every change to the lock happens under it, so a contender acting on what
+ *  it saw of the lock can't meet another's change in between. */
+function underGate(lockFile, f, onGate) {
+  const gate = `${lockFile}.gate`, token = `${process.pid} ${randomUUID()}\n`;
+  for (const until = Date.now() + 5000; ;) {
+    try { writeFileSync(gate, token, { flag: "wx", mode: 0o600 }); break; }
+    catch (e) {
+      if (e.code !== "EEXIST") throw e;
+      try { const h = holderOf(gate); if (h && !processAlive(h.pid) && Date.now() - statSync(gate).mtimeMs > GATE_STALE_MS) rmSync(gate, { force: true }); } catch { /* gone meanwhile */ }
+      if (Date.now() > until) throw failure("E_ATTACH_FAILED", `the lock ${lockFile} stayed busy → run it again`);
+      sleepMs(25);
+    }
   }
-  throw failure("E_ATTACH_FAILED", `could not take the lock ${lockFile} → run it again`);
+  try { onGate?.(); return f(); } finally { if (holderOf(gate)?.raw === token) rmSync(gate, { force: true }); }
+}
+/**
+ * An exclusive lock file holding its owner's pid and a token: one holder at a
+ * time. A lock whose process has ended (a start or apply that was killed) is
+ * taken over; one held by a running process refuses with `busy(pid)`.
+ * Taking, taking over and releasing all happen under the lock's gate, so two
+ * contenders recovering the same dead lock never both hold it, and release
+ * removes only the caller's own lock. Returns the release function.
+ */
+export function exclusiveLock(lockFile, busy, { onGate } = {}) {
+  const token = `${process.pid} ${randomUUID()}\n`;
+  underGate(lockFile, () => {
+    const holder = holderOf(lockFile);
+    if (holder && processAlive(holder.pid)) throw failure("E_ATTACH_FAILED", busy(holder.pid));
+    writeFileSync(lockFile, token, { mode: 0o600 });
+  }, onGate);
+  return () => underGate(lockFile, () => { if (holderOf(lockFile)?.raw === token) rmSync(lockFile, { force: true }); });
 }
 
 /**
@@ -169,7 +199,7 @@ export function applyPlan({ plan, planRevision, idempotencyKey, receiptsDir, att
   checkApplyArgs(planRevision, idempotencyKey);
   mkdirSync(receiptsDir, { recursive: true, mode: 0o700 });
   const receiptFile = join(receiptsDir, `receipt.${idempotencyKey}.json`), lockFile = join(receiptsDir, `receipt.${idempotencyKey}.lock`);
-  takeLock(lockFile, (pid) => `an apply with this idempotency key is already running (pid ${pid}) → run it again once it has finished, to get its result`);
+  const release = exclusiveLock(lockFile, (pid) => `an apply with this idempotency key is already running (pid ${pid}) → run it again once it has finished, to get its result`);
   try {
     const replay = storedReceipt({ receiptsDir, idempotencyKey, planRevision, deployment: plan.deployment });
     if (replay) return replay;
@@ -192,7 +222,7 @@ export function applyPlan({ plan, planRevision, idempotencyKey, receiptsDir, att
     catch (e) { if (e.code !== "EEXIST") throw e; return storedReceipt({ receiptsDir, idempotencyKey, planRevision, deployment: plan.deployment }); }
     finally { rmSync(temp, { force: true }); }
     return receipt;
-  } finally { rmSync(lockFile, { force: true }); }
+  } finally { release(); }
 }
 
 /** aw in one identity's home: the identity is the home's own `.aw`, never an
@@ -228,7 +258,7 @@ export function attachHome({ entry, run, keys, recipient = entry.instance }) {
   const stateDir = attachStateDir(entry.home);
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const lock = join(stateDir, "attach.lock");
-  takeLock(lock, (pid) => `another attach of ${entry.instance} is running (pid ${pid}, ${lock}) → retry once it has finished`);
+  const release = exclusiveLock(lock, (pid) => `another attach of ${entry.instance} is running (pid ${pid}, ${lock}) → retry once it has finished`);
   try {
     if (resumeImport({ childHome: entry.home, stateDir, run })) { clearAttachRefusal(entry.home); return; }
     const current = keys ?? homeKeyIds(entry.home);
@@ -238,7 +268,7 @@ export function attachHome({ entry, run, keys, recipient = entry.instance }) {
   } catch (e) {
     if (isLastingRefusal(e.code)) e.message += saveRefusal(entry.home, { code: e.code, reason: e.reason ?? null, message: String(e.message || e).slice(0, 300), at: new Date().toISOString() });
     throw e;
-  } finally { rmSync(lock, { force: true }); }
+  } finally { release(); }
 }
 
 /** Starts never wait longer than this for an attach (oats#1665 C3): well
