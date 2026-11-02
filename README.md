@@ -5,6 +5,16 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.33.0 — a workspace without a browser sign-in
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33. `oats aweb setup
+--username` creates the account and team without a sign-in, and setup's
+`aw init` no longer writes aw's rules into `AGENTS.md` or `CLAUDE.md`.
+`/oats-aweb` says how the person then attaches themselves to the account
+with `aw claim-human`: the setup expert runs it with the address they give,
+and the account is theirs once they click the link aw mails them. The
+CHANGELOG has the rest, and how to remove rules an earlier setup wrote.
+
 ## 1.32.0 — upgrade a stopped seat
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33. Upgrade the kernel
