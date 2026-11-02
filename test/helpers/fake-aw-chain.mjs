@@ -88,6 +88,10 @@ if (args[0] === "id" && args[1] === "child" && args[2] === "approve") {
 if (args[0] === "id" && args[1] === "parent" && args[2] === "import") {
   const response = readJson(args[3]);
   if (!fs.existsSync(path.join(aw, "outgoing-" + response.request_id + ".json"))) refuse("request_binding_mismatch");
+  // aw resolves the requester again: a chainless one names its domain (cmd/aw/id_parent.go selectRequester).
+  const certs = response.chain.certificates, leaf = certs[certs.length - 1].certificate;
+  if (!chain() && !flag("--domain")) refuse("--domain is required");
+  if (flag("--domain") && flag("--domain") !== leaf.domain) refuse("request_binding_mismatch");
   fs.writeFileSync(path.join(aw, "id-chain.json"), JSON.stringify(response.chain));
   emit({ request_id: response.request_id, id: idOf(), registration: "" });
   process.exit(0);

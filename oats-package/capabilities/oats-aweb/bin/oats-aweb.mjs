@@ -1779,7 +1779,8 @@ function issueChildChain(issuer) {
   try { response = JSON.parse(readFileSync(responseFile, "utf8")); } catch { fail("the issuer's response is not readable JSON"); }
   const problem = chainLimitProblem(response?.chain);
   if (problem) fail(problem);
-  step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--json"], home));
+  // A chainless requester names its domain again: aw resolves it anew at import.
+  step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--domain", invite.domain, "--json"], home));
 }
 /** aw's local team invite makes a chained inviter the new identity's ID
  *  parent, so `aw init --join-from` from a chained minting root would chain
