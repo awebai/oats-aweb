@@ -24,8 +24,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The aw-verb guard (test/oats-aweb.test.mjs) checks every aw verb the
+      # guidance names against a real aw, and fails here rather than skip. The
+      # aw is the one the provider is tested with (AW_TESTED), in an isolated
+      # prefix on this step's PATH only.
+      - name: Install the tested aw
+        shell: bash
+        run: |
+          version="$(node --input-type=module -e "import {AW_TESTED} from './oats-package/capabilities/oats-aweb/lib/aw-floor.mjs'; console.log(AW_TESTED)")"
+          npm install --prefix "$RUNNER_TEMP/aw" --no-audit --no-fund "@awebai/aw@$version"
+          installed="$("$RUNNER_TEMP/aw/node_modules/.bin/aw" version)"
+          echo "$installed"
+          test "${installed%%$'\n'*}" = "aw $version"
       - name: Validate manifests, vendored skills, and hooks
-        run: npm test
+        shell: bash
+        env:
+          OATS_AW_VERBS_REQUIRED: '1'
+        run: PATH="$RUNNER_TEMP/aw/node_modules/.bin:$PATH" npm test
       - name: Provision pinned generic hostOnly validator
         shell: bash
         run: |

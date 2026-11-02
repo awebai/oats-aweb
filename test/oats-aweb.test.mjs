@@ -138,8 +138,11 @@ test("capability guidance names only real first-level aw verbs", (t) => {
     for (const match of text.matchAll(/`aw\s+([a-z][a-z0-9-]*)\b/g)) verbs.add(match[1]);
   }
   assert.ok(verbs.size > 0, "the test must enumerate printed/run aw verbs");
+  // CI installs the tested aw for this guard and sets OATS_AW_VERBS_REQUIRED, so it never skips there.
+  const required = process.env.OATS_AW_VERBS_REQUIRED === "1";
   const found = spawnSync("aw", ["--help"], { encoding: "utf8" });
   if (found.error?.code === "ENOENT") {
+    assert.ok(!required, "OATS_AW_VERBS_REQUIRED: the aw-verb guard needs aw on PATH");
     t.skip(`aw CLI not on PATH; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
     return;
   }
@@ -154,6 +157,7 @@ test("capability guidance names only real first-level aw verbs", (t) => {
   };
   t.diagnostic(`aw version fixture: ${(version.stdout + version.stderr).trim()}`);
   if (!atLeast("1.36.6")) {
+    assert.ok(!required, `OATS_AW_VERBS_REQUIRED: the aw-verb guard needs aw 1.36.6 or newer, not ${parsed?.[0] || "unknown"}`);
     t.skip(`aw ${parsed?.[0] || "unknown"} is older than published 1.36.6; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
     return;
   }
