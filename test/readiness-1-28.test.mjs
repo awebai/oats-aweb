@@ -8,13 +8,14 @@
 // a manifest-filled claudeChannelMode arrives as "development" with origin
 // kind manifest-default.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
+import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import { AW_MIN } from "../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs";
 import { claudeChannelModeUnset, targetReceiveAssessment, wakeDaemonAssessment } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 
@@ -44,15 +45,20 @@ function fixture(t) {
   const record = (meta, claude) => writeFileSync(join(home, "instance.json"), JSON.stringify({
     launch: { harness: meta.runtime, hooks: claude ? { launch: { claude } } : {} }, capabilityMeta: { "oats.aweb": meta },
   }));
+  /** The deployment's current oats.aweb settings, as the kernel's
+   *  `inspect --soul` answers them; never called, no kernel answers. */
+  let kernel = {};
+  const current = (settings, change) => { kernel = currentRootQuery(ws, { home, deployment: ws, settings, change }); };
+  const kernelCalls = () => { try { return readFileSync(kernel.calls, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
   /** The binding readiness check; `targetHome: null` is soul scope. */
-  const readiness = (settings, { targetHome = home, origins } = {}) => {
+  const readiness = (settings, { targetHome = home, origins, path } = {}) => {
     const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { root: ws, ...settings }, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: env.OATS_WORKSPACE_KEY, deployment: ws, soul: "dev", team: "default", instance: targetHome ? "dev-1" : null, home: targetHome } } };
-    const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: ws, input: JSON.stringify(input), env: { ...env, ...(origins !== undefined ? { OATS_SETTINGS_ORIGINS: origins } : {}) }, encoding: "utf8", timeout: 20000 });
+    const r = spawnSync(process.execPath, [BINDING, "check"], { cwd: ws, input: JSON.stringify(input), env: { ...env, ...(path ? { PATH: path } : {}), ...(kernel.cli ? { OATS_CLI_BIN: kernel.cli } : {}), ...(origins !== undefined ? { OATS_SETTINGS_ORIGINS: origins } : {}) }, encoding: "utf8", timeout: 20000 });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     return JSON.parse(r.stdout).result;
   };
   const statusCalls = () => fake.readCalls().filter((c) => c.args[0] === "wake" && c.args[1] === "status");
-  return { fake, ws, home, record, readiness, statusCalls };
+  return { fake, ws, home, record, readiness, statusCalls, current, kernelCalls };
 }
 const modeDefault = (result) => result.warnings.filter((w) => w.code === MODE_DEFAULT.code);
 
@@ -203,21 +209,65 @@ test('unread observer off leaves broker-delivered primary readiness silent', t =
 test('unread observer on warns when count-only support is unavailable', t => {
   const fx = fixture(t);
   fx.record({delivery: 'session', runtime: 'codex'});
+  fx.current({delivery: 'session', health: {publish: true}});
   for (const targetHome of [fx.home, null]) {
     assert.equal(countWarning(fx.readiness({delivery: 'session', health: {publish: true}}, {targetHome})).length, 1);
   }
 });
 
-test('unread observer warnings are silent on channel-delivered primaries', t => {
+// A home's settings are its spawn's capture; the observer reads the
+// deployment's current health setting each minute, and so does a home's check.
+test('a home spawned before health enable warns once health publishes now', t => {
   const fx = fixture(t);
-  for (const runtime of ['claude', 'pi']) {
-    fx.record({delivery: 'channel', runtime});
-    for (const publish of [false, true]) {
-      const result = fx.readiness({delivery: 'channel', health: {publish}});
-      assert.deepEqual(countWarning(result), [], runtime);
-    }
+  fx.record({delivery: 'session', runtime: 'codex'});
+  fx.current({delivery: 'session', health: {publish: true}});
+  const result = fx.readiness({delivery: 'session'});
+  assert.equal(countWarning(result).length, 1, JSON.stringify(result));
+  const [call] = fx.kernelCalls();
+  assert.deepEqual(call.args, ['inspect', '--soul', 'dev', '--dir', fx.ws, '--json']);
+  assert.equal(call.cwd, fx.ws);
+  assert.deepEqual(call.selectors, [], 'no OATS_* selector reaches the kernel query');
+});
+
+test('a home spawned with health on is silent once health is disabled', t => {
+  const fx = fixture(t);
+  fx.record({delivery: 'session', runtime: 'codex'});
+  for (const now of [{delivery: 'session', health: {publish: false}}, {delivery: 'session'}]) {
+    fx.current(now);
+    assert.deepEqual(countWarning(fx.readiness({delivery: 'session', health: {publish: true}})), [], JSON.stringify(now));
   }
-  assert.deepEqual(countWarning(fx.readiness({delivery: 'channel'}, {targetHome: null})), [], 'channel soul without a captured broker runtime');
+});
+
+test('a home whose current health setting is unreadable is silent, whatever it captured', t => {
+  const fx = fixture(t);
+  fx.record({delivery: 'session', runtime: 'codex'});
+  assert.deepEqual(countWarning(fx.readiness({delivery: 'session', health: {publish: true}})), [], 'no kernel to ask');
+  for (const change of ["doc={schemaVersion:1,ok:false,error:{code:'E_X',message:'x'}};", 'doc.result.capabilities=[];', "doc.result.capabilities[0].settings.health={publish:'yes'};", 'process.exit(1);']) {
+    fx.current({delivery: 'session', health: {publish: true}}, change);
+    assert.deepEqual(countWarning(fx.readiness({delivery: 'session', health: {publish: true}})), [], change);
+  }
+});
+
+test('a home probes aw only while health publishes now, and a count-only aw is silent', t => {
+  const fx = fixture(t);
+  fx.record({delivery: 'session', runtime: 'codex'});
+  const inboxHelp = () => fx.fake.readCalls().filter((c) => c.args.join(' ') === 'mail inbox --help').length;
+  fx.current({delivery: 'session', health: {publish: false}});
+  assert.deepEqual(countWarning(fx.readiness({delivery: 'session', health: {publish: true}})), []);
+  assert.equal(fx.kernelCalls().length, 1, 'the kernel answers first');
+  assert.equal(inboxHelp(), 0, 'no aw probe while health is off');
+  // An aw whose inbox help advertises --count-only; everything else is the fake's.
+  const bin = join(fx.ws, 'count-only-bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'aw'), `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args.join(' ') === 'mail inbox --help') { console.log('  --count-only   print the unread count'); process.exit(0); }
+const r = require('node:child_process').spawnSync(${JSON.stringify(join(fx.fake.path.split(':')[0], 'aw'))}, args, {stdio: 'inherit'});
+process.exit(r.status ?? 1);
+`, {mode: 0o755});
+  fx.current({delivery: 'session', health: {publish: true}});
+  const result = fx.readiness({delivery: 'session'}, {path: `${bin}:${fx.fake.path}`});
+  assert.deepEqual(countWarning(result), [], JSON.stringify(result));
 });
 
 for (const [phase, health, code] of [

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The unread-count warning follows a later `health enable`.** A home's
+  readiness warning `unread-count-unavailable` now reads whether health
+  publishes now, from the soul's current settings, as the per-minute observer
+  does, instead of the settings captured at the home's spawn. A home spawned
+  before `oats aweb health enable` warns once it is enabled; one spawned while
+  it was on stops warning once it is disabled.
+
 ## 1.33.2 — 2026-11-02
 
 Requires OATS >=0.68.0. The aw floor and pin are unchanged.

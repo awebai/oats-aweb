@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
-import { assessCapturedSessionReadiness } from './session-readiness.mjs';
+import { assessCapturedSessionReadiness, querySelectedKernel } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment, wakeDaemonAssessment, claudeChannelModeUnset, CLAUDE_CHANNEL_MODE_DEFAULT } from './wake-receive.mjs';
 import { channelConnection, channelReadiness } from './claude-channel.mjs';
@@ -329,6 +329,17 @@ function soulJoinsTeams(settings) {return typeof settings.join==='string' && set
 /** The kernel's captured per-leaf settings origins for a home (JSON pointer to
  *  {kind,at}); anything unparseable is no origin. */
 function settingsOrigins(env) {try {const origins=JSON.parse(env.OATS_SETTINGS_ORIGINS??'');return obj(origins)?origins:undefined;} catch {return undefined;}}
+/** Whether the deployment publishes health now: the soul's current oats.aweb
+ *  `health.publish`, the setting `oats aweb health publish` reads before it
+ *  counts unread mail each minute. False when the kernel can't say. */
+// The kernel's resolved view, never oats-local.yaml read here: layering is the resolver's, and the observer reads its payload.
+function healthPublishesNow(ctx,env) {
+  try {
+    const doc=querySelectedKernel(['inspect','--soul',ctx.soul,'--dir',ctx.deployment,'--json'],{env,cwd:ctx.deployment});
+    const rows=doc?.ok===true && Array.isArray(doc.result?.capabilities)?doc.result.capabilities.filter(c=>c?.id==='oats.aweb'):[];
+    return rows.length===1 && obj(rows[0].settings) && healthSettings(rows[0].settings).publish;
+  } catch {return false;}
+}
 async function workspaceReadinessPhase(req,{env=process.env}={}) {
   // Phase-start clock bounds the calls and judges the already-recorded grant.
   const now=Date.now(),deadline=now+28000;
@@ -423,7 +434,9 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     else if(daemon.problems.length) warnings.push({code:'joined-team-broker-unconfirmed',message:'the host wake broker is not confirmed running. A joined team needs it on a pi or Codex home. A Claude channel home reads its joined teams at task boundaries and needs no broker.'});
   }
   const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
-  if (primaryBroker && !excludedGrantSeat && !problems.length && req.settings.health?.publish === true) {
+  // A home's settings are its spawn's capture: it asks whether health
+  // publishes now, so a later `health enable` or `disable` counts.
+  if (primaryBroker && !excludedGrantSeat && !problems.length && (ctx.home ? healthPublishesNow(ctx,env) : req.settings.health?.publish === true)) {
     let countOnly = false;
     try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
     if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});
