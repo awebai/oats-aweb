@@ -2,7 +2,8 @@
 // Its answers follow the real kernel's: `oats --version --json` is the
 // unenveloped version document (bin/oats.mjs), `teams --json` the teams
 // document, and `teams add|default` the verbs of lib/teams-verbs.mjs, all of
-// @awebai/oats 0.50.0. `teams-conditional-default` (OATS 0.48.0) is in the
+// @awebai/oats 0.50.0; `soul teams <soul>` answers from `soulTeams[<soul>]` in the state
+// (E_SOUL_UNKNOWN when absent). `teams-conditional-default` (OATS 0.48.0) is in the
 // feature list unless `version` names an older kernel: `0.42.0` answers with
 // the 0.42.0 kernel's feature list, which lacks it.
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -20,6 +21,10 @@ const fail=()=>{console.log(JSON.stringify({schemaVersion:1,ok:false,error:{code
 const refuse=(code,details)=>{console.log(JSON.stringify({schemaVersion:1,ok:false,error:{code,message:code,details}}));process.exit(1);};
 if(args[0]==='--version'){
  console.log(JSON.stringify({schemaVersion:1,name:'@awebai/oats',version:${JSON.stringify(version)},desktopApi:1,features:${JSON.stringify(features)}}));
+}else if(args[0]==='soul'&&args[1]==='teams'){
+ // \`oats soul teams <soul> --json\` (team-model-3): the soul's default and eligible teams, from state.soulTeams.
+ const soul=doc.soulTeams?.[args[2]];if(!soul)refuse('E_SOUL_UNKNOWN',{soul:args[2]});
+ console.log(JSON.stringify({schemaVersion:1,ok:true,result:{soulTeamsApi:2,soul:args[2],key:args[2],match:null,defaultMatch:null,defaultTeam:soul.defaultTeam??null,teams:soul.teams??[]}}));
 }else if(args[1]==='add'||args[1]==='default'){
  const verb=args[1];if(doc.failure===verb+'-before')fail();
  if(doc.localTeams===false)refuse('E_WORKSPACE_SCHEMA',{reason:'local-teams-closed'});

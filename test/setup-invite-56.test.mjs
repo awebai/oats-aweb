@@ -86,7 +86,8 @@ test('a hosted invite gives team, service and label: joins beside the deployment
 });
 
 test('--invite <token> works too, and the human output ends with exactly one next step', t => {
-  const f = fixture(t);
+  // The joined team becomes the deployment's default, which the soul takes as its own.
+  const f = fixture(t, { soulTeams: { dev: { defaultTeam: { label: LABEL, team: TEAM, from: 'deployment' }, teams: [{ label: LABEL, team: TEAM, default: true, from: 'local', via: ['default'] }] } } });
   const r = f.run(['--invite', TOKEN, '--name', 'host'], {}, '');
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(r.stdout.split('\n').filter(l => /^Next:/.test(l)), ['Next: `oats spawn dev --preview`']);
@@ -221,8 +222,66 @@ test('a deployment already a member of the team refuses before redeeming, and ne
   const settings = JSON.stringify({ roots: { [TEAM]: member } });
   const r = f.run(['--invite-stdin', '--name', 'host', '--json'], { OATS_SETTINGS: settings });
   const error = refused(f, r, 'E_SETUP_ALREADY_MEMBER');
-  assert.equal(error.message, `already a member of ${TEAM} at ${member}; nothing redeemed`);
+  assert.ok(error.message.startsWith(`already a member of ${TEAM} at ${member}; nothing redeemed`), error.message);
   assert.doesNotMatch(readFileSync(join(f.dep, 'oats-local.yaml'), 'utf8'), /roots/, 'roots[team] is not re-pointed');
+});
+
+/** A shared root (settings.root, no roots[team]) whose `aw team list` lists the team or cannot be read. */
+function sharedRoot(f, { list } = {}) {
+  const member = join(f.dir, 'member-root');
+  mkdirSync(join(member, '.aw'), { recursive: true });
+  writeFileSync(join(member, '.aw', 'teams.json'), JSON.stringify({ memberships: [{ team_id: TEAM }] }));
+  return { member, extra: { OATS_SETTINGS: JSON.stringify({ root: member }), ...(list ? { AW_LIST_TEAMS: list } : {}) } };
+}
+
+test('a shared root (settings.root) already in the team refuses before redeeming, naming the mapping it lacks', t => {
+  const f = fixture(t);
+  const { member, extra } = sharedRoot(f);
+  const r = f.run(['--invite-stdin', '--name', 'host', '--json'], extra);
+  const error = refused(f, r, 'E_SETUP_ALREADY_MEMBER');
+  assert.ok(error.message.startsWith(`already a member of ${TEAM} at ${member}; nothing redeemed`), error.message);
+  // No kernel team maps the team, and this root is no per-team root a resume would find: record the mapping.
+  assert.ok(error.message.includes(`oats teams add ${LABEL} --team ${TEAM} --dir ${f.dep}`), error.message);
+  assert.doesNotMatch(readFileSync(join(f.dep, 'oats-local.yaml'), 'utf8'), /roots/, 'roots is unchanged');
+});
+
+test('a shared root whose membership cannot be read refuses before redeeming (E_SETUP_MEMBERSHIP), never as "not a member"', t => {
+  const f = fixture(t);
+  const { member, extra } = sharedRoot(f, { list: 'not-json' });
+  const r = f.run(['--invite-stdin', '--name', 'host', '--json'], extra);
+  const error = refused(f, r, 'E_SETUP_MEMBERSHIP');
+  assert.equal(error.message, `membership at ${member} could not be read; nothing redeemed`);
+  assert.doesNotMatch(readFileSync(join(f.dep, 'oats-local.yaml'), 'utf8'), /roots/, 'roots is unchanged');
+});
+
+test('a member root an earlier run recorded but never mapped names the tokenless resume, which finishes without redeeming', t => {
+  const f = fixture(t);
+  const ran = f.kernel.read();
+  f.kernel.set({ ...ran, failure: 'add-before' });
+  const first = f.run(['--invite-stdin', '--name', 'host', '--json']);
+  assert.equal(first.status, 1, first.stdout + first.stderr);
+  assert.equal(f.accepts().length, 1);
+  f.kernel.set({ ...f.kernel.read(), failure: undefined });
+  const root = join(f.dep, '.aweb-roots', LABEL);
+  const settings = { OATS_SETTINGS: JSON.stringify({ roots: { [TEAM]: root } }) };
+  const again = f.run(['--invite-stdin', '--name', 'host', '--json'], settings);
+  assert.equal(again.status, 1, again.stdout + again.stderr);
+  const error = JSON.parse(again.stdout).error;
+  assert.equal(error.code, 'E_SETUP_ALREADY_MEMBER');
+  const resume = `oats aweb setup --dir ${f.dep} --soul dev --join ${LABEL} --service ${SERVICE}`;
+  assert.ok(error.message.includes(resume), error.message);
+  assert.equal(f.accepts().length, 1, 'the refusal redeems nothing');
+  const resumed = f.run(resume.split(' ').slice(3), settings, '');
+  assert.equal(resumed.status, 0, resumed.stdout + resumed.stderr);
+  assert.equal(f.accepts().length, 1, 'the resume redeems nothing');
+  assert.ok(f.kernel.read().teams.some(row => row.label === LABEL && row.team === TEAM), 'the resume records the mapping');
+});
+
+test('an inspect failure names the label already mapped to the invite\'s team in its resume', t => {
+  const f = fixture(t, { teams: [{ label: 'ops', team: TEAM, from: 'local' }] });
+  const r = f.run(['--invite-stdin', '--name', 'host', '--json'], { AW_INSPECT_FAIL: 'exhausted', AW_INSPECT_FAIL_INVITE: '1' });
+  const error = refused(f, r, 'E_SETUP_INVITE_INSPECT');
+  assert.ok(error.message.includes(`oats aweb setup --dir ${f.dep} --soul dev --join ops --service ${SERVICE}`), error.message);
 });
 
 for (const [name, extra] of [
@@ -296,10 +355,11 @@ for (const status of ['exhausted', 'expired', 'revoked']) test(`an ${status} inv
   assert.ok(error.message.includes(`oats aweb setup --dir ${f.dep} --soul dev --join ${LABEL} --service ${SERVICE}`), error.message);
 });
 
-test('with the default preserved, one Next: line names the spawn that joins the new team, the same in text and JSON', t => {
-  const prior = { label: 'prior', team: 'prior:example.invalid', from: 'deployment' };
-  const state = { teams: [{ ...prior, from: 'local' }], defaultTeam: prior };
-  const step = `oats spawn dev --provider oats.aweb join=${LABEL} --preview`;
+const PRIOR = { label: 'prior', team: 'prior:example.invalid', from: 'deployment' };
+const preserved = (soulTeams) => ({ teams: [{ ...PRIOR, from: 'local' }], defaultTeam: PRIOR, ...(soulTeams ? { soulTeams: { dev: soulTeams } } : {}) });
+const row = (label, team, isDefault = false) => ({ label, team, default: isDefault, from: 'local', via: [isDefault ? 'default' : 'workspace'] });
+/** One Next: line in text, the same step in JSON, and the preserved default folded into the note. */
+function oneNext(t, state, step, { command = true } = {}) {
   const j = fixture(t, state).run(['--invite-stdin', '--name', 'host', '--json']);
   assert.equal(j.status, 0, j.stdout + j.stderr);
   const result = JSON.parse(j.stdout).result;
@@ -308,6 +368,30 @@ test('with the default preserved, one Next: line names the spawn that joins the 
   assert.match(result.note, new RegExp(`oats teams default ${LABEL} --dir `));
   const h = fixture(t, state).run(['--invite-stdin', '--name', 'host']);
   assert.equal(h.status, 0, h.stdout + h.stderr);
-  assert.deepEqual(h.stdout.split('\n').filter(l => /Next:/.test(l)), [`Next: \`${step}\``]);
+  const lines = h.stdout.split('\n').filter(l => /Next:/.test(l));
+  assert.equal(lines.length, 1, h.stdout);
+  assert.ok(lines[0].startsWith(command ? `Next: \`${step}\`` : `Next: ${step}`), lines[0]);
   assert.doesNotMatch(h.stdout, /"remaining"/);
+  return { result, line: lines[0] };
+}
+
+test('with the default preserved and the new team the soul\'s default, the next step is a plain spawn', t => {
+  oneNext(t, preserved({ defaultTeam: { label: LABEL, team: TEAM, from: 'soul' }, teams: [row(LABEL, TEAM, true), row('prior', PRIOR.team)] }), 'oats spawn dev --preview');
+});
+
+test('with the default preserved and the new team eligible for the soul, the next step joins it', t => {
+  const { result } = oneNext(t, preserved({ defaultTeam: PRIOR, teams: [row('prior', PRIOR.team, true), row(LABEL, TEAM)] }), `oats spawn dev --provider oats.aweb join=${LABEL} --preview`);
+  assert.equal(result.nextNote, undefined, 'eligibility was read, nothing is assumed');
+});
+
+test('with the new team not eligible for the soul, the one next step is the shared souls: change', t => {
+  const { result } = oneNext(t, preserved({ defaultTeam: PRIOR, teams: [row('prior', PRIOR.team, true)] }),
+    `make ${LABEL} eligible for dev: add it to dev's teams in the souls: of oats-workspace.yaml, a shared-file change (/oats-teams); then \`oats spawn dev --provider oats.aweb join=${LABEL} --preview\``, { command: false });
+  assert.equal(result.nextNote, undefined);
+});
+
+test('when the soul\'s teams cannot be read, the next step keeps the join spawn and says it assumes eligibility', t => {
+  const { result, line } = oneNext(t, preserved(), `oats spawn dev --provider oats.aweb join=${LABEL} --preview`);
+  assert.equal(result.nextNote, `assumes ${LABEL} is eligible for dev: oats soul teams dev could not be read`);
+  assert.ok(line.endsWith(`(${result.nextNote})`), line);
 });

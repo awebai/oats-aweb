@@ -1053,22 +1053,31 @@ Supported acts:
   invite's; an explicit `--service` must name the same service, up to a
   trailing `/api`. With `--install-aw`, an aw older than 1.36.53 is upgraded
   first. It ends with one next step (`result.next` with `--json`, the same
-  line): `oats spawn <soul> --preview`, or, when the deployment keeps another
-  default team, `oats spawn <soul> --provider oats.aweb join=<label> --preview`,
-  with moving the default left to the operator in the note. The dashboard's
+  line), chosen from `oats soul teams <soul>`: `oats spawn <soul> --preview`
+  when the label is the soul's default, `oats spawn <soul> --provider oats.aweb
+  join=<label> --preview` when the label is eligible for it, and otherwise
+  making the label eligible in the workspace's `souls:` (a shared-file change,
+  `/oats-teams`). When the soul's teams cannot be read, it keeps the spawn and
+  says it assumes eligibility (`result.nextNote`). A kept deployment default,
+  and moving it, are in the note. The dashboard's
   `--invite <token>` one-liner works; `printf '%s\n' "$TOKEN" | oats aweb setup
   --soul <soul> --invite-stdin --name <alias>` keeps the token out of shell
   history. A deployment with no root identity needs `--name <alias>`. To resume
   an admitted but unconnected join, run the printed `--join <label> --service
   <service>` command without the token; an expired, exhausted or revoked invite
-  that aw reports with its team names that exact command too. Refusals, all
+  that aw reports with its team names that exact command too, with the label
+  the deployment already maps to that team. Refusals, all
   before anything is redeemed:
   `E_SETUP_AW_VERSION` (aw older than 1.36.53: upgrade aw),
   `E_SETUP_INVITE_INSPECT` (inspect failed; names aw's fixed refusal code, such
   as `exhausted`, or a withheld cause), `E_SETUP_INVITE_CONTROLLER` (a
   local-controller invite: scope and status unknown), `E_SETUP_ALREADY_MEMBER`
-  (the deployment already has a member root for the team; `roots[team]` is never
-  re-pointed), `E_SETUP_SERVICE_MISMATCH` (an explicit `--service` for another
+  (`roots[team]`, `root` or the default team's root already lists the team;
+  `roots[team]` is never re-pointed; when no team label maps it, the message
+  names the tokenless resume for a per-team root an earlier run left, else the
+  `oats teams add` mapping), `E_SETUP_MEMBERSHIP` (one of those roots' `aw team
+  list` could not be read: never taken as "not a member"),
+  `E_SETUP_SERVICE_MISMATCH` (an explicit `--service` for another
   service), `E_SETUP_DEFAULT_PRESERVE` (the workspace sets the default and the
   label is unmapped; its exact `oats teams add` command names the invite's team)
   and `E_SETUP_LABEL_COLLISION` (the derived label is another team's: pass

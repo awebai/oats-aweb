@@ -80,5 +80,6 @@ export function prepareJoinConfiguration(requestedLabel, deployment, { env = pro
         } : {}) };
     },
     details() { return { label, steps, ...(observed ? { observed } : {}) }; },
+    soulTeams: soul => kernel.soulTeams(soul),
   };
 }

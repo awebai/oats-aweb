@@ -12,14 +12,19 @@
   never an argv. A label the deployment already maps to the team is reused
   rather than a new one made; a hosted invite of scope `unknown` joins with
   `--local`; an explicit `--service` must be the invite's (up to `/api`); and
-  `--install-aw` upgrades an older aw first. It ends with one next step,
-  `oats spawn <soul> --preview`, or, when the deployment keeps another default,
-  the spawn that joins the new team beside it, the same in text and JSON.
+  `--install-aw` upgrades an older aw first. It ends with one next step, the
+  same in text and JSON, chosen from `oats soul teams <soul>`: a plain spawn
+  when the label is the soul's default, the spawn that joins it when it is
+  eligible, else making it eligible in the workspace's `souls:`; when that read
+  fails it keeps the spawn and says it assumes eligibility.
   Needs aw 1.36.53 or later; every refusal comes before anything is redeemed:
   `E_SETUP_AW_VERSION`, `E_SETUP_INVITE_INSPECT` (an expired, exhausted or
   revoked invite names the exact resume command), `E_SETUP_INVITE_CONTROLLER`,
   `E_SETUP_INVITE_SCOPE` (ask for a LOCAL invite, or use the GLOBAL resident
-  journey), `E_SETUP_ALREADY_MEMBER` (`roots[team]` is never re-pointed),
+  journey), `E_SETUP_ALREADY_MEMBER` (`roots[team]`, `root` or the default
+  team's root lists the team; `roots[team]` is never re-pointed; an unmapped
+  team names the tokenless resume or the `oats teams add` it lacks),
+  `E_SETUP_MEMBERSHIP` (such a root's membership could not be read),
   `E_SETUP_SERVICE_MISMATCH`, `E_SETUP_DEFAULT_PRESERVE` (a workspace default
   with the label unmapped, decided before redemption from the invite's team)
   and `E_SETUP_LABEL_COLLISION` (pass `--join <label>`; never a suffix). `--join <label>` is unchanged; with an invite aw can read, a
@@ -34,7 +39,10 @@
 - **The invite token is in no argv on the accepting host.** Every
   `aw id team accept-invite` — setup's labelled `--join`, the invite form and an
   instance's `oats aweb join` — now reads the token on stdin (`--token-stdin`,
-  which aw 1.36.33, the provider's floor, already has).
+  which aw 1.36.33, the provider's floor, already has). aw's `--token-stdin`
+  path checks the token's characters and format before acceptance, so a
+  malformed token now fails as an aw usage error (exit 2) before anything is
+  redeemed.
 
 - **A refused `oats aweb join` names its cause and fix (#52).** The join has
   read the deployment's live `roots` since 1.22.0, so a team root added to

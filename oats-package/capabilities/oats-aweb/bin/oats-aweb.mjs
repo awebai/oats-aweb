@@ -64,7 +64,7 @@ import { awErrorCode, leadingJsonObject, withheldFailureCause } from "../lib/aw-
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
-import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
+import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
@@ -1489,6 +1489,25 @@ function rosterLine(m) {
   const kind = ROSTER_KIND_FROM_TEXT[m.kindFrom] ? `${m.kind} (${ROSTER_KIND_FROM_TEXT[m.kindFrom]})` : m.kind;
   return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]`;
 }
+/** The root this deployment already holds `team` in, before an invite is redeemed (#56):
+ *  roots[team], root and, for the default team, the root its setup uses. Each with a .aw is
+ *  read with a reader that throws: membership that cannot be read is never "not a member". */
+function deploymentMemberRoot(team) {
+  const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
+  const candidates = [roots[team], settings.root, team === defaultTeamId() ? rootSettingCandidate(team)?.root : undefined]
+    .filter((root) => typeof root === "string" && root.trim() && isAbsolute(root.trim())).map((root) => resolve(root.trim()));
+  for (const root of [...new Set(candidates)]) {
+    if (!existsSync(join(root, ".aw"))) continue;
+    let listed;
+    try { listed = parseAwJson(run(["aw", "team", "list", "--json"], root), "aw team list"); }
+    catch { listed = undefined; }
+    if (!Array.isArray(listed?.memberships || listed?.teams)) {
+      throw Object.assign(new Error(`membership at ${root} could not be read; nothing redeemed`), { code: "E_SETUP_MEMBERSHIP" });
+    }
+    if (teamIdsOf(listed).map(String).includes(team)) return root;
+  }
+  return undefined;
+}
 /** `aw team list --json` at a root; no memberships when aw cannot answer there. */
 function readTeamsAt(rootDir) {
   try { return parseAwJson(run(["aw", "team", "list", "--json"], rootDir), "aw team list"); }
@@ -2311,12 +2330,25 @@ if (event === "launch") {
         }
         requireInviteInspect(await readAwVersion());
         const labelOf = (team) => normalizeAwebTeamName(team.slice(0, team.indexOf(":")));
-        const resumeCommand = (team, service) => setupResumeCommand(labelOf(team), service);
+        // The kernel's team rows, or undefined when it cannot say; a remedy then names the derived label.
+        const kernelTeams = () => { try { return selectedTeamKernel(selected).read().teams; } catch { return undefined; } };
+        // A resume names the label a row already maps to the team, as the success path uses it.
+        const resumeCommand = (team, service) => setupResumeCommand(kernelTeams()?.find((row) => row.team === team)?.label || labelOf(team), service);
         inviteEnvelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId, resumeCommand });
         // A deployment already in the team keeps its root: nothing is redeemed, roots[team] is never re-pointed.
-        const memberRoot = awebRootForTeam(inviteEnvelope.team);
-        if (memberRoot && teamIdsOf(readTeamsAt(memberRoot)).map(String).includes(inviteEnvelope.team)) {
-          throw Object.assign(new Error(`already a member of ${inviteEnvelope.team} at ${memberRoot}; nothing redeemed`), { code: "E_SETUP_ALREADY_MEMBER" });
+        const memberRoot = deploymentMemberRoot(inviteEnvelope.team);
+        if (memberRoot) {
+          const team = inviteEnvelope.team, rows = kernelTeams();
+          let remedy = "";
+          if (rows && !rows.some((row) => row.team === team)) {
+            // No kernel row maps the team: a root an earlier run left at the label's per-team root
+            // finishes with the tokenless resume; any other root needs only the mapping.
+            const label = labelOf(team), canonical = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+            remedy = canonical(memberRoot) === canonical(perTeamRoot(selected, label))
+              ? `; finish its setup without an invite: ${setupResumeCommand(label, inviteEnvelope.service)}`
+              : `; no team label maps it here: oats teams add ${quoteArg(label)} --team ${team} --dir ${quoteArg(selected)}`;
+          }
+          throw Object.assign(new Error(`already a member of ${team} at ${memberRoot}; nothing redeemed${remedy}`), { code: "E_SETUP_ALREADY_MEMBER" });
         }
         checkInviteService(joinService, inviteEnvelope.service);
         if (!joinService) joinService = inviteEnvelope.service;
@@ -2588,23 +2620,35 @@ ${JSON.stringify(problem.details || {})}`);
       try { configuration = joinConfiguration.finish(accepted.team); }
       catch (error) { error.details = { ...error.details, ...joinConfiguration.details(), root: accepted.teamRoot }; throw error; }
       // The invite form ends with exactly one next step; the released --join output is unchanged.
-      // A preserved default folds `remaining` into the note: the step that matters is a spawn
-      // that joins the new team beside the kept default; moving the default is the operator's call.
-      let next;
+      // A preserved default folds `remaining` into the note: moving the default is the operator's call.
+      // The step follows the soul's teams (`oats soul teams S`): its default is the label, the label
+      // is eligible for it, or it must first be made eligible in the workspace's souls:.
+      let next, nextIsCommand = true, nextNote;
       if (inviteEnvelope) {
-        next = `oats spawn ${setupSoulArg()} --preview`;
+        const soulArg = setupSoulArg(), soul = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(forwardedSoulArg || "") ? forwardedSoulArg : undefined;
+        const joinSpawn = `oats spawn ${soulArg} --provider oats.aweb join=${joinLabel} --preview`;
+        let soulTeams;
+        if (soul) { try { soulTeams = joinConfiguration.soulTeams(soul); } catch { soulTeams = undefined; } }
+        if (soulTeams?.defaultTeam?.label === joinLabel) next = `oats spawn ${soulArg} --preview`;
+        else if (soulTeams?.teams.some((row) => row?.label === joinLabel)) next = joinSpawn;
+        else if (soulTeams) {
+          next = `make ${joinLabel} eligible for ${soulArg}: add it to ${soulArg}'s teams in the souls: of oats-workspace.yaml, a shared-file change (/oats-teams); then \`${joinSpawn}\``;
+          nextIsCommand = false;
+        } else {
+          next = configuration.remaining?.length ? joinSpawn : `oats spawn ${soulArg} --preview`;
+          nextNote = `assumes ${joinLabel} is eligible for ${soulArg}: oats soul teams ${soulArg} could not be read`;
+        }
         if (configuration.remaining?.length) {
           const { remaining, ...rest } = configuration;
-          next = `oats spawn ${setupSoulArg()} --provider oats.aweb join=${joinLabel} --preview`;
-          configuration = { ...rest, note: `the deployment's default team ${configuration.observed?.defaultTeam?.label || ""} is kept, so the next spawn joins ${joinLabel} beside it; to make ${joinLabel} the default instead (an operator's choice): ${remaining.map((c) => c.join(" ")).join("; ")}` };
+          configuration = { ...rest, note: `the deployment's default team ${configuration.observed?.defaultTeam?.label || ""} is kept; to make ${joinLabel} the deployment's default instead (an operator's choice): ${remaining.map((c) => c.join(" ")).join("; ")}` };
         }
       }
-      const fromInvite = inviteEnvelope ? { invite: { kind: inviteEnvelope.kind, team: inviteEnvelope.team, service: inviteEnvelope.service }, labelFrom: joinConfiguration.labelFrom, next } : {};
+      const fromInvite = inviteEnvelope ? { invite: { kind: inviteEnvelope.kind, team: inviteEnvelope.team, service: inviteEnvelope.service }, labelFrom: joinConfiguration.labelFrom, next, ...(nextNote ? { nextNote } : {}) } : {};
       if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { ...accepted, ...configuration, ...fromInvite } }));
       else {
         console.log(`✓ joined ${accepted.team} as ${joinLabel} in ${accepted.teamRoot}; recorded settings.oats.aweb.roots[${accepted.team}].`);
         console.log(JSON.stringify(configuration));
-        if (next) console.log(`Next: \`${next}\``);
+        if (next) console.log(`Next: ${nextIsCommand ? `\`${next}\`` : next}${nextNote ? ` (${nextNote})` : ""}`);
       }
       process.exit(0);
     }
