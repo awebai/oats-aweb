@@ -562,11 +562,9 @@ accept a second LOCAL team into an existing identity. Intended new root is
 root is a placement blocker: select and compose 1.22.0 or later before effects. The fix
 uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
-place; no automatic move, deletion or fresh acceptance is part of setup. To move
-one to `D/.aweb-roots/<label>` on the operator's request: with no spawn or join
-of that team running, move the directory there, run `aw workspace connect --team
-<T>` in it, set `roots[T]` in D's `oats-local.yaml` to the new path, and check it
-with `oats aweb join --labels L --plan` from a home that has not joined T.
+place; no automatic move, deletion or fresh acceptance is part of setup.
+Existing nested roots keep working and are not migrated; to move one, ask your
+aweb lead.
 
 ### attach yourself to the account
 

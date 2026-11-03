@@ -491,7 +491,10 @@ team}, ready, steps}}`. A `failed` step ends the run with `ok: false`,
 Failures: `E_TEAM_NOT_MEMBER` (this deployment cannot invite to the host's
 team: join it here first), a kernel route code such as `E_SSH`,
 `E_INVITE_FAILED`, `E_JOIN_FAILED`, and the host's `E_AW_INSTALL` /
-`E_AW_FLOOR`. A team that is not hosted (a local-controller BYOT team) is
+`E_AW_FLOOR`. `E_INVITE_FAILED` keeps aw's output withheld and names the cause
+(the HTTP status and redacted server `detail`, else aw's `--json` error code, an
+unreachable service, or that its output held none of these), that nothing was
+sent to the host, and the root it ran in with the setting that chose it. A team that is not hosted (a local-controller BYOT team) is
 `needs-human` (`E_INVITE_NOT_HOSTED`), because its invites only work on the
 machine that minted them. The host root's alias is the server id, or `--name`
 when the id is not a valid aweb alias. connect spawns nothing: it mints for the
@@ -985,13 +988,8 @@ outside the deployment: with the default team's root at
 `<deployment>/.aweb-roots/<default>`, `--join <label>` creates
 `<deployment>/.aweb-roots/<label>` beside it and records it as
 `roots[<team id>]` (#45). Previously recorded roots retain their exact
-locations. A root nested inside another (made by provider versions before
-1.22.0) keeps working and is never moved. To move one beside the others: with no
-spawn or join of that team running, move the directory to
-`<deployment>/.aweb-roots/<label>`, run `aw workspace connect --team <team id>`
-in it so aw records the new path, set `roots[<team id>]` in `oats-local.yaml`
-to the new path, and check it with `oats aweb join --labels <label> --plan` from
-a home that has not joined that team (membership confirmed at the new path).
+locations. Existing nested roots keep working and are not migrated; to move one,
+ask your aweb lead.
 
 ### Setup acts
 
@@ -1204,7 +1202,10 @@ native HOME; plans discard temporary state without changing the selected root.
 For pinned aw 1.36.23, only its anchored CLI-generated HTTP 401/403 prefix maps
 to `E_INVITE_DENIED`; details are statically withheld, never matched as role or
 body prose. Other statuses, transport and unknown native errors are
-`E_INVITE_NATIVE`. Invalid successful native output is `E_INVITE_OUTPUT`.
+`E_INVITE_NATIVE`; without an HTTP status its message names the cause from the
+same fixed vocabulary as the join (aw's `--json` error code, an unreachable
+service, or none of these) and the issuing root with the setting that chose it,
+never aw's text or a token. Invalid successful native output is `E_INVITE_OUTPUT`.
 Inspect an uncertain issuance before any deliberate retry. No mandatory authority
 query or extra Cloud version floor is introduced. This act additionally requires
 the selected kernel to dispatch `OATS_TEAM_SCOPE` and expose public

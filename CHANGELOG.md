@@ -13,16 +13,14 @@
   "output withheld": it names aw's `--json` error code, an unreachable aweb
   service, or that its output held none of these, plus the root it ran in and
   the setting that chose it. aw's output stays withheld; no token is printed.
+  `oats aweb connect` (`E_INVITE_FAILED`) and `oats aweb invite`
+  (`E_INVITE_NATIVE`) name the same causes, root and setting when their
+  `aw team invite` fails; their error codes are unchanged.
 - **Per-team roots (#45).** Since 1.22.0, `oats aweb setup --join <label>` puts
   a new root at `<deployment>/.aweb-roots/<label>`, beside the default team's
   root, and records it as `roots[<team id>]`; it is now tested with the default
-  root itself recorded as `roots[<default team>]`. A root an earlier version
-  nested inside the default team's root keeps working and is not migrated. To
-  move one: with no spawn or join of that team running, move the directory to
-  `<deployment>/.aweb-roots/<label>`, run `aw workspace connect --team <team id>`
-  in it, set `roots[<team id>]` in `oats-local.yaml` to the new path, and check
-  it with `oats aweb join --labels <label> --plan` from a home that has not
-  joined that team.
+  root itself recorded as `roots[<default team>]`. Existing nested roots keep
+  working and are not migrated; to move one, ask your aweb lead.
 
 ## 1.35.0 — 2026-11-03
 

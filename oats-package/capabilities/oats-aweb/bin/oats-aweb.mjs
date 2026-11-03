@@ -60,6 +60,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { AW_ERROR_CODES, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -99,29 +100,18 @@ const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
  *  `aweb: http <status> (<headers>): <body>`; only a string `detail` of a JSON
  *  body is taken, never the headers or any other text. */
 const TOKEN_SHAPED_RE = /[A-Za-z0-9_\-.~+/=]{20,}/g;
-/** The refusal codes read from aw's --json error envelope
- *  (`{"error":{"code":...}}`, aw 1.36.52-rc.3 and later). A code is a fixed
- *  word, so naming it leaks nothing; anything else is never read. */
-const AW_ERROR_CODES = new Set(["unknown_or_invalid"]);
+/** aw's --json error code (`{"error":{"code":...}}`), only when AW_ERROR_CODES lists it. */
 function awErrorCode(stdout) {
   try {
     const code = leadingJsonObject(String(stdout ?? "").trim())?.error?.code;
     return AW_ERROR_CODES.has(code) ? code : undefined;
   } catch { return undefined; }
 }
-/** Transport failures as Go's net/http and crypto/tls word them: the class is
- *  named by a fixed phrase, never by the matched text. */
-const NETWORK_FAILURE_RE = /\b(?:dial tcp|no such host|connection refused|connection reset|network is unreachable|i\/o timeout|context deadline exceeded)\b|\btls: |\bx509: /i;
 function failureClass(e) {
   const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
   const http = /\bhttp (\d{3})\b/.exec(text);
-  if (!http) {
-    // Without an HTTP status, still a cause from a fixed vocabulary (awebai/oats-aweb#52).
-    const code = awErrorCode(e?.stdout);
-    if (code) return `aw error ${code}`;
-    if (NETWORK_FAILURE_RE.test(text)) return "the aweb service could not be reached: a network or TLS failure";
-    return "no HTTP status, aw error code or network failure in its output";
-  }
+  // Without an HTTP status, still a cause from a fixed vocabulary (awebai/oats-aweb#52).
+  if (!http) return withheldFailureCause({ text, code: awErrorCode(e?.stdout) });
   let detail;
   const body = text.indexOf("{", http.index);
   if (body >= 0) { try { const doc = leadingJsonObject(text.slice(body)); if (typeof doc?.detail === "string") detail = doc.detail; } catch { /* no JSON body */ } }
@@ -407,6 +397,12 @@ function rootSettingCandidate(team = defaultTeamId()) {
   if (declared) return declared;
   const fallback = process.env.OATS_WORKSPACE || process.cwd();
   return fallback ? { root: fallback, key: "settings.oats.aweb.root", declared: false } : undefined;
+}
+/** Which setting chose `team`'s minting root, as a failure names it: `roots[team]`, `root`,
+ *  or, for the default team with neither set, the deployment directory itself. */
+function rootSourceOf(team) {
+  const declared = declaredRootCandidate(team);
+  return !declared ? "the deployment directory" : declared.key === "settings.oats.aweb.root" ? "root" : "roots[team]";
 }
 function awebRootProblem(candidate) {
   if (!candidate?.root) return `no messaging root at ${process.cwd()}: run oats aweb setup there or set settings.oats.aweb.root`;
@@ -1353,7 +1349,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
   const identityHome = identityHomeForLabel(row.label);
-  const { root, source } = current ? currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }) : { root: awebRootForTeam(row.team), source: declaredRootCandidate(row.team)?.key === "settings.oats.aweb.root" ? "root" : "roots[team]" };
+  const { root, source } = current ? currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }) : { root: awebRootForTeam(row.team), source: rootSourceOf(row.team) };
   if (!root) throw new Error(joinedTeamRootRefusal(row.team, row.label));
   let minted;
   try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
@@ -2191,9 +2187,9 @@ if (event === "launch") {
   // output is withheld (secretSafe) and the token is dropped as soon as the join returns.
   let token;
   try {
-    const minted = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", team.team), "--json"], localRoot, 45000, { secretSafe: true }), "aw team invite");
+    const minted = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", team.team), "--json"], localRoot, 45000, { secretSafe: true, failureDetail: true }), "aw team invite");
     token = typeof minted?.token === "string" && minted.token ? minted.token : undefined;
-  } catch (e) { fail("invite", "E_INVITE_FAILED", `aw team invite for ${team.team} failed: ${e.message || e}`); }
+  } catch (e) { fail("invite", "E_INVITE_FAILED", `aw team invite for ${team.team} failed: ${e.message || e}; nothing was sent to ${serverId}; root ${localRoot} (from ${rootSourceOf(team.team)})`); }
   if (!token) fail("invite", "E_INVITE_FAILED", `aw team invite returned no usable token for ${team.team}`);
   if (!token.startsWith("aw_inv_")) {
     token = undefined;
