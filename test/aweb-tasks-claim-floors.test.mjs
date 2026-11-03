@@ -13,6 +13,7 @@ import test from 'node:test';
 import * as floors from '../oats-package/capabilities/oats-aweb-tasks/lib/claim-floors.mjs';
 import * as version from '../oats-package/capabilities/oats-aweb-tasks/lib/version.mjs';
 import * as awFloor from '../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs';
+import { expectedReceive } from '../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs';
 import { checkResult } from '../oats-package/capabilities/oats-aweb-tasks/lib/binding.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -69,8 +70,13 @@ test('the daemon warning: 1.36.53 and 1.36.54-rc.1 warn; 1.36.54 and above do no
   const w = floors.wakeDaemonWarning;
   for (const v of ['1.36.53', '1.36.54-rc.1', floors.AW_MIN, '1.36.40+b']) assert.deepEqual(w(reported(v)), { code: 'wake-daemon-outdated', message: DAEMON(v) }, v);
   for (const v of ['1.36.54', '1.36.55', '1.36.54+build', '1.37.0', '2.0.0-rc.1']) assert.equal(w(reported(v)), undefined, v);
-  // Below AW_MIN, oats.aweb's own item for this listed home is the only one.
-  for (const v of ['1.36.31', `${floors.AW_MIN}-rc.1`, '0.1.0']) assert.equal(w(reported(v)), undefined, v);
+  // Below AW_MIN: oats.aweb's own item is the only one where it checks this
+  // home's broker; elsewhere this one warns, so the daemon is never unwarned.
+  for (const v of ['1.36.31', `${floors.AW_MIN}-rc.1`, '0.1.0']) {
+    assert.equal(w(reported(v), { awebChecks: true }), undefined, v);
+    assert.deepEqual(w(reported(v), { awebChecks: false }), { code: 'wake-daemon-outdated', message: DAEMON(v) }, v);
+  }
+  assert.deepEqual(w(reported('1.36.53'), { awebChecks: true })?.code, 'wake-daemon-outdated', 'between the floors, whatever oats.aweb checks');
   for (const [name, status] of [
     ['not running', { daemon_running: false, daemon_version_state: 'not_running', daemon_version: '1.36.53' }],
     ['running unknown', { daemon_running: 'yes', daemon_version_state: 'reported', daemon_version: '1.36.53' }],
@@ -120,9 +126,13 @@ test('the readers: the launch record, the config dirs, and the installed version
   // The launch record, as oats.aweb reads it.
   assert.equal(floors.recordedLaunch(home), undefined, 'no record');
   write(join(home, 'instance.json'), { harness: 'claude', launch: { harness: 'pi', env: { X: '1' } }, capabilityMeta: { 'oats.aweb': { delivery: 'session' } } });
-  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'pi', delivery: 'session', env: { X: '1' } });
+  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'pi', delivery: 'session', recordedDelivery: 'session', env: { X: '1' } });
   write(join(home, 'instance.json'), { launch: { harness: 'pi' }, capabilityMeta: { 'oats.aweb': { runtime: 'claude' } } });
-  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'claude', delivery: 'channel', env: {} }, 'oats.aweb\'s runtime first, channel by default');
+  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'pi', delivery: 'channel', recordedDelivery: undefined, env: {} }, 'the kernel\'s launched harness first, as oats.aweb readiness reads it');
+  write(join(home, 'instance.json'), { harness: 'codex', launch: {}, capabilityMeta: { 'oats.aweb': { runtime: 'claude', delivery: 'bogus' } } });
+  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'codex', delivery: 'channel', recordedDelivery: undefined, env: {} }, 'then the record\'s harness; an unknown delivery is unrecorded');
+  write(join(home, 'instance.json'), { launch: {}, capabilityMeta: { 'oats.aweb': { runtime: 'claude' } } });
+  assert.equal(floors.recordedLaunch(home).runtime, 'claude', 'then oats.aweb\'s runtime');
   write(join(home, 'instance.json'), { harness: 'claude' });
   assert.equal(floors.recordedLaunch(home), undefined, 'no launch');
   // Config dirs.
@@ -173,6 +183,38 @@ test('the readers: the launch record, the config dirs, and the installed version
   write(join(linked, 'package.json'), { name: '@awebai/pi', version: '0.4.0' });
   rmSync(dirname(pkg), { recursive: true }); symlinkSync(linked, dirname(pkg));
   assert.equal(floors.piExtensionVersion(agent), undefined, 'a link out');
+});
+
+test('a FIFO at an expected path is unreadable, never a blocked check', { skip: process.platform === 'win32' }, t => {
+  const dir = scratch(t, 'aweb-tasks-fifo-'), file = join(dir, 'plugins', 'installed_plugins.json');
+  mkdirSync(dirname(file));
+  assert.equal(spawnSync('mkfifo', [file]).status, 0, 'mkfifo');
+  const script = `import { readJsonInside } from ${JSON.stringify(join(cap, 'lib/claim-floors.mjs'))}; console.log(String(readJsonInside(${JSON.stringify(dir)}, ${JSON.stringify(file)})));`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL' });
+  assert.equal(r.signal, null, 'did not block');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'undefined');
+});
+
+test('awebChecksDaemon agrees with oats.aweb\'s own brokerRequired for the same home', t => {
+  const dir = scratch(t, 'aweb-tasks-agree-');
+  let n = 0;
+  const cases = [];
+  for (const harness of ['codex', 'claude', 'pi']) for (const delivery of ['channel', 'session', undefined]) for (const joined of ['none', 'one', 'polled']) {
+    const home = join(dir, `h${n++}`), identity = join(home, '.aweb-identity-shared');
+    mkdirSync(join(home, '.aw'), { recursive: true }); mkdirSync(identity);
+    write(join(home, 'instance.json'), { launch: { harness }, capabilityMeta: { 'oats.aweb': { ...(delivery ? { delivery } : {}), runtime: harness } } });
+    const teams = joined === 'none' ? [] : [{ label: 'shared', team: 'shared:example.invalid', identityHome: identity, ...(joined === 'polled' ? { expectedPoll: true } : {}) }];
+    write(join(home, '.oats-aweb', 'teams.json'), { joinedTeams: teams });
+    const theirs = expectedReceive(home, { policy: { root: join(dir, 'no-policy') } });
+    if (theirs.problems.length) continue;  // oats.aweb reads no daemon at all then
+    cases.push(`${harness}/${delivery}/${joined}`);
+    assert.equal(floors.awebChecksDaemon(home, floors.recordedLaunch(home)), theirs.brokerRequired, `${harness} ${delivery ?? 'unrecorded'} joined:${joined}`);
+  }
+  t.diagnostic(`compared: ${cases.join(' ')}`);
+  for (const c of ['codex/channel/none', 'pi/channel/none', 'pi/channel/one', 'claude/channel/polled', 'claude/session/none']) assert.ok(cases.includes(c), `${c} is compared`);
+  // A record oats.aweb can't use: this check warns rather than assume it does.
+  assert.equal(floors.awebChecksDaemon(join(dir, 'nowhere'), undefined), false);
 });
 
 // ------------------------------------------------------- the readiness wire
@@ -266,11 +308,19 @@ test('a home the daemon serves: 1.36.53 and 1.36.54-rc.1 warn beside ready; 1.36
   ]) assert.deepEqual(f.check({}, { home: f.home }, { FAKE_WAKE: answer }), READY, name);
 });
 
-test('below AW_MIN only oats.aweb\'s item appears; between the two floors only this one does', t => {
+test('below AW_MIN only oats.aweb\'s item appears where it checks the broker; elsewhere and between the floors only this one does', t => {
   const f = fixture(t);
   f.record({ harness: 'codex' });
-  assert.deepEqual(f.check({}, { home: f.home }, { FAKE_WAKE: f.listed('1.36.31') }), READY, 'oats.aweb warns wake-daemon-outdated for this listed home');
+  assert.deepEqual(f.check({}, { home: f.home }, { FAKE_WAKE: f.listed('1.36.31') }), READY, 'a Codex home: oats.aweb warns wake-daemon-outdated itself');
   assert.deepEqual(codes(f.check({}, { home: f.home }, { FAKE_WAKE: f.listed('1.36.40') }).warnings), ['wake-daemon-outdated']);
+  // A pi channel home with no joined team and a retained row: oats.aweb needs
+  // no broker and reads no daemon, so this one warns.
+  f.record({ harness: 'pi', delivery: 'channel' }); f.pi('0.4.1');
+  write(join(f.home, '.oats-aweb', 'teams.json'), { joinedTeams: [] });
+  assert.deepEqual(codes(f.check({}, { home: f.home }, { FAKE_WAKE: f.listed('1.36.31') }).warnings), ['wake-daemon-outdated']);
+  // The same home with a joined team the broker serves: oats.aweb checks it.
+  write(join(f.home, '.oats-aweb', 'teams.json'), { joinedTeams: [{ label: 'shared', team: 'shared:example.invalid', identityHome: join(f.home, '.aweb-identity-shared') }] });
+  assert.deepEqual(f.check({}, { home: f.home }, { FAKE_WAKE: f.listed('1.36.31') }), READY);
 });
 
 test('with team set: a ready answer gains the warning, and a refusal keeps its problems and adds it', t => {
@@ -331,6 +381,13 @@ test('a pi channel home: @awebai/pi below 0.4.1 warns, at the floor does not, un
   f.pi('0.3.15', join(f.user, 'pi-dir'));
   f.record({ harness: 'pi', launchEnv: { PI_CODING_AGENT_DIR: '~/pi-dir' } });
   assert.match(f.check({}, { home: f.home }, notListed).warnings[0].message, /installed: 0\.3\.15/);
+  // The kernel's launched harness decides, even when oats.aweb's runtime lags it.
+  f.record({ harness: 'pi', runtime: 'claude' }); f.channel('1.8.2'); f.pi('0.4.0');
+  assert.deepEqual(codes(f.check({}, { home: f.home }, notListed).warnings), ['pi-extension-outdated']);
+  f.record({ harness: 'claude', runtime: 'pi' }); f.channel('1.8.1'); f.pi('0.4.1');
+  assert.deepEqual(codes(f.check({}, { home: f.home }, notListed).warnings), ['aweb-channel-outdated']);
+  f.record({ harness: 'pi' }); f.pi('0.3.15', join(f.user, 'pi-dir'));
+  f.record({ harness: 'pi', launchEnv: { PI_CODING_AGENT_DIR: '~/pi-dir' } });
   // A pi home the daemon serves for its joined teams: both floors.
   const listed = { FAKE_WAKE: f.listed('1.36.53', { runtime_delivery: 'native-pi' }) };
   assert.deepEqual(codes(f.check({}, { home: f.home }, listed).warnings), ['wake-daemon-outdated', 'pi-extension-outdated']);

@@ -11,7 +11,7 @@
 // Everything here is read-only and bounded. A version that cannot be read gives
 // no item: the floors apply where the version is readable.
 import { spawnSync } from 'node:child_process';
-import { closeSync, fstatSync, openSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { parseVersion, versionAtLeast } from './version.mjs';
 
@@ -24,8 +24,8 @@ export const PI_EXTENSION_FLOOR = '0.4.1';
 
 /** oats.aweb's AW_MIN (lib/aw-floor.mjs), copied because this module cannot
  *  import it. Below it, oats.aweb's own readiness warns `wake-daemon-outdated`
- *  for a home the daemon serves, so this check adds no second item with that
- *  code there. */
+ *  for a home whose broker it checks (awebChecksDaemon), so this check adds
+ *  no second item with that code there. */
 export const AW_MIN = '1.36.33';
 
 export const AWEB_CHANNEL_PLUGIN = 'aweb-channel@awebai-marketplace';
@@ -36,6 +36,10 @@ const object = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const pathValue = (v) => typeof v === 'string' && v !== '' && v.trim() === v && isAbsolute(v) && !v.includes('\0');
 const canon = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 
+// Opening never blocks (a FIFO at the path) and never follows a link swapped in
+// after the path was resolved; the descriptor is then checked to be a file.
+const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
+
 /** JSON from `file`, read only when it resolves to a regular file inside
  *  `base` (no link out of it) of at most 1 MiB; undefined otherwise. */
 export function readJsonInside(base, file) {
@@ -43,7 +47,7 @@ export function readJsonInside(base, file) {
   try {
     const root = realpathSync(base), real = realpathSync(file);
     if (real !== root && !real.startsWith(root + sep)) return undefined;
-    fd = openSync(real, 'r');
+    fd = openSync(real, OPEN_FLAGS);
     const st = fstatSync(fd);
     if (!st.isFile() || st.size > MAX_FILE) return undefined;
     const buf = Buffer.alloc(st.size);
@@ -54,18 +58,44 @@ export function readJsonInside(base, file) {
   finally { if (fd !== undefined) try { closeSync(fd); } catch { /* closed */ } }
 }
 
-/** What the kernel recorded for the home's last start, as oats.aweb reads it:
- *  the runtime (oats.aweb's recorded runtime, else the launched harness), the
- *  captured delivery (channel when unrecorded), and the launch environment.
- *  undefined when the home has no readable launch record. These describe how
- *  the home was started, which only its record holds; the team check's
- *  identity mode, a setting, comes from the kernel instead. */
+/** What the kernel recorded for the home's last start, as oats.aweb's
+ *  readiness reads it: the runtime (the kernel's launched harness, else
+ *  oats.aweb's recorded runtime, which can lag a start), the captured delivery
+ *  (`recordedDelivery`, undefined for a legacy record; `delivery` reads that as
+ *  channel), and the launch environment. undefined when the home has no
+ *  readable launch record. These describe how the home was started, which only
+ *  its record holds; the team check's identity mode, a setting, comes from the
+ *  kernel instead. */
 export function recordedLaunch(home) {
   const doc = readJsonInside(home, join(home, 'instance.json'));
   if (!object(doc?.launch)) return undefined;
   const meta = object(doc.capabilityMeta?.['oats.aweb']) ? doc.capabilityMeta['oats.aweb'] : {};
-  const harness = typeof doc.launch.harness === 'string' ? doc.launch.harness : typeof doc.harness === 'string' ? doc.harness : undefined;
-  return { runtime: typeof meta.runtime === 'string' ? meta.runtime : harness, delivery: meta.delivery ?? 'channel', env: object(doc.launch.env) ? doc.launch.env : {} };
+  const id = (v) => typeof v === 'string' && v ? v : undefined;
+  const recordedDelivery = ['channel', 'session'].includes(meta.delivery) ? meta.delivery : undefined;
+  return { runtime: id(doc.launch.harness) ?? id(doc.harness) ?? (typeof meta.runtime === 'string' ? meta.runtime : undefined),
+    delivery: recordedDelivery ?? 'channel', recordedDelivery, env: object(doc.launch.env) ? doc.launch.env : {} };
+}
+
+/** Whether oats.aweb's readiness checks the host wake daemon for this home, so
+ *  that it warns `wake-daemon-outdated` itself below AW_MIN. It does where the
+ *  home needs the broker (wake-receive.mjs expectedReceive, brokerRequired):
+ *  the primary receives through it (Codex, `delivery: session`, or a runtime
+ *  with no channel), or a joined team does (every joined team in
+ *  .oats-aweb/teams.json, except those a Claude channel home polls). A record
+ *  that does not show either, or cannot be read, is false, so this check warns
+ *  rather than leave a daemon below AW_MIN unwarned. (oats.aweb also reports
+ *  configuration problems before it reads the daemon; the warning follows once
+ *  they are fixed.) */
+export function awebChecksDaemon(home, launch) {
+  if (!launch) return false;
+  const { runtime, recordedDelivery } = launch;
+  const primaryBroker = runtime === 'codex' || recordedDelivery === 'session'
+    || (recordedDelivery === 'channel' && runtime !== undefined && runtime !== 'claude' && runtime !== 'pi');
+  if (primaryBroker) return true;
+  const claudeChannel = recordedDelivery === 'channel' && runtime === 'claude';
+  const state = readJsonInside(home, join(home, '.oats-aweb', 'teams.json'));
+  if (!Array.isArray(state?.joinedTeams)) return false;
+  return state.joinedTeams.some((j) => object(j) && !(claudeChannel && j.expectedPoll === true));
 }
 
 /** The row of `aw wake status --json` that lists `home`, or undefined. */
@@ -97,15 +127,17 @@ export function claimFloors(context, { status, launch } = {}) {
   return launch.runtime === 'claude' ? ['aweb-channel'] : launch.runtime === 'pi' ? ['pi-extension'] : [];
 }
 
-/** The wake daemon's warning, or undefined. Only a running daemon that reports
- *  a semver version at or above AW_MIN and below TASKS_WAKE_FLOOR warns: below
- *  AW_MIN, oats.aweb warns `wake-daemon-outdated` for this home itself. A
- *  daemon that is not running or reports no readable version adds nothing:
- *  oats.aweb reports not-running and unknown where it needs the broker. */
-export function wakeDaemonWarning(status) {
+/** The wake daemon's warning, or undefined. A running daemon that reports a
+ *  semver version below TASKS_WAKE_FLOOR warns, except below AW_MIN where
+ *  `awebChecks` (awebChecksDaemon): there oats.aweb warns
+ *  `wake-daemon-outdated` for this home itself. A daemon that is not running or
+ *  reports no readable version adds nothing: oats.aweb reports not-running and
+ *  unknown where it needs the broker. */
+export function wakeDaemonWarning(status, { awebChecks = false } = {}) {
   if (!object(status) || status.daemon_running !== true || status.daemon_version_state !== 'reported') return undefined;
   const version = status.daemon_version;
-  if (!parseVersion(version) || !versionAtLeast(version, AW_MIN) || versionAtLeast(version, TASKS_WAKE_FLOOR)) return undefined;
+  if (!parseVersion(version) || versionAtLeast(version, TASKS_WAKE_FLOOR)) return undefined;
+  if (awebChecks && !versionAtLeast(version, AW_MIN)) return undefined;
   return { code: 'wake-daemon-outdated',
     message: `oats.aweb-tasks: host wake daemon is running ${version}; aweb task claims need aw ${TASKS_WAKE_FLOOR} or later, whose wake daemon heartbeats claims: upgrade aw, then restart the host wake daemon (\`oats aweb wake install\`)` };
 }
@@ -195,7 +227,7 @@ export function claimFloorWarnings(context, { readStatus, env = process.env } = 
   const launch = recordedLaunch(context.home);
   const warnings = [];
   for (const floor of claimFloors(context, { status, launch })) {
-    const w = floor === 'wake-daemon' ? wakeDaemonWarning(status)
+    const w = floor === 'wake-daemon' ? wakeDaemonWarning(status, { awebChecks: awebChecksDaemon(context.home, launch) })
       : floor === 'aweb-channel' ? awebChannelWarning(awebChannelVersion(claudeConfigDir(launch, env)), context.home)
       : piExtensionWarning(piExtensionVersion(piAgentDir(launch, env)), context.home);
     if (w) warnings.push(w);

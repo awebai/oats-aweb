@@ -214,18 +214,21 @@ no new read or warning.
 | `aweb-channel-outdated` | Claude on `delivery: channel`, not listed | aweb-channel 1.8.2 | the user-scope `aweb-channel@awebai-marketplace` entry in `<config dir>/plugins/installed_plugins.json`; the config dir is the launch's literal `CLAUDE_CONFIG_DIR`, else `~/.claude` |
 | `pi-extension-outdated` | pi on `delivery: channel` | @awebai/pi 0.4.1 | `<agentDir>/npm/node_modules/@awebai/pi/package.json`; `<agentDir>` is the launch's literal `PI_CODING_AGENT_DIR`, else `~/.pi/agent` |
 
-- **The daemon** warns from oats.aweb's AW_MIN (1.36.33) up to 1.36.54;
-  1.36.54-rc.1 warns. Below AW_MIN, oats.aweb's own `wake-daemon-outdated`
-  for that home is the only item. A pi home the daemon lists for its joined
-  teams can get both the daemon and the pi warning.
+- **The daemon** warns below 1.36.54; 1.36.54-rc.1 warns. Below oats.aweb's
+  AW_MIN (1.36.33), oats.aweb warns `wake-daemon-outdated` itself where it
+  checks the home's broker: the primary receives through it (Codex,
+  `delivery: session`), or a joined team does. That home gets only oats.aweb's
+  item; every other listed home gets this one. A pi home the daemon lists for
+  its joined teams can get both the daemon and the pi warning.
 - **Nothing is added** for a version or status that can't be read: a daemon
   that is not running or reports no version, which oats.aweb reports where it
   needs the broker; a project-scope install; pi's older global npm location;
-  a file reached through a link out of its folder. Joined teams that only poll
+  a file reached through a link out of its folder, or one that isn't a regular file. Joined teams that only poll
   have no heartbeat and get nothing. A soul gets nothing: the check can't tell
   whether its delivery is the broker.
 - **The reads** are the home's `instance.json` (its runtime and delivery, as
-  oats.aweb reads them), `aw wake status --json` run from the home without the
+  oats.aweb's readiness reads them: the kernel's launched harness first) and,
+  below AW_MIN, `.oats-aweb/teams.json` (its joined teams), `aw wake status --json` run from the home without the
   check's own `OATS_*` or an inherited `AWEB_IDENTITY_HOME`, and the one file
   per component above. The aw call is bounded at 10 s, and by what is left of
   25 s after the team reads, so the check stays inside the kernel's 30 s.

@@ -9,9 +9,11 @@
   readiness check now warns a home whose heartbeat source is older. These are
   warnings beside the team answer, ready or not; they never refuse:
   - `wake-daemon-outdated`: `aw wake status --json` lists the home, and its
-    daemon runs a version from oats.aweb's floor (1.36.33) up to, but not
-    including, 1.36.54; 1.36.54-rc.1 warns. Below 1.36.33, oats.aweb's own
-    `wake-daemon-outdated` for that home is the only item.
+    daemon runs a version below 1.36.54; 1.36.54-rc.1 warns. Below oats.aweb's
+    floor (1.36.33), oats.aweb warns `wake-daemon-outdated` itself for a home
+    whose broker it checks (Codex, `delivery: session`, or a joined team the
+    broker serves), so that home gets only oats.aweb's item. Every other home
+    gets this one, so no daemon is left unwarned.
   - `aweb-channel-outdated`: a Claude home on `delivery: channel` that the
     daemon does not list, whose aweb-channel@awebai-marketplace is below
     1.8.2. The version is the user-scope entry in
