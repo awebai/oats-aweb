@@ -121,6 +121,14 @@ env -i HOME="$HOME" PATH="$PATH" node scripts/check-aweb-tasks-argv.mjs
 ```
 
 The argv checker parses the skill and runs only help against aw 1.36.47.
+
+Task coordination is taught only here, in oats.aweb-tasks. Nothing oats.aweb
+puts into a home mentions it: its inject, its skills (the vendored aweb skills
+included), its readiness phrases, and the briefs and warnings its hooks write.
+`test/no-task-coordination.test.mjs` reads the files; the spawn, grant-seat
+and captured-native fixtures check what the hooks write, with the patterns in
+`test/helpers/task-coordination-text.mjs`. Teaching that oats.aweb drops moves
+here rather than being lost.
 `test/aweb-tasks-kernel.test.mjs` is an opt-in real-kernel selection check:
 set `OATS_TASKS_KERNEL_ROOT` to the kernel source and
 `OATS_TASKS_SCRATCH_ROOT` to a scratch parent, then run that test file. It creates

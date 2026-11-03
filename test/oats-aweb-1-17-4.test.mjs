@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 import { launchChannelWarning } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
+import { describeTaskCoordination } from "./helpers/task-coordination-text.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
@@ -161,6 +162,20 @@ test("spawn output is pinned byte for byte for the same inputs", (t) => {
     const r = fx.hook("spawn");
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(r.stdout, expected117(fx.home, { delivery, runtime }), `${delivery}/${runtime}`);
+  }
+});
+
+// oats.aweb is messaging only: task coordination is taught by oats.aweb-tasks
+// (test/no-task-coordination.test.mjs reads the inject and skills).
+test("spawn's brief and warnings, and soul readiness, never mention task coordination", (t) => {
+  for (const [delivery, runtime] of [["session", "claude"], ["channel", "claude"], ["channel", "pi"], ["channel", "codex"]]) {
+    const fx = fixture(t, { delivery, runtime });
+    const r = fx.hook("spawn");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.ok(r.doc.brief, "spawn writes a brief");
+    const found = ["brief", "warning"].flatMap((field) => describeTaskCoordination(`spawn ${delivery}/${runtime} ${field}`, r.doc[field] || ""));
+    found.push(...describeTaskCoordination(`readiness ${delivery}/${runtime}`, JSON.stringify(readinessOf(fx, { root: fx.ws, delivery }))));
+    assert.deepEqual(found, [], found.join("\n"));
   }
 });
 
