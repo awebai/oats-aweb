@@ -3,7 +3,7 @@
 // server) and a real OATS kernel, with no fixture and no fake. CI runs them
 // (see ci.yml); locally, bring the stack up and set:
 //
-//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 or 1.36.51 executable
+//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 or 1.36.53 executable
 //   OATS_RESIDENT_JOURNEY_AWEB_URL  e.g. http://127.0.0.1:18000
 //   OATS_RESIDENT_JOURNEY_AWID_URL  e.g. http://127.0.0.1:18010
 //   OATS_RESIDENT_JOURNEY_KERNEL    a checkout of an OATS kernel with the
@@ -16,11 +16,15 @@
 // and then scaffolded with --no-launch, which mints a real grant at the
 // resident's custody; retiring the scaffold revokes it.
 //
-// The OSS server does not serve aweb Cloud's /api/v1/workspaces/init, so an
-// API-key init here registers the identity at awid and then fails. That proves
-// registration, same-DID resume and the key's absence on a failure; a complete
-// create, a quarantined partial and a customer-held team's refusal are proven
-// only by the joint E2E against the local aweb Cloud.
+// The OSS server does not serve aweb Cloud's /api/v1/workspaces/init, so with
+// aw 1.36.33 an API-key init here registers the identity at awid and then
+// fails. That proves registration, same-DID resume and the key's absence on a
+// failure. aw 1.36.53 reads the key's team first, which this server doesn't
+// answer, so it stops before minting: that proves aw's refusal reaches the
+// operator unchanged, with no partial and no key anywhere, and a rerun into
+// what it left is refused. A complete create, a quarantined partial and a
+// customer-held team's refusal are proven only by the joint E2E against the
+// local aweb Cloud.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -51,7 +55,10 @@ function journey(t) {
   writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: local\n");
   symlinkSync(realpathSync(AW), join(bin, "aw"));
   const version = spawnSync(join(bin, "aw"), ["version"], { encoding: "utf8" });
-  assert.match(version.stdout, /^aw (1\.36\.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4|1\.36\.51\n  commit: 8325ef68ecae502523253b43575570144dd46297) /, "the journeys are qualified on aw 1.36.33 (877bbee9) and 1.36.51 (8325ef68)");
+  assert.match(version.stdout, /^aw (1\.36\.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4|1\.36\.53\n  commit: 98a5ae85c3c6ee3bfda814da2f5a5d4e6b1563ea) /, "the journeys are qualified on aw 1.36.33 (877bbee9) and 1.36.53 (98a5ae85)");
+  // aw 1.36.53 reads the API key's team before it mints anything; the OSS
+  // server does not answer that read, so init stops there and leaves no partial.
+  const teamReadFirst = version.stdout.startsWith("aw 1.36.53\n");
   // The printed steps start with `oats`; a spawn's preflight looks for the
   // harness, which --preview and --no-launch never start.
   writeFileSync(join(bin, "oats"), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(OATS)} "$@"\n`, { mode: 0o755 });
@@ -86,7 +93,7 @@ function journey(t) {
     for (const args of [["init", "-q"], ["add", "."], ["commit", "-qm", "fixture workspace"]]) assert.equal(git(...args).status, 0, `git ${args[0]}`);
     writeFileSync(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    delivery: session\n`);
   };
-  return { base, deployment, home, bin, env, run, shell, aw, workspace, cleanups };
+  return { base, deployment, home, bin, env, run, shell, aw, workspace, cleanups, teamReadFirst };
 }
 /** A complete global identity in root, made the way aweb's own real-stack e2e
  *  makes one, whose custody and per-user unit the cleanups stop. */
@@ -117,13 +124,31 @@ function filesUnder(dir) {
   return out;
 }
 
-test("registration at awid, a forced failure with no key anywhere, and a rerun that keeps the same DID", async (t) => {
+test("a forced API-key init failure leaves no key anywhere; on aw 1.36.33 it registers at awid and a rerun keeps the same DID, on aw 1.36.53 aw refuses before minting and a rerun is refused", async (t) => {
   if (!configured(t)) return;
   const j = journey(t);
   const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
   const root = join(j.deployment, ".aweb-residents", "alice");
   const first = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
   assert.equal(first.status, 1, first.stdout + first.stderr);
+  if (j.teamReadFirst) {
+    // The refusal is aw's own, and nothing was minted: no partial, so no rerun
+    // continues; R holds only the captures and the .aw aw began, which a rerun
+    // refuses to init into.
+    assert.equal(first.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
+    const captured = (kind) => readFileSync(first.doc.error.details.captures.find((p) => p.endsWith(kind)), "utf8").trim();
+    const awText = captured(".stderr") || captured(".stdout");
+    assert.match(awText, /^The aweb service at \S+ /, "aw names the service that refused");
+    assert.ok(first.doc.error.message.startsWith(`${awText}\n`), first.doc.error.message);
+    assert.equal(first.doc.error.details.partial, null);
+    assert.ok(!existsSync(join(root, ".aw", "partial-init.yaml")));
+    const again = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+    assert.equal(again.doc.error.code, "E_RESIDENT_ROOT");
+    for (const r of [first, again]) assert.ok(!r.stdout.includes(key) && !r.stderr.includes(key));
+    assert.deepEqual(filesUnder(j.base).filter((p) => readFileSync(p).includes(key)), []);
+    assert.equal(statSync(join(root, ".oats-resident")).mode & 0o777, 0o700);
+    return;
+  }
   assert.equal(first.doc.error.code, "E_RESIDENT_INIT");
   assert.match(first.doc.error.message, /^workspace init target was not found or the team was deleted \(404\): .*\nrerun the same command in this directory; do not delete \.aw\/partial-init\.yaml$/);
   const partialFile = join(root, ".aw", "partial-init.yaml");
@@ -149,10 +174,11 @@ test("registration at awid, a forced failure with no key anywhere, and a rerun t
   assert.equal(statSync(join(root, ".oats-resident")).mode & 0o777, 0o700);
 });
 
-test("a rerun with another registry gets aw's own refusal, unchanged", (t) => {
+test("a rerun with another registry gets aw's own refusal, unchanged (aw 1.36.33: aw 1.36.53 leaves no partial to carry a registry)", (t) => {
   if (!configured(t)) return;
   const j = journey(t);
   const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
+  if (j.teamReadFirst) { t.skip("aw 1.36.53 refuses before writing a partial on this server, so no rerun carries a registry; the previous journey covers its refusal"); return; }
   assert.equal(j.run(["create", "alice"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL }).status, 1);
   const other = AWID_URL.replace("127.0.0.1", "localhost");
   const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: other });

@@ -331,11 +331,14 @@ function soulJoinsTeams(settings) {return typeof settings.join==='string' && set
 function settingsOrigins(env) {try {const origins=JSON.parse(env.OATS_SETTINGS_ORIGINS??'');return obj(origins)?origins:undefined;} catch {return undefined;}}
 /** Whether the deployment publishes health now: the soul's current oats.aweb
  *  `health.publish`, the setting `oats aweb health publish` reads before it
- *  counts unread mail each minute. False when the kernel can't say. */
+ *  counts unread mail each minute. False when the kernel can't say, or can't
+ *  say before the phase's deadline. */
 // The kernel's resolved view, never oats-local.yaml read here: layering is the resolver's, and the observer reads its payload.
-function healthPublishesNow(ctx,env) {
+export function healthPublishesNow(ctx,env,deadline) {
+  const left=Math.min(10000,deadline-Date.now());
+  if(left<1) return false;
   try {
-    const doc=querySelectedKernel(['inspect','--soul',ctx.soul,'--dir',ctx.deployment,'--json'],{env,cwd:ctx.deployment});
+    const doc=querySelectedKernel(['inspect','--soul',ctx.soul,'--dir',ctx.deployment,'--json'],{env,cwd:ctx.deployment,timeout:left});
     const rows=doc?.ok===true && Array.isArray(doc.result?.capabilities)?doc.result.capabilities.filter(c=>c?.id==='oats.aweb'):[];
     return rows.length===1 && obj(rows[0].settings) && healthSettings(rows[0].settings).publish;
   } catch {return false;}
@@ -436,7 +439,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
   // A home's settings are its spawn's capture: it asks whether health
   // publishes now, so a later `health enable` or `disable` counts.
-  if (primaryBroker && !excludedGrantSeat && !problems.length && (ctx.home ? healthPublishesNow(ctx,env) : req.settings.health?.publish === true)) {
+  if (primaryBroker && !excludedGrantSeat && !problems.length && (ctx.home ? healthPublishesNow(ctx,env,deadline) : req.settings.health?.publish === true)) {
     let countOnly = false;
     try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
     if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});

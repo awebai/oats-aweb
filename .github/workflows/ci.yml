@@ -94,9 +94,11 @@ jobs:
       fail-fast: false
       matrix:
         # The provider's floor and the newest aw checked against it.
-        aw: ['1.36.33', '1.36.51']
+        aw: ['1.36.33', '1.36.53']
     env:
-      AWEB_STACK_COMMIT: 1d7ee6bb3519a3c940ebeb12afc86d921dc13e27
+      # aweb's release of aw 1.36.53, server 1.27.45 and awid 0.5.35: AW_TESTED
+      # runs against the server it was released with.
+      AWEB_STACK_COMMIT: 755f3dcc47faae8e44b1c82b955508bbe8dafe2f
       AW_VERSION: ${{ matrix.aw }}
     steps:
       - uses: actions/checkout@v4

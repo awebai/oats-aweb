@@ -16,7 +16,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
 import { currentRootQuery } from "./helpers/current-root-query.mjs";
-import { AW_MIN } from "../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs";
+import { AW_MIN, healthPublishesNow } from "../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs";
 import { claudeChannelModeUnset, targetReceiveAssessment, wakeDaemonAssessment } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -264,6 +264,24 @@ test('a home whose current health setting is unreadable is silent, whatever it c
     fx.current({delivery: 'session', health: {publish: true}}, change);
     assert.deepEqual(countWarning(fx.readiness({delivery: 'session', health: {publish: true}})), [], change);
   }
+});
+
+// The query shares the readiness phase's deadline, as the phase's aw calls do.
+test('the current-health query never outlasts the readiness deadline', t => {
+  const ws = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-128-deadline-")));
+  t.after(() => rmSync(ws, { recursive: true, force: true }));
+  const ctx = { soul: 'dev', deployment: ws };
+  const slow = currentRootQuery(ws, { home: join(ws, 'h'), deployment: ws, settings: { health: { publish: true } }, change: 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,8000);' });
+  const env = { PATH: process.env.PATH, OATS_CLI_BIN: slow.cli };
+  const calls = () => { try { return readFileSync(slow.calls, 'utf8').trim().split('\n').filter(Boolean).length; } catch { return 0; } };
+  assert.equal(healthPublishesNow(ctx, env, Date.now() - 1), false, 'a spent deadline asks nothing');
+  assert.equal(calls(), 0);
+  const started = Date.now();
+  assert.equal(healthPublishesNow(ctx, env, started + 700), false, 'a kernel slower than the time left is no answer');
+  assert.ok(Date.now() - started < 5000, `stopped at the deadline, not after ${Date.now() - started} ms`);
+  assert.equal(calls(), 1);
+  const fast = currentRootQuery(ws, { home: join(ws, 'h'), deployment: ws, settings: { health: { publish: true } } });
+  assert.equal(healthPublishesNow(ctx, { ...env, OATS_CLI_BIN: fast.cli }, Date.now() + 28000), true, 'time left: the answer counts');
 });
 
 test('a home probes aw only while health publishes now, and a count-only aw is silent', t => {
