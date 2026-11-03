@@ -957,23 +957,41 @@ same kernel's public inspect API. It first validates the selected home's recorde
 soul, then reads that soul in the selected deployment, consuming only `root` and
 `roots`. The exact team's explicit entry wins, including when invalid; otherwise
 a shared current root must prove membership in that team. Query, configuration,
-compatibility or membership failures refuse before an invite is minted. Captured
-module, identity and delivery settings remain unchanged; spawn, launch and retire
-do not use this current-root lookup.
+compatibility or membership failures refuse before an invite is minted. A team
+root recorded in `oats-local.yaml` after the home's spawn is therefore joined
+without a respawn. Each refusal says `nothing was minted` and names its cause
+and fix: when the live settings cannot be read, the cause in parentheses and
+the `oats inspect … --json` read to repair; when they name no member root for
+the team, the `oats aweb setup --join <label> --invite-stdin` that makes one.
+Captured module, identity and delivery settings remain unchanged; spawn, launch
+and retire do not use this current-root lookup.
 
 `oats aweb join --labels <labels> --plan [--json]` resolves each label's root
 exactly as the join would and prints its team, root, the setting that chose it
 (`roots[team]` or `root`) and whether membership was confirmed, or the refusal.
 It mints no invite, accepts nothing and writes no identity or provider state;
 it exits 1 when any label would be refused. When `aw team invite` fails, its
-output stays withheld, and the failure names the HTTP status and the server's
-`detail` with token-shaped values redacted.
+output stays withheld, and the failure names the cause from a fixed vocabulary
+(the HTTP status and the server's `detail` with token-shaped values redacted;
+otherwise aw's `--json` error code, an unreachable service, or that its output
+held none of these), the root it ran in and the setting that chose it, and
+that nothing was joined.
 
 Setup selects the deployment from `OATS_TEAM_SCOPE`, with `OATS_WORKSPACE` as an
 older-dispatch fallback. Supplied deployment facts must agree and the selected
 directory must contain a readable `oats-local.yaml`. New team roots are siblings
 under that deployment's `.aweb-roots`, even when the minting root is nested or
-outside the deployment. Previously recorded roots retain their exact locations.
+outside the deployment: with the default team's root at
+`<deployment>/.aweb-roots/<default>`, `--join <label>` creates
+`<deployment>/.aweb-roots/<label>` beside it and records it as
+`roots[<team id>]` (#45). Previously recorded roots retain their exact
+locations. A root nested inside another (made by provider versions before
+1.22.0) keeps working and is never moved. To move one beside the others: with no
+spawn or join of that team running, move the directory to
+`<deployment>/.aweb-roots/<label>`, run `aw workspace connect --team <team id>`
+in it so aw records the new path, set `roots[<team id>]` in `oats-local.yaml`
+to the new path, and check it with `oats aweb join --labels <label> --plan` from
+a home that has not joined that team (membership confirmed at the new path).
 
 ### Setup acts
 

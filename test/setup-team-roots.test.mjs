@@ -29,6 +29,23 @@ for(const outside of [false,true]) test(`setup join places sibling at deployment
  assert.match(readFileSync(join(f.deployment,'oats-local.yaml'),'utf8'),new RegExp(target));
  assert.ok(!existsSync(join(f.root,'oats-local.yaml')));assert.doesNotMatch(r.stdout+r.stderr,/SECRET/);
 });
+// awebai/oats-aweb#45: the default team's root is itself a per-team root under
+// .aweb-roots and is recorded as roots[<default team>], not root. A --join puts
+// the new root beside it at <deployment>/.aweb-roots/<label>, never inside it,
+// and records it as roots[<team id>].
+test('setup join beside a default-team per-team root records roots[team] at the deployment', t=>{
+ const f=fixture(t), target=join(f.deployment,'.aweb-roots','joined');
+ const r=f.run(['setup','--join','joined','--invite-stdin','--name','host','--service','https://service.invalid'],{OATS_SETTINGS:JSON.stringify({roots:{'default:example.invalid':f.root}})},'SECRET\n');
+ assert.equal(r.status,0,r.stderr);
+ assert.ok(existsSync(join(target,'.aw','workspace.yaml')),'the new root is a sibling of the default root');
+ assert.ok(!existsSync(join(f.root,'.aweb-roots')),'nothing is created inside the default root');
+ const accept=f.fake.readCalls().find(c=>c.args.includes('accept-invite'));
+ assert.equal(accept.identityHome,join(target,'.aw'));
+ const local=readFileSync(join(f.deployment,'oats-local.yaml'),'utf8');
+ assert.match(local,new RegExp(`roots:\\n(?:\\s+.*\\n)*?\\s+"?${TEAM.replace(/\./g,'\\.')}"?:\\s+"?${target.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}"?\\n`));
+ assert.match(r.stdout,new RegExp(`recorded settings\\.oats\\.aweb\\.roots\\[${TEAM.replace(/\./g,'\\.')}\\]`));
+ assert.doesNotMatch(r.stdout+r.stderr,/SECRET/);
+});
 for(const variant of ['absent','contradictory','missing-local','wrong-dir']) test(`setup ${variant} deployment refuses before writes`,t=>{
  const f=fixture(t);const extra={};const args=['setup','--join','joined','--invite','SECRET'];
  if(variant==='absent')extra.OATS_TEAM_SCOPE='';

@@ -59,7 +59,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
-import { selectedDeployment, currentJoinRoot, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -109,10 +109,19 @@ function awErrorCode(stdout) {
     return AW_ERROR_CODES.has(code) ? code : undefined;
   } catch { return undefined; }
 }
+/** Transport failures as Go's net/http and crypto/tls word them: the class is
+ *  named by a fixed phrase, never by the matched text. */
+const NETWORK_FAILURE_RE = /\b(?:dial tcp|no such host|connection refused|connection reset|network is unreachable|i\/o timeout|context deadline exceeded)\b|\btls: |\bx509: /i;
 function failureClass(e) {
   const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
   const http = /\bhttp (\d{3})\b/.exec(text);
-  if (!http) return "";
+  if (!http) {
+    // Without an HTTP status, still a cause from a fixed vocabulary (awebai/oats-aweb#52).
+    const code = awErrorCode(e?.stdout);
+    if (code) return `aw error ${code}`;
+    if (NETWORK_FAILURE_RE.test(text)) return "the aweb service could not be reached: a network or TLS failure";
+    return "no HTTP status, aw error code or network failure in its output";
+  }
   let detail;
   const body = text.indexOf("{", http.index);
   if (body >= 0) { try { const doc = leadingJsonObject(text.slice(body)); if (typeof doc?.detail === "string") detail = doc.detail; } catch { /* no JSON body */ } }
@@ -1344,9 +1353,16 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
   const identityHome = identityHomeForLabel(row.label);
-  const root = current ? currentJoinRoot(row.team, home, { membership: rootListsTeam }) : awebRootForTeam(row.team);
+  const { root, source } = current ? currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }) : { root: awebRootForTeam(row.team), source: declaredRootCandidate(row.team)?.key === "settings.oats.aweb.root" ? "root" : "roots[team]" };
   if (!root) throw new Error(joinedTeamRootRefusal(row.team, row.label));
-  const inv = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }), "aw team invite");
+  let minted;
+  try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
+  catch (e) {
+    // aw's own output stays withheld (it can hold a token); the failure says
+    // which root and setting minted, the class of the cause and where to look.
+    throw new Error(`${e.message || e}; nothing was joined; check with oats aweb join --labels ${row.label} --plan; root ${root} (from ${source})`);
+  }
+  const inv = parseSecretJson(minted, "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
   const { joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias: instance || meta.alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] });
   const next = { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] };
@@ -1358,7 +1374,7 @@ const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).includes(team
 function joinPlan(rows, meta) {
   return rows.map((row) => {
     if (joinedTeamsOf(meta).some((j) => j.label === row.label)) return { label: row.label, team: row.team, joined: true };
-    try { return { label: row.label, team: row.team, ...currentJoinRootChoice(row.team, home, { membership: rootListsTeam }), member: true }; }
+    try { return { label: row.label, team: row.team, ...currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }), member: true }; }
     catch (e) { return { label: row.label, team: row.team, root: null, source: null, member: false, problem: e.message || String(e) }; }
   });
 }

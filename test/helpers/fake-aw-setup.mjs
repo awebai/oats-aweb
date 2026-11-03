@@ -17,7 +17,8 @@
 //                     .aweb-identity-<label>
 //   AW_DELETE_FAIL_SUFFIX text appended to that refusal's diagnostic
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
-//                     (default "403 forbidden") on stderr
+//                     (default "403 forbidden") on stderr and AW_INVITE_FAIL_STDOUT,
+//                     when set, on stdout (aw's --json error envelope)
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -71,7 +72,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   writeTeams(process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)});
   console.log(JSON.stringify({ team_id: process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)} }));
 } else if (args[0] === "team" && args[1] === "invite") {
-  if (process.env.AW_INVITE_FAIL) { console.error(process.env.AW_INVITE_FAIL_STDERR || "403 forbidden"); process.exit(5); }
+  if (process.env.AW_INVITE_FAIL) { if (process.env.AW_INVITE_FAIL_STDOUT) console.log(process.env.AW_INVITE_FAIL_STDOUT); console.error(process.env.AW_INVITE_FAIL_STDERR || "403 forbidden"); process.exit(5); }
   console.log(JSON.stringify({ token: process.env.AW_INVITE_TOKEN || "INVITE-TOKEN" }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "list") {
   if (fs.existsSync(teamsFile)) console.log(fs.readFileSync(teamsFile, "utf8"));

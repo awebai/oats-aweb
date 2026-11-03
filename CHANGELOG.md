@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **A refused `oats aweb join` names its cause and fix (#52).** The join has
+  read the deployment's live `roots` since 1.22.0, so a team root added to
+  `oats-local.yaml` after the home's spawn is joined without a respawn. Each
+  refusal before minting now says `nothing was minted` and names its cause:
+  live settings that cannot be read name the reason and the
+  `oats inspect … --json` read to repair; live settings with no member root for
+  the team name the `oats aweb setup --join <label> --invite-stdin` that makes
+  one. A failed `aw team invite` with no HTTP status no longer reads only
+  "output withheld": it names aw's `--json` error code, an unreachable aweb
+  service, or that its output held none of these, plus the root it ran in and
+  the setting that chose it. aw's output stays withheld; no token is printed.
+- **Per-team roots (#45).** Since 1.22.0, `oats aweb setup --join <label>` puts
+  a new root at `<deployment>/.aweb-roots/<label>`, beside the default team's
+  root, and records it as `roots[<team id>]`; it is now tested with the default
+  root itself recorded as `roots[<default team>]`. A root an earlier version
+  nested inside the default team's root keeps working and is not migrated. To
+  move one: with no spawn or join of that team running, move the directory to
+  `<deployment>/.aweb-roots/<label>`, run `aw workspace connect --team <team id>`
+  in it, set `roots[<team id>]` in `oats-local.yaml` to the new path, and check
+  it with `oats aweb join --labels <label> --plan` from a home that has not
+  joined that team.
+
 ## 1.35.0 — 2026-11-03
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. A kernel that lists `settings-committed-only` refuses oats.aweb-tasks `team` from `oats-local.yaml` and `--provider`; an earlier one ignores the flag. A workspace sets `team` in its `tasks:` payload only once every deployment reading it lists `workspace-tasks-payload`. A pi home whose pi folder loads `@awebai/pi` with its skills now reads the readiness warning `pi-extension-skills-loaded`, which names the one-line fix.
