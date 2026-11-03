@@ -5,6 +5,14 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.34.0 — messaging only; aweb tasks by opt-in
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
+oats.aweb teaches messaging only: nothing it puts into a home names the task
+layer, `aw task`, `aw work`, `aw lock` or `aw roles`. oats.aweb-tasks teaches
+them, and composing it is how a home opts into aweb tasks; its inject and skill
+open with the workspace's opt-in. The inject gives the whole messaging loop.
+
 ## 1.33.3 — tested with aw 1.36.53
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33, and the tested aw moves to
