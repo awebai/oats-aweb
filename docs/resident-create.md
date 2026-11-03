@@ -59,6 +59,7 @@ decides from what R holds:
 | R holds | Then |
 | --- | --- |
 | nothing, or does not exist | init creates the resident |
+| only what an init that minted nothing left: this command's `.oats-resident/` captures, and at most a `.aw/` holding only aw's recovery lock `partial-init.yaml.lock` (aw 1.36.53 takes it before an API key's team read) | init runs again, as for an empty R; nothing in R is deleted |
 | `.aw/partial-init.yaml` (an earlier init that failed part way) | init continues it: aw reuses the saved key, so the DID is the same |
 | `.aw/partial-init.yaml.<time>.<n>.rejected` (aw quarantined the key) | init runs once, and aw refuses with its own reconciliation message; there is no rerun |
 | a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded |
@@ -322,9 +323,12 @@ step as a sentence.
 A failure is `FAIL <stage>: <message>` on stderr. An init failure's message
 is aw's own text (with the key redacted), so aw's "rerun the same command in
 this directory" appears only when aw left a resumable partial. When an init
-leaves neither a partial nor an identity, the message adds
-`provisioning left nothing to continue; R contains …; contact aweb with
-<capture path>`.
+creates nothing (R then holds only the captures, and at most aw's lock), the
+message adds `nothing was created; fix what aw reports above, then rerun the
+same command (aw's output is kept in <capture path>)`, and the rerun runs
+init again. When an init leaves anything else and neither a partial nor an
+identity, the message adds `provisioning left nothing to continue; R contains
+…; contact aweb with <capture path>`.
 
 Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 
@@ -340,7 +344,7 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_RECORD` | preflight, record | `oats-local.yaml` cannot be updated safely |
 | `E_RESIDENT_KEY` | key | no key and no terminal, an empty answer, or a malformed key |
 | `E_RESIDENT_INIT` | init | aw init failed; aw's text |
-| `E_RESIDENT_NOTHING_TO_CONTINUE` | init | aw init failed and left nothing to continue |
+| `E_RESIDENT_NOTHING_TO_CONTINUE` | init | aw init failed and left nothing to continue: it created nothing (rerun once aw's report is fixed), or left something this command can't continue |
 | `E_RESIDENT_VERIFY` | verify | the identity is not the connected global `<name>`, or an offline check is not ok |
 | `E_RESIDENT_UNIT` | custody | a launchctl or systemctl command failed |
 | `E_RESIDENT_UNIT_UNSUPPORTED` | custody | no unit on this host and custody is not running: the hand step |
@@ -637,7 +641,7 @@ A quarantined partial: aw's refusal, with no rerun.
 }
 ```
 
-An init that left nothing to continue:
+An init that created nothing:
 
 <!-- envelope: nothing-to-continue -->
 ```json
@@ -646,7 +650,7 @@ An init that left nothing to continue:
   "ok": false,
   "error": {
     "code": "E_RESIDENT_NOTHING_TO_CONTINUE",
-    "message": "AWID_REGISTRY_URL=local is not supported by `aw init`; use an explicit localhost URL such as http://localhost:8010\nprovisioning left nothing to continue; /srv/deploy/.aweb-residents/carol contains .oats-resident; contact aweb with /srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+    "message": "AWID_REGISTRY_URL=local is not supported by `aw init`; use an explicit localhost URL such as http://localhost:8010\nnothing was created; fix what aw reports above, then rerun the same command (aw's output is kept in /srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr)",
     "details": {
       "stage": "init",
       "root": "/srv/deploy/.aweb-residents/carol",

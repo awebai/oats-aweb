@@ -4,13 +4,13 @@
 // aw 1.36.33 captures (test/fixtures/resident); see helpers/fake-aw-resident.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { userInfo } from "node:os";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
 import { AWEB_URL, HOOK, KEY, LABEL, NAME, initCalls, setup } from "./helpers/resident-harness.mjs";
-import { derivedTeamLabel } from "../oats-package/capabilities/oats-aweb/lib/resident.mjs";
+import { derivedTeamLabel, rootState, writeCaptures } from "../oats-package/capabilities/oats-aweb/lib/resident.mjs";
 
 function filesUnder(dir) {
   const out = [];
@@ -281,18 +281,103 @@ test("a quarantined partial: init runs once and aw's refusal is the answer, neve
   assert.equal(initCalls(s.fake).length, 1);
 });
 
-test("an init that leaves nothing to continue says so and names the capture", (t) => {
-  const s = setup(t, { init: "nothing" });
+for (const init of ["nothing", "lock-nothing"]) {
+  test(`an init that creates nothing (${init}) says to fix aw's report and rerun, and the rerun inits again`, (t) => {
+    const s = setup(t, { init });
+    const r = s.run(["create", NAME, "--json"]);
+    assert.equal(r.status, 1);
+    assert.equal(r.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
+    assert.equal(r.doc.error.details.partial, null);
+    const capture = r.doc.error.details.captures.find((p) => p.endsWith(".stderr"));
+    assert.equal(r.doc.error.message, `${fixture("init-apikey-registry-local").stderr.trim()}\nnothing was created; fix what aw reports above, then rerun the same command (aw's output is kept in ${capture})`);
+    assert.equal(readFileSync(capture, "utf8"), fixture("init-apikey-registry-local").stderr);
+    assert.deepEqual(readdirSync(s.root).sort(), init === "nothing" ? [".oats-resident"] : [".aw", ".oats-resident"]);
+    // R holds only our captures and aw's lock: the rerun inits again, and
+    // nothing in R was deleted.
+    const again = s.run(["create", NAME, "--json"]);
+    assert.equal(again.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
+    assert.equal(initCalls(s.fake).length, 2);
+    assert.equal(readdirSync(join(s.root, ".oats-resident")).length, 6, "both runs' captures are kept");
+  });
+}
+
+test("an init that leaves anything unrecognised says provisioning left nothing to continue, names R's contents and the capture, and the rerun is refused before init", (t) => {
+  const s = setup(t, { init: "stray" });
   const r = s.run(["create", NAME, "--json"]);
   assert.equal(r.status, 1);
   assert.equal(r.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
   const capture = r.doc.error.details.captures.find((p) => p.endsWith(".stderr"));
-  assert.equal(r.doc.error.message, `${fixture("init-apikey-registry-local").stderr.trim()}\nprovisioning left nothing to continue; ${s.root} contains .oats-resident; contact aweb with ${capture}`);
-  assert.equal(readFileSync(capture, "utf8"), fixture("init-apikey-registry-local").stderr);
-  // R now holds only the captures: a re-run refuses rather than init into it.
+  assert.equal(r.doc.error.message, `${fixture("init-apikey-registry-local").stderr.trim()}\nprovisioning left nothing to continue; ${s.root} contains .aw, .oats-resident; contact aweb with ${capture}`);
+  const before = { root: readdirSync(s.root).sort(), aw: readdirSync(join(s.root, ".aw")).sort() };
+  assert.deepEqual(before.aw, ["partial-init.yaml.lock", "x"]);
+  // R is not create-shaped: the rerun is refused before init, and nothing in
+  // R was deleted.
   const again = s.run(["create", NAME, "--json"]);
   assert.equal(again.doc.error.code, "E_RESIDENT_ROOT");
   assert.equal(initCalls(s.fake).length, 1);
+  assert.deepEqual(readdirSync(s.root).sort(), before.root);
+  assert.deepEqual(readdirSync(join(s.root, ".aw")).sort(), before.aw);
+  assert.equal(readdirSync(join(s.root, ".oats-resident")).length, 3);
+});
+
+test("rootState: only an init that minted nothing counts as create; anything else keeps its state or is refused", (t) => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-rootstate-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  let n = 0;
+  const make = (files) => {
+    const root = join(base, String(n++));
+    mkdirSync(root);
+    for (const f of files) {
+      if (f.endsWith("/")) mkdirSync(join(root, f), { recursive: true });
+      else { mkdirSync(dirname(join(root, f)), { recursive: true }); writeFileSync(join(root, f), ""); }
+    }
+    return root;
+  };
+  for (const files of [[".oats-resident/"], [".oats-resident/", ".aw/"], [".oats-resident/", ".aw/partial-init.yaml.lock"], [".aw/partial-init.yaml.lock"], [".aw/"]]) {
+    assert.equal(rootState(make(files)).state, "create", files.join(" "));
+  }
+  assert.equal(rootState(make([".aw/partial-init.yaml", ".aw/partial-init.yaml.lock", ".oats-resident/"])).state, "continue");
+  assert.equal(rootState(make([".aw/identity.yaml", ".aw/signing.key", ".aw/workspace.yaml", ".aw/partial-init.yaml.lock"])).state, "adopt");
+  for (const files of [[".oats-resident/", ".aw/partial-init.yaml.lock", ".aw/signing.key"], [".oats-resident/", "notes.txt"], [".aw"], [".aw/partial-init.yaml.lock", "x/"], [".oats-resident"], [".aw/partial-init.yaml.lock/signing.key"]]) {
+    assert.throws(() => rootState(make(files)), (e) => e.code === "E_RESIDENT_ROOT", files.join(" "));
+  }
+  // Never through a link: a linked captures dir, .aw or lock, or a dangling
+  // lock, is refused, wherever it points.
+  const outside = make(["elsewhere/signing.key", "dir/"]);
+  const linked = (name, target, files = []) => { const root = make(files); mkdirSync(dirname(join(root, name)), { recursive: true }); symlinkSync(target, join(root, name)); return root; };
+  for (const [name, target, files] of [[".oats-resident", join(outside, "dir")], [".aw", join(outside, "dir"), [".oats-resident/"]], [".aw/partial-init.yaml.lock", join(outside, "elsewhere", "signing.key"), [".oats-resident/"]], [".aw/partial-init.yaml.lock", join(outside, "missing"), [".oats-resident/"]]]) {
+    assert.throws(() => rootState(linked(name, target, files)), (e) => e.code === "E_RESIDENT_ROOT", `${name} -> ${target}`);
+  }
+  // A linked captures dir is refused whatever else R holds.
+  assert.throws(() => rootState(linked(".oats-resident", join(outside, "dir"), [".aw/partial-init.yaml"])), (e) => e.code === "E_RESIDENT_ROOT");
+});
+
+test("writeCaptures never overwrites or follows: a stem any earlier capture used, complete or not, is skipped", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oats-aweb-captures-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = join(root, ".oats-resident"), outside = join(root, "outside.key");
+  mkdirSync(dir, { mode: 0o700 });
+  writeFileSync(outside, "OUTSIDE");
+  const second = "20261103T120000Z";
+  // An interrupted earlier run: its stdout only, no exit.
+  writeFileSync(join(dir, `init-${second}.stdout`), "EARLIER-RUN-OUTPUT");
+  // A stem whose stderr is a link out of R.
+  symlinkSync(outside, join(dir, `init-${second}-2.stderr`));
+  const run = { status: 1, stdout: "NEXT-OUT", stderr: "NEXT-ERR" };
+  const { files } = writeCaptures(root, run, (x) => x, second);
+  assert.deepEqual(files.map((f) => f.slice(dir.length + 1)), ["stdout", "stderr", "exit"].map((k) => `init-${second}-3.${k}`));
+  assert.equal(readFileSync(join(dir, `init-${second}.stdout`), "utf8"), "EARLIER-RUN-OUTPUT");
+  assert.equal(readFileSync(outside, "utf8"), "OUTSIDE");
+  assert.equal(readFileSync(files[0], "utf8"), "NEXT-OUT");
+});
+
+test("R holding anything beyond our captures and aw's lock is still refused before init", (t) => {
+  const s = setup(t, { init: "lock-nothing" });
+  mkdirSync(s.root, { recursive: true, mode: 0o700 });
+  writeFileSync(join(s.root, ".aw-unknown"), "");
+  const r = s.run(["create", NAME, "--json"]);
+  assert.equal(r.doc.error.code, "E_RESIDENT_ROOT");
+  assert.equal(initCalls(s.fake).length, 0);
 });
 
 test("the key is never echoed: an aw that prints it on both streams is scrubbed in our output and in the captures", (t) => {
