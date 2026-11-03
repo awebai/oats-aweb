@@ -5,7 +5,7 @@
 - **A refused `oats aweb join` names its cause and fix (#52).** The join has
   read the deployment's live `roots` since 1.22.0, so a team root added to
   `oats-local.yaml` after the home's spawn is joined without a respawn. Each
-  refusal before minting now says `nothing was minted` and names its cause:
+  root refusal before minting now says `nothing was minted` and names its cause:
   live settings that cannot be read name the reason and the
   `oats inspect … --json` read to repair; live settings with no member root for
   the team name the `oats aweb setup --join <label> --invite-stdin` that makes
@@ -13,9 +13,17 @@
   "output withheld": it names aw's `--json` error code, an unreachable aweb
   service, or that its output held none of these, plus the root it ran in and
   the setting that chose it. aw's output stays withheld; no token is printed.
-  `oats aweb connect` (`E_INVITE_FAILED`) and `oats aweb invite`
-  (`E_INVITE_NATIVE`) name the same causes, root and setting when their
-  `aw team invite` fails; their error codes are unchanged.
+  A spawn-time join's invite failure names the root and setting without the
+  `--plan` hint. The network cause covers Go's dial (tcp, tcp4, tcp6), DNS,
+  refused, reset and unreachable connections, i/o, deadline, TLS-handshake and
+  client timeouts, TLS and certificate errors and a connection ended by `EOF`.
+  `oats aweb connect` (`E_INVITE_FAILED`) now also names the HTTP status and
+  the redacted server `detail` of a failed `aw team invite`, and with no HTTP
+  status the same causes; `oats aweb invite` (`E_INVITE_NATIVE`), with no HTTP
+  status, names how aw ended (exit status, `ENOENT`, a timeout or a signal) and
+  the same causes. Both name the root and the setting that chose it (`roots[team]`,
+  `root`, or for the default team with neither set, the workspace or current
+  directory); their error codes are unchanged.
 - **Per-team roots (#45).** Since 1.22.0, `oats aweb setup --join <label>` puts
   a new root at `<deployment>/.aweb-roots/<label>`, beside the default team's
   root, and records it as `roots[<team id>]`; it is now tested with the default

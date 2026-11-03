@@ -123,7 +123,7 @@ for(const outside of [false,true])test(`create uses deployment sibling with ${ou
 for(const event of ['launch','retire'])test(`${event} never queries current roots`,t=>{
  const f=fixture(t),q=currentRootQuery(f.base,{home:f.home,deployment:f.deployment,settings:{}});
  const r=f.run([event],{OATS_CLI_BIN:q.cli,OATS_LAUNCH_PREVIEW:'1',OATS_META:JSON.stringify({team:'default:example.invalid',alias:'dev-1',runtime:'claude',delivery:'channel'})});
- assert.ok(!existsSync(q.calls));assert.doesNotMatch(r.stdout+r.stderr,/current root query/);
+ assert.ok(!existsSync(q.calls));assert.doesNotMatch(r.stdout+r.stderr,/live settings could not be read|oats inspect did not answer/);
 });
 test('GLOBAL error and operation error envelope remain intact',t=>{
  const f=joinFixture(t),r=f.run({OATS_OPERATION:'messaging:join',OATS_SETTINGS:JSON.stringify({identity:{mode:'global'}})});

@@ -8,6 +8,7 @@ import { selectedDeployment } from './team-roots.mjs';
 import { querySelectedKernel } from './session-readiness.mjs';
 import { yamlScalar } from './binding-wire.mjs';
 import { withheldFailureCause } from './aw-failure-cause.mjs';
+import { childOutcome } from './child-outcome.mjs';
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -38,10 +39,6 @@ function options(argv) {
 function nativeEnv(env, home) {
   return { PATH: env.PATH || '', ...(env.SystemRoot ? { SystemRoot: env.SystemRoot } : {}), HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home,'.config'), XDG_CACHE_HOME: join(home,'.cache'), AW_NO_UPDATE_CHECK: '1' };
 }
-/** aw's --json error code from a failed call's stdout, or undefined; the caller allowlists it. */
-function awJsonErrorCode(stdout) {
-  try { return JSON.parse(String(stdout || '').trim())?.error?.code; } catch { return undefined; }
-}
 function native(args, root, env, issuance) {
   try { return execFileSync('aw', args, { cwd: root, env, encoding: 'utf8', stdio: ['ignore','pipe','pipe'], timeout: 45000, maxBuffer: 1024 * 1024 }); }
   catch (e) {
@@ -52,8 +49,9 @@ function native(args, root, env, issuance) {
     if (issuance && status) fail('E_INVITE_NATIVE', `aw member invite failed (HTTP ${status}); native detail withheld because it may contain credentials`);
     if (!issuance) fail('E_INVITE_MEMBERSHIP', 'cannot read selected root membership; native output withheld');
     // No HTTP status: a cause from a fixed vocabulary, the root and its setting (awebai/oats-aweb#52).
-    const cause = withheldFailureCause({ text: `${e.stderr || ''}\n${e.stdout || ''}`, code: awJsonErrorCode(e.stdout) });
-    fail('E_INVITE_NATIVE', `aw member invite failed (${cause}); native output withheld; inspect root ${root} (from ${issuance.source}) and its service before a deliberate retry`);
+    // How aw ended (its exit status, a timeout, ENOENT or a signal) is not its output.
+    const cause = withheldFailureCause({ stderr: e.stderr, stdout: e.stdout });
+    fail('E_INVITE_NATIVE', `aw member invite ${childOutcome(e, 45000)} (${cause}); native output withheld; inspect root ${root} (from ${issuance.source}) and its service before a deliberate retry`);
   }
 }
 // Read-only native calls also get disposable user state: cwd supplies the

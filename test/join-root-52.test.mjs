@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
@@ -61,17 +61,19 @@ test('live settings with no root for the team refuse before any mint, naming the
  assert.deepEqual(f.mints(),[]);
 });
 
-for(const [name,options,cause] of [
- ['the kernel cannot be run',{extra:{OATS_CLI_BIN:'/absent/oats'}},/the deployment's live settings could not be read \(oats inspect did not answer\)/],
- ['the kernel refuses the query',{change:"doc={schemaVersion:1,ok:false,error:{code:'E_SOUL_UNKNOWN',message:'SECRET'}};"},/the deployment's live settings could not be read \(oats inspect returned no usable answer\)/],
- ['the live settings are stale',{change:"doc.result.teamsSource='recorded';"},/the deployment's live settings could not be read \(oats inspect answered from recorded, not live, settings\)/],
+for(const [name,options,cause,flag] of [
+ ['the kernel cannot be run',{extra:{OATS_CLI_BIN:'/absent/oats'}},/the deployment's live settings could not be read \(oats inspect did not answer\)/,'home'],
+ ['the kernel refuses the query',{change:"doc={schemaVersion:1,ok:false,error:{code:'E_SOUL_UNKNOWN',message:'SECRET'}};"},/the deployment's live settings could not be read \(oats inspect returned no usable answer\)/,'home'],
+ ['the live settings are stale',{change:"doc.result.teamsSource='recorded';"},/the deployment's live settings could not be read \(oats inspect answered from recorded, not live, settings\)/,'soul'],
 ]) test(`unreadable live settings refuse before any mint when ${name}`, t=>{
  const f=fixture(t,options);
  const r=f.run(['join','--labels','joined'],options.extra);
  assert.equal(r.status,1,r.stdout);
  assert.match(r.stderr,cause);
  assert.match(r.stderr,/nothing was minted/);
- assert.match(r.stderr,/oats inspect --(?:soul|home) \S+ --dir \S+ --json/,'the fix names the read to repair');
+ // Before the home's soul is known, the read to repair is the home's; after, the soul's.
+ const subject=flag==='home'?`--home ${f.home}`:'--soul dev';
+ assert.ok(r.stderr.includes(`run oats inspect ${subject} --dir ${f.deployment} --json in the deployment`),r.stderr);
  assert.doesNotMatch(r.stderr,/SECRET/);
  assert.deepEqual(f.mints(),[]);
 });
@@ -91,4 +93,32 @@ for(const [name,extra,cause] of [
  assert.match(r.stderr,/oats aweb join --labels joined --plan/);
  assert.doesNotMatch(r.stdout+r.stderr,new RegExp(TOKEN));
  assert.doesNotMatch(r.stderr,/aweb\.example\.invalid|something odd/,'none of aw\'s own output is relayed');
+});
+
+// The live settings name a root for the team that cannot mint: each says why, before any mint.
+for(const [name,live,cause] of [
+ ['roots is not a map',()=>({roots:[]}),/cannot join team joined:example\.invalid: the live settings\.oats\.aweb\.roots is not a map; nothing was minted; check settings\.oats\.aweb\.roots/],
+ ['the root has no readable .aw',({base})=>({roots:{[TEAM]:join(base,'no-aw')}}),/cannot join team joined:example\.invalid: the live roots\[team\] root is missing, not absolute or has no readable \.aw; nothing was minted; check settings\.oats\.aweb\.roots/],
+]) test(`a live root that ${name} refuses before any mint, naming the cause and the fix`, t=>{
+ const f=fixture(t,{live:({defaultRoot,addedRoot})=>live({base:dirname(dirname(dirname(defaultRoot))),defaultRoot,addedRoot})});
+ mkdirSync(join(dirname(dirname(dirname(f.defaultRoot))),'no-aw'),{recursive:true});
+ const r=f.run(['join','--labels','joined']);
+ assert.equal(r.status,1,r.stdout);
+ assert.match(r.stderr,cause);
+ assert.match(r.stderr,/oats aweb setup --join joined --invite-stdin/);
+ assert.deepEqual(f.mints(),[]);
+});
+
+// A spawn-time join (settings.join) has no home to run --plan from: its invite failure names
+// the root and the setting that chose it, and no --plan hint.
+test('a spawn-time join whose invite fails names root and setting, with no --plan hint', t=>{
+ const f=fixture(t);
+ const env={OATS_EVENT:'spawn',OATS_WORKSPACE:f.deployment,OATS_RUNTIME:'claude',OATS_SETTINGS:JSON.stringify({join:'joined',roots:{[DEFAULT]:f.defaultRoot,[TEAM]:f.addedRoot}}),AW_INVITE_FAIL:'1',AW_INVITE_FAIL_STDERR:`something odd ${TOKEN}`};
+ const r=f.run(['spawn'],env);
+ assert.equal(r.status,1,r.stdout+r.stderr);
+ const warning=JSON.parse(r.stdout).warning;
+ assert.match(warning,/aw team invite failed \(exit 5\)/);
+ assert.match(warning,/nothing was joined; root /);
+ assert.doesNotMatch(warning,/--plan/);
+ assert.doesNotMatch(r.stdout+r.stderr,new RegExp(TOKEN));
 });

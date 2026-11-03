@@ -60,7 +60,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
-import { AW_ERROR_CODES, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
+import { awErrorCode, leadingJsonObject, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -100,18 +100,11 @@ const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
  *  `aweb: http <status> (<headers>): <body>`; only a string `detail` of a JSON
  *  body is taken, never the headers or any other text. */
 const TOKEN_SHAPED_RE = /[A-Za-z0-9_\-.~+/=]{20,}/g;
-/** aw's --json error code (`{"error":{"code":...}}`), only when AW_ERROR_CODES lists it. */
-function awErrorCode(stdout) {
-  try {
-    const code = leadingJsonObject(String(stdout ?? "").trim())?.error?.code;
-    return AW_ERROR_CODES.has(code) ? code : undefined;
-  } catch { return undefined; }
-}
 function failureClass(e) {
   const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
   const http = /\bhttp (\d{3})\b/.exec(text);
   // Without an HTTP status, still a cause from a fixed vocabulary (awebai/oats-aweb#52).
-  if (!http) return withheldFailureCause({ text, code: awErrorCode(e?.stdout) });
+  if (!http) return withheldFailureCause({ stderr: e?.stderr, stdout: e?.stdout });
   let detail;
   const body = text.indexOf("{", http.index);
   if (body >= 0) { try { const doc = leadingJsonObject(text.slice(body)); if (typeof doc?.detail === "string") detail = doc.detail; } catch { /* no JSON body */ } }
@@ -221,23 +214,6 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
-/** The JSON object that `text` starts with, ignoring whatever follows it. */
-function leadingJsonObject(text) {
-  let depth = 0, inString = false, escaped = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === '"') inString = false;
-      continue;
-    }
-    if (c === '"') inString = true;
-    else if (c === "{") depth++;
-    else if (c === "}" && --depth === 0) return JSON.parse(text.slice(0, i + 1));
-  }
-  throw new Error("unterminated JSON object");
-}
 /** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
  *  prints progress before it. A top-level object (one opening at column 0) may also be followed
  *  by notes (`aw workspace status` appends its gone-workspace checks); an indented line is never
@@ -399,10 +375,12 @@ function rootSettingCandidate(team = defaultTeamId()) {
   return fallback ? { root: fallback, key: "settings.oats.aweb.root", declared: false } : undefined;
 }
 /** Which setting chose `team`'s minting root, as a failure names it: `roots[team]`, `root`,
- *  or, for the default team with neither set, the deployment directory itself. */
+ *  or, for the default team with neither set, rootSettingCandidate's fallback: the workspace
+ *  directory (OATS_WORKSPACE) or the current directory. */
 function rootSourceOf(team) {
   const declared = declaredRootCandidate(team);
-  return !declared ? "the deployment directory" : declared.key === "settings.oats.aweb.root" ? "root" : "roots[team]";
+  if (declared) return declared.key === "settings.oats.aweb.root" ? "root" : "roots[team]";
+  return process.env.OATS_WORKSPACE ? "the workspace directory" : "the current directory";
 }
 function awebRootProblem(candidate) {
   if (!candidate?.root) return `no messaging root at ${process.cwd()}: run oats aweb setup there or set settings.oats.aweb.root`;
@@ -1356,7 +1334,8 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   catch (e) {
     // aw's own output stays withheld (it can hold a token); the failure says
     // which root and setting minted, the class of the cause and where to look.
-    throw new Error(`${e.message || e}; nothing was joined; check with oats aweb join --labels ${row.label} --plan; root ${root} (from ${source})`);
+    // A spawn-time join has no home yet to run --plan from: the root and its setting are enough.
+    throw new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`);
   }
   const inv = parseSecretJson(minted, "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
