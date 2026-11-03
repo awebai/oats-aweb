@@ -205,8 +205,9 @@ for(const key of ['"joined:example.invalid"', "'joined:example.invalid'", 'joine
 // shipped procedure (never run against a live aw), so the docs say only that.
 test('docs say nested roots are not migrated and ship no move procedure', () => {
  const repo=fileURLToPath(new URL('..',import.meta.url));
- const changelog=readFileSync(join(repo,'CHANGELOG.md'),'utf8'), unreleased=changelog.slice(changelog.indexOf('## Unreleased'),changelog.indexOf('\n## ',changelog.indexOf('## Unreleased')+1));
- for(const [name,text] of [['CHANGELOG Unreleased',unreleased],['README',readFileSync(join(repo,'README.md'),'utf8')],['skill',readFileSync(join(repo,'oats-package','capabilities','oats-aweb','skills','oats-aweb','SKILL.md'),'utf8')]]){
+ // #45 shipped in 1.36.0: its CHANGELOG section carries the sentence.
+ const changelog=readFileSync(join(repo,'CHANGELOG.md'),'utf8'), released=changelog.slice(changelog.indexOf('## 1.36.0'),changelog.indexOf('\n## ',changelog.indexOf('## 1.36.0')+1));
+ for(const [name,text] of [['CHANGELOG 1.36.0',released],['README',readFileSync(join(repo,'README.md'),'utf8')],['skill',readFileSync(join(repo,'oats-package','capabilities','oats-aweb','skills','oats-aweb','SKILL.md'),'utf8')]]){
   const flat=text.replace(/\s+/g,' ');
   assert.match(flat,/Existing nested roots keep working and are not migrated; to move one, ask your aweb lead\./,name);
   assert.doesNotMatch(flat,/aw workspace connect --team <(?:team id|T)>/,`${name} ships no move steps`);
