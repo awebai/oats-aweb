@@ -5,6 +5,14 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.33.3 — tested with aw 1.36.53
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33, and the tested aw moves to
+1.36.53, npm's `latest`. A resident create whose API key is refused can be rerun:
+aw 1.36.53 mints nothing on that refusal, and the rerun runs aw again. The
+unread-count warning follows whether health publishes now, inside readiness's
+time budget, and the alias-conflict refusal names its remedy plainly.
+
 ## 1.33.2 — a warning when aw is newer than its server
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33. Off the aweb Cloud,

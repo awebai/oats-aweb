@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.33.3 — 2026-11-03
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw moves to 1.36.53.
+
+- **Tested with aw 1.36.53.** `AW_TESTED` moves from 1.36.51 to 1.36.53, the
+  aw npm `latest` now that the Cloud serves invite preview. CI's journeys run
+  on 1.36.33 and 1.36.53, and `aw-newer-than-tested` warns only above 1.36.53;
+  the pin it and the mint refusal name is `npm i -g @awebai/aw@1.36.53`. The
+  floor is unchanged.
 - **A resident create whose API key is refused can simply be rerun.** aw
   1.36.53 reads an API key's team before it mints anything, and takes its
   recovery lock `.aw/partial-init.yaml.lock` first. A refused key (wrong,
@@ -13,13 +22,16 @@
   refused. The failure says `nothing was created; fix what aw reports above,
   then rerun the same command`, and a rerun within the same second keeps the
   earlier run's captures.
-
 - **The unread-count warning follows a later `health enable`.** A home's
   readiness warning `unread-count-unavailable` now reads whether health
   publishes now, from the soul's current settings, as the per-minute observer
   does, instead of the settings captured at the home's spawn. A home spawned
   before `oats aweb health enable` warns once it is enabled; one spawned while
   it was on stops warning once it is disabled.
+- **That check stays inside readiness's time budget.** Its kernel query now
+  shares the readiness phase's deadline, as the phase's aw calls do, so a slow
+  kernel can't push a home's readiness past it; a query with no time left is
+  skipped and the check stays silent.
 - **The alias-conflict spawn refusal reads plainly.** When another agent's
   certificate holds the alias, spawn says so with no ticket id or kernel
   version: another machine's instance has that name, or a retired one still
@@ -28,15 +40,6 @@
   Retire's warning for an alias the server has not released yet drops the
   kernel version the same way: spawn successors with a different `--name` or
   `--purpose` until it is released.
-- **That check stays inside readiness's time budget.** Its kernel query now
-  shares the readiness phase's deadline, as the phase's aw calls do, so a slow
-  kernel can't push a home's readiness past it; a query with no time left is
-  skipped and the check stays silent.
-- **Tested with aw 1.36.53.** `AW_TESTED` moves from 1.36.51 to 1.36.53, the
-  aw npm `latest` now that the Cloud serves invite preview. CI's journeys run
-  on 1.36.33 and 1.36.53, and `aw-newer-than-tested` warns only above 1.36.53;
-  the pin it and the mint refusal name is `npm i -g @awebai/aw@1.36.53`. The
-  floor is unchanged.
 
 ## 1.33.2 — 2026-11-02
 
