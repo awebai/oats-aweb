@@ -450,6 +450,29 @@ test("teams document uses eligible non-default rows and preserves visible live l
   assert.match(events, /aweb-team-left/);
 });
 
+test("a joined team that becomes the live default stays joined until the home is respawned", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { settings: { join: "shared" } });
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  const spawnCalls = fake.calls().length;
+  // The workspace makes `shared` the default; this home's primary identity is
+  // still in `personal`, where it was spawned.
+  const envAfterMove = { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(doc.meta), OATS_DEFAULT_TEAM: "shared", OATS_DEFAULT_TEAM_ID: "shared:example.test", OATS_DEFAULT_TEAM_FROM: "workspace",
+    OATS_TEAMS: JSON.stringify([{ label: "shared", team: "shared:example.test", default: true, from: "shared" }, { label: "personal", team: "default:example.test", default: false, from: "local" }]) };
+  const launch = runHook("launch", { cwd: fx.home, env: envAfterMove });
+  assert.equal(launch.status, 0, launch.stdout + launch.stderr);
+  const launched = JSON.parse(launch.stdout);
+  assert.doesNotMatch(launched.warning || "", /left joined team/);
+  assert.match(launched.warning, /kept joined team shared: it is now the default team, and this home's primary identity is still in personal; respawn to move it/);
+  assert.deepEqual(launched.meta.joinedTeams.map((j) => j.label), ["shared"]);
+  assert.equal(launched.meta.left?.length || 0, 0);
+  assert.deepEqual(launched.meta.defaultTeam, doc.meta.defaultTeam, "the recorded primary team is unchanged");
+  const events = join(fx.home, ".oats-events.jsonl");
+  assert.doesNotMatch(existsSync(events) ? readFileSync(events, "utf8") : "", /aweb-team-left/);
+  assert.equal(fake.calls().slice(spawnCalls).some((c) => c.args[0] === "workspace" && c.args[1] === "delete"), false, "no aw call leaves the team");
+  assert.ok(existsSync(join(fx.home, ".aweb-identity-shared")), "the joined identity home is kept");
+});
+
 test("failed lost-team leave appends a durable event and keeps the team joined", (t) => {
   const fake = fakeAw117(t);
   const fx = fixture(t, { settings: { join: "shared" } });
