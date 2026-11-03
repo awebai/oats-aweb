@@ -301,6 +301,25 @@ for (const init of ["nothing", "lock-nothing"]) {
   });
 }
 
+test("an init that leaves anything unrecognised says provisioning left nothing to continue, names R's contents and the capture, and the rerun is refused before init", (t) => {
+  const s = setup(t, { init: "stray" });
+  const r = s.run(["create", NAME, "--json"]);
+  assert.equal(r.status, 1);
+  assert.equal(r.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
+  const capture = r.doc.error.details.captures.find((p) => p.endsWith(".stderr"));
+  assert.equal(r.doc.error.message, `${fixture("init-apikey-registry-local").stderr.trim()}\nprovisioning left nothing to continue; ${s.root} contains .aw, .oats-resident; contact aweb with ${capture}`);
+  const before = { root: readdirSync(s.root).sort(), aw: readdirSync(join(s.root, ".aw")).sort() };
+  assert.deepEqual(before.aw, ["partial-init.yaml.lock", "x"]);
+  // R is not create-shaped: the rerun is refused before init, and nothing in
+  // R was deleted.
+  const again = s.run(["create", NAME, "--json"]);
+  assert.equal(again.doc.error.code, "E_RESIDENT_ROOT");
+  assert.equal(initCalls(s.fake).length, 1);
+  assert.deepEqual(readdirSync(s.root).sort(), before.root);
+  assert.deepEqual(readdirSync(join(s.root, ".aw")).sort(), before.aw);
+  assert.equal(readdirSync(join(s.root, ".oats-resident")).length, 3);
+});
+
 test("rootState: only an init that minted nothing counts as create; anything else keeps its state or is refused", (t) => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-rootstate-"));
   t.after(() => rmSync(base, { recursive: true, force: true }));

@@ -51,7 +51,8 @@ ${body}`;
  *   registry refusal; the partial stays as it was), "nothing" (aw refuses
  *   AWID_REGISTRY_URL=local and leaves nothing), "lock-nothing" (that refusal
  *   after taking aw's recovery lock, as aw 1.36.53 does before an API key's
- *   team read, so .aw holds only partial-init.yaml.lock), "rejected" (aw's refusal of a
+ *   team read, so .aw holds only partial-init.yaml.lock), "stray" (that
+ *   refusal leaving the lock and one unrecognised .aw entry, x), "rejected" (aw's refusal of a
  *   quarantined partial), "echo-key" (a hostile aw that prints its AWEB_API_KEY on
  *   both streams and fails, leaving nothing).
  * linger: "yes" | "no" (loginctl's answer).
@@ -87,6 +88,7 @@ if (argv[0] === "init") {
   if (state.init === "rejected") replay(f["init-apikey-rejected"]);
   if (state.init === "nothing") replay(f["init-apikey-registry-local"]);
   if (state.init === "lock-nothing") { mark("partial-init.yaml.lock"); replay(f["init-apikey-registry-local"]); }
+  if (state.init === "stray") { mark("partial-init.yaml.lock", "x"); replay(f["init-apikey-registry-local"]); }
   if (state.init === "echo-key") { const k = process.env.AWEB_API_KEY || ""; process.stdout.write("key " + k + "\\n"); process.stderr.write("rejected key " + k + "\\n"); process.exit(1); }
 }
 if (argv[0] === "whoami") replay(f["whoami"]);
