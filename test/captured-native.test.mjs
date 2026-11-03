@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {invocationFor,FIXTURE_INCARNATION_ID} from './helpers/invocation-fixture.mjs';
+import {describeTaskCoordination} from './helpers/task-coordination-text.mjs';
 const cap=process.env.OATS_S3_BASELINE_CAP||fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/',import.meta.url));
 function fixture(t,{runtime='codex',version='0.24.2',nativeMode='normal',projection=true}={}){
  const root=fs.realpathSync(fs.mkdtempSync(join(tmpdir(),'aweb-native-adapter-')));t.diagnostic('preserved fixture '+root);
@@ -36,6 +37,10 @@ else {console.error('unexpected fake native command');process.exit(93);}
  const readCalls=()=>fs.existsSync(calls)?fs.readFileSync(calls,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
  return{root,home,work,deployment,binding,context,invocation,env,save,run,readCalls};
 }
+test('the captured brief never mentions task coordination',t=>{
+ const f=fixture(t),r=f.run();assert.equal(r.status,0,r.stdout+r.stderr);assert.ok(r.output.brief);
+ const found=describeTaskCoordination('captured-native brief',r.output.brief);assert.deepEqual(found,[],found.join('\n'));
+});
 test('captured session policy and native HOME setup use selected identity/team and normal registration',t=>{
  const f=fixture(t),r=f.run();assert.equal(r.status,0,r.stdout+r.stderr);assert.equal(r.output.meta.team,f.binding.payload.privateTeam.id);assert.equal(r.output.meta.did,'did:key:zFixtureOwnIdentity');assert.deepEqual(r.output.env,{AWEB_DELIVERY:'session'});assert.match(r.output.brief,/waiting-items line/);assert.match(r.output.brief,/aweb mail event received\./);assert.match(r.output.brief,/trust_status/);assert.match(r.output.brief,/untrusted sender content/);assert.match(r.output.brief,/delivered mail may not appear in unread aw mail inbox/);assert.match(r.output.brief,/aw mail show --message-id <id> --json/);assert.match(r.output.brief,/aw mail inbox --show-all --json/);assert.match(r.output.brief,/Read state is not completion/);assert.match(r.output.brief,/--conversation-id.*not a recovery check/);assert.doesNotMatch(r.stdout+r.stderr,/SYNTHETIC-INVITE/);
  const calls=f.readCalls();assert.equal(calls[0].cwd,f.deployment);assert.equal(calls[1].cwd,f.home);assert.deepEqual(calls.at(-1).args,['wake','register','--home',f.home,'--identity-home',join(f.home,'.aw'),'--delivery','session']);

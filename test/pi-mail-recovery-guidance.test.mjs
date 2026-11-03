@@ -10,7 +10,7 @@ test("the always-loaded inject triggers recovery even when the skill or wake is 
   const inject = readFileSync(new URL("../oats-package/capabilities/oats-aweb/injects/aweb.md", import.meta.url), "utf8").replace(/\s+/g, " ");
   assert.match(inject, /on pi with `@awebai\/pi` 0\.4\.0 after any interrupted turn and at task boundaries/);
   assert.match(inject, /at task boundaries \(load `\/oats-aweb` section 4\), reconcile/);
-  assert.match(inject, /STATE and task records against exact (?:delivered )?ids/);
+  assert.match(inject, /STATE and your own records against exact (?:delivered )?ids/);
   assert.match(inject, /`aw mail inbox --show-all --json` (?:paged )?with `--cursor`/);
 });
 

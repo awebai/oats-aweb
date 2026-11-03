@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
+import { describeTaskCoordination } from "./helpers/task-coordination-text.mjs";
 import { DEFAULT_GRANT_TTL, resolveGrantTTL } from "../oats-package/capabilities/oats-aweb/lib/grant-duration.mjs";
 import { custodyPreflight } from "../oats-package/capabilities/oats-aweb/lib/grant-custody.mjs";
 import { grantExpiryAssessment } from "../oats-package/capabilities/oats-aweb/lib/grant-expiry.mjs";
@@ -103,6 +104,16 @@ test("a never-grant is recorded as never, and the brief says it never expires", 
 });
 
 // ------------------------------------------------- mint receipt validation
+
+test("a grant seat's brief, warnings and readiness never mention task coordination", (t) => {
+  const s = seat(t);
+  const r = s.spawn({});
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.doc.brief, /through a session grant/);
+  const found = ["brief", "warning"].flatMap((field) => describeTaskCoordination(`grant-seat spawn ${field}`, r.doc[field] || ""));
+  found.push(...describeTaskCoordination("grant-seat readiness", JSON.stringify(s.readiness({}))));
+  assert.deepEqual(found, [], found.join("\n"));
+});
 
 test("a minted expiry must match the request: anything else fails closed, revokes and keeps nothing", (t) => {
   for (const [identity, expires] of [[{}, ""], [{}, "soon"], [{}, "2026-02-30T00:00:00Z"], [{ ttl: "24h" }, "never"], [{ ttl: "24h" }, "soon"]]) {
