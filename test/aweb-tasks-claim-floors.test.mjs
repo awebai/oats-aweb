@@ -126,11 +126,11 @@ test('the readers: the launch record, the config dirs, and the installed version
   // The launch record, as oats.aweb reads it.
   assert.equal(floors.recordedLaunch(home), undefined, 'no record');
   write(join(home, 'instance.json'), { harness: 'claude', launch: { harness: 'pi', env: { X: '1' } }, capabilityMeta: { 'oats.aweb': { delivery: 'session' } } });
-  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'pi', delivery: 'session', recordedDelivery: 'session', env: { X: '1' } });
+  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'pi', delivery: 'session', recordedDelivery: 'session', env: { X: '1' }, joinedTeams: undefined });
   write(join(home, 'instance.json'), { launch: { harness: 'pi' }, capabilityMeta: { 'oats.aweb': { runtime: 'claude' } } });
-  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'pi', delivery: 'channel', recordedDelivery: undefined, env: {} }, 'the kernel\'s launched harness first, as oats.aweb readiness reads it');
+  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'pi', delivery: 'channel', recordedDelivery: undefined, env: {}, joinedTeams: undefined }, 'the kernel\'s launched harness first, as oats.aweb readiness reads it');
   write(join(home, 'instance.json'), { harness: 'codex', launch: {}, capabilityMeta: { 'oats.aweb': { runtime: 'claude', delivery: 'bogus' } } });
-  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'codex', delivery: 'channel', recordedDelivery: undefined, env: {} }, 'then the record\'s harness; an unknown delivery is unrecorded');
+  assert.deepEqual(floors.recordedLaunch(home), { runtime: 'codex', delivery: 'channel', recordedDelivery: undefined, env: {}, joinedTeams: undefined }, 'then the record\'s harness; an unknown delivery is unrecorded');
   write(join(home, 'instance.json'), { launch: {}, capabilityMeta: { 'oats.aweb': { runtime: 'claude' } } });
   assert.equal(floors.recordedLaunch(home).runtime, 'claude', 'then oats.aweb\'s runtime');
   write(join(home, 'instance.json'), { harness: 'claude' });
@@ -200,19 +200,20 @@ test('awebChecksDaemon agrees with oats.aweb\'s own brokerRequired for the same 
   const dir = scratch(t, 'aweb-tasks-agree-');
   let n = 0;
   const cases = [];
-  for (const harness of ['codex', 'claude', 'pi']) for (const delivery of ['channel', 'session', undefined]) for (const joined of ['none', 'one', 'polled']) {
+  for (const harness of ['codex', 'claude', 'pi']) for (const delivery of ['channel', 'session', undefined]) for (const joined of ['none', 'one', 'polled', 'meta-only']) {
     const home = join(dir, `h${n++}`), identity = join(home, '.aweb-identity-shared');
     mkdirSync(join(home, '.aw'), { recursive: true }); mkdirSync(identity);
-    write(join(home, 'instance.json'), { launch: { harness }, capabilityMeta: { 'oats.aweb': { ...(delivery ? { delivery } : {}), runtime: harness } } });
     const teams = joined === 'none' ? [] : [{ label: 'shared', team: 'shared:example.invalid', identityHome: identity, ...(joined === 'polled' ? { expectedPoll: true } : {}) }];
-    write(join(home, '.oats-aweb', 'teams.json'), { joinedTeams: teams });
+    // meta-only: a legacy home whose joins are only in oats.aweb's metadata.
+    write(join(home, 'instance.json'), { launch: { harness }, capabilityMeta: { 'oats.aweb': { ...(delivery ? { delivery } : {}), runtime: harness, ...(joined === 'meta-only' ? { joinedTeams: teams } : {}) } } });
+    if (joined !== 'meta-only') write(join(home, '.oats-aweb', 'teams.json'), { joinedTeams: teams });
     const theirs = expectedReceive(home, { policy: { root: join(dir, 'no-policy') } });
     if (theirs.problems.length) continue;  // oats.aweb reads no daemon at all then
     cases.push(`${harness}/${delivery}/${joined}`);
     assert.equal(floors.awebChecksDaemon(home, floors.recordedLaunch(home)), theirs.brokerRequired, `${harness} ${delivery ?? 'unrecorded'} joined:${joined}`);
   }
   t.diagnostic(`compared: ${cases.join(' ')}`);
-  for (const c of ['codex/channel/none', 'pi/channel/none', 'pi/channel/one', 'claude/channel/polled', 'claude/session/none']) assert.ok(cases.includes(c), `${c} is compared`);
+  for (const c of ['codex/channel/none', 'pi/channel/none', 'pi/channel/one', 'claude/channel/polled', 'claude/session/none', 'pi/undefined/meta-only']) assert.ok(cases.includes(c), `${c} is compared`);
   // A record oats.aweb can't use: this check warns rather than assume it does.
   assert.equal(floors.awebChecksDaemon(join(dir, 'nowhere'), undefined), false);
 });

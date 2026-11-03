@@ -11,7 +11,7 @@
 // Everything here is read-only and bounded. A version that cannot be read gives
 // no item: the floors apply where the version is readable.
 import { spawnSync } from 'node:child_process';
-import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { parseVersion, versionAtLeast } from './version.mjs';
 
@@ -39,6 +39,8 @@ const canon = (p) => { try { return realpathSync(p); } catch { return resolve(p)
 // Opening never blocks (a FIFO at the path) and never follows a link swapped in
 // after the path was resolved; the descriptor is then checked to be a file.
 const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
+
+const absent = (file) => { try { lstatSync(file); return false; } catch (e) { return e.code === 'ENOENT'; } };
 
 /** JSON from `file`, read only when it resolves to a regular file inside
  *  `base` (no link out of it) of at most 1 MiB; undefined otherwise. */
@@ -73,7 +75,8 @@ export function recordedLaunch(home) {
   const id = (v) => typeof v === 'string' && v ? v : undefined;
   const recordedDelivery = ['channel', 'session'].includes(meta.delivery) ? meta.delivery : undefined;
   return { runtime: id(doc.launch.harness) ?? id(doc.harness) ?? (typeof meta.runtime === 'string' ? meta.runtime : undefined),
-    delivery: recordedDelivery ?? 'channel', recordedDelivery, env: object(doc.launch.env) ? doc.launch.env : {} };
+    delivery: recordedDelivery ?? 'channel', recordedDelivery, env: object(doc.launch.env) ? doc.launch.env : {},
+    joinedTeams: Array.isArray(meta.joinedTeams) ? meta.joinedTeams : undefined };
 }
 
 /** Whether oats.aweb's readiness checks the host wake daemon for this home, so
@@ -81,7 +84,9 @@ export function recordedLaunch(home) {
  *  home needs the broker (wake-receive.mjs expectedReceive, brokerRequired):
  *  the primary receives through it (Codex, `delivery: session`, or a runtime
  *  with no channel), or a joined team does (every joined team in
- *  .oats-aweb/teams.json, except those a Claude channel home polls). A record
+ *  .oats-aweb/teams.json, except those a Claude channel home polls; a legacy
+ *  record without delivery or runtime and without that file keeps its joins in
+ *  oats.aweb's metadata, as expectedReceive reads them). A record
  *  that does not show either, or cannot be read, is false, so this check warns
  *  rather than leave a daemon below AW_MIN unwarned. (oats.aweb also reports
  *  configuration problems before it reads the daemon; the warning follows once
@@ -93,9 +98,11 @@ export function awebChecksDaemon(home, launch) {
     || (recordedDelivery === 'channel' && runtime !== undefined && runtime !== 'claude' && runtime !== 'pi');
   if (primaryBroker) return true;
   const claudeChannel = recordedDelivery === 'channel' && runtime === 'claude';
-  const state = readJsonInside(home, join(home, '.oats-aweb', 'teams.json'));
-  if (!Array.isArray(state?.joinedTeams)) return false;
-  return state.joinedTeams.some((j) => object(j) && !(claudeChannel && j.expectedPoll === true));
+  const file = join(home, '.oats-aweb', 'teams.json');
+  const legacy = recordedDelivery === undefined || runtime === undefined;
+  const joined = absent(file) ? (legacy ? launch.joinedTeams : undefined) : readJsonInside(home, file)?.joinedTeams;
+  if (!Array.isArray(joined)) return false;
+  return joined.some((j) => object(j) && !(claudeChannel && j.expectedPoll === true));
 }
 
 /** The row of `aw wake status --json` that lists `home`, or undefined. */
