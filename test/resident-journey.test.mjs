@@ -129,7 +129,8 @@ test("registration at awid, a forced failure with no key anywhere, and a rerun t
   assert.equal(first.status, 1, first.stdout + first.stderr);
   if (j.teamReadFirst) {
     // The refusal is aw's own, and nothing was minted: no partial, so no rerun
-    // continues; R holds only the captures, which a rerun refuses to init into.
+    // continues; R holds only the captures and the .aw aw began, which a rerun
+    // refuses to init into.
     assert.equal(first.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
     const captured = (kind) => readFileSync(first.doc.error.details.captures.find((p) => p.endsWith(kind)), "utf8").trim();
     const awText = captured(".stderr") || captured(".stdout");
