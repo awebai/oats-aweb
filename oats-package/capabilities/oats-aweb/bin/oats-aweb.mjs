@@ -63,9 +63,10 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from
 import { awErrorCode, leadingJsonObject, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
+import { AW_INVITE_INSPECT, checkInviteLabel, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
-import { AW_TESTED } from "../lib/aw-floor.mjs";
+import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
@@ -1276,9 +1277,11 @@ function connectExistingJoinedTeam({ label, identityHome, expectedTeam, root, cw
   }
   return { label, team, identityHome, receive: "poll", since: new Date().toISOString() };
 }
-function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true }) {
+function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true, tokenStdin = false }) {
   if (!token || typeof token !== "string") throw new Error(`aw id team accept-invite received no invite token for ${label}`);
-  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", token, flagEq("--name", requestedAlias), "--local", "--json"]), cwd, JOIN_TIMEOUT_MS, { secrets: [token], secretSafe: true }), "aw id team accept-invite");
+  // tokenStdin (aw 1.36.53): the token reaches aw on stdin, never its argv.
+  const tokenArgs = tokenStdin ? ["--token-stdin"] : [token];
+  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", ...tokenArgs, flagEq("--name", requestedAlias), "--local", "--json"]), cwd, JOIN_TIMEOUT_MS, { secrets: [token], secretSafe: true, ...(tokenStdin ? { input: `${token}\n` } : {}) }), "aw id team accept-invite");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`aw id team accept-invite returned no usable result for joined team ${label}`);
   const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : requestedAlias;
   const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : expectedTeam;
@@ -2202,7 +2205,7 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
-  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>]]";
+  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
   let setupDir, setupLabel, setupPlan = false;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
@@ -2237,8 +2240,8 @@ if (event === "launch") {
   if ((setupLabel !== undefined || setupPlan) && !username) { console.error(`oats aweb setup: --label/--plan require --username\n${usage}`); process.exit(2); }
   if (createNamespace && !createLabel) { console.error(`oats aweb setup: --namespace requires --create\n${usage}`); process.exit(2); }
   if (invite && inviteStdin) { console.error(`oats aweb setup: --invite and --invite-stdin cannot be combined\n${usage}`); process.exit(2); }
-  if (invite && !joinLabel) { console.error(`oats aweb setup: --invite requires --join <label> so the team gets its own root\n${usage}`); process.exit(2); }
-  if (inviteStdin && !joinLabel) { console.error(`oats aweb setup: --invite-stdin requires --join <label> so the team gets its own root\n${usage}`); process.exit(2); }
+  // --invite / --invite-stdin without --join (#56): the label comes from the invite.
+  const inviteForm = (!!invite || inviteStdin) && !joinLabel;
   if (checkOnly && (username || createLabel || joinLabel || invite || inviteStdin)) { console.error(`oats aweb setup: --check-only cannot be combined with --username, --create, --join or --invite\n${usage}`); process.exit(2); }
   if (awVersion && !installAw) { console.error(`oats aweb setup: --aw-version requires --install-aw\n${usage}`); process.exit(2); }
   if (awVersion && !AW_VERSION_SPEC_RE.test(awVersion)) { console.error(`oats aweb setup: --aw-version must be a version such as ${AW_MIN}, ^${AW_MIN} or ~${AW_MIN}\n${usage}`); process.exit(2); }
@@ -2247,7 +2250,7 @@ if (event === "launch") {
     try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }
     if (!invite) { console.error("oats aweb setup: --invite-stdin read no invite token from stdin"); process.exit(1); }
   }
-  if ((joinService || (joinName && !username)) && !joinLabel) { console.error(`oats aweb setup: --service/--name require --join <label>\n${usage}`); process.exit(2); }
+  if ((joinService || (joinName && !username)) && !joinLabel && !inviteForm) { console.error(`oats aweb setup: --service/--name require --join <label> or an invite\n${usage}`); process.exit(2); }
   // New hosted accounts have no recorded root alias to reuse. Require the
   // operator's explicit name before installation, directory creation or init.
   if (username && (!joinName || !AWEB_ALIAS_RE.test(joinName))) {
@@ -2255,7 +2258,7 @@ if (event === "launch") {
     process.exit(2);
   }
   const apiKey = !!process.env.AWEB_API_KEY;
-  const actions = [username ? "--username" : null, joinLabel ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
+  const actions = [username ? "--username" : null, joinLabel || inviteForm ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
 
   if (username) {
@@ -2280,9 +2283,27 @@ if (event === "launch") {
     }
   }
 
-  let joinConfiguration;
-  if (joinLabel) {
-    try { joinConfiguration = prepareJoinConfiguration(joinLabel, selectedDeployment(process.env, setupDir), { validTeam: validAwebTeamId }); }
+  let joinConfiguration, inviteEnvelope;
+  if (joinLabel || inviteForm) {
+    try {
+      const selected = selectedDeployment(process.env, setupDir);
+      if (inviteForm) {
+        // The invite names its team and service; nothing is redeemed until every check passes.
+        requireInviteInspect(await readAwVersion());
+        inviteEnvelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId });
+        joinLabel = normalizeAwebTeamName(inviteEnvelope.team.slice(0, inviteEnvelope.team.indexOf(":")));
+        if (!joinService) joinService = inviteEnvelope.service;
+      }
+      joinConfiguration = prepareJoinConfiguration(joinLabel, selected, { validTeam: validAwebTeamId });
+      if (inviteEnvelope) checkInviteLabel({ label: joinLabel, mappedTeam: joinConfiguration.expectedTeam, inviteTeam: inviteEnvelope.team, explicit: false });
+      else if (invite && joinConfiguration.expectedTeam && versionAtLeast(await readAwVersion(), AW_INVITE_INSPECT)) {
+        // --join L with an invite (released): where aw can read the invite, a mapped label
+        // must be its team. An invite aw cannot read keeps the released behaviour.
+        let envelope;
+        try { envelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId }); } catch { envelope = undefined; }
+        if (envelope) checkInviteLabel({ label: joinLabel, mappedTeam: joinConfiguration.expectedTeam, inviteTeam: envelope.team, explicit: true });
+      }
+    }
     catch (error) {
       const problem = { code: error.code || "E_SETUP_DEPLOYMENT", message: error.message, details: error.details };
       if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: problem }));
@@ -2385,7 +2406,7 @@ ${JSON.stringify(problem.details || {})}`);
       try { mkdirSync(teamRoot); createdRoot = true; }
       catch (e) { if (e.code !== "EEXIST" || !statSync(teamRoot).isDirectory()) throw e; }
       try {
-        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
+        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false, tokenStdin: !!inviteEnvelope }));
       } catch (e) {
         // A recorded root may contain operator data or be the deployment itself.
         // Roll back only our newly created, still-empty directory; retain any
@@ -2537,14 +2558,18 @@ ${JSON.stringify(problem.details || {})}`);
     }
     if (joinLabel) {
       if (!json) console.log(invite ? `Accepting invite for ${joinLabel} into a new per-team root (token withheld).` : `Resuming join for ${joinLabel} in its per-team root.`);
-      const accepted = acceptIntoTeamRoot(joinLabel, invite, joinConfiguration.expectedTeam);
+      const accepted = acceptIntoTeamRoot(joinLabel, invite, inviteEnvelope?.team || joinConfiguration.expectedTeam);
       let configuration;
       try { configuration = joinConfiguration.finish(accepted.team); }
       catch (error) { error.details = { ...error.details, ...joinConfiguration.details(), root: accepted.teamRoot }; throw error; }
-      if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { ...accepted, ...configuration } }));
+      // The invite form ends with exactly one next step; the released --join output is unchanged.
+      const next = inviteEnvelope ? `oats spawn ${setupSoulArg()} --preview` : undefined;
+      const fromInvite = inviteEnvelope ? { invite: { kind: inviteEnvelope.kind, team: inviteEnvelope.team, service: inviteEnvelope.service }, next } : {};
+      if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { ...accepted, ...configuration, ...fromInvite } }));
       else {
         console.log(`✓ joined ${accepted.team} as ${joinLabel} in ${accepted.teamRoot}; recorded settings.oats.aweb.roots[${accepted.team}].`);
         console.log(JSON.stringify(configuration));
+        if (next) console.log(`Next: \`${next}\``);
       }
       process.exit(0);
     }

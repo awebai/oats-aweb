@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Setup from an invite alone (#56).** `oats aweb setup --invite-stdin
+  --name <alias>` (or `--invite <token>`) without `--join` reads the invite's
+  team and service with `aw team invite inspect --json`, which takes the token
+  on stdin and redeems nothing, and derives the label from the team's name,
+  normalized as `--create` does. It then joins as `--join` does: a root beside
+  the default at `<deployment>/.aweb-roots/<label>`, `roots[<team id>]`, the
+  local mapping, and the token on `aw id team accept-invite --token-stdin`,
+  never an argv. It ends with one next step, `oats spawn <soul> --preview`.
+  Needs aw 1.36.53 or later; every refusal comes before anything is redeemed:
+  `E_SETUP_AW_VERSION`, `E_SETUP_INVITE_INSPECT`, `E_SETUP_INVITE_CONTROLLER`,
+  `E_SETUP_INVITE_SCOPE` and `E_SETUP_LABEL_COLLISION` (pass `--join <label>`;
+  never a suffix). `--join <label>` is unchanged; with an invite aw can read, a
+  label mapped to another team refuses with `E_SETUP_JOIN_MISMATCH`, naming
+  both. `oats aweb invite` answers the joiner's one-line command beside the
+  token, never holding it: `result.joinCommand`, and on stderr in text mode.
+
 - **A refused `oats aweb join` names its cause and fix (#52).** The join has
   read the deployment's live `roots` since 1.22.0, so a team root added to
   `oats-local.yaml` after the home's spawn is joined without a respawn. Each

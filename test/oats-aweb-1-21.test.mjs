@@ -96,7 +96,7 @@ test("setup --invite-stdin behaves exactly as --invite, with the token on no arg
   assert.match(readFileSync(join(viaStdin, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
 });
 
-test("setup --invite with --invite-stdin is a usage error, and --invite-stdin needs --join", async (t) => {
+test("setup --invite with --invite-stdin is a usage error, and --invite-stdin without --join needs a deployment (#56)", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
   const both = await run(["setup", "--join", "joined", "--invite", "SECRET-X", "--invite-stdin"], deploymentEnv(root, { PATH: fake.path }), root, "SECRET-Y\n");
@@ -104,8 +104,10 @@ test("setup --invite with --invite-stdin is a usage error, and --invite-stdin ne
   assert.match(both.stderr, /--invite and --invite-stdin cannot be combined/);
   assert.doesNotMatch(both.stdout + both.stderr, /SECRET-[XY]/);
   const noJoin = await run(["setup", "--invite-stdin"], deploymentEnv(root, { PATH: fake.path }), root, "SECRET-Y\n");
-  assert.equal(noJoin.code, 2);
-  assert.match(noJoin.stderr, /--invite-stdin requires --join <label>/);
+  assert.equal(noJoin.code, 1);
+  // This root has no oats-local.yaml: the invite form refuses at the deployment, before any aw call.
+  assert.match(noJoin.stderr, /E_SETUP_DEPLOYMENT: selected deployment is missing/);
+  assert.doesNotMatch(noJoin.stdout + noJoin.stderr, /SECRET-[XY]/);
   assert.equal(fake.readCalls().some((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite"), false);
 });
 

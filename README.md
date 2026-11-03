@@ -1034,7 +1034,32 @@ Supported acts:
   before creating anything.
 - `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
-  never accepts into the existing default root.
+  never accepts into the existing default root. With aw 1.36.53 or later, a
+  label already mapped to a team must be the invite's team: otherwise
+  `E_SETUP_JOIN_MISMATCH` names both, before anything is redeemed. An invite
+  that aw cannot read keeps the released behaviour.
+- `oats aweb setup --invite-stdin --name <alias>` (or `--invite <token>`),
+  without `--join` (#56): needs aw 1.36.53 or later. Setup reads the invite's
+  team and service with `aw team invite inspect --json`, which takes the token
+  on stdin and redeems nothing (it makes one preview request to the invite's
+  service). The label is the team's name, normalized as `--create` normalizes
+  it; `--join <label>` chooses another. It then joins as `--join` does: a new
+  root at `<deployment>/.aweb-roots/<label>`, `roots[<team id>]`, the team's
+  local mapping, and the token reaching `aw id team accept-invite` on stdin
+  (`--token-stdin`), never an argv. It ends with one next step,
+  `oats spawn <soul> --preview` (`result.next` with `--json`). The dashboard's
+  `--invite <token>` one-liner works; `printf '%s\n' "$TOKEN" | oats aweb setup
+  --soul <soul> --invite-stdin --name <alias>` keeps the token out of shell
+  history. A deployment with no root identity needs `--name <alias>`. To resume
+  an admitted but unconnected join, run the printed `--join <label>` command
+  without the token. Refusals, all before anything is redeemed:
+  `E_SETUP_AW_VERSION` (aw older than 1.36.53: upgrade aw),
+  `E_SETUP_INVITE_INSPECT` (inspect failed; names aw's fixed refusal code, such
+  as `exhausted`, or a withheld cause), `E_SETUP_INVITE_CONTROLLER` (a
+  local-controller invite: scope and status unknown), `E_SETUP_INVITE_SCOPE` (an
+  invite for a GLOBAL identity) and `E_SETUP_LABEL_COLLISION` (the derived
+  label is another team's: pass `--join <label>`; never a suffix). The fallback
+  each names is `--join <label> --invite-stdin --name <alias> --service <url>`.
 - Owner-creates-shared flow: when a committed/shared team has no provider id,
   its owner explicitly runs `oats aweb setup --create <label> --namespace
   <domain>`. Setup creates the provider team, accepts it into a per-team root,
@@ -1178,7 +1203,12 @@ inherited credentials, controller state, external identity home or routing.
 Membership is not an owner/admin claim; the server decides issuance authority.
 
 Success prints the token once (plain stdout), or once at `result.token` inside
-`{schemaVersion:1,ok:true,result}` with `--json`. With `--json`, plan and apply
+`{schemaVersion:1,ok:true,result}` with `--json`. Beside it, the joiner's
+one-line command, which never holds the token (#56): `result.joinCommand` with
+`--json`, and on stderr in text mode, so stdout stays the token alone:
+`oats aweb setup --soul <soul> --invite-stdin` (the `--soul` the invite was
+dispatched with, else `<soul>`), which reads the token on stdin and needs aw
+1.36.53 or later on the joining host. With `--json`, plan and apply
 also answer `result.awebUrl`: the service the issuing root names (its
 `.aw/workspace.yaml` `aweb_url`, as written), or `null`, never a guessed
 default. Only a plain service URL is handed on: http(s), a host, an optional
