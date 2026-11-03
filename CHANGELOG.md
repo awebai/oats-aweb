@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.36.0 — 2026-11-03
+
+Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. Setup from an invite alone needs aw 1.36.53 or later; on an older aw it refuses with `E_SETUP_AW_VERSION`, and `--install-aw` upgrades aw first. `oats aweb setup --invite`/`--invite-stdin` without `--join`, which was the usage error "requires --join <label>" (exit 2), is now that form. Every invite acceptance reads the token on stdin, so a malformed token now fails as an aw usage error (exit 2) before anything is redeemed.
+
 - **Setup from an invite alone (#56).** `oats aweb setup --invite-stdin
   --name <alias>` (or `--invite <token>`) without `--join` reads the invite's
   team and service with `aw team invite inspect --json`, which takes the token

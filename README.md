@@ -5,6 +5,18 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.36.0 — setup from one pasted invite
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
+`oats aweb setup --soul <soul> --invite-stdin --name <alias>`, without `--join`,
+joins a team from the invite alone: aw 1.36.53 reads its team and service
+without redeeming it, the label comes from the team's name, and every refusal
+comes before anything is redeemed. `oats aweb invite --json` answers that
+command beside the token, at `result.joinCommand`. Every invite acceptance
+now reads the token on stdin, never an argv. A refused `oats aweb join` and a
+failed `aw team invite` name their cause and fix, and new team roots go beside
+the default team's root.
+
 ## 1.35.0 — one tasks team for every deployment; pi without bundled skills
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
