@@ -16,7 +16,12 @@
   never a suffix). `--join <label>` is unchanged; with an invite aw can read, a
   label mapped to another team refuses with `E_SETUP_JOIN_MISMATCH`, naming
   both. `oats aweb invite` answers the joiner's one-line command beside the
-  token, never holding it: `result.joinCommand`, and on stderr in text mode.
+  token, never holding it: `oats aweb setup --soul <soul> --invite-stdin --name
+  <alias>` at `result.joinCommand`, and on stderr in text mode.
+  Token-only setup (`--invite`/`--invite-stdin` without `--join`), which was the
+  usage error "requires --join <label>" (exit 2), is now this form: on an aw
+  older than 1.36.53 it refuses with `E_SETUP_AW_VERSION` (exit 1) instead, and
+  the two tests that pinned the usage error now pin that refusal.
 
 - **A refused `oats aweb join` names its cause and fix (#52).** The join has
   read the deployment's live `roots` since 1.22.0, so a team root added to

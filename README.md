@@ -1206,9 +1206,10 @@ Success prints the token once (plain stdout), or once at `result.token` inside
 `{schemaVersion:1,ok:true,result}` with `--json`. Beside it, the joiner's
 one-line command, which never holds the token (#56): `result.joinCommand` with
 `--json`, and on stderr in text mode, so stdout stays the token alone:
-`oats aweb setup --soul <soul> --invite-stdin` (the `--soul` the invite was
-dispatched with, else `<soul>`), which reads the token on stdin and needs aw
-1.36.53 or later on the joining host. With `--json`, plan and apply
+`oats aweb setup --soul <soul> --invite-stdin --name <alias>` (the `--soul` the
+invite was dispatched with, else `<soul>`; `<alias>` stays a placeholder for
+the joining root's name, which a fresh joining machine needs), which reads the
+token on stdin and needs aw 1.36.53 or later on the joining host. With `--json`, plan and apply
 also answer `result.awebUrl`: the service the issuing root names (its
 `.aw/workspace.yaml` `aweb_url`, as written), or `null`, never a guessed
 default. Only a plain service URL is handed on: http(s), a host, an optional

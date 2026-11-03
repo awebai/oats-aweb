@@ -137,9 +137,9 @@ test('invite answers the joiner\'s one-line command beside the token, never insi
  const f=fixture(t);
  for(const [args,soul] of [[['--soul','dev'],'dev'],[[],'<soul>']]){
   const j=f.run([...args,'--json']);assert.equal(j.status,0,j.stderr);const d=JSON.parse(j.stdout).result;
-  assert.equal(d.joinCommand,`oats aweb setup --soul ${soul} --invite-stdin`);assert.ok(!d.joinCommand.includes('aw_inv_'));assert.equal(j.stderr,'');
+  assert.equal(d.joinCommand,`oats aweb setup --soul ${soul} --invite-stdin --name <alias>`);assert.ok(!d.joinCommand.includes('aw_inv_'));assert.equal(j.stderr,'');
   const h=f.run(args);assert.equal(h.status,0,h.stderr);assert.equal(h.stdout,'aw_inv_SYNTHETIC\n');
-  assert.equal(h.stderr,`Joiner: pipe this token to \`oats aweb setup --soul ${soul} --invite-stdin\` in their deployment (it reads the token on stdin).\n`);
+  assert.equal(h.stderr,`Joiner: pipe this token to \`oats aweb setup --soul ${soul} --invite-stdin --name <alias>\` in their deployment (it reads the token on stdin; <alias> is the joining root's name).\n`);
  }
  const p=f.run(['--plan','--json']);assert.equal(JSON.parse(p.stdout).result.joinCommand,undefined,'a plan mints no token to join with');
 });
