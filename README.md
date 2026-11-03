@@ -529,7 +529,7 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   | runtime | `channel` | `session` |
   |---|---|---|
   | Claude Code | the `aweb-channel` plugin (launch flag) | host wake broker |
-  | pi | the `@awebai/pi` extension | host wake broker |
+  | pi | the `@awebai/pi` extension, without its skills ([below](#the-pi-extension-without-its-skills)) | host wake broker |
   | Codex, or any runtime without an aweb channel | host wake broker | host wake broker |
 
   The channel packages push events into the session. The host wake broker
@@ -796,6 +796,49 @@ belongs to the OATS team model (`oats teams`, `oats soul teams`) and reaches the
 provider as `OATS_DEFAULT_TEAM*` and `OATS_TEAMS`. If a `team` setting is present
 at any layer, oats.aweb refuses it instead of treating provider payloads as team
 configuration.
+
+### The pi extension without its skills
+
+An aweb install made through OATS installs only what messaging needs: a home
+gets its skills through its OATS capabilities (oats.aweb, and oats.aweb-tasks
+where chosen), never machine-wide. `@awebai/pi` 0.4.0 bundles five skills with
+its extension (aweb-bootstrap, aweb-coordination, aweb-identity, aweb-messaging
+and aweb-team-membership), and pi loads them in every session that uses that
+pi folder. The extension does not need them. Install the extension, then make
+its entry in the pi folder's `settings.json` filter them out:
+
+```bash
+pi install npm:@awebai/pi
+```
+
+```json
+{"packages": [{"source": "npm:@awebai/pi", "skills": []}]}
+```
+
+The pi folder is `PI_CODING_AGENT_DIR`, else `~/.pi/agent`. `pi install`
+writes a plain string, `"npm:@awebai/pi"`; replace that string with the object,
+keeping any version in `source` and every other entry. pi's object form loads
+everything except the resource types it empties (pi's `docs/packages.md`,
+"Select package resources"). Checked with pi 1.3.0 and `@awebai/pi` 0.4.0: the
+filtered entry still loads the extension and none of its skills, and a later
+`pi install` or `pi update` of the package keeps the filter (`pi install
+npm:@awebai/pi@latest` rewrites `source` to `npm:@awebai/pi@latest` and keeps
+`"skills": []`), so an update needs no second step. `pi remove` drops the
+entry with its filter.
+
+Home readiness warns `pi-extension-skills-loaded` for a pi home when its
+launch's pi folder (the recorded launch's `PI_CODING_AGENT_DIR`, else
+`$HOME/.pi/agent`) lists `npm:@awebai/pi`, with or without a version, as a
+plain string or as an object without `"skills": []`. The message names the
+file and the exact edit. A missing or unreadable file, a folder that does not
+list the extension, another runtime and soul scope say nothing.
+
+Known gaps:
+
+- The filter is interim, until aweb publishes the pi extension without skills.
+- Claude Code's aweb-channel plugin (1.7.11) ships one skill of its own,
+  `aw:configure`, a channel setup helper. Claude Code installs a plugin whole,
+  so OATS cannot drop it; aweb is asked to ship the plugin without it.
 
 ### One root per team
 

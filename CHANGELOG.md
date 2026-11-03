@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **The pi extension without its skills.** `@awebai/pi` bundles skills that
+  pi loads in every session using its pi folder; a home gets its skills
+  through its OATS capabilities only. Both pi `install` texts now install the
+  extension, then make its settings entry `{"source": "npm:@awebai/pi",
+  "skills": []}` (README, "The pi extension without its skills"). Home
+  readiness warns `pi-extension-skills-loaded` for a pi home whose launch's
+  pi folder lists `npm:@awebai/pi`, with or without a version, as a plain
+  string or as an object without `"skills": []`, naming the file and the exact
+  edit. Checked with pi 1.3.0: `pi install` and `pi update` keep the filter.
+  The vendored aweb-messaging skill's Pi line says the same, in place of
+  "the aweb channel and these skills are bundled together";
+  `scripts/sync-vendored-skills.mjs` writes that line and its note in
+  `skills/VENDORED.md`, so a resync keeps both. Interim, until aweb publishes
+  the extension without skills.
+
 ## 1.34.0 — 2026-11-03
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. A home learns aweb tasks only when it composes oats.aweb-tasks: a deployment that uses aweb tasks and doesn't compose it gets no task guidance from oats.aweb after this upgrade.
@@ -25,6 +40,7 @@ Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are u
   to the task. A skill named in team instructions, a role description or pi's
   welcome message may not be installed in the home; the agent follows the
   skills OATS composed instead.
+
 
 ## 1.33.3 — 2026-11-03
 
