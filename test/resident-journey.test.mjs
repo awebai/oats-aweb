@@ -16,11 +16,15 @@
 // and then scaffolded with --no-launch, which mints a real grant at the
 // resident's custody; retiring the scaffold revokes it.
 //
-// The OSS server does not serve aweb Cloud's /api/v1/workspaces/init, so an
-// API-key init here registers the identity at awid and then fails. That proves
-// registration, same-DID resume and the key's absence on a failure; a complete
-// create, a quarantined partial and a customer-held team's refusal are proven
-// only by the joint E2E against the local aweb Cloud.
+// The OSS server does not serve aweb Cloud's /api/v1/workspaces/init, so with
+// aw 1.36.33 an API-key init here registers the identity at awid and then
+// fails. That proves registration, same-DID resume and the key's absence on a
+// failure. aw 1.36.53 reads the key's team first, which this server doesn't
+// answer, so it stops before minting: that proves aw's refusal reaches the
+// operator unchanged, with no partial and no key anywhere, and a rerun into
+// what it left is refused. A complete create, a quarantined partial and a
+// customer-held team's refusal are proven only by the joint E2E against the
+// local aweb Cloud.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -120,7 +124,7 @@ function filesUnder(dir) {
   return out;
 }
 
-test("registration at awid, a forced failure with no key anywhere, and a rerun that keeps the same DID", async (t) => {
+test("a forced API-key init failure leaves no key anywhere; on aw 1.36.33 it registers at awid and a rerun keeps the same DID, on aw 1.36.53 aw refuses before minting and a rerun is refused", async (t) => {
   if (!configured(t)) return;
   const j = journey(t);
   const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
@@ -170,20 +174,11 @@ test("registration at awid, a forced failure with no key anywhere, and a rerun t
   assert.equal(statSync(join(root, ".oats-resident")).mode & 0o777, 0o700);
 });
 
-test("a rerun with another registry gets aw's own refusal, unchanged", (t) => {
+test("a rerun with another registry gets aw's own refusal, unchanged (aw 1.36.33: aw 1.36.53 leaves no partial to carry a registry)", (t) => {
   if (!configured(t)) return;
   const j = journey(t);
   const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
-  if (j.teamReadFirst) {
-    // No partial to carry a registry: the first run is already aw's refusal,
-    // and the message carries aw's text exactly as aw printed it.
-    const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
-    assert.equal(r.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
-    const captured = (kind) => readFileSync(r.doc.error.details.captures.find((p) => p.endsWith(kind)), "utf8").trim();
-    const awText = captured(".stderr") || captured(".stdout");
-    assert.ok(awText && r.doc.error.message.startsWith(`${awText}\n`), r.doc.error.message);
-    return;
-  }
+  if (j.teamReadFirst) { t.skip("aw 1.36.53 refuses before writing a partial on this server, so no rerun carries a registry; the previous journey covers its refusal"); return; }
   assert.equal(j.run(["create", "alice"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL }).status, 1);
   const other = AWID_URL.replace("127.0.0.1", "localhost");
   const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: other });
