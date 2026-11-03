@@ -131,3 +131,15 @@ for(const [mode,cause] of [['network',/aw member invite failed \(exit 1\) \(the 
  }
  assert.equal(f.read().filter(c=>c.args[1]==='invite').length,mode==='vanish'?0:2,'never retried');
 });
+// awebai/oats-aweb#56: beside the token, the joiner's one-line command, which never holds it.
+// stdout in text mode stays the token alone (scripts capture it); the line goes to stderr.
+test('invite answers the joiner\'s one-line command beside the token, never inside it',t=>{
+ const f=fixture(t);
+ for(const [args,soul] of [[['--soul','dev'],'dev'],[[],'<soul>']]){
+  const j=f.run([...args,'--json']);assert.equal(j.status,0,j.stderr);const d=JSON.parse(j.stdout).result;
+  assert.equal(d.joinCommand,`oats aweb setup --soul ${soul} --invite-stdin --name <alias>`);assert.ok(!d.joinCommand.includes('aw_inv_'));assert.equal(j.stderr,'');
+  const h=f.run(args);assert.equal(h.status,0,h.stderr);assert.equal(h.stdout,'aw_inv_SYNTHETIC\n');
+  assert.equal(h.stderr,`Joiner: pipe this token to \`oats aweb setup --soul ${soul} --invite-stdin --name <alias>\` in their deployment (it reads the token on stdin; <alias> is the joining root's name).\n`);
+ }
+ const p=f.run(['--plan','--json']);assert.equal(JSON.parse(p.stdout).result.joinCommand,undefined,'a plan mints no token to join with');
+});

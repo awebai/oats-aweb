@@ -1034,7 +1034,60 @@ Supported acts:
   before creating anything.
 - `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
-  never accepts into the existing default root.
+  never accepts into the existing default root. With aw 1.36.53 or later, a
+  label already mapped to a team must be the invite's team: otherwise
+  `E_SETUP_JOIN_MISMATCH` names both, before anything is redeemed. An invite
+  that aw cannot read keeps the released behaviour.
+- `oats aweb setup --invite-stdin --name <alias>` (or `--invite <token>`),
+  without `--join` (#56): needs aw 1.36.53 or later. Setup reads the invite's
+  team and service with `aw team invite inspect --json`, which takes the token
+  on stdin and redeems nothing (it makes one preview request to the invite's
+  service). The label is the label the deployment already maps to that team
+  (said as `Using label …`, `result.labelFrom: "mapping"`), else the team's
+  name normalized as `--create` normalizes it; `--join <label>` chooses
+  another. It then joins as `--join` does: a new root at
+  `<deployment>/.aweb-roots/<label>`, `roots[<team id>]`, the team's local
+  mapping, and the token reaching `aw id team accept-invite` on stdin
+  (`--token-stdin`), never an argv. A hosted invite whose identity scope is
+  `unknown` joins with `--local`, like a `local` one. The service is the
+  invite's; an explicit `--service` must name the same service, up to a
+  trailing `/api`. With `--install-aw`, an aw older than 1.36.53 is upgraded
+  first. It ends with one next step (`result.next` with `--json`, the same
+  line), chosen from `oats soul teams <soul>`: `oats spawn <soul> --preview`
+  when the label is the soul's default, `oats spawn <soul> --provider oats.aweb
+  join=<label> --preview` when the label is eligible for it, and otherwise
+  making the label eligible in the workspace's `souls:` (a shared-file change,
+  `/oats-teams`). When the soul's teams cannot be read, it keeps the spawn and
+  says it assumes eligibility (`result.nextNote`). A kept deployment default,
+  and moving it, are in the note. The dashboard's
+  `--invite <token>` one-liner works; `printf '%s\n' "$TOKEN" | oats aweb setup
+  --soul <soul> --invite-stdin --name <alias>` keeps the token out of shell
+  history. A deployment with no root identity needs `--name <alias>`. To resume
+  an admitted but unconnected join, run the printed `--join <label> --service
+  <service>` command without the token; an expired, exhausted or revoked invite
+  that aw reports with its team names that exact command too, with the label
+  the deployment already maps to that team. Refusals, all
+  before anything is redeemed:
+  `E_SETUP_AW_VERSION` (aw older than 1.36.53: upgrade aw),
+  `E_SETUP_INVITE_INSPECT` (inspect failed; names aw's fixed refusal code, such
+  as `exhausted`, or a withheld cause), `E_SETUP_INVITE_CONTROLLER` (a
+  local-controller invite: scope and status unknown), `E_SETUP_ALREADY_MEMBER`
+  (`roots[team]`, `root` or the default team's root already lists the team;
+  `roots[team]` is never re-pointed; when no team label maps it, the message
+  names the tokenless resume for a per-team root an earlier run left, else the
+  mapping: `oats teams add <label> --team <id> --no-default`, which keeps a
+  workspace default, or, where the workspace allows no local teams, the
+  `teams:` commit to oats-workspace.yaml), `E_SETUP_MEMBERSHIP` (one of those roots' `aw team
+  list` could not be read: never taken as "not a member"),
+  `E_SETUP_SERVICE_MISMATCH` (an explicit `--service` for another
+  service), `E_SETUP_DEFAULT_PRESERVE` (the workspace sets the default and the
+  label is unmapped; its exact `oats teams add` command names the invite's team)
+  and `E_SETUP_LABEL_COLLISION` (the derived label is another team's: pass
+  `--join <label>`; never a suffix). Inspect and controller refusals name the
+  labelled fallback `--join <label> --invite-stdin --name <alias> --service
+  <url>`. `E_SETUP_INVITE_SCOPE` (an invite for a GLOBAL identity) is different:
+  ask for a LOCAL member invite (`oats aweb invite`), or use the
+  [existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md).
 - Owner-creates-shared flow: when a committed/shared team has no provider id,
   its owner explicitly runs `oats aweb setup --create <label> --namespace
   <domain>`. Setup creates the provider team, accepts it into a per-team root,
@@ -1178,7 +1231,13 @@ inherited credentials, controller state, external identity home or routing.
 Membership is not an owner/admin claim; the server decides issuance authority.
 
 Success prints the token once (plain stdout), or once at `result.token` inside
-`{schemaVersion:1,ok:true,result}` with `--json`. With `--json`, plan and apply
+`{schemaVersion:1,ok:true,result}` with `--json`. Beside it, the joiner's
+one-line command, which never holds the token (#56): `result.joinCommand` with
+`--json`, and on stderr in text mode, so stdout stays the token alone:
+`oats aweb setup --soul <soul> --invite-stdin --name <alias>` (the `--soul` the
+invite was dispatched with, else `<soul>`; `<alias>` stays a placeholder for
+the joining root's name, which a fresh joining machine needs), which reads the
+token on stdin and needs aw 1.36.53 or later on the joining host. With `--json`, plan and apply
 also answer `result.awebUrl`: the service the issuing root names (its
 `.aw/workspace.yaml` `aweb_url`, as written), or `null`, never a guessed
 default. Only a plain service URL is handed on: http(s), a host, an optional
@@ -1188,8 +1247,9 @@ that could carry a credential (userinfo, a query, any other path), answers
 is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
 only to the intended accepting operator's labelled `setup --invite-stdin`
 procedure in `/oats-aweb` §8, **Invitations and certificate ownership**. Never
-log, echo, put in argv/history, or send it as ordinary mail. Native acceptance
-still exposes its token argument in the target host's process list temporarily.
+log, echo, put in argv/history, or send it as ordinary mail. Setup hands it to
+`aw id team accept-invite --token-stdin` on stdin (aw 1.36.33, the provider's
+floor), so it is in no process's argv on the accepting host.
 A token is not bound to the future alias. Issuance is never automatically retried.
 
 `E_INVITE_ARGUMENT`, `E_INVITE_DEPLOYMENT`, `E_INVITE_TEAM_QUERY`,

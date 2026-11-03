@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- **Setup from an invite alone (#56).** `oats aweb setup --invite-stdin
+  --name <alias>` (or `--invite <token>`) without `--join` reads the invite's
+  team and service with `aw team invite inspect --json`, which takes the token
+  on stdin and redeems nothing, and derives the label from the team's name,
+  normalized as `--create` does. It then joins as `--join` does: a root beside
+  the default at `<deployment>/.aweb-roots/<label>`, `roots[<team id>]`, the
+  local mapping, and the token on `aw id team accept-invite --token-stdin`,
+  never an argv. A label the deployment already maps to the team is reused
+  rather than a new one made; a hosted invite of scope `unknown` joins with
+  `--local`; the invite's service is used and shown only as a plain service
+  URL (http(s), a host, an optional port and no path but `/` or `/api`, the
+  shape `oats aweb invite` hands on), else the invite is not usable; an
+  explicit `--service` must be the invite's (up to `/api`); and
+  `--install-aw` upgrades an older aw first. It ends with one next step, the
+  same in text and JSON, chosen from `oats soul teams <soul>`: a plain spawn
+  when the label is the soul's default, the spawn that joins it when it is
+  eligible, else making it eligible in the workspace's `souls:`; when that read
+  fails it keeps the spawn and says it assumes eligibility.
+  Needs aw 1.36.53 or later; every refusal comes before anything is redeemed:
+  `E_SETUP_AW_VERSION`, `E_SETUP_INVITE_INSPECT` (an expired, exhausted or
+  revoked invite names the exact resume command), `E_SETUP_INVITE_CONTROLLER`,
+  `E_SETUP_INVITE_SCOPE` (ask for a LOCAL invite, or use the GLOBAL resident
+  journey), `E_SETUP_ALREADY_MEMBER` (`roots[team]`, `root` or the default
+  team's root lists the team; `roots[team]` is never re-pointed; an unmapped
+  team names the tokenless resume or the mapping it lacks, `oats teams add
+  ... --no-default` or the workspace commit),
+  `E_SETUP_MEMBERSHIP` (such a root's membership could not be read),
+  `E_SETUP_SERVICE_MISMATCH`, `E_SETUP_DEFAULT_PRESERVE` (a workspace default
+  with the label unmapped, decided before redemption from the invite's team)
+  and `E_SETUP_LABEL_COLLISION` (pass `--join <label>`; never a suffix). `--join <label>` is unchanged; with an invite aw can read, a
+  label mapped to another team refuses with `E_SETUP_JOIN_MISMATCH`, naming
+  both; that optional inspect waits at most 10s, then keeps the released
+  behaviour. `oats aweb invite` answers the joiner's one-line command beside the
+  token, never holding it: `oats aweb setup --soul <soul> --invite-stdin --name
+  <alias>` at `result.joinCommand`, and on stderr in text mode.
+  Token-only setup (`--invite`/`--invite-stdin` without `--join`), which was the
+  usage error "requires --join <label>" (exit 2), is now this form: on an aw
+  older than 1.36.53 it refuses with `E_SETUP_AW_VERSION` (exit 1) instead, and
+  the two tests that pinned the usage error now pin that refusal.
+- **The invite token is in no argv on the accepting host.** Every
+  `aw id team accept-invite` — setup's labelled `--join`, the invite form and an
+  instance's `oats aweb join` — now reads the token on stdin (`--token-stdin`,
+  which aw 1.36.33, the provider's floor, already has). aw's `--token-stdin`
+  path checks the token's characters and format before acceptance, so a
+  malformed token now fails as an aw usage error (exit 2) before anything is
+  redeemed.
+
 - **A refused `oats aweb join` names its cause and fix (#52).** The join has
   read the deployment's live `roots` since 1.22.0, so a team root added to
   `oats-local.yaml` after the home's spawn is joined without a respawn. Each

@@ -63,7 +63,7 @@ test('recorded nested root resumes without a second acceptance',t=>{
  assert.equal(f.fake.readCalls().filter(c=>c.args[0]==='workspace'&&c.args[1]==='connect').length,1);
  assert.ok(!existsSync(join(f.deployment,'.aweb-roots','joined')));
 });
-test('actual verdict remedy is parsed into join and token-only remains refused',t=>{
+test('actual verdict remedy is parsed into join; a token without --join needs aw 1.36.53 (#56)',t=>{
  const f=fixture(t);writeFileSync(join(f.root,'.aw','teams.json'),'{"memberships":[]}');const r=f.run(['setup','--soul','dev','--dir',f.deployment]);assert.equal(r.status,0,r.stderr);
  const command=r.stdout.match(/Existing team path:.*`(oats aweb setup [^`]+)`/)[1];
  assert.match(command,/--join default --invite-stdin/);assert.doesNotMatch(command,/aw team join/);
@@ -71,7 +71,8 @@ test('actual verdict remedy is parsed into join and token-only remains refused',
  const args=expanded.split(' ').slice(2);
  // An absent deployment is the effect boundary: parser reaches join, no acceptance.
  const checked=f.run(args,{OATS_TEAM_SCOPE:''},'SECRET\n');assert.equal(checked.status,1);assert.match(checked.stderr,/selected deployment/);assert.doesNotMatch(checked.stderr,/usage:/);
- const refused=f.run(['setup','--invite-stdin'],{},'SECRET\n');assert.equal(refused.status,2);assert.match(refused.stderr,/requires --join/);
+ const refused=f.run(['setup','--invite-stdin'],{},'SECRET\n');assert.equal(refused.status,1);assert.match(refused.stderr,/E_SETUP_AW_VERSION: .*aw 1\.36\.53 or later/);assert.doesNotMatch(refused.stdout+refused.stderr,/SECRET/);
+ assert.ok(!f.fake.readCalls().some(c=>c.args.includes('accept-invite')||c.args.includes('inspect')),'nothing inspected or redeemed');
 });
 test('hosted create diagnostic distinguishes native 1.36.24 from unsupported wrapper and 1.36.23',t=>{
  const f=fixture(t),r=f.run(['setup','--create','sibling']);assert.equal(r.status,1);assert.match(r.stderr,/provider setup --create without --namespace is not supported/);assert.match(r.stderr,/native aw 1\.36\.24 supports id team create --hosted/);assert.match(r.stderr,/not available in aw 1\.36\.23/);assert.doesNotMatch(r.stderr,/not yet released/);assert.ok(!f.fake.readCalls().some(c=>c.args.includes('create')));

@@ -9,6 +9,7 @@ import { querySelectedKernel } from './session-readiness.mjs';
 import { yamlScalar } from './binding-wire.mjs';
 import { withheldFailureCause } from './aw-failure-cause.mjs';
 import { childOutcome } from './child-outcome.mjs';
+import { plainServiceUrl } from './plain-service.mjs';
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -93,7 +94,7 @@ function selectedProblems(problems, label) {
 export function rootAwebUrl(root) {
   let raw;
   try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
-  return typeof raw === 'string' && raw.length <= 2048 && /^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(raw) ? raw : null;
+  return plainServiceUrl(raw) ?? null;
 }
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
@@ -135,7 +136,8 @@ export function issueInvite(argv, env = process.env) {
   let minted;
   try { minted = JSON.parse(rawResult); } catch { fail('E_INVITE_OUTPUT', 'aw returned malformed invite output; issuance may have occurred; do not automatically retry'); }
   if (!object(minted) || minted.status !== 'created' || typeof minted.invite_id !== 'string' || !minted.invite_id.trim() || typeof minted.token !== 'string' || !/^aw_inv_[^\s\x00-\x1f\x7f]+$/.test(minted.token)) fail('E_INVITE_OUTPUT', 'aw returned an unsupported or malformed hosted invite; issuance may have occurred; do not automatically retry');
-  return { ...result, issuedAt: new Date().toISOString(), token: minted.token };
+  // The joiner's one-line command (#56): it reads the token on stdin, so the token is never in it.
+  return { ...result, issuedAt: new Date().toISOString(), token: minted.token, joinCommand: `oats aweb setup --soul ${/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(opts.soul || '') ? opts.soul : '<soul>'} --invite-stdin --name <alias>` };
 }
 export function inviteMain(argv, env = process.env) {
   const json = argv.includes('--json') || !!env.OATS_OPERATION;
@@ -143,7 +145,7 @@ export function inviteMain(argv, env = process.env) {
     const result = issueInvite(argv,env);
     if (json) process.stdout.write(JSON.stringify({schemaVersion:1,ok:true,result})+'\n');
     else if (result.plan) process.stdout.write(`Plan: ask ${result.root} to issue a LOCAL member invite for ${result.team}; native/server decides authority. No invite minted.\n`);
-    else process.stdout.write(result.token+'\n');
+    else { process.stdout.write(result.token+'\n'); process.stderr.write(`Joiner: pipe this token to \`${result.joinCommand}\` in their deployment (it reads the token on stdin; <alias> is the joining root's name).\n`); }
     return 0;
   } catch (e) {
     const error = {code:e.code?.startsWith('E_INVITE_')?e.code:'E_INVITE_FAILED',message:e.code?.startsWith('E_INVITE_')?e.message:'invite failed; details withheld'};
