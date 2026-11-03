@@ -31,9 +31,10 @@
   string or as an object without `"skills": []`, naming the file and the exact
   edit. Checked with pi 1.3.0: `pi install` and `pi update` keep the filter.
   The vendored aweb-messaging skill's Pi line says the same, in place of
-  "the aweb channel and these skills are bundled together" (an adaptation
-  recorded in `skills/VENDORED.md`). Interim, until aweb publishes the
-  extension without skills.
+  "the aweb channel and these skills are bundled together";
+  `scripts/sync-vendored-skills.mjs` writes that line and its note in
+  `skills/VENDORED.md`, so a resync keeps both. Interim, until aweb publishes
+  the extension without skills.
 
 ## 1.33.3 — 2026-11-03
 

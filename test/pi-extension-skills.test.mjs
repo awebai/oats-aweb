@@ -10,6 +10,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
 import { piExtensionSkillsWarning, recordedPiAgentDir } from "../oats-package/capabilities/oats-aweb/lib/pi-extension.mjs";
+import { LINE_ADAPTATIONS, adaptVendored } from "../scripts/sync-vendored-skills.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -190,9 +191,15 @@ test("both pi install texts install the extension, then name the filtered settin
 
 // --------------------------------------------------------- vendored skill text
 
-test("the vendored aweb-messaging skill says OATS installs the pi extension without its skills", () => {
-  const skill = readFileSync(join(CAPABILITY, "skills", "aweb-messaging", "SKILL.md"), "utf8");
-  const line = skill.split("\n").find((l) => l.startsWith("- **Pi**:"));
-  assert.equal(line, `- **Pi**: OATS installs the \`@awebai/pi\` extension with its bundled skills filtered out: its entry in the pi folder's \`settings.json\` is \`{"source": "npm:@awebai/pi", "skills": []}\`. A home's skills come from OATS.`, "upstream's Pi line came back with a sync: adapt it again (skills/VENDORED.md)");
-  assert.doesNotMatch(skill, /bundled together/);
+test("a sync writes the vendored aweb-messaging Pi line: OATS installs the extension without its skills", () => {
+  const [[skill, file, upstream, adapted]] = LINE_ADAPTATIONS;
+  assert.equal(`${skill}/${file}`, "aweb-messaging/SKILL.md");
+  assert.equal(adapted, `- **Pi**: OATS installs the \`@awebai/pi\` extension with its bundled skills filtered out: its entry in the pi folder's \`settings.json\` is \`{"source": "npm:@awebai/pi", "skills": []}\`. A home's skills come from OATS.`);
+  const shipped = readFileSync(join(CAPABILITY, "skills", skill, file), "utf8");
+  assert.equal(shipped.split("\n").filter((l) => l === adapted).length, 1, "the shipped skill carries the adapted line");
+  assert.doesNotMatch(shipped, /bundled together/);
+  // Upstream's text (the shipped skill with upstream's line back) adapts to exactly the shipped skill.
+  assert.equal(adaptVendored(skill, file, shipped.replace(adapted, upstream)), shipped);
+  assert.throws(() => adaptVendored(skill, file, shipped), /expected upstream line .* exactly once, found 0/, "a changed upstream is refused, not passed through");
+  assert.equal(adaptVendored("aweb-identity", "SKILL.md", "untouched"), "untouched");
 });
