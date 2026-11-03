@@ -24,6 +24,14 @@ test('real kernel selects messaging and tasks together with no catalog alias', {
     GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
     GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
   };
+  // A kernel from 0.69 on ships a catalog alias for oats.aweb-tasks. Selection
+  // is proven without one: the kernel's own catalog, less that alias, through
+  // the kernel's OATS_PACKAGE_CATALOG override.
+  const catalog = JSON.parse(readFileSync(join(kernel, 'package-catalog.json'), 'utf8'));
+  const catalogAlias = Object.hasOwn(catalog.capabilities || {}, 'oats.aweb-tasks');
+  delete catalog.capabilities?.['oats.aweb-tasks'];
+  env.OATS_PACKAGE_CATALOG = join(base, 'package-catalog.json');
+  writeFileSync(env.OATS_PACKAGE_CATALOG, JSON.stringify(catalog));
   const git = (cwd, ...args) => {
     const r = spawnSync('git', ['-c', 'commit.gpgsign=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', ...args], { cwd, env, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr); return r.stdout.trim();
@@ -83,7 +91,7 @@ test('real kernel selects messaging and tasks together with no catalog alias', {
   assert.match(text, /oats\.aweb/);
   assert.doesNotMatch(text, /E_SLOT_CONFLICT/);
   assert.equal(existsSync(marker), false, 'selection must never call aw');
-  const catalog = JSON.parse(readFileSync(join(kernel, 'package-catalog.json')));
-  assert.equal(catalog.capabilities['oats.aweb-tasks'], undefined, 'test must use an unamended catalog');
-  t.diagnostic(`Selection: ${JSON.stringify({ ok: answer.ok, modules: selected, catalogAlias: false })}`);
+  const used = JSON.parse(readFileSync(env.OATS_PACKAGE_CATALOG, 'utf8'));
+  assert.equal(used.capabilities?.['oats.aweb-tasks'], undefined, 'selection ran with no catalog alias');
+  t.diagnostic(`Selection: ${JSON.stringify({ ok: answer.ok, modules: selected, catalogAlias: false, kernelShipsAlias: catalogAlias })}`);
 });
