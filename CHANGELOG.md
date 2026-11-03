@@ -9,22 +9,29 @@
   readiness check now warns a home whose heartbeat source is older. These are
   warnings beside the team answer, ready or not; they never refuse:
   - `wake-daemon-outdated`: `aw wake status --json` lists the home, and its
-    daemon runs a version below 1.36.54; 1.36.54-rc.1 warns. Below oats.aweb's
-    floor (1.36.33), oats.aweb warns `wake-daemon-outdated` itself for a home
-    whose broker it checks (Codex, `delivery: session`, or a joined team the
-    broker serves), so that home gets only oats.aweb's item. Every other home
-    gets this one, so no daemon is left unwarned.
-  - `aweb-channel-outdated`: a Claude home on `delivery: channel` that the
-    daemon does not list, whose aweb-channel@awebai-marketplace is below
+    daemon runs a version from oats.aweb's floor (1.36.33) up to, but not
+    including, 1.36.54; 1.36.54-rc.1 warns. oats.aweb registers a home with
+    the broker exactly when it needs it and then reads the daemon itself, so
+    below 1.36.33 its own `wake-daemon-outdated` is the only item. (A stale
+    registration oats.aweb no longer expects gets neither below 1.36.33.) A
+    home the daemon doesn't list gets no daemon item.
+  - `aweb-channel-outdated`: a Claude home (the kernel's launched harness) that
+    the daemon does not list, whose aweb-channel@awebai-marketplace is below
     1.8.2. The version is the user-scope entry in
     `plugins/installed_plugins.json` of the Claude config dir it launches with:
     its literal `CLAUDE_CONFIG_DIR`, else `~/.claude`.
-  - `pi-extension-outdated`: a pi home on `delivery: channel` whose @awebai/pi
+  - `pi-extension-outdated`: a pi home that the daemon does not list, or lists
+    for its joined teams only (a native-pi row), whose @awebai/pi
     is below 0.4.1. The version is in
     `<agentDir>/npm/node_modules/@awebai/pi/package.json`, where pi installs a
     user-scope npm package; `<agentDir>` is its literal `PI_CODING_AGENT_DIR`,
     else `~/.pi/agent`. A pi home the daemon lists for its joined teams can get
     both this and the daemon warning.
+  - The check reads only the kernel's launch record (`launch.harness`,
+    `harness`, `launch.env`), never oats.aweb's metadata or files. A Claude or
+    pi home on `delivery: session` that is missing from the broker therefore
+    gets the plugin or extension warning too: harmless, since oats.aweb's
+    readiness reports the missing registration.
   - Nothing is added for a version or status that can't be read: a daemon
     not running or reporting no version (oats.aweb reports those where it
     needs the broker), a project-scope plugin or extension install, or pi's

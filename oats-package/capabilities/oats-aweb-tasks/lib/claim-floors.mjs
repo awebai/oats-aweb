@@ -9,9 +9,11 @@
 // refusal. Joined teams that only poll have no heartbeat yet and get nothing.
 //
 // Everything here is read-only and bounded. A version that cannot be read gives
-// no item: the floors apply where the version is readable.
+// no item: the floors apply where the version is readable. Nothing here reads
+// oats.aweb's metadata or files: only aw's status, the kernel's launch record
+// (instance.json `launch.harness`, `harness`, `launch.env`) and the installs.
 import { spawnSync } from 'node:child_process';
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { parseVersion, versionAtLeast } from './version.mjs';
 
@@ -24,8 +26,8 @@ export const PI_EXTENSION_FLOOR = '0.4.1';
 
 /** oats.aweb's AW_MIN (lib/aw-floor.mjs), copied because this module cannot
  *  import it. Below it, oats.aweb's own readiness warns `wake-daemon-outdated`
- *  for a home whose broker it checks (awebChecksDaemon), so this check adds
- *  no second item with that code there. */
+ *  for a home the daemon lists, so this check adds no second item there
+ *  (wakeDaemonWarning). */
 export const AW_MIN = '1.36.33';
 
 export const AWEB_CHANNEL_PLUGIN = 'aweb-channel@awebai-marketplace';
@@ -39,8 +41,6 @@ const canon = (p) => { try { return realpathSync(p); } catch { return resolve(p)
 // Opening never blocks (a FIFO at the path) and never follows a link swapped in
 // after the path was resolved; the descriptor is then checked to be a file.
 const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
-
-const absent = (file) => { try { lstatSync(file); return false; } catch (e) { return e.code === 'ENOENT'; } };
 
 /** JSON from `file`, read only when it resolves to a regular file inside
  *  `base` (no link out of it) of at most 1 MiB; undefined otherwise. */
@@ -60,49 +60,14 @@ export function readJsonInside(base, file) {
   finally { if (fd !== undefined) try { closeSync(fd); } catch { /* closed */ } }
 }
 
-/** What the kernel recorded for the home's last start, as oats.aweb's
- *  readiness reads it: the runtime (the kernel's launched harness, else
- *  oats.aweb's recorded runtime, which can lag a start), the captured delivery
- *  (`recordedDelivery`, undefined for a legacy record; `delivery` reads that as
- *  channel), and the launch environment. undefined when the home has no
- *  readable launch record. These describe how the home was started, which only
- *  its record holds; the team check's identity mode, a setting, comes from the
- *  kernel instead. */
+/** The kernel's record of the home's last start: the harness it launched
+ *  (`launch.harness`, else `harness`) and the launch environment. undefined
+ *  when the home has no readable launch record. */
 export function recordedLaunch(home) {
   const doc = readJsonInside(home, join(home, 'instance.json'));
   if (!object(doc?.launch)) return undefined;
-  const meta = object(doc.capabilityMeta?.['oats.aweb']) ? doc.capabilityMeta['oats.aweb'] : {};
   const id = (v) => typeof v === 'string' && v ? v : undefined;
-  const recordedDelivery = ['channel', 'session'].includes(meta.delivery) ? meta.delivery : undefined;
-  return { runtime: id(doc.launch.harness) ?? id(doc.harness) ?? (typeof meta.runtime === 'string' ? meta.runtime : undefined),
-    delivery: recordedDelivery ?? 'channel', recordedDelivery, env: object(doc.launch.env) ? doc.launch.env : {},
-    joinedTeams: Array.isArray(meta.joinedTeams) ? meta.joinedTeams : undefined };
-}
-
-/** Whether oats.aweb's readiness checks the host wake daemon for this home, so
- *  that it warns `wake-daemon-outdated` itself below AW_MIN. It does where the
- *  home needs the broker (wake-receive.mjs expectedReceive, brokerRequired):
- *  the primary receives through it (Codex, `delivery: session`, or a runtime
- *  with no channel), or a joined team does (every joined team in
- *  .oats-aweb/teams.json, except those a Claude channel home polls; a legacy
- *  record without delivery or runtime and without that file keeps its joins in
- *  oats.aweb's metadata, as expectedReceive reads them). A record
- *  that does not show either, or cannot be read, is false, so this check warns
- *  rather than leave a daemon below AW_MIN unwarned. (oats.aweb also reports
- *  configuration problems before it reads the daemon; the warning follows once
- *  they are fixed.) */
-export function awebChecksDaemon(home, launch) {
-  if (!launch) return false;
-  const { runtime, recordedDelivery } = launch;
-  const primaryBroker = runtime === 'codex' || recordedDelivery === 'session'
-    || (recordedDelivery === 'channel' && runtime !== undefined && runtime !== 'claude' && runtime !== 'pi');
-  if (primaryBroker) return true;
-  const claudeChannel = recordedDelivery === 'channel' && runtime === 'claude';
-  const file = join(home, '.oats-aweb', 'teams.json');
-  const legacy = recordedDelivery === undefined || runtime === undefined;
-  const joined = absent(file) ? (legacy ? launch.joinedTeams : undefined) : readJsonInside(home, file)?.joinedTeams;
-  if (!Array.isArray(joined)) return false;
-  return joined.some((j) => object(j) && !(claudeChannel && j.expectedPoll === true));
+  return { runtime: id(doc.launch.harness) ?? id(doc.harness), env: object(doc.launch.env) ? doc.launch.env : {} };
 }
 
 /** The row of `aw wake status --json` that lists `home`, or undefined. */
@@ -120,9 +85,12 @@ export function statusRow(status, home) {
  *  - A home the status lists: the daemon. A native row also names its channel:
  *    the daemon streams only that home's joined teams, and the plugin or
  *    extension keeps the primary identity present.
- *  - A home it does not list (or an unreadable status): the channel it records,
- *    for a Claude or pi home on `delivery: channel`. Anything else, such as a
- *    Codex home missing from the broker, is oats.aweb's own readiness item. */
+ *  - A home it does not list (or an unreadable status): the kernel's harness
+ *    alone picks, claude the plugin and pi the extension; anything else gets
+ *    nothing. The record holds no delivery this check may read, so a Claude or
+ *    pi home on `delivery: session` that is missing from the broker gets the
+ *    plugin or extension warning too: harmless, since its missing registration
+ *    is oats.aweb's own readiness problem, as a Codex home's is. */
 export function claimFloors(context, { status, launch } = {}) {
   if (!context?.home) return [];
   const row = statusRow(status, context.home);
@@ -130,28 +98,29 @@ export function claimFloors(context, { status, launch } = {}) {
     const native = row.runtime_delivery === 'native-channel' ? ['aweb-channel'] : row.runtime_delivery === 'native-pi' ? ['pi-extension'] : [];
     return ['wake-daemon', ...native];
   }
-  if (launch?.delivery !== 'channel') return [];
-  return launch.runtime === 'claude' ? ['aweb-channel'] : launch.runtime === 'pi' ? ['pi-extension'] : [];
+  return launch?.runtime === 'claude' ? ['aweb-channel'] : launch?.runtime === 'pi' ? ['pi-extension'] : [];
 }
 
-/** The wake daemon's warning, or undefined. A running daemon that reports a
- *  semver version below TASKS_WAKE_FLOOR warns, except below AW_MIN where
- *  `awebChecks` (awebChecksDaemon): there oats.aweb warns
- *  `wake-daemon-outdated` for this home itself. A daemon that is not running or
- *  reports no readable version adds nothing: oats.aweb reports not-running and
- *  unknown where it needs the broker. */
-export function wakeDaemonWarning(status, { awebChecks = false } = {}) {
+/** The wake daemon's warning for a home the status lists, or undefined. Only a
+ *  running daemon that reports a semver version at or above AW_MIN and below
+ *  TASKS_WAKE_FLOOR warns. oats.aweb registers a home with the broker exactly
+ *  when it needs it, and its readiness then reads the daemon, so below AW_MIN
+ *  oats.aweb warns `wake-daemon-outdated` for this home itself. The edge left:
+ *  a stale registration oats.aweb no longer expects, where neither warns below
+ *  AW_MIN. A daemon that is not running or reports no readable version adds
+ *  nothing: oats.aweb reports not-running and unknown where it needs the
+ *  broker. */
+export function wakeDaemonWarning(status) {
   if (!object(status) || status.daemon_running !== true || status.daemon_version_state !== 'reported') return undefined;
   const version = status.daemon_version;
-  if (!parseVersion(version) || versionAtLeast(version, TASKS_WAKE_FLOOR)) return undefined;
-  if (awebChecks && !versionAtLeast(version, AW_MIN)) return undefined;
+  if (!parseVersion(version) || !versionAtLeast(version, AW_MIN) || versionAtLeast(version, TASKS_WAKE_FLOOR)) return undefined;
   return { code: 'wake-daemon-outdated',
     message: `oats.aweb-tasks: host wake daemon is running ${version}; aweb task claims need aw ${TASKS_WAKE_FLOOR} or later, whose wake daemon heartbeats claims: upgrade aw, then restart the host wake daemon (\`oats aweb wake install\`)` };
 }
 
 /** The Claude config dir the home launches with: its literal absolute
  *  CLAUDE_CONFIG_DIR, else HOME's .claude when the launch sets none; undefined
- *  for any other value (a {fromEnv} reference), as oats.aweb reads it. */
+ *  for any other value (a {fromEnv} reference). */
 export function claudeConfigDir(launch, env = process.env) {
   if (!launch) return undefined;
   if (!Object.hasOwn(launch.env, 'CLAUDE_CONFIG_DIR')) return pathValue(env.HOME) ? join(env.HOME, '.claude') : undefined;
@@ -160,7 +129,7 @@ export function claudeConfigDir(launch, env = process.env) {
 
 /** The pi folder the home launches with: its literal PI_CODING_AGENT_DIR
  *  (absolute, or under ~, which pi expands against HOME), else HOME's
- *  .pi/agent; undefined for any other value, as oats.aweb reads it. */
+ *  .pi/agent; undefined for any other value. */
 export function piAgentDir(launch, env = process.env) {
   if (!launch) return undefined;
   const userHome = pathValue(env.HOME) ? env.HOME : undefined;
@@ -234,7 +203,7 @@ export function claimFloorWarnings(context, { readStatus, env = process.env } = 
   const launch = recordedLaunch(context.home);
   const warnings = [];
   for (const floor of claimFloors(context, { status, launch })) {
-    const w = floor === 'wake-daemon' ? wakeDaemonWarning(status, { awebChecks: awebChecksDaemon(context.home, launch) })
+    const w = floor === 'wake-daemon' ? wakeDaemonWarning(status)
       : floor === 'aweb-channel' ? awebChannelWarning(awebChannelVersion(claudeConfigDir(launch, env)), context.home)
       : piExtensionWarning(piExtensionVersion(piAgentDir(launch, env)), context.home);
     if (w) warnings.push(w);
