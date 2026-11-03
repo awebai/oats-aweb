@@ -20,6 +20,11 @@
   shares the readiness phase's deadline, as the phase's aw calls do, so a slow
   kernel can't push a home's readiness past it; a query with no time left is
   skipped and the check stays silent.
+- **Tested with aw 1.36.53.** `AW_TESTED` moves from 1.36.51 to 1.36.53, the
+  aw npm `latest` now that the Cloud serves invite preview. CI's journeys run
+  on 1.36.33 and 1.36.53, and `aw-newer-than-tested` warns only above 1.36.53;
+  the pin it and the mint refusal name is `npm i -g @awebai/aw@1.36.53`. The
+  floor is unchanged.
 
 ## 1.33.2 — 2026-11-02
 

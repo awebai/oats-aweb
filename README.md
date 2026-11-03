@@ -317,7 +317,7 @@ The rest:
   restart the host wake daemon" and goes on to assess the target. A daemon that
   is not running or reports no version is still a problem.
 - **`aw-newer-than-tested` is a warning.** When the aw on PATH is above the
-  highest aw this provider's CI journeys pass on (`AW_TESTED`, 1.36.51), and
+  highest aw this provider's CI journeys pass on (`AW_TESTED`, 1.36.53), and
   the home's own team root (or, at spawn, the root of a team it also joins)
   names a service other than the aweb Cloud (an exact
   origin match on `https://app.aweb.ai`), readiness and spawn say so: a server

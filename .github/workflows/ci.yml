@@ -94,7 +94,7 @@ jobs:
       fail-fast: false
       matrix:
         # The provider's floor and the newest aw checked against it.
-        aw: ['1.36.33', '1.36.51']
+        aw: ['1.36.33', '1.36.53']
     env:
       AWEB_STACK_COMMIT: 1d7ee6bb3519a3c940ebeb12afc86d921dc13e27
       AW_VERSION: ${{ matrix.aw }}

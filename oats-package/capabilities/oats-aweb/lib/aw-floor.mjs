@@ -9,7 +9,7 @@ export const AW_MIN = '1.36.33';
 /** The highest aw the provider's CI journeys pass on (ci.yml's resident-journey
  *  matrix, whose top a test holds equal to this). It moves only once that aw is
  *  in the matrix, never ahead of it. */
-export const AW_TESTED = '1.36.51';
+export const AW_TESTED = '1.36.53';
 /** The aweb Cloud's service origins. aw reaches npm `latest` only after the
  *  Cloud runs a server that supports it, so a Cloud home is never warned that
  *  its aw is newer than tested. */

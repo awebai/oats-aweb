@@ -92,10 +92,10 @@ test("the Cloud is an exact origin: scheme, host and port, no suffix match", () 
 
 test("aw newer than tested warns only above AW_TESTED, and only off the Cloud", () => {
   const self = "https://aweb.example.test/api";
-  for (const v of ["1.36.52", "1.36.52-rc.3", "1.37.0", "2.0.0-alpha"]) assert.match(awNewerThanTestedMessage(v, self) || "", new RegExp(`^aw ${v.replaceAll(".", "\\.")} is newer than the aw this oats\\.aweb is tested with \\(${AW_TESTED.replaceAll(".", "\\.")}\\)`), v);
+  for (const v of ["1.36.54", "1.36.54-rc.3", "1.37.0", "2.0.0-alpha"]) assert.match(awNewerThanTestedMessage(v, self) || "", new RegExp(`^aw ${v.replaceAll(".", "\\.")} is newer than the aw this oats\\.aweb is tested with \\(${AW_TESTED.replaceAll(".", "\\.")}\\)`), v);
   for (const v of [AW_TESTED, `${AW_TESTED}+build.1`, `${AW_TESTED}-rc.1`, "1.36.33", "dev", undefined]) assert.equal(awNewerThanTestedMessage(v, self), undefined, String(v));
-  assert.equal(awNewerThanTestedMessage("1.36.53", "https://app.aweb.ai/api"), undefined, "the Cloud is covered by aw's release order");
-  assert.equal(awNewerThanTestedMessage("1.36.53", null), undefined, "no service named is aw's default, the Cloud");
+  assert.equal(awNewerThanTestedMessage("1.36.54", "https://app.aweb.ai/api"), undefined, "the Cloud is covered by aw's release order");
+  assert.equal(awNewerThanTestedMessage("1.36.54", null), undefined, "no service named is aw's default, the Cloud");
 });
 
 test("the CI journey matrix spans exactly AW_MIN to AW_TESTED, so the tested range is what CI proves", () => {
