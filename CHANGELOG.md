@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **A resident create whose API key is refused can simply be rerun.** aw
+  1.36.53 reads an API key's team before it mints anything, and takes its
+  recovery lock `.aw/partial-init.yaml.lock` first. A refused key (wrong,
+  expired, or a service without that read) mints nothing, but left R holding
+  that lock and the captures, and the rerun was refused until R was emptied.
+  R holding only what an init that minted nothing leaves (the captures, and at
+  most a `.aw/` holding only that lock) now counts as empty: the rerun runs
+  aw init again. Nothing in R is deleted, and anything else in R is still
+  refused. The failure says `nothing was created; fix what aw reports above,
+  then rerun the same command`, and a rerun within the same second keeps the
+  earlier run's captures.
+
 - **The unread-count warning follows a later `health enable`.** A home's
   readiness warning `unread-count-unavailable` now reads whether health
   publishes now, from the soul's current settings, as the per-minute observer
