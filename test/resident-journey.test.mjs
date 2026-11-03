@@ -52,6 +52,9 @@ function journey(t) {
   symlinkSync(realpathSync(AW), join(bin, "aw"));
   const version = spawnSync(join(bin, "aw"), ["version"], { encoding: "utf8" });
   assert.match(version.stdout, /^aw (1\.36\.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4|1\.36\.53\n  commit: 98a5ae85c3c6ee3bfda814da2f5a5d4e6b1563ea) /, "the journeys are qualified on aw 1.36.33 (877bbee9) and 1.36.53 (98a5ae85)");
+  // aw 1.36.53 reads the API key's team before it mints anything; the OSS
+  // server does not answer that read, so init stops there and leaves no partial.
+  const teamReadFirst = version.stdout.startsWith("aw 1.36.53\n");
   // The printed steps start with `oats`; a spawn's preflight looks for the
   // harness, which --preview and --no-launch never start.
   writeFileSync(join(bin, "oats"), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(OATS)} "$@"\n`, { mode: 0o755 });
@@ -86,7 +89,7 @@ function journey(t) {
     for (const args of [["init", "-q"], ["add", "."], ["commit", "-qm", "fixture workspace"]]) assert.equal(git(...args).status, 0, `git ${args[0]}`);
     writeFileSync(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    delivery: session\n`);
   };
-  return { base, deployment, home, bin, env, run, shell, aw, workspace, cleanups };
+  return { base, deployment, home, bin, env, run, shell, aw, workspace, cleanups, teamReadFirst };
 }
 /** A complete global identity in root, made the way aweb's own real-stack e2e
  *  makes one, whose custody and per-user unit the cleanups stop. */
@@ -124,6 +127,20 @@ test("registration at awid, a forced failure with no key anywhere, and a rerun t
   const root = join(j.deployment, ".aweb-residents", "alice");
   const first = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
   assert.equal(first.status, 1, first.stdout + first.stderr);
+  if (j.teamReadFirst) {
+    // The refusal is aw's own, and nothing was minted: no partial, so no rerun
+    // continues; R holds only the captures, which a rerun refuses to init into.
+    assert.equal(first.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
+    assert.match(first.doc.error.message, /The aweb service at \S+ (is older than this aw|refused this API key's team read)/);
+    assert.equal(first.doc.error.details.partial, null);
+    assert.ok(!existsSync(join(root, ".aw", "partial-init.yaml")));
+    const again = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+    assert.equal(again.doc.error.code, "E_RESIDENT_ROOT");
+    for (const r of [first, again]) assert.ok(!r.stdout.includes(key) && !r.stderr.includes(key));
+    assert.deepEqual(filesUnder(j.base).filter((p) => readFileSync(p).includes(key)), []);
+    assert.equal(statSync(join(root, ".oats-resident")).mode & 0o777, 0o700);
+    return;
+  }
   assert.equal(first.doc.error.code, "E_RESIDENT_INIT");
   assert.match(first.doc.error.message, /^workspace init target was not found or the team was deleted \(404\): .*\nrerun the same command in this directory; do not delete \.aw\/partial-init\.yaml$/);
   const partialFile = join(root, ".aw", "partial-init.yaml");
@@ -153,6 +170,16 @@ test("a rerun with another registry gets aw's own refusal, unchanged", (t) => {
   if (!configured(t)) return;
   const j = journey(t);
   const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
+  if (j.teamReadFirst) {
+    // No partial to carry a registry: the first run is already aw's refusal,
+    // and the message carries aw's text exactly as aw printed it.
+    const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+    assert.equal(r.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
+    const captured = (kind) => readFileSync(r.doc.error.details.captures.find((p) => p.endsWith(kind)), "utf8").trim();
+    const awText = captured(".stderr") || captured(".stdout");
+    assert.ok(awText && r.doc.error.message.startsWith(`${awText}\n`), r.doc.error.message);
+    return;
+  }
   assert.equal(j.run(["create", "alice"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL }).status, 1);
   const other = AWID_URL.replace("127.0.0.1", "localhost");
   const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: other });
