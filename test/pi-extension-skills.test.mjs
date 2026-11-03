@@ -187,3 +187,12 @@ test("both pi install texts install the extension, then name the filtered settin
   }
   assert.match(readme, /^#{2,4} The pi extension without its skills$/m, "the README section the install text names");
 });
+
+// --------------------------------------------------------- vendored skill text
+
+test("the vendored aweb-messaging skill says OATS installs the pi extension without its skills", () => {
+  const skill = readFileSync(join(CAPABILITY, "skills", "aweb-messaging", "SKILL.md"), "utf8");
+  const line = skill.split("\n").find((l) => l.startsWith("- **Pi**:"));
+  assert.equal(line, `- **Pi**: OATS installs the \`@awebai/pi\` extension with its bundled skills filtered out: its entry in the pi folder's \`settings.json\` is \`{"source": "npm:@awebai/pi", "skills": []}\`. A home's skills come from OATS.`, "upstream's Pi line came back with a sync: adapt it again (skills/VENDORED.md)");
+  assert.doesNotMatch(skill, /bundled together/);
+});
