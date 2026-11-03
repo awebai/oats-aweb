@@ -46,7 +46,9 @@ export function checkSkillArgv(markdown, help) {
     }
   }
   // Also check flags mentioned outside command examples against a verified use.
-  for (const flag of markdown.match(/--[a-z][a-z-]*/g) ?? []) {
+  // An `oats …` command is the kernel's, not aw's: its flags are not aw argv.
+  const awText = markdown.replace(/`oats\s[^`\n]*`/g, '').replace(/^oats\s.*$/gm, '');
+  for (const flag of awText.match(/--[a-z][a-z-]*/g) ?? []) {
     assert.ok(documentedFlags.has(flag), `Flag has no verified example: ${flag}`);
   }
   return { examples: commands.length, helpCommands: cache.size, flags: documentedFlags.size };

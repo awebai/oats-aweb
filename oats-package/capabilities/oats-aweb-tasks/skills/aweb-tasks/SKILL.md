@@ -37,6 +37,31 @@ use another instance's identity. The human is an assignee like any team member;
 use the exact alias from the roster, never a display-name guess. If the human
 is absent from that roster, ask for their exact member alias rather than guess.
 
+## Tasks team
+
+Skip this section unless your TASK.md's Tasks line names a team. That team's
+task list is the deployment's, and it is never your default team's. Find the
+identity that acts in it from your instance home:
+
+```bash
+oats aweb teams --json
+```
+
+- If `defaultTeam.label` is that label, it is your default team: plain
+  `aw task` and `aw work` commands are right, as above.
+- Otherwise the identity home is `joined[].identityHome` of the entry whose
+  `label` is that label. Use it on **every** task and work command, the
+  identity check included:
+
+  ```bash
+  aw --identity-home <identityHome> whoami
+  aw --identity-home <identityHome> work ready
+  ```
+
+- If no joined entry has that label, or it has no `identityHome`, report it to
+  your human and stop. Never fall back to the default team, and never build
+  the path yourself.
+
 ## Find and inspect work
 
 ```bash

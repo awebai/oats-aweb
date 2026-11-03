@@ -48,7 +48,8 @@ test('package exports messaging and tasks at 1.34.0 with the same floors', () =>
   assert.deepEqual(Object.keys(tasks.hooks), ['spawn', 'upgrade']);
   assert.equal(typeof tasks.hooks.spawn, 'string');
   assert.equal(tasks.hooks.upgrade, 'bin/oats-aweb-tasks.mjs upgrade');
-  assert.equal(tasks.binding, undefined, 'readiness does not qualify bound preparation');
+  // The binding answers the readiness check only (test/aweb-tasks-team.test.mjs).
+  assert.equal(tasks.binding.check, 'binding-check');
   assert.equal(tasks.environment, undefined, 'tasks reuse messaging identity without setting environment');
 });
 

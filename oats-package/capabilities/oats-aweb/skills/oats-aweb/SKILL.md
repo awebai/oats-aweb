@@ -442,7 +442,9 @@ is up.
   message lists them. Check the spelling against `oats aweb teams --json`.
 - `E_TEAM_DEFAULT` — the workspace's default team cannot be left.
 - `E_TEAM_GLOBAL_MODE` — this home acts as a resident identity through a
-  session grant; joined teams need local identities. Report it.
+  session grant; joined teams need local identities. Report it. A GLOBAL seat
+  cannot join teams (#60), so readiness refuses a tasks `team` setting that
+  names another team.
 - "failed to leave team … kept …" — the release was not confirmed; the identity
   home was kept on purpose so leave can be retried. Retry later or report.
 
