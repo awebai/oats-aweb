@@ -304,7 +304,8 @@ test("channel delivery requires the channel package for Claude and pi only, nami
   const claude = channelRows.find((r) => r.runtime === "claude");
   assert.equal(claude.install, "claude plugin marketplace add awebai/claude-plugins && claude plugin install aweb-channel@awebai-marketplace");
   const pi = channelRows.find((r) => r.runtime === "pi");
-  assert.equal(pi.install, "pi install npm:@awebai/pi");
+  // Its text continues with the settings filter (test/pi-extension-skills.test.mjs).
+  assert.ok(pi.install.startsWith("pi install npm:@awebai/pi, then "), pi.install);
   assert.equal(manifest.requires.some((r) => r.runtime === "codex"), false);
 });
 

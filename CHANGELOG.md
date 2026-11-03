@@ -60,6 +60,16 @@ Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw moves to 1.36.
   Retire's warning for an alias the server has not released yet drops the
   kernel version the same way: spawn successors with a different `--name` or
   `--purpose` until it is released.
+- **The pi extension without its skills.** `@awebai/pi` bundles skills that
+  pi loads in every session using its pi folder; a home gets its skills
+  through its OATS capabilities only. Both pi `install` texts now install the
+  extension, then make its settings entry `{"source": "npm:@awebai/pi",
+  "skills": []}` (README, "The pi extension without its skills"). Home
+  readiness warns `pi-extension-skills-loaded` for a pi home whose launch's
+  pi folder lists `npm:@awebai/pi`, with or without a version, as a plain
+  string or as an object without `"skills": []`, naming the file and the exact
+  edit. Checked with pi 1.3.0: `pi install` and `pi update` keep the filter.
+  Interim, until aweb publishes the extension without skills.
 
 ## 1.33.2 — 2026-11-02
 
