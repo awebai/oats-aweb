@@ -8,8 +8,8 @@ import { versionAtLeast } from './aw-floor.mjs';
 import { leadingJsonObject, withheldFailureCause } from './aw-failure-cause.mjs';
 
 /** The first aw whose `team invite inspect` sends the whole hosted token to the
- *  invite preview and accepts the Cloud's `/api` service URL, and whose
- *  `id team accept-invite` reads `--token-stdin`. */
+ *  invite preview and accepts the Cloud's `/api` service URL. (`id team
+ *  accept-invite --token-stdin` is older: aw 1.36.33, the provider's floor, has it.) */
 export const AW_INVITE_INSPECT = '1.36.53';
 
 /** aw's inspect refusal codes (cmd/aw/team_invite_inspect*.go, aw 1.36.53):
@@ -26,6 +26,19 @@ function plainService(value) {
   } catch { return undefined; }
 }
 
+/** Whether two service URLs name one service, as aw judges an invite's: equal up
+ *  to a trailing `/api` mount (cmd/aw/team_invite_inspect.go sameInviteService). */
+export function sameInviteService(a, b) {
+  const strip = v => String(v).replace(/\/api$/, '');
+  return strip(a) === strip(b);
+}
+
+/** Refuses an explicit --service that is not the invite's service. */
+export function checkInviteService(given, invite) {
+  if (!given || sameInviteService(given, invite)) return;
+  throw setupFailure('E_SETUP_SERVICE_MISMATCH', `--service ${given} is not the invite's service ${invite}; nothing was redeemed; drop --service to use the invite's, or ask for an invite from ${given}`);
+}
+
 /** Refuses an aw that cannot inspect an invite without redeeming it. */
 export function requireInviteInspect(version) {
   if (versionAtLeast(version, AW_INVITE_INSPECT)) return;
@@ -34,16 +47,22 @@ export function requireInviteInspect(version) {
 
 /** The invite's envelope, read by `aw team invite inspect --json` with the
  *  token on stdin: `{ kind, team, service, scope, status }`. */
-export function inspectInvite(token, cwd, { run, validTeam }) {
+/** `resumeCommand(team, service)`: the exact tokenless resume for a join of `team`
+ *  that an earlier setup accepted, named when aw's refusal carries the invite. */
+export function inspectInvite(token, cwd, { run, validTeam, resumeCommand }) {
   let raw;
   try { raw = run(['aw', 'team', 'invite', 'inspect', '--json'], cwd, 45000, { input: `${token}\n`, secrets: [token], secretSafe: true }); }
   catch (e) {
-    let code;
-    try { code = leadingJsonObject(String(e.stdout ?? '').trim())?.error?.code; } catch { /* no envelope */ }
+    let doc;
+    try { doc = leadingJsonObject(String(e.stdout ?? '').trim()); } catch { /* no envelope */ }
+    const code = doc?.error?.code;
     const cause = INSPECT_CODES.has(code)
       ? `aw team invite inspect refused the invite (${code})`
       : `aw team invite inspect ${e.outcome || 'failed'} (${withheldFailureCause({ stderr: e.stderr, stdout: e.stdout })})`;
-    throw setupFailure('E_SETUP_INVITE_INSPECT', `${cause}; nothing was redeemed; for an exhausted invite that an earlier setup accepted, resume with oats aweb setup --join <label>; otherwise ask for a new invite, ${FALLBACK}`);
+    // aw reports an expired, exhausted or revoked hosted invite with the invite itself.
+    const team = doc?.invite?.canonical_team_id, service = plainService(doc?.invite?.server_url);
+    const resume = resumeCommand && validTeam(team) ? resumeCommand(team, service) : 'oats aweb setup --join <label>';
+    throw setupFailure('E_SETUP_INVITE_INSPECT', `${cause}; nothing was redeemed; if an earlier setup accepted this invite, resume with ${resume}; otherwise ask for a new invite, ${FALLBACK}`);
   }
   let doc;
   try { doc = JSON.parse(raw); } catch { doc = undefined; }
@@ -58,6 +77,7 @@ export function inspectInvite(token, cwd, { run, validTeam }) {
     throw setupFailure('E_SETUP_INVITE_INSPECT', `aw team invite inspect found the invite for ${team} not usable (status or service); nothing was redeemed; ask for a new invite, ${FALLBACK}`);
   }
   if (doc.identity_scope === 'global') {
+    // identity_scope "unknown" proceeds: the accept is --local, and aw refuses a mismatch.
     throw setupFailure('E_SETUP_INVITE_SCOPE', `the invite for ${team} is for a GLOBAL identity; setup joins a LOCAL per-team root; nothing was redeemed; ask for a LOCAL member invite (oats aweb invite), or follow the existing-team GLOBAL resident journey`);
   }
   return { kind: doc.kind, team, service, scope: doc.identity_scope, status: doc.status };

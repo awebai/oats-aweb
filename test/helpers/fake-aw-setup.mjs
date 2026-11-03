@@ -22,9 +22,12 @@
 //                     (AW_FAKE_TEAM), AW_INSPECT_SERVICE (https://app.aweb.ai/api),
 //                     AW_INSPECT_SCOPE (local), AW_INSPECT_STATUS (active); or
 //                     AW_INSPECT_FAIL=<code>, aw's --json error envelope on stdout
-//                     whose message echoes the token, exit 1
+//                     whose message echoes the token, exit 1, with aw's `invite`
+//                     (canonical_team_id, server_url) when AW_INSPECT_FAIL_INVITE is set
+//   AW_FAKE_VERSION_FILE when it exists, `aw version` (and the inspect gate) read
+//                     the version from it, so a fake npm can upgrade aw
 //   accept-invite --token-stdin reads the token from stdin; the call records
-//                     `stdin: true`, never the token
+//                     `stdin: true` and the token's sha256, never the token
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
 //                     (default "403 forbidden") on stderr and AW_INVITE_FAIL_STDOUT,
 //                     when set, on stdout (aw's --json error envelope)
@@ -53,12 +56,13 @@ if (process.env.AWEB_IDENTITY_HOME) { console.error("unexpected ambient identity
 let args = process.argv.slice(2);
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
-if (args[0] === "version") { console.log("aw " + (process.env.AW_FAKE_VERSION || "1.36.33")); process.exit(0); }
+const fakeVersion = () => (process.env.AW_FAKE_VERSION_FILE && fs.existsSync(process.env.AW_FAKE_VERSION_FILE) ? fs.readFileSync(process.env.AW_FAKE_VERSION_FILE, "utf8").trim() : process.env.AW_FAKE_VERSION) || "1.36.33";
+if (args[0] === "version") { console.log("aw " + fakeVersion()); process.exit(0); }
 const awDir = identityHome || path.join(process.cwd(), ".aw");
 const deleting = args[0] === "workspace" && args[1] === "delete";
 const readsStdin = (args[0] === "team" && args[1] === "invite" && args[2] === "inspect") || (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite" && args.includes("--token-stdin"));
 const stdinToken = readsStdin ? fs.readFileSync(0, "utf8").trim() : undefined;
-fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY, ...(deleting ? { signingKey: fs.existsSync(path.join(awDir, "signing.key")) } : {}), ...(readsStdin ? { stdin: !!stdinToken } : {}) }) + "\\n");
+fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY, ...(deleting ? { signingKey: fs.existsSync(path.join(awDir, "signing.key")) } : {}), ...(readsStdin ? { stdin: !!stdinToken, stdinSha256: stdinToken ? require("node:crypto").createHash("sha256").update(stdinToken).digest("hex") : null } : {}) }) + "\\n");
 const writeKeys = (dir) => { if (!process.env.AW_FAKE_KEYS) return; fs.mkdirSync(path.join(dir, "encryption-keys"), { recursive: true }); fs.writeFileSync(path.join(dir, "signing.key"), "FIXTURE-PRIVATE-SIGNING-KEY\\n"); fs.writeFileSync(path.join(dir, "encryption-keys", "fixture.x25519.key"), "FIXTURE-PRIVATE-X25519-KEY\\n"); };
 if (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) process.on("exit", (code) => { if (code === 0) writeKeys(awDir); });
 (${joinFromFake})(args);
@@ -83,9 +87,9 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   writeTeams(process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)});
   console.log(JSON.stringify({ team_id: process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)} }));
 } else if (args[0] === "team" && args[1] === "invite" && args[2] === "inspect") {
-  const v = (process.env.AW_FAKE_VERSION || "1.36.33").split(/[.-]/).map(Number);
+  const v = fakeVersion().split(/[.-]/).map(Number);
   if (v[0] === 1 && v[1] === 36 && v[2] < 28) { console.error("unknown command 'inspect' for 'aw team invite'"); process.exit(1); }
-  if (process.env.AW_INSPECT_FAIL) { console.log(JSON.stringify({ error: { code: process.env.AW_INSPECT_FAIL, message: "refused " + stdinToken } })); process.exit(1); }
+  if (process.env.AW_INSPECT_FAIL) { console.log(JSON.stringify({ error: { code: process.env.AW_INSPECT_FAIL, message: "refused " + stdinToken }, ...(process.env.AW_INSPECT_FAIL_INVITE ? { invite: { kind: "hosted", canonical_team_id: process.env.AW_INSPECT_TEAM || process.env.AW_FAKE_TEAM, identity_scope: "local", server_url: process.env.AW_INSPECT_SERVICE ?? "https://app.aweb.ai/api", expires_at: null, status: process.env.AW_INSPECT_FAIL } } : {}) })); process.exit(1); }
   const kind = process.env.AW_INSPECT_KIND || "hosted";
   console.log(JSON.stringify({ kind, canonical_team_id: process.env.AW_INSPECT_TEAM || process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)}, identity_scope: kind === "hosted" ? (process.env.AW_INSPECT_SCOPE || "local") : "unknown", server_url: process.env.AW_INSPECT_SERVICE ?? "https://app.aweb.ai/api", ...(kind === "hosted" ? { expires_at: null } : {}), status: kind === "hosted" ? (process.env.AW_INSPECT_STATUS || "active") : "unverified" }));
 } else if (args[0] === "team" && args[1] === "invite") {

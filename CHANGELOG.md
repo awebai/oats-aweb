@@ -9,11 +9,20 @@
   normalized as `--create` does. It then joins as `--join` does: a root beside
   the default at `<deployment>/.aweb-roots/<label>`, `roots[<team id>]`, the
   local mapping, and the token on `aw id team accept-invite --token-stdin`,
-  never an argv. It ends with one next step, `oats spawn <soul> --preview`.
+  never an argv. A label the deployment already maps to the team is reused
+  rather than a new one made; a hosted invite of scope `unknown` joins with
+  `--local`; an explicit `--service` must be the invite's (up to `/api`); and
+  `--install-aw` upgrades an older aw first. It ends with one next step,
+  `oats spawn <soul> --preview`, or, when the deployment keeps another default,
+  the spawn that joins the new team beside it, the same in text and JSON.
   Needs aw 1.36.53 or later; every refusal comes before anything is redeemed:
-  `E_SETUP_AW_VERSION`, `E_SETUP_INVITE_INSPECT`, `E_SETUP_INVITE_CONTROLLER`,
-  `E_SETUP_INVITE_SCOPE` and `E_SETUP_LABEL_COLLISION` (pass `--join <label>`;
-  never a suffix). `--join <label>` is unchanged; with an invite aw can read, a
+  `E_SETUP_AW_VERSION`, `E_SETUP_INVITE_INSPECT` (an expired, exhausted or
+  revoked invite names the exact resume command), `E_SETUP_INVITE_CONTROLLER`,
+  `E_SETUP_INVITE_SCOPE` (ask for a LOCAL invite, or use the GLOBAL resident
+  journey), `E_SETUP_ALREADY_MEMBER` (`roots[team]` is never re-pointed),
+  `E_SETUP_SERVICE_MISMATCH`, `E_SETUP_DEFAULT_PRESERVE` (a workspace default
+  with the label unmapped, decided before redemption from the invite's team)
+  and `E_SETUP_LABEL_COLLISION` (pass `--join <label>`; never a suffix). `--join <label>` is unchanged; with an invite aw can read, a
   label mapped to another team refuses with `E_SETUP_JOIN_MISMATCH`, naming
   both. `oats aweb invite` answers the joiner's one-line command beside the
   token, never holding it: `oats aweb setup --soul <soul> --invite-stdin --name
@@ -22,6 +31,10 @@
   usage error "requires --join <label>" (exit 2), is now this form: on an aw
   older than 1.36.53 it refuses with `E_SETUP_AW_VERSION` (exit 1) instead, and
   the two tests that pinned the usage error now pin that refusal.
+- **The invite token is in no argv on the accepting host.** Every
+  `aw id team accept-invite` — setup's labelled `--join`, the invite form and an
+  instance's `oats aweb join` — now reads the token on stdin (`--token-stdin`,
+  which aw 1.36.33, the provider's floor, already has).
 
 - **A refused `oats aweb join` names its cause and fix (#52).** The join has
   read the deployment's live `roots` since 1.22.0, so a team root added to

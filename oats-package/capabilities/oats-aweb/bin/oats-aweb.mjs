@@ -63,7 +63,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from
 import { awErrorCode, leadingJsonObject, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
-import { AW_INVITE_INSPECT, checkInviteLabel, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
+import { AW_INVITE_INSPECT, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
@@ -427,18 +427,26 @@ const AW_VERSION_SPEC_RE = /^[\^~]?\d+\.\d+\.\d+$/;
 /** The aw step of `setup --install-aw` / `--check-only`, as one status: `ok` (meets the floor),
  *  `done` (installed now), `needs-human` (missing or old, not asked to install) or `failed`. The
  *  default install is AW_MIN's release line (`^AW_MIN`, the newest compatible aw). */
-async function ensureAw({ install, version }) {
-  const problem = await awFloorMessage();
+/** aw at or above the floor, and `min` when given (the invite form's 1.36.53), installing it
+ *  with npm when `install` is set. */
+async function ensureAw({ install, version, min }) {
+  const belowMin = async () => {
+    const floor = await awFloorMessage();
+    if (floor || !min) return floor;
+    const v = await readAwVersion();
+    return versionAtLeast(v, min) ? undefined : `aw ${v || "unreadable"} is older than ${min}`;
+  };
+  const problem = await belowMin();
   if (!problem) return { status: "ok", version: await readAwVersion() };
   if (!install) return { status: "needs-human", detail: problem, remedy: "`oats aweb setup --install-aw` (installs aw with npm)" };
   const was = onPath("aw") ? (await readAwVersion()) || "unreadable" : "missing";
-  const pkg = `@awebai/aw@${version || `^${AW_MIN}`}`;
+  const pkg = `@awebai/aw@${version || `^${min || AW_MIN}`}`;
   try { run(["npm", "install", "-g", pkg], process.cwd(), 300000); }
   catch (e) {
     const why = String(e.stderr || e.message || "").replace(/\s+/g, " ").trim().slice(0, 500);
     return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} ${e.outcome || "failed"}${why ? `: ${why}` : ""}` };
   }
-  const after = await awFloorMessage();
+  const after = await belowMin();
   if (after) return { status: "failed", code: "E_AW_FLOOR", detail: `npm install -g ${pkg} ran, but ${after}` };
   const installed = await readAwVersion();
   return { status: "done", version: installed, detail: `installed aw ${installed} (was ${was})` };
@@ -1277,11 +1285,10 @@ function connectExistingJoinedTeam({ label, identityHome, expectedTeam, root, cw
   }
   return { label, team, identityHome, receive: "poll", since: new Date().toISOString() };
 }
-function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true, tokenStdin = false }) {
+function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true }) {
   if (!token || typeof token !== "string") throw new Error(`aw id team accept-invite received no invite token for ${label}`);
-  // tokenStdin (aw 1.36.53): the token reaches aw on stdin, never its argv.
-  const tokenArgs = tokenStdin ? ["--token-stdin"] : [token];
-  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", ...tokenArgs, flagEq("--name", requestedAlias), "--local", "--json"]), cwd, JOIN_TIMEOUT_MS, { secrets: [token], secretSafe: true, ...(tokenStdin ? { input: `${token}\n` } : {}) }), "aw id team accept-invite");
+  // The token reaches aw on stdin, never its argv (`--token-stdin`: aw 1.36.33, the provider's floor).
+  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", "--token-stdin", flagEq("--name", requestedAlias), "--local", "--json"]), cwd, JOIN_TIMEOUT_MS, { secrets: [token], secretSafe: true, input: `${token}\n` }), "aw id team accept-invite");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`aw id team accept-invite returned no usable result for joined team ${label}`);
   const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : requestedAlias;
   const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : expectedTeam;
@@ -2283,18 +2290,40 @@ if (event === "launch") {
     }
   }
 
-  let joinConfiguration, inviteEnvelope;
+  // Remedy commands, also named by the invite form's refusals before any root exists.
+  const setupSoulArg = () => forwardedSoulArg || "<soul>";
+  const quoteArg = (value) => /^[A-Za-z0-9_./:-]+$/.test(value) ? value : "'" + String(value).replaceAll("'", "'\\''") + "'";
+  const setupContext = () => `--dir ${quoteArg(setupDir || process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || "<deployment>")} --soul ${quoteArg(setupSoulArg())}`;
+  // The invite form names its exact service; the released --join resume keeps `<url>`.
+  const setupResumeCommand = (label, service = inviteEnvelope ? joinService : undefined) => `oats aweb setup ${setupContext()} --join ${quoteArg(label)} --service ${service ? quoteArg(service) : "<url>"}`;
+  const setupInviteCommand = (label) => `oats aweb setup ${setupContext()} --join ${quoteArg(label || "<label>")} --invite-stdin --name <alias> --service <url>`;
+  let joinConfiguration, inviteEnvelope, awEnsured = false;
   if (joinLabel || inviteForm) {
     try {
       const selected = selectedDeployment(process.env, setupDir);
       if (inviteForm) {
         // The invite names its team and service; nothing is redeemed until every check passes.
+        if (installAw) {
+          const aw = await ensureAw({ install: true, version: awVersion, min: AW_INVITE_INSPECT });
+          if (aw.status === "failed") throw Object.assign(new Error(aw.detail), { code: aw.code || "E_AW_INSTALL" });
+          if (aw.status === "done" && !json) console.log(`✓ ${aw.detail}`);
+          awEnsured = true;
+        }
         requireInviteInspect(await readAwVersion());
-        inviteEnvelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId });
-        joinLabel = normalizeAwebTeamName(inviteEnvelope.team.slice(0, inviteEnvelope.team.indexOf(":")));
+        const labelOf = (team) => normalizeAwebTeamName(team.slice(0, team.indexOf(":")));
+        const resumeCommand = (team, service) => setupResumeCommand(labelOf(team), service);
+        inviteEnvelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId, resumeCommand });
+        // A deployment already in the team keeps its root: nothing is redeemed, roots[team] is never re-pointed.
+        const memberRoot = awebRootForTeam(inviteEnvelope.team);
+        if (memberRoot && teamIdsOf(readTeamsAt(memberRoot)).map(String).includes(inviteEnvelope.team)) {
+          throw Object.assign(new Error(`already a member of ${inviteEnvelope.team} at ${memberRoot}; nothing redeemed`), { code: "E_SETUP_ALREADY_MEMBER" });
+        }
+        checkInviteService(joinService, inviteEnvelope.service);
         if (!joinService) joinService = inviteEnvelope.service;
+        joinLabel = labelOf(inviteEnvelope.team);
       }
-      joinConfiguration = prepareJoinConfiguration(joinLabel, selected, { validTeam: validAwebTeamId });
+      joinConfiguration = prepareJoinConfiguration(joinLabel, selected, { validTeam: validAwebTeamId, ...(inviteEnvelope ? { knownTeam: inviteEnvelope.team, preferMappedLabel: true } : {}) });
+      joinLabel = joinConfiguration.label;
       if (inviteEnvelope) checkInviteLabel({ label: joinLabel, mappedTeam: joinConfiguration.expectedTeam, inviteTeam: inviteEnvelope.team, explicit: false });
       else if (invite && joinConfiguration.expectedTeam && versionAtLeast(await readAwVersion(), AW_INVITE_INSPECT)) {
         // --join L with an invite (released): where aw can read the invite, a mapped label
@@ -2313,7 +2342,7 @@ ${JSON.stringify(problem.details || {})}`);
     }
   }
 
-  if (installAw || checkOnly) {
+  if ((installAw && !awEnsured) || checkOnly) {
     const aw = await ensureAw({ install: installAw, version: awVersion });
     if (checkOnly) {
       // The host's answer to `oats aweb connect`: aw, the default team, and whether the root
@@ -2350,10 +2379,6 @@ ${JSON.stringify(problem.details || {})}`);
     if (!alias || !AWEB_ALIAS_RE.test(alias)) throw new Error(`--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule`);
     return alias;
   };
-  const quoteArg = (value) => /^[A-Za-z0-9_./:-]+$/.test(value) ? value : "'" + String(value).replaceAll("'", "'\\''") + "'";
-  const setupContext = () => `--dir ${quoteArg(setupDir || process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || "<deployment>")} --soul ${quoteArg(setupSoulArg())}`;
-  const setupResumeCommand = (label) => `oats aweb setup ${setupContext()} --join ${quoteArg(label)} --service <url>`;
-  const setupInviteCommand = (label) => `oats aweb setup ${setupContext()} --join ${quoteArg(label || "<label>")} --invite-stdin --name <alias> --service <url>`;
   let deployment;
 
   const setupServiceDocs = (teamRoot) => {
@@ -2406,7 +2431,7 @@ ${JSON.stringify(problem.details || {})}`);
       try { mkdirSync(teamRoot); createdRoot = true; }
       catch (e) { if (e.code !== "EEXIST" || !statSync(teamRoot).isDirectory()) throw e; }
       try {
-        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false, tokenStdin: !!inviteEnvelope }));
+        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
       } catch (e) {
         // A recorded root may contain operator data or be the deployment itself.
         // Roll back only our newly created, still-empty directory; retain any
@@ -2476,7 +2501,6 @@ ${JSON.stringify(problem.details || {})}`);
     if (localTeams?.closed) { console.log(`  ${lead}.`); printWorkspaceTeam("<label>", team, localTeams); return; }
     console.log(`  ${lead}; record it with \`oats teams add <label> --team ${team}\` and \`oats teams default <label>\`${tail}.`);
   };
-  const setupSoulArg = () => forwardedSoulArg || "<soul>";
   const missingSharedRows = () => parseOatsTeams().filter((t) => {
     if (t.from !== "shared" || !t.label || !t.team) return false;
     const teamRoot = awebRootForTeam(t.team);
@@ -2557,14 +2581,25 @@ ${JSON.stringify(problem.details || {})}`);
       process.exit(0);
     }
     if (joinLabel) {
+      if (!json && joinConfiguration.labelFrom === "mapping") console.log(`Using label ${joinLabel}, already mapped to ${inviteEnvelope.team}.`);
       if (!json) console.log(invite ? `Accepting invite for ${joinLabel} into a new per-team root (token withheld).` : `Resuming join for ${joinLabel} in its per-team root.`);
       const accepted = acceptIntoTeamRoot(joinLabel, invite, inviteEnvelope?.team || joinConfiguration.expectedTeam);
       let configuration;
       try { configuration = joinConfiguration.finish(accepted.team); }
       catch (error) { error.details = { ...error.details, ...joinConfiguration.details(), root: accepted.teamRoot }; throw error; }
       // The invite form ends with exactly one next step; the released --join output is unchanged.
-      const next = inviteEnvelope ? `oats spawn ${setupSoulArg()} --preview` : undefined;
-      const fromInvite = inviteEnvelope ? { invite: { kind: inviteEnvelope.kind, team: inviteEnvelope.team, service: inviteEnvelope.service }, next } : {};
+      // A preserved default folds `remaining` into the note: the step that matters is a spawn
+      // that joins the new team beside the kept default; moving the default is the operator's call.
+      let next;
+      if (inviteEnvelope) {
+        next = `oats spawn ${setupSoulArg()} --preview`;
+        if (configuration.remaining?.length) {
+          const { remaining, ...rest } = configuration;
+          next = `oats spawn ${setupSoulArg()} --provider oats.aweb join=${joinLabel} --preview`;
+          configuration = { ...rest, note: `the deployment's default team ${configuration.observed?.defaultTeam?.label || ""} is kept, so the next spawn joins ${joinLabel} beside it; to make ${joinLabel} the default instead (an operator's choice): ${remaining.map((c) => c.join(" ")).join("; ")}` };
+        }
+      }
+      const fromInvite = inviteEnvelope ? { invite: { kind: inviteEnvelope.kind, team: inviteEnvelope.team, service: inviteEnvelope.service }, labelFrom: joinConfiguration.labelFrom, next } : {};
       if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { ...accepted, ...configuration, ...fromInvite } }));
       else {
         console.log(`✓ joined ${accepted.team} as ${joinLabel} in ${accepted.teamRoot}; recorded settings.oats.aweb.roots[${accepted.team}].`);

@@ -614,7 +614,7 @@ test("setup --create with namespace creates a local BYOT team, accepts it into a
   assert.deepEqual(fake.readCalls().map((c) => c.args), [
     ["id", "team", "create", `--name=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
     ["whoami", "--json"],
-    ["id", "team", "accept-invite", `TOKEN__${team}`, "--name=fixture", "--local", "--json"],
+    ["id", "team", "accept-invite", "--token-stdin", "--name=fixture", "--local", "--json"],
     ["workspace", "connect", "--service=https://app.aweb.ai/api", `--team=${team}`, "--json"],
     ["team", "list", "--json"],
   ]);

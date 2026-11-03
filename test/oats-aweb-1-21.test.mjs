@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 import { fakeKernelTeamConfig, joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 
@@ -89,8 +91,10 @@ test("setup --invite-stdin behaves exactly as --invite, with the token on no arg
   assert.deepEqual(callsOf(stdinFake, viaStdin), callsOf(argvFake, viaArgv));
   const stdinCalls = stdinFake.readCalls();
   const accept = stdinCalls.find((c) => c.args.slice(0, 3).join(" ") === "id team accept-invite");
-  assert.equal(accept.args[3], TOKEN, "the trimmed first stdin line is the token aw accepts");
-  for (const c of stdinCalls) if (c !== accept) assert.ok(!c.args.join(" ").includes(TOKEN), `token on aw argv: ${c.args.join(" ")}`);
+  // Every accept reads the token on stdin (aw's --token-stdin, from the 1.36.33 floor).
+  assert.ok(accept.args.includes("--token-stdin"));
+  assert.equal(accept.stdinSha256, sha256(TOKEN), "the trimmed first stdin line is the token aw accepts");
+  for (const c of stdinCalls) assert.ok(!c.args.join(" ").includes(TOKEN), `token on aw argv: ${c.args.join(" ")}`);
   assert.doesNotMatch(s.stdout + s.stderr, /SECRET-STDIN-TOKEN/);
   for (const f of filesUnder(viaStdin)) assert.ok(!f.text.includes(TOKEN), `token written to ${f.path}`);
   assert.match(readFileSync(join(viaStdin, "oats-local.yaml"), "utf8"), /"joined:example\.invalid": ".*\.aweb-roots\/joined"/);
@@ -360,13 +364,12 @@ function connectFixture(t, { localTeam = TEAM, hostMember = false, hostAw = true
 const envelope = (stdout) => JSON.parse(stdout.trim().split("\n").pop());
 const awCall = (calls, prefix) => calls.filter((c) => c.args.slice(0, prefix.length).join(" ") === prefix.join(" "));
 
-/** The token appears nowhere but the host's single `aw id team accept-invite` argv. */
+/** The token appears in no argv, the host's `aw id team accept-invite` included (it reads stdin). */
 function assertTokenContained(fx, result, token = HOSTED_TOKEN) {
   assert.ok(!(result.stdout + result.stderr).includes(token), "token in connect output");
   for (const argv of fx.kernel.readCalls()) assert.ok(!argv.join(" ").includes(token), `token on oats argv: ${argv.join(" ")}`);
   const awCalls = fx.fake.readCalls();
-  const accepts = awCall(awCalls, ["id", "team", "accept-invite"]);
-  for (const c of awCalls) if (!accepts.includes(c)) assert.ok(!c.args.join(" ").includes(token), `token on aw argv: ${c.args.join(" ")}`);
+  for (const c of awCalls) assert.ok(!c.args.join(" ").includes(token), `token on aw argv: ${c.args.join(" ")}`);
   for (const dir of [fx.localDir, fx.hostDir]) for (const f of filesUnder(dir)) assert.ok(!f.text.includes(token), `token written to ${f.path}`);
 }
 
@@ -398,7 +401,7 @@ test("connect on a fresh host installs aw, mints a hosted invite, joins through 
   assert.ok(invites[0].args.includes(`--team-id=${TEAM}`));
   const accepts = awCall(fx.fake.readCalls(), ["id", "team", "accept-invite"]);
   assert.equal(accepts.length, 1);
-  assert.equal(accepts[0].args[3], HOSTED_TOKEN, "the host accepted the token connect minted");
+  assert.equal(accepts[0].stdinSha256, sha256(HOSTED_TOKEN), "the host accepted, on stdin, the token connect minted");
   assert.equal(accepts[0].identityHome, join(teamRoot, ".aw"));
   assertTokenContained(fx, result);
 });
