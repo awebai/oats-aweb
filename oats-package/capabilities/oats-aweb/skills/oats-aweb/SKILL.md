@@ -366,6 +366,8 @@ acts as a resident identity through a session grant (identity.mode "global")`:
 stop at #60's owner-pending grant contract, never use native switch/join in-seat.
 When a team becomes ineligible, launch attempts leave; an unconfirmed release
 keeps the identity and reports the failure. Do not manually delete its receipts.
+A joined team that has become the default is kept, with a warning, until the
+home is respawned: only a respawn moves its primary identity.
 
 ## 6. Etiquette
 

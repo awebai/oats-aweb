@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **A joined team that becomes the default is no longer left at start.** At
+  every start and restart, launch leaves joined teams that are no longer
+  eligible, and the default team is never eligible to join. So when a
+  workspace made a team every soul's default, a home that had joined it, but
+  whose primary identity is still in the team it was spawned in, left it on
+  its next restart. Launch now keeps that membership, warns "kept joined team
+  <label>: it is now the default team … respawn to move it", and changes
+  nothing else. Only a respawn moves a running home's primary identity.
 - **The pi extension without its skills.** `@awebai/pi` bundles skills that
   pi loads in every session using its pi folder; a home gets its skills
   through its OATS capabilities only. Both pi `install` texts now install the
