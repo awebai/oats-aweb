@@ -24,6 +24,14 @@
   `scripts/sync-vendored-skills.mjs` writes that line and its note in
   `skills/VENDORED.md`, so a resync keeps both. Interim, until aweb publishes
   the extension without skills.
+- **oats.aweb-tasks `team` is committed-only.** The manifest marks
+  `settings.team` `committedOnly: true`. A kernel that lists
+  `settings-committed-only` in `oats version --json` refuses `team` from
+  `oats-local.yaml` and from `--provider` (`E_WORKSPACE_SCHEMA`, reason
+  `committed-only-key`); an earlier kernel ignores the flag, so the
+  compatibility floor stays OATS >=0.68.0. Either way, `team` belongs in the
+  workspace's or a soul's `tasks:` payload. `schemas/capability-manifest.schema.json`
+  is refreshed from awebai/oats `0e215e8`, which adds `committedOnly`.
 - **oats.aweb-tasks `team`: one team's task list for every deployment.** The
   new setting `team: <label>` names the aweb team whose task list
   oats.aweb-tasks reads and writes. It is set only in the workspace's or a

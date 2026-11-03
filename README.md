@@ -119,10 +119,14 @@ writes, so that every deployment of a workspace can share one list:
 tasks: { team: shared }
 ```
 
-- **Where it is set.** `team` is set only in the workspace's or a soul's
-  `tasks:` payload, never in a deployment's `oats-local.yaml` or with
-  `oats spawn --provider`. The kernel owns that rule and refuses or warns about
-  `team` from anywhere else, so the provider has no origin check of its own.
+- **Where it is set.** `team` belongs in the workspace's or a soul's `tasks:`
+  payload, never in a deployment's `oats-local.yaml` or with
+  `oats spawn --provider`. The manifest marks it `committedOnly`, and the
+  kernel owns that rule: a kernel that lists `settings-committed-only` in
+  `oats version --json` refuses `team` from `oats-local.yaml` and from
+  `--provider` (`E_WORKSPACE_SCHEMA`, reason `committed-only-key`). An earlier
+  kernel ignores the flag. Either way the provider has no origin check of its
+  own, and `team` belongs in the workspace's or a soul's `tasks:`.
 - **Absent** (the default): the home's default team, exactly as before. The
   brief is unchanged byte for byte, and readiness adds one passing item with no
   warning. The inject and skill say "the tasks team", which is the default team
@@ -206,7 +210,9 @@ previews a soul with both providers. It calls no live service or aw command.
 `test/aweb-tasks-team-kernel.test.mjs` takes the same two variables. It gives
 `team` through soul payloads, reads `oats readiness --soul` for each case, and
 compares an absent `team` with the same package stripped of its check: only the
-one passing item differs. `test/aweb-tasks-team.test.mjs` drives the check
+one passing item differs. On a kernel that lists `settings-committed-only` it
+also checks the refusal of `team` from `oats-local.yaml` and `--provider`; it
+skips that case on an earlier kernel. `test/aweb-tasks-team.test.mjs` drives the check
 against a fake kernel that answers `oats aweb teams --json` and
 `oats inspect … --json`, and pins that the inject and skill, minus their "Tasks
 team" block and with their one changed sentence restored, are byte-identical to

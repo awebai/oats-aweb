@@ -77,7 +77,9 @@ const codes = (r) => r.problems.map((p) => p.code);
 test('the manifest declares team with a description only, and the smallest binding the kernel accepts', () => {
   const m = JSON.parse(read('oats.json'));
   assert.deepEqual(Object.keys(m.settings), ['team']);
-  assert.deepEqual(Object.keys(m.settings.team), ['description'], 'no default and no new keys on the team entry');
+  // committedOnly: a kernel with settings-committed-only takes team from the workspace's or a soul's tasks: only.
+  assert.deepEqual(Object.keys(m.settings.team).sort(), ['committedOnly', 'description'], 'no default, and committedOnly is the one flag');
+  assert.equal(m.settings.team.committedOnly, true);
   assert.match(m.settings.team.description, /Absent \(the default\) means the home's default team/);
   assert.match(m.settings.team.description, /only in the workspace's or a soul's tasks: payload/);
   assert.deepEqual(m.binding, { version: 1, normalize: 'binding-normalize', bind: 'binding-bind', check: 'binding-check' });
@@ -85,6 +87,20 @@ test('the manifest declares team with a description only, and the smallest bindi
   assert.equal(m.environment, undefined);
   assert.deepEqual(Object.keys(m.hooks), ['spawn', 'upgrade']);
   assert.equal(typeof m.hooks.spawn, 'string', 'the spawn hook stays not required');
+});
+
+test('the schema copy refuses a committedOnly that is not a boolean, or one beside hostOnly', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'aweb-tasks-schema-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const path of ['scripts', 'schemas', 'oats-package']) cpSync(join(root, path), join(dir, path), { recursive: true });
+  const path = join(dir, 'oats-package/capabilities/oats-aweb-tasks/oats.json'), manifest = JSON.parse(readFileSync(path, 'utf8'));
+  const validate = (team) => {
+    writeFileSync(path, JSON.stringify({ ...manifest, settings: { team: { ...manifest.settings.team, ...team } } }));
+    return spawnSync(process.execPath, [join(dir, 'scripts/validate-manifests.mjs')], { cwd: dir, encoding: 'utf8' }).status;
+  };
+  assert.equal(validate({}), 0);
+  assert.equal(validate({ committedOnly: 'yes' }), 1);
+  assert.equal(validate({ hostOnly: true }), 1, 'never hostOnly and committedOnly together');
 });
 
 test('a team label follows oats.aweb LABEL_RE, and a refusal names the problem', () => {
