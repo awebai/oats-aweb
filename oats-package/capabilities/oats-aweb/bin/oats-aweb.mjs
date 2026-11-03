@@ -2330,23 +2330,28 @@ if (event === "launch") {
         }
         requireInviteInspect(await readAwVersion());
         const labelOf = (team) => normalizeAwebTeamName(team.slice(0, team.indexOf(":")));
-        // The kernel's team rows, or undefined when it cannot say; a remedy then names the derived label.
-        const kernelTeams = () => { try { return selectedTeamKernel(selected).read().teams; } catch { return undefined; } };
+        // The kernel's teams document, or undefined when it cannot say; a remedy then names the derived label.
+        const kernelTeamsDoc = () => { try { return selectedTeamKernel(selected).read(); } catch { return undefined; } };
+        const kernelTeams = () => kernelTeamsDoc()?.teams;
         // A resume names the label a row already maps to the team, as the success path uses it.
         const resumeCommand = (team, service) => setupResumeCommand(kernelTeams()?.find((row) => row.team === team)?.label || labelOf(team), service);
         inviteEnvelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId, resumeCommand });
         // A deployment already in the team keeps its root: nothing is redeemed, roots[team] is never re-pointed.
         const memberRoot = deploymentMemberRoot(inviteEnvelope.team);
         if (memberRoot) {
-          const team = inviteEnvelope.team, rows = kernelTeams();
+          const team = inviteEnvelope.team, doc = kernelTeamsDoc(), rows = doc?.teams;
           let remedy = "";
           if (rows && !rows.some((row) => row.team === team)) {
             // No kernel row maps the team: a root an earlier run left at the label's per-team root
-            // finishes with the tokenless resume; any other root needs only the mapping.
+            // finishes with the tokenless resume; any other root needs only the mapping, added with
+            // --no-default (teams-conditional-default) so a workspace default is never overridden, or,
+            // where the workspace refuses local teams, committed in oats-workspace.yaml.
             const label = labelOf(team), canonical = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
             remedy = canonical(memberRoot) === canonical(perTeamRoot(selected, label))
               ? `; finish its setup without an invite: ${setupResumeCommand(label, inviteEnvelope.service)}`
-              : `; no team label maps it here: oats teams add ${quoteArg(label)} --team ${team} --dir ${quoteArg(selected)}`;
+              : doc.localTeams === false
+                ? `; no team label maps it here, and this workspace does not allow local teams: commit ${JSON.stringify(label)}: { team: ${JSON.stringify(team)} } under teams: in oats-workspace.yaml (a shared-file change, /oats-teams)`
+                : `; no team label maps it here: oats teams add ${quoteArg(label)} --team ${team} --no-default --dir ${quoteArg(selected)}`;
           }
           throw Object.assign(new Error(`already a member of ${team} at ${memberRoot}; nothing redeemed${remedy}`), { code: "E_SETUP_ALREADY_MEMBER" });
         }

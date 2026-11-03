@@ -23,7 +23,8 @@
   `E_SETUP_INVITE_SCOPE` (ask for a LOCAL invite, or use the GLOBAL resident
   journey), `E_SETUP_ALREADY_MEMBER` (`roots[team]`, `root` or the default
   team's root lists the team; `roots[team]` is never re-pointed; an unmapped
-  team names the tokenless resume or the `oats teams add` it lacks),
+  team names the tokenless resume or the mapping it lacks, `oats teams add
+  ... --no-default` or the workspace commit),
   `E_SETUP_MEMBERSHIP` (such a root's membership could not be read),
   `E_SETUP_SERVICE_MISMATCH`, `E_SETUP_DEFAULT_PRESERVE` (a workspace default
   with the label unmapped, decided before redemption from the invite's team)

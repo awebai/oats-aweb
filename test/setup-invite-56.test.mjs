@@ -241,8 +241,25 @@ test('a shared root (settings.root) already in the team refuses before redeeming
   const error = refused(f, r, 'E_SETUP_ALREADY_MEMBER');
   assert.ok(error.message.startsWith(`already a member of ${TEAM} at ${member}; nothing redeemed`), error.message);
   // No kernel team maps the team, and this root is no per-team root a resume would find: record the mapping.
-  assert.ok(error.message.includes(`oats teams add ${LABEL} --team ${TEAM} --dir ${f.dep}`), error.message);
+  assert.ok(error.message.includes(`oats teams add ${LABEL} --team ${TEAM} --no-default --dir ${f.dep}`), error.message);
   assert.doesNotMatch(readFileSync(join(f.dep, 'oats-local.yaml'), 'utf8'), /roots/, 'roots is unchanged');
+});
+
+test('the mapping remedy keeps a workspace default: oats teams add ... --no-default', t => {
+  const prior = { label: 'prior', team: 'prior:example.invalid', from: 'workspace' };
+  const f = fixture(t, { teams: [{ ...prior, from: 'shared' }], defaultTeam: prior });
+  const { extra } = sharedRoot(f);
+  const error = refused(f, f.run(['--invite-stdin', '--name', 'host', '--json'], extra), 'E_SETUP_ALREADY_MEMBER');
+  // Without --no-default the first local team would become the deployment's default over the workspace's.
+  assert.ok(error.message.includes(`oats teams add ${LABEL} --team ${TEAM} --no-default --dir ${f.dep}`), error.message);
+});
+
+test('in a workspace closed to local teams, the mapping remedy names the workspace commit', t => {
+  const f = fixture(t, { localTeams: false });
+  const { extra } = sharedRoot(f);
+  const error = refused(f, f.run(['--invite-stdin', '--name', 'host', '--json'], extra), 'E_SETUP_ALREADY_MEMBER');
+  assert.doesNotMatch(error.message, /oats teams add/);
+  assert.ok(error.message.includes(`commit ${JSON.stringify(LABEL)}: { team: ${JSON.stringify(TEAM)} } under teams: in oats-workspace.yaml`), error.message);
 });
 
 test('a shared root whose membership cannot be read refuses before redeeming (E_SETUP_MEMBERSHIP), never as "not a member"', t => {

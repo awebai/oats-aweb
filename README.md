@@ -1075,7 +1075,9 @@ Supported acts:
   (`roots[team]`, `root` or the default team's root already lists the team;
   `roots[team]` is never re-pointed; when no team label maps it, the message
   names the tokenless resume for a per-team root an earlier run left, else the
-  `oats teams add` mapping), `E_SETUP_MEMBERSHIP` (one of those roots' `aw team
+  mapping: `oats teams add <label> --team <id> --no-default`, which keeps a
+  workspace default, or, where the workspace allows no local teams, the
+  `teams:` commit to oats-workspace.yaml), `E_SETUP_MEMBERSHIP` (one of those roots' `aw team
   list` could not be read: never taken as "not a member"),
   `E_SETUP_SERVICE_MISMATCH` (an explicit `--service` for another
   service), `E_SETUP_DEFAULT_PRESERVE` (the workspace sets the default and the
