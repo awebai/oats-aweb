@@ -131,7 +131,10 @@ test("registration at awid, a forced failure with no key anywhere, and a rerun t
     // The refusal is aw's own, and nothing was minted: no partial, so no rerun
     // continues; R holds only the captures, which a rerun refuses to init into.
     assert.equal(first.doc.error.code, "E_RESIDENT_NOTHING_TO_CONTINUE");
-    assert.match(first.doc.error.message, /The aweb service at \S+ (is older than this aw|refused this API key's team read)/);
+    const captured = (kind) => readFileSync(first.doc.error.details.captures.find((p) => p.endsWith(kind)), "utf8").trim();
+    const awText = captured(".stderr") || captured(".stdout");
+    assert.match(awText, /^The aweb service at \S+ /, "aw names the service that refused");
+    assert.ok(first.doc.error.message.startsWith(`${awText}\n`), first.doc.error.message);
     assert.equal(first.doc.error.details.partial, null);
     assert.ok(!existsSync(join(root, ".aw", "partial-init.yaml")));
     const again = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
