@@ -12,6 +12,13 @@
   oats.aweb-tasks now says what oats.aweb stopped saying: task state belongs
   in tasks, not mail; `aw lock` and `aw roles` stay outside OATS; and how to
   treat `work` and `claim` events.
+- **The messaging loop is whole in oats.aweb.** The inject and `/oats-aweb`
+  section 4 ("The messaging loop") give the complete session loop for mail and
+  chat: read what the wake presents, or `aw mail inbox` and `aw chat pending`
+  when nothing is; reply in thread, or answer or extend a waiting chat; return
+  to the task. A skill named in team instructions, a role description or pi's
+  welcome message may not be installed in the home; the agent follows the
+  skills OATS composed instead.
 
 ## 1.33.3 — 2026-11-03
 

@@ -56,3 +56,22 @@ test("a failure names the file, the line and the matched text", () => {
     'SKILL.md:2: the task layer: "task\\nlayer"',
   ], "a wrapped match is named by the line it starts on");
 });
+
+// aweb's team instructions, roles and pi's welcome point agents to a skill for
+// the session loop that an OATS home may not have, so oats.aweb teaches the
+// whole messaging loop itself, mail and chat only.
+test("the inject and the oats-aweb skill teach the whole messaging loop and defer skill names in team text to OATS", () => {
+  const inject = readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8").replace(/\s+/g, " ");
+  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8").replace(/\s+/g, " ");
+  const loop = skill.split("**The messaging loop** (when woken).")[1]?.split("**Never sleep, poll or busy-wait")[0];
+  assert.ok(loop, "section 4 holds the messaging loop");
+  assert.match(inject, /\*\*Your messaging loop\*\*.*`\/oats-aweb` section 4, "The messaging loop"/);
+  for (const [name, text] of [["inject", inject], ["oats-aweb section 4", loop]]) {
+    assert.match(text, /run `aw mail inbox` and `aw chat pending`/, `${name}: read what is waiting`);
+    assert.match(text, /`aw mail reply/, `${name}: reply in thread`);
+    assert.match(text, /`aw chat send-and-leave`.*`aw chat extend-wait`/, `${name}: answer or extend a waiting chat`);
+    assert.match(text, /(?:Return|Go back) to (?:your task|the task you were on)/, `${name}: back to the task`);
+    assert.match(text, /\(`aw instructions`, (?:a role description|role descriptions)|Team instructions \(`aw instructions`\), role descriptions/, `${name}: names team and role text`);
+    assert.match(text, /may not be installed in this home: follow (?:the|this loop and the other) skills OATS composed here instead/, `${name}: defers to OATS's skills`);
+  }
+});
