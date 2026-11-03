@@ -3,7 +3,7 @@
 // `oats aweb teams --json` and `oats inspect … --json`.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -189,7 +189,8 @@ test('home readiness reads oats aweb teams from the home and refuses a home that
   assert.deepEqual(home('shared', { FAKE_TEAMS: teamsDoc({ joined: JOINED }) }), { status: 'ready', problems: [], warnings: [] });
   const teamsCall = f.kernel()[0];
   assert.deepEqual(teamsCall.args, ['aweb', 'teams', '--json']);
-  assert.equal(teamsCall.cwd, f.home, 'run from the home');
+  // process.cwd() is a realpath (macOS: /tmp is /private/tmp), so compare realpaths.
+  assert.equal(realpathSync(teamsCall.cwd), realpathSync(f.home), 'run from the home');
   assert.deepEqual(teamsCall.leaked, [], "the check's own OATS_* never reach the dispatched command");
 
   const own = home('home-team', { FAKE_TEAMS: teamsDoc() });
