@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.34.0 — 2026-11-03
+
+Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. A home learns aweb tasks only when it composes oats.aweb-tasks: a deployment that uses aweb tasks and doesn't compose it gets no task guidance from oats.aweb after this upgrade.
+
 - **oats.aweb no longer mentions task coordination; oats.aweb-tasks teaches
   it, only when composed.** Nothing oats.aweb puts into a home names the task
   layer, `aw task`, `aw work`, `aw lock`, `aw roles`, task claims or the
