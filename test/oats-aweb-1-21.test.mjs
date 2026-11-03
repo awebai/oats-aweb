@@ -433,6 +433,42 @@ test("connect from a deployment that is not a member of the host's team fails at
   assert.equal(fx.kernel.readCalls().length, 1);
 });
 
+// awebai/oats-aweb#52: a failed mint names its cause from a fixed vocabulary, the root it
+// ran in and the setting that chose it; aw's own output and the token are never relayed.
+for (const [name, env, cause] of [
+  ["an unreachable service", { AW_INVITE_FAIL: "1", AW_INVITE_FAIL_STDERR: `Error: Post "https://aweb.example.invalid/v1/teams/invite": dial tcp: lookup aweb.example.invalid: no such host ${HOSTED_TOKEN}` }, /the aweb service could not be reached: a network or TLS failure/],
+  ["an aw error code", { AW_INVITE_FAIL: "1", AW_INVITE_FAIL_STDERR: "", AW_INVITE_FAIL_STDOUT: JSON.stringify({ error: { code: "unknown_or_invalid", message: `something odd ${HOSTED_TOKEN}` } }) }, /aw error unknown_or_invalid/],
+  ["unrecognised output", { AW_INVITE_FAIL: "1", AW_INVITE_FAIL_STDERR: `something odd ${HOSTED_TOKEN}` }, /no HTTP status, aw error code or network failure in its output/],
+]) test(`connect whose invite fails with ${name} names its cause, root and setting, never aw's text or the token`, async (t) => {
+  const fx = connectFixture(t);
+  const result = await fx.connect([SERVER, "--json"], env);
+  assert.equal(result.code, 1);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.error.code, "E_INVITE_FAILED");
+  assert.match(doc.error.message, cause);
+  assert.match(doc.error.message, /nothing was sent to altair-aweb/);
+  assert.ok(doc.error.message.includes(`root ${fx.localDir} (from root)`), doc.error.message);
+  assert.deepEqual(doc.error.details.steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "failed"]]);
+  assert.doesNotMatch(result.stdout + result.stderr, /aweb\.example\.invalid|something odd/);
+  assertTokenContained(fx, result);
+  assert.equal(awCall(fx.fake.readCalls(), ["id", "team", "accept-invite"]).length, 0);
+});
+
+// With no root setting, the default team's root is rootSettingCandidate's fallback, and the
+// failure says which: the workspace directory (OATS_WORKSPACE), else the current directory.
+for (const [name, env, source] of [
+  ["OATS_WORKSPACE", { OATS_SETTINGS: "{}" }, "the workspace directory"],
+  ["the cwd", { OATS_SETTINGS: "{}", OATS_WORKSPACE: "" }, "the current directory"],
+]) test(`connect whose invite fails from ${name} names that fallback as the root's source`, async (t) => {
+  const fx = connectFixture(t);
+  const result = await fx.connect([SERVER, "--json"], { ...env, AW_INVITE_FAIL: "1", AW_INVITE_FAIL_STDERR: `something odd ${HOSTED_TOKEN}` });
+  assert.equal(result.code, 1);
+  const doc = envelope(result.stdout);
+  assert.equal(doc.error.code, "E_INVITE_FAILED");
+  assert.ok(doc.error.message.endsWith(`root ${fx.localDir} (from ${source})`), doc.error.message);
+  assertTokenContained(fx, result);
+});
+
 test("connect to an unreachable host fails at aw with the kernel's code", async (t) => {
   const fx = connectFixture(t, { unreachable: true });
   const result = await fx.connect([SERVER, "--json"]);

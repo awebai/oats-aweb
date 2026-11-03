@@ -59,7 +59,8 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
-import { selectedDeployment, currentJoinRoot, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { awErrorCode, leadingJsonObject, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -99,20 +100,11 @@ const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
  *  `aweb: http <status> (<headers>): <body>`; only a string `detail` of a JSON
  *  body is taken, never the headers or any other text. */
 const TOKEN_SHAPED_RE = /[A-Za-z0-9_\-.~+/=]{20,}/g;
-/** The refusal codes read from aw's --json error envelope
- *  (`{"error":{"code":...}}`, aw 1.36.52-rc.3 and later). A code is a fixed
- *  word, so naming it leaks nothing; anything else is never read. */
-const AW_ERROR_CODES = new Set(["unknown_or_invalid"]);
-function awErrorCode(stdout) {
-  try {
-    const code = leadingJsonObject(String(stdout ?? "").trim())?.error?.code;
-    return AW_ERROR_CODES.has(code) ? code : undefined;
-  } catch { return undefined; }
-}
 function failureClass(e) {
   const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
   const http = /\bhttp (\d{3})\b/.exec(text);
-  if (!http) return "";
+  // Without an HTTP status, still a cause from a fixed vocabulary (awebai/oats-aweb#52).
+  if (!http) return withheldFailureCause({ stderr: e?.stderr, stdout: e?.stdout });
   let detail;
   const body = text.indexOf("{", http.index);
   if (body >= 0) { try { const doc = leadingJsonObject(text.slice(body)); if (typeof doc?.detail === "string") detail = doc.detail; } catch { /* no JSON body */ } }
@@ -222,23 +214,6 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
-/** The JSON object that `text` starts with, ignoring whatever follows it. */
-function leadingJsonObject(text) {
-  let depth = 0, inString = false, escaped = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === '"') inString = false;
-      continue;
-    }
-    if (c === '"') inString = true;
-    else if (c === "{") depth++;
-    else if (c === "}" && --depth === 0) return JSON.parse(text.slice(0, i + 1));
-  }
-  throw new Error("unterminated JSON object");
-}
 /** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
  *  prints progress before it. A top-level object (one opening at column 0) may also be followed
  *  by notes (`aw workspace status` appends its gone-workspace checks); an indented line is never
@@ -398,6 +373,14 @@ function rootSettingCandidate(team = defaultTeamId()) {
   if (declared) return declared;
   const fallback = process.env.OATS_WORKSPACE || process.cwd();
   return fallback ? { root: fallback, key: "settings.oats.aweb.root", declared: false } : undefined;
+}
+/** Which setting chose `team`'s minting root, as a failure names it: `roots[team]`, `root`,
+ *  or, for the default team with neither set, rootSettingCandidate's fallback: the workspace
+ *  directory (OATS_WORKSPACE) or the current directory. */
+function rootSourceOf(team) {
+  const declared = declaredRootCandidate(team);
+  if (declared) return declared.key === "settings.oats.aweb.root" ? "root" : "roots[team]";
+  return process.env.OATS_WORKSPACE ? "the workspace directory" : "the current directory";
 }
 function awebRootProblem(candidate) {
   if (!candidate?.root) return `no messaging root at ${process.cwd()}: run oats aweb setup there or set settings.oats.aweb.root`;
@@ -1344,9 +1327,17 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
   const identityHome = identityHomeForLabel(row.label);
-  const root = current ? currentJoinRoot(row.team, home, { membership: rootListsTeam }) : awebRootForTeam(row.team);
+  const { root, source } = current ? currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }) : { root: awebRootForTeam(row.team), source: rootSourceOf(row.team) };
   if (!root) throw new Error(joinedTeamRootRefusal(row.team, row.label));
-  const inv = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }), "aw team invite");
+  let minted;
+  try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
+  catch (e) {
+    // aw's own output stays withheld (it can hold a token); the failure says
+    // which root and setting minted, the class of the cause and where to look.
+    // A spawn-time join has no home yet to run --plan from: the root and its setting are enough.
+    throw new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`);
+  }
+  const inv = parseSecretJson(minted, "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
   const { joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias: instance || meta.alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] });
   const next = { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] };
@@ -1358,7 +1349,7 @@ const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).includes(team
 function joinPlan(rows, meta) {
   return rows.map((row) => {
     if (joinedTeamsOf(meta).some((j) => j.label === row.label)) return { label: row.label, team: row.team, joined: true };
-    try { return { label: row.label, team: row.team, ...currentJoinRootChoice(row.team, home, { membership: rootListsTeam }), member: true }; }
+    try { return { label: row.label, team: row.team, ...currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }), member: true }; }
     catch (e) { return { label: row.label, team: row.team, root: null, source: null, member: false, problem: e.message || String(e) }; }
   });
 }
@@ -2175,9 +2166,9 @@ if (event === "launch") {
   // output is withheld (secretSafe) and the token is dropped as soon as the join returns.
   let token;
   try {
-    const minted = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", team.team), "--json"], localRoot, 45000, { secretSafe: true }), "aw team invite");
+    const minted = parseSecretJson(run(["aw", "team", "invite", flagEq("--team-id", team.team), "--json"], localRoot, 45000, { secretSafe: true, failureDetail: true }), "aw team invite");
     token = typeof minted?.token === "string" && minted.token ? minted.token : undefined;
-  } catch (e) { fail("invite", "E_INVITE_FAILED", `aw team invite for ${team.team} failed: ${e.message || e}`); }
+  } catch (e) { fail("invite", "E_INVITE_FAILED", `aw team invite for ${team.team} failed: ${e.message || e}; nothing was sent to ${serverId}; root ${localRoot} (from ${rootSourceOf(team.team)})`); }
   if (!token) fail("invite", "E_INVITE_FAILED", `aw team invite returned no usable token for ${team.team}`);
   if (!token.startsWith("aw_inv_")) {
     token = undefined;

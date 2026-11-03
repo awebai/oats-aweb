@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **A refused `oats aweb join` names its cause and fix (#52).** The join has
+  read the deployment's live `roots` since 1.22.0, so a team root added to
+  `oats-local.yaml` after the home's spawn is joined without a respawn. Each
+  root refusal before minting now says `nothing was minted` and names its cause:
+  live settings that cannot be read name the reason and the
+  `oats inspect … --json` read to repair; live settings with no member root for
+  the team name the `oats aweb setup --join <label> --invite-stdin` that makes
+  one. A failed `aw team invite` with no HTTP status no longer reads only
+  "output withheld": it names aw's `--json` error code, an unreachable aweb
+  service, or that its output held none of these, plus the root it ran in and
+  the setting that chose it. aw's output stays withheld; no token is printed.
+  A spawn-time join's invite failure names the root and setting without the
+  `--plan` hint. The network cause covers Go's dial (tcp, tcp4, tcp6), DNS,
+  refused, reset and unreachable connections, i/o, deadline, TLS-handshake and
+  client timeouts, TLS and certificate errors and a connection ended by `EOF`.
+  `oats aweb connect` (`E_INVITE_FAILED`) now also names the HTTP status and
+  the redacted server `detail` of a failed `aw team invite`, and with no HTTP
+  status the same causes; `oats aweb invite` (`E_INVITE_NATIVE`), with no HTTP
+  status, names how aw ended (exit status, `ENOENT`, a timeout or a signal) and
+  the same causes. Both name the root and the setting that chose it (`roots[team]`,
+  `root`, or for the default team with neither set, the workspace or current
+  directory); their error codes are unchanged.
+- **Per-team roots (#45).** Since 1.22.0, `oats aweb setup --join <label>` puts
+  a new root at `<deployment>/.aweb-roots/<label>`, beside the default team's
+  root, and records it as `roots[<team id>]`; it is now tested with the default
+  root itself recorded as `roots[<default team>]`. Existing nested roots keep
+  working and are not migrated; to move one, ask your aweb lead.
+
 ## 1.35.0 — 2026-11-03
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. A kernel that lists `settings-committed-only` refuses oats.aweb-tasks `team` from `oats-local.yaml` and `--provider`; an earlier one ignores the flag. A workspace sets `team` in its `tasks:` payload only once every deployment reading it lists `workspace-tasks-payload`. A pi home whose pi folder loads `@awebai/pi` with its skills now reads the readiness warning `pi-extension-skills-loaded`, which names the one-line fix.

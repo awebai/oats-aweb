@@ -354,13 +354,14 @@ minting authority for its canonical T. Run from H, not the caller's worktree.
 |---|---|---|---|
 | Inspect | `oats aweb teams --json` | Read-only default/eligible/joined/left facts; success: intended target is identified. Next: selected authorized join or leave. | Unknown label → `/oats-teams` resolves policy, never a guessed team. |
 | Plan a join | `oats aweb join --labels L --plan [--json]` | Read-only: per label, team, root, the setting that chose it (`roots[team]` or `root`) and whether membership was confirmed; no invite or state. Next: the join below. | `refused: …` names why the join would refuse → section 8 LOCAL join. |
-| Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; root failure → section 8 LOCAL join. |
+| Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; `cannot join team …: the deployment's live settings could not be read (…); nothing was minted` → run the `oats inspect … --json` it names and fix what it reports; `cannot join team …: <no or non-member root>; nothing was minted` → section 8 LOCAL join; `aw team invite failed … nothing was joined; … root R (from S)` → the cause in the parentheses, then `--plan`. |
 | Leave | `oats aweb leave --labels L` | Releases membership/receive registration; success: joined entry is absent after confirmed release. Next: `oats aweb teams --json` readback. | `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop; policy change does not migrate this identity. |
 
 Homes composed before provider 1.22.0 can hold stale captured minting roots;
 require the 1.22.0 fix to be composed instead of borrowing another identity.
 In 1.22.0, explicit join queries current exact-team root authority; launch/retire still use captured
-settings. Existing joined receipts do not require another acceptance. GLOBAL
+settings. A team root recorded in `oats-local.yaml` after the home's spawn is joined
+without a respawn. Existing joined receipts do not require another acceptance. GLOBAL
 `E_TEAM_GLOBAL_MODE` means `joined teams need local per-team identities; this home
 acts as a resident identity through a session grant (identity.mode "global")`:
 stop at #60's owner-pending grant contract, never use native switch/join in-seat.
@@ -562,6 +563,8 @@ root is a placement blocker: select and compose 1.22.0 or later before effects. 
 uses kernel `OATS_TEAM_SCOPE`, checks older `OATS_WORKSPACE` for consistency,
 and updates only D's existing `oats-local.yaml`. Recorded nested roots stay in
 place; no automatic move, deletion or fresh acceptance is part of setup.
+Existing nested roots keep working and are not migrated; to move one, ask your
+aweb lead.
 
 ### attach yourself to the account
 

@@ -29,6 +29,23 @@ for(const outside of [false,true]) test(`setup join places sibling at deployment
  assert.match(readFileSync(join(f.deployment,'oats-local.yaml'),'utf8'),new RegExp(target));
  assert.ok(!existsSync(join(f.root,'oats-local.yaml')));assert.doesNotMatch(r.stdout+r.stderr,/SECRET/);
 });
+// awebai/oats-aweb#45: the default team's root is itself a per-team root under
+// .aweb-roots and is recorded as roots[<default team>], not root. A --join puts
+// the new root beside it at <deployment>/.aweb-roots/<label>, never inside it,
+// and records it as roots[<team id>].
+test('setup join beside a default-team per-team root records roots[team] at the deployment', t=>{
+ const f=fixture(t), target=join(f.deployment,'.aweb-roots','joined');
+ const r=f.run(['setup','--join','joined','--invite-stdin','--name','host','--service','https://service.invalid'],{OATS_SETTINGS:JSON.stringify({roots:{'default:example.invalid':f.root}})},'SECRET\n');
+ assert.equal(r.status,0,r.stderr);
+ assert.ok(existsSync(join(target,'.aw','workspace.yaml')),'the new root is a sibling of the default root');
+ assert.ok(!existsSync(join(f.root,'.aweb-roots')),'nothing is created inside the default root');
+ const accept=f.fake.readCalls().find(c=>c.args.includes('accept-invite'));
+ assert.equal(accept.identityHome,join(target,'.aw'));
+ const local=readFileSync(join(f.deployment,'oats-local.yaml'),'utf8');
+ assert.match(local,new RegExp(`roots:\\n(?:\\s+.*\\n)*?\\s+"?${TEAM.replace(/\./g,'\\.')}"?:\\s+"?${target.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}"?\\n`));
+ assert.match(r.stdout,new RegExp(`recorded settings\\.oats\\.aweb\\.roots\\[${TEAM.replace(/\./g,'\\.')}\\]`));
+ assert.doesNotMatch(r.stdout+r.stderr,/SECRET/);
+});
 for(const variant of ['absent','contradictory','missing-local','wrong-dir']) test(`setup ${variant} deployment refuses before writes`,t=>{
  const f=fixture(t);const extra={};const args=['setup','--join','joined','--invite','SECRET'];
  if(variant==='absent')extra.OATS_TEAM_SCOPE='';
@@ -106,7 +123,7 @@ for(const outside of [false,true])test(`create uses deployment sibling with ${ou
 for(const event of ['launch','retire'])test(`${event} never queries current roots`,t=>{
  const f=fixture(t),q=currentRootQuery(f.base,{home:f.home,deployment:f.deployment,settings:{}});
  const r=f.run([event],{OATS_CLI_BIN:q.cli,OATS_LAUNCH_PREVIEW:'1',OATS_META:JSON.stringify({team:'default:example.invalid',alias:'dev-1',runtime:'claude',delivery:'channel'})});
- assert.ok(!existsSync(q.calls));assert.doesNotMatch(r.stdout+r.stderr,/current root query/);
+ assert.ok(!existsSync(q.calls));assert.doesNotMatch(r.stdout+r.stderr,/live settings could not be read|oats inspect did not answer/);
 });
 test('GLOBAL error and operation error envelope remain intact',t=>{
  const f=joinFixture(t),r=f.run({OATS_OPERATION:'messaging:join',OATS_SETTINGS:JSON.stringify({identity:{mode:'global'}})});
@@ -181,4 +198,16 @@ for(const key of ['"joined:example.invalid"', "'joined:example.invalid'", 'joine
  writeFileSync(file,text);
  const r=f.run(['setup','--join','joined','--invite','FIXTURE','--name','host','--service','https://service.invalid']);
  assert.equal(r.status,1);assert.match(r.stderr,/duplicate root key/);assert.equal(readFileSync(file,'utf8'),text);
+});
+
+// #45: a nested root keeps working and is not migrated. Moving one is not a
+// shipped procedure (never run against a live aw), so the docs say only that.
+test('docs say nested roots are not migrated and ship no move procedure', () => {
+ const repo=fileURLToPath(new URL('..',import.meta.url));
+ const changelog=readFileSync(join(repo,'CHANGELOG.md'),'utf8'), unreleased=changelog.slice(changelog.indexOf('## Unreleased'),changelog.indexOf('\n## ',changelog.indexOf('## Unreleased')+1));
+ for(const [name,text] of [['CHANGELOG Unreleased',unreleased],['README',readFileSync(join(repo,'README.md'),'utf8')],['skill',readFileSync(join(repo,'oats-package','capabilities','oats-aweb','skills','oats-aweb','SKILL.md'),'utf8')]]){
+  const flat=text.replace(/\s+/g,' ');
+  assert.match(flat,/Existing nested roots keep working and are not migrated; to move one, ask your aweb lead\./,name);
+  assert.doesNotMatch(flat,/aw workspace connect --team <(?:team id|T)>/,`${name} ships no move steps`);
+ }
 });
