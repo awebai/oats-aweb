@@ -15,6 +15,7 @@ aw whoami
 If it fails, report the exact failure to your human and do not use tasks.
 Continue only with a working identity; do not create or repair one here.
 
+This workspace tracks work in aweb tasks, and its agents use them.
 This skill implements the OATS tasks layer only when `oats.aweb-tasks` is
 selected. Conversation belongs to the deployment's messaging layer. Do not
 replace the selected tasks provider with aweb tasks in another deployment.

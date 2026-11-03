@@ -33,6 +33,11 @@ test('tasks skill handles work and claim events and stands in for aweb-coordinat
 
 test('tasks inject routes only task coordination to its skill', () => {
   const text = inject();
+  // aweb's coordination skill applies aweb tasks only where a team already has
+  // tasks or its instructions say it uses them; this sentence, kept on one line,
+  // is that opt-in for an OATS home that composes oats.aweb-tasks.
+  assert.match(text, /^This workspace tracks work in aweb tasks, and its agents use them\.$/m);
+  assert.match(skill(), /^This workspace tracks work in aweb tasks, and its agents use them\.$/m);
   assert.match(text, /\/aweb-tasks/);
   assert.match(text, /instance home/);
   assert.match(text, /human/);

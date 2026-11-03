@@ -11,7 +11,9 @@
   recovery reconciles "STATE and your own records", no longer "task records".
   oats.aweb-tasks now says what oats.aweb stopped saying: task state belongs
   in tasks, not mail; `aw lock` and `aw roles` stay outside OATS; and how to
-  treat `work` and `claim` events.
+  treat `work` and `claim` events. Its inject and skill open with "This
+  workspace tracks work in aweb tasks, and its agents use them.": composing
+  oats.aweb-tasks is how an OATS home opts into aweb tasks.
 - **The messaging loop is whole in oats.aweb.** The inject and `/oats-aweb`
   section 4 ("The messaging loop") give the complete session loop for mail and
   chat: read what the wake presents, or `aw mail inbox` and `aw chat pending`

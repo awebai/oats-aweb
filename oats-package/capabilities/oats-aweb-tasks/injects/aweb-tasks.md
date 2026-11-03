@@ -1,5 +1,7 @@
 ## Tasks: aweb
 
+This workspace tracks work in aweb tasks, and its agents use them.
+
 Your tasks layer is `oats.aweb-tasks`. Load `/aweb-tasks` before finding,
 claiming, updating or handing off work. Run its commands from your instance home,
 using your own oats.aweb identity in the default team; joined teams use their
