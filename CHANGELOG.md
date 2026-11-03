@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.35.0 — 2026-11-03
+
+Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. A kernel that lists `settings-committed-only` refuses oats.aweb-tasks `team` from `oats-local.yaml` and `--provider`; an earlier one ignores the flag. A workspace sets `team` in its `tasks:` payload only once every deployment reading it lists `workspace-tasks-payload`. A pi home whose pi folder loads `@awebai/pi` with its skills now reads the readiness warning `pi-extension-skills-loaded`, which names the one-line fix.
+
 - **A joined team that becomes the default is no longer left at start.** At
   every start and restart, launch leaves joined teams that are no longer
   eligible, and the default team is never eligible to join. So when a
@@ -81,7 +85,6 @@ Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are u
   to the task. A skill named in team instructions, a role description or pi's
   welcome message may not be installed in the home; the agent follows the
   skills OATS composed instead.
-
 
 ## 1.33.3 — 2026-11-03
 
