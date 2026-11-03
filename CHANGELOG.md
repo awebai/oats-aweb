@@ -21,8 +21,10 @@
   oats.aweb-tasks reads and writes. It is set only in the workspace's or a
   soul's `tasks:` payload; the kernel owns that rule, and the provider has no
   origin check of its own. Absent, nothing changes: the home's default team,
-  the same brief byte for byte, and the inject and skill text as before plus
-  one "Tasks team" block that applies only when the brief names a team. Every
+  the same brief byte for byte. The inject and skill now say the tasks team
+  ("the default team, or the team your TASK.md names") where they said the
+  default team, and add one "Tasks team" block that applies only when the
+  brief names a team. Every
   task command then runs as `aw --identity-home <H>`, H being
   `joined[].identityHome` for that label in `oats aweb teams --json`, never a
   path built from the label; a label that is not joined is reported and the

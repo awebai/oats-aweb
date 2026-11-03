@@ -23,7 +23,8 @@ OATS does not ship aweb's own `aweb-coordination` skill; this skill takes its
 place for day-to-day work coordination, and the messaging skills never teach it.
 
 Run commands from your **instance home**, with your own oats.aweb identity in
-its default team. This capability creates no identity and joins no team. If
+the tasks team: its default team, or the team your TASK.md names ("Tasks
+team" below). This capability creates no identity and joins no team. If
 messaging is not oats.aweb or your identity is missing, ask your human. Load
 `/oats-aweb` for the team roster and `/aweb-team-membership` for team selection.
 For a team you already joined, use that team's explicit identity home:

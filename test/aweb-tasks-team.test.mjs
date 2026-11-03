@@ -138,14 +138,24 @@ test('an invalid team is refused in the brief, with a warning, and the hook stil
   assert.match(f.spawn({ OATS_SETTINGS: '{broken' }).brief, /^Tasks: refused: oats\.aweb-tasks the oats\.aweb-tasks settings payload is not an object/);
 });
 
-test('the inject and skill add one Tasks team block and are otherwise the #186 text', () => {
-  const inject = read('injects/aweb-tasks.md'), skill = read('skills/aweb-tasks/SKILL.md');
+// The one sentence of #186 that changes, in each file: it named the default
+// team, and now names the tasks team, which is the default one when `team` is absent.
+const SENTENCES = {
+  inject: ['using your own oats.aweb identity in the default team; joined teams use their\nexplicit identity home.',
+    'using your own oats.aweb identity in the tasks team: the default team, or the\nteam your TASK.md names (Tasks team, below); joined teams use their explicit\nidentity home.'],
+  skill: ['with your own oats.aweb identity in\nits default team.',
+    'with your own oats.aweb identity in\nthe tasks team: its default team, or the team your TASK.md names ("Tasks\nteam" below).'],
+};
+const restore = (text, [was, now]) => { assert.equal(text.split(now).length, 2, `the changed sentence appears once: ${now}`); return text.replace(now, was); };
+
+test('the inject and skill add one Tasks team block, change one sentence, and are otherwise the #186 text', () => {
+  const inject = restore(read('injects/aweb-tasks.md'), SENTENCES.inject), skill = restore(read('skills/aweb-tasks/SKILL.md'), SENTENCES.skill);
   const injectBlock = inject.slice(inject.indexOf('\n\n**Tasks team.**'));
   assert.ok(injectBlock.startsWith('\n\n**Tasks team.**') && injectBlock.endsWith('never fall back to the default team.\n'));
-  assert.equal(sha256(inject.slice(0, -injectBlock.length) + '\n'), '6322e11b18ce1dac51386023b0c3625f051ce78213dda41006cc6f966c252503', 'inject minus the block is #186');
+  assert.equal(sha256(inject.slice(0, -injectBlock.length) + '\n'), '6322e11b18ce1dac51386023b0c3625f051ce78213dda41006cc6f966c252503', 'inject minus the block and with the old sentence is #186');
   const start = skill.indexOf('## Tasks team\n'), end = skill.indexOf('## Find and inspect work\n');
   assert.ok(start > 0 && end > start);
-  assert.equal(sha256(skill.slice(0, start) + skill.slice(end)), 'bb9f89dfbf4f0b153532273b427ccfe0604345c9ca8056987156f2576435a000', 'skill minus the section is #186');
+  assert.equal(sha256(skill.slice(0, start) + skill.slice(end)), 'bb9f89dfbf4f0b153532273b427ccfe0604345c9ca8056987156f2576435a000', 'skill minus the section and with the old sentence is #186');
   for (const block of [injectBlock, skill.slice(start, end)]) {
     const text = block.replace(/\*\*/g, '').replace(/\s+/g, ' ');
     assert.ok(text.includes('oats aweb teams --json'), 'names the exact lookup');

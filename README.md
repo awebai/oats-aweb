@@ -124,8 +124,9 @@ tasks: { team: shared }
   `oats spawn --provider`. The kernel owns that rule and refuses or warns about
   `team` from anywhere else, so the provider has no origin check of its own.
 - **Absent** (the default): the home's default team, exactly as before. The
-  brief, the inject and the skill are unchanged, and readiness adds one passing
-  item with no warning.
+  brief is unchanged byte for byte, and readiness adds one passing item with no
+  warning. The inject and skill say "the tasks team", which is the default team
+  when `team` is absent.
 - **A label** follows oats.aweb's rule: a letter or digit, then up to 63
   letters, digits, `-` or `_`. Anything else is refused: the brief tells the
   agent not to use tasks and the spawn warns, and readiness answers
@@ -204,8 +205,9 @@ previews a soul with both providers. It calls no live service or aw command.
 compares an absent `team` with the same package stripped of its check: only the
 one passing item differs. `test/aweb-tasks-team.test.mjs` drives the check
 against a fake kernel that answers `oats aweb teams --json` and
-`oats inspect … --json`, and pins that the inject and skill minus their "Tasks
-team" block are byte-identical to the text before the setting.
+`oats inspect … --json`, and pins that the inject and skill, minus their "Tasks
+team" block and with their one changed sentence restored, are byte-identical to
+the text before the setting.
 
 ## 1.30.0 — Codex readiness from the kernel's launch record
 
