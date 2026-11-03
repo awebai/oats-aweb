@@ -161,8 +161,11 @@ reads ready with the warning `team-join-at-spawn`: its homes must join it
 `team-is-default`. For a home, the check runs `oats aweb teams --json` from the
 home through the kernel that runs the check (`OATS_CLI_BIN`); whether the seat
 is GLOBAL is the kernel's resolved oats.aweb `identity.mode`, read with
-`oats inspect --home|--soul … --json`. An unreadable mode is not taken as
-GLOBAL. Each call is bounded at 10 s.
+`oats inspect --home|--soul … --json`, a soul named by its qualified name from
+`OATS_SOUL_ID` so that another soul of the same bare name cannot make it
+ambiguous. An unreadable mode is never taken as GLOBAL, nor as ready: a home
+gets the not-joined refusal, with its #60 note, and a soul `team-unverified`.
+Each call is bounded at 10 s.
 
 The manifest declares `binding` with `normalize`, `bind` and `check` because
 the kernel requires all three to name commands; it runs only `check`, and

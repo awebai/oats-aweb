@@ -74,15 +74,26 @@ function teamsDocument(home, opts) {
   return { doc: d };
 }
 
-/** 'global', 'local' or null (unknown): the kernel's resolved oats.aweb identity.mode. */
+/** The soul a check names to `oats inspect --soul`. The wire's `soul` is the bare
+ *  name, which another soul of that name makes ambiguous. OATS_SOUL_ID, the
+ *  soul's stable id (`<repoKey>#<soul>` or `package:<id>#<soul>`), gives its
+ *  qualified name, `<repoKey>/<soul>` or `<id>/<soul>`. */
+export function soulSelector(soul, env = process.env) {
+  const id = /^(?:package:)?([^#\s]+)#([^#\s]+)$/.exec(String(env.OATS_SOUL_ID ?? ''));
+  return id && id[2] === soul ? `${id[1]}/${soul}` : soul;
+}
+
+/** The kernel's resolved oats.aweb identity.mode: {mode: 'global'|'local'} or {why}. */
 export function identityMode(context, opts = {}) {
-  const args = context.home ? ['inspect', '--home', context.home, '--json'] : context.soul && context.deployment ? ['inspect', '--soul', context.soul, '--dir', context.deployment, '--json'] : null;
-  if (!args) return null;
+  const args = context.home ? ['inspect', '--home', context.home, '--json']
+    : context.soul && context.deployment ? ['inspect', '--soul', soulSelector(context.soul, opts.env || process.env), '--dir', context.deployment, '--json'] : null;
+  if (!args) return { why: 'the check names neither a home nor a soul and deployment' };
   const got = kernelJson(args, { ...opts, cwd: context.home || context.deployment });
+  if (got.why) return got;
   const caps = got.doc?.result?.capabilities;
-  if (!Array.isArray(caps)) return null;
+  if (!Array.isArray(caps)) return { why: `\`oats ${args.join(' ')}\` answered no capabilities` };
   const mode = caps.find((c) => isObject(c) && (c.id === 'oats.aweb' || c.name === 'oats.aweb'))?.settings?.identity?.mode;
-  return mode === 'global' || mode === 'local' ? mode : null;
+  return mode === 'global' || mode === 'local' ? { mode } : { why: `\`oats ${args.join(' ')}\` shows no oats.aweb identity.mode` };
 }
 
 const ready = (warnings = []) => ({ status: 'ready', problems: [], warnings });
@@ -106,7 +117,8 @@ function checkHome(label, context, opts) {
   if (d.defaultTeam?.label === label) return ready([defaultNote(label, 'home')]);
   const joined = d.joined.find((j) => isObject(j) && j.label === label);
   if (joined && typeof joined.identityHome === 'string' && joined.identityHome) return ready();
-  if (identityMode(context, opts) === 'global') return globalRefusal(label, 'home');
+  // An unknown mode is not GLOBAL: the not-joined refusal carries the #60 note.
+  if (identityMode(context, opts).mode === 'global') return globalRefusal(label, 'home');
   if (d.eligible.some((e) => isObject(e) && e.label === label)) return notJoined(label);
   const labels = [d.defaultTeam?.label, ...d.eligible.map((e) => e?.label)].filter((l) => typeof l === 'string' && l);
   return notEligible(label, 'home', labels);
@@ -123,7 +135,10 @@ function checkSoul(label, context, opts) {
   if (!rows.some((r) => r.default === false && r.label === label)) {
     return notEligible(label, 'soul', rows.map((r) => r.label).filter((l) => typeof l === 'string' && l));
   }
-  if (identityMode(context, opts) === 'global') return globalRefusal(label, 'soul');
+  // Ready only on a confirmed LOCAL mode: an unknown one is neither GLOBAL nor ready.
+  const identity = identityMode(context, opts);
+  if (identity.mode === 'global') return globalRefusal(label, 'soul');
+  if (!identity.mode) return unverified(label, { subject: 'soul', text: `its oats.aweb identity mode cannot be read, and a GLOBAL seat cannot join teams until #60: ${identity.why}` });
   return ready([{ code: 'team-join-at-spawn',
     message: `oats.aweb-tasks: team ${label} is eligible, and a home must join it: spawn with oats.aweb \`join=${label}\`, or run \`oats aweb join --labels ${label}\` from the home` }]);
 }

@@ -55,10 +55,24 @@ test('real kernel delivers team from the soul payload to the readiness check, an
     git(bare, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
     return pathToFileURL(bare).href;
   }
+  // Each package copy also ships a GLOBAL soul named like the member soul
+  // worker-global, so that bare name is ambiguous: the check must still name
+  // the soul it was asked about (OATS_SOUL_ID), never read an unknown mode as
+  // ready, and refuse both.
+  function packageCopy(name) {
+    const dir = join(base, name);
+    cpSync(fileURLToPath(new URL('../oats-package', import.meta.url)), dir, { recursive: true });
+    const index = join(dir, 'oats-package.json'), pkg = JSON.parse(readFileSync(index, 'utf8'));
+    writeFileSync(index, JSON.stringify({ ...pkg, souls: [...(pkg.souls || []), 'souls/worker-global'] }));
+    mkdirSync(join(dir, 'souls/worker-global'), { recursive: true });
+    writeFileSync(join(dir, 'souls/worker-global/soul.yaml'), JSON.stringify({ schemaVersion: 2, name: 'worker-global', description: 'inert fixture', work: 'directory',
+      tasks: { team: 'shared' }, messaging: MESSAGING['worker-global'] }));
+    writeFileSync(join(dir, 'souls/worker-global/AGENTS.md'), '# Inert fixture\n');
+    return dir;
+  }
   // "Before": this package with the tasks binding, its commands and the team
   // setting removed, which is oats.aweb-tasks as it was without a check.
-  const before = join(base, 'before-package');
-  cpSync(fileURLToPath(new URL('../oats-package', import.meta.url)), before, { recursive: true });
+  const before = packageCopy('before-package');
   const beforeManifest = join(before, 'capabilities/oats-aweb-tasks/oats.json');
   const { binding, commands, settings, ...older } = JSON.parse(readFileSync(beforeManifest, 'utf8'));
   writeFileSync(beforeManifest, JSON.stringify(older));
@@ -95,8 +109,9 @@ test('real kernel delivers team from the soul payload to the readiness check, an
   }
   const tasksItem = (doc) => doc.checks.providers.items.find((i) => i.capability?.id === 'oats.aweb-tasks');
 
-  const after = deployment('after', fileURLToPath(new URL('../oats-package', import.meta.url)));
-  const answers = Object.fromEntries(Object.keys(SOULS).map((soul) => [soul, tasksItem(after(soul))]));
+  const after = deployment('after', packageCopy('after-package'));
+  const answers = Object.fromEntries([...Object.keys(SOULS).filter((soul) => soul !== 'worker-global'), 'oats.aweb/worker-global', 'after-workspace/worker-global']
+    .map((soul) => [soul, tasksItem(after(soul))]));
   t.diagnostic(`oats.aweb-tasks items: ${JSON.stringify(answers)}`);
   assert.deepEqual(answers.worker.result, { status: 'ready', problems: [], warnings: [] });
   assert.equal(answers.worker.status, 'pass');
@@ -107,7 +122,9 @@ test('real kernel delivers team from the soul payload to the readiness check, an
   assert.deepEqual(answers['worker-other'].result.problems.map((p) => p.code), ['team-not-eligible']);
   assert.equal(answers['worker-bad'].status, 'fail');
   assert.deepEqual(answers['worker-bad'].result.problems.map((p) => p.code), ['team-invalid']);
-  assert.deepEqual(answers['worker-global'].result.problems.map((p) => p.code), ['team-global-seat']);
+  for (const soul of ['oats.aweb/worker-global', 'after-workspace/worker-global']) {
+    assert.deepEqual(answers[soul].result.problems.map((p) => p.code), ['team-global-seat'], `${soul}: a qualified soul is inspected by its own name`);
+  }
   assert.match(answers['worker-bad'].reason, /setting team "no spaces" contains " "/);
 
   // An absent team: the one passing item is all the check adds.

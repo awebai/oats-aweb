@@ -249,7 +249,18 @@ test('soul readiness checks the label against the soul teams, and refuses a GLOB
   assert.deepEqual(eligible.warnings.map((w) => w.code), ['team-join-at-spawn']);
   assert.match(eligible.warnings[0].message, /a home must join it: spawn with oats\.aweb `join=shared`/);
   assert.deepEqual(f.kernel().at(-1).args, ['inspect', '--soul', 'worker', '--dir', f.deployment, '--json']);
-  assert.equal(soul('shared', { FAKE_INSPECT: 'exit' }).status, 'ready', 'an unreadable mode is not GLOBAL');
+  // The soul's stable id names it, so another soul of the same bare name cannot make it ambiguous.
+  soul('shared', { FAKE_INSPECT: inspectDoc('local'), OATS_SOUL_ID: 'package:oats.aweb#worker' });
+  assert.deepEqual(f.kernel().at(-1).args.slice(0, 3), ['inspect', '--soul', 'oats.aweb/worker']);
+  soul('shared', { FAKE_INSPECT: inspectDoc('local'), OATS_SOUL_ID: 'github.com/acme/agents#worker' });
+  assert.deepEqual(f.kernel().at(-1).args.slice(0, 3), ['inspect', '--soul', 'github.com/acme/agents/worker']);
+  // A mode the kernel cannot show is neither GLOBAL nor ready.
+  for (const inspect of ['exit', 'garbage', JSON.stringify({ ok: true, result: { capabilities: [] } })]) {
+    const unread = soul('shared', { FAKE_INSPECT: inspect });
+    assert.equal(unread.status, 'unavailable', inspect);
+    assert.deepEqual(codes(unread), ['team-unverified']);
+    assert.match(unread.problems[0].message, /identity mode cannot be read, and a GLOBAL seat cannot join teams until #60/);
+  }
 
   const global = soul('shared', { FAKE_INSPECT: inspectDoc('global') });
   assert.deepEqual(codes(global), ['team-global-seat']);
