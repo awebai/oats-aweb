@@ -4,13 +4,13 @@
 // aw 1.36.33 captures (test/fixtures/resident); see helpers/fake-aw-resident.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
 import { AWEB_URL, HOOK, KEY, LABEL, NAME, initCalls, setup } from "./helpers/resident-harness.mjs";
-import { derivedTeamLabel, rootState } from "../oats-package/capabilities/oats-aweb/lib/resident.mjs";
+import { derivedTeamLabel, rootState, writeCaptures } from "../oats-package/capabilities/oats-aweb/lib/resident.mjs";
 
 function filesUnder(dir) {
   const out = [];
@@ -319,9 +319,37 @@ test("rootState: only an init that minted nothing counts as create; anything els
   }
   assert.equal(rootState(make([".aw/partial-init.yaml", ".aw/partial-init.yaml.lock", ".oats-resident/"])).state, "continue");
   assert.equal(rootState(make([".aw/identity.yaml", ".aw/signing.key", ".aw/workspace.yaml", ".aw/partial-init.yaml.lock"])).state, "adopt");
-  for (const files of [[".oats-resident/", ".aw/partial-init.yaml.lock", ".aw/signing.key"], [".oats-resident/", "notes.txt"], [".aw"], [".aw/partial-init.yaml.lock", "x/"]]) {
+  for (const files of [[".oats-resident/", ".aw/partial-init.yaml.lock", ".aw/signing.key"], [".oats-resident/", "notes.txt"], [".aw"], [".aw/partial-init.yaml.lock", "x/"], [".oats-resident"], [".aw/partial-init.yaml.lock/signing.key"]]) {
     assert.throws(() => rootState(make(files)), (e) => e.code === "E_RESIDENT_ROOT", files.join(" "));
   }
+  // Never through a link: a linked captures dir, .aw or lock, or a dangling
+  // lock, is refused, wherever it points.
+  const outside = make(["elsewhere/signing.key", "dir/"]);
+  const linked = (name, target, files = []) => { const root = make(files); mkdirSync(dirname(join(root, name)), { recursive: true }); symlinkSync(target, join(root, name)); return root; };
+  for (const [name, target, files] of [[".oats-resident", join(outside, "dir")], [".aw", join(outside, "dir"), [".oats-resident/"]], [".aw/partial-init.yaml.lock", join(outside, "elsewhere", "signing.key"), [".oats-resident/"]], [".aw/partial-init.yaml.lock", join(outside, "missing"), [".oats-resident/"]]]) {
+    assert.throws(() => rootState(linked(name, target, files)), (e) => e.code === "E_RESIDENT_ROOT", `${name} -> ${target}`);
+  }
+  // A linked captures dir is refused whatever else R holds.
+  assert.throws(() => rootState(linked(".oats-resident", join(outside, "dir"), [".aw/partial-init.yaml"])), (e) => e.code === "E_RESIDENT_ROOT");
+});
+
+test("writeCaptures never overwrites or follows: a stem any earlier capture used, complete or not, is skipped", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oats-aweb-captures-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = join(root, ".oats-resident"), outside = join(root, "outside.key");
+  mkdirSync(dir, { mode: 0o700 });
+  writeFileSync(outside, "OUTSIDE");
+  const second = "20261103T120000Z";
+  // An interrupted earlier run: its stdout only, no exit.
+  writeFileSync(join(dir, `init-${second}.stdout`), "EARLIER-RUN-OUTPUT");
+  // A stem whose stderr is a link out of R.
+  symlinkSync(outside, join(dir, `init-${second}-2.stderr`));
+  const run = { status: 1, stdout: "NEXT-OUT", stderr: "NEXT-ERR" };
+  const { files } = writeCaptures(root, run, (x) => x, second);
+  assert.deepEqual(files.map((f) => f.slice(dir.length + 1)), ["stdout", "stderr", "exit"].map((k) => `init-${second}-3.${k}`));
+  assert.equal(readFileSync(join(dir, `init-${second}.stdout`), "utf8"), "EARLIER-RUN-OUTPUT");
+  assert.equal(readFileSync(outside, "utf8"), "OUTSIDE");
+  assert.equal(readFileSync(files[0], "utf8"), "NEXT-OUT");
 });
 
 test("R holding anything beyond our captures and aw's lock is still refused before init", (t) => {
