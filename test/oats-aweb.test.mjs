@@ -9,6 +9,7 @@ import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.
 import { joinFromCalls } from "./helpers/fake-aw-join-from.mjs";
 import { fakeKernelTeamConfig, joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
+import { vendoredMarkdown } from "../scripts/sync-vendored-skills.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ROOT = join(REPO, "oats-package");
@@ -122,6 +123,9 @@ test("vendored skills carry exact upstream provenance and MIT license", () => {
   }
   assert.match(license, /^MIT License/);
   assert.match(license, /Copyright \(c\) 2025 Juan Reyero/);
+  // A sync rewrites VENDORED.md, so the script must carry its adaptation notes.
+  assert.equal(vendored, vendoredMarkdown(), "VENDORED.md is what scripts/sync-vendored-skills.mjs writes");
+  assert.match(vendored, /adapted for OATS: they carry no task-coordination text/);
 });
 
 test("capability guidance names only real first-level aw verbs", (t) => {

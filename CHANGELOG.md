@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **oats.aweb no longer mentions task coordination; oats.aweb-tasks teaches
+  it, only when composed.** Nothing oats.aweb puts into a home names the task
+  layer, `aw task`, `aw work`, `aw lock`, `aw roles`, task claims or the
+  `aweb-coordination` skill: not the inject, not the `Comms:` line (spawn,
+  grant seat and captured native drop "coordination stays in your deployment's
+  task layer"), and not its skills, the vendored aweb skills included. Mail
+  recovery reconciles "STATE and your own records", no longer "task records".
+  oats.aweb-tasks now says what oats.aweb stopped saying: task state belongs
+  in tasks, not mail; `aw lock` and `aw roles` stay outside OATS; and how to
+  treat `work` and `claim` events.
+
 ## 1.33.3 — 2026-11-03
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw moves to 1.36.53.

@@ -89,12 +89,8 @@ test('manifest validator enforces both capability IDs, versions and floors', t =
   assert.match(result.stderr, /must enumerate its messaging and tasks capability directories/);
 });
 
-test('messaging instructions route task state to the selected tasks provider', () => {
-  for (const path of ['injects/aweb.md', 'skills/oats-aweb/SKILL.md']) {
-    const text = readFileSync(join(root, 'oats-package/capabilities/oats-aweb', path), 'utf8');
-    assert.match(text, /oats\.aweb-tasks/);
-    assert.match(text, /\/aweb-tasks/);
-    assert.match(text, /`aw lock` and `aw roles` stay outside OATS/);
-    assert.doesNotMatch(text, /`aw task`\/`work`\/`lock`\/`roles` are not part/);
-  }
+test('the tasks inject, not messaging, keeps task state out of mail and locks and roles outside OATS', () => {
+  const text = readFileSync(join(root, 'oats-package/capabilities/oats-aweb-tasks/injects/aweb-tasks.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(text, /Tasks are not messages: task state belongs here, not in mail/);
+  assert.match(text, /`aw lock` and `aw roles` stay outside OATS/);
 });

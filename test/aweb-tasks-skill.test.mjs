@@ -24,6 +24,13 @@ test('tasks skill covers identity, claims, blockers, handoff, and safe text inpu
   assert.match(text, /in_progress[\s\S]*actor/);
 });
 
+test('tasks skill handles work and claim events and stands in for aweb-coordination', () => {
+  const text = skill().replace(/\s+/g, ' ');
+  assert.match(text, /event of type `work` or `claim`/);
+  assert.match(text, /Act on it at once only when it affects the work you are on/);
+  assert.match(text, /`aweb-coordination` skill; this skill takes its place/);
+});
+
 test('tasks inject routes only task coordination to its skill', () => {
   const text = inject();
   assert.match(text, /\/aweb-tasks/);
