@@ -19,10 +19,10 @@ const SOULS = {
 };
 const MESSAGING = { 'worker-global': { identity: { mode: 'global', resident: 'fixture-resident' } } };
 
-test('real kernel delivers team from the soul payload to the readiness check, and an absent team changes nothing else', { timeout: 300000 }, t => {
-  if (!process.env.OATS_TASKS_KERNEL_ROOT || !process.env.OATS_TASKS_SCRATCH_ROOT) {
-    t.skip('requires explicit pinned kernel source and scratch parent'); return;
-  }
+const skipReason = () => (!process.env.OATS_TASKS_KERNEL_ROOT || !process.env.OATS_TASKS_SCRATCH_ROOT ? 'requires explicit pinned kernel source and scratch parent' : null);
+
+/** An isolated workspace, package and deployment on the kernel the caller names. */
+function kernelFixture(t) {
   const kernel = resolve(process.env.OATS_TASKS_KERNEL_ROOT);
   const base = realpathSync(mkdtempSync(join(process.env.OATS_TASKS_SCRATCH_ROOT, 'aweb-tasks-team-kernel-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
@@ -70,14 +70,7 @@ test('real kernel delivers team from the soul payload to the readiness check, an
     writeFileSync(join(dir, 'souls/worker-global/AGENTS.md'), '# Inert fixture\n');
     return dir;
   }
-  // "Before": this package with the tasks binding, its commands and the team
-  // setting removed, which is oats.aweb-tasks as it was without a check.
-  const before = packageCopy('before-package');
-  const beforeManifest = join(before, 'capabilities/oats-aweb-tasks/oats.json');
-  const { binding, commands, settings, ...older } = JSON.parse(readFileSync(beforeManifest, 'utf8'));
-  writeFileSync(beforeManifest, JSON.stringify(older));
-
-  function deployment(name, packageDir) {
+  function deployment(name, packageDir, { local = {} } = {}) {
     const packageRef = remote(`${name}-package`, {}, packageDir);
     const packageCommit = git(base, '--git-dir', fileURLToPath(packageRef), 'rev-parse', 'HEAD');
     const workspaceRef = pathToFileURL(join(base, `${name}-workspace.git`)).href;
@@ -98,15 +91,28 @@ test('real kernel delivers team from the soul payload to the readiness check, an
     remote(`${name}-workspace`, files);
     const dir = join(base, `${name}-deployment`); mkdirSync(dir);
     git(base, 'clone', '-q', fileURLToPath(workspaceRef), join(dir, 'workspace'));
-    writeFileSync(join(dir, 'oats-local.yaml'), JSON.stringify({ schemaVersion: 2, workspace: workspaceRef }));
+    writeFileSync(join(dir, 'oats-local.yaml'), JSON.stringify({ schemaVersion: 2, workspace: workspaceRef, ...local }));
     const cli = (...args) => spawnSync(process.execPath, [join(kernel, 'bin/oats.mjs'), ...args, '--dir', dir, '--json'], { cwd: dir, env, encoding: 'utf8', timeout: 120000 });
     const synced = cli('sync'); assert.equal(synced.status, 0, synced.stdout + synced.stderr);
-    return (soul) => {
+    const readiness = (soul) => {
       const r = cli('readiness', '--soul', soul);
       const doc = JSON.parse(r.stdout);
       return doc.result ?? doc;
     };
+    return Object.assign(readiness, { cli });
   }
+  return { kernel, env, packageCopy, deployment };
+}
+
+test('real kernel delivers team from the soul payload to the readiness check, and an absent team changes nothing else', { timeout: 300000 }, t => {
+  if (skipReason()) { t.skip(skipReason()); return; }
+  const { packageCopy, deployment } = kernelFixture(t);
+  // "Before": this package with the tasks binding, its commands and the team
+  // setting removed, which is oats.aweb-tasks as it was without a check.
+  const before = packageCopy('before-package');
+  const beforeManifest = join(before, 'capabilities/oats-aweb-tasks/oats.json');
+  const { binding, commands, settings, ...older } = JSON.parse(readFileSync(beforeManifest, 'utf8'));
+  writeFileSync(beforeManifest, JSON.stringify(older));
   const tasksItem = (doc) => doc.checks.providers.items.find((i) => i.capability?.id === 'oats.aweb-tasks');
 
   const after = deployment('after', packageCopy('after-package'));
@@ -140,4 +146,28 @@ test('real kernel delivers team from the soul payload to the readiness check, an
   assert.deepEqual(shape(now), shape(was));
   assert.equal(now.summary.required, was.summary.required + 1);
   assert.equal(now.summary.pass, was.summary.pass + 1);
+});
+
+// team is committedOnly: a kernel with settings-committed-only refuses it from
+// oats-local.yaml and from --provider. An earlier kernel ignores the flag.
+test('a kernel with settings-committed-only refuses team from oats-local.yaml and from --provider', { timeout: 300000 }, t => {
+  if (skipReason()) { t.skip(skipReason()); return; }
+  const { kernel, env, packageCopy, deployment } = kernelFixture(t);
+  const version = spawnSync(process.execPath, [join(kernel, 'bin/oats.mjs'), 'version', '--json'], { env, encoding: 'utf8' });
+  if (!JSON.parse(version.stdout).features?.includes('settings-committed-only')) { t.skip('the kernel does not list settings-committed-only'); return; }
+  const refused = (r, layer, at) => {
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    const { error } = JSON.parse(r.stdout);
+    assert.equal(error.code, 'E_WORKSPACE_SCHEMA');
+    assert.deepEqual({ reason: error.details.reason, capability: error.details.capability, key: error.details.key, layer: error.details.layer, at: error.details.at },
+      { reason: 'committed-only-key', capability: 'oats.aweb-tasks', key: 'team', layer, at });
+  };
+  const preview = ['spawn', 'worker', '--preview', '--work', 'directory', '--harness', 'codex', '--launch-config', 'none'];
+  const local = deployment('local', packageCopy('local-package'), { local: { settings: { 'oats.aweb-tasks': { team: 'shared' } } } });
+  refused(local.cli('readiness', '--soul', 'worker'), 'host', 'oats-local.yaml#/settings/oats.aweb-tasks');
+  refused(local.cli(...preview), 'host', 'oats-local.yaml#/settings/oats.aweb-tasks');
+  const plain = deployment('plain', packageCopy('plain-package'));
+  refused(plain.cli(...preview, '--provider', 'oats.aweb-tasks', 'team=shared'), 'spawn', '--provider oats.aweb-tasks');
+  const fromSoul = plain.cli('spawn', 'worker-shared', '--preview', '--work', 'directory', '--harness', 'codex', '--launch-config', 'none');
+  assert.equal(fromSoul.status, 0, `a soul's tasks: payload is committed: ${fromSoul.stdout}${fromSoul.stderr}`);
 });

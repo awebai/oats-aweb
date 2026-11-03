@@ -34,7 +34,8 @@
   },
   "settings": {
     "team": {
-      "description": "The aweb team label whose task list this capability reads and writes, set only in the workspace's or a soul's tasks: payload. Absent (the default) means the home's default team. A label is a letter or digit, then up to 63 letters, digits, - or _. Every task command then runs as aw --identity-home <H>, H being joined[].identityHome for that label in oats aweb teams --json; readiness refuses a home that has not joined it, and a GLOBAL seat (#60). The default team's own label needs no join."
+      "description": "The aweb team label whose task list this capability reads and writes, set only in the workspace's or a soul's tasks: payload. Absent (the default) means the home's default team. A label is a letter or digit, then up to 63 letters, digits, - or _. Every task command then runs as aw --identity-home <H>, H being joined[].identityHome for that label in oats aweb teams --json; readiness refuses a home that has not joined it, and a GLOBAL seat (#60). The default team's own label needs no join.",
+      "committedOnly": true
     }
   }
 }
