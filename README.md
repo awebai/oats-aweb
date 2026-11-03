@@ -5,6 +5,17 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.35.0 — one tasks team for every deployment; pi without bundled skills
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
+oats.aweb-tasks gains `team: <label>`, the aweb team whose task list every
+deployment shares, set only in the workspace's or a soul's `tasks:` payload
+(`committedOnly`, enforced by kernels with `settings-committed-only`), and a
+readiness check that refuses a home that has not joined it. The pi extension is
+installed with its bundled skills filtered out, and readiness warns
+`pi-extension-skills-loaded` where it still loads them. A joined team that has
+become the default is kept until the home is respawned.
+
 ## 1.34.0 — messaging only; aweb tasks by opt-in
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
