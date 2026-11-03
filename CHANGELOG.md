@@ -16,6 +16,10 @@
   Retire's warning for an alias the server has not released yet drops the
   kernel version the same way: spawn successors with a different `--name` or
   `--purpose` until it is released.
+- **That check stays inside readiness's time budget.** Its kernel query now
+  shares the readiness phase's deadline, as the phase's aw calls do, so a slow
+  kernel can't push a home's readiness past it; a query with no time left is
+  skipped and the check stays silent.
 
 ## 1.33.2 — 2026-11-02
 
