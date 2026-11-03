@@ -9,6 +9,7 @@ import { querySelectedKernel } from './session-readiness.mjs';
 import { yamlScalar } from './binding-wire.mjs';
 import { withheldFailureCause } from './aw-failure-cause.mjs';
 import { childOutcome } from './child-outcome.mjs';
+import { plainServiceUrl } from './plain-service.mjs';
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -93,7 +94,7 @@ function selectedProblems(problems, label) {
 export function rootAwebUrl(root) {
   let raw;
   try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
-  return typeof raw === 'string' && raw.length <= 2048 && /^https?:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?(?:\/api\/?|\/)?$/.test(raw) ? raw : null;
+  return plainServiceUrl(raw) ?? null;
 }
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);

@@ -11,7 +11,10 @@
   local mapping, and the token on `aw id team accept-invite --token-stdin`,
   never an argv. A label the deployment already maps to the team is reused
   rather than a new one made; a hosted invite of scope `unknown` joins with
-  `--local`; an explicit `--service` must be the invite's (up to `/api`); and
+  `--local`; the invite's service is used and shown only as a plain service
+  URL (http(s), a host, an optional port and no path but `/` or `/api`, the
+  shape `oats aweb invite` hands on), else the invite is not usable; an
+  explicit `--service` must be the invite's (up to `/api`); and
   `--install-aw` upgrades an older aw first. It ends with one next step, the
   same in text and JSON, chosen from `oats soul teams <soul>`: a plain spawn
   when the label is the soul's default, the spawn that joins it when it is
@@ -30,7 +33,8 @@
   with the label unmapped, decided before redemption from the invite's team)
   and `E_SETUP_LABEL_COLLISION` (pass `--join <label>`; never a suffix). `--join <label>` is unchanged; with an invite aw can read, a
   label mapped to another team refuses with `E_SETUP_JOIN_MISMATCH`, naming
-  both. `oats aweb invite` answers the joiner's one-line command beside the
+  both; that optional inspect waits at most 10s, then keeps the released
+  behaviour. `oats aweb invite` answers the joiner's one-line command beside the
   token, never holding it: `oats aweb setup --soul <soul> --invite-stdin --name
   <alias>` at `result.joinCommand`, and on stderr in text mode.
   Token-only setup (`--invite`/`--invite-stdin` without `--join`), which was the

@@ -63,7 +63,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from
 import { awErrorCode, leadingJsonObject, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
-import { AW_INVITE_INSPECT, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
+import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
@@ -2366,7 +2366,8 @@ if (event === "launch") {
         // --join L with an invite (released): where aw can read the invite, a mapped label
         // must be its team. An invite aw cannot read keeps the released behaviour.
         let envelope;
-        try { envelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId }); } catch { envelope = undefined; }
+        // Optional: a service that does not answer delays the released form by at most 10s.
+        try { envelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId, timeout: OPTIONAL_INSPECT_TIMEOUT_MS }); } catch { envelope = undefined; }
         if (envelope) checkInviteLabel({ label: joinLabel, mappedTeam: joinConfiguration.expectedTeam, inviteTeam: envelope.team, explicit: true });
       }
     }

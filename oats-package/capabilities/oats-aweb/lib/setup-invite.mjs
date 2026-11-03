@@ -6,6 +6,7 @@
 import { setupFailure } from './setup-team-default.mjs';
 import { versionAtLeast } from './aw-floor.mjs';
 import { leadingJsonObject, withheldFailureCause } from './aw-failure-cause.mjs';
+import { plainServiceUrl } from './plain-service.mjs';
 
 /** The first aw whose `team invite inspect` sends the whole hosted token to the
  *  invite preview and accepts the Cloud's `/api` service URL. (`id team
@@ -18,13 +19,11 @@ const INSPECT_CODES = new Set(['malformed_token', 'unsupported_version', 'server
 
 const FALLBACK = 'or use the labelled form: oats aweb setup --join <label> --invite-stdin --name <alias> --service <url>';
 
-/** A plain http(s) service URL with no credential-bearing part. */
-function plainService(value) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash ? value : undefined;
-  } catch { return undefined; }
-}
+/** How long the required inspect of the invite form waits, and the optional one of the
+ *  released `--join L --invite` form: that one falls back to the released behaviour, so a
+ *  service that does not answer delays it by no more than this. */
+export const REQUIRED_INSPECT_TIMEOUT_MS = 45000;
+export const OPTIONAL_INSPECT_TIMEOUT_MS = 10000;
 
 /** Whether two service URLs name one service, as aw judges an invite's: equal up
  *  to a trailing `/api` mount (cmd/aw/team_invite_inspect.go sameInviteService). */
@@ -49,9 +48,9 @@ export function requireInviteInspect(version) {
  *  token on stdin: `{ kind, team, service, scope, status }`. */
 /** `resumeCommand(team, service)`: the exact tokenless resume for a join of `team`
  *  that an earlier setup accepted, named when aw's refusal carries the invite. */
-export function inspectInvite(token, cwd, { run, validTeam, resumeCommand }) {
+export function inspectInvite(token, cwd, { run, validTeam, resumeCommand, timeout = REQUIRED_INSPECT_TIMEOUT_MS }) {
   let raw;
-  try { raw = run(['aw', 'team', 'invite', 'inspect', '--json'], cwd, 45000, { input: `${token}\n`, secrets: [token], secretSafe: true }); }
+  try { raw = run(['aw', 'team', 'invite', 'inspect', '--json'], cwd, timeout, { input: `${token}\n`, secrets: [token], secretSafe: true }); }
   catch (e) {
     let doc;
     try { doc = leadingJsonObject(String(e.stdout ?? '').trim()); } catch { /* no envelope */ }
@@ -60,13 +59,13 @@ export function inspectInvite(token, cwd, { run, validTeam, resumeCommand }) {
       ? `aw team invite inspect refused the invite (${code})`
       : `aw team invite inspect ${e.outcome || 'failed'} (${withheldFailureCause({ stderr: e.stderr, stdout: e.stdout })})`;
     // aw reports an expired, exhausted or revoked hosted invite with the invite itself.
-    const team = doc?.invite?.canonical_team_id, service = plainService(doc?.invite?.server_url);
+    const team = doc?.invite?.canonical_team_id, service = plainServiceUrl(doc?.invite?.server_url);
     const resume = resumeCommand && validTeam(team) ? resumeCommand(team, service) : 'oats aweb setup --join <label>';
     throw setupFailure('E_SETUP_INVITE_INSPECT', `${cause}; nothing was redeemed; if an earlier setup accepted this invite, resume with ${resume}; otherwise ask for a new invite, ${FALLBACK}`);
   }
   let doc;
   try { doc = JSON.parse(raw); } catch { doc = undefined; }
-  const team = doc?.canonical_team_id, service = plainService(doc?.server_url);
+  const team = doc?.canonical_team_id, service = plainServiceUrl(doc?.server_url);
   if (!doc || !['hosted', 'controller'].includes(doc.kind) || !validTeam(team)) {
     throw setupFailure('E_SETUP_INVITE_INSPECT', `aw team invite inspect returned no usable envelope; nothing was redeemed; ${FALLBACK.replace(/^or /, '')}`);
   }
