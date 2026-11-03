@@ -105,11 +105,72 @@ Tasks use the instance's own messaging identity in its default team. For an
 already joined team, use its explicit identity home as taught by
 [/aweb-tasks](oats-package/capabilities/oats-aweb-tasks/skills/aweb-tasks/SKILL.md).
 The tasks capability creates no identities or memberships. Its spawn hook emits
-a fixed advisory brief and makes no reads or aw calls. Before using tasks, the
+an advisory brief and makes no reads or aw calls. Before using tasks, the
 agent checks `aw whoami`; if that fails, it reports the failure to its human and
 does not use tasks. Conversation stays with the messaging provider.
 
-Readiness has no tasks-slot item for this provider, by design, in this version.
+#### One team's task list: `team`
+
+`team: <label>` names the aweb team whose task list oats.aweb-tasks reads and
+writes, so that every deployment of a workspace can share one list:
+
+```yaml
+# oats-workspace.yaml, or a soul's soul.yaml
+tasks: { team: shared }
+```
+
+- **Where it is set.** `team` is set only in the workspace's or a soul's
+  `tasks:` payload, never in a deployment's `oats-local.yaml` or with
+  `oats spawn --provider`. The kernel owns that rule and refuses or warns about
+  `team` from anywhere else, so the provider has no origin check of its own.
+- **Absent** (the default): the home's default team, exactly as before. The
+  brief is unchanged byte for byte, and readiness adds one passing item with no
+  warning. The inject and skill say "the tasks team", which is the default team
+  when `team` is absent.
+- **A label** follows oats.aweb's rule: a letter or digit, then up to 63
+  letters, digits, `-` or `_`. Anything else is refused: the brief tells the
+  agent not to use tasks and the spawn warns, and readiness answers
+  `team-invalid`, naming what is wrong with the value.
+- **The identity that acts in it** is the joined team's identity home, read
+  from oats.aweb's own record and never built from the label: from the
+  instance home, `oats aweb teams --json`, `joined[].identityHome` where
+  `label` is the setting. Every task and work command runs as
+  `aw --identity-home <identityHome> task|work …`. The brief names the label,
+  and the inject's and skill's "Tasks team" block teaches the lookup. A label
+  that is not joined is reported and the agent stops: it never falls back to
+  the default team.
+- **The default team's own label** needs no join: plain `aw task …` is right,
+  and the brief and readiness say so.
+
+**Readiness** (`oats readiness`) refuses a home whose identity cannot act in
+the team:
+
+| Code | Subject | Meaning |
+| --- | --- | --- |
+| `team-not-joined` | home | the home has not joined the label |
+| `team-not-eligible` | home or soul | the label is not one of its teams, so it cannot join it |
+| `team-global-seat` | home or soul | a GLOBAL seat cannot join teams until #60 |
+| `team-invalid` | home or soul | the value is not a team label |
+| `team-unverified` | home or soul | `oats aweb teams --json` (home) or the kernel's teams (soul) could not be read; never ready |
+
+Each refusal names both remedies: join the team with
+`oats aweb join --labels <label>`, run from the home (a GLOBAL seat cannot,
+until #60), or set `tasks: none` for that soul. A soul whose label is eligible
+reads ready with the warning `team-join-at-spawn`: its homes must join it
+(oats.aweb `join=<label>` at spawn). The default team's label reads ready with
+`team-is-default`. For a home, the check runs `oats aweb teams --json` from the
+home through the kernel that runs the check (`OATS_CLI_BIN`); whether the seat
+is GLOBAL is the kernel's resolved oats.aweb `identity.mode`, read with
+`oats inspect --home|--soul … --json`, a soul named by its qualified name from
+`OATS_SOUL_ID` so that another soul of the same bare name cannot make it
+ambiguous. An unreadable mode is never taken as GLOBAL, nor as ready: a home
+gets the not-joined refusal, with its #60 note, and a soul `team-unverified`.
+Each call is bounded at 10 s.
+
+The manifest declares `binding` with `normalize`, `bind` and `check` because
+the kernel requires all three to name commands; it runs only `check`, and
+normalize and bind answer `provider-not-qualified`.
+
 Provider 1.31.0 requires OATS >=0.52.0 and aw >=1.36.33; the upgrade
 release above raises the kernel floor to >=0.68.0.
 The task protocol and file flags are verified against aw 1.36.47.
@@ -123,7 +184,7 @@ shared package version and kernel floor. No npm dependencies are needed for
 provider tests or validation.
 
 ```bash
-env -i HOME="$HOME" PATH="$PATH" node --test test/aweb-tasks.test.mjs test/aweb-tasks-skill.test.mjs
+env -i HOME="$HOME" PATH="$PATH" node --test test/aweb-tasks.test.mjs test/aweb-tasks-skill.test.mjs test/aweb-tasks-team.test.mjs
 env -i HOME="$HOME" PATH="$PATH" npm run validate
 env -i HOME="$HOME" PATH="$PATH" node scripts/check-aweb-tasks-argv.mjs
 ```
@@ -142,6 +203,14 @@ set `OATS_TASKS_KERNEL_ROOT` to the kernel source and
 `OATS_TASKS_SCRATCH_ROOT` to a scratch parent, then run that test file. It creates
 local bare package/workspace repositories, an isolated HOME and cache, and
 previews a soul with both providers. It calls no live service or aw command.
+`test/aweb-tasks-team-kernel.test.mjs` takes the same two variables. It gives
+`team` through soul payloads, reads `oats readiness --soul` for each case, and
+compares an absent `team` with the same package stripped of its check: only the
+one passing item differs. `test/aweb-tasks-team.test.mjs` drives the check
+against a fake kernel that answers `oats aweb teams --json` and
+`oats inspect … --json`, and pins that the inject and skill, minus their "Tasks
+team" block and with their one changed sentence restored, are byte-identical to
+the text before the setting.
 
 ## 1.30.0 — Codex readiness from the kernel's launch record
 

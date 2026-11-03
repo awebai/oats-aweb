@@ -16,6 +16,31 @@
   `scripts/sync-vendored-skills.mjs` writes that line and its note in
   `skills/VENDORED.md`, so a resync keeps both. Interim, until aweb publishes
   the extension without skills.
+- **oats.aweb-tasks `team`: one team's task list for every deployment.** The
+  new setting `team: <label>` names the aweb team whose task list
+  oats.aweb-tasks reads and writes. It is set only in the workspace's or a
+  soul's `tasks:` payload; the kernel owns that rule, and the provider has no
+  origin check of its own. Absent, nothing changes: the home's default team,
+  the same brief byte for byte. The inject and skill now say the tasks team
+  ("the default team, or the team your TASK.md names") where they said the
+  default team, and add one "Tasks team" block that applies only when the
+  brief names a team. Every
+  task command then runs as `aw --identity-home <H>`, H being
+  `joined[].identityHome` for that label in `oats aweb teams --json`, never a
+  path built from the label; a label that is not joined is reported and the
+  agent stops, never falling back to the default team. The default team's own
+  label needs no join. A value that is not a team label is refused in the
+  brief, with a spawn warning.
+- **oats.aweb-tasks has a readiness check.** It answers ready with nothing else
+  when `team` is absent (readiness gains that one passing item). With `team`
+  set it refuses a home that has not joined the label (`team-not-joined`), a
+  label that is not one of the home's or soul's teams (`team-not-eligible`), an
+  invalid value (`team-invalid`), and a GLOBAL seat, which cannot join teams
+  until #60 (`team-global-seat`). Each refusal names both remedies:
+  `oats aweb join --labels <label>` from the home, or `tasks: none` for the
+  soul. What it cannot read fails closed (`team-unverified`). A soul reads
+  ready with `team-join-at-spawn` when its homes must join the label, and with
+  `team-is-default` for the default team's label.
 
 ## 1.34.0 — 2026-11-03
 
