@@ -254,6 +254,27 @@ test("darwin: a broker still loaded after the bound fails E_WAKE_UNIT with the m
   assert.deepEqual(launchctl.slice(launchctl.indexOf("bootout")), ["bootout", ...Array(41).fill("print")]);
 });
 
+test("darwin: a print that fails other than not-found is no answer: no bootstrap until the broker is confirmed gone", async (t) => {
+  for (const [why, unloadPrints] of [["then gone", 2], ["never answers", -1]]) {
+    const host = fakeWakeHost(t, { unloadPrints, printError: true });
+    assert.equal((await wake(host, "darwin", ["install"])).code, 0);
+    const before = host.calls().length;
+    const r = await wake(host, "darwin", ["install", "--json"], { unloadMs: unloadPrints > 0 ? undefined : 20 });
+    const launchctl = host.calls().slice(before).filter((c) => c.cmd === "launchctl").map((c) => c.argv[0]);
+    const after = launchctl.slice(launchctl.indexOf("bootout"));
+    if (unloadPrints > 0) {
+      assert.equal(r.code, 0, `${why}: ${r.stdout}`);
+      assert.deepEqual(after, ["bootout", "print", "print", "print", "bootstrap"], why);
+      assert.ok(host.running(), why);
+    } else {
+      assert.equal(r.code, 1, `${why}: ${r.stdout}`);
+      assert.equal(r.json.error.code, "E_WAKE_UNIT");
+      assert.equal(r.json.error.message, `launchd job ${WAKE_LABEL} could not be confirmed unloaded (launchctl print gui/501/${WAKE_LABEL} failed (exit 1): Unrecognized target specifier.) 0.02 s after launchctl bootout gui/501/${WAKE_LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${WAKE_LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${unitFile(host, "darwin")}\`, then rerun oats aweb wake install`);
+      assert.ok(!after.includes("bootstrap"), why);
+    }
+  }
+});
+
 test("install refuses a foreign unit that runs aw wake run, and a file at our path it did not write; it writes and runs nothing", async (t) => {
   for (const platform of PLATFORMS) {
     const host = fakeWakeHost(t);

@@ -255,21 +255,31 @@ export async function ensureCustodyUnit({ platform, label, aw, root, home, addre
 }
 
 const UNLOAD_MS = 10000, UNLOAD_POLL_MS = 250;
+// launchctl print's exit status for a service its domain does not have
+// ("Could not find service"): the only answer that confirms a job is gone.
+const LAUNCHD_NOT_FOUND = 113;
 const shellWord = (s) => /^[A-Za-z0-9/_.@:-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
 
 /** Restarts a loaded launchd job: bootout, then one bootstrap once launchd
- *  no longer finds the job. bootout returns before the job has exited, and a
+ *  confirms the job is gone. bootout returns before the job has exited, and a
  *  bootstrap while it is still unloading fails (5: Input/output error) and
  *  leaves it unloaded. A bootout that exits nonzero (3 while the job is still
- *  unloading) is not fatal by itself: the wait decides. Still found after
- *  `timeoutMs`, it fails with `codes.failed` before any bootstrap, naming the
- *  manual step and `rerun`. */
+ *  unloading) is not fatal by itself: the wait decides. Only print's
+ *  not-found status confirms the job is gone; any other failed print is no
+ *  answer, and the wait goes on. Not confirmed gone after `timeoutMs`, it
+ *  fails with `codes.failed` before any bootstrap, naming the manual step,
+ *  `rerun` and the last failed print. */
 export async function reloadLaunchd({ env, uid, label, path, codes = RESIDENT_CODES, rerun = "the command", now = Date.now, sleep = pause, timeoutMs = UNLOAD_MS, intervalMs = UNLOAD_POLL_MS }) {
   const target = `gui/${uid}/${label}`;
   if (manage(env, "launchctl", ["bootout", target]).missing) fail(codes.unsupported, "launchctl is not available on this host");
   const until = now() + timeoutMs;
-  while (manage(env, "launchctl", ["print", target]).ok) {
-    if (now() >= until) fail(codes.failed, `launchd job ${label} is still unloading ${timeoutMs / 1000} s after launchctl bootout ${target}, so it was not bootstrapped: once \`launchctl print ${target}\` no longer finds it, run \`launchctl bootstrap gui/${uid} ${shellWord(path)}\`, then rerun ${rerun}`);
+  for (;;) {
+    const r = manage(env, "launchctl", ["print", target]);
+    if (!r.ok && r.status === LAUNCHD_NOT_FOUND) break;
+    if (now() >= until) {
+      const state = r.ok ? "is still unloading" : `could not be confirmed unloaded (launchctl print ${target} failed${r.status != null ? ` (exit ${r.status})` : ""}${r.stderr ? `: ${r.stderr}` : ""})`;
+      fail(codes.failed, `launchd job ${label} ${state} ${timeoutMs / 1000} s after launchctl bootout ${target}, so it was not bootstrapped: once \`launchctl print ${target}\` no longer finds it, run \`launchctl bootstrap gui/${uid} ${shellWord(path)}\`, then rerun ${rerun}`);
+    }
     await sleep(intervalMs);
   }
   managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path], codes);

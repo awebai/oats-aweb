@@ -71,16 +71,17 @@ ${body}`;
  * unloadPrints: after a bootout the job stays loaded for this many launchctl
  *   prints, as launchd unloads asynchronously (-1: it never goes); a bootstrap
  *   while it is loaded exits 5. bootoutExit: bootout's exit code (3 while a
- *   job is still unloading).
+ *   job is still unloading). printError: while the job unloads, print fails
+ *   (exit 1) instead of showing it, as a query error would.
  */
-export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true, unloadPrints = 0, bootoutExit = 0 } = {}) {
+export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true, unloadPrints = 0, bootoutExit = 0, printError = false } = {}) {
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
   const fixtures = {};
   for (const name of ["init-certificate-connect", "init-apikey-workspace-init-404", "init-apikey-registry-mismatch", "init-apikey-registry-local", "init-apikey-rejected", "whoami", "doctor-identity-offline", "doctor-registry-online", "custody-status-not-running", "custody-status-running"]) fixtures[name] = fixture(name);
   const running = JSON.parse(fixtures["custody-status-running"].stdout);
   const missingOps = { ...fixtures["custody-status-running"], stdout: JSON.stringify({ ...running, ops: running.ops.filter((op) => op !== "grant_never_ttl.v1" && op !== "mail_reply_continuation.v1") }, null, 2) + "\n" };
-  const state = JSON.stringify({ base, init, linger, custody, fixtures, missingOps, version: AW_VERSION_OUTPUT, unloadPrints, bootoutExit });
+  const state = JSON.stringify({ base, init, linger, custody, fixtures, missingOps, version: AW_VERSION_OUTPUT, unloadPrints, bootoutExit, printError });
   const write = (name, body) => { const file = join(bin, name); writeFileSync(file, script(state, body)); chmodSync(file, 0o755); };
   if (aw) write("aw", `
 const f = state.fixtures, cwd = process.cwd(), dotAw = path.join(cwd, ".aw");
@@ -114,6 +115,7 @@ if (argv[0] === "print") {
     if (left === 0) { drop("unloading"); drop("unit-loaded"); } else if (left > 0) fs.writeFileSync(file, String(left - 1));
   }
   if (!flag("unit-loaded")) process.exit(113);
+  if (flag("unloading") && state.printError) { process.stderr.write("Unrecognized target specifier.\\n"); process.exit(1); }
   process.stdout.write(flag("unloading") ? "gui/501/x = {\\n\\tstate = not running\\n}\\n" : running() ? "gui/501/x = {\\n\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tstate = active\\n\\t}\\n}\\n" : "gui/501/x = {\\n\\tstate = spawn scheduled\\n\\tlast exit code = 1\\n}\\n");
   process.exit(0);
 }

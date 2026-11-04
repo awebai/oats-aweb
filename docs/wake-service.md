@@ -149,9 +149,10 @@ restarted with `bootout` and `bootstrap`, never `kickstart -k`: launchd keeps
 the code requirement it read from the binary at bootstrap, so after an aw
 upgrade a kickstarted broker exits 78 ("needs LWCR update") until a bootstrap
 reads the new binary's. `bootout` returns before the job has unloaded, so the
-restart waits, within about 10 s, until `launchctl print` no longer finds it,
-then bootstraps once; past that it fails `E_WAKE_UNIT` without bootstrapping,
-naming the manual `launchctl bootstrap` step.
+restart waits, within about 10 s, until `launchctl print` answers that it
+cannot find it (any other failed print is no answer), then bootstraps once;
+past that it fails `E_WAKE_UNIT` without bootstrapping, naming the manual
+`launchctl bootstrap` step.
 
 It then verifies, reading `aw wake status --json` for up to about 10 seconds.
 It passes when `daemon_running` is true, `daemon_version_state` is `reported`,

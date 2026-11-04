@@ -248,6 +248,30 @@ test("ensureCustodyUnit on launchd: a job still loaded after about 10 s fails E_
   assert.deepEqual(after.slice(2), Array(41).fill("print"));
 });
 
+test("ensureCustodyUnit on launchd: a print that fails other than not-found is no answer: no bootstrap until the job is confirmed gone", async (t) => {
+  const dir = base(t);
+  for (const [why, unloadPrints] of [["then gone", 2], ["never answers", -1]]) {
+    const at = join(dir, why.replace(" ", "-"));
+    const fake = fakeResidentAw(at, { aw: false, custody: "crashloop", unloadPrints, printError: true });
+    const home = join(at, "home"); mkdirSync(home);
+    const opts = { platform: "darwin", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home }, rerun: "oats aweb resident create alice", unload: { timeoutMs: unloadPrints > 0 ? undefined : 20, intervalMs: 1 } };
+    await ensureCustodyUnit(opts);
+    const calls = fake.calls().length;
+    const path = unitPath({ platform: "darwin", home }, LABEL);
+    if (unloadPrints > 0) {
+      await ensureCustodyUnit(opts);
+      assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv[0]), ["print", "bootout", "print", "print", "print", "bootstrap"], why);
+      assert.ok(fake.loaded(), why);
+    } else {
+      await assert.rejects(ensureCustodyUnit(opts), {
+        code: "E_RESIDENT_UNIT",
+        message: `launchd job ${LABEL} could not be confirmed unloaded (launchctl print gui/501/${LABEL} failed (exit 1): Unrecognized target specifier.) 0.02 s after launchctl bootout gui/501/${LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${path}\`, then rerun oats aweb resident create alice`,
+      }, why);
+      assert.ok(!fake.calls().slice(calls).some((c) => c.argv[0] === "bootstrap"), why);
+    }
+  }
+});
+
 test("systemctl and loginctl reach the user's manager through its bus variables; the unit itself gets PATH and HOME only", async (t) => {
   const dir = base(t);
   const fake = fakeResidentAw(dir, { aw: false });

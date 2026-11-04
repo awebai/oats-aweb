@@ -7,9 +7,10 @@
   `npm i -g @awebai/aw` replaces aw, `launchctl kickstart -k` leaves the job
   down (exit 78, "needs LWCR update"); a `bootout` then `bootstrap` brings it
   back. `bootout` returns before the job has unloaded, so every such restart
-  waits, within about 10 s, until `launchctl print` no longer finds the job,
-  then bootstraps once; past that it fails with the command's unit error
-  (`E_WAKE_UNIT`, `E_RESIDENT_UNIT`) without bootstrapping, naming the manual
+  waits, within about 10 s, until `launchctl print` answers that it cannot
+  find the job (any other failed print is no answer), then bootstraps once;
+  past that it fails with the command's unit error (`E_WAKE_UNIT`,
+  `E_RESIDENT_UNIT`) without bootstrapping, naming the manual
   `launchctl bootstrap` step.
   - `oats aweb wake install` now restarts a loaded broker with
     `launchctl bootout gui/<uid>/ai.aweb.wake`, then `bootstrap`, whether or
@@ -24,8 +25,10 @@
     upgrade)" row in docs/resident-create.md, "The custody unit".
 - **Known issue (macOS):** a running custody job is not restarted for you
   after an aw upgrade. After upgrading aw on macOS, reload each custody job
-  with `launchctl bootout gui/$(id -u)/<label>`, then
-  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`,
+  with `launchctl bootout gui/$(id -u)/<label>`; wait until
+  `launchctl print gui/$(id -u)/<label>` no longer finds it (bootout returns
+  before the job has unloaded); then
+  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`;
   then rerun `oats aweb resident create <name>` to verify.
 - **Claim floors for aweb tasks (oats.aweb-tasks readiness, not oats.aweb).**
   aweb takes over a task claim whose presence heartbeat has gone stale. The
