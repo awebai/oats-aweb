@@ -140,11 +140,19 @@ the broker. Its manager commands:
 | | Linux | macOS |
 | --- | --- | --- |
 | New or changed text | `systemctl --user daemon-reload`, `enable <path>`, `restart ai.aweb.wake.service` | `launchctl bootstrap gui/<uid> <plist>` (after `bootout gui/<uid>/ai.aweb.wake` when it was loaded) |
-| Unchanged text | `enable <path>`, `restart ai.aweb.wake.service` | `kickstart -k gui/<uid>/ai.aweb.wake` (`bootstrap` when not loaded) |
+| Unchanged text | `enable <path>`, `restart ai.aweb.wake.service` | `launchctl bootout gui/<uid>/ai.aweb.wake`, then `bootstrap gui/<uid> <plist>` (`bootstrap` alone when not loaded) |
 
 A bootstrap starts the job, because of `RunAtLoad`. A rerun always restarts
 the broker, so **rerunning `install` after an aw upgrade is how to restart the
-broker on the new aw**. There is no `restart` verb.
+broker on the new aw**. There is no `restart` verb. On macOS a loaded job is
+restarted with `bootout` and `bootstrap`, never `kickstart -k`: launchd keeps
+the code requirement it read from the binary at bootstrap, so after an aw
+upgrade a kickstarted broker exits 78 ("needs LWCR update") until a bootstrap
+reads the new binary's. `bootout` returns before the job has unloaded, so the
+restart waits, within about 30 s, until `launchctl print` answers that it
+cannot find it (any other failed print is no answer), then bootstraps once;
+past that it fails `E_WAKE_UNIT` without bootstrapping, naming the manual
+`launchctl bootstrap` step.
 
 It then verifies, reading `aw wake status --json` for up to about 10 seconds.
 It passes when `daemon_running` is true, `daemon_version_state` is `reported`,
@@ -223,7 +231,7 @@ actions and changes nothing.
 | `E_WAKE_UNIT_CONFLICT` | a foreign wake unit, or a foreign file at our path | retire it with the printed steps, then rerun |
 | `E_WAKE_LINGER` | `--linger-required` and lingering is off | an administrator runs `loginctl enable-linger <user>` |
 | `E_WAKE_RUNNING_UNSUPERVISED` | a daemon runs outside our unit | stop it (the message names its pid), then rerun |
-| `E_WAKE_UNIT` | a manager command failed | its output is in the message |
+| `E_WAKE_UNIT` | a manager command failed, or the broker was still unloading about 30 s after `bootout` | its output, or the manual `launchctl bootstrap` step, is in the message |
 | `E_WAKE_NOT_RUNNING` | the unit is in place but the daemon is not verified | read the named log, fix the cause, rerun `install` |
 | `E_WAKE_FAILED` | anything else | the message |
 

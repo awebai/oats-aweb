@@ -17,7 +17,7 @@ import { fakeWakeHost } from "./helpers/fake-wake-host.mjs";
 const BIN = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
 const onPath = (cmd) => spawnSync("sh", ["-c", `command -v ${cmd}`]).status === 0;
 const PLATFORMS = ["linux", "darwin"];
-const FAST = { verifyMs: 60, intervalMs: 10, uid: 501, user: "alice" };
+const FAST = { verifyMs: 60, intervalMs: 10, unloadIntervalMs: 1, uid: 501, user: "alice" };
 
 async function wake(host, platform, argv, { env = {}, ...rest } = {}) {
   let stdout = "", stderr = "";
@@ -166,12 +166,20 @@ test("install again: unchanged restarts without rewriting; changed rewrites, rel
     const host = fakeWakeHost(t);
     assert.equal((await wake(host, platform, ["install"])).code, 0);
     const path = unitFile(host, platform);
+    // On macOS a loaded job restarts by bootout and bootstrap, never kickstart:
+    // only a bootstrap re-reads the code requirement of a replaced aw binary.
+    const restart = platform === "darwin"
+      ? [`bootout gui/501/${WAKE_LABEL}`, `bootstrap gui/501 ${path}`]
+      : [`--user enable ${path}`, `--user restart ${WAKE_LABEL}.service`];
+    const plan = await wake(host, platform, ["install", "--plan", "--json"]);
+    assert.equal(plan.json.unit.changed, false);
+    assert.deepEqual(plan.json.actions, restart.map((a) => `${platform === "darwin" ? "launchctl" : "systemctl"} ${a}`));
     const before = host.changes().length;
     const same = await wake(host, platform, ["install", "--json"]);
+    assert.equal(same.code, 0, same.stdout);
     assert.equal(same.json.unit.written, false);
-    assert.deepEqual(host.changes().slice(before).map((c) => c.argv.join(" ")), platform === "darwin"
-      ? [`kickstart -k gui/501/${WAKE_LABEL}`]
-      : [`--user enable ${path}`, `--user restart ${WAKE_LABEL}.service`]);
+    assert.deepEqual(host.changes().slice(before).map((c) => c.argv.join(" ")), restart);
+    assert.ok(host.running());
     // oats moved: the unit's AW_WAKE_OATS_BIN and PATH change.
     const moved = join(host.base, "moved"); mkdirSync(moved);
     symlinkSync(join(host.bin, "oats"), join(moved, "oats"));
@@ -183,6 +191,87 @@ test("install again: unchanged restarts without rewriting; changed rewrites, rel
     assert.deepEqual(host.changes().slice(at).map((c) => c.argv.join(" ")), platform === "darwin"
       ? [`bootout gui/501/${WAKE_LABEL}`, `bootstrap gui/501 ${path}`]
       : ["--user daemon-reload", `--user enable ${path}`, `--user restart ${WAKE_LABEL}.service`]);
+  }
+});
+
+test("darwin, after an aw upgrade: a loaded broker launchd will not respawn comes back with bootout and bootstrap", async (t) => {
+  const host = fakeWakeHost(t);
+  assert.equal((await wake(host, "darwin", ["install"])).code, 0);
+  // launchd keeps the job loaded but refuses its respawns (exit 78, "needs LWCR update").
+  rmSync(join(host.base, "unit-running"));
+  assert.ok(host.loaded() && !host.running());
+  const before = host.changes().length;
+  const r = await wake(host, "darwin", ["install", "--json"]);
+  assert.equal(r.code, 0, r.stdout);
+  assert.equal(r.json.daemon.running, true);
+  assert.deepEqual(host.changes().slice(before).map((c) => c.argv.join(" ")), [`bootout gui/501/${WAKE_LABEL}`, `bootstrap gui/501 ${unitFile(host, "darwin")}`]);
+  assert.ok(!host.calls().some((c) => c.argv[0] === "kickstart"));
+});
+
+// launchd unloads asynchronously: bootout returns before the job has gone, and
+// a bootstrap while it is still loaded fails with 5 and leaves it unloaded.
+test("darwin: a restart, unchanged or changed, waits for the broker to unload, then bootstraps once", async (t) => {
+  const host = fakeWakeHost(t, { unloadPrints: 3 });
+  assert.equal((await wake(host, "darwin", ["install"])).code, 0);
+  const path = unitFile(host, "darwin");
+  const moved = join(host.base, "moved"); mkdirSync(moved);
+  symlinkSync(join(host.bin, "oats"), join(moved, "oats"));
+  for (const [why, env] of [["unchanged", {}], ["changed", { PATH: `${moved}:${host.bin}:${host.tmuxBin}` }]]) {
+    const before = host.calls().length;
+    const r = await wake(host, "darwin", ["install", "--json"], { env });
+    assert.equal(r.code, 0, `${why}: ${r.stdout}`);
+    assert.equal(r.json.unit.written, why === "changed");
+    assert.equal(r.json.daemon.running, true);
+    const launchctl = host.calls().slice(before).filter((c) => c.cmd === "launchctl").map((c) => c.argv.join(" "));
+    // Found by three prints after the bootout, gone at the fourth: then one bootstrap.
+    assert.deepEqual(launchctl.slice(launchctl.indexOf(`bootout gui/501/${WAKE_LABEL}`)), [`bootout gui/501/${WAKE_LABEL}`, ...Array(4).fill(`print gui/501/${WAKE_LABEL}`), `bootstrap gui/501 ${path}`], why);
+  }
+});
+
+test("darwin: a bootout that exits 3 while the broker unloads is not fatal: the bootstrap follows once it is gone", async (t) => {
+  const host = fakeWakeHost(t, { unloadPrints: 1, bootoutExit: 3 });
+  assert.equal((await wake(host, "darwin", ["install"])).code, 0);
+  const before = host.changes().length;
+  const r = await wake(host, "darwin", ["install", "--json"]);
+  assert.equal(r.code, 0, r.stdout);
+  assert.deepEqual(host.changes().slice(before).map((c) => c.argv[0]), ["bootout", "bootstrap"]);
+  assert.ok(host.running());
+});
+
+test("darwin: a broker still loaded after the bound fails E_WAKE_UNIT with the manual step, and is never bootstrapped", async (t) => {
+  const host = fakeWakeHost(t, { unloadPrints: -1 });
+  assert.equal((await wake(host, "darwin", ["install"])).code, 0);
+  const path = unitFile(host, "darwin");
+  const before = host.calls().length;
+  let clock = 0;
+  const r = await wake(host, "darwin", ["install", "--json"], { now: () => clock, sleep: async (ms) => { clock += ms; }, unloadIntervalMs: 1000 });
+  assert.equal(r.code, 1, r.stdout);
+  assert.equal(r.json.error.code, "E_WAKE_UNIT");
+  assert.equal(r.json.error.message, `launchd job ${WAKE_LABEL} is still unloading 30 s after launchctl bootout gui/501/${WAKE_LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${WAKE_LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${path}\`, then rerun oats aweb wake install`);
+  assert.equal(clock, 30000);
+  const launchctl = host.calls().slice(before).filter((c) => c.cmd === "launchctl").map((c) => c.argv[0]);
+  // The default 30 s bound, polled every second here: 31 prints, and no bootstrap.
+  assert.deepEqual(launchctl.slice(launchctl.indexOf("bootout")), ["bootout", ...Array(31).fill("print")]);
+});
+
+test("darwin: a print that fails other than not-found is no answer: no bootstrap until the broker is confirmed gone", async (t) => {
+  for (const [why, unloadPrints] of [["then gone", 2], ["never answers", -1]]) {
+    const host = fakeWakeHost(t, { unloadPrints, printError: true });
+    assert.equal((await wake(host, "darwin", ["install"])).code, 0);
+    const before = host.calls().length;
+    const r = await wake(host, "darwin", ["install", "--json"], { unloadMs: unloadPrints > 0 ? undefined : 20 });
+    const launchctl = host.calls().slice(before).filter((c) => c.cmd === "launchctl").map((c) => c.argv[0]);
+    const after = launchctl.slice(launchctl.indexOf("bootout"));
+    if (unloadPrints > 0) {
+      assert.equal(r.code, 0, `${why}: ${r.stdout}`);
+      assert.deepEqual(after, ["bootout", "print", "print", "print", "bootstrap"], why);
+      assert.ok(host.running(), why);
+    } else {
+      assert.equal(r.code, 1, `${why}: ${r.stdout}`);
+      assert.equal(r.json.error.code, "E_WAKE_UNIT");
+      assert.equal(r.json.error.message, `launchd job ${WAKE_LABEL} could not be confirmed unloaded (launchctl print gui/501/${WAKE_LABEL} failed (exit 1): Unrecognized target specifier.) 0.02 s after launchctl bootout gui/501/${WAKE_LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${WAKE_LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${unitFile(host, "darwin")}\`, then rerun oats aweb wake install`);
+      assert.ok(!after.includes("bootstrap"), why);
+    }
   }
 });
 
