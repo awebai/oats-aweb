@@ -16,11 +16,13 @@
   - `oats aweb resident create` now reloads a loaded, unchanged custody job
     whose process is not running (`bootout`, then `bootstrap`), as
     docs/resident-create.md already promised; a running custody is still left
-    alone. A running custody keeps its old aw until it exits, so the macOS
-    upgrade step for it is explicit: `launchctl bootout gui/$(id -u)/<label>`,
-    then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`,
-    then rerun `oats aweb resident create <name>` to verify (the "restart it"
-    row in docs/resident-create.md, "The custody unit").
+    alone. The macOS custody upgrade step is the new "restart it (after an aw
+    upgrade)" row in docs/resident-create.md, "The custody unit".
+- **Known issue (macOS):** a running custody job is not restarted for you
+  after an aw upgrade. After upgrading aw on macOS, reload each custody job
+  with `launchctl bootout gui/$(id -u)/<label>`, then
+  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`,
+  then rerun `oats aweb resident create <name>` to verify.
 - **Claim floors for aweb tasks (oats.aweb-tasks readiness, not oats.aweb).**
   aweb takes over a task claim whose presence heartbeat has gone stale. The
   heartbeat comes from aw 1.36.54's host wake daemon, aweb-channel 1.8.2 or
