@@ -68,7 +68,6 @@ if (args[0] === "compose") {
 else { process.exit(0); } // ps/volume/network ls: nothing
 `,
   open: `
-log();
 // A stand-in for com.docker.backend: it runs until \`docker desktop stop\`.
 const backend = cp.spawn(process.execPath, ["-e", "setInterval(()=>{},1000)", "e2eds-fake-docker-backend", DIR], { detached: true, stdio: "ignore" });
 fs.writeFileSync(marker("backend.pid"), String(backend.pid));
@@ -76,6 +75,10 @@ backend.unref();
 if (!cfg.dockerNeverStarts) {
   cp.spawn(process.execPath, ["-e", "setTimeout(()=>{const fs=require('node:fs');if(!fs.existsSync(process.argv[2]))fs.writeFileSync(process.argv[1],'')}," + (cfg.dockerStartDelayMs || 0) + ")", marker("docker-started"), marker("docker-quit")], { detached: true, stdio: "ignore" }).unref();
 }
+// Logged last: a test that signals on this call must find Docker Desktop
+// already starting. Logged first, a SIGTERM could end this open before the
+// backend spawned, and the harness would find nothing to quit.
+log();
 process.exit(0);
 `,
   osascript: `
