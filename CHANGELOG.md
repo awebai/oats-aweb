@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.37.0 — 2026-11-04
+
+Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged, and messaging-only homes are unaffected. A home that composes oats.aweb-tasks now warns `wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated` until whatever keeps its task claims present reaches aw 1.36.54 (its host wake daemon), aweb-channel 1.8.2 or @awebai/pi 0.4.1. aw 1.36.54 is on npm's `next` tag while `latest` is still 1.36.53, so install it by version, `npm install -g @awebai/aw@1.36.54` (plain `npm install -g @awebai/aw` and `oats aweb setup --install-aw` install 1.36.53), then rerun `oats aweb wake install`. Against a server other than the aweb Cloud, aw 1.36.54 is newer than the tested aw, so oats.aweb also warns `aw-newer-than-tested` there.
+
 - **Claim floors for aweb tasks (oats.aweb-tasks readiness, not oats.aweb).**
   aweb takes over a task claim whose presence heartbeat has gone stale. The
   heartbeat comes from aw 1.36.54's host wake daemon, aweb-channel 1.8.2 or
