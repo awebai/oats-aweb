@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **oats.aweb no longer asks for the skills filter on @awebai/pi 0.5.0 or
+  later.** @awebai/pi 0.5.0 declares `"skills": []` and bundles no skills, so
+  `pi-extension-skills-loaded` now warns only when the @awebai/pi installed in
+  the launch's pi folder (`<pi folder>/npm/node_modules/@awebai/pi`) is below
+  0.5.0, or its version can't be read; its message also offers the update to
+  0.5.0 as the fix. Both pi `install` texts ask for the filter below 0.5.0
+  only, and say never to install @awebai/claude-skills in a pi folder that
+  OATS homes use. The vendored aweb-messaging skill's Pi line says the same.
+- **New readiness warning `pi-skills-package-loaded`** (pi homes). The skills
+  now ship on their own in @awebai/claude-skills. Home readiness warns when the
+  launch's pi folder lists `npm:@awebai/claude-skills`, with or without a
+  version, as a plain string or as an object without `"skills": []`, whatever
+  the extension's version: a home's skills come from its capabilities. The
+  message names the file and the fix: remove the entry, or filter it with
+  `"skills": []`. It can appear beside `pi-extension-skills-loaded`.
+
 ## 1.37.0 — 2026-11-04
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged, and messaging-only homes are unaffected. A home that composes oats.aweb-tasks now warns `wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated` until whatever keeps its task claims present reaches aw 1.36.54 (its host wake daemon), aweb-channel 1.8.2 or @awebai/pi 0.4.1. aw 1.36.54 is on npm's `next` tag while `latest` is still 1.36.53, so install it by version, `npm install -g @awebai/aw@1.36.54` (plain `npm install -g @awebai/aw` and `oats aweb setup --install-aw` install 1.36.53), then rerun `oats aweb wake install`, which on macOS now reloads the broker so launchd accepts the new aw (on macOS, also reload each custody job by hand: see the known issue below). Against a server other than the aweb Cloud, aw 1.36.54 is newer than the tested aw, so oats.aweb also warns `aw-newer-than-tested` there.
