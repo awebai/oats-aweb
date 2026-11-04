@@ -12,16 +12,18 @@ const UPSTREAM_COMMIT = "812bdeb1be8ed99dbd339a910a153e7b802501d4";
 const UPSTREAM_INTEGRITY = "sha512-SnCT+5Ybh57G7+zwlfw6QRgAoyAVkyhcgRqIPPx47e+UcJdi5REXw9td806LveLEKAx0CwFTyxOInPH6mfs4EA==";
 // Each vendored tree, with how this package adapts it for OATS (VENDORED.md says so).
 const SKILLS = [
-  ["aweb-messaging", ", adapted for OATS: a sync rewrites its Pi channel line to say OATS installs `@awebai/pi` with its bundled skills filtered out, and a home's skills come from OATS"],
+  ["aweb-messaging", ", adapted for OATS: a sync rewrites its Pi channel line to say OATS installs `@awebai/pi`, filtering out its bundled skills below 0.5.0, and that a home's skills come from OATS, so `@awebai/claude-skills` is not installed in a pi folder that OATS homes use"],
   ["aweb-team-membership", ", adapted for OATS: team changes go through `oats aweb teams|join|leave`"],
   ["aweb-identity", ""],
 ];
 // Upstream lines a sync replaces, each found exactly once: [skill, file, upstream line, OATS line].
-// OATS installs the pi extension with its skills filtered out (README, "The pi extension without its skills").
+// OATS installs the pi extension without skills: below 0.5.0 its entry filters
+// them out, and @awebai/claude-skills stays out of the pi folder (README, "The
+// pi extension without its skills").
 export const LINE_ADAPTATIONS = [
   ["aweb-messaging", "SKILL.md",
     "- **Pi**: install `@awebai/pi`; the aweb channel and these skills are bundled together.",
-    "- **Pi**: OATS installs the `@awebai/pi` extension with its bundled skills filtered out: its entry in the pi folder's `settings.json` is `{\"source\": \"npm:@awebai/pi\", \"skills\": []}`. A home's skills come from OATS."],
+    "- **Pi**: OATS installs the `@awebai/pi` extension; below 0.5.0, its entry in the pi folder's `settings.json` carries `\"skills\": []`, as `{\"source\": \"npm:@awebai/pi\", \"skills\": []}`. A home's skills come from OATS: don't install `@awebai/claude-skills` in a pi folder that OATS homes use."],
 ];
 
 /** `text` of `skill`/`file` with its line adaptations applied; refuses when an

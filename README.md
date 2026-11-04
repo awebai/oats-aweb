@@ -969,15 +969,19 @@ configuration.
 
 An aweb install made through OATS installs only what messaging needs: a home
 gets its skills through its OATS capabilities (oats.aweb, and oats.aweb-tasks
-where chosen), never machine-wide. `@awebai/pi` 0.4.0 bundles five skills with
-its extension (aweb-bootstrap, aweb-coordination, aweb-identity, aweb-messaging
-and aweb-team-membership), and pi loads them in every session that uses that
-pi folder. The extension does not need them. Install the extension, then make
-its entry in the pi folder's `settings.json` filter them out:
+where chosen), never machine-wide. `@awebai/pi` below 0.5.0 bundles five
+skills with its extension (aweb-bootstrap, aweb-coordination, aweb-identity,
+aweb-messaging and aweb-team-membership), and pi loads them in every session
+that uses that pi folder. The extension does not need them. From 0.5.0 the
+extension declares `"skills": []` itself and ships none, so it needs no
+filter. Install the extension:
 
 ```bash
 pi install npm:@awebai/pi
 ```
+
+Below 0.5.0, also make its entry in the pi folder's `settings.json` filter the
+skills out:
 
 ```json
 {"packages": [{"source": "npm:@awebai/pi", "skills": []}]}
@@ -992,19 +996,34 @@ filtered entry still loads the extension and none of its skills, and a later
 `pi install` or `pi update` of the package keeps the filter (`pi install
 npm:@awebai/pi@latest` rewrites `source` to `npm:@awebai/pi@latest` and keeps
 `"skills": []`), so an update needs no second step. `pi remove` drops the
-entry with its filter.
+entry with its filter. A filter left in place after an update to 0.5.0 is
+harmless.
 
-Home readiness warns `pi-extension-skills-loaded` for a pi home when its
-launch's pi folder (the recorded launch's `PI_CODING_AGENT_DIR`, else
-`$HOME/.pi/agent`) lists `npm:@awebai/pi`, with or without a version, as a
-plain string or as an object without `"skills": []`. The message names the
-file and the exact edit. A missing or unreadable file, a folder that does not
-list the extension, another runtime and soul scope say nothing.
+The skills now ship on their own in `@awebai/claude-skills` (0.2.17 and later),
+which aweb documents as a user-wide install. Never install it in a pi folder
+that OATS homes use: pi would load its skills in every session there, beside
+the ones the home's capabilities give it.
+
+Home readiness reads the home's launch's pi folder (the recorded launch's
+`PI_CODING_AGENT_DIR`, else `$HOME/.pi/agent`), its `settings.json` only, and
+warns for a pi home:
+
+- `pi-extension-skills-loaded` when it lists `npm:@awebai/pi`, with or without
+  a version, as a plain string or as an object without `"skills": []`, and the
+  `@awebai/pi` installed there (`<pi folder>/npm/node_modules/@awebai/pi`) is
+  below 0.5.0 or its version can't be read. The message names the file and
+  the exact edit, or the update to 0.5.0. From 0.5.0 it is quiet.
+- `pi-skills-package-loaded` when it lists `npm:@awebai/claude-skills`, with
+  or without a version, the same way, whatever the extension's version. The
+  message names the file and the fix: remove the entry, or filter it with
+  `"skills": []`.
+
+Both can appear together. A missing or unreadable file, a folder that lists
+neither package, another runtime and soul scope say nothing.
 
 Known gaps:
 
-- The filter is interim, until aweb publishes the pi extension without skills.
-- Claude Code's aweb-channel plugin (1.7.11) ships one skill of its own,
+- Claude Code's aweb-channel plugin (through 1.8.2) ships one skill of its own,
   `aw:configure`, a channel setup helper. Claude Code installs a plugin whole,
   so OATS cannot drop it; aweb is asked to ship the plugin without it.
 
