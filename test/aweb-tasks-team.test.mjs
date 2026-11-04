@@ -26,7 +26,7 @@ function fixture(t) {
   const home = join(dir, 'home'), bin = join(dir, 'bin'), module = join(dir, 'module'), deployment = join(dir, 'deployment');
   const awCalls = join(dir, 'aw-calls'), kernelCalls = join(dir, 'kernel-calls'), cli = join(dir, 'fake-oats.mjs');
   for (const d of [home, bin, deployment]) mkdirSync(d);
-  writeFileSync(join(bin, 'aw'), `#!/bin/sh\necho called >> '${awCalls}'\nexit 97\n`, { mode: 0o755 });
+  writeFileSync(join(bin, 'aw'), `#!/bin/sh\necho "$*" >> '${awCalls}'\nexit 97\n`, { mode: 0o755 });
   writeFileSync(cli, `import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const leaked = Object.keys(process.env).filter((k) => k.startsWith('OATS_'));
@@ -40,6 +40,8 @@ process.stdout.write(answer === 'garbage' ? 'not json\\n' : answer + '\\n');
   const kernel = () => existsSync(kernelCalls) ? readFileSync(kernelCalls, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
   return {
     home, deployment, kernel, awCalled: () => existsSync(awCalls),
+    // A home's readiness reads only the host wake daemon (aweb-tasks-claim-floors.test.mjs).
+    awReadsOnlyWakeStatus: () => !existsSync(awCalls) || readFileSync(awCalls, 'utf8').trim().split('\n').every((l) => l === 'wake status --json'),
     spawn(extra = {}) {
       const r = spawnSync(process.execPath, [join(module, 'bin/oats-aweb-tasks.mjs'), 'spawn'], { cwd: module, encoding: 'utf8',
         env: env({ OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'worker-1', OATS_DEFAULT_TEAM: 'home-team', OATS_DEFAULT_TEAM_ID: 'home:example.invalid', ...extra }) });
@@ -163,9 +165,12 @@ const SENTENCES = {
     'with your own oats.aweb identity in\nthe tasks team: its default team, or the team your TASK.md names ("Tasks\nteam" below).'],
 };
 const restore = (text, [was, now]) => { assert.equal(text.split(now).length, 2, `the changed sentence appears once: ${now}`); return text.replace(now, was); };
+// The paragraph the claim floors add to each file (aweb-tasks-claim-floors.test.mjs).
+const HEARTBEAT = 'Your claims stay present only while something heartbeats them: the host\'s\nwake daemon from aw 1.36.54, or on a Claude or pi channel home the aweb-channel\nplugin from 1.8.2 or the aweb pi extension from 0.4.1. If readiness warns\n`wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated`,\nreport it to your human.\n\n';
+const unheartbeat = (text) => { assert.equal(text.split(HEARTBEAT).length, 2, 'the heartbeat paragraph appears once'); return text.replace(HEARTBEAT, ''); };
 
-test('the inject and skill add one Tasks team block, change one sentence, and are otherwise the #186 text', () => {
-  const inject = restore(read('injects/aweb-tasks.md'), SENTENCES.inject), skill = restore(read('skills/aweb-tasks/SKILL.md'), SENTENCES.skill);
+test('the inject and skill add one Tasks team block and the heartbeat paragraph, change one sentence, and are otherwise the #186 text', () => {
+  const inject = unheartbeat(restore(read('injects/aweb-tasks.md'), SENTENCES.inject)), skill = unheartbeat(restore(read('skills/aweb-tasks/SKILL.md'), SENTENCES.skill));
   const injectBlock = inject.slice(inject.indexOf('\n\n**Tasks team.**'));
   assert.ok(injectBlock.startsWith('\n\n**Tasks team.**') && injectBlock.endsWith('never fall back to the default team.\n'));
   assert.equal(sha256(inject.slice(0, -injectBlock.length) + '\n'), '6322e11b18ce1dac51386023b0c3625f051ce78213dda41006cc6f966c252503', 'inject minus the block and with the old sentence is #186');
@@ -190,13 +195,13 @@ test('nothing oats.aweb-tasks ships builds an identity home from the label', () 
   }
 });
 
-test('readiness with team absent is ready with nothing else, and reads nothing', t => {
+test('readiness with team absent is ready with nothing else, and reads no kernel', t => {
   const f = fixture(t);
-  for (const ctx of [{ home: '/h/x' }, {}]) {
-    assert.deepEqual(result(f.binding('check', request({}, ctx))), { status: 'ready', problems: [], warnings: [] });
-  }
+  assert.deepEqual(result(f.binding('check', request({}, {}))), { status: 'ready', problems: [], warnings: [] });
+  assert.equal(f.awCalled(), false, 'a soul reads no wake status');
+  assert.deepEqual(result(f.binding('check', request({}, { home: f.home }))), { status: 'ready', problems: [], warnings: [] });
+  assert.ok(f.awReadsOnlyWakeStatus(), 'a home reads only the host wake daemon');
   assert.deepEqual(f.kernel(), []);
-  assert.equal(f.awCalled(), false);
 });
 
 test('home readiness reads oats aweb teams from the home and refuses a home that has not joined', t => {
@@ -237,7 +242,7 @@ test('home readiness reads oats aweb teams from the home and refuses a home that
   const other = home('elsewhere', { FAKE_TEAMS: teamsDoc(), FAKE_INSPECT: inspectDoc('local') });
   assert.deepEqual(codes(other), ['team-not-eligible']);
   assert.match(other.problems[0].message, /elsewhere is not one of this home's teams \(home-team, shared\)/);
-  assert.equal(f.awCalled(), false);
+  assert.ok(f.awReadsOnlyWakeStatus());
 });
 
 test('home readiness fails closed when oats aweb teams refuses or answers no document', t => {

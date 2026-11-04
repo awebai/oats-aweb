@@ -152,7 +152,7 @@ tasks: { team: shared }
   own, and `team` belongs in the workspace's or a soul's `tasks:`.
 - **Absent** (the default): the home's default team, exactly as before. The
   brief is unchanged byte for byte, and readiness adds one passing item with no
-  warning. The inject and skill say "the tasks team", which is the default team
+  team warning (a home can still get a claim-floor warning, below). The inject and skill say "the tasks team", which is the default team
   when `team` is absent.
 - **A label** follows oats.aweb's rule: a letter or digit, then up to 63
   letters, digits, `-` or `_`. Anything else is refused: the brief tells the
@@ -198,6 +198,54 @@ The manifest declares `binding` with `normalize`, `bind` and `check` because
 the kernel requires all three to name commands; it runs only `check`, and
 normalize and bind answer `provider-not-qualified`.
 
+#### Claim floors
+
+aweb takes over a task claim whose presence heartbeat has gone stale. Which
+component heartbeats a home's claims depends on how it receives, and the
+readiness check warns when that component is older than the release that
+heartbeats. These are warnings, added beside the team answer whether it is
+ready or a refusal; they never refuse. They come from oats.aweb-tasks only:
+oats.aweb's readiness and floors are unchanged, and a messaging-only home gets
+no new read or warning.
+
+| Code | Home | Floor | Version read from |
+| --- | --- | --- | --- |
+| `wake-daemon-outdated` | listed in `aw wake status --json` | aw 1.36.54 | the daemon's reported version |
+| `aweb-channel-outdated` | Claude (kernel harness), not listed | aweb-channel 1.8.2 | the user-scope `aweb-channel@awebai-marketplace` entry in `<config dir>/plugins/installed_plugins.json`; the config dir is the launch's literal `CLAUDE_CONFIG_DIR`, else `~/.claude` |
+| `pi-extension-outdated` | pi (kernel harness), not listed or listed for its joined teams | @awebai/pi 0.4.1 | `<agentDir>/npm/node_modules/@awebai/pi/package.json`; `<agentDir>` is the launch's literal `PI_CODING_AGENT_DIR`, else `~/.pi/agent` |
+
+- **The daemon** warns from oats.aweb's AW_MIN (1.36.33) up to 1.36.54;
+  1.36.54-rc.1 warns. oats.aweb registers a home with the broker exactly when
+  it needs it, and its readiness then reads the daemon, so below AW_MIN its
+  own `wake-daemon-outdated` is the only item. A stale registration oats.aweb
+  no longer expects gets neither below AW_MIN. A home the daemon doesn't list
+  gets no daemon item. A pi home the daemon lists for its joined teams can get
+  both the daemon and the pi warning.
+- **Not listed,** the kernel's launched harness alone picks: claude the plugin,
+  pi the extension, anything else nothing. A Claude or pi home on
+  `delivery: session` that is missing from the broker gets the plugin or
+  extension warning too; that is harmless, because oats.aweb's readiness
+  reports the missing registration.
+- **Nothing is added** for a version or status that can't be read: a daemon
+  that is not running or reports no version, which oats.aweb reports where it
+  needs the broker; a project-scope install; pi's older global npm location;
+  a file reached through a link out of its folder, or one that isn't a
+  regular file. Joined teams that only poll have no heartbeat and get nothing.
+  A soul gets nothing: the check can't tell whether its delivery is the
+  broker.
+- **The reads** are the kernel's launch record in the home's `instance.json`
+  (`launch.harness`, else `harness`, and `launch.env`; never oats.aweb's
+  metadata or files), `aw wake status --json` run from the home without the
+  check's own `OATS_*` or an inherited `AWEB_IDENTITY_HOME`, and the one file
+  per component above. The aw call is bounded at 10 s, and by what is left of
+  25 s after the team reads, so the check stays inside the kernel's 30 s.
+- **The upgrade:**
+  1. Install aw 1.36.54.
+  2. Rerun `oats aweb wake install` to restart the host wake daemon.
+  3. Update aweb-channel to 1.8.2 on a Claude host, or @awebai/pi to 0.4.1 on
+     a pi host.
+  4. Restart the homes.
+
 Provider 1.31.0 requires OATS >=0.52.0 and aw >=1.36.33; the upgrade
 release above raises the kernel floor to >=0.68.0.
 The task protocol and file flags are verified against aw 1.36.47.
@@ -211,7 +259,7 @@ shared package version and kernel floor. No npm dependencies are needed for
 provider tests or validation.
 
 ```bash
-env -i HOME="$HOME" PATH="$PATH" node --test test/aweb-tasks.test.mjs test/aweb-tasks-skill.test.mjs test/aweb-tasks-team.test.mjs
+env -i HOME="$HOME" PATH="$PATH" node --test test/aweb-tasks.test.mjs test/aweb-tasks-skill.test.mjs test/aweb-tasks-team.test.mjs test/aweb-tasks-claim-floors.test.mjs
 env -i HOME="$HOME" PATH="$PATH" npm run validate
 env -i HOME="$HOME" PATH="$PATH" node scripts/check-aweb-tasks-argv.mjs
 ```
@@ -238,8 +286,13 @@ also checks the refusal of `team` from `oats-local.yaml` and `--provider`; it
 skips that case on an earlier kernel. `test/aweb-tasks-team.test.mjs` drives the check
 against a fake kernel that answers `oats aweb teams --json` and
 `oats inspect … --json`, and pins that the inject and skill, minus their "Tasks
-team" block and with their one changed sentence restored, are byte-identical to
-the text before the setting.
+team" block and heartbeat paragraph and with their one changed sentence
+restored, are byte-identical to the text before the setting.
+`test/aweb-tasks-claim-floors.test.mjs` drives the claim floors with a fake
+`aw wake status`, fake Claude and pi installs and a fake kernel. Its version
+rules live in `lib/version.mjs`, a copy of oats.aweb's `lib/aw-floor.mjs` rules,
+since a capability's module is copied into a home on its own. Its AW_MIN is a
+copy of oats.aweb's too. The test holds both copies equal to oats.aweb's.
 
 ## 1.30.0 — Codex readiness from the kernel's launch record
 

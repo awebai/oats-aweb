@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+- **Claim floors for aweb tasks (oats.aweb-tasks readiness, not oats.aweb).**
+  aweb takes over a task claim whose presence heartbeat has gone stale. The
+  heartbeat comes from aw 1.36.54's host wake daemon, aweb-channel 1.8.2 or
+  @awebai/pi 0.4.1, depending on how the home receives. oats.aweb-tasks's
+  readiness check now warns a home whose heartbeat source is older. These are
+  warnings beside the team answer, ready or not; they never refuse:
+  - `wake-daemon-outdated`: `aw wake status --json` lists the home, and its
+    daemon runs a version from oats.aweb's floor (1.36.33) up to, but not
+    including, 1.36.54; 1.36.54-rc.1 warns. oats.aweb registers a home with
+    the broker exactly when it needs it and then reads the daemon itself, so
+    below 1.36.33 its own `wake-daemon-outdated` is the only item. (A stale
+    registration oats.aweb no longer expects gets neither below 1.36.33.) A
+    home the daemon doesn't list gets no daemon item.
+  - `aweb-channel-outdated`: a Claude home (the kernel's launched harness) that
+    the daemon does not list, whose aweb-channel@awebai-marketplace is below
+    1.8.2. The version is the user-scope entry in
+    `plugins/installed_plugins.json` of the Claude config dir it launches with:
+    its literal `CLAUDE_CONFIG_DIR`, else `~/.claude`.
+  - `pi-extension-outdated`: a pi home that the daemon does not list, or lists
+    for its joined teams only (a native-pi row), whose @awebai/pi
+    is below 0.4.1. The version is in
+    `<agentDir>/npm/node_modules/@awebai/pi/package.json`, where pi installs a
+    user-scope npm package; `<agentDir>` is its literal `PI_CODING_AGENT_DIR`,
+    else `~/.pi/agent`. A pi home the daemon lists for its joined teams can get
+    both this and the daemon warning.
+  - The check reads only the kernel's launch record (`launch.harness`,
+    `harness`, `launch.env`), never oats.aweb's metadata or files. A Claude or
+    pi home on `delivery: session` that is missing from the broker therefore
+    gets the plugin or extension warning too: harmless, since oats.aweb's
+    readiness reports the missing registration.
+  - Nothing is added for a version or status that can't be read: a daemon
+    not running or reporting no version (oats.aweb reports those where it
+    needs the broker), a project-scope plugin or extension install, or pi's
+    older global npm location. Joined teams that only poll have no heartbeat
+    yet and get nothing. A soul gets nothing: the check can't tell whether its
+    delivery is the broker, and the home's readiness warns after spawn.
+  - The aw read runs from the home, bounded at 10 s within the check's time.
+  - The tasks inject and skill gain one paragraph: claims stay present only
+    while something heartbeats them, and the agent reports these warnings to
+    its human.
+- **Messaging-only homes are unchanged.** oats.aweb's readiness, its floor
+  (AW_MIN 1.36.33), the tested aw (1.36.53) and its text don't change, and
+  homes without oats.aweb-tasks get no new read or warning.
+- **Upgrading a host:**
+  1. Install aw 1.36.54.
+  2. Rerun `oats aweb wake install` to restart the host wake daemon on it.
+  3. On a Claude host, update aweb-channel to 1.8.2; on a pi host, @awebai/pi
+     to 0.4.1.
+  4. Restart the homes they serve.
+  A claim taken by hand (`aw task update <ref> --status in_progress`) is no
+  different: it stays present only while something heartbeats it. So restart
+  the daemon after upgrading aw on every host whose agents take claims,
+  whatever its tasks capability.
+
 ## 1.36.0 — 2026-11-03
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. Setup from an invite alone needs aw 1.36.53 or later; on an older aw it refuses with `E_SETUP_AW_VERSION`, and `--install-aw` upgrades aw first. `oats aweb setup --invite`/`--invite-stdin` without `--join`, which was the usage error "requires --join <label>" (exit 2), is now that form. Every invite acceptance reads the token on stdin, so a malformed token now fails as an aw usage error (exit 2) before anything is redeemed.
