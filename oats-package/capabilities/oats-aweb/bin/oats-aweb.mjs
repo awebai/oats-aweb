@@ -2495,9 +2495,15 @@ ${JSON.stringify(problem.details || {})}`);
     recordAwebRootSetting(joined.team, teamRoot, { start: deployment });
     return { team: joined.team, teamRoot };
   };
-  /** The aweb service a BYOT create registers its team with and connects to: the first of
-   *  setupServiceDocs (AWEB_URL, then the existing roots' workspace.yaml), or undefined. */
-  const createService = (label) => setupServiceDocs(teamRootFor(label, candidateTeamId(normalizeAwebTeamName(label))).teamRoot).map((d) => d.aweb_url).find(Boolean);
+  /** The aweb service a BYOT create registers its team with and connects to: AWEB_URL, then the
+   *  target root's own workspace.yaml (a partial create left it connected to its service), then the
+   *  other roots' (setupServiceDocs skips the target, so it is read here), or undefined. */
+  const createService = (label) => {
+    const { teamRoot } = teamRootFor(label, candidateTeamId(normalizeAwebTeamName(label)));
+    let own;
+    try { own = yamlScalar(readFileSync(join(teamRoot, ".aw", "workspace.yaml"), "utf8"), "aweb_url"); } catch { /* not connected yet */ }
+    return process.env.AWEB_URL || own || setupServiceDocs(teamRoot).map((d) => d.aweb_url).find(Boolean);
+  };
   const noCreateService = (label) => `--create ${label} --namespace ${createNamespace} needs the aweb service to register the new team with, and none is known: set AWEB_URL to the server's public URL (hosted aweb is https://app.aweb.ai/api) and re-run; nothing was created`;
   /** aw prints no invite token for a BYOT create (awebai/oats-aweb#202). The team key create just
    *  wrote does the rest: register the team with the service, mint a local invite, accept it. Each

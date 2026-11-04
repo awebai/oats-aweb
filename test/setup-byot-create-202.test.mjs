@@ -24,7 +24,7 @@ function fixture(t) {
   writeFileSync(join(root, 'oats-local.yaml'), 'schemaVersion: 2\nworkspace: fixture\n');
   const kernelCalls = join(root, 'kernel-calls.jsonl'), cli = join(root, 'oats');
   const teams = { teamsApi: 1, deployment: root, defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
-  writeFileSync(cli, `#!${process.execPath}\nconst fs = require("node:fs");\nconst args = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(kernelCalls)}, JSON.stringify({ args }) + "\\n");\nif (args[0] === "teams" && args[1] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
+  writeFileSync(cli, `#!${process.execPath}\nconst fs = require("node:fs");\nconst args = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(kernelCalls)}, JSON.stringify({ args }) + "\\n");\nif (args[0] === "teams" && args[1] === "add" && process.env.FIXTURE_TEAMS_ADD_FAIL) { console.error("fixture teams add refusal"); process.exit(1); }\nif (args[0] === "teams" && args[1] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
   const fake = fakeAwSetupPath(t);
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AW_)/.test(k)));
   Object.assign(env, { PATH: fake.path, AWEB_API_KEY: '', AWEB_URL: SERVICE, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root }) });
@@ -152,4 +152,22 @@ test('a team key that is not on this machine gets the fixed cause and remedy, ne
   assert.match(r.stderr, new RegExp(`registering ${TEAM} with the aweb service at ${SERVICE} failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials; the team key is not on this machine\\); team ${TEAM} exists: run setup as the user whose ~/\\.awid/team-keys/example\\.invalid/ holds its key, or copy the key there, then re-run the same command to resume`));
   assert.doesNotMatch(r.stdout + r.stderr, new RegExp(`${SENTINEL}|no such file|key is kept`));
   assert.deepEqual(named(f.calls(), 'id team invite'), []);
+});
+
+test('a retry whose only service is the retained root it connected resumes there, without another invite', (t) => {
+  const f = fixture(t), service = 'https://public.example.invalid/api';
+  const first = f.run({ AWEB_URL: service, FIXTURE_TEAMS_ADD_FAIL: '1' });
+  assert.equal(first.status, 1, 'the local mapping failed after the root was connected and recorded');
+  assert.match(readFileSync(join(f.teamRoot, '.aw', 'workspace.yaml'), 'utf8'), new RegExp(`aweb_url: ${service}`));
+  const before = f.calls().length;
+  const r = f.run({ AWEB_URL: '', OATS_SETTINGS: JSON.stringify({ root: f.root, roots: { [TEAM]: f.teamRoot } }) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(f.calls().slice(before), [
+    `id team create --name=eng --namespace=${NS} --json`,
+    `id team register --service=${service} --team=${TEAM} --json`,
+    'id team list --json',
+    'team list --json',
+  ]);
+  assert.match(r.stdout, new RegExp(`registered with ${service}`));
+  assert.deepEqual(f.kernel().filter((a) => a[1] === 'add'), Array(2).fill(['teams', 'add', 'eng', `--team=${TEAM}`]));
 });
