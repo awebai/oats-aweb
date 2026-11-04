@@ -140,11 +140,15 @@ the broker. Its manager commands:
 | | Linux | macOS |
 | --- | --- | --- |
 | New or changed text | `systemctl --user daemon-reload`, `enable <path>`, `restart ai.aweb.wake.service` | `launchctl bootstrap gui/<uid> <plist>` (after `bootout gui/<uid>/ai.aweb.wake` when it was loaded) |
-| Unchanged text | `enable <path>`, `restart ai.aweb.wake.service` | `kickstart -k gui/<uid>/ai.aweb.wake` (`bootstrap` when not loaded) |
+| Unchanged text | `enable <path>`, `restart ai.aweb.wake.service` | `launchctl bootout gui/<uid>/ai.aweb.wake`, then `bootstrap gui/<uid> <plist>` (`bootstrap` alone when not loaded) |
 
 A bootstrap starts the job, because of `RunAtLoad`. A rerun always restarts
 the broker, so **rerunning `install` after an aw upgrade is how to restart the
-broker on the new aw**. There is no `restart` verb.
+broker on the new aw**. There is no `restart` verb. On macOS a loaded job is
+restarted with `bootout` and `bootstrap`, never `kickstart -k`: launchd keeps
+the code requirement it read from the binary at bootstrap, so after an aw
+upgrade a kickstarted broker exits 78 ("needs LWCR update") until a bootstrap
+reads the new binary's.
 
 It then verifies, reading `aw wake status --json` for up to about 10 seconds.
 It passes when `daemon_running` is true, `daemon_version_state` is `reported`,

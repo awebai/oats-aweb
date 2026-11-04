@@ -166,12 +166,20 @@ test("install again: unchanged restarts without rewriting; changed rewrites, rel
     const host = fakeWakeHost(t);
     assert.equal((await wake(host, platform, ["install"])).code, 0);
     const path = unitFile(host, platform);
+    // On macOS a loaded job restarts by bootout and bootstrap, never kickstart:
+    // only a bootstrap re-reads the code requirement of a replaced aw binary.
+    const restart = platform === "darwin"
+      ? [`bootout gui/501/${WAKE_LABEL}`, `bootstrap gui/501 ${path}`]
+      : [`--user enable ${path}`, `--user restart ${WAKE_LABEL}.service`];
+    const plan = await wake(host, platform, ["install", "--plan", "--json"]);
+    assert.equal(plan.json.unit.changed, false);
+    assert.deepEqual(plan.json.actions, restart.map((a) => `${platform === "darwin" ? "launchctl" : "systemctl"} ${a}`));
     const before = host.changes().length;
     const same = await wake(host, platform, ["install", "--json"]);
+    assert.equal(same.code, 0, same.stdout);
     assert.equal(same.json.unit.written, false);
-    assert.deepEqual(host.changes().slice(before).map((c) => c.argv.join(" ")), platform === "darwin"
-      ? [`kickstart -k gui/501/${WAKE_LABEL}`]
-      : [`--user enable ${path}`, `--user restart ${WAKE_LABEL}.service`]);
+    assert.deepEqual(host.changes().slice(before).map((c) => c.argv.join(" ")), restart);
+    assert.ok(host.running());
     // oats moved: the unit's AW_WAKE_OATS_BIN and PATH change.
     const moved = join(host.base, "moved"); mkdirSync(moved);
     symlinkSync(join(host.bin, "oats"), join(moved, "oats"));
@@ -184,6 +192,20 @@ test("install again: unchanged restarts without rewriting; changed rewrites, rel
       ? [`bootout gui/501/${WAKE_LABEL}`, `bootstrap gui/501 ${path}`]
       : ["--user daemon-reload", `--user enable ${path}`, `--user restart ${WAKE_LABEL}.service`]);
   }
+});
+
+test("darwin, after an aw upgrade: a loaded broker launchd will not respawn comes back with bootout and bootstrap", async (t) => {
+  const host = fakeWakeHost(t);
+  assert.equal((await wake(host, "darwin", ["install"])).code, 0);
+  // launchd keeps the job loaded but refuses its respawns (exit 78, "needs LWCR update").
+  rmSync(join(host.base, "unit-running"));
+  assert.ok(host.loaded() && !host.running());
+  const before = host.changes().length;
+  const r = await wake(host, "darwin", ["install", "--json"]);
+  assert.equal(r.code, 0, r.stdout);
+  assert.equal(r.json.daemon.running, true);
+  assert.deepEqual(host.changes().slice(before).map((c) => c.argv.join(" ")), [`bootout gui/501/${WAKE_LABEL}`, `bootstrap gui/501 ${unitFile(host, "darwin")}`]);
+  assert.ok(!host.calls().some((c) => c.argv[0] === "kickstart"));
 });
 
 test("install refuses a foreign unit that runs aw wake run, and a file at our path it did not write; it writes and runs nothing", async (t) => {

@@ -228,7 +228,14 @@ file and runs `systemctl --user daemon-reload`. Then rerun resident create.
 | see it | `launchctl print gui/$(id -u)/<label>`, and `aw custody status --json` in R |
 | stop it | `launchctl bootout gui/$(id -u)/<label>` (a killed process is restarted) |
 | start it | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist` |
+| restart it (after an aw upgrade) | `launchctl bootout gui/$(id -u)/<label>`, then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`, then rerun `oats aweb resident create <name>` to verify |
 | remove it | `launchctl bootout gui/$(id -u)/<label>`, then delete the plist |
+
+A running custody keeps its old aw until it exits, and `launchctl kickstart -k`
+does not bring it back on the new one: launchd refuses to start a replaced aw
+binary (exit 78, "needs LWCR update") until a bootstrap re-reads its code
+requirement. A rerun of resident create does that for a loaded, unchanged unit
+whose process is not running; it never restarts a running one.
 
 **Linux (systemd --user).** The unit is
 `~/.config/systemd/user/ai.aweb.custody.<namespace>.<name>.service`

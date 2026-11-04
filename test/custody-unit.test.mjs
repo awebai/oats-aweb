@@ -169,8 +169,8 @@ test("ensureCustodyUnit installs once, is idempotent, and refuses a unit of its 
     const calls = fake.calls().length;
     const again = ensureCustodyUnit(opts);
     assert.equal(again.changed, false);
-    // Unchanged and loaded: only the loaded check runs.
-    assert.ok(fake.calls().length - calls <= 1, JSON.stringify(fake.calls().slice(calls)));
+    // Unchanged, loaded and running: only the loaded check runs, nothing is restarted.
+    assert.deepEqual(fake.calls().slice(calls).map((c) => `${c.cmd} ${c.argv.join(" ")}`), [platform === "darwin" ? `launchctl print gui/501/${LABEL}` : `systemctl --user is-active ${LABEL}.service`]);
     assert.throws(() => ensureCustodyUnit({ ...opts, root: "/r/other" }), { code: "E_RESIDENT_UNIT_CONFLICT", message: `custody unit ${unitPath({ platform, home }, LABEL)} already serves /r/alice, not /r/other; remove that unit or choose another name` });
     rmSync(join(dir, "unit-loaded"), { force: true });
   }
@@ -179,6 +179,20 @@ test("ensureCustodyUnit installs once, is idempotent, and refuses a unit of its 
   const linux = fake.calls().filter((c) => c.cmd === "systemctl").map((c) => c.argv.join(" "));
   // By its path: the user's manager links a unit file from wherever it is.
   assert.deepEqual(linux.slice(0, 2), ["--user daemon-reload", `--user enable --now ${unitPath({ platform: "linux", home }, LABEL)}`]);
+});
+
+test("ensureCustodyUnit on launchd: a loaded, unchanged job that is not running is booted out and bootstrapped", (t) => {
+  const dir = base(t);
+  // Loaded, but launchd refuses its respawns (after an aw upgrade: exit 78, "needs LWCR update").
+  const fake = fakeResidentAw(dir, { aw: false, custody: "crashloop" });
+  const home = join(dir, "home"); mkdirSync(home);
+  const opts = { platform: "darwin", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home } };
+  const path = unitPath({ platform: "darwin", home }, LABEL);
+  assert.equal(ensureCustodyUnit(opts).changed, true);
+  const calls = fake.calls().length;
+  assert.equal(ensureCustodyUnit(opts).changed, false);
+  assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv.join(" ")), [`print gui/501/${LABEL}`, `bootout gui/501/${LABEL}`, `bootstrap gui/501 ${path}`]);
+  assert.ok(fake.loaded());
 });
 
 test("systemctl and loginctl reach the user's manager through its bus variables; the unit itself gets PATH and HOME only", (t) => {

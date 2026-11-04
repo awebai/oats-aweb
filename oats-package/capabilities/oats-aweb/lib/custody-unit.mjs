@@ -206,7 +206,8 @@ export function lingerEnabled({ platform, user, env }) {
   return r.ok && /^Linger=yes$/m.test(r.stdout);
 }
 
-/** Writes the unit when it is missing or differs, and makes sure it is loaded.
+/** Writes the unit when it is missing or differs, and makes sure it is loaded
+ *  and its process running; a running, unchanged unit is left as it is.
  *  A unit of this label that serves another directory is refused. */
 export function ensureCustodyUnit({ platform, label, aw, root, home, address, uid, env, xdgConfigHome }) {
   const manager = unitManager(platform);
@@ -229,8 +230,14 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
     const target = `gui/${uid}/${label}`;
     const loaded = manage(env, "launchctl", ["print", target]);
     if (loaded.missing) fail("E_RESIDENT_UNIT_UNSUPPORTED", "launchctl is not available on this host");
-    if (changed && loaded.ok) managed(env, "launchctl", ["bootout", target]);
-    if (changed || !loaded.ok) managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path]);
+    // A loaded job is reloaded when its text changed, or when it is not
+    // running: launchd refuses the respawns of a job whose binary was
+    // replaced (an aw upgrade: exit 78, "needs LWCR update") until a
+    // bootstrap re-reads its code requirement. A running, unchanged job is
+    // left serving.
+    const reload = loaded.ok && (changed || launchdPid(loaded.stdout) === undefined);
+    if (reload) managed(env, "launchctl", ["bootout", target]);
+    if (reload || !loaded.ok) managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path]);
   } else {
     // Enabled by its path, the user's manager links the file into its own
     // configuration wherever the file is; by name, it looks only there.
@@ -252,15 +259,20 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
 export function runningPid(manager, env, uid, label) {
   if (manager === "launchd") {
     const r = manage(env, "launchctl", ["print", `gui/${uid}/${label}`]);
-    // The job's own state and pid are its top-level (one-tab) lines.
-    if (!r.ok || !/^\tstate = running$/m.test(r.stdout)) return undefined;
-    return Number(/^\tpid = (\d+)$/m.exec(r.stdout)?.[1]) || undefined;
+    return r.ok ? launchdPid(r.stdout) : undefined;
   }
   const r = manage(env, "systemctl", ["--user", "show", "-p", "ActiveState,SubState,MainPID", `${label}.service`]);
   if (!r.ok) return undefined;
   const value = (key) => new RegExp(`^${key}=(.*)$`, "m").exec(r.stdout)?.[1];
   if (value("ActiveState") !== "active" || value("SubState") !== "running") return undefined;
   return Number(value("MainPID")) || undefined;
+}
+
+/** The running pid in a loaded job's `launchctl print` output, or undefined.
+ *  The job's own state and pid are its top-level (one-tab) lines. */
+function launchdPid(printed) {
+  if (!/^\tstate = running$/m.test(printed)) return undefined;
+  return Number(/^\tpid = (\d+)$/m.exec(printed)?.[1]) || undefined;
 }
 
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));

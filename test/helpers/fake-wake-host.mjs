@@ -5,10 +5,10 @@
 // <base>/calls.jsonl.
 //
 // The fake daemon follows the fake unit: a started unit (systemctl restart,
-// launchctl bootstrap or kickstart) runs it as pid 4242; a stopped one (disable
-// --now, bootout) stops it. aw wake status reports the fields real aw 1.36.35
-// reports (daemon_running, daemon_pid, daemon_version, daemon_version_state,
-// instances).
+// launchctl bootstrap) runs it as pid 4242; a stopped one (disable --now,
+// bootout) stops it. launchctl kickstart is not faked: it exits 97. aw wake
+// status reports the fields real aw 1.36.35 reports (daemon_running,
+// daemon_pid, daemon_version, daemon_version_state, instances).
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,7 +80,6 @@ if (argv[0] === "print") {
 }
 if (argv[0] === "bootstrap") { touch("unit-loaded"); touch("unit-running"); process.exit(0); }
 if (argv[0] === "bootout") { drop("unit-loaded"); drop("unit-running"); process.exit(0); }
-if (argv[0] === "kickstart") { touch("unit-running"); process.exit(0); }
 process.exit(97);
 `);
   write("loginctl", `

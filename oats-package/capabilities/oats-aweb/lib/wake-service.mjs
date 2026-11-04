@@ -361,10 +361,12 @@ async function prepareInstall(opts, ctx) {
     const target = `gui/${uid}/${WAKE_LABEL}`;
     const loaded = manage(env, "launchctl", ["print", target]);
     if (loaded.missing) fail("E_WAKE_UNSUPPORTED", "launchctl is not available on this host");
-    // A bootstrap starts the job (RunAtLoad); a loaded, unchanged one restarts.
-    if (!loaded.ok) run("launchctl", ["bootstrap", `gui/${uid}`, path]);
-    else if (changed) { run("launchctl", ["bootout", target]); run("launchctl", ["bootstrap", `gui/${uid}`, path]); }
-    else run("launchctl", ["kickstart", "-k", target]);
+    // A bootstrap starts the job (RunAtLoad) and re-reads the binary's code
+    // requirement; a kickstart doesn't, so after an aw upgrade a kickstarted
+    // job exits 78 ("needs LWCR update"). A loaded job, changed or not, is
+    // booted out and bootstrapped again.
+    if (loaded.ok) run("launchctl", ["bootout", target]);
+    run("launchctl", ["bootstrap", `gui/${uid}`, path]);
   } else {
     // Enabled by its path, as the custody unit is; always restarted, so a
     // rerun after an aw upgrade restarts the broker on the new aw.

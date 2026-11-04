@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Fixed: launchd jobs come back after an aw upgrade (macOS).** launchd keeps
+  the code requirement it read from a job's binary at bootstrap, so once
+  `npm i -g @awebai/aw` replaces aw, `launchctl kickstart -k` leaves the job
+  down (exit 78, "needs LWCR update"); a `bootout` then `bootstrap` brings it
+  back.
+  - `oats aweb wake install` now restarts a loaded broker with
+    `launchctl bootout gui/<uid>/ai.aweb.wake`, then `bootstrap`, whether or
+    not the plist changed (`bootstrap` alone when it is not loaded; `--plan`
+    lists both). It no longer runs `kickstart`, so the documented
+    after-upgrade rerun brings the broker back on the new aw. Linux is
+    unchanged.
+  - `oats aweb resident create` now reloads a loaded, unchanged custody job
+    whose process is not running (`bootout`, then `bootstrap`), as
+    docs/resident-create.md already promised; a running custody is still left
+    alone. A running custody keeps its old aw until it exits, so the macOS
+    upgrade step for it is explicit: `launchctl bootout gui/$(id -u)/<label>`,
+    then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`,
+    then rerun `oats aweb resident create <name>` to verify (the "restart it"
+    row in docs/resident-create.md, "The custody unit").
 - **Claim floors for aweb tasks (oats.aweb-tasks readiness, not oats.aweb).**
   aweb takes over a task claim whose presence heartbeat has gone stale. The
   heartbeat comes from aw 1.36.54's host wake daemon, aweb-channel 1.8.2 or
