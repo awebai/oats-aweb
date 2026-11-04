@@ -31,6 +31,7 @@ const argv = process.argv.slice(2);
 fs.appendFileSync(path.join(state.base, "calls.jsonl"), JSON.stringify({ cmd: path.basename(process.argv[1]), argv, cwd: process.cwd(), env: process.env }) + "\\n");
 const flag = (name) => fs.existsSync(path.join(state.base, name));
 const touch = (name) => fs.writeFileSync(path.join(state.base, name), "");
+const drop = (name) => fs.rmSync(path.join(state.base, name), { force: true });
 const replay = (f) => { process.stdout.write(f.stdout); process.stderr.write(f.stderr); process.exit(f.exit); };
 // Whether our unit's process is running at this look. A flapping one is
 // running at the first look and gone at every later one.
@@ -67,15 +68,19 @@ ${body}`;
  * Our unit's process is pid 4242 and owns the custody socket (fake lsof);
  * another custody is pid 999.
  * lsof: false leaves the fake lsof out, as on a host without it.
+ * unloadPrints: after a bootout the job stays loaded for this many launchctl
+ *   prints, as launchd unloads asynchronously (-1: it never goes); a bootstrap
+ *   while it is loaded exits 5. bootoutExit: bootout's exit code (3 while a
+ *   job is still unloading).
  */
-export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true } = {}) {
+export function fakeResidentAw(base, { init = "connected", linger = "yes", custody = "ready", aw = true, lsof = true, unloadPrints = 0, bootoutExit = 0 } = {}) {
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
   const fixtures = {};
   for (const name of ["init-certificate-connect", "init-apikey-workspace-init-404", "init-apikey-registry-mismatch", "init-apikey-registry-local", "init-apikey-rejected", "whoami", "doctor-identity-offline", "doctor-registry-online", "custody-status-not-running", "custody-status-running"]) fixtures[name] = fixture(name);
   const running = JSON.parse(fixtures["custody-status-running"].stdout);
   const missingOps = { ...fixtures["custody-status-running"], stdout: JSON.stringify({ ...running, ops: running.ops.filter((op) => op !== "grant_never_ttl.v1" && op !== "mail_reply_continuation.v1") }, null, 2) + "\n" };
-  const state = JSON.stringify({ base, init, linger, custody, fixtures, missingOps, version: AW_VERSION_OUTPUT });
+  const state = JSON.stringify({ base, init, linger, custody, fixtures, missingOps, version: AW_VERSION_OUTPUT, unloadPrints, bootoutExit });
   const write = (name, body) => { const file = join(bin, name); writeFileSync(file, script(state, body)); chmodSync(file, 0o755); };
   if (aw) write("aw", `
 const f = state.fixtures, cwd = process.cwd(), dotAw = path.join(cwd, ".aw");
@@ -104,12 +109,20 @@ process.stderr.write("fake aw: unexpected " + argv.join(" ") + "\\n"); process.e
 `);
   write("launchctl", `
 if (argv[0] === "print") {
+  if (flag("unloading")) {
+    const file = path.join(state.base, "unloading"), left = Number(fs.readFileSync(file, "utf8"));
+    if (left === 0) { drop("unloading"); drop("unit-loaded"); } else if (left > 0) fs.writeFileSync(file, String(left - 1));
+  }
   if (!flag("unit-loaded")) process.exit(113);
-  process.stdout.write(running() ? "gui/501/x = {\\n\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tstate = active\\n\\t}\\n}\\n" : "gui/501/x = {\\n\\tstate = spawn scheduled\\n\\tlast exit code = 1\\n}\\n");
+  process.stdout.write(flag("unloading") ? "gui/501/x = {\\n\\tstate = not running\\n}\\n" : running() ? "gui/501/x = {\\n\\tstate = running\\n\\tpid = 4242\\n\\tendpoints = {\\n\\t\\tstate = active\\n\\t}\\n}\\n" : "gui/501/x = {\\n\\tstate = spawn scheduled\\n\\tlast exit code = 1\\n}\\n");
   process.exit(0);
 }
+if (argv[0] === "bootstrap" && flag("unit-loaded")) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
 if (argv[0] === "bootstrap") { touch("unit-loaded"); process.exit(0); }
-if (argv[0] === "bootout") { try { fs.rmSync(path.join(state.base, "unit-loaded")); } catch {} process.exit(0); }
+if (argv[0] === "bootout") {
+  if (state.unloadPrints) fs.writeFileSync(path.join(state.base, "unloading"), String(state.unloadPrints)); else drop("unit-loaded");
+  process.exit(state.bootoutExit);
+}
 process.exit(97);
 `);
   write("systemctl", `

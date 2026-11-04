@@ -208,8 +208,10 @@ export function lingerEnabled({ platform, user, env }) {
 
 /** Writes the unit when it is missing or differs, and makes sure it is loaded
  *  and its process running; a running, unchanged unit is left as it is.
- *  A unit of this label that serves another directory is refused. */
-export function ensureCustodyUnit({ platform, label, aw, root, home, address, uid, env, xdgConfigHome }) {
+ *  A unit of this label that serves another directory is refused. `rerun`
+ *  names the command to rerun in a failure's remedy; `unload` overrides
+ *  reloadLaunchd's clock, sleep and bound. */
+export async function ensureCustodyUnit({ platform, label, aw, root, home, address, uid, env, xdgConfigHome, rerun = "the command", unload = {} }) {
   const manager = unitManager(platform);
   if (!manager) fail("E_RESIDENT_UNIT_UNSUPPORTED", `this host (${platform}) has no supported per-user service manager`);
   const path = unitPath({ platform, home, xdgConfigHome }, label);
@@ -235,9 +237,8 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
     // replaced (an aw upgrade: exit 78, "needs LWCR update") until a
     // bootstrap re-reads its code requirement. A running, unchanged job is
     // left serving.
-    const reload = loaded.ok && (changed || launchdPid(loaded.stdout) === undefined);
-    if (reload) managed(env, "launchctl", ["bootout", target]);
-    if (reload || !loaded.ok) managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path]);
+    if (loaded.ok && (changed || launchdPid(loaded.stdout) === undefined)) await reloadLaunchd({ env, uid, label, path, rerun, ...unload });
+    else if (!loaded.ok) managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path]);
   } else {
     // Enabled by its path, the user's manager links the file into its own
     // configuration wherever the file is; by name, it looks only there.
@@ -251,6 +252,27 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
     }
   }
   return { manager, label, path, changed };
+}
+
+const UNLOAD_MS = 10000, UNLOAD_POLL_MS = 250;
+const shellWord = (s) => /^[A-Za-z0-9/_.@:-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+
+/** Restarts a loaded launchd job: bootout, then one bootstrap once launchd
+ *  no longer finds the job. bootout returns before the job has exited, and a
+ *  bootstrap while it is still unloading fails (5: Input/output error) and
+ *  leaves it unloaded. A bootout that exits nonzero (3 while the job is still
+ *  unloading) is not fatal by itself: the wait decides. Still found after
+ *  `timeoutMs`, it fails with `codes.failed` before any bootstrap, naming the
+ *  manual step and `rerun`. */
+export async function reloadLaunchd({ env, uid, label, path, codes = RESIDENT_CODES, rerun = "the command", now = Date.now, sleep = pause, timeoutMs = UNLOAD_MS, intervalMs = UNLOAD_POLL_MS }) {
+  const target = `gui/${uid}/${label}`;
+  if (manage(env, "launchctl", ["bootout", target]).missing) fail(codes.unsupported, "launchctl is not available on this host");
+  const until = now() + timeoutMs;
+  while (manage(env, "launchctl", ["print", target]).ok) {
+    if (now() >= until) fail(codes.failed, `launchd job ${label} is still unloading ${timeoutMs / 1000} s after launchctl bootout ${target}, so it was not bootstrapped: once \`launchctl print ${target}\` no longer finds it, run \`launchctl bootstrap gui/${uid} ${shellWord(path)}\`, then rerun ${rerun}`);
+    await sleep(intervalMs);
+  }
+  managed(env, "launchctl", ["bootstrap", `gui/${uid}`, path], codes);
 }
 
 /** The pid of a unit's running process, or undefined when it is not running.

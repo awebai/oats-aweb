@@ -158,20 +158,20 @@ test("linger: Linux without it stops with the exact admin command; with it, noth
   assert.equal(lingerProblem({ platform: "darwin", user: "alice", env: { PATH: no.bin } }), undefined);
 });
 
-test("ensureCustodyUnit installs once, is idempotent, and refuses a unit of its label serving another directory", (t) => {
+test("ensureCustodyUnit installs once, is idempotent, and refuses a unit of its label serving another directory", async (t) => {
   const dir = base(t);
   const fake = fakeResidentAw(dir, { aw: false });
   const home = join(dir, "home"); mkdirSync(home);
   for (const platform of ["darwin", "linux"]) {
     const opts = { platform, label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home } };
-    const first = ensureCustodyUnit(opts);
+    const first = await ensureCustodyUnit(opts);
     assert.deepEqual(first, { manager: unitManager(platform), label: LABEL, path: unitPath({ platform, home }, LABEL), changed: true });
     const calls = fake.calls().length;
-    const again = ensureCustodyUnit(opts);
+    const again = await ensureCustodyUnit(opts);
     assert.equal(again.changed, false);
     // Unchanged, loaded and running: only the loaded check runs, nothing is restarted.
     assert.deepEqual(fake.calls().slice(calls).map((c) => `${c.cmd} ${c.argv.join(" ")}`), [platform === "darwin" ? `launchctl print gui/501/${LABEL}` : `systemctl --user is-active ${LABEL}.service`]);
-    assert.throws(() => ensureCustodyUnit({ ...opts, root: "/r/other" }), { code: "E_RESIDENT_UNIT_CONFLICT", message: `custody unit ${unitPath({ platform, home }, LABEL)} already serves /r/alice, not /r/other; remove that unit or choose another name` });
+    await assert.rejects(ensureCustodyUnit({ ...opts, root: "/r/other" }), { code: "E_RESIDENT_UNIT_CONFLICT", message: `custody unit ${unitPath({ platform, home }, LABEL)} already serves /r/alice, not /r/other; remove that unit or choose another name` });
     rmSync(join(dir, "unit-loaded"), { force: true });
   }
   const darwin = fake.calls().filter((c) => c.cmd === "launchctl").map((c) => c.argv.join(" "));
@@ -181,26 +181,79 @@ test("ensureCustodyUnit installs once, is idempotent, and refuses a unit of its 
   assert.deepEqual(linux.slice(0, 2), ["--user daemon-reload", `--user enable --now ${unitPath({ platform: "linux", home }, LABEL)}`]);
 });
 
-test("ensureCustodyUnit on launchd: a loaded, unchanged job that is not running is booted out and bootstrapped", (t) => {
+test("ensureCustodyUnit on launchd: a loaded, unchanged job that is not running is booted out and bootstrapped", async (t) => {
   const dir = base(t);
   // Loaded, but launchd refuses its respawns (after an aw upgrade: exit 78, "needs LWCR update").
   const fake = fakeResidentAw(dir, { aw: false, custody: "crashloop" });
   const home = join(dir, "home"); mkdirSync(home);
   const opts = { platform: "darwin", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home } };
   const path = unitPath({ platform: "darwin", home }, LABEL);
-  assert.equal(ensureCustodyUnit(opts).changed, true);
+  assert.equal((await ensureCustodyUnit(opts)).changed, true);
   const calls = fake.calls().length;
-  assert.equal(ensureCustodyUnit(opts).changed, false);
-  assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv.join(" ")), [`print gui/501/${LABEL}`, `bootout gui/501/${LABEL}`, `bootstrap gui/501 ${path}`]);
+  assert.equal((await ensureCustodyUnit(opts)).changed, false);
+  assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv.join(" ")), [`print gui/501/${LABEL}`, `bootout gui/501/${LABEL}`, `print gui/501/${LABEL}`, `bootstrap gui/501 ${path}`]);
   assert.ok(fake.loaded());
 });
 
-test("systemctl and loginctl reach the user's manager through its bus variables; the unit itself gets PATH and HOME only", (t) => {
+// launchd unloads asynchronously: bootout returns before the job has gone, and
+// a bootstrap while it is still loaded fails with 5 and leaves it unloaded.
+test("ensureCustodyUnit on launchd: a reload waits for the job to unload, then bootstraps once", async (t) => {
+  const dir = base(t);
+  for (const [why, custody, aw] of [["not running", "crashloop", "/bin/aw"], ["changed", "ready", "/opt/aw/bin/aw"]]) {
+    const at = join(dir, why.replace(" ", "-"));
+    const fake = fakeResidentAw(at, { aw: false, custody, unloadPrints: 3 });
+    const home = join(at, "home"); mkdirSync(home);
+    const opts = { platform: "darwin", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home }, unload: { intervalMs: 1 } };
+    await ensureCustodyUnit(opts);
+    const calls = fake.calls().length;
+    assert.equal((await ensureCustodyUnit({ ...opts, aw })).changed, why === "changed");
+    const path = unitPath({ platform: "darwin", home }, LABEL);
+    // Found by three prints after the bootout, gone at the fourth: then one bootstrap.
+    assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv.join(" ")), [`print gui/501/${LABEL}`, `bootout gui/501/${LABEL}`, ...Array(4).fill(`print gui/501/${LABEL}`), `bootstrap gui/501 ${path}`], why);
+    assert.ok(fake.loaded(), why);
+  }
+});
+
+test("ensureCustodyUnit on launchd: a bootout that exits 3 while the job unloads is not fatal: the bootstrap follows once it is gone", async (t) => {
+  const dir = base(t);
+  const fake = fakeResidentAw(dir, { aw: false, custody: "crashloop", unloadPrints: 1, bootoutExit: 3 });
+  const home = join(dir, "home"); mkdirSync(home);
+  const opts = { platform: "darwin", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home }, unload: { intervalMs: 1 } };
+  await ensureCustodyUnit(opts);
+  const calls = fake.calls().length;
+  await ensureCustodyUnit(opts);
+  assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv[0]), ["print", "bootout", "print", "print", "bootstrap"]);
+  assert.ok(fake.loaded());
+});
+
+test("ensureCustodyUnit on launchd: a job still loaded after about 10 s fails E_RESIDENT_UNIT with the manual step, and is never bootstrapped", async (t) => {
+  const dir = base(t);
+  const fake = fakeResidentAw(dir, { aw: false, custody: "crashloop", unloadPrints: -1 });
+  const home = join(dir, "home"); mkdirSync(home);
+  const opts = { platform: "darwin", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home }, rerun: "oats aweb resident create alice" };
+  await ensureCustodyUnit(opts);
+  const calls = fake.calls().length;
+  // The default bound and poll, on an injected clock.
+  let clock = 0;
+  const unload = { now: () => clock, sleep: async (ms) => { clock += ms; } };
+  const path = unitPath({ platform: "darwin", home }, LABEL);
+  await assert.rejects(ensureCustodyUnit({ ...opts, unload }), {
+    code: "E_RESIDENT_UNIT",
+    message: `launchd job ${LABEL} is still unloading 10 s after launchctl bootout gui/501/${LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${path}\`, then rerun oats aweb resident create alice`,
+  });
+  assert.equal(clock, 10000);
+  const after = fake.calls().slice(calls).map((c) => c.argv[0]);
+  assert.deepEqual(after.slice(0, 2), ["print", "bootout"]);
+  // Polled every 250 ms: 41 prints over the 10 s bound, and no bootstrap.
+  assert.deepEqual(after.slice(2), Array(41).fill("print"));
+});
+
+test("systemctl and loginctl reach the user's manager through its bus variables; the unit itself gets PATH and HOME only", async (t) => {
   const dir = base(t);
   const fake = fakeResidentAw(dir, { aw: false });
   const home = join(dir, "home"); mkdirSync(home);
   const env = { PATH: fake.bin, HOME: home, XDG_RUNTIME_DIR: "/run/user/1000", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus", AWEB_API_KEY: "never-passed", SHELL: "/bin/sh" };
-  ensureCustodyUnit({ platform: "linux", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 1000, env });
+  await ensureCustodyUnit({ platform: "linux", label: LABEL, aw: "/bin/aw", root: "/r/alice", home, address: "juan.aweb.ai/alice", uid: 1000, env });
   lingerProblem({ platform: "linux", user: "alice", env });
   for (const call of fake.calls()) {
     assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["DBUS_SESSION_BUS_ADDRESS", "HOME", "PATH", "XDG_RUNTIME_DIR"], `${call.cmd} ${call.argv.join(" ")}`);
@@ -216,18 +269,18 @@ test("the unit's PATH is aw's and node's directories and the system's, whatever 
   assert.equal(unitSearchPath(join(dir, "aw"), {}), [dir, join(dir, "real"), dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].filter((d, i, all) => all.indexOf(d) === i).join(":"));
 });
 
-test("a rerun from another PATH, or through a symlink to R, leaves a running unit alone", (t) => {
+test("a rerun from another PATH, or through a symlink to R, leaves a running unit alone", async (t) => {
   const dir = base(t);
   const fake = fakeResidentAw(dir, { aw: false });
   const home = join(dir, "home"); mkdirSync(home);
   mkdirSync(join(dir, "r", "alice"), { recursive: true }); symlinkSync(join(dir, "r"), join(dir, "via"));
   for (const platform of ["darwin", "linux"]) {
     const opts = { platform, label: LABEL, aw: "/bin/aw", root: join(dir, "r", "alice"), home, address: "juan.aweb.ai/alice", uid: 501, env: { PATH: fake.bin, HOME: home } };
-    ensureCustodyUnit(opts);
+    await ensureCustodyUnit(opts);
     const written = readFileSync(unitPath({ platform, home }, LABEL), "utf8");
     const calls = fake.calls().length;
     for (const again of [{ ...opts, env: { ...opts.env, PATH: `${fake.bin}:/opt/venv/bin:/home/me/.nvm/bin` } }, { ...opts, root: join(dir, "via", "alice") }]) {
-      assert.equal(ensureCustodyUnit(again).changed, false);
+      assert.equal((await ensureCustodyUnit(again)).changed, false);
       assert.equal(readFileSync(unitPath({ platform, home }, LABEL), "utf8"), written);
     }
     assert.deepEqual(fake.calls().slice(calls).map((c) => c.argv[0] === "--user" ? c.argv[1] : c.argv[0]).filter((v) => !["print", "is-active"].includes(v)), [], "no bootout, bootstrap, enable or restart");
@@ -283,7 +336,7 @@ test("waitForCustody with an owner check: another process answering after our un
   for (const platform of ["darwin", "linux"]) {
     const fake = fakeResidentAw(join(dir, platform), { aw: false, custody: "takeover" });
     const env = { PATH: fake.bin, HOME: home };
-    ensureCustodyUnit({ platform, label: LABEL, aw: "/bin/aw", root, home, address: "juan.aweb.ai/alice", uid: 501, env });
+    await ensureCustodyUnit({ platform, label: LABEL, aw: "/bin/aw", root, home, address: "juan.aweb.ai/alice", uid: 501, env });
     const owner = async (status) => {
       const own = await ownUnitServes({ platform, label: LABEL, root, home, uid: 501, env, socketPath: status.socket_path, settleMs: 5 });
       return own.serves ? undefined : `not ours (${own.why})`;

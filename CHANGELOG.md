@@ -6,7 +6,11 @@
   the code requirement it read from a job's binary at bootstrap, so once
   `npm i -g @awebai/aw` replaces aw, `launchctl kickstart -k` leaves the job
   down (exit 78, "needs LWCR update"); a `bootout` then `bootstrap` brings it
-  back.
+  back. `bootout` returns before the job has unloaded, so every such restart
+  waits, within about 10 s, until `launchctl print` no longer finds the job,
+  then bootstraps once; past that it fails with the command's unit error
+  (`E_WAKE_UNIT`, `E_RESIDENT_UNIT`) without bootstrapping, naming the manual
+  `launchctl bootstrap` step.
   - `oats aweb wake install` now restarts a loaded broker with
     `launchctl bootout gui/<uid>/ai.aweb.wake`, then `bootstrap`, whether or
     not the plist changed (`bootstrap` alone when it is not loaded; `--plan`

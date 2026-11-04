@@ -34,13 +34,17 @@ ${body}`;
  * registered: homes `aw wake status` lists.
  * versionSplit: `aw version` writes its line in two pieces, 150 ms apart,
  *   split this many characters into the version.
+ * unloadPrints: after a bootout the job stays loaded for this many launchctl
+ *   prints, as launchd unloads asynchronously (-1: it never goes); a bootstrap
+ *   while it is loaded exits 5. bootoutExit: bootout's exit code (3 while a
+ *   job is still unloading).
  */
-export function fakeWakeHost(t, { awVersion = "1.36.35", daemonVersion = awVersion, daemon = "unit", linger = "yes", oats = true, tmux = true, registered = [], versionSplit } = {}) {
+export function fakeWakeHost(t, { awVersion = "1.36.35", daemonVersion = awVersion, daemon = "unit", linger = "yes", oats = true, tmux = true, registered = [], versionSplit, unloadPrints = 0, bootoutExit = 0 } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-wake-service-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const bin = join(base, "bin");
   mkdirSync(bin, { recursive: true });
-  const state = { base, awVersion, daemonVersion, daemon, linger, registered, versionSplit };
+  const state = { base, awVersion, daemonVersion, daemon, linger, registered, versionSplit, unloadPrints, bootoutExit };
   const write = (name, body) => { const file = join(bin, name); writeFileSync(file, script(state, body)); chmodSync(file, 0o755); };
   write("aw", `
 if (argv[0] === "version") {
@@ -74,12 +78,21 @@ process.exit(97);
 `);
   write("launchctl", `
 if (argv[0] === "print") {
+  if (flag("unloading")) {
+    const file = path.join(state.base, "unloading"), left = Number(fs.readFileSync(file, "utf8"));
+    if (left === 0) { drop("unloading"); drop("unit-loaded"); } else if (left > 0) fs.writeFileSync(file, String(left - 1));
+  }
   if (!flag("unit-loaded")) process.exit(113);
   process.stdout.write(flag("unit-running") ? "gui/501/ai.aweb.wake = {\\n\\tstate = running\\n\\tpid = 4242\\n}\\n" : "gui/501/ai.aweb.wake = {\\n\\tstate = not running\\n}\\n");
   process.exit(0);
 }
+if (argv[0] === "bootstrap" && flag("unit-loaded")) { process.stderr.write("Bootstrap failed: 5: Input/output error\\n"); process.exit(5); }
 if (argv[0] === "bootstrap") { touch("unit-loaded"); touch("unit-running"); process.exit(0); }
-if (argv[0] === "bootout") { drop("unit-loaded"); drop("unit-running"); process.exit(0); }
+if (argv[0] === "bootout") {
+  drop("unit-running");
+  if (state.unloadPrints) fs.writeFileSync(path.join(state.base, "unloading"), String(state.unloadPrints)); else drop("unit-loaded");
+  process.exit(state.bootoutExit);
+}
 process.exit(97);
 `);
   write("loginctl", `
