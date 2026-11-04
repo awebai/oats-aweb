@@ -1127,20 +1127,43 @@ Supported acts:
   place the key in a literal command or history.
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
   a customer-controlled namespace. It normalizes `<label>` to aweb's team-name
-  rule, runs `aw id team create --name <normalized> --namespace <domain>`,
-  requires the returned `team_id` and invite token, accepts the invite into a
-  new per-team root, records `roots[<team id>]`, then records the local mapping
-  with `OATS_CLI_BIN teams add <label> --team <id>`. Without `--namespace`,
-  setup refuses hosted additional-team creation: the provider has no wrapper.
-  Native aw 1.36.24 supports `id team create --hosted`; aw 1.36.23 does not.
-  Native JSON contains an invite token and must be captured privately. Before creating anything it reads `OATS_CLI_BIN teams --json`:
+  rule and, before any aw call, resolves the aweb service: `AWEB_URL` (the
+  server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
+  `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
+  neither, it refuses and nothing is created. It then runs `aw id team create
+  --name <normalized> --namespace <domain>`, registers the team with that
+  service (`aw id team register --service <url> --team <team id>`), mints a
+  local invite with the team key aw just wrote (`aw id team invite`), accepts
+  it into a new per-team root, connects the root to the service, records
+  `roots[<team id>]`, then records the local mapping with
+  `OATS_CLI_BIN teams add <label> --team <id>`. A re-run of the same command
+  resumes a partial create: no second team, no `-2` suffix, and no second
+  invite once the root's identity is accepted. A refused registration names
+  the HTTP status and the server's short code (such as
+  `http 422 ... service_url_mismatch`) and says the team exists with its key
+  kept; a re-run resumes. Without the namespace controller key, setup says
+  "the namespace controller key for this namespace is not on this machine"
+  and names the remedy: run `aw id namespace prepare-controller --domain
+  <domain>` as this user, or create the team where that key is, then re-run.
+  aw's raw output is never relayed, and `--service` is refused with
+  `--create`. Before creating anything it reads `OATS_CLI_BIN teams --json`:
   where `localTeams` is `false` (team model 3: the workspace does not allow
   local teams), it records no local mapping and prints the `teams:` entry, and
   `defaultTeam:` when the workspace has none, to commit in
   `oats-workspace.yaml`, how to let souls join it (a `souls:` entry's teams),
   and the `localTeams: true` alternative. A kernel without `localTeams` (OATS
   0.36) takes the local mapping. If the kernel cannot answer, setup refuses
-  before creating anything.
+  before creating anything. Without `--namespace`, setup refuses hosted
+  additional-team creation: the provider has no wrapper. Native aw 1.36.24
+  supports `id team create --hosted`; aw 1.36.23 does not. Native JSON
+  contains an invite token and must be captured privately. Two operator
+  notes:
+  - A local-controller invite can be accepted only where the team key is: the
+    same user on the same machine. Another user's deployment on that machine
+    needs the key in its own `~/.awid/team-keys/`. Without it, aw falls back
+    to a hosted invite, which a self-hosted server answers with 404.
+  - A self-hosted aweb accepts signed requests only for its public origin:
+    `AWEB_URL` must be the server's public URL, not a port forward.
 - `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
   never accepts into the existing default root. With aw 1.36.53 or later, a
@@ -1199,9 +1222,11 @@ Supported acts:
   [existing-team GLOBAL resident journey](oats-package/capabilities/oats-aweb/skills/oats-aweb/references/existing-team-global-resident.md).
 - Owner-creates-shared flow: when a committed/shared team has no provider id,
   its owner explicitly runs `oats aweb setup --create <label> --namespace
-  <domain>`. Setup creates the provider team, accepts it into a per-team root,
-  records the root locally, and prints the id to commit. Plain `oats aweb setup`
-  does not create shared teams; it asks for the owner-provided id or invite.
+  <domain>`. Setup creates the provider team, registers it with the service at
+  `AWEB_URL` (the server's public URL) or an existing root's service, mints a
+  local invite and accepts it into a per-team root, records the root locally,
+  and prints the id to commit. A re-run resumes. Plain `oats aweb setup` does
+  not create shared teams; it asks for the owner-provided id or invite.
 
 For a committed/shared team whose provider id exists but whose root is not a
 member, setup/readiness tells the operator it is shared: ask the owner for an

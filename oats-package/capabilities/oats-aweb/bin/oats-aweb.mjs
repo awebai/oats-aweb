@@ -60,7 +60,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
-import { awErrorCode, leadingJsonObject, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, serviceDetailCode, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
@@ -99,16 +99,25 @@ const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
  *  phrase with every token-shaped value redacted: what a withheld failure may
  *  still say (awebai/oats-aweb#149). aw reports a server refusal as
  *  `aweb: http <status> (<headers>): <body>`; only a string `detail` of a JSON
- *  body is taken, never the headers or any other text. */
+ *  body is taken, or the `code` of an object `detail` through its fixed
+ *  vocabulary (serviceDetailCode, #202), never the headers or any other text. */
 const TOKEN_SHAPED_RE = /[A-Za-z0-9_\-.~+/=]{20,}/g;
 function failureClass(e) {
   const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
   const http = /\bhttp (\d{3})\b/.exec(text);
   // Without an HTTP status, still a cause from a fixed vocabulary (awebai/oats-aweb#52).
   if (!http) return withheldFailureCause({ stderr: e?.stderr, stdout: e?.stdout });
-  let detail;
+  let detail, code;
   const body = text.indexOf("{", http.index);
-  if (body >= 0) { try { const doc = leadingJsonObject(text.slice(body)); if (typeof doc?.detail === "string") detail = doc.detail; } catch { /* no JSON body */ } }
+  if (body >= 0) {
+    try {
+      const doc = leadingJsonObject(text.slice(body));
+      if (typeof doc?.detail === "string") detail = doc.detail;
+      else if (doc?.detail && typeof doc.detail === "object" && !Array.isArray(doc.detail) && Object.hasOwn(doc.detail, "code")) code = serviceDetailCode(doc.detail.code);
+    } catch { /* no JSON body */ }
+  }
+  if (code === SERVICE_REFUSED) return `http ${http[1]}, ${SERVICE_REFUSED}`;
+  if (code) return `http ${http[1]}, detail.code: ${code}`;
   const redacted = detail === undefined ? undefined : detail.replace(TOKEN_SHAPED_RE, "<redacted>").replace(/\s+/g, " ").trim().slice(0, 200);
   return `http ${http[1]}${redacted ? `, detail: ${JSON.stringify(redacted)}` : ""}`;
 }
@@ -2437,11 +2446,15 @@ ${JSON.stringify(problem.details || {})}`);
   const candidateTeamId = (name) => `${name}:${createNamespace}`;
   const teamExistsError = (e) => e?.status === 409 || /\b409\b|\bconflict\b|\balready exists\b|\bexists\b/i.test(commandOutput(e));
   const configuredTeamForLabel = (label) => parseOatsTeams().find((t) => t.label === label && t.team)?.team || (label === defaultTeamLabel() ? defaultTeamId() : undefined);
-  const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
+  /** The root a team accepts into: its recorded root, else the label's per-team root. */
+  const teamRootFor = (label, expectedTeam) => {
     const configured = joinConfiguration ? expectedTeam : expectedTeam || configuredTeamForLabel(label);
     const recorded = configured && settings.roots && Object.hasOwn(settings.roots, configured) ? settings.roots[configured] : undefined;
     if (recorded !== undefined && (typeof recorded !== "string" || !isAbsolute(recorded))) throw new Error(`configured root for ${label} must be an absolute directory`);
-    const teamRoot = recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label);
+    return { configured, teamRoot: recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label) };
+  };
+  const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
+    const { configured, teamRoot } = teamRootFor(label, expectedTeam);
     const idHome = join(teamRoot, ".aw");
     const resumeCommand = setupResumeCommand(label);
     const docs = [...setupServiceDocs(teamRoot), ...serviceDocs];
@@ -2482,26 +2495,50 @@ ${JSON.stringify(problem.details || {})}`);
     recordAwebRootSetting(joined.team, teamRoot, { start: deployment });
     return { team: joined.team, teamRoot };
   };
-  const createTeam = (label) => {
+  /** The aweb service a BYOT create registers its team with and connects to: the first of
+   *  setupServiceDocs (AWEB_URL, then the existing roots' workspace.yaml), or undefined. */
+  const createService = (label) => setupServiceDocs(teamRootFor(label, candidateTeamId(normalizeAwebTeamName(label))).teamRoot).map((d) => d.aweb_url).find(Boolean);
+  const noCreateService = (label) => `--create ${label} --namespace ${createNamespace} needs the aweb service to register the new team with, and none is known: set AWEB_URL to the server's public URL (hosted aweb is https://app.aweb.ai/api) and re-run; nothing was created`;
+  /** aw prints no invite token for a BYOT create (awebai/oats-aweb#202). The team key create just
+   *  wrote does the rest: register the team with the service, mint a local invite, accept it. Each
+   *  step is safe to re-run, so a re-run of the same command resumes a partial create. */
+  const createTeam = (label, service) => {
     if (!createNamespace) throw new Error(hostedCreateUnavailable());
     const base = normalizeAwebTeamName(label);
     for (let n = 1; n <= 20; n++) {
       const name = n === 1 ? base : `${base}-${n}`;
       const expectedTeam = candidateTeamId(name);
       const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
+      let created;
       try {
-        const created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true }), "aw id team create");
-        if (!created?.team_id || typeof created.team_id !== "string") throw new Error("aw id team create returned no team_id");
-        const team = created.team_id;
-        const token = created.invite_token || created.invite || created.token;
-        if (!token || typeof token !== "string") throw new Error("aw id team create returned no invite token");
-        return acceptIntoTeamRoot(label, token, team, created);
+        created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
       } catch (e) {
+        // A missing controller key is named before the suffix logic can read its text.
+        if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
         if (!teamExistsError(e)) throw e;
         const teams = readTeams();
         if (teamIdsOf(teams).some((tid) => String(tid) === expectedTeam)) { recordAwebRootSetting(expectedTeam, scope, { start: deployment }); return { team: expectedTeam, teamRoot: scope, reused: true }; }
         if (n === 20) throw new Error(`could not create a unique aweb team for ${JSON.stringify(label)} after suffixing through -20`);
+        continue;
       }
+      if (!created?.team_id || typeof created.team_id !== "string") throw new Error("aw id team create returned no team_id");
+      const team = created.team_id;
+      const resume = `team ${team} exists and its key is kept on this machine; re-run the same command to resume`;
+      const after = (e) => withheldFailureCause(e) === TEAM_KEY_MISSING
+        ? `; team ${team} exists: run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key, or copy the key there, then re-run the same command to resume`
+        : `; ${resume}`;
+      try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+      catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
+      // A future aw may print a token itself; an accepted identity in the root needs none.
+      let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
+      if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
+        let minted;
+        try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
+        catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
+        token = minted?.token;
+        if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);
+      }
+      return acceptIntoTeamRoot(label, token, team, { aweb_url: service });
     }
   };
   const recordLocalTeam = (label, team) => {
@@ -2603,9 +2640,11 @@ ${JSON.stringify(problem.details || {})}`);
       let localTeams;
       try { localTeams = readLocalTeams(); }
       catch (e) { throw new Error(`could not tell whether this workspace allows local teams (oats teams --json: ${String(e.message || e).replace(/\s+/g, " ").trim()}); nothing was created`); }
+      const service = createService(label);
+      if (!service) throw new Error(noCreateService(label));
       mkdirSync(scope, { recursive: true });
-      console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root.`);
-      const created = createTeam(label);
+      console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root, registered with ${service}.`);
+      const created = createTeam(label, service);
       teams = readTeams();
       const done = `✓ created ${created.team}, ${created.reused ? `reused existing member root ${created.teamRoot}` : `accepted it into ${created.teamRoot}`}, recorded roots[${created.team}]`;
       if (localTeams.closed) {
