@@ -5,6 +5,20 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.37.0 — claim floors for aweb tasks
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
+A home that composes oats.aweb-tasks warns when whatever keeps its task claims
+present is too old: the host wake daemon below aw 1.36.54
+(`wake-daemon-outdated`), the aweb-channel plugin below 1.8.2
+(`aweb-channel-outdated`) or the aweb pi extension below 0.4.1
+(`pi-extension-outdated`). They are warnings, not refusals, and messaging-only
+homes get none ("Claim floors" below). While npm's `latest` aw is 1.36.53,
+install aw by version: `npm install -g @awebai/aw@1.36.54`, then
+`oats aweb wake install`. On macOS that rerun now reloads the broker
+(bootout, then bootstrap) so launchd runs the new aw; a running custody job
+is reloaded by hand (CHANGELOG, 1.37.0, "Known issue").
+
 ## 1.36.0 — setup from one pasted invite
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
