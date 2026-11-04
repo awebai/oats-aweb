@@ -5,6 +5,17 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## 1.38.0 — pi 0.5.0 without the skills filter
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
+@awebai/pi 0.5.0 bundles no skills, so a pi home no longer needs the
+`"skills": []` filter on its extension entry once 0.5.0 or later is installed
+in its pi folder: `pi-extension-skills-loaded` now warns only below 0.5.0 or
+when the version can't be read. The aweb skills now ship on their own as
+@awebai/claude-skills; a home gets its skills from its capabilities, so the new
+warning `pi-skills-package-loaded` fires when its pi folder lists that package
+unfiltered ("The pi extension without its skills" below).
+
 ## 1.37.0 — claim floors for aweb tasks
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.

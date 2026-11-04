@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.38.0 — 2026-11-04
+
+Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. Only pi homes see a difference. With @awebai/pi 0.5.0 or later installed in the launch's pi folder, `pi-extension-skills-loaded` no longer asks for the skills filter, because that extension bundles no skills; below 0.5.0, or with an unreadable version, it warns as before. The new warning `pi-skills-package-loaded` fires when that pi folder lists @awebai/claude-skills unfiltered. Remove the entry, or filter it with `"skills": []`. Never install @awebai/claude-skills in a pi folder that OATS homes use.
+
 - **oats.aweb no longer asks for the skills filter on @awebai/pi 0.5.0 or
   later.** @awebai/pi 0.5.0 declares `"skills": []` and bundles no skills, so
   `pi-extension-skills-loaded` now warns only when the @awebai/pi installed in
