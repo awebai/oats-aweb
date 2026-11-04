@@ -15,7 +15,9 @@ present is too old: the host wake daemon below aw 1.36.54
 (`pi-extension-outdated`). They are warnings, not refusals, and messaging-only
 homes get none ("Claim floors" below). While npm's `latest` aw is 1.36.53,
 install aw by version: `npm install -g @awebai/aw@1.36.54`, then
-`oats aweb wake install`.
+`oats aweb wake install`. On macOS that rerun now reloads the broker
+(bootout, then bootstrap) so launchd runs the new aw; a running custody job
+is reloaded by hand (CHANGELOG, 1.37.0, "Known issue").
 
 ## 1.36.0 — setup from one pasted invite
 

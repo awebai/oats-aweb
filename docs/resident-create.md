@@ -228,7 +228,18 @@ file and runs `systemctl --user daemon-reload`. Then rerun resident create.
 | see it | `launchctl print gui/$(id -u)/<label>`, and `aw custody status --json` in R |
 | stop it | `launchctl bootout gui/$(id -u)/<label>` (a killed process is restarted) |
 | start it | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist` |
+| restart it (after an aw upgrade) | `launchctl bootout gui/$(id -u)/<label>`; wait until `launchctl print gui/$(id -u)/<label>` no longer finds it (bootout returns before the job has unloaded); then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`; then rerun `oats aweb resident create <name>` to verify |
 | remove it | `launchctl bootout gui/$(id -u)/<label>`, then delete the plist |
+
+A running custody keeps its old aw until it exits, and `launchctl kickstart -k`
+does not bring it back on the new one: launchd refuses to start a replaced aw
+binary (exit 78, "needs LWCR update") until a bootstrap re-reads its code
+requirement. A rerun of resident create does that for a loaded, unchanged unit
+whose process is not running; it never restarts a running one. Its reload waits,
+within about 30 s, for `launchctl print` to confirm the job is gone (its
+"Could not find service" answer) after `bootout` before it bootstraps;
+past that it fails `E_RESIDENT_UNIT` without bootstrapping, naming the manual
+`launchctl bootstrap` step.
 
 **Linux (systemd --user).** The unit is
 `~/.config/systemd/user/ai.aweb.custody.<namespace>.<name>.service`
@@ -346,7 +357,7 @@ Exit status: 0 on success, 2 for a usage error, 1 for any other failure.
 | `E_RESIDENT_INIT` | init | aw init failed; aw's text |
 | `E_RESIDENT_NOTHING_TO_CONTINUE` | init | aw init failed and left nothing to continue: it created nothing (rerun once aw's report is fixed), or left something this command can't continue |
 | `E_RESIDENT_VERIFY` | verify | the identity is not the connected global `<name>`, or an offline check is not ok |
-| `E_RESIDENT_UNIT` | custody | a launchctl or systemctl command failed |
+| `E_RESIDENT_UNIT` | custody | a launchctl or systemctl command failed, or the custody job was still unloading about 30 s after `bootout` (the message names the manual `launchctl bootstrap` step) |
 | `E_RESIDENT_UNIT_UNSUPPORTED` | custody | no unit on this host and custody is not running: the hand step |
 | `E_RESIDENT_CUSTODY` | custody | custody not ready in 30 s: not running, team not ready, or ops missing |
 | `E_RESIDENT_TEAM_LABEL` | preflight, record | the kernel lacks `teams-conditional-default` (OATS older than 0.48.0); `--team-label` already maps to a team (before an init); the label, given or derived, maps to another team (at record: rerun with `--team-label <other>`); or the kernel refused |

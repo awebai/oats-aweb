@@ -4,8 +4,36 @@
 
 ## 1.37.0 — 2026-11-04
 
-Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged, and messaging-only homes are unaffected. A home that composes oats.aweb-tasks now warns `wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated` until whatever keeps its task claims present reaches aw 1.36.54 (its host wake daemon), aweb-channel 1.8.2 or @awebai/pi 0.4.1. aw 1.36.54 is on npm's `next` tag while `latest` is still 1.36.53, so install it by version, `npm install -g @awebai/aw@1.36.54` (plain `npm install -g @awebai/aw` and `oats aweb setup --install-aw` install 1.36.53), then rerun `oats aweb wake install`. Against a server other than the aweb Cloud, aw 1.36.54 is newer than the tested aw, so oats.aweb also warns `aw-newer-than-tested` there.
+Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged, and messaging-only homes are unaffected. A home that composes oats.aweb-tasks now warns `wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated` until whatever keeps its task claims present reaches aw 1.36.54 (its host wake daemon), aweb-channel 1.8.2 or @awebai/pi 0.4.1. aw 1.36.54 is on npm's `next` tag while `latest` is still 1.36.53, so install it by version, `npm install -g @awebai/aw@1.36.54` (plain `npm install -g @awebai/aw` and `oats aweb setup --install-aw` install 1.36.53), then rerun `oats aweb wake install`, which on macOS now reloads the broker so launchd accepts the new aw (on macOS, also reload each custody job by hand: see the known issue below). Against a server other than the aweb Cloud, aw 1.36.54 is newer than the tested aw, so oats.aweb also warns `aw-newer-than-tested` there.
 
+- **Fixed: launchd jobs come back after an aw upgrade (macOS).** launchd keeps
+  the code requirement it read from a job's binary at bootstrap, so once
+  `npm i -g @awebai/aw` replaces aw, `launchctl kickstart -k` leaves the job
+  down (exit 78, "needs LWCR update"); a `bootout` then `bootstrap` brings it
+  back. `bootout` returns before the job has unloaded, so every such restart
+  waits, within about 30 s, until `launchctl print` answers that it cannot
+  find the job (any other failed print is no answer), then bootstraps once;
+  past that it fails with the command's unit error (`E_WAKE_UNIT`,
+  `E_RESIDENT_UNIT`) without bootstrapping, naming the manual
+  `launchctl bootstrap` step.
+  - `oats aweb wake install` now restarts a loaded broker with
+    `launchctl bootout gui/<uid>/ai.aweb.wake`, then `bootstrap`, whether or
+    not the plist changed (`bootstrap` alone when it is not loaded; `--plan`
+    lists both). It no longer runs `kickstart`, so the documented
+    after-upgrade rerun brings the broker back on the new aw. Linux is
+    unchanged.
+  - `oats aweb resident create` now reloads a loaded, unchanged custody job
+    whose process is not running (`bootout`, then `bootstrap`), as
+    docs/resident-create.md already promised; a running custody is still left
+    alone. The macOS custody upgrade step is the new "restart it (after an aw
+    upgrade)" row in docs/resident-create.md, "The custody unit".
+- **Known issue (macOS):** a running custody job is not restarted for you
+  after an aw upgrade. After upgrading aw on macOS, reload each custody job
+  with `launchctl bootout gui/$(id -u)/<label>`; wait until
+  `launchctl print gui/$(id -u)/<label>` no longer finds it (bootout returns
+  before the job has unloaded); then
+  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`;
+  then rerun `oats aweb resident create <name>` to verify.
 - **Claim floors for aweb tasks (oats.aweb-tasks readiness, not oats.aweb).**
   aweb takes over a task claim whose presence heartbeat has gone stale. The
   heartbeat comes from aw 1.36.54's host wake daemon, aweb-channel 1.8.2 or
