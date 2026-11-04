@@ -244,14 +244,14 @@ test("darwin: a broker still loaded after the bound fails E_WAKE_UNIT with the m
   const path = unitFile(host, "darwin");
   const before = host.calls().length;
   let clock = 0;
-  const r = await wake(host, "darwin", ["install", "--json"], { now: () => clock, sleep: async (ms) => { clock += ms; }, unloadIntervalMs: undefined });
+  const r = await wake(host, "darwin", ["install", "--json"], { now: () => clock, sleep: async (ms) => { clock += ms; }, unloadIntervalMs: 1000 });
   assert.equal(r.code, 1, r.stdout);
   assert.equal(r.json.error.code, "E_WAKE_UNIT");
-  assert.equal(r.json.error.message, `launchd job ${WAKE_LABEL} is still unloading 10 s after launchctl bootout gui/501/${WAKE_LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${WAKE_LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${path}\`, then rerun oats aweb wake install`);
-  assert.equal(clock, 10000);
+  assert.equal(r.json.error.message, `launchd job ${WAKE_LABEL} is still unloading 30 s after launchctl bootout gui/501/${WAKE_LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${WAKE_LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${path}\`, then rerun oats aweb wake install`);
+  assert.equal(clock, 30000);
   const launchctl = host.calls().slice(before).filter((c) => c.cmd === "launchctl").map((c) => c.argv[0]);
-  // The default bound and poll: 41 prints, every 250 ms over 10 s, and no bootstrap.
-  assert.deepEqual(launchctl.slice(launchctl.indexOf("bootout")), ["bootout", ...Array(41).fill("print")]);
+  // The default 30 s bound, polled every second here: 31 prints, and no bootstrap.
+  assert.deepEqual(launchctl.slice(launchctl.indexOf("bootout")), ["bootout", ...Array(31).fill("print")]);
 });
 
 test("darwin: a print that fails other than not-found is no answer: no bootstrap until the broker is confirmed gone", async (t) => {

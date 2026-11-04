@@ -226,7 +226,7 @@ test("ensureCustodyUnit on launchd: a bootout that exits 3 while the job unloads
   assert.ok(fake.loaded());
 });
 
-test("ensureCustodyUnit on launchd: a job still loaded after about 10 s fails E_RESIDENT_UNIT with the manual step, and is never bootstrapped", async (t) => {
+test("ensureCustodyUnit on launchd: a job still loaded after about 30 s fails E_RESIDENT_UNIT with the manual step, and is never bootstrapped", async (t) => {
   const dir = base(t);
   const fake = fakeResidentAw(dir, { aw: false, custody: "crashloop", unloadPrints: -1 });
   const home = join(dir, "home"); mkdirSync(home);
@@ -239,13 +239,13 @@ test("ensureCustodyUnit on launchd: a job still loaded after about 10 s fails E_
   const path = unitPath({ platform: "darwin", home }, LABEL);
   await assert.rejects(ensureCustodyUnit({ ...opts, unload }), {
     code: "E_RESIDENT_UNIT",
-    message: `launchd job ${LABEL} is still unloading 10 s after launchctl bootout gui/501/${LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${path}\`, then rerun oats aweb resident create alice`,
+    message: `launchd job ${LABEL} is still unloading 30 s after launchctl bootout gui/501/${LABEL}, so it was not bootstrapped: once \`launchctl print gui/501/${LABEL}\` no longer finds it, run \`launchctl bootstrap gui/501 ${path}\`, then rerun oats aweb resident create alice`,
   });
-  assert.equal(clock, 10000);
+  assert.equal(clock, 30000);
   const after = fake.calls().slice(calls).map((c) => c.argv[0]);
   assert.deepEqual(after.slice(0, 2), ["print", "bootout"]);
-  // Polled every 250 ms: 41 prints over the 10 s bound, and no bootstrap.
-  assert.deepEqual(after.slice(2), Array(41).fill("print"));
+  // Polled every 250 ms: 121 prints over the 30 s bound, and no bootstrap.
+  assert.deepEqual(after.slice(2), Array(121).fill("print"));
 });
 
 test("ensureCustodyUnit on launchd: a print that fails other than not-found is no answer: no bootstrap until the job is confirmed gone", async (t) => {

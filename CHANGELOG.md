@@ -7,7 +7,7 @@
   `npm i -g @awebai/aw` replaces aw, `launchctl kickstart -k` leaves the job
   down (exit 78, "needs LWCR update"); a `bootout` then `bootstrap` brings it
   back. `bootout` returns before the job has unloaded, so every such restart
-  waits, within about 10 s, until `launchctl print` answers that it cannot
+  waits, within about 30 s, until `launchctl print` answers that it cannot
   find the job (any other failed print is no answer), then bootstraps once;
   past that it fails with the command's unit error (`E_WAKE_UNIT`,
   `E_RESIDENT_UNIT`) without bootstrapping, naming the manual

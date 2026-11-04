@@ -254,7 +254,9 @@ export async function ensureCustodyUnit({ platform, label, aw, root, home, addre
   return { manager, label, path, changed };
 }
 
-const UNLOAD_MS = 10000, UNLOAD_POLL_MS = 250;
+// Past launchd's default ExitTimeOut (20 s; neither plist sets one), after
+// which launchd kills a job that has not exited on SIGTERM.
+const UNLOAD_MS = 30000, UNLOAD_POLL_MS = 250;
 // launchctl print's exit status for a service its domain does not have
 // ("Could not find service"): the only answer that confirms a job is gone.
 const LAUNCHD_NOT_FOUND = 113;
