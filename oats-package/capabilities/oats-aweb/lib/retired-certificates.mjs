@@ -6,26 +6,22 @@
 // can mark the leftover member and print that command. The record holds certificate ids
 // and commands only, never a secret, and lives only on the host where the retire ran.
 //
-// Writers (retire) serialise on a lock file beside the record: each re-reads the record
-// under the lock, merges its entries, writes a temp file in the same directory, checks it
-// still holds the lock and renames the temp file over the record. Readers (roster) never
-// lock: the rename is atomic, so they always see a whole file.
+// Writers (retire) serialise on an exclusive lock file beside the record: each re-reads
+// the record under the lock, merges its entries, writes a temp file in the same directory
+// and renames it over the record. Readers (roster) never lock: the rename is atomic, so
+// they always see a whole file.
 //
-// The lock names its holder ({pid, host, token}) and appears whole: it is written to a
-// temp file and hard-linked into place, which fails when a lock exists. Only a lock whose
-// holder is dead on this host (or whose content is not a holder) is removed, never one
-// that is merely old: a paused writer still holds it. Two writers may find the same dead
-// lock; each moves the lock aside and removes it only if it is the lock it inspected,
-// putting back a live lock it moved by mistake. A holder that finds its lock gone before
-// it renames gives up with a warning rather than overwrite another writer's merge.
-import { chmodSync, linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { hostname } from "node:os";
+// No writer ever removes another's lock, however old or whoever held it: a lock path that
+// is moved or removed can be taken by a third writer at once, and no later step can undo
+// what it did meanwhile. A lock left by a writer that died is reported instead: each later
+// retire waits LOCK_WAIT_MS, records nothing and warns, naming the file to remove.
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const RETIRED_RECORD_MAX = 500;
 const LOCK_WAIT_MS = 5000;
 const LOCK_POLL_MS = 20;
+const LOCK_RELATIVE = ".oats-aweb/retired-certificates.json.lock";
 
 export const retiredRecordDir = (deployment) => join(deployment, ".oats-aweb");
 export const retiredRecordFile = (deployment) => join(retiredRecordDir(deployment), "retired-certificates.json");
@@ -66,74 +62,37 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 const fixed = (cause) => Object.assign(new Error(cause), { fixed: true });
 const quietly = (fn) => { try { fn(); } catch { /* best effort */ } };
 
-/** Whether the lock text names a writer that is gone: a holder on this host whose process
- *  no longer exists, or text that names no holder (never written by takeLock). */
-function lockAbandoned(text) {
-  let holder;
-  try { holder = JSON.parse(text); } catch { return true; }
-  if (!holder || typeof holder.token !== "string" || !Number.isInteger(holder.pid) || holder.pid <= 0) return true;
-  if (holder.host !== hostname()) return false; // no way to tell from here
-  try { process.kill(holder.pid, 0); return false; }
-  catch (e) { return e?.code === "ESRCH"; }
-}
-
-/** Removes the abandoned lock `observed` read. The lock is moved aside first; if what moved
- *  is not that lock (another writer replaced it meanwhile), it is linked back. */
-function breakLock(lock, observed, token) {
-  const aside = `${lock}.${token}.abandoned`;
-  try { renameSync(lock, aside); } catch { return; /* already gone */ }
-  let moved;
-  try { moved = readFileSync(aside, "utf8"); } catch { moved = undefined; }
-  if (moved !== observed) quietly(() => linkSync(aside, lock)); // a live lock: put it back
-  quietly(() => unlinkSync(aside));
-}
-
-/** Takes the writers' lock and returns its token, or throws a fixed-cause error. */
-function takeLock(lock, { waitMs = LOCK_WAIT_MS, hooks = {} } = {}) {
-  const token = randomBytes(12).toString("hex");
-  const mine = `${lock}.${token}`;
-  try { writeFileSync(mine, `${JSON.stringify({ pid: process.pid, host: hostname(), token })}\n`, { mode: 0o600, flag: "wx" }); }
-  catch { throw fixed("the record directory is not writable"); }
-  try {
-    const deadline = Date.now() + waitMs;
-    for (;;) {
-      try { linkSync(mine, lock); hooks.locked?.(); return token; }
-      catch (e) { if (e?.code !== "EEXIST") throw fixed("the record's lock could not be taken"); }
-      let observed;
-      try { observed = readFileSync(lock, "utf8"); }
-      catch (e) { if (e?.code === "ENOENT") continue; throw fixed("the record's lock could not be read"); }
-      if (lockAbandoned(observed)) { hooks.abandoned?.(); breakLock(lock, observed, token); hooks.broken?.(); continue; }
-      if (Date.now() >= deadline) throw fixed("another retire held the record's lock");
-      sleep(LOCK_POLL_MS);
+/** Takes the writers' lock, or throws a fixed-cause error. */
+function takeLock(lock, { waitMs = LOCK_WAIT_MS } = {}) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try { closeSync(openSync(lock, "wx", 0o600)); return; }
+    catch (e) {
+      if (e?.code !== "EEXIST") throw fixed("the record directory is not writable");
     }
-  } finally {
-    quietly(() => unlinkSync(mine));
+    if (Date.now() >= deadline) throw fixed(`another retire holds the record's lock (if none is running, remove ${LOCK_RELATIVE})`);
+    sleep(LOCK_POLL_MS);
   }
-}
-
-function holdsLock(lock, token) {
-  try { return JSON.parse(readFileSync(lock, "utf8"))?.token === token; } catch { return false; }
 }
 
 /** Records `entries` ({team, certificateId, alias, instance, retiredAt, command}) at the
  *  deployment, replacing any entry with the same team and certificate id and keeping the
  *  newest RETIRED_RECORD_MAX. Entries without a certificate id are skipped: nothing can
  *  match them. Never throws: returns `cause`, the fixed cause of what went wrong, if
- *  anything did (an unreadable or malformed record is replaced, and said so).
- *  `testHooks` ({abandoned, broken, locked}) are seams for tests to order two writers. */
-export function recordRetiredCertificates(deployment, entries, { lockWaitMs, testHooks } = {}) {
+ *  anything did (an unreadable or malformed record is replaced, and said so). */
+export function recordRetiredCertificates(deployment, entries, { lockWaitMs } = {}) {
   try {
     const fresh = entries
       .map((e) => ({ team: e?.team, certificateId: e?.certificateId, alias: e?.alias ?? null, instance: e?.instance ?? null, retiredAt: e?.retiredAt, command: e?.command }))
       .filter(validEntry);
     if (!fresh.length) return {};
-    return writeRecord(deployment, fresh, { lockWaitMs, hooks: testHooks || {} });
+    return writeRecord(deployment, fresh, { lockWaitMs });
   } catch {
     return { cause: "the record could not be written" };
   }
 }
 
-function writeRecord(deployment, fresh, { lockWaitMs, hooks }) {
+function writeRecord(deployment, fresh, { lockWaitMs }) {
   const dir = retiredRecordDir(deployment), file = retiredRecordFile(deployment), lock = `${file}.lock`;
   try { mkdirSync(dir, { recursive: true, mode: 0o700 }); }
   catch { return { cause: "the record directory could not be created" }; }
@@ -141,10 +100,11 @@ function writeRecord(deployment, fresh, { lockWaitMs, hooks }) {
   // leaving the owner's (a directory the owner cannot write stays unwritable).
   try { const { mode } = statSync(dir); if (mode & 0o077) chmodSync(dir, mode & 0o700); }
   catch { return { cause: "the record directory's mode could not be set to 0700" }; }
-  let token;
-  try { token = takeLock(lock, { waitMs: lockWaitMs, hooks }); }
+  try { takeLock(lock, { waitMs: lockWaitMs }); }
   catch (e) { return { cause: e?.fixed ? e.message : "the record's lock could not be taken" }; }
-  const tmp = join(dir, `.retired-certificates.${token}.tmp`);
+  // Under the lock no other writer runs, so this process's temp name is free unless a
+  // crashed writer left it: that one fails this write, is reported, and is removed.
+  const tmp = join(dir, `.retired-certificates.${process.pid}.tmp`);
   try {
     let existing = [], cause;
     try {
@@ -157,12 +117,10 @@ function writeRecord(deployment, fresh, { lockWaitMs, hooks }) {
       writeFileSync(tmp, `${JSON.stringify({ version: 1, entries: merged }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
       chmodSync(tmp, 0o600);
     } catch { return { cause: "the record could not be written" }; }
-    // Another writer may have taken the lock from under this one; its merge must stand.
-    if (!holdsLock(lock, token)) return { cause: "another retire took the record's lock" };
     try { renameSync(tmp, file); } catch { return { cause: "the record could not be written" }; }
     return cause ? { cause } : {};
   } finally {
     quietly(() => unlinkSync(tmp));
-    if (holdsLock(lock, token)) quietly(() => unlinkSync(lock));
+    quietly(() => unlinkSync(lock));
   }
 }
