@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -163,72 +163,46 @@ test("an existing record directory loses group and other access; an unwritable o
   assert.equal(mode(dir), 0o500);
 });
 
-test("a failure after the lock is taken returns its cause and never throws", (t) => {
+test("a failure after the lock is taken, its cleanup failing too, returns its cause and releases the lock", (t) => {
   const ws = tempDir(t), dir = join(ws, ".oats-aweb");
-  const r = recordRetiredCertificates(ws, [entry("c-1")], { testHooks: { locked: () => chmodSync(dir, 0o500) } });
-  assert.deepEqual(r, { cause: "the record could not be written" });
-  chmodSync(dir, 0o700);
+  // A directory at this process's temp name: the temp write fails and so does its removal.
+  mkdirSync(join(dir, `.retired-certificates.${process.pid}.tmp`, "occupied"), { recursive: true });
+  assert.deepEqual(recordRetiredCertificates(ws, [entry("c-1")]), { cause: "the record could not be written" });
+  assert.equal(existsSync(join(dir, "retired-certificates.json.lock")), false);
   assert.equal(existsSync(join(dir, "retired-certificates.json")), false);
 });
 
-test("a lock whose holder is alive is never taken, however old", (t) => {
+test("no writer takes a lock it did not make, however old or whoever left it", (t) => {
   const ws = tempDir(t), lock = join(ws, ".oats-aweb", "retired-certificates.json.lock");
-  write(lock, JSON.stringify({ pid: process.pid, host: hostname(), token: "live" }));
-  utimesSync(lock, new Date(0), new Date(0));
-  assert.deepEqual(recordRetiredCertificates(ws, [entry("c-1")], { lockWaitMs: 100 }), { cause: "another retire held the record's lock" });
-  assert.equal(JSON.parse(readFileSync(lock, "utf8")).token, "live");
-  assert.equal(existsSync(join(ws, ".oats-aweb", "retired-certificates.json")), false);
-});
-
-/** A child process that records one entry, its lock steps ordered by marker files in ws. */
-function orderedWriter(ws, name, hooks) {
-  const marks = join(ws, "marks");
-  const script = `const fs = await import("node:fs");
-const { recordRetiredCertificates } = await import(${JSON.stringify(pathToFileURL(LIB).href)});
-const mark = (m) => fs.writeFileSync(${JSON.stringify(marks)} + "/" + m, "");
-const until = (m) => { while (!fs.existsSync(${JSON.stringify(marks)} + "/" + m)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5); };
-const hooks = ${hooks};
-const r = recordRetiredCertificates(${JSON.stringify(ws)}, [{ team: "t:example.test", certificateId: "${name}", alias: "${name}", instance: "${name}", retiredAt: new Date().toISOString(), command: "aw id team remove-member --cert-id ${name}" }], { lockWaitMs: 60000, testHooks: hooks });
-if (r.cause) { console.error(r.cause); process.exit(1); }`;
-  return new Promise((done, fail) => {
-    const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = ""; child.stderr.on("data", (d) => { stderr += d; });
-    child.on("exit", (code) => code === 0 ? done() : fail(new Error(`${name}: ${stderr}`)));
-  });
-}
-
-test("two writers that find the same abandoned lock both keep their entry", async (t) => {
-  const ws = tempDir(t);
-  mkdirSync(join(ws, "marks"));
   const dead = spawnSync(process.execPath, ["-e", ""]).pid;
-  write(join(ws, ".oats-aweb", "retired-certificates.json.lock"), JSON.stringify({ pid: dead, host: hostname(), token: "dead" }));
-  // Both read the dead lock; a breaks it and takes the lock; only then does b break what is
-  // now a's live lock, and a commits after that.
-  await Promise.all([
-    orderedWriter(ws, "a", `{ abandoned: () => { mark("a-abandoned"); until("b-abandoned"); }, locked: () => { mark("a-locked"); until("b-broken"); } }`),
-    orderedWriter(ws, "b", `{ abandoned: () => { mark("b-abandoned"); until("a-locked"); }, broken: () => mark("b-broken") }`),
-  ]);
-  const ids = readRecord(join(ws, ".oats-aweb", "retired-certificates.json")).entries.map((e) => e.certificateId).sort();
-  assert.deepEqual(ids, ["a", "b"]);
-  assert.equal(existsSync(join(ws, ".oats-aweb", "retired-certificates.json.lock")), false);
+  for (const holder of [String(process.pid), String(dead), ""]) {
+    write(lock, holder);
+    utimesSync(lock, new Date(0), new Date(0));
+    assert.deepEqual(recordRetiredCertificates(ws, [entry("c-1")], { lockWaitMs: 100 }), { cause: "another retire holds the record's lock (if none is running, remove .oats-aweb/retired-certificates.json.lock)" });
+    assert.equal(readFileSync(lock, "utf8"), holder, "the lock is left as it was");
+    assert.equal(existsSync(join(ws, ".oats-aweb", "retired-certificates.json")), false);
+  }
+  // Once the operator removes it, the next retire records.
+  rmSync(lock);
+  assert.deepEqual(recordRetiredCertificates(ws, [entry("c-1")]), {});
 });
 
-test("two concurrent writers keep every entry", async (t) => {
+test("three concurrent writers keep every entry", async (t) => {
   const ws = tempDir(t), WRITES = 150;
   const writer = (name) => new Promise((done, fail) => {
     // Each writer waits for the other to be ready, so their read-merge-rename cycles overlap.
     const script = `const fs = await import("node:fs");
 const { recordRetiredCertificates } = await import(${JSON.stringify(pathToFileURL(LIB).href)});
 fs.writeFileSync(${JSON.stringify(join(ws, "ready-"))} + "${name}", "");
-while (!["a", "b"].every((w) => fs.existsSync(${JSON.stringify(join(ws, "ready-"))} + w))) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+while (!["a", "b", "c"].every((w) => fs.existsSync(${JSON.stringify(join(ws, "ready-"))} + w))) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
 for (let i = 0; i < ${WRITES}; i++) { const r = recordRetiredCertificates(${JSON.stringify(ws)}, [{ team: "t:example.test", certificateId: "${name}-" + i, alias: "${name}", instance: "${name}", retiredAt: new Date().toISOString(), command: "aw id team remove-member --cert-id ${name}-" + i }], { lockWaitMs: 60000 }); if (r.cause) { console.error(r.cause); process.exit(1); } }`;
     const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = ""; child.stderr.on("data", (d) => { stderr += d; });
     child.on("exit", (code) => code === 0 ? done() : fail(new Error(`${name}: ${stderr}`)));
   });
-  await Promise.all([writer("a"), writer("b")]);
+  await Promise.all([writer("a"), writer("b"), writer("c")]);
   const ids = readRecord(join(ws, ".oats-aweb", "retired-certificates.json")).entries.map((e) => e.certificateId).sort();
-  assert.deepEqual(ids, [...Array(WRITES).keys()].flatMap((i) => [`a-${i}`, `b-${i}`]).sort());
+  assert.deepEqual(ids, [...Array(WRITES).keys()].flatMap((i) => [`a-${i}`, `b-${i}`, `c-${i}`]).sort());
   assert.equal(existsSync(join(ws, ".oats-aweb", "retired-certificates.json.lock")), false);
 });
 
