@@ -17,6 +17,15 @@
   cause and remedy (`aw id namespace prepare-controller --domain <domain>` as this user,
   or create the team where that key is); aw's raw output is never relayed. No
   new flag or setting; `--service` stays refused with `--create`.
+- **Fixed: the send examples no longer use fixed `/tmp` body files.** The
+  oats-aweb skill's mail and chat examples wrote every body to a fixed path
+  (`/tmp/msg.md`, `/tmp/reply.md` and four more). On a shared host, agents that
+  copied them overwrote each other's drafts, so mail went out with another
+  agent's text, and anyone on the host could read the drafts. Section 3 now
+  makes a new owner-only file per message under the home's `.oats-aweb/drafts/`
+  (which retirement neither keeps nor copies), and says why. The inject's crib
+  and the aweb-tasks skill say the same, and a test keeps fixed `/tmp` body
+  files out of every shipped skill, inject and the README.
 
 ## 1.38.0 — 2026-11-04
 

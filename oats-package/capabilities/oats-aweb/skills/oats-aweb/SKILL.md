@@ -88,9 +88,24 @@ Always put the body in a file: inline `--body "…"` breaks on quotes,
 backticks, `$(…)` and newlines. There is **no positional recipient** for mail
 and **no `--reply-to`**.
 
+**Make a new private file for every message**, and never use a fixed or shared
+`/tmp` path: other agents and users on the host share `/tmp`, so a fixed name
+there lets another agent overwrite your draft (and your mail carries its text),
+and anyone can read it. Run this from your home; it prints a new path:
+
 ```bash
-aw mail send --to <alias> --subject "<short subject>" --body-file /tmp/msg.md
-aw mail reply <message-id> --body-file /tmp/reply.md    # stay in the thread
+(umask 077; mkdir -p "${OATS_INSTANCE_HOME:?}/.oats-aweb/drafts" && mktemp "$OATS_INSTANCE_HOME/.oats-aweb/drafts/XXXXXXXX")
+```
+
+Write the body to the path it printed and pass that path as `<body-file>`
+below. Use the printed path itself: a shell variable does not survive between
+your tool calls. Keep the `X`s last (macOS `mktemp` replaces only trailing
+`X`s, so `XXXXXX.md` is one fixed name). The directory is owner-only, and
+retirement neither keeps nor copies it.
+
+```bash
+aw mail send --to <alias> --subject "<short subject>" --body-file <body-file>
+aw mail reply <message-id> --body-file <body-file>      # stay in the thread
 aw mail inbox                                          # UNREAD only
 aw mail inbox --show-all --json                       # recovery, including affected Pi interrupts (section 4); page with --cursor
 aw mail show --message-id <id> --json                  # exact delivered message recovery
@@ -101,12 +116,12 @@ aw mail ack <message-id>                               # mark one read without r
 Chat is synchronous: use it only when someone must answer before you can go on.
 
 ```bash
-aw chat send-and-wait <alias> --body-file /tmp/q.md --start-conversation   # ask and wait
-aw chat send-and-leave <alias> --body-file /tmp/answer.md                   # answer, don't wait
-aw chat extend-wait <alias> --body-file /tmp/status.md                      # "need 5 more minutes"
+aw chat send-and-wait <alias> --body-file <body-file> --start-conversation   # ask and wait
+aw chat send-and-leave <alias> --body-file <body-file>                      # answer, don't wait
+aw chat extend-wait <alias> --body-file <body-file>                         # "need 5 more minutes"
 aw chat pending                                                             # chats waiting on you
 aw chat history <alias>                                                     # past exchange
-aw chat send --session-id <session-id> --body-file /tmp/more.md             # continue a known session
+aw chat send --session-id <session-id> --body-file <body-file>              # continue a known session
 ```
 
 `aw chat send` has **no `--to`**: it only continues an existing session. Start a
@@ -116,7 +131,7 @@ chat with `send-and-wait` / `send-and-leave`.
 nothing else changes:
 
 ```bash
-aw --identity-home <identityHome> mail send --to <alias> --subject "…" --body-file /tmp/msg.md
+aw --identity-home <identityHome> mail send --to <alias> --subject "…" --body-file <body-file>
 aw --identity-home <identityHome> mail inbox
 aw --identity-home <identityHome> chat pending
 ```
