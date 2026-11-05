@@ -16,12 +16,19 @@ const shipped = () => [
   })),
 ];
 
+const TMP_FILE_FLAG = /--[a-z]+-file(?:\s+|=)["']?\/tmp\//;
+
+test('the /tmp file-flag guard sees both flag forms', () => {
+  for (const example of ['--body-file /tmp/draft', '--body-file=/tmp/draft', "--notes-file '/tmp/n'", '--body-file="/tmp/x.md"']) assert.match(example, TMP_FILE_FLAG, example);
+  assert.doesNotMatch('--body-file <body-file>', TMP_FILE_FLAG);
+});
+
 test('no shipped skill, inject or README example writes a message or task body to a fixed /tmp path', () => {
   const files = shipped();
   assert.ok(files.length >= 6, 'the scan found the shipped markdown');
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
-    assert.doesNotMatch(text, /--[a-z]+-file\s+["']?\/tmp\//, `${file} passes a /tmp path to a file flag`);
+    assert.doesNotMatch(text, TMP_FILE_FLAG, `${file} passes a /tmp path to a file flag`);
     assert.doesNotMatch(text, /\/tmp\/[\w.-]+\.(?:md|txt)\b/, `${file} names a fixed /tmp file`);
   }
 });
@@ -33,5 +40,5 @@ test('the oats-aweb draft recipe makes a unique owner-only file in a home entry 
   assert.ok(recipe[2].length >= 6, 'enough random characters, and the X run ends the template (BSD mktemp)');
   const manifest = JSON.parse(readFileSync(join(capabilities, 'oats-aweb/oats.json'), 'utf8'));
   assert.ok(manifest.retirement.disposable.home.includes(recipe[1]), `${recipe[1]} is declared disposable, so retirement neither fingerprints nor copies drafts`);
-  for (const example of skill.matchAll(/--body-file (\S+)/g)) assert.equal(example[1], '<body-file>');
+  for (const example of skill.matchAll(/--body-file(?:\s+|=)(\S+)/g)) assert.equal(example[1], '<body-file>');
 });
