@@ -13,6 +13,30 @@ export const AW_ERROR_CODES = new Set(["unknown_or_invalid"]);
  *  errors, and a connection that ended early (`Post "…": EOF`). */
 const NETWORK_FAILURE_RE = /\b(?:dial tcp[46]?|no such host|connection refused|connection reset|network is unreachable|i\/o timeout|context deadline exceeded|tls handshake timeout|client\.timeout exceeded)\b|\btls: |\bx509: |": (?:unexpected )?EOF\b/i;
 
+/** The `detail.code` an aweb service may refuse with, as a fixed table: the
+ *  code is remote text, so it is named only when the table lists it or the
+ *  WHOLE string is one short snake_case word; anything else is the generic
+ *  SERVICE_REFUSED (awebai/oats-aweb#202). */
+export const SERVICE_DETAIL_CODES = new Set(["service_url_mismatch", "awid_team_not_found", "awid_team_controller_mismatch", "awid_team_missing_controller", "invalid_controller_signature", "invalid_controller_timestamp", "validation_error"]);
+export const SERVICE_REFUSED = "service-refused";
+const SERVICE_DETAIL_CODE_RE = /^[a-z][a-z0-9_]{0,47}$/;
+export function serviceDetailCode(code) {
+  return typeof code === "string" && (SERVICE_DETAIL_CODES.has(code) || SERVICE_DETAIL_CODE_RE.test(code)) ? code : SERVICE_REFUSED;
+}
+
+/** A key aw needs that is not on this machine, as aw words it: a BYOT team
+ *  create without the namespace controller key ("no local controller key for
+ *  --namespace D", or "load controller key for D: ..." when loading it fails),
+ *  and an invite or register without the team key ("no team key for D/N",
+ *  "local team controller key for N:D was not found"). Checked before
+ *  anything else: these are the actionable causes. */
+export const NAMESPACE_CONTROLLER_KEY_MISSING = "the namespace controller key for this namespace is not on this machine";
+export const TEAM_KEY_MISSING = "the team key is not on this machine";
+const LOCAL_KEY_CAUSES = [
+  [/\bno local controller key for\b|\bload controller key for\b/i, NAMESPACE_CONTROLLER_KEY_MISSING],
+  [/\bno team key for\b|\blocal team controller key for \S+ was not found\b/i, TEAM_KEY_MISSING],
+];
+
 /** The JSON object that `text` starts with, ignoring whatever follows it. */
 export function leadingJsonObject(text) {
   let depth = 0, inString = false, escaped = false;
@@ -40,12 +64,15 @@ export function awErrorCode(stdout) {
   } catch { return undefined; }
 }
 
-/** The cause of a failure with no HTTP status: aw's allowlisted error code,
- *  else a network or TLS failure in its output, else that the output held
- *  none of these. */
+/** The cause of a failure with no HTTP status: a missing local key, else
+ *  aw's allowlisted error code, else a network or TLS failure in its output,
+ *  else that the output held none of these. */
 export function withheldFailureCause({ stderr, stdout }) {
+  const text = `${stderr ?? ""}\n${stdout ?? ""}`;
+  const key = LOCAL_KEY_CAUSES.find(([re]) => re.test(text));
+  if (key) return key[1];
   const code = awErrorCode(stdout);
   if (code) return `aw error ${code}`;
-  if (NETWORK_FAILURE_RE.test(`${stderr ?? ""}\n${stdout ?? ""}`)) return "the aweb service could not be reached: a network or TLS failure";
+  if (NETWORK_FAILURE_RE.test(text)) return "the aweb service could not be reached: a network or TLS failure";
   return "no HTTP status, aw error code or network failure in its output";
 }

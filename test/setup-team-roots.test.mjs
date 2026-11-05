@@ -118,7 +118,7 @@ for(const kind of ['wrong-membership','spoofed-workspace','query-unavailable'])t
 for(const outside of [false,true])test(`create uses deployment sibling with ${outside?'external':'nested'} authority`,t=>{
  const f=fixture(t,outside), cli=join(f.base,'teams-cli');
  writeFileSync(cli,`#!${process.execPath}\nconsole.log(JSON.stringify({schemaVersion:1,ok:true,result:{localTeams:false,defaultTeam:{label:'default'}}}));`,{mode:0o755});
- const r=f.run(['setup','--create','joined','--namespace','example.invalid'],{OATS_CLI_BIN:cli});assert.equal(r.status,0,r.stderr);
+ const r=f.run(['setup','--create','joined','--namespace','example.invalid'],{OATS_CLI_BIN:cli,AWEB_URL:'https://service.invalid'});assert.equal(r.status,0,r.stderr);
  assert.ok(existsSync(join(f.deployment,'.aweb-roots','joined','.aw','workspace.yaml')));assert.ok(!existsSync(join(f.root,'.aweb-roots')));
 });
 for(const event of ['launch','retire'])test(`${event} never queries current roots`,t=>{

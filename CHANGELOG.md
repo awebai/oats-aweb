@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Fixed: `oats aweb setup --create <label> --namespace <domain>` completes
+  (#202).** aw never prints an invite token for a team created in a
+  customer-controlled namespace, so setup refused every such create. Setup now
+  resolves the aweb service first, from `AWEB_URL` (the server's public URL)
+  or an existing messaging root's `aweb_url`, and refuses before any aw call
+  when there is none. After `aw id team create` it registers the team with
+  that service (`aw id team register`), mints the invite itself with the local
+  team key (`aw id team invite`), then accepts it into the per-team root and
+  connects it. A re-run of the same command resumes a partial create: no
+  second team, no `-2` suffix, no second invite once the identity is
+  accepted. A refused registration names the HTTP status and the server's
+  short code. A missing namespace controller key or team key gets a fixed
+  cause and remedy (`aw id namespace prepare-controller --domain <domain>` as this user,
+  or create the team where that key is); aw's raw output is never relayed. No
+  new flag or setting; `--service` stays refused with `--create`.
+
 ## 1.38.0 — 2026-11-04
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. Only pi homes see a difference. With @awebai/pi 0.5.0 or later installed in the launch's pi folder, `pi-extension-skills-loaded` no longer asks for the skills filter, because that extension bundles no skills; below 0.5.0, or with an unreadable version, it warns as before. The new warning `pi-skills-package-loaded` fires when that pi folder lists @awebai/claude-skills unfiltered. Remove the entry, or filter it with `"skills": []`. Never install @awebai/claude-skills in a pi folder that OATS homes use.

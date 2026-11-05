@@ -28,6 +28,20 @@
 //                     the version from it, so a fake npm can upgrade aw
 //   accept-invite --token-stdin reads the token from stdin; the call records
 //                     `stdin: true` and the token's sha256, never the token
+//   id team create    as aw 1.36.53 does it for --namespace (BYOT): no invite token;
+//                     it writes the team key under team-keys/ beside the bin
+//                     directory, and a re-run with that key prints the same team.
+//                     AW_CREATE_MODE: no-controller-key (aw's exit 2 usage error,
+//                     with RAW-AW-SENTINEL in its text), token (a future aw that
+//                     prints an invite token), keyless (the key lands where this
+//                     user's aw cannot read it), missing-id, conflict, conflict-once,
+//                     network-error, token-leak-error
+//   id team register  needs the team key; prints created, then synced. With
+//                     AW_REGISTER_FAIL_CODE it is refused as aw reports a server
+//                     refusal: `aweb: http <AW_REGISTER_FAIL_STATUS, 422> (...): <body>`
+//                     whose detail is {code: <that code>, message: RAW-AW-SENTINEL}
+//   id team invite    needs the team key ("no team key for D/N"); prints a local
+//                     invite token, SECRET-LOCAL-INVITE__<team>
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
 //                     (default "403 forbidden") on stderr and AW_INVITE_FAIL_STDOUT,
 //                     when set, on stdout (aw's --json error envelope)
@@ -52,6 +66,7 @@ export function fakeAwSetupPath(t, { activeTeam = "active:example.invalid" } = {
 const fs = require("node:fs");
 const path = require("node:path");
 const calls = ${JSON.stringify(calls)};
+const teamKeys = ${JSON.stringify(join(dir, "team-keys"))};
 if (process.env.AWEB_IDENTITY_HOME) { console.error("unexpected ambient identity home"); process.exit(94); }
 let args = process.argv.slice(2);
 let identityHome = null;
@@ -98,24 +113,39 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "list") {
   if (fs.existsSync(teamsFile)) console.log(fs.readFileSync(teamsFile, "utf8"));
   else console.log(JSON.stringify({ memberships: [] }));
+} else if (args[0] === "id" && args[1] === "team" && args[2] === "invite") {
+  const name = flag("--team"), namespace = flag("--namespace");
+  if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "no team key for " + namespace + "/" + name + "; run \`aw id team create\` first"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(2); }
+  console.log(JSON.stringify({ token: "SECRET-LOCAL-INVITE__" + name + ":" + namespace, team_id: name + ":" + namespace, expires_at: null }));
+} else if (args[0] === "id" && args[1] === "team" && args[2] === "register") {
+  const team = flag("--team"), [name, namespace] = team.split(":");
+  if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "local team controller key for " + team + " was not found: open " + path.join(teamKeys, namespace, name + ".key") + ": no such file or directory RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
+  if (process.env.AW_REGISTER_FAIL_CODE !== undefined) { console.error("aweb: http " + (process.env.AW_REGISTER_FAIL_STATUS || "422") + " (Content-Type: application/json; X-Fixture: RAW-AW-SENTINEL): " + JSON.stringify({ detail: { code: process.env.AW_REGISTER_FAIL_CODE, message: "RAW-AW-SENTINEL " + flag("--service") } })); process.exit(1); }
+  const registered = path.join(teamKeys, namespace, name + ".registered");
+  const status = fs.existsSync(registered) ? "synced" : "created";
+  fs.writeFileSync(registered, flag("--service"));
+  console.log(JSON.stringify({ status, team_id: team, service: flag("--service") }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "create") {
   const name = flag("--name");
   const namespace = flag("--namespace") || "aweb.ai";
   const team = name + ":" + namespace;
+  if (process.env.AW_CREATE_MODE === "no-controller-key") { const m = "no local controller key for --namespace " + namespace + "; pass --hosted for a hosted sibling, or install the namespace controller key for BYOT (aw id namespace prepare-controller --domain " + namespace + ") RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(2); }
   if (process.env.AW_CREATE_MODE === "network-error") { console.error("network unavailable"); process.exit(73); }
   if (process.env.AW_CREATE_MODE === "token-leak-error") { console.error("network unavailable token=SECRET-FRESH-INVITE"); process.exit(73); }
   if (process.env.AW_CREATE_MODE === "conflict") { console.error("409 conflict: team exists"); process.exit(9); }
   if (process.env.AW_CREATE_MODE === "conflict-once") { const creates = fs.readFileSync(calls, "utf8").trim().split("\\n").filter((l) => JSON.parse(l).args.slice(0,3).join(" ") === "id team create").length; if (creates === 1) { console.error("409 conflict: team exists"); process.exit(9); } }
   if (process.env.AW_CREATE_MODE === "missing-id") { console.log(JSON.stringify({ invite_token: "TOKEN__" + team })); process.exit(0); }
-  if (process.env.AW_CREATE_MODE === "missing-token") { console.log(JSON.stringify({ team_id: team })); process.exit(0); }
-  console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team, aweb_url: "https://app.aweb.ai/api" }));
+  const key = path.join(teamKeys, namespace, name + ".key");
+  if (process.env.AW_CREATE_MODE !== "keyless") { fs.mkdirSync(path.dirname(key), { recursive: true }); if (!fs.existsSync(key)) fs.writeFileSync(key, "FIXTURE-TEAM-KEY\\n"); }
+  if (process.env.AW_CREATE_MODE === "token") { console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team, aweb_url: "https://app.aweb.ai/api" })); process.exit(0); }
+  console.log(JSON.stringify({ status: "created", team_id: team, team_did_key: "did:key:zFixtureTeam", team_key_path: key, registry_url: "https://api.awid.ai" }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
   if (process.env.AW_ACCEPT_FAIL) {
     if (process.env.AW_ACCEPT_FAIL_ADDITION) fs.writeFileSync(path.join(path.dirname(awDir), "concurrent-data"), "keep addition");
     if (process.env.AW_ACCEPT_FAIL_PARTIAL) { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "partial identity"); }
     console.error("fixture acceptance failure"); process.exit(17);
   }
-  const team = process.env.AW_FAKE_TEAM || (stdinToken ?? args[3]).replace(/^TOKEN__/, "");
+  const team = process.env.AW_FAKE_TEAM || (stdinToken ?? args[3]).replace(/^(?:TOKEN__|SECRET-LOCAL-INVITE__)/, "");
   writeTeams(team, { alias: flag("--name") || "root", identity_scope: "local" });
   console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", ...(process.env.AW_ACCEPT_OMIT_SERVICE ? {} : { aweb_url: "https://app.aweb.ai/api" }) }));
 } else if (args[0] === "whoami") {
