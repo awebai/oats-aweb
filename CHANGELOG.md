@@ -5,7 +5,11 @@
 - **Spawn attribution: each spawned instance carries an identity chain to a
   human** (aweb-acmj.21, oats#1665). New host-only setting `attribution:
   human | none`, a per-deployment opt-in in `oats-local.yaml` (a committed value
-  is refused); absent means `none`, and spawns are unchanged. The bound human and the
+  is refused); absent means `none`, and spawns are unchanged. **Doing nothing
+  keeps today's behaviour:** a deployment upgraded without setting
+  `attribution: human` spawns, starts, restarts, retires, joins and reports
+  readiness as on 1.38.0, with no new warning, prompt, aweb Cloud request or
+  required setting, and existing homes are not re-signed. The bound human and the
   deployment's steward are read from host-only `human` and `steward`
   settings, one human per deployment. The bind that records them is
   `oats aweb setup --steward --name <alias>` (aweb-acrn), run by the setup
@@ -50,10 +54,13 @@
     what the page shows (address, domain, label, key fingerprint); the next
     imports the issued chain and records the human, the steward and then
     `attribution: human`. A rerun continues the same request; a declined,
-    expired, replaced or revoked one is reported, never submitted again. An
-    account with no person yet refuses `E_BIND_NO_HUMAN`, naming claim-human.
-    Undo is the dashboard's revoke. oats-aweb never holds key material: aw
-    signs every call.
+    expired or replaced one is reported, never submitted again. An account
+    with no person yet refuses `E_BIND_NO_HUMAN`, naming claim-human. Undo is
+    the dashboard's revoke (`E_BIND_REVOKED`); since aweb Cloud certifies an
+    agent once, the deployment can't be bound again yet (replacing the
+    steward is awebai/oats-aweb#204), and spawns refuse while it is revoked.
+    A rerun on a verified steward completes a partial record without calling
+    Cloud. oats-aweb never holds key material: aw signs every call.
   - Limit: captured execution's binding phases accept no attribution
     settings, so a mode-`human` deployment that uses captured execution is
     refused there.

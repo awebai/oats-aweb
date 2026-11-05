@@ -38,7 +38,7 @@ else { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 
   };
   const localYaml = () => readFileSync(join(deployment, "oats-local.yaml"), "utf8");
   const cloudCalls = () => fake.calls().filter((c) => c.args[0] === "id" && c.args[1] === "request" && !c.args.includes("--help"));
-  return { base, deployment, steward, fake, run, localYaml, cloudCalls, bindDir: join(steward, ".oats-bind") };
+  return { base, deployment, steward, env, fake, run, localYaml, cloudCalls, bindDir: join(steward, ".oats-bind") };
 }
 
 test("a first run makes the steward, submits its request with the label, and stops for the person's click, recording nothing", (t) => {
@@ -119,6 +119,7 @@ test("a declined or expired request is reported, nothing is recorded, and a reru
     r = fx.run();
     assert.equal(r.doc.error.code, code);
     assert.match(r.doc.error.message, /bind again only if they want to/);
+    assert.match(r.doc.error.message, /remove .*\.oats-bind, then run this command again/, "never certified, so a new request for the same steward works");
     assert.equal(fx.fake.submissions().length, 1, `${status}: submitted once`);
     assert.equal(fx.localYaml(), "schemaVersion: 2\nworkspace: local\n");
     assert.ok(!fx.fake.calls().some((c) => c.args[2] === "import"));
@@ -215,4 +216,100 @@ test("usage: --name is required, and unknown flags refuse", (t) => {
   assert.equal(JSON.parse(r.stdout.trim()).error.code, "E_STEWARD_USAGE");
   assert.equal(fx.run(["--bogus"]).doc.error.code, "E_STEWARD_USAGE");
   assert.ok(!existsSync(fx.bindDir));
+});
+
+test("a record stopped after human.id is completed by the rerun, with no Cloud call, and only a complete record is already-bound", (t) => {
+  const fx = setup(t, { cloud: { statuses: ["issued"] } });
+  assert.equal(fx.run().status, 0);
+  // What a run stopped after human.id leaves: steward and human, no attribution.
+  const partial = `schemaVersion: 2\nworkspace: local\nsettings:\n  oats.aweb:\n    steward:\n      "id": "${STEWARD.stableId}"\n      "home": "${fx.steward}"\n    human:\n      "id": "${HUMAN}"\n`;
+  writeFileSync(join(fx.deployment, "oats-local.yaml"), partial);
+  const settings = { steward: { id: STEWARD.stableId, home: fx.steward }, human: { id: HUMAN } };
+  const before = fx.cloudCalls().length;
+  let r = fx.run(["--label", "Ana Example"], { OATS_SETTINGS: JSON.stringify(settings) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.result.outcome, "bound", "completing a partial record is not already-bound");
+  assert.equal(fx.cloudCalls().length, before, "no Cloud call");
+  assert.ok(fx.localYaml().trimEnd().endsWith('attribution: "human"'));
+  assert.match(fx.localYaml(), /"label": "Ana Example"/);
+  // attribution: none set on purpose: the bind turns it on again.
+  r = fx.run([], { OATS_SETTINGS: JSON.stringify({ ...settings, human: { id: HUMAN, label: "Ana Example" }, attribution: "none" }) });
+  assert.equal(r.doc.result.outcome, "bound", r.stdout);
+  // Complete: already-bound.
+  r = fx.run([], { OATS_SETTINGS: JSON.stringify({ ...settings, human: { id: HUMAN, label: "Ana Example" }, attribution: "human" }) });
+  assert.equal(r.doc.result.outcome, "already-bound", r.stdout);
+  // A new label is not complete until it is written.
+  r = fx.run(["--label", "Ana B. Example"], { OATS_SETTINGS: JSON.stringify({ ...settings, human: { id: HUMAN, label: "Ana Example" }, attribution: "human" }) });
+  assert.equal(r.doc.result.outcome, "bound", r.stdout);
+  assert.match(fx.localYaml(), /"label": "Ana B\. Example"/);
+});
+
+test("a steward whose chain verifies but nothing was recorded yet is recorded without asking Cloud again", (t) => {
+  const fx = setup(t, { cloud: { statuses: ["issued"] } });
+  assert.equal(fx.run().status, 0);
+  writeFileSync(join(fx.deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: local\n");
+  const before = fx.cloudCalls().length;
+  const r = fx.run();
+  assert.equal(r.doc.result.outcome, "bound", r.stdout);
+  assert.equal(fx.cloudCalls().length, before);
+  assert.match(fx.localYaml(), new RegExp(`human:\\n {6}"id": "${HUMAN}"\\n {4}attribution: "human"`));
+});
+
+// After B3's undo: the person revoked the steward's certificate. Cloud
+// certifies an agent once, so the deployment can't be bound again yet
+// (awebai/oats-aweb#204).
+function revokedBind(t) {
+  const fx = setup(t, { cloud: { statuses: ["issued"] } });
+  assert.equal(fx.run().status, 0);
+  fx.fake.revoke(STEWARD.agentId);
+  const settings = { steward: { id: STEWARD.stableId, home: fx.steward }, human: { id: HUMAN }, attribution: "human" };
+  return { fx, settings };
+}
+
+test("a revoked steward is reported with its own code: the deployment can't be bound again yet, naming the follow-up", (t) => {
+  const { fx, settings } = revokedBind(t);
+  const yaml = fx.localYaml();
+  const r = fx.run([], { OATS_SETTINGS: JSON.stringify(settings) });
+  assert.equal(r.doc.error.code, "E_BIND_REVOKED", r.stdout);
+  assert.equal(r.doc.error.message, "the steward's certificate was revoked from the dashboard: aweb Cloud certifies an agent once, so this deployment can't be bound again yet (awebai/oats-aweb#204), and spawns refuse while its steward is revoked");
+  assert.doesNotMatch(r.doc.error.message, /bind .*again →|remove .*\.oats-bind|--replace/);
+  assert.equal(fx.localYaml(), yaml, "the record is left as it is");
+  // The fake enforces that rule: a fresh request for the same steward is refused.
+  rmSync(fx.bindDir, { recursive: true });
+  const again = fx.run([], { OATS_SETTINGS: JSON.stringify({ ...settings, attribution: "none" }) });
+  assert.notEqual(again.status, 0, again.stdout);
+});
+
+test("another steward after a revoke is still refused: one human and one steward per deployment", (t) => {
+  const { fx, settings } = revokedBind(t);
+  const r = spawnSync(process.execPath, [HOOK, "setup", "--steward", "--name", "steward2", "--json"], { env: { ...fx.env, OATS_SETTINGS: JSON.stringify(settings) }, cwd: fx.deployment, encoding: "utf8", input: "" });
+  const doc = JSON.parse(r.stdout.trim().split("\n").at(-1));
+  assert.equal(doc.error.code, "E_STEWARD_ONE_HUMAN");
+  assert.doesNotMatch(doc.error.message, /--replace/);
+});
+
+test("an account whose human is not the deployment's bound human refuses before anything is submitted, and the record is unchanged", (t) => {
+  const fx = setup(t, { cloud: { statuses: ["issued"] }, settings: { human: { id: "did:aw:human2" } } });
+  const yaml = fx.localYaml();
+  const r = fx.run();
+  assert.equal(r.doc.error.code, "E_STEWARD_ONE_HUMAN", r.stdout);
+  assert.match(r.doc.error.message, new RegExp(`the account's human is ${HUMAN}, but this deployment is bound to did:aw:human2`));
+  assert.equal(fx.fake.submissions().length, 0);
+  assert.equal(fx.localYaml(), yaml);
+});
+
+test("a failed opt-in leaves the deployment exactly as before: attribution: human is written only after the import verifies", (t) => {
+  const response = JSON.stringify({ v: 1, request_id: "req-1", chain: [{ human: HUMAN }] }) + "\n\n";
+  for (const cloud of [
+    { statuses: ["pending"] },
+    { statuses: ["declined"] },
+    { context: { status: 409, body: { detail: "A recorded creator with a registered human is required" } } },
+    { statuses: ["issued"], response, importRefusesNewline: true },
+  ]) {
+    const fx = setup(t, { cloud });
+    const yaml = fx.localYaml();
+    const r = fx.run();
+    assert.notEqual(r.status, 0, `${JSON.stringify(cloud)}: ${r.stdout}`);
+    assert.equal(fx.localYaml(), yaml, `${JSON.stringify(cloud)} must not touch oats-local.yaml`);
+  }
 });

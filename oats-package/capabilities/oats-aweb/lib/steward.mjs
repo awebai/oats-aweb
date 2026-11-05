@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
-import { kernelRefusal, oneLineLabel } from "./attribution.mjs";
+import { REVOKED_STEWARD_LIMIT, kernelRefusal, oneLineLabel } from "./attribution.mjs";
 import { BIND_STEPS, awaitDecision, bindStepFailure, deploymentLabel, rawBody, writeSubmission } from "./attribution-bind.mjs";
 import { recordAwebScalar, recordAwebSetting } from "./local-settings.mjs";
 import { checkWhoamiAnswer, globalIdentityTools, initGlobalIdentity, needsInit, rootState, scrubber } from "./resident.mjs";
@@ -89,7 +89,7 @@ export async function bindSteward(opts, { env, stdin, stderr }, deps = {}) {
   let settings = {};
   try { settings = JSON.parse(env.OATS_SETTINGS || "{}") || {}; } catch { settings = {}; }
   const stewardHome = join(deployment, ".aweb-stewards", opts.name);
-  const recorded = settings.steward;
+  const recorded = settings.steward, boundHuman = settings.human?.id;
   if (recorded?.home && resolve(recorded.home) !== stewardHome) throw failure("E_STEWARD_ONE_HUMAN", `this deployment already records the steward ${recorded.id || "?"} at ${recorded.home}; one human and one steward per deployment, so a second person needs a deployment of their own`);
   let version;
   try { version = query(["--version", "--json"], env); } catch { version = undefined; }
@@ -101,8 +101,31 @@ export async function bindSteward(opts, { env, stdin, stderr }, deps = {}) {
   const who = () => { const r = call(["who", "--json"]); try { return JSON.parse(r.stdout); } catch { return undefined; } };
   const verifies = (doc, human) => doc?.identity_valid === true && doc.outcome === "nearest_human" && doc.human_id === human;
 
-  if (recorded?.home && settings.human?.id && existsSync(join(stewardHome, ".aw", "id-chain.json")) && verifies(who(), settings.human.id)) {
-    return { outcome: "already-bound", human: { id: settings.human.id, ...(settings.human.label ? { label: settings.human.label } : {}) }, steward: { id: recorded.id, home: stewardHome } };
+  /** The record, the mode last, so a partial record never turns human mode on. */
+  const recordBind = (human, stewardId) => {
+    try {
+      const start = deployment;
+      record.setting("steward", "id", stewardId, { start });
+      record.setting("steward", "home", stewardHome, { start });
+      record.setting("human", "id", human, { start });
+      if (opts.label) record.setting("human", "label", opts.label, { start });
+      record.scalar("attribution", "human", { start });
+    } catch (e) { throw failure(BIND_STEPS.record.code, `${BIND_STEPS.record.what} failed: ${e.message}`); }
+    const label = opts.label ?? settings.human?.label;
+    return { outcome: "bound", human: { id: human, ...(label ? { label } : {}) }, steward: { id: stewardId, home: stewardHome } };
+  };
+
+  // A steward whose chain already verifies needs no Cloud call: what is
+  // missing from the record is written, and only a complete record is
+  // already-bound.
+  const verdictNow = existsSync(join(stewardHome, ".aw", "id-chain.json")) ? who() : undefined;
+  if (verdictNow?.identity_valid === true && verdictNow.outcome === "nearest_human") {
+    const human = verdictNow.human_id;
+    if (boundHuman && human !== boundHuman) throw failure("E_STEWARD_ONE_HUMAN", `the steward in ${stewardHome} verifies to ${human}, but this deployment is bound to ${boundHuman}; one human per deployment`);
+    const stewardId = checkWhoamiAnswer(readJson(["whoami", "--json"], "aw whoami"), opts.name).stableId;
+    const complete = recorded?.id === stewardId && resolve(recorded.home ?? "") === stewardHome && boundHuman === human && settings.attribution === "human" && (!opts.label || settings.human?.label === opts.label);
+    if (complete) return { outcome: "already-bound", human: { id: human, ...(settings.human?.label ? { label: settings.human.label } : {}) }, steward: { id: stewardId, home: stewardHome } };
+    return recordBind(human, stewardId);
   }
 
   // ---- the label, before anything has a remote effect
@@ -154,6 +177,7 @@ export async function bindSteward(opts, { env, stdin, stderr }, deps = {}) {
     if (!existsSync(files.request)) {
       const context = cloud("context", "GET", base);
       if (!/^did:aw:\S+$/.test(context?.parent?.id || "") || typeof context.domain !== "string" || typeof context.invitation_id !== "string") throw failure(BIND_STEPS.context.code, `${BIND_STEPS.context.what}: aweb Cloud's answer names no human, domain and invitation`);
+      if (boundHuman && context.parent.id !== boundHuman) throw failure("E_STEWARD_ONE_HUMAN", `the account's human is ${context.parent.id}, but this deployment is bound to ${boundHuman}; one human per deployment, so the steward is made from the bound human's account → use that account's dashboard line`);
       writePrivate(files.context, JSON.stringify(context));
       const r = call(["id", "parent", "request", "--domain", context.domain, "--parent", context.parent.id, "--invitation-id", context.invitation_id, "--out", files.request, "--json"]);
       if (r.status !== 0) throw bindStepFailure("request", r);
@@ -180,7 +204,8 @@ export async function bindSteward(opts, { env, stdin, stderr }, deps = {}) {
         `Once they have approved it, run this command again: ${rerun}`,
       ].join("\n"), { approvalUrl, shows, requestId: operation.request_id, expiresAt: operation.expires_at ?? null });
     }
-    if (/^E_BIND_(DECLINED|EXPIRED|SUPERSEDED|REVOKED)$/.test(e.code)) e.message += `: remove ${dir}, then run this command again`;
+    if (e.code === "E_BIND_REVOKED") throw failure("E_BIND_REVOKED", `the steward's certificate was revoked from the dashboard: ${REVOKED_STEWARD_LIMIT}`, { requestId: operation.request_id });
+    if (/^E_BIND_(DECLINED|EXPIRED|SUPERSEDED)$/.test(e.code)) e.message += `: remove ${dir}, then run this command again`;
     throw e;
   }
 
@@ -191,16 +216,7 @@ export async function bindSteward(opts, { env, stdin, stderr }, deps = {}) {
   const verdict = who();
   if (!verifies(verdict, context.parent.id)) throw failure(BIND_STEPS.import.code, `the steward in ${stewardHome} does not verify to ${context.parent.id} after the import (aw who: ${verdict?.outcome || "?"}, ${verdict?.reason || "?"}); nothing was recorded`);
 
-  // ---- record: the mode last, so a partial record never turns human mode on
-  try {
-    const start = deployment;
-    record.setting("steward", "id", identity.stableId, { start });
-    record.setting("steward", "home", stewardHome, { start });
-    record.setting("human", "id", context.parent.id, { start });
-    if (opts.label) record.setting("human", "label", opts.label, { start });
-    record.scalar("attribution", "human", { start });
-  } catch (e) { throw failure(BIND_STEPS.record.code, `${BIND_STEPS.record.what} failed: ${e.message}`); }
-  return { outcome: "bound", human: { id: context.parent.id, ...(opts.label ? { label: opts.label } : {}) }, steward: { id: identity.stableId, home: stewardHome }, deploymentLabel: shown, requestId: operation.request_id };
+  return { ...recordBind(context.parent.id, identity.stableId), deploymentLabel: shown, requestId: operation.request_id };
 }
 
 /** The command's entrypoint: one JSON-v1 envelope with --json, else text.

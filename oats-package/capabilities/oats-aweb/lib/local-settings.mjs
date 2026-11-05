@@ -153,12 +153,22 @@ export function recordAwebScalar(name, value, { start = process.env.OATS_WORKSPA
   if (typeof aweb === "object") refuse(`line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`);
   if (aweb < 0) aweb = ensureYamlBlock(lines, settings, settingsEnd, 2, "oats.aweb");
   const awebEnd = blockEnd(lines, aweb, 2);
+  // The key plain or quoted, and any spacing before the colon, as
+  // recordAwebSetting matches an entry's key.
   const matches = [];
-  for (let i = aweb + 1; i < awebEnd; i++) if (lines[i].startsWith(`    ${name}:`)) matches.push(i);
+  for (let i = aweb + 1; i < awebEnd; i++) {
+    if (!lines[i].startsWith("    ") || lines[i].startsWith("     ")) continue;
+    const entry = lines[i].slice(4);
+    for (const key of [name, `"${name}"`, `'${name}'`]) {
+      const delimiter = entry.startsWith(key) ? /^[ \t]*:(.*)$/.exec(entry.slice(key.length)) : null;
+      if (delimiter) { matches.push({ at: i, tail: delimiter[1] }); break; }
+    }
+  }
   if (matches.length > 1) refuse(`duplicate ${name} key`);
   if (!matches.length) { lines.splice(awebEnd, 0, row); atomicWrite(file, `${lines.join("\n")}\n`); return; }
-  const at = matches[0];
-  const scalar = lines[at].slice(`    ${name}:`.length).trim();
+  const { at, tail } = matches[0];
+  if (tail && !/^[ \t]/.test(tail)) refuse(`unsupported ${name} delimiter`);
+  const scalar = tail.trim();
   const parsed = /^("[^"\\]*"|'[^']*'|[A-Za-z0-9_-]+)(\s+#.*)?$/.exec(scalar);
   if (!parsed) refuse(`unsupported ${name} value`);
   if (at + 1 < awebEnd && lines[at + 1].startsWith("     ") && lines[at + 1].trim() && !lines[at + 1].trimStart().startsWith("#")) refuse(`ambiguous ${name} continuation`);

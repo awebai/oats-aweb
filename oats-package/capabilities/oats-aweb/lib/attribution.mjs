@@ -48,17 +48,21 @@ export function issuerSelection({ spawnerHome, steward }) {
   return { kind: "steward", home: steward.home, id: steward.id };
 }
 
+/** A revoked steward's limit: aweb Cloud certifies an agent once, and replacing the steward is awebai/oats-aweb#204. */
+export const REVOKED_STEWARD_LIMIT = "aweb Cloud certifies an agent once, so this deployment can't be bound again yet (awebai/oats-aweb#204), and spawns refuse while its steward is revoked";
+
 const REVOKED = new Set(["revoked", "subject_revoked", "parent_revoked"]);
 const NO_CHAIN = new Set(["legacy_no_chain", "unregistered_identity"]);
 
 /** The fix a failing issuer chain names, by who the issuer is. */
 const fixFor = (issuer) => issuer.kind === "steward"
-  ? "bind the human again, which issues the steward again (`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud)"
+  ? "bind the human again (`oats aweb setup --steward --name <alias>`, run by the setup expert, continues an unfinished bind)"
   : "retire the spawner and spawn from a valid instance, or from a shell so the deployment's steward issues";
 
 /** One line saying why a chain refuses, then its fix after an arrow. */
 function refusalFor(issuer, reason) {
   const who = issuer.kind === "steward" ? "the deployment's steward" : "the spawner";
+  if (REVOKED.has(reason) && issuer.kind === "steward") return `${who}'s identity chain is revoked (${reason}) → ${REVOKED_STEWARD_LIMIT}; set attribution: none on this host to spawn without chains meanwhile`;
   if (REVOKED.has(reason)) return `${who}'s identity chain is revoked (${reason}) → ${fixFor(issuer)}`;
   if (reason === "root_replaced") return `the namespace root was replaced after ${who}'s chain was registered (root_replaced) → the namespace owner re-admits it; ${fixFor(issuer)}`;
   if (reason === "superseded_certificate") return `${who}'s certificate was replaced by a newer certificate (superseded_certificate) → install the current chain, or ${fixFor(issuer)}`;

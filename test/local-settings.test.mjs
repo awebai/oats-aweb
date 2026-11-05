@@ -82,3 +82,25 @@ test("an attribution scalar it cannot edit safely refuses with the line to add b
     assert.equal(read(dir), text);
   }
 });
+
+test("the attribution scalar is found under a quoted key or a spaced colon, and replaced in place, never duplicated", (t) => {
+  for (const [line, kept] of [['"attribution": none', ""], ["'attribution': none", ""], ["attribution : none", ""], ['"attribution" :  none # chosen', " # chosen"], ["attribution:\tnone", ""]]) {
+    const dir = deployment(t, `settings:\n  oats.aweb:\n    ${line}\n    delivery: session\n`);
+    recordAwebScalar("attribution", "human", { start: dir });
+    const text = read(dir);
+    assert.equal(text, `settings:\n  oats.aweb:\n    attribution: "human"${kept}\n    delivery: session\n`, line);
+    assert.equal(text.match(/attribution/g).length, 1, `${line}: one key`);
+  }
+});
+
+test("an attribution key written twice in equivalent forms refuses, so the file never holds a duplicate", (t) => {
+  const dir = deployment(t, 'settings:\n  oats.aweb:\n    attribution: none\n    "attribution": human\n');
+  assert.throws(() => recordAwebScalar("attribution", "human", { start: dir }), /duplicate attribution key/);
+  assert.equal(read(dir), 'settings:\n  oats.aweb:\n    attribution: none\n    "attribution": human\n');
+});
+
+test("a key that only begins with the name is another key", (t) => {
+  const dir = deployment(t, "settings:\n  oats.aweb:\n    attributions: x\n");
+  recordAwebScalar("attribution", "human", { start: dir });
+  assert.equal(read(dir), 'settings:\n  oats.aweb:\n    attributions: x\n    attribution: "human"\n');
+});

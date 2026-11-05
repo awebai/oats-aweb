@@ -12,6 +12,12 @@
 //   statuses  [status, ...]: GET .../requests/<id>, one per call, the last repeats
 //   response  the body of GET .../requests/<id>/response
 //   importRefusesNewline  `aw id parent import` refuses a file ending in a newline
+// Cloud certifies an agent once (its first certification): once a request is
+// issued, a new submission for that agent is refused with 409, even after a
+// revoke. revoke(alias) is the dashboard's revoke: the request then reads
+// revoked and the steward's `aw who` reports revoked. A steward's identity
+// follows its directory's name: "steward" is STEWARD, any other alias is
+// did:aw:<alias>1 with its own agent id.
 // Every call is logged as {args, cwd, env} to <base>/calls.jsonl, and every
 // submitted body to <base>/submissions.jsonl.
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -33,7 +39,9 @@ const argv = process.argv.slice(2);
 fs.appendFileSync(path.join(state.base, "calls.jsonl"), JSON.stringify({ args: argv, cwd: process.cwd(), env: { AWEB_API_KEY: process.env.AWEB_API_KEY ?? null, AWEB_IDENTITY_HOME: process.env.AWEB_IDENTITY_HOME ?? null } }) + "\\n");
 const cloud = JSON.parse(fs.readFileSync(path.join(state.base, "cloud.json"), "utf8"));
 const aw = path.join(process.cwd(), ".aw");
-const s = state.steward;
+const alias = path.basename(process.cwd());
+const s = alias === state.steward.alias ? state.steward : { ...state.steward, alias, stableId: "did:aw:" + alias + "1", agentId: "1" + state.steward.agentId.slice(1, -alias.length) + alias.replace(/[^0-9a-f]/g, "a").padEnd(alias.length, "a") };
+const marker = (name) => path.join(state.base, name + "-" + s.agentId);
 const args = argv.filter((a) => a !== "--json");
 const flag = (n) => args.includes(n) ? args[args.indexOf(n) + 1] : undefined;
 const out = (o) => { process.stdout.write(JSON.stringify(o, null, 2) + "\\n"); process.exit(0); };
@@ -57,6 +65,7 @@ if (args[0] === "doctor" && args[1] === "registry") out({ status: "ok", checks: 
 if (args[0] === "workspace" && args[1] === "status") out({ workspace: { agent_id: has("fake-no-agent-id") ? null : s.agentId, alias: s.alias, workspace_id: "ws-1" }, team: [] });
 if (args[0] === "who") {
   if (!has("id-chain.json")) out({ identity_valid: false, outcome: "legacy_no_chain" });
+  if (fs.existsSync(marker("revoked"))) out({ identity_valid: false, outcome: "revoked", reason: "subject_revoked" });
   out({ identity_valid: true, outcome: "nearest_human", human_id: JSON.parse(fs.readFileSync(path.join(aw, "id-chain.json"), "utf8")).human });
 }
 if (args[0] === "id" && args[1] === "request") {
@@ -82,6 +91,7 @@ if (args[0] === "id" && args[1] === "request") {
     const body = fs.readFileSync(flag("--body-file"), "utf8");
     fs.appendFileSync(path.join(state.base, "submissions.jsonl"), JSON.stringify({ body, header: flag("--header") ?? null }) + "\\n");
     const doc = JSON.parse(body);
+    if (fs.existsSync(marker("issued"))) reply(409, { detail: "This agent already has an issued adoption certificate; fetch the original response" });
     const c = cloud.submit || { status: 200, body: { request_id: "req-1", status: "pending", expires_at: "2026-11-06T10:00:00Z", deployment_label: doc.deployment_label, approval_path: "/account/adoptions/" + s.agentId + "/req-1?team_id=t1" } };
     reply(c.status, c.body);
   }
@@ -90,7 +100,9 @@ if (args[0] === "id" && args[1] === "request") {
     const n = fs.existsSync(seen) ? Number(fs.readFileSync(seen, "utf8")) : 0;
     fs.writeFileSync(seen, String(n + 1));
     const list = cloud.statuses || ["issued"];
-    reply(200, { request_id: m[2], status: list[Math.min(n, list.length - 1)], expires_at: "2026-11-06T10:00:00Z", deployment_label: "x", approval_path: "/account/adoptions/" + s.agentId + "/" + m[2] + "?team_id=t1" });
+    const status = fs.existsSync(marker("revoked")) ? "revoked" : list[Math.min(n, list.length - 1)];
+    if (status === "issued") fs.writeFileSync(marker("issued"), "");
+    reply(200, { request_id: m[2], status, expires_at: "2026-11-06T10:00:00Z", deployment_label: "x", approval_path: "/account/adoptions/" + s.agentId + "/" + m[2] + "?team_id=t1" });
   }
   if (method === "GET" && m[3]) reply(200, cloud.response ?? JSON.stringify({ v: 1, request_id: "req-1", chain: [{ human: state.human }] }));
   reply(405, { detail: "Method Not Allowed" });
@@ -116,6 +128,7 @@ fail("fake aw: unsupported " + argv.join(" "));
   return {
     bin,
     setCloud: (c) => writeFileSync(join(base, "cloud.json"), JSON.stringify(c)),
+    revoke: (agentId) => writeFileSync(join(base, `revoked-${agentId}`), ""),
     calls: () => lines("calls.jsonl"),
     submissions: () => lines("submissions.jsonl"),
   };

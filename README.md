@@ -15,6 +15,12 @@ oats#1665). It is a per-deployment opt-in and host-only, like `human` and
 `oats-workspace.yaml`, a soul or a spawn is refused, so one deployment turning
 it on never changes another.
 
+**Doing nothing keeps today's behaviour.** A deployment without
+`attribution: human`, including one upgraded from 1.38.0 without touching its
+configuration, spawns, starts, restarts, retires, joins and reports readiness
+exactly as before: no new warning, refusal, prompt, aweb Cloud request or
+required setting, and existing homes are not re-signed.
+
 - **`none`** (the default, and what an absent setting means): spawns are
   unchanged. No chain is issued and the spawn meta records no attribution.
 - **`human`**: every spawned instance gets a chain. An instance spawned by
@@ -56,16 +62,21 @@ AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb setup --steward --name <alias> [--la
    `--wait <seconds>` waits that long for the click instead.
 
 A rerun continues the same request from the steward's `.oats-bind`; it never
-signs or submits a second one. A declined, expired, replaced or revoked
-request is reported (`E_BIND_DECLINED`, `E_BIND_EXPIRED`, `E_BIND_SUPERSEDED`,
-`E_BIND_REVOKED`), never submitted again: to ask again, remove that directory.
-Nothing is recorded until the import verifies.
+signs or submits a second one. A declined, expired or replaced request is
+reported (`E_BIND_DECLINED`, `E_BIND_EXPIRED`, `E_BIND_SUPERSEDED`), never
+submitted again: to ask again, remove that directory. Nothing is recorded
+until the import verifies. A rerun whose steward already verifies writes
+whatever the record lacks, with no call to aweb Cloud, and reports
+`already-bound` only when the record is complete.
 
 - An account with no person yet can't bind: nobody can approve. It refuses
   `E_BIND_NO_HUMAN`; the person attaches themselves first (/oats-aweb,
   "attach yourself to the account").
 - **Undo:** the person revokes the steward's certificate from the dashboard.
-  Attach and spawns then refuse by the revoked-parent rule, naming the fix.
+  Spawns then refuse by the revoked-parent rule, and the bind reports
+  `E_BIND_REVOKED`. aweb Cloud certifies an agent once, so this deployment
+  can't be bound again yet: replacing the steward is awebai/oats-aweb#204.
+  Setting `attribution: none` on the host spawns without chains meanwhile.
 - The steward's aweb Cloud agent id is the one aw's workspace status reports
   in its home; aweb Cloud's 404 for it refuses `E_BIND_AGENT_NOT_FOUND`.
 - A label over 120 characters, or one aweb Cloud would change, refuses

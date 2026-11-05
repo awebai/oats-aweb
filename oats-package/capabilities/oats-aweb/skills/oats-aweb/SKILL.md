@@ -929,7 +929,9 @@ cannot send the encrypted reply to such a sender.
 
 `settings.oats.aweb.attribution` is `none` (the default, and what absence means:
 spawns are unchanged) or `human`. It is host-only, set per deployment in
-`oats-local.yaml`; a committed value is refused. In mode `human`, every
+`oats-local.yaml`; a committed value is refused. It is opt-in: doing nothing
+keeps today's behaviour, with no new warning, prompt, aweb Cloud request or
+setting, and an upgrade re-signs no home. In mode `human`, every
 spawned instance gets an aw identity chain to the deployment's bound human
 (aw's `docs/id-certificates.md`; oats#1665):
 - an instance spawned by an instance (`OATS_SPAWNER_HOME`, set by the kernel)
@@ -964,9 +966,14 @@ in aweb Cloud. It needs aweb Cloud and aw 1.36.54 or later (`aw id request`).
    It imports the chain (`aw id parent import`), checks it with `aw who` and
    records the bind.
 
-- `E_BIND_DECLINED`, `E_BIND_EXPIRED`, `E_BIND_SUPERSEDED`, `E_BIND_REVOKED`:
-  tell the person what happened. Never submit again on your own; ask again
-  only if they want to (the error names the directory to remove first).
+- `E_BIND_DECLINED`, `E_BIND_EXPIRED`, `E_BIND_SUPERSEDED`: tell the person
+  what happened. Never submit again on your own; ask again only if they want
+  to (the error names the directory to remove first).
+- `E_BIND_REVOKED`: the person revoked the steward from the dashboard, and
+  aweb Cloud certifies an agent once, so this deployment can't be bound again
+  yet (awebai/oats-aweb#204). Tell them plainly: spawns refuse while the
+  steward is revoked; `attribution: none` on the host spawns without chains
+  meanwhile. Don't remove `.oats-bind` or run the bind again: it can't work.
 - `E_BIND_NO_HUMAN`: the account has no person yet. They attach themselves
   first ("attach yourself to the account" above), then you run it again.
 - `E_BIND_AGENT_NOT_FOUND`, `E_BIND_AGENT_ID`: the steward is not a connected
@@ -975,6 +982,8 @@ in aweb Cloud. It needs aweb Cloud and aw 1.36.54 or later (`aw id request`).
   name. Other `E_BIND_<step>` and `E_STEWARD_*` codes name the step and fix.
 - **Undo:** the person revokes the steward's certificate from the dashboard;
   spawns then refuse by the revoked-parent rule, naming the fix.
+- A rerun whose steward already verifies only completes the record; it asks
+  aweb Cloud nothing.
 
 With no human bound, everything works as today. One human per deployment; a
 self-custodial human can't be a steward parent. `oats aweb setup --check-only

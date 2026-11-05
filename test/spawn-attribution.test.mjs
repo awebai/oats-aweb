@@ -80,6 +80,15 @@ for (const [reason, fix] of [
   });
 }
 
+for (const reason of ["revoked", "subject_revoked"]) {
+  test(`refuse: a ${reason} steward says the deployment can't be bound again yet, naming the follow-up, and never says to bind again`, () => {
+    const verdict = classifyIssuer({ issuer: { kind: "steward" }, who: failed(reason), chainFiles: true });
+    assert.equal(verdict.action, "refuse");
+    assert.match(verdict.message, new RegExp(`^the deployment's steward's identity chain is revoked \\(${reason}\\) → aweb Cloud certifies an agent once, so this deployment can't be bound again yet \\(awebai/oats-aweb#204\\), and spawns refuse while its steward is revoked; set attribution: none on this host to spawn without chains meanwhile$`));
+    assert.doesNotMatch(verdict.message, /bind the human again|--replace|\.oats-bind/);
+  });
+}
+
 test("refuse: a chain stale after its parent's rotation says to re-sign with the parent first", () => {
   const verdict = classifyIssuer({ issuer: { kind: "spawner" }, who: failed("stale_issuer_key"), chainFiles: true });
   assert.equal(verdict.action, "refuse");
@@ -141,7 +150,7 @@ test("chainless never applies when chain files are present: a present chain that
 test("the steward never issues chainless: a steward without a verified chain refuses, naming the setup rerun", () => {
   const verdict = classifyIssuer({ issuer: { kind: "steward" }, who: { ...failed("legacy_no_chain"), identity_valid: null }, chainFiles: false });
   assert.equal(verdict.action, "refuse");
-  assert.match(verdict.message, /the deployment's steward has no verified chain .* → bind the human again, which issues the steward again \(`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud\)$/);
+  assert.match(verdict.message, /the deployment's steward has no verified chain .* → bind the human again \(`oats aweb setup --steward --name <alias>`, run by the setup expert, continues an unfinished bind\)$/);
 });
 
 test("limits: a resulting chain over 8 certificates or 6144 canonical bytes refuses", () => {
