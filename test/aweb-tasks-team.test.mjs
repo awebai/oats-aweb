@@ -168,9 +168,12 @@ const restore = (text, [was, now]) => { assert.equal(text.split(now).length, 2, 
 // The paragraph the claim floors add to each file (aweb-tasks-claim-floors.test.mjs).
 const HEARTBEAT = 'Your claims stay present only while something heartbeats them: the host\'s\nwake daemon from aw 1.36.54, or on a Claude or pi channel home the aweb-channel\nplugin from 1.8.2 or the aweb pi extension from 0.4.1. If readiness warns\n`wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated`,\nreport it to your human.\n\n';
 const unheartbeat = (text) => { assert.equal(text.split(HEARTBEAT).length, 2, 'the heartbeat paragraph appears once'); return text.replace(HEARTBEAT, ''); };
+// The paragraph the private body files add to the skill (private-body-files.test.mjs).
+const PRIVATE_FILES = '\nMake each of these files new and private with `mktemp` (it prints a fresh,\nowner-only path), never a fixed or shared `/tmp` path: other agents and users\non the host share `/tmp`, so a fixed name lets another agent overwrite your\nfile and your task carries its text. `/path/...` below stands for such a path.\n';
+const unprivate = (text) => { assert.equal(text.split(PRIVATE_FILES).length, 2, 'the private files paragraph appears once'); return text.replace(PRIVATE_FILES, ''); };
 
-test('the inject and skill add one Tasks team block and the heartbeat paragraph, change one sentence, and are otherwise the #186 text', () => {
-  const inject = unheartbeat(restore(read('injects/aweb-tasks.md'), SENTENCES.inject)), skill = unheartbeat(restore(read('skills/aweb-tasks/SKILL.md'), SENTENCES.skill));
+test('the inject and skill add one Tasks team block, the heartbeat and private files paragraphs, change one sentence, and are otherwise the #186 text', () => {
+  const inject = unheartbeat(restore(read('injects/aweb-tasks.md'), SENTENCES.inject)), skill = unprivate(unheartbeat(restore(read('skills/aweb-tasks/SKILL.md'), SENTENCES.skill)));
   const injectBlock = inject.slice(inject.indexOf('\n\n**Tasks team.**'));
   assert.ok(injectBlock.startsWith('\n\n**Tasks team.**') && injectBlock.endsWith('never fall back to the default team.\n'));
   assert.equal(sha256(inject.slice(0, -injectBlock.length) + '\n'), '6322e11b18ce1dac51386023b0c3625f051ce78213dda41006cc6f966c252503', 'inject minus the block and with the old sentence is #186');
