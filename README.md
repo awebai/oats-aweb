@@ -1156,14 +1156,17 @@ Supported acts:
   before creating anything. Without `--namespace`, setup refuses hosted
   additional-team creation: the provider has no wrapper. Native aw 1.36.24
   supports `id team create --hosted`; aw 1.36.23 does not. Native JSON
-  contains an invite token and must be captured privately. Two operator
-  notes:
+  contains an invite token and must be captured privately. Operator notes:
   - A local-controller invite can be accepted only where the team key is: the
     same user on the same machine. Another user's deployment on that machine
     needs the key in its own `~/.awid/team-keys/`. Without it, aw falls back
     to a hosted invite, which a self-hosted server answers with 404.
   - A self-hosted aweb accepts signed requests only for its public origin:
     `AWEB_URL` must be the server's public URL, not a port forward.
+  - Without `AWEB_URL`, the team is registered with the service an existing
+    root already uses, which may be hosted aweb. To create on a self-hosted
+    server, set `AWEB_URL` first. Setup names the service
+    before it creates anything.
 - `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
   never accepts into the existing default root. With aw 1.36.53 or later, a

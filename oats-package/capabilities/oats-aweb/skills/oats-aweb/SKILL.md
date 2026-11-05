@@ -101,7 +101,8 @@ Write the body to the path it printed and pass that path as `<body-file>`
 below. Use the printed path itself: a shell variable does not survive between
 your tool calls. Keep the `X`s last (macOS `mktemp` replaces only trailing
 `X`s, so `XXXXXX.md` is one fixed name). The directory is owner-only, and
-retirement neither keeps nor copies it.
+retirement neither keeps nor copies it. Once the message is sent you may
+delete its draft (`rm -f <body-file>`); drafts you leave go at retirement.
 
 ```bash
 aw mail send --to <alias> --subject "<short subject>" --body-file <body-file>
@@ -573,7 +574,7 @@ as did earlier versions; provider 1.23.0 users follow the reference above.
 | Existing hosted team's first LOCAL root, released provider 1.21.1; selected team provisioning key | `oats aweb setup --soul S` with key only in protected `AWEB_API_KEY` child environment | `aw init --do-not-touch-agents-md`, LOCAL root/workspace; returned membership must match intended team. Next: `/oats-teams` mapping/default readback. | `Workspace initialized, but no membership matching "<T>".` → use LOCAL join below with an appropriate owner invite; not fresh GLOBAL init. |
 | Additional controller-owned team, released provider 1.21.1; actual controller authority for owned namespace: its namespace controller key on this machine, for this user; the aweb service from `AWEB_URL` (the server's public URL; hosted aweb is `https://app.aweb.ai/api`), else an existing messaging root's `.aw/workspace.yaml` `aweb_url` | `oats aweb setup --soul S --create L --namespace <owned-domain>` (`--service` is refused with `--create`) | Normalizes label; resolves the service before any aw call; `aw id team create` (T, team key written locally); `aw id team register --service <url> --team <team id>` registers T with that service; mints a local invite with that team key (`aw id team invite`), skipped when the per-team root already holds an accepted identity; accepts it into a per-team root, connects it to the service, records `roots[T]`; success is returned canonical membership plus recorded root. Where `localTeams: true`, records local label; otherwise prints `teams:`/`defaultTeam:` to commit in `oats-workspace.yaml`, with eligibility in a `souls:` entry. A re-run of the same command resumes a partial create: no second team, no `-2` suffix, no second invite once the identity is accepted. Next: `/oats-teams` declaration/readback. | `could not tell whether this workspace allows local teams (...); nothing was created` → repair selected kernel/configuration read before retry. `set AWEB_URL to the server's public URL (hosted aweb is https://app.aweb.ai/api) and re-run; nothing was created` → set `AWEB_URL` to the server's public URL, then re-run. A refused registration (HTTP status and the server's short code, e.g. `http 422 ... service_url_mismatch`; T exists, its key kept) → fix what it names, then re-run the same command: it resumes. `the namespace controller key for this namespace is not on this machine` → as this user, `aw id namespace prepare-controller --domain <owned-domain>`, or create the team where that key is, then re-run. `the team key is not on this machine` → run setup as the user whose `~/.awid/team-keys/<owned-domain>/` holds it, or copy the key there, then re-run. aw's raw output is never relayed. No invented controller authority. |
 
-Two operator notes for this card:
+Operator notes for this card:
 
 - A local-controller invite can be accepted only where the team key is: the
   same user on the same machine. Another user's deployment on that machine
@@ -581,6 +582,10 @@ Two operator notes for this card:
   a hosted invite, which a self-hosted server answers with 404.
 - A self-hosted aweb accepts signed requests only for its public origin:
   `AWEB_URL` must be the server's public URL, not a port forward.
+- Without `AWEB_URL`, the team is registered with the service an existing
+  root already uses, which may be hosted aweb. To create on a self-hosted
+  server, set `AWEB_URL` first. Setup names the service
+  before it creates anything.
 
 For created or joined LOCAL teams, one identity owns each separate `.aw`; never
 accept a second LOCAL team into an existing identity. Intended new root is
