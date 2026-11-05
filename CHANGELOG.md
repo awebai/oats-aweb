@@ -9,6 +9,21 @@
   `AWEB_URL` first. Setup names the service before it creates anything.
 - **Docs: a sent message's draft may be deleted.** Section 3 of the oats-aweb
   skill now says so; drafts left behind go at retirement.
+- **`oats aweb roster` marks certificates that retires left behind.** In a
+  team whose controller key is held by people, `aw workspace delete` cannot
+  remove the member (`team_not_hosted`), and retire's warning reached only its
+  caller. Retire now also records each such certificate on this host, in
+  `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
+  alias, instance, time and the controller's `aw id team remove-member`
+  command; mode 0600, the newest 500). Its warning and
+  `pendingControllerCleanup` meta are unchanged; a record that cannot be
+  written adds one warning and changes nothing else. The roster matches the
+  team's listed certificates on team and certificate id: a matched line ends
+  `; retired by OATS on this host <date>; the team controller removes it with:
+  <command>`, the footer counts them, and `--json` adds `retired: {at,
+  instance, command}` to those members. An unreadable record is a
+  `retired-record` problem. The record starts with retires after this upgrade,
+  so earlier leftovers won't show, and only on the host where the retire ran.
 - **Fixed: `oats aweb setup --create <label> --namespace <domain>` completes
   (#202).** aw never prints an invite token for a team created in a
   customer-controlled namespace, so setup refused every such create. Setup now

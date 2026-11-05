@@ -636,16 +636,27 @@ aweb team aweb:juan.aweb.ai — 9 entries (membership certificates and workspace
 - Kinds: `global identity` (from the identity scope, listed first),
   `human` / `hosted agent` (from the session context), `instance` /
   `deployment root` (from the workspace path), else `unknown`. Inferred kinds
-  say so. Nothing is called retired: a certificate with no workspace record is
-  reported as that.
+  say so. A certificate with no workspace record is reported as that, not as
+  retired.
+- A certificate that a retire on this host left in a team whose controller key
+  is held by people (retire answered `team_not_hosted`) is marked: its line ends
+  `; retired by OATS on this host <YYYY-MM-DD>; the team controller removes it
+  with: <command>`, and the footer counts those certificates. Only the team's
+  controller can remove them, with the printed command. Retire records them in
+  `<deployment>/.oats-aweb/retired-certificates.json` (certificate ids and
+  commands only), matched on team and certificate id, never on alias. The
+  record lives on the host where the retire ran: a roster read on another host
+  doesn't show those leftovers.
 - aw does not mark the team's coordinator; the roster says so and points at
   the global identities.
 - If a source cannot be read, or presence is past its 200-workspace cap, the
   roster lists what it has and prints `Incomplete: <source>: <why>.`
 - `--json`: `{team, members: [{alias, kind, kindFrom, identityScope, address,
-  role, status, sources, presence}], certificatesComplete, presenceComplete,
-  problems}`. Status is `active`, `offline`, `no-workspace-record` or
-  `presence-unknown`.
+  role, status, sources, presence, retired?}], certificatesComplete,
+  presenceComplete, problems}`. Status is `active`, `offline`,
+  `no-workspace-record` or `presence-unknown`. `retired: {at, instance,
+  command}` is on marked members only. A record that cannot be read is a
+  `problems` entry with source `retired-record`, and nothing from it is shown.
 
 ## 1.19.0 — team model 3
 
