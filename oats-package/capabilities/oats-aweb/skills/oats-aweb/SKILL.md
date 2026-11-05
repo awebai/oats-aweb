@@ -65,12 +65,20 @@ membership certificates (`aw id team members`) and its workspaces
 - **Who coordinates.** aw does not mark the team's coordinator, and a
   workspace's `role` is its own setting. Look among the global identities and
   ask your expert or coordinator which one coordinates.
-- **Whether an entry is retired.** A certificate with no workspace record may
-  belong to an instance that was retired, one that runs elsewhere, or one that
-  aw never recorded. Offline is not retired.
+- **Whether an entry is retired**, beyond the leftovers below. A certificate
+  with no workspace record may belong to an instance that was retired, one that
+  runs elsewhere, or one that aw never recorded. Offline is not retired.
 - **The whole team, when it prints `Incomplete:`.** That line names the source
   that could not be read, or says presence is past its 200-workspace cap. The
   roster then lists what it has and claims nothing about the rest.
+
+**Leftovers of a retire.** In a team whose controller key is held by people,
+retire cannot remove the instance's member certificate. A line that ends
+`; retired by OATS on this host <date>; the team controller removes it with:
+<command>` is such a leftover: don't message it. Only the team's controller can
+remove it, by running that command; tell your human if you are not the
+controller. The record lives on the host where the retire ran, so a roster read
+on another host does not show those leftovers.
 
 - A `deployment root` (for example `altair-aweb`) is a machine's minting
   identity, not an agent: don't send work to it.
