@@ -61,6 +61,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
@@ -1465,7 +1466,7 @@ function rosterKind({ scope, workspace, rootPaths }) {
   if (/\/agents\/[^/]+\/instances\/[^/]+\/?$/.test(path)) return { kind: "instance", kindFrom: "workspace path" };
   return { kind: "unknown", kindFrom: null };
 }
-function rosterDocument({ team, certificates, presence, problems, root }) {
+function rosterDocument({ team, certificates, presence, problems, root, retired = [] }) {
   const certificatesComplete = !!certificates;
   const presenceComplete = !!presence && presence.team_has_more !== true && (presence.team || []).length < ROSTER_PRESENCE_LIMIT;
   if (presence && !presenceComplete) problems.push({ source: "presence", message: `aw workspace status reports more than ${ROSTER_PRESENCE_LIMIT} workspaces; only the first ${ROSTER_PRESENCE_LIMIT} were read` });
@@ -1484,7 +1485,11 @@ function rosterDocument({ team, certificates, presence, problems, root }) {
     const better = !e.workspace || (w.status === "active" && e.workspace.status !== "active") || (w.status === e.workspace.status && String(w.last_seen || "") > String(e.workspace.last_seen || ""));
     if (better) { e.workspace = w; e.self = w === self; }
   }
+  // A certificate this host's retires recorded, matched on team and certificate id, never on
+  // alias alone: aliases are reused.
+  const retiredByCertificate = new Map(retired.filter((r) => r.team === team).map((r) => [r.certificateId, r]));
   const members = [...entries.values()].map(({ alias, certificate, workspace, self: isSelf }) => {
+    const leftover = typeof certificate?.certificate_id === "string" ? retiredByCertificate.get(certificate.certificate_id) : undefined;
     const scopes = [certificate?.identity_scope, workspace?.agent_identity_scope].filter(Boolean);
     const identityScope = scopes.includes("global") ? "global" : scopes[0] || null;
     return {
@@ -1496,6 +1501,7 @@ function rosterDocument({ team, certificates, presence, problems, root }) {
       status: workspace ? (workspace.status === "active" ? "active" : "offline") : presenceComplete ? "no-workspace-record" : "presence-unknown",
       sources: [certificate ? "certificate" : null, workspace ? "presence" : null].filter(Boolean),
       presence: workspace ? { status: workspace.status || null, hostname: workspace.hostname || null, lastSeen: workspace.last_seen || null } : null,
+      ...(leftover ? { retired: { at: leftover.retiredAt ?? null, instance: leftover.instance ?? null, command: leftover.command } } : {}),
     };
   });
   members.sort((a, b) => ROSTER_KINDS.indexOf(a.kind) - ROSTER_KINDS.indexOf(b.kind) || a.alias.localeCompare(b.alias));
@@ -1513,7 +1519,8 @@ function rosterLine(m) {
   const since = m.presence?.lastSeen ? sinceText(m.presence.lastSeen) : undefined;
   const status = m.status === "active" ? "active" : m.status === "offline" ? (since ? `seen ${since}` : "offline") : ROSTER_STATUS_TEXT[m.status];
   const kind = ROSTER_KIND_FROM_TEXT[m.kindFrom] ? `${m.kind} (${ROSTER_KIND_FROM_TEXT[m.kindFrom]})` : m.kind;
-  return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]`;
+  const retired = m.retired ? `; retired by OATS on this host${typeof m.retired.at === "string" && /^\d{4}-\d{2}-\d{2}/.test(m.retired.at) ? ` ${m.retired.at.slice(0, 10)}` : ""}; the team controller removes it with: ${m.retired.command}` : "";
+  return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]${retired}`;
 }
 /** The root this deployment already holds `team` in, before an invite is redeemed (#56):
  *  roots[team], root and, for the default team, the root its setup uses. Each with a .aw is
@@ -1966,6 +1973,19 @@ if (event === "launch") {
   // second self-delete of the default identity.
   const failedLeaves = [];
   const retiredMeta = (fields = {}) => ({ ...fields, ...(pendingControllerCleanup.length ? { pendingControllerCleanup } : {}) });
+  // Each controller cleanup is also recorded at the deployment, for `oats aweb roster` on
+  // this host (lib/retired-certificates.mjs). Best effort: a failure is one more warning,
+  // never another exit code or meta.
+  const recordControllerCleanup = () => {
+    const entries = pendingControllerCleanup.filter((c) => c.certificateId && c.command);
+    if (!entries.length) return;
+    let deployment;
+    try { deployment = selectedDeployment(process.env); }
+    catch { outNotes.push("could not record the controller cleanup on this host: the deployment could not be resolved"); return; }
+    const retiredAt = new Date().toISOString();
+    const { cause } = recordRetiredCertificates(deployment, entries.map((c) => ({ team: c.team, certificateId: c.certificateId, alias: c.alias, instance: instance || null, retiredAt, command: c.command })));
+    if (cause) outNotes.push(`could not record the controller cleanup on this host: ${cause}`);
+  };
   if (hasStaleTeamSetting) retireWarnings.push(TEAM_SETTING_MESSAGE);
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
@@ -1975,6 +1995,7 @@ if (event === "launch") {
   // way out of this branch awaits it through finish().
   const deregistration = brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
   const finish = async (o, code) => {
+    recordControllerCleanup();
     if (deregistration && !(await deregistration)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n");
     if (failedLeaves.length) {
       const incomplete = o.meta.retired === false && o.meta.reason !== "nothing-to-delete";
@@ -2099,7 +2120,15 @@ if (event === "launch") {
   const certificates = read("certificates", ["aw", "id", "team", "members", ...teamFlag, "--json"], "aw id team members", (d) => Array.isArray(d?.members));
   let presence = read("presence", ["aw", "workspace", "status", flagEq("--limit", ROSTER_PRESENCE_LIMIT), "--json"], "aw workspace status", (d) => Array.isArray(d?.team));
   if (presence?.selected_team && presence.selected_team !== team) { problems.push({ source: "presence", message: `aw workspace status at ${root} describes ${presence.selected_team}, not ${team}` }); presence = undefined; }
-  const roster = rosterDocument({ team: certificates?.team_id || team, certificates, presence, problems, root });
+  // The certificates this host's retires left for the team's controller (read-only here).
+  // No resolvable deployment, or no record, means nothing to show.
+  let retired = [];
+  try {
+    const record = readRetiredRecord(selectedDeployment(process.env));
+    if (record.problem) problems.push({ source: "retired-record", message: record.problem });
+    retired = record.entries;
+  } catch { /* no deployment: no record to read */ }
+  const roster = rosterDocument({ team: certificates?.team_id || team, certificates, presence, problems, root, retired });
   // One synchronous write: a large roster piped to a reader must not lose its tail at exit.
   if (argv.includes("--json")) { writeSync(1, `${JSON.stringify(roster, null, 2)}\n`); process.exit(0); }
   const lines = [`aweb team ${roster.team} — ${roster.members.length} entries (membership certificates and workspaces):`];
@@ -2107,6 +2136,8 @@ if (event === "launch") {
   for (const m of roster.members) lines.push(`  ${rosterLine(m)}`);
   lines.push("");
   for (const problem of roster.problems) lines.push(`Incomplete: ${problem.source}: ${problem.message}.`);
+  const leftovers = roster.members.filter((m) => m.retired).length;
+  if (leftovers) lines.push(leftovers === 1 ? "1 certificate belongs to an instance OATS retired on this host; only the team's controller can remove it." : `${leftovers} certificates belong to instances OATS retired on this host; only the team's controller can remove them.`);
   lines.push("aw does not mark the team's coordinator (a workspace's role is its own setting): look among the global identities and ask your expert or coordinator which one coordinates.");
   lines.push("Certificates come from `aw id team members`; `aw workspace status` is the presence view.");
   lines.push(`Message an entry with \`aw mail send --to <alias> --subject "..." --body-file <file>\`${label ? ` as this team: \`aw --identity-home <identityHome> mail send ...\` (identityHome from \`oats aweb teams --json\`)` : ""}.`);
