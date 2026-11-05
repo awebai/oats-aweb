@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+- **Spawn attribution: each spawned instance carries an identity chain to a
+  human** (aweb-acmj.21, oats#1665). New host-only setting `attribution:
+  human | none`, a per-deployment opt-in in `oats-local.yaml` (a committed value
+  is refused); absent means `none`, and spawns are unchanged. **Doing nothing
+  keeps today's behaviour:** a deployment upgraded without setting
+  `attribution: human` spawns, starts, restarts, retires, joins and reports
+  readiness as on 1.38.0, with no new warning, prompt, aweb Cloud request or
+  required setting, and existing homes are not re-signed. The bound human and the
+  deployment's steward are read from host-only `human` and `steward`
+  settings, one human per deployment. The bind that records them is
+  `oats aweb setup --steward --name <alias>` (aweb-acrn), run by the setup
+  expert; the person's only act is one click in aweb Cloud. With no human
+  bound, everything works as today, and a self-custodial human can't be a
+  steward parent. In mode `human` the spawn
+  hook issues the child
+  through aw's agent-child exchange: from the spawning instance
+  (`OATS_SPAWNER_HOME`), or from the steward for a person's spawn.
+  - It refuses, naming each fix, on a revoked, replaced, malformed or stale
+    chain, unavailable registry evidence, a chain over 8 certificates or 6144
+    bytes, a spawner whose recorded chain files are gone, an issuer the
+    registry certifies but that holds no installed chain, a resident-grant
+    spawner, a chained minting root or a steward at the minting root, a kernel
+    without `spawn-attribution`, or no bound human.
+  - A spawner with no chain gets a chainless child that reports `unknown`,
+    with a warning.
+  - The spawn meta records `identity.attribution` and `chainInstalled`.
+    Home readiness warns `attribution` only when there is something to do (mode
+    human: no human bound, or this instance has no chain). `setup --check-only
+    --json` reports `attribution` only in mode human (the bound human, the
+    steward and the count of spawners without a chain); its absence means
+    mode none.
+  - Costs: a registry outage stops chained spawning for as long as it lasts
+    (`attribution: none` on the host spawns without chains meanwhile), and a
+    `--server` spawn from another host counts as a person's. The steward's key
+    custody is a convention under the same OS user, where misuse changes the
+    recorded parent and never the human.
+  - **Mode `human` needs aw 1.36.53 or later**, the first release with
+    `aw who` and with `aw id parent request --parent` accepting the `did:key`
+    parent of an instance-issued child. The provider's aw floor stays 1.36.33:
+    with attribution absent or `none`, nothing needs a newer aw.
+    Needs a kernel listing `spawn-attribution`.
+  - **The bind** (needs aweb Cloud and aw 1.36.54 or later, the first with
+    `aw id request`). The steward is an ordinary global self-custodial agent in
+    `<deployment>/.aweb-stewards/<alias>`, made with resident create's init
+    (`aw init --global`, from the dashboard API key of the account whose human
+    will approve it), with no custody unit and no grant seats. It signs its own
+    parent request and submits it to aweb Cloud with
+    `{signed_request, deployment_label}`; the label is
+    `<workspace name>-<short hostname>`, refused (never shortened) above 120
+    characters. The first run stops with `E_BIND_PENDING`, the approval link and
+    what the page shows (address, domain, label, key fingerprint); the next
+    imports the issued chain and records the human, the steward and then
+    `attribution: human`. A rerun continues the same request; a declined,
+    expired or replaced one is reported, never submitted again. An account
+    with no person yet refuses `E_BIND_NO_HUMAN`, naming claim-human. Undo is
+    the dashboard's revoke (`E_BIND_REVOKED`); since aweb Cloud certifies an
+    agent once, the deployment can't be bound again yet (replacing the
+    steward is awebai/oats-aweb#204), and spawns refuse while it is revoked.
+    A rerun on a verified steward completes a partial record without calling
+    Cloud. oats-aweb never holds key material: aw signs every call.
+  - Limit: captured execution's binding phases accept no attribution
+    settings, so a mode-`human` deployment that uses captured execution is
+    refused there.
+
 ## 1.38.0 — 2026-11-04
 
 Requires OATS >=0.68.0. The aw floor (1.36.33) and the tested aw (1.36.53) are unchanged. Only pi homes see a difference. With @awebai/pi 0.5.0 or later installed in the launch's pi folder, `pi-extension-skills-loaded` no longer asks for the skills filter, because that extension bundles no skills; below 0.5.0, or with an unreadable version, it warns as before. The new warning `pi-skills-package-loaded` fires when that pi folder lists @awebai/claude-skills unfiltered. Remove the entry, or filter it with `"skills": []`. Never install @awebai/claude-skills in a pi folder that OATS homes use.

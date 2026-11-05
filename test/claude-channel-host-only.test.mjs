@@ -44,6 +44,28 @@ for(const value of ['approved','development']) test(`real hostOnly accepts host-
   assert.equal(result.payloads['oats.aweb'].claudeChannelMode,value);
   assert.deepEqual(result.payloadOrigins['oats.aweb']['/claudeChannelMode'],{kind:'host',at:'oats-local.yaml#/settings/oats.aweb'});
 });
+// Spawn attribution is a per-deployment opt-in: a committed value would put
+// every deployment of the workspace into mode human.
+for(const layer of ['soul','workspace','spawn']) test(`real hostOnly rejects attribution from ${layer}`,{skip:!root},async()=>{
+  const {soul,discovery,options}=fixture();
+  if(layer==='soul') soul.definition.messaging={attribution:'human'};
+  if(layer==='workspace') discovery.workspace.messaging={attribution:'human'};
+  if(layer==='spawn') options.spawn={providers:{'oats.aweb':{attribution:'human'}}};
+  await assert.rejects(kernel.resolveSoul(discovery,soul,options),error=>{
+    assert.equal(error.code,'E_WORKSPACE_SCHEMA');
+    assert.equal(error.details.reason,'host-only-key');
+    assert.equal(error.details.key,'attribution');
+    assert.match(error.message,/oats-local.yaml/);
+    return true;
+  });
+});
+test('real hostOnly accepts host-local attribution with host origin',{skip:!root},async()=>{
+  const {soul,discovery,options}=fixture();
+  options.local={settings:{'oats.aweb':{attribution:'human'}}};
+  const result=await kernel.resolveSoul(discovery,soul,options);
+  assert.equal(result.payloads['oats.aweb'].attribution,'human');
+  assert.deepEqual(result.payloadOrigins['oats.aweb']['/attribution'],{kind:'host',at:'oats-local.yaml#/settings/oats.aweb'});
+});
 test('real hostOnly omission keeps the provider development default', {skip:!root},async()=>{
   const {soul,discovery,options}=fixture();
   const result=await kernel.resolveSoul(discovery,soul,options);

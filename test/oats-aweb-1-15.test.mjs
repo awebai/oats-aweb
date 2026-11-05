@@ -10,6 +10,7 @@ import { assertKernelOperationAnswer } from "./helpers/kernel-operation-envelope
 import { flagValue, joinFromCalls } from "./helpers/fake-aw-join-from.mjs";
 import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
+import { awAtLeast, splitByAwMin } from "./helpers/aw-version-gate.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -418,7 +419,8 @@ function parseInvocation(inv) {
 }
 
 test("real aw: every aw invocation in the skills and inject exists with its flags", (t) => {
-  if (!realAw(t)) return;
+  const installed = realAw(t);
+  if (!installed) return;
   const files = [
     join(CAPABILITY, "injects", "aweb.md"),
     ...["oats-aweb", "aweb-messaging", "aweb-team-membership", "aweb-identity"].map((s) => join(CAPABILITY, "skills", s, "SKILL.md")),
@@ -431,23 +433,34 @@ test("real aw: every aw invocation in the skills and inject exists with its flag
   };
   let checked = 0;
   const problems = [];
+  // A section marked aw-min <version> cites commands that need that aw; on an
+  // older one they are named here, not checked. Everything else always is.
+  const cited = new Map();
   for (const file of files) {
-    for (const inv of citedAwInvocations(readFileSync(file, "utf8"))) {
-      const { path, flags, alt } = parseInvocation(inv);
-      if (!path.length && !alt) continue;
-      const paths = alt ? alt.split("|").map((a) => [...path, a]) : [path];
-      for (const full of paths) {
-        // The longest prefix that is a command; any remaining words must be
-        // positionals that command's usage line declares (<arg> or [arg]).
-        const isCommand = (q) => { const h = help(q); return h.ok && new RegExp(`Usage:\\s*\\n\\s*aw ${q.join(" ")}(\\s|$)`).test(h.text); };
-        let p = full;
-        while (p.length && !isCommand(p)) p = p.slice(0, -1);
-        const h = p.length ? help(p) : undefined;
-        const usage = h ? (new RegExp(`Usage:\\s*\\n\\s*(aw ${p.join(" ")}[^\\n]*)`).exec(h.text)?.[1] || "") : "";
-        if (!p.length || (p.length < full.length && !/[<[]/.test(usage.slice(`aw ${p.join(" ")}`.length)))) { problems.push(`${file.split("/oats-aweb/").pop()}: \`${inv}\` → aw ${full.join(" ")} is not a command`); continue; }
-        for (const f of flags) if (f !== "--identity-home" && f !== "--help" && !h.text.includes(`${f} `) && !h.text.includes(`${f}\n`)) problems.push(`${file.split("/oats-aweb/").pop()}: \`${inv}\` → aw ${p.join(" ")} has no ${f}`);
-        checked++;
-      }
+    const label = file.split("/oats-aweb/").pop();
+    const cite = (text) => { for (const inv of citedAwInvocations(text)) cited.set(`${label}: ${inv}`, { label, inv }); };
+    const { ungated, gated } = splitByAwMin(readFileSync(file, "utf8"));
+    cite(ungated);
+    for (const section of gated) {
+      if (awAtLeast(`aw ${installed.join(".")}`, section.min)) cite(section.text);
+      else t.diagnostic(`aw ${installed.join(".")} is older than ${section.min}: not checked, as an aw-min ${section.min} section of ${label} cites them: ${citedAwInvocations(section.text).join(" | ")}`);
+    }
+  }
+  for (const { label, inv } of cited.values()) {
+    const { path, flags, alt } = parseInvocation(inv);
+    if (!path.length && !alt) continue;
+    const paths = alt ? alt.split("|").map((a) => [...path, a]) : [path];
+    for (const full of paths) {
+      // The longest prefix that is a command; any remaining words must be
+      // positionals that command's usage line declares (<arg> or [arg]).
+      const isCommand = (q) => { const h = help(q); return h.ok && new RegExp(`Usage:\\s*\\n\\s*aw ${q.join(" ")}(\\s|$)`).test(h.text); };
+      let p = full;
+      while (p.length && !isCommand(p)) p = p.slice(0, -1);
+      const h = p.length ? help(p) : undefined;
+      const usage = h ? (new RegExp(`Usage:\\s*\\n\\s*(aw ${p.join(" ")}[^\\n]*)`).exec(h.text)?.[1] || "") : "";
+      if (!p.length || (p.length < full.length && !/[<[]/.test(usage.slice(`aw ${p.join(" ")}`.length)))) { problems.push(`${label}: \`${inv}\` → aw ${full.join(" ")} is not a command`); continue; }
+      for (const f of flags) if (f !== "--identity-home" && f !== "--help" && !h.text.includes(`${f} `) && !h.text.includes(`${f}\n`)) problems.push(`${label}: \`${inv}\` → aw ${p.join(" ")} has no ${f}`);
+      checked++;
     }
   }
   t.diagnostic(`checked ${checked} cited aw invocations`);

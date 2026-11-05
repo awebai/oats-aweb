@@ -924,6 +924,120 @@ cannot send the encrypted reply to such a sender.
   by design ("source sender key is missing, expired or invalid; ask them to send
   a new message"): ask them to send a new message.
 
+### Spawn attribution: an identity chain to a human
+<!-- aw-min 1.36.53 -->
+
+`settings.oats.aweb.attribution` is `none` (the default, and what absence means:
+spawns are unchanged) or `human`. It is host-only, set per deployment in
+`oats-local.yaml`; a committed value is refused. It is opt-in: doing nothing
+keeps today's behaviour, with no new warning, prompt, aweb Cloud request or
+setting, and an upgrade re-signs no home. In mode `human`, every
+spawned instance gets an aw identity chain to the deployment's bound human
+(aw's `docs/id-certificates.md`; oats#1665):
+- an instance spawned by an instance (`OATS_SPAWNER_HOME`, set by the kernel)
+  is issued by that instance;
+- one spawned by a person is issued by the deployment's **steward**.
+
+`aw who` in a child shows the human, the steward, each spawning instance, then
+the child. The README's "Spawn attribution" section is the full reference.
+Mode `human` needs aw 1.36.53 or later, the first release with identity
+chains; the provider's aw floor stays 1.36.33.
+
+<!-- /aw-min -->
+<!-- aw-min 1.36.54 -->
+
+**The bind** records the human and the steward in host-only settings
+(`human: {id, label}`, `steward: {id, home}`), then sets `attribution: human`.
+You, the setup expert, run every command; the person's only act is one click
+in aweb Cloud. It needs aweb Cloud and aw 1.36.54 or later (`aw id request`).
+1. Ask the person for the dashboard line (`AWEB_API_KEY`, `AWEB_URL`) of the
+   account whose human will approve the steward. Tell them it must be their
+   own account: aweb Cloud lets only the steward's recorded creator approve it.
+2. Run `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb setup --steward --name <alias> --json`,
+   with `--label "<their name>"` if they want a name beside their id. It makes
+   the steward, submits its request and stops with `E_BIND_PENDING`; its
+   `details` hold `approvalUrl` and `shows`.
+3. Tell the person, before they click, in these words: "This link opens an
+   approval page in aweb Cloud. It will show the agent `<shows.address>`, the
+   domain `<shows.domain>`, the deployment label `<shows.deploymentLabel>`
+   (marked as supplied by the agent) and the key fingerprint
+   `<shows.fingerprint>`. Approve only if all four match." Then send the link.
+4. Once they say they approved, run the same command again, without the key.
+   It imports the chain (`aw id parent import`), checks it with `aw who` and
+   records the bind.
+
+- `E_BIND_DECLINED`, `E_BIND_EXPIRED`, `E_BIND_SUPERSEDED`: tell the person
+  what happened. Never submit again on your own; ask again only if they want
+  to (the error names the directory to remove first).
+- `E_BIND_REVOKED`: the person revoked the steward from the dashboard, and
+  aweb Cloud certifies an agent once, so this deployment can't be bound again
+  yet (awebai/oats-aweb#204). Tell them plainly: spawns refuse while the
+  steward is revoked; `attribution: none` on the host spawns without chains
+  meanwhile. Don't remove `.oats-bind` or run the bind again: it can't work.
+- `E_BIND_NO_HUMAN`: the account has no person yet. They attach themselves
+  first ("attach yourself to the account" above), then you run it again.
+- `E_BIND_AGENT_NOT_FOUND`, `E_BIND_AGENT_ID`: the steward is not a connected
+  agent of the account's team; `E_BIND_LABEL`: the label is over 120
+  characters or has a character aweb Cloud refuses, so shorten the workspace
+  name. Other `E_BIND_<step>` and `E_STEWARD_*` codes name the step and fix.
+- **Undo:** the person revokes the steward's certificate from the dashboard;
+  spawns then refuse by the revoked-parent rule, naming the fix.
+- A rerun whose steward already verifies only completes the record; it asks
+  aweb Cloud nothing.
+
+With no human bound, everything works as today. One human per deployment; a
+self-custodial human can't be a steward parent. `oats aweb setup --check-only
+--json` reports `attribution` only in mode `human`.
+
+<!-- /aw-min -->
+<!-- aw-min 1.36.53 -->
+
+**Spawn refusals in mode `human`** are the existing spawn-hook refusal, each
+naming its fix:
+- a revoked, replaced or malformed issuer chain;
+- unavailable registry evidence for a known chain (a CLI process holds no
+  shared cache, so a registry outage stops chained spawning for as long as it
+  lasts; `attribution: none` on the host spawns without chains meanwhile);
+- a chain stale after its parent rotated its key: re-sign it with its parent
+  first (`aw id parent request --resign` in its home, the parent approves,
+  then `aw id parent import`);
+- a resulting chain over 8 certificates or 6144 decoded bytes;
+- a spawner whose spawn meta records a chain whose files are gone;
+- a spawner or steward the registry certifies but that holds no installed
+  chain (aw issues only from an installed chain);
+- a resident-grant spawner;
+- a minting root that carries a chain (aw would make it every child's parent),
+  or a steward at the minting root: the root mints and the steward issues;
+- a kernel without `spawn-attribution`;
+- an aw without `aw who`: upgrade aw to 1.36.53 or later;
+- no human bound.
+
+A spawner with no chain, where that absence is evidence, gets a
+**chainless** child that
+reports `unknown`, with a spawn warning. A chain that exists but fails never
+falls back to a chainless child. Attribution never fails readiness. A home's
+readiness warns `attribution` only when there is something to do: in mode
+`human`, no human bound yet, or this instance has no chain (respawn it).
+`setup --check-only --json` reports `attribution` as information only in
+mode `human`, counting `chainlessSpawners`. **No `attribution` key means mode
+`none`**: the deployment has not opted in, and nothing about attribution
+applies to it. A value other than `human` or `none` is reported there too.
+
+Absence is evidence for a local instance with no chain files and no recorded
+chain (`aw who`: `legacy_no_chain`), and for a `did:aw` the registry reports
+unregistered (`unregistered_identity`). In a domain without an identity-tree
+root (most BYOT domains, and hosted namespaces for now), a chainless `did:aw`
+answers `evidence_unavailable` and refuses (aweb-acpa).
+
+Limits: a `--server` spawn from a home on another host counts as a person's.
+Captured execution's binding phases accept no attribution settings, so a
+mode-`human` deployment that uses captured execution is refused there.
+The steward's key custody is a convention under the same OS user, where misuse
+changes the recorded parent and never the human. Revocation at retire, chains
+across hosts, and deployments shared by several people are out of scope.
+
+<!-- /aw-min -->
+
 ### What retire's recovery keeps
 
 Provider 1.24.0 on OATS >=0.42.0 declares `.aw`, `.aweb-identity`,

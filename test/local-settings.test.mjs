@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { assertAwebSettingRecordable, recordAwebSetting } from "../oats-package/capabilities/oats-aweb/lib/local-settings.mjs";
+import { assertAwebSettingRecordable, recordAwebScalar, recordAwebSetting } from "../oats-package/capabilities/oats-aweb/lib/local-settings.mjs";
 
 function deployment(t, text) {
   const dir = mkdtempSync(join(tmpdir(), "oats-local-settings-"));
@@ -56,4 +56,51 @@ test("the health map takes a boolean as a YAML boolean, beside quoted strings, a
   assert.equal(read(dir), 'schemaVersion: 2\nworkspace: local\nsettings:\n  oats.aweb:\n    root: "/roots/default"\n    health:\n      "publish": true\n      "operator": "Nactiva\'s operator"\n');
   recordAwebSetting("health", "publish", false, { start: dir });
   assert.match(read(dir), /\n {6}"publish": false\n {6}"operator"/);
+});
+
+test("records the attribution scalar directly under oats.aweb, beside maps, and replaces it in place", (t) => {
+  const dir = deployment(t, 'settings:\n  oats.aweb:\n    roots:\n      "default:example.com": "/roots/default"\n');
+  recordAwebScalar("attribution", "human", { start: dir });
+  assert.equal(read(dir), 'settings:\n  oats.aweb:\n    roots:\n      "default:example.com": "/roots/default"\n    attribution: "human"\n');
+  recordAwebScalar("attribution", "human", { start: dir });
+  assert.equal(read(dir), 'settings:\n  oats.aweb:\n    roots:\n      "default:example.com": "/roots/default"\n    attribution: "human"\n');
+  const plain = deployment(t, "settings:\n  oats.aweb:\n    attribution: none # chosen\n    delivery: session\n");
+  recordAwebScalar("attribution", "human", { start: plain });
+  assert.equal(read(plain), 'settings:\n  oats.aweb:\n    attribution: "human" # chosen\n    delivery: session\n');
+});
+
+test("creates the file and blocks for the attribution scalar when absent", (t) => {
+  const dir = deployment(t);
+  recordAwebScalar("attribution", "human", { start: dir });
+  assert.equal(read(dir), 'schemaVersion: 2\nworkspace: local\nsettings:\n  oats.aweb:\n    attribution: "human"\n');
+});
+
+test("an attribution scalar it cannot edit safely refuses with the line to add by hand", (t) => {
+  for (const text of ["settings:\n  oats.aweb:\n    attribution:\n      nested: x\n", "settings:\n  oats.aweb: { attribution: none }\n", "settings:\n  oats.aweb:\n    attribution: none\n    attribution: human\n"]) {
+    const dir = deployment(t, text);
+    assert.throws(() => recordAwebScalar("attribution", "human", { start: dir }), /add this line by hand under block-style settings\.oats\.aweb: attribution: "human"/, text);
+    assert.equal(read(dir), text);
+  }
+});
+
+test("the attribution scalar is found under a quoted key or a spaced colon, and replaced in place, never duplicated", (t) => {
+  for (const [line, kept] of [['"attribution": none', ""], ["'attribution': none", ""], ["attribution : none", ""], ['"attribution" :  none # chosen', " # chosen"], ["attribution:\tnone", ""]]) {
+    const dir = deployment(t, `settings:\n  oats.aweb:\n    ${line}\n    delivery: session\n`);
+    recordAwebScalar("attribution", "human", { start: dir });
+    const text = read(dir);
+    assert.equal(text, `settings:\n  oats.aweb:\n    attribution: "human"${kept}\n    delivery: session\n`, line);
+    assert.equal(text.match(/attribution/g).length, 1, `${line}: one key`);
+  }
+});
+
+test("an attribution key written twice in equivalent forms refuses, so the file never holds a duplicate", (t) => {
+  const dir = deployment(t, 'settings:\n  oats.aweb:\n    attribution: none\n    "attribution": human\n');
+  assert.throws(() => recordAwebScalar("attribution", "human", { start: dir }), /duplicate attribution key/);
+  assert.equal(read(dir), 'settings:\n  oats.aweb:\n    attribution: none\n    "attribution": human\n');
+});
+
+test("a key that only begins with the name is another key", (t) => {
+  const dir = deployment(t, "settings:\n  oats.aweb:\n    attributions: x\n");
+  recordAwebScalar("attribution", "human", { start: dir });
+  assert.equal(read(dir), 'settings:\n  oats.aweb:\n    attributions: x\n    attribution: "human"\n');
 });

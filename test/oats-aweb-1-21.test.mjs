@@ -274,6 +274,7 @@ test("setup without --install-aw keeps today's message when aw is missing; --che
   assert.deepEqual(npm.readCalls(), []);
 });
 
+// acmj.21: a deployment that has not opted in to attribution gets no attribution key.
 test("setup --check-only reports membership of the default team from its root", async (t) => {
   const root = tempDir(t);
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });

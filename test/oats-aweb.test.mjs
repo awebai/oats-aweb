@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { assertKernelCheckAnswerRule } from "./helpers/kernel-check-answer-rule.mjs";
+import { awAtLeast, splitByAwMin } from "./helpers/aw-version-gate.mjs";
 import { joinFromCalls } from "./helpers/fake-aw-join-from.mjs";
 import { fakeKernelTeamConfig, joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
@@ -134,12 +135,15 @@ test("capability guidance names only real first-level aw verbs", (t) => {
     join(CAPABILITY, "injects", "aweb.md"),
     join(REPO, "README.md"),
   ];
-  const verbs = new Set();
+  const verbs = new Set(), gatedVerbs = [];
+  const verbsIn = (text) => [...text.matchAll(/\["aw",\s*"([a-z][a-z0-9-]*)"/g), ...text.matchAll(/`aw\s+([a-z][a-z0-9-]*)\b/g)].map((m) => m[1]);
   for (const file of files) {
     const text = readFileSync(file, "utf8");
     assert.doesNotMatch(text, /aw team create\b/, `${file} must not recommend the nonexistent aw team create command`);
-    for (const match of text.matchAll(/\["aw",\s*"([a-z][a-z0-9-]*)"/g)) verbs.add(match[1]);
-    for (const match of text.matchAll(/`aw\s+([a-z][a-z0-9-]*)\b/g)) verbs.add(match[1]);
+    // Verbs in an aw-min section are checked only on an aw that new; the rest always.
+    const { ungated, gated } = splitByAwMin(text);
+    for (const verb of verbsIn(ungated)) verbs.add(verb);
+    for (const section of gated) for (const verb of verbsIn(section.text)) gatedVerbs.push({ verb, min: section.min, file });
   }
   assert.ok(verbs.size > 0, "the test must enumerate printed/run aw verbs");
   // CI installs the tested aw for this guard and sets OATS_AW_VERBS_REQUIRED, so it never skips there.
@@ -164,6 +168,10 @@ test("capability guidance names only real first-level aw verbs", (t) => {
     assert.ok(!required, `OATS_AW_VERBS_REQUIRED: the aw-verb guard needs aw 1.36.6 or newer, not ${parsed?.[0] || "unknown"}`);
     t.skip(`aw ${parsed?.[0] || "unknown"} is older than published 1.36.6; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
     return;
+  }
+  for (const { verb, min, file } of gatedVerbs) {
+    if (awAtLeast(version.stdout + version.stderr, min)) verbs.add(verb);
+    else if (!verbs.has(verb)) t.diagnostic(`${parsed?.[0] || "aw (unknown version)"} is older than ${min}: verb ${verb} not checked, as an aw-min ${min} section of ${file.split("/").pop()} cites it`);
   }
   for (const verb of [...verbs].sort()) {
     const help = spawnSync("aw", [verb, "--help"], { encoding: "utf8", timeout: 10000 });
