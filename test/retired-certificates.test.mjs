@@ -5,9 +5,9 @@
 // also records each certificate at <deployment>/.oats-aweb/retired-certificates.json; roster
 // matches the team's listed certificates against it on team and certificate id.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -89,6 +89,7 @@ function fixture(t) {
   return { ws, home, retire, hook, members, recordFile: join(ws, ".oats-aweb", "retired-certificates.json") };
 }
 const readRecord = (file) => JSON.parse(readFileSync(file, "utf8"));
+const entry = (certificateId) => ({ team: "t:example.test", certificateId, alias: "a", instance: "a", retiredAt: "2026-11-05T00:00:00.000Z", command: `aw id team remove-member --cert-id ${certificateId}` });
 const mode = (p) => statSync(p).mode & 0o777;
 
 test("retire records each controller cleanup at the deployment, its warning and meta unchanged", (t) => {
@@ -133,11 +134,83 @@ test("a record that cannot be written adds one warning and leaves the retire's o
 
 test("retire replaces a malformed record and says so; it never throws", (t) => {
   const fx = fixture(t);
-  write(fx.recordFile, "{ not json");
+  for (const content of ["{ not json", JSON.stringify({ version: 1, entries: [{ team: DEFAULT, certificateId: "cert-other", command: "x" }] })]) {
+    write(fx.recordFile, content);
+    const doc = fx.retire();
+    assert.equal(doc.warning, `${BASE_WARNING} | oats-aweb: could not record the controller cleanup on this host: the previous record was malformed and was replaced`);
+    assert.deepEqual(doc.meta.pendingControllerCleanup, BASE_PENDING);
+    assert.deepEqual(readRecord(fx.recordFile).entries.map((e) => e.certificateId), ["cert-shared-123", "cert-default-123"]);
+  }
+});
+
+test("a record that cannot be replaced leaves the retire's outcome unchanged", (t) => {
+  const fx = fixture(t);
+  mkdirSync(join(fx.recordFile, "occupied"), { recursive: true }); // a directory where the record goes
   const doc = fx.retire();
-  assert.equal(doc.warning, `${BASE_WARNING} | oats-aweb: could not record the controller cleanup on this host: the previous record was malformed and was replaced`);
+  assert.equal(doc.warning, `${BASE_WARNING} | oats-aweb: could not record the controller cleanup on this host: the record could not be written`);
   assert.deepEqual(doc.meta.pendingControllerCleanup, BASE_PENDING);
-  assert.equal(readRecord(fx.recordFile).entries.length, 2);
+  assert.equal(doc.meta.retired, true);
+  assert.equal(existsSync(`${fx.recordFile}.lock`), false, "the lock is released");
+});
+
+test("an existing record directory loses group and other access; an unwritable one stays unwritable", (t) => {
+  const ws = tempDir(t), dir = join(ws, ".oats-aweb");
+  mkdirSync(dir, { mode: 0o755 }); chmodSync(dir, 0o755);
+  assert.deepEqual(recordRetiredCertificates(ws, [entry("c-1")]), {});
+  assert.equal(mode(dir), 0o700);
+  chmodSync(dir, 0o555);
+  assert.deepEqual(recordRetiredCertificates(ws, [entry("c-2")]), { cause: "the record directory is not writable" });
+  assert.equal(mode(dir), 0o500);
+});
+
+test("a failure after the lock is taken returns its cause and never throws", (t) => {
+  const ws = tempDir(t), dir = join(ws, ".oats-aweb");
+  const r = recordRetiredCertificates(ws, [entry("c-1")], { testHooks: { locked: () => chmodSync(dir, 0o500) } });
+  assert.deepEqual(r, { cause: "the record could not be written" });
+  chmodSync(dir, 0o700);
+  assert.equal(existsSync(join(dir, "retired-certificates.json")), false);
+});
+
+test("a lock whose holder is alive is never taken, however old", (t) => {
+  const ws = tempDir(t), lock = join(ws, ".oats-aweb", "retired-certificates.json.lock");
+  write(lock, JSON.stringify({ pid: process.pid, host: hostname(), token: "live" }));
+  utimesSync(lock, new Date(0), new Date(0));
+  assert.deepEqual(recordRetiredCertificates(ws, [entry("c-1")], { lockWaitMs: 100 }), { cause: "another retire held the record's lock" });
+  assert.equal(JSON.parse(readFileSync(lock, "utf8")).token, "live");
+  assert.equal(existsSync(join(ws, ".oats-aweb", "retired-certificates.json")), false);
+});
+
+/** A child process that records one entry, its lock steps ordered by marker files in ws. */
+function orderedWriter(ws, name, hooks) {
+  const marks = join(ws, "marks");
+  const script = `const fs = await import("node:fs");
+const { recordRetiredCertificates } = await import(${JSON.stringify(pathToFileURL(LIB).href)});
+const mark = (m) => fs.writeFileSync(${JSON.stringify(marks)} + "/" + m, "");
+const until = (m) => { while (!fs.existsSync(${JSON.stringify(marks)} + "/" + m)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5); };
+const hooks = ${hooks};
+const r = recordRetiredCertificates(${JSON.stringify(ws)}, [{ team: "t:example.test", certificateId: "${name}", alias: "${name}", instance: "${name}", retiredAt: new Date().toISOString(), command: "aw id team remove-member --cert-id ${name}" }], { lockWaitMs: 60000, testHooks: hooks });
+if (r.cause) { console.error(r.cause); process.exit(1); }`;
+  return new Promise((done, fail) => {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = ""; child.stderr.on("data", (d) => { stderr += d; });
+    child.on("exit", (code) => code === 0 ? done() : fail(new Error(`${name}: ${stderr}`)));
+  });
+}
+
+test("two writers that find the same abandoned lock both keep their entry", async (t) => {
+  const ws = tempDir(t);
+  mkdirSync(join(ws, "marks"));
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  write(join(ws, ".oats-aweb", "retired-certificates.json.lock"), JSON.stringify({ pid: dead, host: hostname(), token: "dead" }));
+  // Both read the dead lock; a breaks it and takes the lock; only then does b break what is
+  // now a's live lock, and a commits after that.
+  await Promise.all([
+    orderedWriter(ws, "a", `{ abandoned: () => { mark("a-abandoned"); until("b-abandoned"); }, locked: () => { mark("a-locked"); until("b-broken"); } }`),
+    orderedWriter(ws, "b", `{ abandoned: () => { mark("b-abandoned"); until("a-locked"); }, broken: () => mark("b-broken") }`),
+  ]);
+  const ids = readRecord(join(ws, ".oats-aweb", "retired-certificates.json")).entries.map((e) => e.certificateId).sort();
+  assert.deepEqual(ids, ["a", "b"]);
+  assert.equal(existsSync(join(ws, ".oats-aweb", "retired-certificates.json.lock")), false);
 });
 
 test("two concurrent writers keep every entry", async (t) => {
@@ -161,9 +234,8 @@ for (let i = 0; i < ${WRITES}; i++) { const r = recordRetiredCertificates(${JSON
 
 test("the record keeps the newest entries and skips those without a certificate id", (t) => {
   const ws = tempDir(t);
-  const entry = (i) => ({ team: "t:example.test", certificateId: `c-${i}`, alias: "a", instance: "a", retiredAt: "2026-11-05T00:00:00.000Z", command: `cmd ${i}` });
-  assert.deepEqual(recordRetiredCertificates(ws, [...Array(RETIRED_RECORD_MAX + 3).keys()].map(entry)), {});
-  assert.deepEqual(recordRetiredCertificates(ws, [{ ...entry(9999), certificateId: null }]), {});
+  assert.deepEqual(recordRetiredCertificates(ws, [...Array(RETIRED_RECORD_MAX + 3).keys()].map((i) => entry(`c-${i}`))), {});
+  assert.deepEqual(recordRetiredCertificates(ws, [{ ...entry("c-9999"), certificateId: null }]), {});
   const ids = readRecord(join(ws, ".oats-aweb", "retired-certificates.json")).entries.map((e) => e.certificateId);
   assert.equal(ids.length, RETIRED_RECORD_MAX);
   assert.equal(ids[0], "c-3");
@@ -226,6 +298,9 @@ test("roster reports a malformed or unreadable record as a problem and shows not
   for (const [content, message] of [
     ["{ not json", "the record of certificates OATS retired on this host is malformed; nothing from it is shown"],
     [JSON.stringify({ version: 2, entries: [{ team: DEFAULT, certificateId: "cert-default-123", command: "x" }] }), "the record of certificates OATS retired on this host is malformed; nothing from it is shown"],
+    // Version 1 with one bad entry is malformed as a whole: no partial record is shown.
+    [JSON.stringify({ version: 1, entries: [{ team: DEFAULT, certificateId: "cert-default-123", alias: "dev-1", instance: "dev-1", retiredAt: "2026-11-04T10:00:00.000Z", command: "x" }, { team: DEFAULT }] }), "the record of certificates OATS retired on this host is malformed; nothing from it is shown"],
+    [JSON.stringify({ version: 1, entries: [{ team: DEFAULT, certificateId: "cert-default-123", command: "x" }] }), "the record of certificates OATS retired on this host is malformed; nothing from it is shown"],
   ]) {
     write(fx.recordFile, content);
     const r = fx.hook("roster", ["--json"]);
