@@ -8,6 +8,8 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fixture } from "./helpers/delivery-fixture.mjs";
 import { AW_MIN } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
+import { readFileSync } from "node:fs";
+import { compatTranscript } from "./helpers/compat-journey.mjs";
 
 const ATTRIBUTION_TRACE = /attribution|identity chain|chainless|steward|bound human/i;
 
@@ -56,5 +58,17 @@ for (const [delivery, runtime, wake] of [["channel", "claude", "wake deregister"
       for (const item of [...readiness.warnings, ...readiness.problems]) assert.doesNotMatch(`${item.code} ${item.message}`, ATTRIBUTION_TRACE);
     }
     assert.equal(none.comparable, absent.comparable, "attribution: none must behave exactly as an absent setting");
+  });
+}
+
+// The opt-in gate: a deployment without attribution: human, on this release,
+// behaves as on 1.38.0. The transcript in fixtures/compat-1.38.0.json was
+// recorded by running test/helpers/compat-journey.mjs against the v1.38.0
+// tree; spawn, start, restart, readiness, setup --check-only and retire must
+// match it, aw calls included.
+const COMPAT_1_38_0 = JSON.parse(readFileSync(new URL("./fixtures/compat-1.38.0.json", import.meta.url), "utf8"));
+for (const { journey, transcript } of COMPAT_1_38_0) {
+  test(`no setting, ${journey.delivery} delivery on ${journey.runtime}${journey.settings.join ? " with a joined team" : ""}${journey.spawner ? " under a spawn-attribution kernel" : ""}: spawn, start, restart, readiness, setup and retire are 1.38.0's`, (t) => {
+    assert.deepEqual(compatTranscript(t, journey), transcript);
   });
 }

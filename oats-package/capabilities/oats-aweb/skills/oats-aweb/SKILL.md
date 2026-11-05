@@ -987,7 +987,7 @@ in aweb Cloud. It needs aweb Cloud and aw 1.36.54 or later (`aw id request`).
 
 With no human bound, everything works as today. One human per deployment; a
 self-custodial human can't be a steward parent. `oats aweb setup --check-only
---json` reports `attribution`.
+--json` reports `attribution` only in mode `human`.
 
 <!-- /aw-min -->
 <!-- aw-min 1.36.53 -->
@@ -1018,9 +1018,10 @@ reports `unknown`, with a spawn warning. A chain that exists but fails never
 falls back to a chainless child. Attribution never fails readiness. A home's
 readiness warns `attribution` only when there is something to do: in mode
 `human`, no human bound yet, or this instance has no chain (respawn it).
-`setup --check-only --json` reports `attribution` as information: in mode
-`none` it names the one act that binds a human; in mode `human` it counts
-`chainlessSpawners`.
+`setup --check-only --json` reports `attribution` as information only in
+mode `human`, counting `chainlessSpawners`. **No `attribution` key means mode
+`none`**: the deployment has not opted in, and nothing about attribution
+applies to it. A value other than `human` or `none` is reported there too.
 
 Absence is evidence for a local instance with no chain files and no recorded
 chain (`aw who`: `legacy_no_chain`), and for a `did:aw` the registry reports

@@ -2490,7 +2490,7 @@ ${JSON.stringify(problem.details || {})}`);
         hasChain: (h) => existsSync(join(h, ".aw", "id-chain.json")),
         isLocal: (h) => existsSync(join(h, ".aw", "signing.key")),
       });
-      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, attribution }));
+      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));
       process.exit(aw.status === "failed" ? 1 : 0);
     }
     if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }

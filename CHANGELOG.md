@@ -30,8 +30,9 @@
   - The spawn meta records `identity.attribution` and `chainInstalled`.
     Home readiness warns `attribution` only when there is something to do (mode
     human: no human bound, or this instance has no chain). `setup --check-only
-    --json` reports `attribution`: the mode, and the count of spawners without
-    a chain.
+    --json` reports `attribution` only in mode human (the bound human, the
+    steward and the count of spawners without a chain); its absence means
+    mode none.
   - Costs: a registry outage stops chained spawning for as long as it lasts
     (`attribution: none` on the host spawns without chains meanwhile), and a
     `--server` spawn from another host counts as a person's. The steward's key

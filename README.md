@@ -142,9 +142,11 @@ no human in it) and `unknown`. It also records `chainInstalled: true|false`.
 Attribution never fails readiness. A home's readiness warns `attribution` only
 when there is something to do: in mode `human`, no human bound yet, or this
 instance has no chain (respawn it). `oats aweb setup --check-only --json`
-reports `attribution` as information in both modes: the mode, and in mode `none` the one act that binds a
-human. In mode `human` it also reports the bound human, the steward, and
-`chainlessSpawners`, the number of local instances without a chain.
+reports `attribution` as information only in mode `human`: the bound human,
+the steward, and `chainlessSpawners`, the number of local instances without a
+chain. Without the setting, or with `none`, the key is absent: absence means
+mode `none`, and the answer is 1.38.0's. A value other than `human` or `none`
+is reported there too.
 
 **Costs and limits.**
 - A registry outage stops chained spawning for as long as it lasts: reviewers,

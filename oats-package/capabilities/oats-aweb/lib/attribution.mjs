@@ -155,13 +155,16 @@ function attributionSummary(settings) {
   return { mode, human, steward, text: `attribution: human — ${bound}` };
 }
 
-/** Deployment readiness (`setup --check-only`): the summary, and in mode
+/** Deployment readiness (`setup --check-only`): null for a deployment that
+ *  has not opted in (absent or none), so its answer carries no attribution
+ *  key; otherwise the summary, and in mode
  *  human the local instances without a chain, whose children are created
  *  chainless until they are respawned. A resident-grant instance is not
  *  counted: it holds no identity key and never issues. */
 export function attributionReadiness({ settings, homes, hasChain, isLocal }) {
   const { mode, human, steward, text } = attributionSummary(settings);
   const base = { mode, human, steward, chainlessSpawners: null, status: "info" };
+  if (mode === "none") return null;
   if (mode !== "human") return { ...base, message: text };
   if (!homes?.known) return { ...base, message: `${text}; instances without a chain: unknown (${homes?.reason || "no deployment homes"})` };
   const chainless = homes.rows.filter((r) => isLocal(r.home) && !hasChain(r.home));

@@ -185,9 +185,16 @@ test("meta: a recorded human label that is not one safe line is recorded as the 
   assert.deepEqual(attributionRecord({ action: "issue", outcome: "nearest_human", humanId: HUMAN, issuerId: STEWARD }, { id: HUMAN, label: "  Juan  " }).human, { id: HUMAN, label: "Juan" });
 });
 
-test("readiness: no human bound is information naming the one binding act, never a failure", () => {
-  const r = attributionReadiness({ settings: {}, homes: { known: true, rows: [] }, hasChain: () => false, isLocal: () => true });
-  assert.deepEqual(r, { mode: "none", human: null, steward: null, chainlessSpawners: null, status: "info", message: 'attribution: none — no human bound; one act binds one: bind a human to this deployment (`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud)' });
+test("readiness: a deployment that has not opted in reports nothing, absent and none alike", () => {
+  for (const settings of [{}, { attribution: "none" }]) {
+    assert.equal(attributionReadiness({ settings, homes: { known: true, rows: [] }, hasChain: () => false, isLocal: () => true }), null, JSON.stringify(settings));
+  }
+});
+
+test("readiness: an attribution value that is neither human nor none is reported, never ignored", () => {
+  const r = attributionReadiness({ settings: { attribution: "yes" }, homes: undefined, hasChain: () => false, isLocal: () => true });
+  assert.equal(r.mode, null);
+  assert.match(r.message, /^attribution: attribution must be "human" or "none" \(got "yes"\)$/);
 });
 
 test("readiness: bound mode names the human and counts the local spawners without a chain", () => {
