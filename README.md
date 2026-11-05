@@ -1164,6 +1164,10 @@ Supported acts:
     to a hosted invite, which a self-hosted server answers with 404.
   - A self-hosted aweb accepts signed requests only for its public origin:
     `AWEB_URL` must be the server's public URL, not a port forward.
+  - Without `AWEB_URL`, the team is registered with the service an existing
+    root already uses, which may be hosted aweb. To create on a self-hosted
+    server, set `AWEB_URL` first. Setup names the service in its first line,
+    before it creates anything.
 - `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
   never accepts into the existing default root. With aw 1.36.53 or later, a

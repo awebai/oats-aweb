@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Docs: `setup --create --namespace` without `AWEB_URL` uses an existing
+  root's service.** The README and the oats-aweb skill now say that the team
+  is then registered with the service an existing root already uses, which
+  may be hosted aweb, so a create meant for a self-hosted server sets
+  `AWEB_URL` first. Setup names the service before it creates anything.
+- **Docs: a sent message's draft may be deleted.** Section 3 of the oats-aweb
+  skill now says so; drafts left behind go at retirement.
 - **Fixed: `oats aweb setup --create <label> --namespace <domain>` completes
   (#202).** aw never prints an invite token for a team created in a
   customer-controlled namespace, so setup refused every such create. Setup now

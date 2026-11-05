@@ -101,7 +101,8 @@ Write the body to the path it printed and pass that path as `<body-file>`
 below. Use the printed path itself: a shell variable does not survive between
 your tool calls. Keep the `X`s last (macOS `mktemp` replaces only trailing
 `X`s, so `XXXXXX.md` is one fixed name). The directory is owner-only, and
-retirement neither keeps nor copies it.
+retirement neither keeps nor copies it. Once the message is sent you may
+delete its draft (`rm -f <body-file>`); drafts you leave go at retirement.
 
 ```bash
 aw mail send --to <alias> --subject "<short subject>" --body-file <body-file>
@@ -581,6 +582,10 @@ Two operator notes for this card:
   a hosted invite, which a self-hosted server answers with 404.
 - A self-hosted aweb accepts signed requests only for its public origin:
   `AWEB_URL` must be the server's public URL, not a port forward.
+- Without `AWEB_URL`, the team is registered with the service an existing
+  root already uses, which may be hosted aweb. To create on a self-hosted
+  server, set `AWEB_URL` first. Setup names the service in its first line,
+  before it creates anything.
 
 For created or joined LOCAL teams, one identity owns each separate `.aw`; never
 accept a second LOCAL team into an existing identity. Intended new root is
