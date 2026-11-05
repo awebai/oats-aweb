@@ -97,7 +97,7 @@ export function rootState(root) {
   if (nothingMinted) return { state: "create" };
   throw failure("E_RESIDENT_ROOT", "preflight", `${root} is neither empty, a partial aw init nor a complete global identity: it contains ${entries.join(", ")}; never init into it: choose another --root or empty it yourself`);
 }
-const needsInit = (state) => state === "create" || state === "continue" || state === "rejected";
+export const needsInit = (state) => state === "create" || state === "continue" || state === "rejected";
 
 /** The key, from AWEB_API_KEY or a prompt that does not echo. */
 async function readKey({ env, stdin, stderr, rerun }) {
@@ -186,6 +186,8 @@ function expectFields(what, doc, name, fields) {
 /** aw init's answer: a connected global identity named `name` in a canonical
  *  team, with a stable id and an address. */
 export const checkInitAnswer = (doc, name) => expectFields("aw init", doc, name, ["status", "team_id"]);
+/** `aw whoami`'s answer for a complete global identity named `name`. */
+export const checkWhoamiAnswer = (doc, name) => expectFields("aw whoami", doc, name, []);
 
 /** Every offline identity check must be ok: with no identity at all, aw's
  *  doctor answers status ok with each check `info`. */
@@ -434,7 +436,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     // by hand or under another supervisor. A unit started beside it would
     // restart in a loop (aw refuses a second server on a socket that answers),
     // while that other custody answered the readiness check.
-    const known = state === "adopt" ? expectFields("aw whoami", readJson(["whoami", "--json"], "aw whoami", "preflight"), name, []) : undefined;
+    const known = state === "adopt" ? checkWhoamiAnswer(readJson(["whoami", "--json"], "aw whoami", "preflight"), name) : undefined;
     if (known && manager) {
       const label = custodyLabel(known.address, name);
       let status;

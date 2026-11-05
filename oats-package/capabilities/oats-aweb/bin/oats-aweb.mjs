@@ -10,6 +10,9 @@
  *                     of live instances (alias = instance name) and humans
  *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the
  *                     messaging root with aw init / id team accept-invite, verify team
+ *   oats-aweb setup --steward  bind a human to this deployment: make its steward
+ *                     and carry the steward's parent request to aweb Cloud,
+ *                     where the person approves it (lib/steward.mjs)
  *   oats-aweb connect  give a registered server's deployment membership in its
  *                     default team, through the kernel's --server capability route
  *   oats-aweb wake     install | status | uninstall the host wake broker's per-user
@@ -51,6 +54,8 @@ import { inviteMain } from '../lib/invite.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'invite') process.exit(inviteMain(process.argv.slice(3)));
 import { residentMain } from '../lib/resident.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'resident') process.exit(await residentMain(process.argv.slice(3)));
+import { stewardMain } from '../lib/steward.mjs';
+if ((process.env.OATS_EVENT || process.argv[2]) === 'setup' && process.argv.slice(3).includes('--steward')) process.exit(await stewardMain(process.argv.slice(3)));
 import { deploymentHomes, wakeMain } from '../lib/wake-service.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await wakeMain(process.argv.slice(3)));
 // Loaded only for `health`: the publisher is opt-in, and no other command or

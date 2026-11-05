@@ -116,7 +116,7 @@ test("refuses before minting when no human is bound, naming the binding act", (t
   const fake = fakeAwChain(t);
   const { status, doc } = spawn(fx, fake);
   assert.equal(status, 1);
-  assert.match(doc.warning, /no human is bound to this deployment → bind a human to this deployment \(a browser approval/);
+  assert.match(doc.warning, /no human is bound to this deployment → bind a human to this deployment \(`oats aweb setup --steward --name <alias>`, run by the setup expert/);
   assert.equal(minted(fake), false);
 });
 

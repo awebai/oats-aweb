@@ -40,7 +40,7 @@ test("kernel gate: a kernel without spawn-attribution refuses bound mode and nam
 test("issuer: the spawner when OATS_SPAWNER_HOME is set, else the steward; no steward refuses with the binding act", () => {
   assert.deepEqual(issuerSelection({ spawnerHome: "/d/a/h", steward: { id: STEWARD, home: "/d/.aweb-stewards/s" } }), { kind: "spawner", home: "/d/a/h" });
   assert.deepEqual(issuerSelection({ spawnerHome: "", steward: { id: STEWARD, home: "/d/.aweb-stewards/s" } }), { kind: "steward", home: "/d/.aweb-stewards/s", id: STEWARD });
-  assert.throws(() => issuerSelection({ spawnerHome: undefined, steward: undefined }), /attribution: human but no human is bound to this deployment → bind\ a\ human\ to\ this\ deployment\ \(a\ browser\ approval\ by\ the\ person,\ driven\ by\ the\ setup\ expert;\ needs\ aweb\ Cloud;\ not\ yet\ available\), or set attribution: none$/);
+  assert.throws(() => issuerSelection({ spawnerHome: undefined, steward: undefined }), /attribution: human but no human is bound to this deployment → bind\ a\ human\ to\ this\ deployment\ \(`oats\ aweb\ setup\ --steward\ --name\ <alias>`,\ run\ by\ the\ setup\ expert;\ the\ person\ approves\ the\ steward\ in\ aweb\ Cloud\), or set attribution: none$/);
   assert.throws(() => issuerSelection({ spawnerHome: "relative/home" }), /OATS_SPAWNER_HOME must be an absolute path/);
 });
 
@@ -141,7 +141,7 @@ test("chainless never applies when chain files are present: a present chain that
 test("the steward never issues chainless: a steward without a verified chain refuses, naming the setup rerun", () => {
   const verdict = classifyIssuer({ issuer: { kind: "steward" }, who: { ...failed("legacy_no_chain"), identity_valid: null }, chainFiles: false });
   assert.equal(verdict.action, "refuse");
-  assert.match(verdict.message, /the deployment's steward has no verified chain .* → bind the human again, which issues the steward again \(a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available\)$/);
+  assert.match(verdict.message, /the deployment's steward has no verified chain .* → bind the human again, which issues the steward again \(`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud\)$/);
 });
 
 test("limits: a resulting chain over 8 certificates or 6144 canonical bytes refuses", () => {
@@ -178,7 +178,7 @@ test("meta: a recorded human label that is not one safe line is recorded as the 
 
 test("readiness: no human bound is information naming the one binding act, never a failure", () => {
   const r = attributionReadiness({ settings: {}, homes: { known: true, rows: [] }, hasChain: () => false, isLocal: () => true });
-  assert.deepEqual(r, { mode: "none", human: null, steward: null, chainlessSpawners: null, status: "info", message: 'attribution: none — no human bound; one act binds one: bind a human to this deployment (a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available)' });
+  assert.deepEqual(r, { mode: "none", human: null, steward: null, chainlessSpawners: null, status: "info", message: 'attribution: none — no human bound; one act binds one: bind a human to this deployment (`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud)' });
 });
 
 test("readiness: bound mode names the human and counts the local spawners without a chain", () => {
@@ -205,6 +205,6 @@ test("home readiness warns only when there is something to act on (oats#881); mo
   assert.equal(ready(bound, undefined), null);
   assert.deepEqual(ready(bound, "/h/a"), { code: "attribution", message: "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; this instance has no chain, so its children are created chainless and report unknown until it is respawned" });
   for (const home of ["/h/a", undefined]) {
-    assert.deepEqual(ready({ attribution: "human" }, home), { code: "attribution", message: 'attribution: human — no human bound yet: bind a human to this deployment (a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available), or set attribution: none' });
+    assert.deepEqual(ready({ attribution: "human" }, home), { code: "attribution", message: 'attribution: human — no human bound yet: bind a human to this deployment (`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud), or set attribution: none' });
   }
 });

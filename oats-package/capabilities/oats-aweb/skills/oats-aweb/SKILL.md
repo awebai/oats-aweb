@@ -941,12 +941,47 @@ the child. The README's "Spawn attribution" section is the full reference.
 Mode `human` needs aw 1.36.53 or later, the first release with identity
 chains; the provider's aw floor stays 1.36.33.
 
+<!-- /aw-min -->
+<!-- aw-min 1.36.54 -->
+
 **The bind** records the human and the steward in host-only settings
-(`human: {id, label}`, `steward: {id, home}`) and sets `attribution: human`.
-It is a browser approval by the person, driven by the setup expert; it needs
-aweb Cloud and is not yet available. With no human bound, everything works as
-today. One human per deployment; a self-custodial human can't be a steward
-parent. `oats aweb setup --check-only --json` reports `attribution`.
+(`human: {id, label}`, `steward: {id, home}`), then sets `attribution: human`.
+You, the setup expert, run every command; the person's only act is one click
+in aweb Cloud. It needs aweb Cloud and aw 1.36.54 or later (`aw id request`).
+1. Ask the person for the dashboard line (`AWEB_API_KEY`, `AWEB_URL`) of the
+   account whose human will approve the steward. Tell them it must be their
+   own account: aweb Cloud lets only the steward's recorded creator approve it.
+2. Run `AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb setup --steward --name <alias> --json`,
+   with `--label "<their name>"` if they want a name beside their id. It makes
+   the steward, submits its request and stops with `E_BIND_PENDING`; its
+   `details` hold `approvalUrl` and `shows`.
+3. Tell the person, before they click, in these words: "This link opens an
+   approval page in aweb Cloud. It will show the agent `<shows.address>`, the
+   domain `<shows.domain>`, the deployment label `<shows.deploymentLabel>`
+   (marked as supplied by the agent) and the key fingerprint
+   `<shows.fingerprint>`. Approve only if all four match." Then send the link.
+4. Once they say they approved, run the same command again, without the key.
+   It imports the chain (`aw id parent import`), checks it with `aw who` and
+   records the bind.
+
+- `E_BIND_DECLINED`, `E_BIND_EXPIRED`, `E_BIND_SUPERSEDED`, `E_BIND_REVOKED`:
+  tell the person what happened. Never submit again on your own; ask again
+  only if they want to (the error names the directory to remove first).
+- `E_BIND_NO_HUMAN`: the account has no person yet. They attach themselves
+  first ("attach yourself to the account" above), then you run it again.
+- `E_BIND_AGENT_NOT_FOUND`, `E_BIND_AGENT_ID`: the steward is not a connected
+  agent of the account's team; `E_BIND_LABEL`: the label is over 120
+  characters or has a character aweb Cloud refuses, so shorten the workspace
+  name. Other `E_BIND_<step>` and `E_STEWARD_*` codes name the step and fix.
+- **Undo:** the person revokes the steward's certificate from the dashboard;
+  spawns then refuse by the revoked-parent rule, naming the fix.
+
+With no human bound, everything works as today. One human per deployment; a
+self-custodial human can't be a steward parent. `oats aweb setup --check-only
+--json` reports `attribution`.
+
+<!-- /aw-min -->
+<!-- aw-min 1.36.53 -->
 
 **Spawn refusals in mode `human`** are the existing spawn-hook refusal, each
 naming its fix:

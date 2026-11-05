@@ -7,10 +7,11 @@
   human | none`, a per-deployment opt-in in `oats-local.yaml` (a committed value
   is refused); absent means `none`, and spawns are unchanged. The bound human and the
   deployment's steward are read from host-only `human` and `steward`
-  settings, one human per deployment. The bind that records them is a browser
-  approval by the person, driven by the setup expert; it needs aweb Cloud and
-  is not yet available. With no human bound, everything works as today, and
-  a self-custodial human can't be a steward parent. In mode `human` the spawn
+  settings, one human per deployment. The bind that records them is
+  `oats aweb setup --steward --name <alias>` (aweb-acrn), run by the setup
+  expert; the person's only act is one click in aweb Cloud. With no human
+  bound, everything works as today, and a self-custodial human can't be a
+  steward parent. In mode `human` the spawn
   hook issues the child
   through aw's agent-child exchange: from the spawning instance
   (`OATS_SPAWNER_HOME`), or from the steward for a person's spawn.
@@ -37,6 +38,22 @@
     parent of an instance-issued child. The provider's aw floor stays 1.36.33:
     with attribution absent or `none`, nothing needs a newer aw.
     Needs a kernel listing `spawn-attribution`.
+  - **The bind** (needs aweb Cloud and aw 1.36.54 or later, the first with
+    `aw id request`). The steward is an ordinary global self-custodial agent in
+    `<deployment>/.aweb-stewards/<alias>`, made with resident create's init
+    (`aw init --global`, from the dashboard API key of the account whose human
+    will approve it), with no custody unit and no grant seats. It signs its own
+    parent request and submits it to aweb Cloud with
+    `{signed_request, deployment_label}`; the label is
+    `<workspace name>-<short hostname>`, refused (never shortened) above 120
+    characters. The first run stops with `E_BIND_PENDING`, the approval link and
+    what the page shows (address, domain, label, key fingerprint); the next
+    imports the issued chain and records the human, the steward and then
+    `attribution: human`. A rerun continues the same request; a declined,
+    expired, replaced or revoked one is reported, never submitted again. An
+    account with no person yet refuses `E_BIND_NO_HUMAN`, naming claim-human.
+    Undo is the dashboard's revoke. oats-aweb never holds key material: aw
+    signs every call.
   - Limit: captured execution's binding phases accept no attribution
     settings, so a mode-`human` deployment that uses captured execution is
     refused there.

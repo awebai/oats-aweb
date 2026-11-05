@@ -18,8 +18,8 @@ const LABEL_MAX_BYTES = 120;
 /** The first aw release with identity chains (`aw who`, the agent-child exchange). */
 export const ATTRIBUTION_AW_UPGRADE = "upgrade aw to 1.36.53 or later (`npm i -g @awebai/aw@latest`)";
 
-/** The act that binds a human: the person approves the steward in a browser. */
-export const BIND_ACT = "bind a human to this deployment (a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available)";
+/** The act that binds a human: the person approves the steward in aweb Cloud. */
+export const BIND_ACT = "bind a human to this deployment (`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud)";
 
 /** settings.oats.aweb.attribution: absent means none, today's behaviour. */
 export function attributionMode(settings = {}) {
@@ -53,7 +53,7 @@ const NO_CHAIN = new Set(["legacy_no_chain", "unregistered_identity"]);
 
 /** The fix a failing issuer chain names, by who the issuer is. */
 const fixFor = (issuer) => issuer.kind === "steward"
-  ? "bind the human again, which issues the steward again (a browser approval by the person, driven by the setup expert; needs aweb Cloud; not yet available)"
+  ? "bind the human again, which issues the steward again (`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud)"
   : "retire the spawner and spawn from a valid instance, or from a shell so the deployment's steward issues";
 
 /** One line saying why a chain refuses, then its fix after an arrow. */

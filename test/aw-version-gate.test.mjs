@@ -36,25 +36,33 @@ test("versions compare on major.minor.patch, so a release candidate of the marke
   assert.equal(awAtLeast("no version", "1.36.53"), false);
 });
 
-// The shipped files: what their aw-min 1.36.53 sections may hold, and that
-// every chain command they cite is in one.
+// The shipped files: what their aw-min sections may hold, and that every
+// command that needs a newer aw than the floor is in one. aw 1.36.53 brought
+// the identity-chain commands; aw 1.36.54 brought `aw id request`, which the
+// bind (`oats aweb setup --steward`) carries the steward's request with.
 import { readFileSync } from "node:fs";
 const CAPABILITY = new URL("../oats-package/capabilities/oats-aweb/", import.meta.url);
 const SHIPPED = [new URL("skills/oats-aweb/SKILL.md", CAPABILITY), new URL("bin/oats-aweb.mjs", CAPABILITY), new URL("../README.md", import.meta.url)];
 const awCommands = (text) => [...text.matchAll(/`(aw\s[^`]+)`/g)].map((m) => m[1]).concat([...text.matchAll(/\["aw",\s*"([a-z-]+)"(?:,\s*"([a-z-]+)")?(?:,\s*"([a-z-]+)")?/g)].map((m) => ["aw", ...m.slice(1).filter(Boolean)].join(" ")));
 const CHAIN = /^aw (who\b|id (child|parent)\b)/;
+const ID_REQUEST = /^aw id request\b/;
+const ALLOWED = { "1.36.53": [CHAIN], "1.36.54": [CHAIN, ID_REQUEST] };
 
-test("an aw-min 1.36.53 section in the shipped files cites only aw's identity-chain commands", () => {
+test("an aw-min section in the shipped files is 1.36.53 or 1.36.54 and cites only the commands that version brought", () => {
+  const seen = new Set();
   for (const file of SHIPPED) for (const section of splitByAwMin(readFileSync(file, "utf8")).gated) {
-    assert.equal(section.min, "1.36.53", file.pathname);
-    for (const cmd of awCommands(section.text)) assert.match(cmd, CHAIN, `${file.pathname}: ${cmd} is gated but is not a chain command`);
+    assert.ok(ALLOWED[section.min], `${file.pathname}: aw-min ${section.min}`);
+    seen.add(section.min);
+    for (const cmd of awCommands(section.text)) assert.ok(ALLOWED[section.min].some((re) => re.test(cmd)), `${file.pathname}: ${cmd} is gated at ${section.min} but that aw didn't bring it`);
   }
+  assert.deepEqual([...seen].sort(), ["1.36.53", "1.36.54"]);
 });
 
-test("every identity-chain command the shipped files cite is inside an aw-min 1.36.53 section", () => {
+test("every identity-chain command the shipped files cite is inside an aw-min section, and every `aw id request` inside a 1.36.54 one", () => {
   for (const file of SHIPPED) {
-    const outside = awCommands(splitByAwMin(readFileSync(file, "utf8")).ungated).filter((cmd) => CHAIN.test(cmd));
-    assert.deepEqual(outside, [], file.pathname);
+    const { ungated, gated } = splitByAwMin(readFileSync(file, "utf8"));
+    assert.deepEqual(awCommands(ungated).filter((cmd) => CHAIN.test(cmd) || ID_REQUEST.test(cmd)), [], file.pathname);
+    for (const section of gated.filter((g) => g.min !== "1.36.54")) assert.deepEqual(awCommands(section.text).filter((cmd) => ID_REQUEST.test(cmd)), [], file.pathname);
   }
 });
 

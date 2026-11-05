@@ -25,16 +25,60 @@ it on never changes another.
   `aw who` in a child shows the human, then the steward, then each spawning
   instance, then the child.
 
+<!-- /aw-min -->
+<!-- aw-min 1.36.54 -->
+
 **Binding a human** records who the deployment's instances trace to:
 host-only `human: {id, label}` and `steward: {id, home}` in `oats-local.yaml`,
-and `attribution: human`. The bind is a browser approval by the person, driven
-by the setup expert; it needs aweb Cloud and is not yet available.
+then `attribution: human`. The setup expert runs every command; the person's
+only act is one click in aweb Cloud.
 
+```text
+AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb setup --steward --name <alias> [--label "<their name>"] [--wait <seconds>]
+```
+
+1. The key and URL are the dashboard line of the account whose human will
+   approve the steward: aweb Cloud accepts only that human, the steward's
+   recorded creator. The key is the team's API key, not a person's token, and
+   reaches only the steward's init.
+2. The first run makes the steward, an ordinary global self-custodial agent in
+   `<deployment>/.aweb-stewards/<alias>`, the way `oats aweb resident create`
+   makes a resident, with no custody unit and no grant seats. It signs the
+   steward's own parent request (`aw id parent request`) and submits it to
+   aweb Cloud (`aw id request`), with the deployment label
+   `<workspace name>-<short hostname>` beside it, never inside it.
+3. It stops with `E_BIND_PENDING`, the approval link and what the page shows:
+   the agent's address, the domain, the deployment label (marked as supplied
+   by the agent) and the key fingerprint. The setup expert tells the person
+   all four before the click.
+4. After the click, the same command imports the issued chain
+   (`aw id parent import`), checks it with `aw who`, and records the bind.
+   `--wait <seconds>` waits that long for the click instead.
+
+A rerun continues the same request from the steward's `.oats-bind`; it never
+signs or submits a second one. A declined, expired, replaced or revoked
+request is reported (`E_BIND_DECLINED`, `E_BIND_EXPIRED`, `E_BIND_SUPERSEDED`,
+`E_BIND_REVOKED`), never submitted again: to ask again, remove that directory.
+Nothing is recorded until the import verifies.
+
+- An account with no person yet can't bind: nobody can approve. It refuses
+  `E_BIND_NO_HUMAN`; the person attaches themselves first (/oats-aweb,
+  "attach yourself to the account").
+- **Undo:** the person revokes the steward's certificate from the dashboard.
+  Attach and spawns then refuse by the revoked-parent rule, naming the fix.
+- The steward's aweb Cloud agent id is the one aw's workspace status reports
+  in its home; aweb Cloud's 404 for it refuses `E_BIND_AGENT_NOT_FOUND`.
+- A label over 120 characters, or one aweb Cloud would change, refuses
+  `E_BIND_LABEL`; it is never shortened.
 - With no human bound, everything works as today.
 - The steward lives outside instance homes and is never passed in an
   instance's environment.
 - One bound human per deployment.
-- A self-custodial human can't be a steward parent.
+- A self-custodial human can't be a steward parent. The bind needs aweb
+  Cloud and aw 1.36.54 or later, the first with `aw id request`.
+
+<!-- /aw-min -->
+<!-- aw-min 1.36.53 -->
 
 Mode `human` needs a kernel that lists the `spawn-attribution` feature, and
 aw 1.36.53 or later, the first release with identity chains. Without them,

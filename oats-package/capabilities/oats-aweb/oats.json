@@ -178,15 +178,15 @@
       "hostOnly": true,
       "default": "none",
       "values": ["none", "human"],
-      "description": "Spawn attribution, a per-deployment opt-in set only in this deployment's oats-local.yaml (never in oats-workspace.yaml, so one deployment never changes another). none (default): instances are spawned as before, with no identity chain. human: every spawned instance gets an aw identity chain to the deployment's bound human, issued by the instance that spawned it, or by the deployment's steward when a person spawned. Needs a kernel with the spawn-attribution feature and a bound human (the bind, a browser approval by the person driven by the setup expert, needs aweb Cloud and is not yet available); spawns refuse otherwise, naming the fix."
+      "description": "Spawn attribution, a per-deployment opt-in set only in this deployment's oats-local.yaml (never in oats-workspace.yaml, so one deployment never changes another). none (default): instances are spawned as before, with no identity chain. human: every spawned instance gets an aw identity chain to the deployment's bound human, issued by the instance that spawned it, or by the deployment's steward when a person spawned. Needs a kernel with the spawn-attribution feature and a bound human (the bind, `oats aweb setup --steward`, run by the setup expert and approved by the person in aweb Cloud); spawns refuse otherwise, naming the fix."
     },
     "human": {
       "hostOnly": true,
-      "description": "Host-owned record of the human bound to this deployment, written by the bind: id (their did:aw) and label (one line). One human per deployment."
+      "description": "Host-owned record of the human bound to this deployment, written by the bind (`oats aweb setup --steward`): id (their did:aw) and label (one line, optional). One human per deployment."
     },
     "steward": {
       "hostOnly": true,
-      "description": "Host-owned record of the deployment's steward, the agent identity the bound human approved at the bind and which issues every instance a person spawns: id (its did:aw) and home (the absolute directory whose .aw holds it, outside instance homes). Written by the bind; never passed to an instance."
+      "description": "Host-owned record of the deployment's steward, the agent identity the bound human approved at the bind and which issues every instance a person spawns: id (its did:aw) and home (the absolute directory whose .aw holds it, outside instance homes). Written by the bind (`oats aweb setup --steward`); never passed to an instance."
     },
     "health": {
       "hostOnly": true,
