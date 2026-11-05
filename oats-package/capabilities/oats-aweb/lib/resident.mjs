@@ -100,10 +100,10 @@ export function rootState(root) {
 const needsInit = (state) => state === "create" || state === "continue" || state === "rejected";
 
 /** The key, from AWEB_API_KEY or a prompt that does not echo. */
-async function readKey({ env, stdin, stderr, name }) {
+async function readKey({ env, stdin, stderr, rerun }) {
   const fromEnv = typeof env.AWEB_API_KEY === "string" ? env.AWEB_API_KEY.trim() : "";
   const key = fromEnv || (stdin.isTTY && stderr.isTTY ? await promptHidden(stdin, stderr) : undefined);
-  if (key === undefined) throw failure("E_RESIDENT_KEY", "key", `no AWEB_API_KEY in the environment and no terminal to ask for it on: run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
+  if (key === undefined) throw failure("E_RESIDENT_KEY", "key", `no AWEB_API_KEY in the environment and no terminal to ask for it on: run AWEB_API_KEY=<key> AWEB_URL=<url> ${rerun}`);
   if (!key) throw failure("E_RESIDENT_KEY", "key", "no API key was entered");
   if (key.length > MAX_KEY_LENGTH || /[\x00-\x1f\x7f]/.test(key)) throw failure("E_RESIDENT_KEY", "key", `the API key must be one line of at most ${MAX_KEY_LENGTH} characters`);
   return key;
@@ -307,6 +307,76 @@ function recordTeam(deployment, env, opts, team, { root, custody, localYaml }) {
   return { teamLabel: { ...result, default: "kept" }, other: doc.defaultTeam, defaultStep: `oats teams default ${label}` };
 }
 
+/** aw on PATH at or above the floor, and its read-only calls in `root`. Every
+ *  aw child but init runs with PATH and HOME, and the init's registry when one
+ *  is set: no key, no identity selector. */
+export async function globalIdentityTools(env, root) {
+  const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
+  const floor = await awFloorMessage({ env: readEnv });
+  if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
+  const aw = onPath("aw", env);
+  if (!aw) throw failure("E_RESIDENT_AW_FLOOR", "aw", "aw is not on PATH");
+  const read = (args) => {
+    const r = spawnSync(aw, args, { cwd: root, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
+    if (r.status !== 0) throw new Error(`aw ${args.slice(0, 2).join(" ")} ${r.error ? `failed: ${r.error.code}` : `exited ${r.status}`}${r.stderr ? `: ${String(r.stderr).trim().slice(0, 300)}` : ""}`);
+    return r.stdout;
+  };
+  const readJson = (args, what, stage = "verify") => {
+    try { return parseAwJson(read(args), what); }
+    catch (e) { throw failure("E_RESIDENT_VERIFY", stage, `${what}: ${e.message}`); }
+  };
+  return { aw, readEnv, read, readJson };
+}
+
+/** Makes the global identity `name` in `root` with one `aw init --global` run
+ *  when `state` needs it (else takes `known`, the identity already there), then
+ *  verifies it with the key absent. Shared by resident create and the
+ *  deployment's steward; `rerun` is the command a missing key names, and the
+ *  init's captures are pushed to `captures`. */
+export async function initGlobalIdentity({ root, name, state, known, aw, read, readJson, env, stdin, stderr, captures, rerun }) {
+  // ---- key and init
+  let identity;
+  if (needsInit(state)) {
+    let key = await readKey({ env, stdin, stderr, rerun });
+    let scrub = scrubber([key, env.AWEB_API_KEY]);
+    const childEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AWEB_URL: env.AWEB_URL, AWEB_API_KEY: key, AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    const r = spawnSync(aw, INIT_ARGS(name), { cwd: root, env: childEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: INIT_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
+    // The key is held for this child only: aw's streams are scrubbed of it
+    // here, before anything else reads them, and then it is dropped.
+    const stdoutText = scrub(r.stdout || ""), stderrText = scrub(r.stderr || "");
+    const written = writeCaptures(root, r, scrub);
+    key = undefined; childEnv.AWEB_API_KEY = undefined; scrub = undefined;
+    captures.push(...written.files);
+    if (r.error || r.status !== 0) {
+      let after;
+      try { after = rootState(root).state; } catch { after = "other"; }
+      const partial = join(root, ".aw", "partial-init.yaml");
+      const awText = stderrText.trim() || stdoutText.trim() || `aw init ${written.exit}`;
+      const details = { root, captures, partial: existsSync(partial) ? partial : null };
+      // Nothing minted: a rerun inits again, once what aw reports is fixed.
+      if (after === "create") throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nnothing was created; fix what aw reports above, then rerun the same command (aw's output is kept in ${captures[1]})`, details);
+      if (!["continue", "rejected", "adopt"].includes(after)) {
+        throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nprovisioning left nothing to continue; ${root} contains ${readdirSync(root).sort().join(", ") || "nothing"}; contact aweb with ${captures[1]}`, details);
+      }
+      throw failure("E_RESIDENT_INIT", "init", awText, details);
+    }
+    let answer;
+    try { answer = parseAwJson(stdoutText, "aw init"); }
+    catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
+    identity = checkInitAnswer(answer, name);
+  } else {
+    identity = known;
+  }
+
+  // ---- verify, with the key absent
+  const doctor = identityDoctor(readJson(["doctor", "identity", "--offline", "--json"], "aw doctor identity --offline"), name);
+  if (identity.team && identity.team !== doctor.team) throw failure("E_RESIDENT_VERIFY", "verify", `aw init answered team ${identity.team}, but the identity on disk is in ${doctor.team}`);
+  const team = doctor.team;
+  const warnings = registryWarnings(read);
+  return { identity, team, warnings };
+}
+
 /** The whole command. Returns the result document; throws a staged failure. */
 export async function createResident(opts, { env, stdin, stderr, platform }) {
   const { name } = opts;
@@ -325,22 +395,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     const recorded = typeof residents[name] === "string" ? residents[name] : undefined;
     if (recorded !== undefined && !samePath(recorded, root)) throw failure("E_RESIDENT_ROOT", "preflight", `settings.oats.aweb.residents.${name} already records ${recorded}, not ${root}: pass --root ${recorded} to verify that resident, or choose another name`);
 
-    // Every aw child but init runs with PATH and HOME, and the init's registry
-    // when one is set: no key, no identity selector.
-    const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
-    const floor = await awFloorMessage({ env: readEnv });
-    if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
-    const aw = onPath("aw", env);
-    if (!aw) throw failure("E_RESIDENT_AW_FLOOR", "aw", "aw is not on PATH");
-    const read = (args) => {
-      const r = spawnSync(aw, args, { cwd: root, env: readEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
-      if (r.status !== 0) throw new Error(`aw ${args.slice(0, 2).join(" ")} ${r.error ? `failed: ${r.error.code}` : `exited ${r.status}`}${r.stderr ? `: ${String(r.stderr).trim().slice(0, 300)}` : ""}`);
-      return r.stdout;
-    };
-    const readJson = (args, what, stage = "verify") => {
-      try { return parseAwJson(read(args), what); }
-      catch (e) { throw failure("E_RESIDENT_VERIFY", stage, `${what}: ${e.message}`); }
-    };
+    const { aw, read, readJson } = await globalIdentityTools(env, root);
 
     // ---- preflight: nothing here has a remote effect
     const where = { platform, uid: process.getuid?.(), home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
@@ -415,46 +470,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
       };
     }
 
-    // ---- key and init
-    let identity;
-    if (needsInit(state)) {
-      let key = await readKey({ env, stdin, stderr, name });
-      let scrub = scrubber([key, env.AWEB_API_KEY]);
-      const childEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AWEB_URL: env.AWEB_URL, AWEB_API_KEY: key, AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
-      mkdirSync(root, { recursive: true, mode: 0o700 });
-      const r = spawnSync(aw, INIT_ARGS(name), { cwd: root, env: childEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: INIT_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
-      // The key is held for this child only: aw's streams are scrubbed of it
-      // here, before anything else reads them, and then it is dropped.
-      const stdoutText = scrub(r.stdout || ""), stderrText = scrub(r.stderr || "");
-      const written = writeCaptures(root, r, scrub);
-      key = undefined; childEnv.AWEB_API_KEY = undefined; scrub = undefined;
-      captures.push(...written.files);
-      if (r.error || r.status !== 0) {
-        let after;
-        try { after = rootState(root).state; } catch { after = "other"; }
-        const partial = join(root, ".aw", "partial-init.yaml");
-        const awText = stderrText.trim() || stdoutText.trim() || `aw init ${written.exit}`;
-        const details = { root, captures, partial: existsSync(partial) ? partial : null };
-        // Nothing minted: a rerun inits again, once what aw reports is fixed.
-        if (after === "create") throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nnothing was created; fix what aw reports above, then rerun the same command (aw's output is kept in ${captures[1]})`, details);
-        if (!["continue", "rejected", "adopt"].includes(after)) {
-          throw failure("E_RESIDENT_NOTHING_TO_CONTINUE", "init", `${awText}\nprovisioning left nothing to continue; ${root} contains ${readdirSync(root).sort().join(", ") || "nothing"}; contact aweb with ${captures[1]}`, details);
-        }
-        throw failure("E_RESIDENT_INIT", "init", awText, details);
-      }
-      let answer;
-      try { answer = parseAwJson(stdoutText, "aw init"); }
-      catch (e) { throw failure("E_RESIDENT_VERIFY", "verify", e.message, { root, captures }); }
-      identity = checkInitAnswer(answer, name);
-    } else {
-      identity = known;
-    }
-
-    // ---- verify, with the key absent
-    const doctor = identityDoctor(readJson(["doctor", "identity", "--offline", "--json"], "aw doctor identity --offline"), name);
-    if (identity.team && identity.team !== doctor.team) throw failure("E_RESIDENT_VERIFY", "verify", `aw init answered team ${identity.team}, but the identity on disk is in ${doctor.team}`);
-    const team = doctor.team;
-    const warnings = registryWarnings(read);
+    const { identity, team, warnings } = await initGlobalIdentity({ root, name, state, known, aw, read, readJson, env, stdin, stderr, captures, rerun: `oats aweb resident create ${name}` });
 
     // ---- custody
     const label = custodyLabel(identity.address, name);
