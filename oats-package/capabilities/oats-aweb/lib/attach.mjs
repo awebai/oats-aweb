@@ -393,6 +393,10 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
     const listing = listHomes();
     if (!listing?.known) return later("E_ATTACH_FAILED", `the deployment's homes could not be read (${listing?.reason || "no listing"}), so its parent can't be chosen`);
     const listed = { byHome: new Map(listing.rows.map((r) => [resolve(r.home), r])), byName: new Map(listing.rows.map((r) => [r.instance, r])) };
+    // A home the deployment doesn't list is never touched, its own start's
+    // included; paths compare as real paths, so a link can't hide one.
+    const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+    if (!listing.rows.some((r) => real(r.home) === real(home))) return later("E_ATTACH_FAILED", "this home is not among the homes `oats status` lists for this deployment, so attach never touches it");
     const line = ancestorRows(home, listed);
     if (!line.complete) return later("E_ATTACH_FAILED", `its line of recorded parents is longer than ${MAX_ANCESTRY}, so its parent can't be chosen`);
     const facts = [{ instance, home }, ...line.rows].map((row) => homeFacts(run, row));

@@ -3,7 +3,7 @@
 // home's lock left by a start that died is taken over.
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -73,6 +73,26 @@ test("a start that can't read the deployment's listing waits, warning, with no e
   const r = fx.start(c, "c", () => ({ known: false, reason: "oats status did not answer" }));
   assert.match(r.note, /\(E_ATTACH_FAILED\).*oats status did not answer.*the next start tries again/);
   assert.equal(inviteCwd(fx.fake), undefined);
+});
+
+test("a start never attaches its own home when oats status doesn't list it: no aw call, no provider state", (t) => {
+  for (const listHomes of ["self excluded", "empty"]) {
+    const fx = deployment(t);
+    const c = fx.home("c", { spawnedBy: null });
+    const r = fx.start(c, "c", listHomes === "empty" ? () => ({ known: true, rows: [] }) : fx.listing(["c"]));
+    assert.equal(r.attach, undefined, listHomes);
+    assert.match(r.note, /\(E_ATTACH_FAILED\): this home is not among the homes `oats status` lists for this deployment, so attach never touches it/, listHomes);
+    assert.deepEqual(fx.fake.calls(), [], listHomes);
+    assert.equal(existsSync(join(c, ".oats-aweb")), false, listHomes);
+    assert.equal(existsSync(join(c, ".aw", "id-chain.json")), false, listHomes);
+  }
+  // Listed through a link to it, the same home is its own.
+  const fx = deployment(t);
+  const c = fx.home("c", { spawnedBy: null });
+  const link = join(fx.ws, "link-to-c");
+  symlinkSync(c, link);
+  assert.deepEqual(fx.start(c, "c", () => ({ known: true, rows: [{ instance: "c", home: link }] })), { attach: undefined, note: null });
+  assert.equal(existsSync(join(c, ".aw", "id-chain.json")), true);
 });
 
 test("a home's lock left by a start that died is taken over; a running one still refuses", (t) => {
