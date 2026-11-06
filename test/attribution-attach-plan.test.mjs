@@ -78,6 +78,22 @@ test("plan: a refused or skipped parent refuses its children, naming the parent"
   assert.equal(p.broken.code, "E_ATTACH_FAILED");
 });
 
+test("plan: an ancestor whose status can't be read never lets the steward stand in as the parent", () => {
+  // A did:aw takes its nearest did:aw ancestor; one whose `aw who` failed may be that ancestor, so the parent can't be chosen yet.
+  const unread = (instance, record) => ({ ...chainless(instance, record), who: undefined, whoError: "aw who failed" });
+  const awChild = (instance, record) => ({ ...chainless(instance, record), who: { ...legacy(instance), id: `did:aw:${instance}`, reason: "unregistered_identity" } });
+  const direct = byName(plan([unread("p", spawnedBy(null)), awChild("g", spawnedBy("p"))]));
+  assert.deepEqual([direct.g.status, direct.g.code, direct.g.reason, direct.g.parent], ["refused", "E_ATTACH_FAILED", "parent_unread", undefined]);
+  assert.match(direct.g.message, /p could not be read/);
+  const intermediate = byName(plan([{ ...chainless("top", spawnedBy(null)), who: verified("did:aw:top"), chainFile: true }, unread("mid", spawnedBy("top")), awChild("g", spawnedBy("mid"))]));
+  assert.deepEqual([intermediate.g.status, intermediate.g.code, intermediate.g.reason], ["refused", "E_ATTACH_FAILED", "parent_unread"]);
+  const unavailable = byName(plan([{ ...chainless("p", spawnedBy(null)), who: { ...legacy("p"), outcome: "unavailable", reason: "registry_unreachable" } }, awChild("g", spawnedBy("p"))]));
+  assert.deepEqual([unavailable.g.status, unavailable.g.reason], ["refused", "parent_unread"]);
+  // A did:key child's parent is its spawner whatever its id: it waits for that parent to attach.
+  const keyChild = byName(plan([unread("p", spawnedBy(null)), chainless("k", spawnedBy("p"))]));
+  assert.deepEqual([keyChild.k.status, keyChild.k.reason, keyChild.k.parent.instance], ["refused", "parent_not_attached", "p"]);
+});
+
 test("revision: the same facts give the same revision; a changed home gives another", () => {
   const facts = [chainless("lead", spawnedBy(null))];
   assert.match(plan(facts).planRevision, /^[a-f0-9]{24}$/);

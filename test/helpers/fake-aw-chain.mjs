@@ -7,6 +7,7 @@
 //
 // Controls, per identity, as files in its `.aw`:
 //   fake-who.json      `aw who --json` answers exactly this
+//   fake-who-fail      `aw who` fails, as when the registry can't be asked
 // and by env:
 //   FAKE_APPROVE_REFUSE=<reason>  `id child approve` refuses with that reason
 //   FAKE_CHAIN_PAD=<n>            approve pads the child certificate by n bytes
@@ -44,6 +45,7 @@ const writeOut = (file, data) => { if (fs.existsSync(file)) refuse("refusing to 
 if (args[0] === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.53-rc.3") + " fixture"); process.exit(0); }
 if (args[0] === "who" && process.env.FAKE_NO_WHO) { console.error('Error: unknown command "who" for "aw"'); process.exit(1); }
 if (args[0] === "who") {
+  if (fs.existsSync(path.join(aw, "fake-who-fail"))) refuse("identity registry request failed");
   if (fs.existsSync(path.join(aw, "fake-who.json"))) { console.log(fs.readFileSync(path.join(aw, "fake-who.json"), "utf8")); process.exit(0); }
   const c = chain();
   if (!c) { emit({ id: idOf(), domain: "", outcome: "unknown", human_id: null, identity_valid: null, kind: null, reason: "legacy_no_chain" }); process.exit(0); }

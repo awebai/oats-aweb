@@ -120,7 +120,11 @@ export function buildPlan({ deployment, settings, origins, homes, stewardStatus 
   for (const n of attachParents(nodes)) {
     const f = n.facts, own = ownStatus(f);
     const entry = { instance: n.instance, home: n.home, did: n.did || null, ...own };
-    if (own.status === "attach") {
+    // Any ancestor whose id can't be read may be the parent itself: never
+    // choose another, the steward included, until it can be read.
+    const unread = own.status === "attach" ? n.parentChosenFrom.filter((a) => a.facts.whoError || a.facts.who?.outcome === "unavailable") : [];
+    if (unread.length) Object.assign(entry, { status: "refused", code: "E_ATTACH_FAILED", reason: "parent_unread", message: `the status of its recorded parents ${unread.map((a) => a.instance).join(", ")} could not be read, so its parent can't be chosen yet → retry once the identity registry answers` });
+    else if (own.status === "attach") {
       const parent = n.parent ? entries.get(n.parent.home) : null;
       entry.parent = parent ? { instance: parent.instance, home: parent.home, id: parent.did } : { steward: true, home: settings.steward.home, id: settings.steward.id };
       // The spawner the record names, not the certificate parent: a did:aw

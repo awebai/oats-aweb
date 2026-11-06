@@ -101,7 +101,8 @@ const recordedSpawner = (s) => (s && typeof s === "object" && typeof s.instance 
  * nodes in attach order, parents first, each with `parent` (a node, or null
  * for the steward) and `spawnParent`: the node its record names, before the
  * did:aw rule (a rule about who spawned it, such as a grant seat's children
- * never being issued, looks there).
+ * never being issued, looks there), and `parentChosenFrom`: the ancestors
+ * whose ids chose `parent`.
  */
 export function attachParents(nodes) {
   // Paths compare resolved, so a recorded `..` can't name a home it isn't.
@@ -111,16 +112,21 @@ export function attachParents(nodes) {
     if (Object.hasOwn(record, "spawnedBy")) { const s = recordedSpawner(record.spawnedBy); return (s && byHome.get(resolve(s.home))) || null; }
     return (typeof record.parentInstance === "string" && byName.get(record.parentInstance)) || null;
   };
+  // The parent, and the ancestors whose ids chose it: a did:aw's walk; a
+  // did:key's parent is its spawner whatever its id.
   const parentOf = (n) => {
     let p = spawnParent(n);
-    if (!String(n.did).startsWith("did:aw:")) return p;
+    if (!String(n.did).startsWith("did:aw:")) return { parent: p, read: [] };
+    const read = [];
     for (const seen = new Set([n]); p && !String(p.did).startsWith("did:aw:"); p = spawnParent(p)) {
-      if (seen.has(p)) return null;
+      if (seen.has(p)) return { parent: null, read };
       seen.add(p);
+      read.push(p);
     }
-    return p;
+    return { parent: p, read: p ? [...read, p] : read };
   };
-  const parents = new Map(nodes.map((n) => [n, parentOf(n)]));
+  const choices = new Map(nodes.map((n) => [n, parentOf(n)]));
+  const parents = new Map([...choices].map(([n, c]) => [n, c.parent]));
   // Parents first. A record that loops back on itself has no real spawner,
   // so the steward issues where the loop closes.
   const ordered = [], placed = new Set();
@@ -130,7 +136,7 @@ export function attachParents(nodes) {
     const p = parents.get(n);
     if (p) place(p, path);
     placed.add(n);
-    ordered.push({ ...n, parent: p && placed.has(p) && p !== n ? p : null, spawnParent: spawnParent(n) });
+    ordered.push({ ...n, parent: p && placed.has(p) && p !== n ? p : null, spawnParent: spawnParent(n), parentChosenFrom: choices.get(n).read });
   };
   for (const n of nodes) place(n);
   return ordered;

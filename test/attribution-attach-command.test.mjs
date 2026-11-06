@@ -105,6 +105,25 @@ test("a home `oats status` does not list is never touched, even when it sits in 
   assert.equal(fake.calls().some((c) => c.cwd === stray), false);
 });
 
+test("a did:aw whose parent's `aw who` fails is refused for now, never issued under the steward in its place", (t) => {
+  const fx = deployment(t, { instances: { p: { spawnedBy: null }, g: { spawnedBy: null } } });
+  writeFileSync(join(fx.homes.g, "instance.json"), JSON.stringify({ instance: "g", spawnedBy: { instance: "p", home: fx.homes.p }, capabilityMeta: { "oats.aweb": { identity: { mode: "local" } } } }));
+  const g = homeKeyIds(fx.homes.g).stableId;
+  writeFileSync(join(fx.homes.g, ".aw", "did"), g);
+  writeFileSync(join(fx.homes.g, ".aw", "fake-who.json"), JSON.stringify({ id: g, outcome: "unknown", human_id: null, identity_valid: null, kind: null, reason: "unregistered_identity" }));
+  writeFileSync(join(fx.homes.p, ".aw", "fake-who-fail"), "");
+  const fake = fakeAwChain(t);
+  const plan = attach(fx, fake, ["--plan"]);
+  assert.equal(plan.status, 0, JSON.stringify(plan.doc) + plan.stderr);
+  const byName = Object.fromEntries(plan.doc.result.homes.map((h) => [h.instance, h]));
+  assert.deepEqual([byName.g.status, byName.g.code, byName.g.reason, byName.g.parent], ["refused", "E_ATTACH_FAILED", "parent_unread", undefined]);
+  assert.equal(byName.p.code, "E_ATTACH_FAILED");
+  const applied = attach(fx, fake, ["--plan-revision", plan.doc.result.planRevision, "--idempotency-key", "unread"]);
+  assert.equal(applied.status, 0, JSON.stringify(applied.doc) + applied.stderr);
+  assert.equal(fake.calls().some((c) => c.args[0] === "id" && c.args[1] === "child"), false, "nothing is issued");
+  assert.equal(existsSync(join(fx.homes.g, ".aw", "id-chain.json")), false);
+});
+
 test("usage: plan or apply, never both or neither", (t) => {
   const fx = deployment(t, { instances: {} });
   const fake = fakeAwChain(t);
