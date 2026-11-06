@@ -182,6 +182,18 @@ test("launch: the mode is this host's now, not the spawn's: workspace-committed 
   assert.equal(Object.hasOwn(r.doc.meta, "attach"), false);
 });
 
+test("launch: a deployment that never opted in looks as it does today: no block on this host, no warning and no attach call", (t) => {
+  for (const host of [null, "schemaVersion: 2\nworkspace: fixture\n"]) {
+    const fx = fixture(t, { host });
+    if (host === null) rmSync(join(fx.ws, "oats-local.yaml"));
+    const r = launch(fx, { captured: {} });
+    assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+    assert.doesNotMatch(r.doc.warning || "", /attribution|attach|oats-local\.yaml/, String(host));
+    assert.deepEqual(idCalls(fx.fake), [], String(host));
+    assert.equal(Object.hasOwn(r.doc.meta, "attach"), false);
+  }
+});
+
 test("launch: a home spawned in mode human whose host has since opted out is issued nothing", (t) => {
   const fx = fixture(t, { host: { attribution: "none", human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: join(tmpdir(), "unused") } } });
   const r = launch(fx);
