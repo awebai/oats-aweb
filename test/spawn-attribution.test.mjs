@@ -119,7 +119,7 @@ test("refuse: an aw without `aw who` names the aw upgrade, not a registry retry"
 test("chainless: a local spawner with no chain files and no recorded chain creates a chainless child with a warning", () => {
   const verdict = classifyIssuer({ issuer: { kind: "spawner" }, who: { ...failed("legacy_no_chain"), identity_valid: null }, chainFiles: false, recordedChainInstalled: false });
   assert.equal(verdict.action, "chainless");
-  assert.match(verdict.warning, /the spawner has no identity chain \(it predates the human binding\), so this child is created without one and reports unknown; respawn the spawner to give its children a chain/);
+  assert.match(verdict.warning, /the spawner has no identity chain \(it predates the human binding\), so this child is created without one and reports unknown; attach the spawner \(the setup expert runs `oats aweb attribution attach`\) to give its children a chain/);
 });
 
 test("refuse: a spawner whose spawn meta says a chain was installed but whose chain files are gone", () => {
@@ -205,7 +205,7 @@ test("readiness: bound mode names the human and counts the local spawners withou
   assert.equal(r.chainlessSpawners, 1);
   assert.deepEqual(r.human, { id: HUMAN, label: "Juan" });
   assert.deepEqual(r.steward, { id: STEWARD });
-  assert.equal(r.message, "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; 1 instance has no chain (b), so its children are created chainless and report unknown until it is respawned");
+  assert.equal(r.message, "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; 1 instance has no chain (b), so its children are created chainless and report unknown until it is attached: `oats aweb attribution attach`");
   const unknown = attributionReadiness({ settings, homes: { known: false, reason: "oats status timed out" }, hasChain: () => true, isLocal: () => true });
   assert.equal(unknown.chainlessSpawners, null);
   assert.match(unknown.message, /instances without a chain: unknown \(oats status timed out\)/);
@@ -219,7 +219,7 @@ test("home readiness warns only when there is something to act on (oats#881); mo
   assert.equal(ready(bound, "/h/a", { chain: true }), null);
   assert.equal(ready(bound, "/h/g", { local: false }), null);
   assert.equal(ready(bound, undefined), null);
-  assert.deepEqual(ready(bound, "/h/a"), { code: "attribution", message: "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; this instance has no chain, so its children are created chainless and report unknown until it is respawned" });
+  assert.deepEqual(ready(bound, "/h/a"), { code: "attribution", message: "attribution: human — bound to Juan (did:aw:human1) through steward did:aw:steward1; this instance has no chain, so its children are created chainless and report unknown until it is attached: `oats aweb attribution attach`" });
   for (const home of ["/h/a", undefined]) {
     assert.deepEqual(ready({ attribution: "human" }, home), { code: "attribution", message: 'attribution: human — no human bound yet: bind a human to this deployment (`oats aweb setup --steward --name <alias>`, run by the setup expert; the person approves the steward in aweb Cloud), or set attribution: none' });
   }

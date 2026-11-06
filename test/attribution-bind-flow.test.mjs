@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { CLOUD, HUMAN, STEWARD, fakeBindAw, seedSteward } from "./helpers/fake-aw-bind.mjs";
+import { readHostAttribution } from "../oats-package/capabilities/oats-aweb/lib/local-settings.mjs";
 
 const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
 const KEY = "aw_sk_bind_KEYVALUE_77a1";
@@ -102,6 +103,8 @@ test("after the click, a rerun continues the same request: it imports the chain 
   assert.match(yaml, new RegExp(`steward:\\n {6}"id": "${STEWARD.stableId}"\\n {6}"home": "${fx.steward.replace(/[.]/g, "\\.")}"`));
   assert.match(yaml, new RegExp(`human:\\n {6}"id": "${HUMAN}"\\n {6}"label": "Ana Example"`));
   assert.ok(yaml.trimEnd().endsWith('attribution: "human"'), "attribution is turned on last");
+  // What the bind records is what a start reads back.
+  assert.deepEqual(readHostAttribution(fx.deployment), { settings: { attribution: "human", human: { id: HUMAN, label: "Ana Example" }, steward: { id: STEWARD.stableId, home: fx.steward } } });
 });
 
 test("without --label the human is recorded by id alone", (t) => {

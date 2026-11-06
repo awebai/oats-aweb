@@ -175,3 +175,101 @@ export function recordAwebScalar(name, value, { start = process.env.OATS_WORKSPA
   lines[at] = row + (parsed[2] ? ` ${parsed[2].trim()}` : "");
   atomicWrite(file, `${lines.join("\n")}\n`);
 }
+
+const HOST_MAPS = { human: ["id", "label"], steward: ["id", "home"] };
+const ENTRY_KEY = /^(?:"([^"\\]*)"|'([^']*)'|([A-Za-z0-9_.-]+))[ \t]*:(.*)$/;
+/** An entry's scalar as recordAwebSetting writes or replaces it: a one-line
+ *  plain value, or a quoted one that may continue on deeper lines; undefined
+ *  for anything else. */
+function hostScalar(tail, more) {
+  const text = tail.trim();
+  if (text.startsWith('"') || text.startsWith("'")) {
+    const quote = text[0];
+    let out = "", rest = text.slice(1), next = 0;
+    for (;;) {
+      for (let i = 0; i < rest.length; i++) {
+        const c = rest[i];
+        if (c === quote && quote === "'" && rest[i + 1] === "'") { out += "'"; i++; continue; }
+        if (c === quote) { const after = rest.slice(i + 1); return !after.trim() || /^\s+#/.test(after) ? out : undefined; }
+        if (quote === '"' && c === "\\") {
+          const e = rest[i + 1];
+          // An escaped line break joins the next line with no space.
+          if (e === undefined) { if (next >= more.length) return undefined; rest = more[next++].trimStart(); i = -1; continue; }
+          const simple = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", " ": " " }[e];
+          if (simple !== undefined) { out += simple; i++; continue; }
+          if (e === "u" && /^[0-9a-fA-F]{4}$/.test(rest.slice(i + 2, i + 6))) { out += String.fromCharCode(Number.parseInt(rest.slice(i + 2, i + 6), 16)); i += 5; continue; }
+          return undefined;
+        }
+        if (c < " ") return undefined;
+        out += c;
+      }
+      // An unescaped line break inside quotes folds to a space.
+      if (next >= more.length) return undefined;
+      out += " ";
+      rest = more[next++].trimStart();
+    }
+  }
+  if (more.length || !text || /^[|>&*!{}[\]%@`#,?"']/.test(text) || /^-(\s|$)/.test(text)) return undefined;
+  const value = text.replace(/\s+#.*$/, "");
+  return value === "null" || value === "~" || /:\s|:$/.test(value) ? undefined : value;
+}
+
+/**
+ * The host's attribution switch: `attribution`, `human` and `steward` from the
+ * deployment-level settings.oats.aweb block of `<deployment>/oats-local.yaml`,
+ * in the block style recordAwebSetting and recordAwebScalar write. Unlike the
+ * settings a launch hook is given, this is read here: attribution is
+ * host-only, so where it was set matters, and the kernel gives a start no
+ * origins of current settings. Returns {settings}; absent is `{}` (off), and
+ * any form outside that style is `{settings: {}, unreadable: true}` (off).
+ */
+export function readHostAttribution(deployment) {
+  const OFF = { settings: {} }, UNREADABLE = { settings: {}, unreadable: true };
+  let lines;
+  try { lines = readFileSync(join(deployment, "oats-local.yaml"), "utf8").split(/\r?\n/); } catch (e) { return e.code === "ENOENT" ? OFF : UNREADABLE; }
+  // A block's header, once: another, or one in flow style, is unreadable.
+  const header = (start, end, indent, names) => {
+    const at = findBlockHeader(lines, start, end, indent, names);
+    if (typeof at === "object" || at >= 0 && findBlockHeader(lines, at + 1, end, indent, names) !== -1) return { unreadable: true };
+    return { at };
+  };
+  const settings = header(0, lines.length, 0, ["settings"]);
+  if (settings.unreadable) return UNREADABLE;
+  if (settings.at < 0) return OFF;
+  const settingsEnd = blockEnd(lines, settings.at, 0);
+  const aweb = header(settings.at + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
+  if (aweb.unreadable) return UNREADABLE;
+  if (aweb.at < 0) return OFF;
+  const awebEnd = blockEnd(lines, aweb.at, 2);
+  const out = {}, content = (i) => lines[i].trim() && !lines[i].trimStart().startsWith("#");
+  /** The lines that continue the entry at `i`: deeper than `indent`, up to the next entry. */
+  const continuation = (i, indent) => { const more = []; for (let j = i + 1; j < awebEnd && (!content(j) || lines[j].startsWith(" ".repeat(indent + 1))); j++) if (content(j)) more.push(lines[j]); return more; };
+  for (let i = aweb.at + 1; i < awebEnd; i++) {
+    if (!content(i) || lines[i].startsWith("     ")) continue;
+    if (!lines[i].startsWith("    ") || /\t/.test(lines[i])) return UNREADABLE;
+    const m = ENTRY_KEY.exec(lines[i].slice(4));
+    if (!m) return UNREADABLE;
+    const key = m[1] ?? m[2] ?? m[3], tail = m[4];
+    if (key === "attribution") {
+      if (Object.hasOwn(out, key) || continuation(i, 4).length) return UNREADABLE;
+      const v = /^\s+("([^"\\]*)"|'([^']*)'|([A-Za-z0-9_-]+))(\s+#.*)?$/.exec(tail);
+      if (!v) return UNREADABLE;
+      out.attribution = v[2] ?? v[3] ?? v[4];
+    } else if (HOST_MAPS[key]) {
+      // recordAwebSetting finds the map by its plain header alone.
+      if (Object.hasOwn(out, key) || m[3] === undefined || tail.trim()) return UNREADABLE;
+      const map = {};
+      for (let j = i + 1; j < awebEnd && (!content(j) || lines[j].startsWith("     ")); j++) {
+        if (!content(j) || lines[j].startsWith("       ")) continue;
+        if (!lines[j].startsWith("      ") || /\t/.test(lines[j])) return UNREADABLE;
+        const e = ENTRY_KEY.exec(lines[j].slice(6));
+        if (!e) return UNREADABLE;
+        const name = e[1] ?? e[2] ?? e[3], value = hostScalar(e[4], continuation(j, 6));
+        if (value === undefined || Object.hasOwn(map, name)) return UNREADABLE;
+        if (HOST_MAPS[key].includes(name)) map[name] = value;
+      }
+      out[key] = map;
+    }
+  }
+  return { settings: out };
+}

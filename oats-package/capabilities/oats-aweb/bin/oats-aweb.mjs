@@ -61,6 +61,12 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await w
 // Loaded only for `health`: the publisher is opt-in, and no other command or
 // hook depends on its modules.
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
+// `attribution attach`: loaded only for that command (lib/attach.mjs).
+if ((process.env.OATS_EVENT || process.argv[2]) === 'attribution') {
+  const { ATTACH_USAGE, attachMain } = await import('../lib/attach.mjs');
+  if (process.argv[3] !== 'attach') { console.error(ATTACH_USAGE); process.exit(2); }
+  process.exit(await attachMain(process.argv.slice(4)));
+}
 
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
@@ -76,7 +82,9 @@ import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, check
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
-import { attributionMode, attributionReadiness, attributionRecord, chainLimitProblem, classifyIssuer, issuerSelection, kernelRefusal } from "../lib/attribution.mjs";
+import { parseAwJson } from "../lib/aw-json.mjs";
+import { startAttach } from "../lib/attach.mjs";
+import { attributionMode, attributionReadiness, attributionRecord, classifyIssuer, exchangeChain, issuerSelection, kernelRefusal } from "../lib/attribution.mjs";
 import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
@@ -225,23 +233,6 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
-/** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
- *  prints progress before it. A top-level object (one opening at column 0) may also be followed
- *  by notes (`aw workspace status` appends its gone-workspace checks); an indented line is never
- *  taken for the start of the answer, since it can be an object nested inside a cut-off one. */
-const parseAwJson = (text, what) => {
-  const trimmed = String(text ?? "").trim();
-  if (!trimmed) throw new Error(`${what} returned no JSON result`);
-  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON or notes after it */ }
-  const lines = trimmed.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].trimStart().startsWith("{")) continue;
-    const rest = lines.slice(i).join("\n");
-    try { return JSON.parse(rest); } catch { /* not the whole remainder */ }
-    if (lines[i].startsWith("{")) { try { return leadingJsonObject(rest); } catch { /* keep looking */ } }
-  }
-  throw new Error(`${what} returned no JSON result`);
-};
 
 /** Delivery/runtime fields shared by launch and stopped-home adoption. Upgrade
  * preserves channel proof; only launch may replace claudeChannelMode. */
@@ -1765,30 +1756,10 @@ function attributionPreflight(root) {
   if (verdict.action === "refuse") fatal(verdict.message);
   return { issuer, verdict };
 }
-/** aw's agent-child exchange (id-certificates §6), between the issuer's home
- *  and this one: the issuer fixes an invitation, this identity exports its
- *  request, the issuer receives and approves it, and this identity imports the
- *  response once the resulting chain is within aw's limits. Each aw runs in its
- *  identity's own directory; no AWEB_IDENTITY_HOME is ever passed. */
+/** The new identity's chain, from its issuer, through aw's agent-child
+ *  exchange (lib/attribution.mjs). */
 function issueChildChain(issuer) {
-  const fail = (m) => { throw new Error(`identity chain issuance failed: ${String(m).slice(0, 300)}`); };
-  const step = (what, f) => { try { return f(); } catch (e) { return fail(`${what}: ${e.message || e}`); } };
-  const dir = join(providerStateDir(), "attribution");
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const requestFile = join(dir, "request.json"), responseFile = join(dir, "response.json");
-  for (const f of [requestFile, responseFile]) rmSync(f, { force: true });
-  const invite = step("aw id child invite", () => parseAwJson(run(["aw", "id", "child", "invite", "--kind", "agent", "--recipient", instance, "--expires", "10m", "--json"], issuer.home), "aw id child invite"));
-  if (typeof invite?.invitation_id !== "string" || typeof invite?.parent?.id !== "string" || typeof invite?.domain !== "string") fail("aw id child invite answered no invitation");
-  step("aw id parent request", () => run(["aw", "id", "parent", "request", "--invitation-id", invite.invitation_id, "--parent", invite.parent.id, "--domain", invite.domain, "--out", requestFile], home));
-  const received = step("aw id child receive", () => parseAwJson(run(["aw", "id", "child", "receive", requestFile, "--json"], issuer.home), "aw id child receive"));
-  if (typeof received?.request_id !== "string") fail("aw id child receive answered no request id");
-  step("aw id child approve", () => run(["aw", "id", "child", "approve", received.request_id, "--out", responseFile], issuer.home));
-  let response;
-  try { response = JSON.parse(readFileSync(responseFile, "utf8")); } catch { fail("the issuer's response is not readable JSON"); }
-  const problem = chainLimitProblem(response?.chain);
-  if (problem) fail(problem);
-  // A chainless requester names its domain again: aw resolves it anew at import.
-  step("aw id parent import", () => run(["aw", "id", "parent", "import", responseFile, "--domain", invite.domain, "--json"], home));
+  exchangeChain({ issuerHome: issuer.home, childHome: home, recipient: instance, stateDir: join(providerStateDir(), "attribution"), run, parseJson: parseAwJson });
 }
 // /aw-min
 /** aw's local team invite makes a chained inviter the new identity's ID
@@ -1800,6 +1771,19 @@ function assertMintingRootIssuesNothing(root) {
   const steward = settings.steward?.home;
   if (typeof steward === "string" && resolve(steward) === resolve(root)) fatal(`the steward's home ${steward} is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → bind the human again with a steward home of its own, separate from the minting root`);
   if (existsSync(join(root, ".aw", "id-chain.json"))) fatal(`this deployment's minting root ${root} carries an identity chain, so aw would make it every child's parent → use a chainless minting root`);
+}
+/** The attach a start makes for its own home (lib/attach.mjs startAttach),
+ *  by this host's attribution now, not the settings captured at spawn: one
+ *  warning when it fails, and a lasting refusal kept in the meta. Mode none
+ *  returns the meta untouched, with no aw call. */
+function attachAtStart(meta, local) {
+  let result;
+  try { result = startAttach({ home, instance, deployment: process.env.OATS_WORKSPACE || "", local, env: process.env }); }
+  catch (e) { outNotes.push(`this home could not be attached at start: ${String(e.message || e).slice(0, 200)}; the next start tries again`); return meta; }
+  if (!result) return meta;
+  if (result.note) outNotes.push(result.note);
+  const { attach, ...rest } = meta;
+  return result.attach ? { ...rest, attach: result.attach } : rest;
 }
 /** A child that reuses an existing identity (a resident grant or a retained
  *  seat) gets no new chain: in mode human it records unknown and says so. */
@@ -1839,7 +1823,7 @@ if (event === "launch") {
   }
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
   if (globalLaunch) globalGrantRenew(started);
-  let oldMeta = withProviderTeams(started);
+  let oldMeta = attachAtStart(withProviderTeams(started), !globalLaunch);
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
     const eligible = new Set(eligibleTeams().map((t) => t.label));

@@ -7,12 +7,17 @@
 //
 // Controls, per identity, as files in its `.aw`:
 //   fake-who.json      `aw who --json` answers exactly this
+//   fake-who-fail      `aw who` fails, as when the registry can't be asked
 // and by env:
 //   FAKE_APPROVE_REFUSE=<reason>  `id child approve` refuses with that reason
 //   FAKE_CHAIN_PAD=<n>            approve pads the child certificate by n bytes
 //   FAKE_CHAIN_EXTRA=<n>          approve adds n extra certificates to the chain
 //   FAKE_NO_WHO=1                 `aw who` is unknown, as in an aw before identity chains
 //   FAKE_AW_VERSION=<v>           `aw version` reports v
+//   FAKE_SLOW_INVITE=<s>          `id child invite` takes s seconds
+//   FAKE_REGISTER_FAIL=1          a did:aw's import installs the chain, then its registration fails
+//   FAKE_IMPORT_KILLS_CALLER=1    a did:aw's import installs the chain, then kills the process that ran aw
+// An identity's key (a request's subject_key) is `.aw/did-key` when present, else its id.
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -41,6 +46,7 @@ const writeOut = (file, data) => { if (fs.existsSync(file)) refuse("refusing to 
 if (args[0] === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.53-rc.3") + " fixture"); process.exit(0); }
 if (args[0] === "who" && process.env.FAKE_NO_WHO) { console.error('Error: unknown command "who" for "aw"'); process.exit(1); }
 if (args[0] === "who") {
+  if (fs.existsSync(path.join(aw, "fake-who-fail"))) refuse("identity registry request failed");
   if (fs.existsSync(path.join(aw, "fake-who.json"))) { console.log(fs.readFileSync(path.join(aw, "fake-who.json"), "utf8")); process.exit(0); }
   const c = chain();
   if (!c) { emit({ id: idOf(), domain: "", outcome: "unknown", human_id: null, identity_valid: null, kind: null, reason: "legacy_no_chain" }); process.exit(0); }
@@ -50,6 +56,7 @@ if (args[0] === "who") {
   process.exit(0);
 }
 if (args[0] === "id" && args[1] === "child" && args[2] === "invite") {
+  if (process.env.FAKE_SLOW_INVITE) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_SLOW_INVITE) * 1000);
   const c = chain();
   if (!c) refuse(idOf() + " has no installed chain, so it issues no children; select --as-root or --human");
   const inv = { invitation_id: crypto.randomUUID(), parent: { kind: "identity", id: idOf() }, domain: c.certificates[0].certificate.domain, kind: flag("--kind"), expires_at: "2026-10-30T23:59:59Z" };
@@ -59,7 +66,8 @@ if (args[0] === "id" && args[1] === "child" && args[2] === "invite") {
 if (args[0] === "id" && args[1] === "parent" && args[2] === "request") {
   const parent = flag("--parent");
   if (!/^did:(aw|key):/.test(parent || "")) refuse("name the parent: --parent <did:aw> or --root-parent");
-  const request = { request: { v: 1, type: "aweb.id-certificate-request", request_id: crypto.randomUUID(), operation: "issue", id: idOf(), domain: flag("--domain"), parent: { kind: "identity", id: parent }, kind: "agent", subject_key: idOf(), invitation_id: flag("--invitation-id"), old_certificate: null }, signature: "sig" };
+  if (idOf().startsWith("did:aw:") && parent.startsWith("did:key:")) refuse("a local did:key parent can issue only a local did:key agent; use a registered parent for registered children");
+  const request = { request: { v: 1, type: "aweb.id-certificate-request", request_id: crypto.randomUUID(), operation: "issue", id: idOf(), domain: flag("--domain"), parent: { kind: "identity", id: parent }, kind: "agent", subject_key: fs.existsSync(path.join(aw, "did-key")) ? fs.readFileSync(path.join(aw, "did-key"), "utf8").trim() : idOf(), invitation_id: flag("--invitation-id"), old_certificate: null }, signature: "sig" };
   fs.writeFileSync(path.join(aw, "outgoing-" + request.request.request_id + ".json"), JSON.stringify(request));
   writeOut(flag("--out"), JSON.stringify(request));
   console.error("Request " + request.request.request_id + " for " + idOf() + " (agent).");
@@ -93,10 +101,20 @@ if (args[0] === "id" && args[1] === "parent" && args[2] === "import") {
   if (!chain() && !flag("--domain")) refuse("--domain is required");
   if (flag("--domain") && flag("--domain") !== leaf.domain) refuse("request_binding_mismatch");
   fs.writeFileSync(path.join(aw, "id-chain.json"), JSON.stringify(response.chain));
-  emit({ request_id: response.request_id, id: idOf(), registration: "" });
+  // aw saves the chain, then registers a did:aw's certificate (cmd/aw/id_parent.go:411, :431, :442).
+  if (process.env.FAKE_IMPORT_KILLS_CALLER && idOf().startsWith("did:aw:")) { process.kill(process.ppid, "SIGKILL"); process.exit(1); }
+  if (process.env.FAKE_REGISTER_FAIL && idOf().startsWith("did:aw:")) refuse("register the certificate of " + idOf() + " (run import again to retry): registry http 503: unavailable");
+  emit({ request_id: response.request_id, id: idOf(), registration: idOf().startsWith("did:aw:") ? "registered" : "" });
   process.exit(0);
 }
+if (args[0] === "wake" && args[1] === "status") { emit({ daemon_running: false, daemon_version_state: "not_running", instances: [] }); process.exit(0); }
 if (args[0] === "wake") { process.exit(0); }
+// A retained seat's spawn: it connects the copied identity and checks that the
+// seat acts as the identity its identity.yaml names.
+if ((args[0] === "workspace" && args[1] === "connect") || args[0] === "check" || args[0] === "heartbeat") process.exit(0);
+const yamlField = (k) => ((fs.existsSync(path.join(aw, "identity.yaml")) ? fs.readFileSync(path.join(aw, "identity.yaml"), "utf8") : "").match(new RegExp("^" + k + ": *(.+)$", "m")) || [])[1];
+if (args[0] === "workspace" && args[1] === "status") { emit({ workspace: { workspace_path: process.cwd(), alias: yamlField("alias") } }); process.exit(0); }
+if (args[0] === "whoami") { emit({ did: yamlField("did"), address: yamlField("address") }); process.exit(0); }
 console.error("fake aw (chain): unexpected aw " + args.join(" ")); process.exit(3);
 `);
   chmodSync(join(bin, "aw"), 0o755);

@@ -131,7 +131,7 @@ spawn-hook refusal, and names its fix.
   For a `did:aw` spawner, only the registry's authoritative "no enrollment"
   counts (`aw who`: `unregistered_identity`); anything else refuses.
   Instances running before the binding keep working this way until they are
-  respawned.
+  attached ("Attaching existing instances", below).
 - **Reuses an identity:** a resident-grant or retained-seat child keeps its
   existing identity and is issued nothing. It reports `unknown`, with a
   warning.
@@ -141,7 +141,7 @@ parent: {id}}`, with opaque ids, `mode` one of `human`, `none` (a chain with
 no human in it) and `unknown`. It also records `chainInstalled: true|false`.
 Attribution never fails readiness. A home's readiness warns `attribution` only
 when there is something to do: in mode `human`, no human bound yet, or this
-instance has no chain (respawn it). `oats aweb setup --check-only --json`
+instance has no chain (attach it). `oats aweb setup --check-only --json`
 reports `attribution` as information only in mode `human`: the bound human,
 the steward, and `chainlessSpawners`, the number of local instances without a
 chain. Without the setting, or with `none`, the key is absent: absence means
@@ -167,6 +167,125 @@ is reported there too.
   a mode-`human` deployment that uses captured execution is refused there.
 - Out of scope in this release: revocation at retire, chains across hosts,
   and deployments shared by several people.
+
+### Attaching existing instances
+
+An existing deployment switches to human attribution in place: first the
+bind, then attach. Attach gives each local instance without a chain a chain
+for its existing identity. Its key, address, `identity.yaml`, mailbox and
+memberships stay as they are; no instance is respawned.
+
+The setup expert runs it in two steps, plan and then apply, from the
+deployment:
+
+```text
+oats aweb attribution attach --plan --dir <deployment> --json
+oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir <deployment> --json
+```
+
+- **The plan** lists every home `oats status` lists for the deployment, parents
+  first, each with what attach does to it:
+  - `attach`, under its parent;
+  - `attached`, or `attached-registry` (a `did:aw` the registry already
+    certifies): left as it is;
+  - `skipped` or `refused`, with an `E_` code and its fix.
+
+  A home `oats status` doesn't list is never touched. The plan's revision
+  covers all of this.
+- **The parent** is the issuer its spawn would have chosen: the instance the
+  kernel recorded as its spawner (`spawnedBy`); the steward when that record is
+  `null` (a person's spawn); for a home spawned before kernels recorded
+  spawners, its `parentInstance`, else the steward. A parent that is no longer
+  listed counts as none. A `did:aw` needs a registered parent, so under a local
+  parent it takes its nearest `did:aw` ancestor, else the steward. When an
+  ancestor that choice reads can't be read (`aw who` fails), the home is
+  refused for now (`E_ATTACH_FAILED`, `parent_unread`), never given another
+  parent. A parent
+  issues only from an installed chain, its own or one the same apply installs:
+  a child of a parent the registry certifies but that holds no chain is
+  refused for now (`parent_has_no_chain`), naming the respawn. A steward that
+  holds no installed chain refuses the whole plan, naming its fix.
+- **The apply** takes the plan's revision and an idempotency key, as
+  `oats instance upgrade` does.
+  - A changed deployment refuses with `E_ATTACH_PLAN_STALE`, carrying the fresh
+    plan.
+  - The same key replays the first result. The same key with another plan
+    refuses with `E_IDEMPOTENCY_CONFLICT`. Receipts live in
+    `<deployment>/.oats-aweb/attach/`.
+  - Each home attaches through aw's agent-child exchange with its parent, the
+    same one a spawn uses. The parent approves only a request whose
+    `subject_key` is the key in that home's own signing key: OATS reads it
+    from the home and never takes it from a did.
+  - A home that fails stays as it was, and its descendants are skipped. The
+    one exception is aw's: it installs a `did:aw`'s chain before it registers
+    the certificate. When that registration fails, the home is recorded as a
+    pending import, its response kept, and the next attach or start resumes
+    that import (the plan shows it as `attach`, resuming).
+  - One apply of an idempotency key runs at a time; its receipt, once
+    written, is never replaced.
+  - A home's attach lock, or a key's, left by a killed attach is taken over.
+    Each lock's gate (`<lock>.gate`) is held only for a few file operations.
+    One left by a process killed inside it is never removed automatically:
+    attach refuses, naming it. The setup expert checks that no attach is
+    running for it, then removes it.
+
+**At start.** In mode `human`, a start attaches its own chainless local home
+the same way, once its parent holds a chain.
+- The mode, the human and the steward are this host's at each start, read
+  from the deployment's `oats-local.yaml`, not the settings the home's spawn
+  captured. A home spawned before the bind attaches at its next start, and a
+  home whose host has since set `none` is issued nothing. A
+  `settings.oats.aweb` block in a form oats.aweb doesn't write (flow style,
+  for example) counts as off, with one warning.
+- It runs on the start's real pass only, within 30 seconds, lock waits
+  included.
+- It attaches only a home `oats status` lists.
+- It chooses the parent by the same plan as the command, over the home's
+  whole line of recorded parents. When one of them can't be read, it waits
+  for a later start rather than choose another parent.
+- It never stops the start: a failure is one warning with its reason, and a
+  refused parent's warning names the parent's fix.
+- A lasting refusal (`E_ATTACH_KEY_MISMATCH`, `E_ATTACH_PARENT_REFUSED`,
+  `E_ATTACH_GRANT_SEAT`) is kept in the home's `.oats-aweb/attach.json` and in
+  the start's meta (`attach`). A start doesn't retry it; an attach apply does,
+  and clears it.
+
+With `attribution` absent or `none` on this host, a start makes no attach
+call and attach refuses with `E_ATTACH_NO_HUMAN`. The mode counts only when it
+is set on this host.
+
+| Code | Meaning → fix |
+|---|---|
+| `E_ATTACH_NO_HUMAN` | no human is bound, or `attribution` isn't `human` in this host's `oats-local.yaml` → bind a human |
+| `E_ATTACH_PARENT_REFUSED` | the parent or aw's registry refused (aw's reason: `revoked`, `stale_issuer_key`, `unregistered_parent`, `domain_mismatch`, `subject_mismatch`…), or the parent isn't attached → fix the parent, then plan again; `parent_has_no_chain`, `grant_seat_parent` and `copied_identity_parent` name a respawn instead |
+| `E_ATTACH_KEY_MISMATCH` | the request is not for the key in the home's signing key, which is never approved → check the home's `.aw` |
+| `E_ATTACH_GRANT_SEAT` | a session-grant seat holds no key → its resident's owner attaches the resident through aw |
+| `E_ATTACH_COPIED_IDENTITY` | a retained seat uses an identity copied from its source → the source's owner attaches the source; a `did:aw` copy then verifies through the registry, a `did:key` copy stays chainless |
+| `E_ATTACH_PLAN_STALE` | the deployment changed since the plan → review the fresh plan |
+| `E_ATTACH_FAILED` | a step failed for now (registry unavailable, the start's time ran out) → try again |
+
+**Limits.**
+- One human per deployment.
+- Attribution is prospective: past messages are not re-attributed.
+- The parent is chosen once, at attach. Moving a certified local key to
+  another parent later needs a new key.
+- A `did:aw` whose key was rotated after it was made can't be attached:
+  aw certifies a `did:aw` only for the key it was made from
+  (`subject_mismatch`).
+- A child of a session-grant seat can't be attached: the seat holds no key,
+  so it never issues. The child stays chainless and reports `unknown`;
+  respawning it from an instance that holds its own key, or from a shell,
+  gives it a chain.
+- A retained seat (`identity.source`) is never attached. Its key is a copy of
+  one that lives on at its source, so its parent isn't this deployment's to
+  choose: the source's owner attaches the source, and a `did:aw` copy then
+  verifies through the registry. A retained seat doesn't carry its source's
+  chain (oats-aweb#180), so it never issues: its children stay chainless and
+  report `unknown` until they are respawned from an instance that holds its
+  own chain, or from a shell.
+- The live acceptance exercises freshly minted `did:key` homes only;
+  global-mode spawns use grant seats. The `did:aw` attach rules have
+  automated-test coverage only.
 
 <!-- /aw-min -->
 
