@@ -183,10 +183,10 @@ function holderOf(file) {
  *  refuses, naming the gate, until someone who has checked removes it. A
  *  gate is created before its holder is written, so an empty or unparseable
  *  holder is busy and waited on; one that stays so for the whole wait was
- *  left the same way. */
-function underGate(lockFile, f, onGate) {
+ *  left the same way. The wait is 5 s, never past `deadline` (a time in ms). */
+function underGate(lockFile, f, onGate, deadline = Infinity) {
   const gate = `${lockFile}.gate`, token = `${process.pid} ${randomUUID()}\n`;
-  for (const until = Date.now() + 5000; ;) {
+  for (const until = Math.min(Date.now() + 5000, deadline); ;) {
     try { writeFileSync(gate, token, { flag: "wx", mode: 0o600 }); break; }
     catch (e) {
       if (e.code !== "EEXIST") throw e;
@@ -207,16 +207,17 @@ function underGate(lockFile, f, onGate) {
  * taken over; one held by a running process refuses with `busy(pid)`.
  * Taking, taking over and releasing all happen under the lock's gate, so two
  * contenders recovering the same dead lock never both hold it, and release
- * removes only the caller's own lock. Returns the release function.
+ * removes only the caller's own lock. No wait for the gate goes past
+ * `deadline` (a time in ms). Returns the release function.
  */
-export function exclusiveLock(lockFile, busy, { onGate } = {}) {
+export function exclusiveLock(lockFile, busy, { onGate, deadline } = {}) {
   const token = `${process.pid} ${randomUUID()}\n`;
   underGate(lockFile, () => {
     const holder = holderOf(lockFile);
     if (holder && processAlive(holder.pid)) throw failure("E_ATTACH_FAILED", busy(holder.pid));
     writeFileSync(lockFile, token, { mode: 0o600 });
-  }, onGate);
-  return () => underGate(lockFile, () => { if (holderOf(lockFile)?.raw === token) rmSync(lockFile, { force: true }); });
+  }, onGate, deadline);
+  return () => underGate(lockFile, () => { if (holderOf(lockFile)?.raw === token) rmSync(lockFile, { force: true }); }, undefined, deadline);
 }
 
 /**
@@ -293,12 +294,13 @@ export function homeFacts(run, row, timeout) {
 }
 
 /** One home's attach: the exchange with its parent, under the home's own
- *  lock; success clears a recorded refusal, a lasting refusal is recorded. */
-export function attachHome({ entry, run, keys, recipient = entry.instance }) {
+ *  lock; success clears a recorded refusal, a lasting refusal is recorded.
+ *  `deadline` (a time in ms) bounds the lock's waits, as `run` bounds aw's. */
+export function attachHome({ entry, run, keys, recipient = entry.instance, deadline }) {
   const stateDir = attachStateDir(entry.home);
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const lock = join(stateDir, "attach.lock");
-  const release = exclusiveLock(lock, (pid) => `another attach of ${entry.instance} is running (pid ${pid}, ${lock}) → retry once it has finished`);
+  const release = exclusiveLock(lock, (pid) => `another attach of ${entry.instance} is running (pid ${pid}, ${lock}) → retry once it has finished`, { deadline });
   try {
     if (resumeImport({ childHome: entry.home, stateDir, run })) { clearAttachRefusal(entry.home); return; }
     const current = keys ?? homeKeyIds(entry.home);
@@ -423,7 +425,7 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
   // Not before its parent holds a chain: the parent attaches first.
   const parent = entry.parent.steward ? null : plan.homes.find((h) => h.home === entry.parent.home);
   if (!entry.resume && parent && parent.status === "attach") return nothing;
-  try { attachHome({ entry, run, keys: homeKeyIds(home) }); return nothing; } catch (e) { return failed(e); }
+  try { attachHome({ entry, run, keys: homeKeyIds(home), deadline }); return nothing; } catch (e) { return failed(e); }
 }
 
 function parseArgs(argv) {

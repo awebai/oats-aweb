@@ -7,7 +7,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { readAttachRefusal, startAttach } from "../oats-package/capabilities/oats-aweb/lib/attach.mjs";
+import { attachStateDir, readAttachRefusal, startAttach } from "../oats-package/capabilities/oats-aweb/lib/attach.mjs";
 import { homeKeyIds } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { fakeAwChain, writeIdentity } from "./helpers/fake-aw-chain.mjs";
 import { currentRootQuery } from "./helpers/current-root-query.mjs";
@@ -107,6 +107,18 @@ test("an exhausted budget never runs aw without a timeout (Node reads a timeout 
   assert.ok(Date.now() - began < 1500, `took ${Date.now() - began} ms`);
   assert.match(r.note, /budget of 0 s ran out/);
   assert.deepEqual(idCalls(fx.fake), []);
+});
+
+test("the start's budget bounds its lock waits too: a busy lock gate ends it within the budget", (t) => {
+  const fx = fixture(t);
+  // A gate held by a running process (this one) is waited on, never taken over.
+  mkdirSync(attachStateDir(fx.home), { recursive: true });
+  writeFileSync(join(attachStateDir(fx.home), "attach.lock.gate"), `${process.pid} held-by-the-test\n`);
+  const began = Date.now();
+  const r = fx.start({ budgetMs: 4000 });
+  assert.ok(Date.now() - began < 4700, `took ${Date.now() - began} ms`);
+  assert.match(r.note, /could not be attached at start \(E_ATTACH_FAILED\): the lock .*attach\.lock stayed busy/);
+  assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), false);
 });
 
 // Through the hook's launch event, as the kernel starts a home.
