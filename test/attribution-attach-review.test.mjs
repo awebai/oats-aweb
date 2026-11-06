@@ -2,6 +2,7 @@
 // installed, the start choosing the same parent as the plan, a did:aw the
 // registry already certifies, and the receipt under concurrent applies.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -80,6 +81,31 @@ test("a start resumes a pending import of its own home", (t) => {
   const before = idCalls(fx.fake).length;
   assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
   assert.deepEqual(idCalls(fx.fake).slice(before).map((c) => c.step), ["parent import"]);
+  assert.equal(readPendingImport(g.home), null);
+});
+
+test("an attach killed after aw installs the chain is found again: the next start finishes the import, with no new issuance", (t) => {
+  const fx = deployment(t);
+  const g = fx.instance("g", { spawnedBy: null }, { global: true, who: UNREGISTERED });
+  // The attach runs in its own process, which aw's import kills once the chain is installed.
+  const driver = `import { attachHome, awInHome } from ${JSON.stringify(new URL("../oats-package/capabilities/oats-aweb/lib/attach.mjs", import.meta.url).href)};
+attachHome({ entry: { instance: "g", home: ${JSON.stringify(g.home)}, parent: { steward: true, home: ${JSON.stringify(fx.steward)} } }, run: awInHome({ PATH: ${JSON.stringify(fx.fake.path)}, FAKE_IMPORT_KILLS_CALLER: "1" }) });`;
+  const killed = spawnSync(process.execPath, ["--input-type=module", "-e", driver], { encoding: "utf8", timeout: 30000 });
+  assert.equal(killed.signal, "SIGKILL", killed.stderr);
+  assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), true);
+  assert.ok(readPendingImport(g.home), "the import is recorded before aw runs it");
+  const before = idCalls(fx.fake).length;
+  assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
+  assert.deepEqual(idCalls(fx.fake).slice(before).map((c) => c.step), ["parent import"]);
+  assert.equal(readPendingImport(g.home), null);
+});
+
+test("an import that fails before aw installs the chain leaves no pending import: the next attach makes a fresh exchange", (t) => {
+  const fx = deployment(t);
+  const g = fx.instance("g", { spawnedBy: null }, { global: true, who: UNREGISTERED });
+  const entry = { instance: "g", home: g.home, parent: { steward: true, home: fx.steward } };
+  assert.throws(() => attachHome({ entry, run: (argv, cwd) => { if (argv[3] === "import") throw new Error("aw id parent import: connection reset"); return awInHome({ PATH: fx.fake.path })(argv, cwd); } }), (e) => e.code === "E_ATTACH_FAILED");
+  assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), false);
   assert.equal(readPendingImport(g.home), null);
 });
 

@@ -16,6 +16,7 @@
 //   FAKE_AW_VERSION=<v>           `aw version` reports v
 //   FAKE_SLOW_INVITE=<s>          `id child invite` takes s seconds
 //   FAKE_REGISTER_FAIL=1          a did:aw's import installs the chain, then its registration fails
+//   FAKE_IMPORT_KILLS_CALLER=1    a did:aw's import installs the chain, then kills the process that ran aw
 // An identity's key (a request's subject_key) is `.aw/did-key` when present, else its id.
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -101,6 +102,7 @@ if (args[0] === "id" && args[1] === "parent" && args[2] === "import") {
   if (flag("--domain") && flag("--domain") !== leaf.domain) refuse("request_binding_mismatch");
   fs.writeFileSync(path.join(aw, "id-chain.json"), JSON.stringify(response.chain));
   // aw saves the chain, then registers a did:aw's certificate (cmd/aw/id_parent.go:411, :431, :442).
+  if (process.env.FAKE_IMPORT_KILLS_CALLER && idOf().startsWith("did:aw:")) { process.kill(process.ppid, "SIGKILL"); process.exit(1); }
   if (process.env.FAKE_REGISTER_FAIL && idOf().startsWith("did:aw:")) refuse("register the certificate of " + idOf() + " (run import again to retry): registry http 503: unavailable");
   emit({ request_id: response.request_id, id: idOf(), registration: idOf().startsWith("did:aw:") ? "registered" : "" });
   process.exit(0);

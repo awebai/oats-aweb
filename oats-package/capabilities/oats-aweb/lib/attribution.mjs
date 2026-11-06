@@ -7,8 +7,9 @@
 // steward are read from host settings (`human`, `steward`); the bind that
 // records them is the person's own approval and is not part of this package.
 import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
+import { atomicWrite } from "./local-settings.mjs";
 import { CONTROL_CHARACTER } from "./status-document.mjs";
 
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -224,9 +225,11 @@ function exchangeError(code, message, reason = null) {
   return Object.assign(new Error(`identity chain issuance failed: ${String(message).slice(0, 300)}`), { code, reason });
 }
 
-/** An import aw left half done: it saves the chain before it registers a
- *  did:aw's certificate (cmd/aw/id_parent.go), and asks for the import to be
- *  run again. The response and its domain are kept until that import ends. */
+/** An import that may be left half done: aw saves the chain before it
+ *  registers a did:aw's certificate (cmd/aw/id_parent.go), and asks for the
+ *  import to be run again. The response and its domain are recorded before aw
+ *  runs, so an attach killed meanwhile is found again, and kept until that
+ *  import ends. */
 const pendingFile = (stateDir) => join(stateDir, "pending-import.json");
 export function pendingImport(stateDir) {
   try { const p = JSON.parse(readFileSync(pendingFile(stateDir), "utf8")); return p && typeof p.response === "string" && typeof p.domain === "string" ? p : null; } catch { return null; }
@@ -240,6 +243,8 @@ export function resumeImport({ childHome, stateDir, run }) {
   if (!p) return false;
   try { run(importArgv(p.response, p.domain), childHome); }
   catch (e) {
+    // No chain installed: nothing is half done, and the next attach exchanges anew.
+    if (!existsSync(join(childHome, ".aw", "id-chain.json"))) rmSync(pendingFile(stateDir), { force: true });
     const text = String(e.message || e), reason = awRefusal(text);
     throw exchangeError(reason ? "E_ATTACH_PARENT_REFUSED" : "E_ATTACH_FAILED", `${resumeHint(childHome, p)}; aw id parent import: ${text.slice(0, 120)}`, reason);
   }
@@ -286,13 +291,14 @@ export function exchangeChain({ issuerHome, childHome, recipient, stateDir, run,
   const problem = chainLimitProblem(response?.chain);
   if (problem) throw exchangeError("E_ATTACH_PARENT_REFUSED", problem, "chain_limit");
   // A chainless requester names its domain again: aw resolves it anew at import.
+  const p = { response: responseFile, domain: invite.domain, at: new Date().toISOString() };
+  atomicWrite(pendingFile(stateDir), `${JSON.stringify(p)}\n`);
   try { run(importArgv(responseFile, invite.domain), childHome); }
   catch (e) {
-    if (!existsSync(join(childHome, ".aw", "id-chain.json"))) return step("aw id parent import", () => { throw e; });
-    const p = { response: responseFile, domain: invite.domain, at: new Date().toISOString() };
-    writeFileSync(pendingFile(stateDir), `${JSON.stringify(p)}\n`, { mode: 0o600 });
+    if (!existsSync(join(childHome, ".aw", "id-chain.json"))) { rmSync(pendingFile(stateDir), { force: true }); return step("aw id parent import", () => { throw e; }); }
     throw exchangeError("E_ATTACH_FAILED", `${resumeHint(childHome, p)}; aw id parent import: ${String(e.message || e).slice(0, 120)}`);
   }
+  rmSync(pendingFile(stateDir), { force: true });
 }
 
 /** A human's label: one line, at most 120 bytes, no control characters. */
