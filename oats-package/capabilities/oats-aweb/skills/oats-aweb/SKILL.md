@@ -1048,7 +1048,9 @@ respawned. The README's "Attaching existing instances" is the full reference.
 
 The setup expert runs both. A start in mode `human` also attaches its own
 chainless home once its parent holds a chain: within 30 s, with one warning
-if it fails. A lasting refusal is recorded (`.oats-aweb/attach.json`, and the
+if it fails. The start reads the mode from this host's oats-local.yaml each
+time, so homes spawned before the bind attach at their next start; a
+`settings.oats.aweb` block in flow style counts as off, with a warning. A lasting refusal is recorded (`.oats-aweb/attach.json`, and the
 meta's `attach`); starts don't retry it, but an apply does. Limits: one human
 per deployment; attribution is prospective only; the parent is chosen once,
 at attach, because moving a certified local key later needs a new key; a

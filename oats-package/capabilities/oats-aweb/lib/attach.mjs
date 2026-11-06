@@ -13,6 +13,7 @@ import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, realpathSyn
 import { join, resolve } from "node:path";
 import { ATTRIBUTION_AW_UPGRADE, BIND_ACT, attachParents, attributionMode, classifyIssuer, exchangeChain, homeKeyIds, pendingImport, resumeImport } from "./attribution.mjs";
 import { parseAwJson } from "./aw-json.mjs";
+import { readHostAttribution } from "./local-settings.mjs";
 import { selectedDeployment } from "./team-roots.mjs";
 import { deploymentHomes } from "./wake-service.mjs";
 
@@ -316,6 +317,7 @@ export function attachHome({ entry, run, keys, recipient = entry.instance, deadl
 /** Starts never wait longer than this for an attach (oats#1665 C3): well
  *  inside the kernel's 120 s launch-hook budget. */
 export const START_ATTACH_BUDGET_MS = 30000;
+const HOST_UNREADABLE = "oats-local.yaml's settings.oats.aweb is not in the block style oats.aweb writes, so attribution counts as off at this start and nothing is attached → write it in block style, as `oats aweb setup --steward` does";
 const ATTACH_ACT = "the setup expert runs `oats aweb attribution attach`";
 
 /** An instance home's record, if `home` is one of the deployment's. */
@@ -360,23 +362,30 @@ function ancestorRows(home, listed) {
  * attach is attached once its parent holds a chain; a pending import is
  * resumed. A failure never stops the start: it gives one warning with its
  * reason. A lasting refusal of the home itself is recorded and not retried at
- * later starts, only by an attach apply. Returns null when the start has
- * nothing to do with attribution (mode none included: no aw call, no file
- * read); otherwise {attach (the meta's record of a lasting refusal, or
- * undefined), note (the warning, or null)}.
+ * later starts, only by an attach apply. The mode, the human and the steward
+ * are this host's now (readHostAttribution), not the settings the home's
+ * spawn captured: a home spawned before the bind attaches, and one whose host
+ * opted out is issued nothing. Returns null when the start has nothing to do
+ * with attribution (mode none included: no aw call); otherwise {attach (the
+ * meta's record of a lasting refusal, or undefined), note (the warning, or
+ * null)}.
  */
-export function startAttach({ home, instance, settings, origins, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS, listHomes = () => deploymentHomes(env, deployment) }) {
+export function startAttach({ home, instance, deployment, local, env, budgetMs = START_ATTACH_BUDGET_MS, listHomes = () => deploymentHomes(env, deployment), readHost = () => readHostAttribution(deployment) }) {
+  if (!local) return null;
+  const deadline = Date.now() + budgetMs;
+  const host = readHost();
+  if (host.unreadable) return { attach: undefined, note: HOST_UNREADABLE };
+  const settings = host.settings;
   let mode;
   try { mode = attributionMode(settings); } catch { return null; }
-  if (hostOnlyViolation(origins)) return null;
-  if (mode !== "human" || !settings.human?.id || !settings.steward?.id || !settings.steward?.home || !local) return null;
+  if (mode !== "human" || !settings.human?.id || !settings.steward?.id || !settings.steward?.home) return null;
   const nothing = { attach: undefined, note: null };
   const recorded = readAttachRefusal(home);
   if (recorded) return { attach: { refused: recorded.code, reason: recorded.reason ?? null, at: recorded.at ?? null }, note: `this home is not attached (${recorded.code}): ${recorded.message} (recorded ${recorded.at || "earlier"}; not retried at start)${RESPAWN_ONLY.has(recorded.reason) ? "" : ` → fix that, then ${ATTACH_ACT}`}` };
   const pending = readPendingImport(home);
   if (!pending && existsSync(join(home, ".aw", "id-chain.json"))) return nothing;
   try { deployment = realpathSync(deployment); } catch { return nothing; }
-  const deadline = Date.now() + budgetMs, base = awInHome(env);
+  const base = awInHome(env);
   const run = (argv, cwd) => {
     const left = deadline - Date.now();
     if (left < 1000) throw new Error(`the start's attach budget of ${budgetMs / 1000} s ran out`);
@@ -406,7 +415,7 @@ export function startAttach({ home, instance, settings, origins, deployment, loc
     // read could change it, so the start waits rather than choose another.
     const unread = facts.slice(1).filter((f) => f.whoError || f.who?.outcome === "unavailable").map((f) => f.instance);
     if (unread.length) return later("E_ATTACH_FAILED", `the status of its recorded parents ${unread.join(", ")} could not be read, so its parent can't be chosen yet`);
-    plan = buildPlan({ deployment, settings, origins, homes: facts, stewardStatus: stewardFacts(run, settings.steward.home) });
+    plan = buildPlan({ deployment, settings, homes: facts, stewardStatus: stewardFacts(run, settings.steward.home) });
     entry = plan.homes.find((h) => h.home === home);
   } catch (e) {
     // A refusal of the whole plan (no steward to issue, the registry

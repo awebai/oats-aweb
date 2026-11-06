@@ -197,7 +197,10 @@ oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir
   `null` (a person's spawn); for a home spawned before kernels recorded
   spawners, its `parentInstance`, else the steward. A parent that is no longer
   listed counts as none. A `did:aw` needs a registered parent, so under a local
-  parent it takes its nearest `did:aw` ancestor, else the steward. A parent
+  parent it takes its nearest `did:aw` ancestor, else the steward. When an
+  ancestor that choice reads can't be read (`aw who` fails), the home is
+  refused for now (`E_ATTACH_FAILED`, `parent_unread`), never given another
+  parent. A parent
   issues only from an installed chain, its own or one the same apply installs:
   a child of a parent the registry certifies but that holds no chain is
   refused for now (`parent_has_no_chain`), naming the respawn. A steward that
@@ -228,7 +231,15 @@ oats aweb attribution attach --plan-revision <rev> --idempotency-key <key> --dir
 
 **At start.** In mode `human`, a start attaches its own chainless local home
 the same way, once its parent holds a chain.
-- It runs on the start's real pass only, within 30 seconds.
+- The mode, the human and the steward are this host's at each start, read
+  from the deployment's `oats-local.yaml`, not the settings the home's spawn
+  captured. A home spawned before the bind attaches at its next start, and a
+  home whose host has since set `none` is issued nothing. A
+  `settings.oats.aweb` block in a form oats.aweb doesn't write (flow style,
+  for example) counts as off, with one warning.
+- It runs on the start's real pass only, within 30 seconds, lock waits
+  included.
+- It attaches only a home `oats status` lists.
 - It chooses the parent by the same plan as the command, over the home's
   whole line of recorded parents. When one of them can't be read, it waits
   for a later start rather than choose another parent.
@@ -239,9 +250,9 @@ the same way, once its parent holds a chain.
   the start's meta (`attach`). A start doesn't retry it; an attach apply does,
   and clears it.
 
-With `attribution` absent or `none`, a start makes no attach call and attach
-refuses with `E_ATTACH_NO_HUMAN`. The mode counts only when it is set on this
-host.
+With `attribution` absent or `none` on this host, a start makes no attach
+call and attach refuses with `E_ATTACH_NO_HUMAN`. The mode counts only when it
+is set on this host.
 
 | Code | Meaning → fix |
 |---|---|

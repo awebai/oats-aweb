@@ -11,6 +11,7 @@ import test from "node:test";
 import { applyPlan, attachHome, awInHome, buildPlan, homeFacts, readPendingImport, startAttach, stewardFacts, whoIn } from "../oats-package/capabilities/oats-aweb/lib/attach.mjs";
 import { homeKeyIds } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { fakeAwChain } from "./helpers/fake-aw-chain.mjs";
+import { writeHostSettings } from "./helpers/host-settings.mjs";
 
 /** `oats status` for a test deployment: every instance home under agents/. */
 function listAll(ws) {
@@ -46,6 +47,7 @@ function deployment(t) {
   writeFileSync(join(steward, ".aw", "did"), STEWARD);
   writeFileSync(join(steward, ".aw", "id-chain.json"), JSON.stringify({ v: 1, type: "aweb.id-chain", certificates: [HUMAN_CERT, STEWARD_CERT] }));
   const settings = { attribution: "human", human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: steward } };
+  writeHostSettings(ws, settings);
   const fake = fakeAwChain(t);
   const instance = (name, record, opts) => {
     const home = join(ws, "agents", "dev", "instances", name);
@@ -79,7 +81,7 @@ test("a start resumes a pending import of its own home", (t) => {
   const g = fx.instance("g", { spawnedBy: null }, { global: true, who: UNREGISTERED });
   assert.throws(() => attachHome({ entry: { instance: "g", home: g.home, parent: { steward: true, home: fx.steward } }, run: awInHome({ PATH: fx.fake.path, FAKE_REGISTER_FAIL: "1" }) }));
   const before = idCalls(fx.fake).length;
-  assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
+  assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
   assert.deepEqual(idCalls(fx.fake).slice(before).map((c) => c.step), ["parent import"]);
   assert.equal(readPendingImport(g.home), null);
 });
@@ -95,7 +97,7 @@ attachHome({ entry: { instance: "g", home: ${JSON.stringify(g.home)}, parent: { 
   assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), true);
   assert.ok(readPendingImport(g.home), "the import is recorded before aw runs it");
   const before = idCalls(fx.fake).length;
-  assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
+  assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
   assert.deepEqual(idCalls(fx.fake).slice(before).map((c) => c.step), ["parent import"]);
   assert.equal(readPendingImport(g.home), null);
 });
@@ -114,7 +116,7 @@ test("a start chooses the plan's parent: a did:aw under a chained did:key spawne
   const sp = fx.instance("sp", { spawnedBy: null }, { chain: [HUMAN_CERT, STEWARD_CERT] });
   const g = fx.instance("g", { spawnedBy: { instance: "sp", home: "" } }, { global: true, who: UNREGISTERED });
   writeFileSync(join(g.home, "instance.json"), JSON.stringify({ instance: "g", spawnedBy: { instance: "sp", home: sp.home } }));
-  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual(r, { attach: undefined, note: null });
   assert.equal(idCalls(fx.fake).find((c) => c.step === "child invite").cwd, fx.steward);
   assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), true);
@@ -125,7 +127,7 @@ test("a start chooses the plan's parent: a did:aw under a did:key spawner takes 
   const gp = fx.instance("gp", { spawnedBy: null }, { global: true, chain: [HUMAN_CERT, STEWARD_CERT] });
   const sp = fx.instance("sp", { spawnedBy: { instance: "gp", home: gp.home } }, { chain: gp.certs });
   const g = fx.instance("g", { spawnedBy: { instance: "sp", home: sp.home } }, { global: true, who: UNREGISTERED });
-  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual(r, { attach: undefined, note: null });
   assert.equal(idCalls(fx.fake).find((c) => c.step === "child invite").cwd, gp.home);
 });
@@ -133,7 +135,7 @@ test("a start chooses the plan's parent: a did:aw under a did:key spawner takes 
 test("a start leaves a did:aw the registry already certifies untouched", (t) => {
   const fx = deployment(t);
   const g = fx.instance("g", { spawnedBy: null }, { global: true, who: { outcome: "nearest_human", human_id: HUMAN, identity_valid: true, kind: "agent", reason: "verified" } });
-  assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
+  assert.deepEqual(startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } }), { attach: undefined, note: null });
   assert.deepEqual(idCalls(fx.fake), []);
 });
 
@@ -179,7 +181,7 @@ test("a start reaches a did:aw ancestor however long the line of local parents b
   let above = gp;
   for (let i = 0; i < 20; i++) above = fx.instance(`l${i}`, { spawnedBy: { instance: above.name, home: above.home } }, {});
   const g = fx.instance("g", { spawnedBy: { instance: above.name, home: above.home } }, { global: true, who: UNREGISTERED });
-  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual(r, { attach: undefined, note: null });
   assert.equal(idCalls(fx.fake).find((c) => c.step === "child invite").cwd, gp.home);
 });
@@ -190,7 +192,7 @@ test("a start whose parents' status can't all be read waits, warning, rather tha
   writeFileSync(join(gp.home, ".aw", "fake-who.json"), "not json");
   const sp = fx.instance("sp", { spawnedBy: { instance: "gp", home: gp.home } }, {});
   const g = fx.instance("g", { spawnedBy: { instance: "sp", home: sp.home } }, { global: true, who: UNREGISTERED });
-  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.equal(r.attach, undefined);
   assert.match(r.note, /\(E_ATTACH_FAILED\).*gp.*the next start tries again/);
   assert.deepEqual(idCalls(fx.fake), []);
@@ -201,7 +203,7 @@ test("a start under a refused parent warns with the parent's reason and its fix,
   const sp = fx.instance("sp", { spawnedBy: null }, { chain: [HUMAN_CERT, STEWARD_CERT] });
   writeFileSync(join(sp.home, ".aw", "fake-who.json"), JSON.stringify({ id: sp.id, outcome: "unknown", human_id: null, identity_valid: false, kind: null, reason: "revoked" }));
   const c = fx.instance("c", { spawnedBy: { instance: "sp", home: sp.home } }, {});
-  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.equal(r.attach, undefined, JSON.stringify(r));
   assert.match(r.note, /\(E_ATTACH_PARENT_REFUSED\).*revoked.*repair the parent's chain/);
   assert.equal(existsSync(join(c.home, ".oats-aweb", "attach.json")), false);
@@ -214,7 +216,7 @@ test("a refusal that can't be saved never stops the start: one warning says so",
   writeFileSync(join(c.home, ".aw", "did-key"), "did:key:zsomeoneelse");
   writeFileSync(join(c.home, ".aw", "did"), "did:key:zsomeoneelse");
   mkdirSync(join(c.home, ".oats-aweb"), { mode: 0o500 });
-  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   chmodSync(join(c.home, ".oats-aweb"), 0o700);
   assert.equal(r.attach.refused, "E_ATTACH_KEY_MISMATCH");
   assert.match(r.note, /could not be saved/);
@@ -224,12 +226,12 @@ test("a start under a grant-seat spawner records a lasting refusal naming the re
   const fx = deployment(t);
   const seat = fx.instance("seat", { spawnedBy: null, capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "g1" } } } } }, {});
   const c = fx.instance("c", { spawnedBy: { instance: "seat", home: seat.home } }, {});
-  const first = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const first = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual([first.attach?.refused, first.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
   assert.match(first.note, /respawn it from an instance that holds its own key, or from a shell/);
   assert.doesNotMatch(first.note, /tries again|then the setup expert runs/);
   const calls = fx.fake.calls().length;
-  const second = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const second = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.equal(second.attach.refused, "E_ATTACH_PARENT_REFUSED");
   assert.equal(fx.fake.calls().length, calls, "no aw call for a recorded refusal");
   assert.deepEqual(idCalls(fx.fake), []);
@@ -245,7 +247,7 @@ test("a grant seat's did:aw child is refused too: the check is on its recorded s
   const plan = buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "seat", home: seat }), homeFacts(run, { instance: "g", home: g.home })], stewardStatus: stewardFacts(run, fx.steward) });
   const entry = plan.homes.find((h) => h.instance === "g");
   assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
-  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
   assert.deepEqual(idCalls(fx.fake), []);
   assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), false);
@@ -257,7 +259,7 @@ test("a grant seat's child is refused through the legacy parent too (no spawnedB
   mkdirSync(seat, { recursive: true });
   writeFileSync(join(seat, "instance.json"), JSON.stringify({ instance: "seat", capabilityMeta: { "oats.aweb": { identity: { mode: "global", grant: { id: "g1" } } } } }));
   const g = fx.instance("g", { parentInstance: "seat" }, { global: true, who: UNREGISTERED });
-  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "grant_seat_parent"]);
   assert.deepEqual(idCalls(fx.fake), []);
 });
@@ -290,7 +292,7 @@ test("a retained did:aw seat the registry certifies plans attached-registry, but
   const plan = planOf(fx, [seat, c]);
   assert.deepEqual(plan.homes.map((h) => [h.instance, h.status, h.reason ?? null]), [["seat", "attached-registry", null], ["c", "refused", "parent_has_no_chain"]]);
   assert.match(plan.homes[1].message, /its parent seat is certified by the registry but holds no installed chain, so it can't issue \(a retained seat doesn't carry its source's chain, oats-aweb#180\) → respawn it from an instance that holds its own chain, or from a shell/);
-  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.equal(r.attach, undefined, "not lasting");
   assert.match(r.note, /parent_has_no_chain|holds no installed chain/);
   assert.deepEqual(idCalls(fx.fake), []);
@@ -304,7 +306,7 @@ test("any registry-certified parent without an installed chain can't issue: its 
   const entry = plan.homes.find((h) => h.instance === "c");
   assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "parent_has_no_chain"]);
   assert.match(entry.message, /its parent p is certified by the registry but holds no installed chain, so it can't issue → respawn it from an instance that holds its own chain, or from a shell$/);
-  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.equal(r.attach, undefined, "not lasting: an installed chain resolves it");
   assert.match(r.note, /the next start tries again/);
   assert.deepEqual(idCalls(fx.fake), []);
@@ -317,11 +319,11 @@ test("a child of a retained did:key seat is refused with copied_identity_parent,
   const entry = planOf(fx, [seat, c]).homes.find((h) => h.instance === "c");
   assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.match(entry.message, /its spawner seat uses an identity copied from \/legacy\/\.aw, and a retained seat doesn't carry its source's chain \(oats-aweb#180\), so it can't issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own chain, or from a shell/);
-  const first = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const first = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual([first.attach?.refused, first.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.doesNotMatch(first.note, /tries again|then the setup expert runs/);
   const calls = fx.fake.calls().length;
-  startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.equal(fx.fake.calls().length, calls, "not retried at start");
   assert.deepEqual(idCalls(fx.fake), []);
 });
@@ -333,7 +335,7 @@ test("a child of an unregistered retained did:aw seat is refused with copied_ide
   const entry = planOf(fx, [seat, c]).homes.find((h) => h.instance === "c");
   assert.deepEqual([entry.status, entry.code, entry.reason], ["refused", "E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.match(entry.message, /its spawner seat uses an identity copied from \/legacy\/\.aw, and a retained seat doesn't carry its source's chain \(oats-aweb#180\), so it can't issue: this instance stays chainless and reports unknown → respawn it from an instance that holds its own chain, or from a shell/);
-  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: c.home, instance: "c", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.deepEqual(idCalls(fx.fake), []);
 });
@@ -346,7 +348,7 @@ test("a did:aw child of a retained did:key seat is refused whatever the listing 
     const entry = planOf(fx, order).homes.find((h) => h.instance === "g");
     assert.deepEqual([entry.status, entry.reason], ["refused", "copied_identity_parent"], `${order.map((h) => h.name)}: ${JSON.stringify(entry)}`);
   }
-  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: g.home, instance: "g", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.deepEqual([r.attach?.refused, r.attach?.reason], ["E_ATTACH_PARENT_REFUSED", "copied_identity_parent"]);
   assert.deepEqual(idCalls(fx.fake), []);
   assert.equal(existsSync(join(g.home, ".aw", "id-chain.json")), false);
@@ -360,7 +362,7 @@ test("a steward the registry certifies but that holds no installed chain can't i
   const run = awInHome({ PATH: fx.fake.path });
   assert.throws(() => buildPlan({ deployment: fx.ws, settings: fx.settings, homes: [homeFacts(run, { instance: "a", home: a.home })], stewardStatus: stewardFacts(run, fx.steward) }),
     (e) => e.code === "E_ATTACH_PARENT_REFUSED" && /the deployment's steward is certified by the registry but holds no installed chain, so it can't issue → bind the human again/.test(e.message));
-  const r = startAttach({ listHomes: listAll(fx.ws), home: a.home, instance: "a", settings: fx.settings, deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
+  const r = startAttach({ listHomes: listAll(fx.ws), home: a.home, instance: "a", deployment: fx.ws, local: true, env: { PATH: fx.fake.path } });
   assert.equal(r.attach, undefined, "a plan-wide refusal is never recorded for the home");
   assert.match(r.note, /holds no installed chain.*the next start tries again/);
   assert.deepEqual(idCalls(fx.fake), []);

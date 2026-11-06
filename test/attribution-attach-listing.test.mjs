@@ -10,6 +10,7 @@ import test from "node:test";
 import { attachHome, awInHome, startAttach } from "../oats-package/capabilities/oats-aweb/lib/attach.mjs";
 import { homeKeyIds } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { fakeAwChain } from "./helpers/fake-aw-chain.mjs";
+import { writeHostSettings } from "./helpers/host-settings.mjs";
 
 const HUMAN = "did:aw:human1", STEWARD = "did:aw:steward1";
 const cert = (id, kind, parent) => ({ certificate: { id, kind, domain: "awtest-demo.example", parent }, signature: "s" });
@@ -32,11 +33,12 @@ function deployment(t) {
   writeFileSync(join(steward, ".aw", "did"), STEWARD);
   writeFileSync(join(steward, ".aw", "id-chain.json"), JSON.stringify({ v: 1, type: "aweb.id-chain", certificates: CHAIN }));
   const settings = { attribution: "human", human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: steward } };
+  writeHostSettings(ws, settings);
   const fake = fakeAwChain(t);
   const home = (name, record, opts) => { const h = join(ws, "agents", "dev", "instances", name); identity(h, opts); writeFileSync(join(h, "instance.json"), JSON.stringify({ instance: name, ...record })); return h; };
   /** `oats status` for this deployment: the homes listed, by default all. */
   const listing = (except = []) => () => ({ known: true, rows: readdirSync(join(ws, "agents", "dev", "instances")).filter((n) => !except.includes(n)).map((n) => ({ instance: n, home: join(ws, "agents", "dev", "instances", n) })) });
-  const start = (h, name, listHomes) => startAttach({ home: h, instance: name, settings, deployment: ws, local: true, env: { PATH: fake.path }, listHomes });
+  const start = (h, name, listHomes) => startAttach({ home: h, instance: name, deployment: ws, local: true, env: { PATH: fake.path }, listHomes });
   return { ws, steward, settings, fake, home, listing, start };
 }
 const inviteCwd = (fake) => fake.calls().find((c) => c.args[0] === "id" && c.args[1] === "child" && c.args[2] === "invite")?.cwd;

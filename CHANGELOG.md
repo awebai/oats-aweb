@@ -20,7 +20,10 @@
     fails after aw installed its chain is resumed by the next attach or start.
   - In mode `human`, a start attaches its own chainless home once its parent
     holds a chain: within 30 s, never stopping the start, with one warning if
-    it fails. A lasting refusal is recorded and not retried at start.
+    it fails. A lasting refusal is recorded and not retried at start. The
+    start reads the mode, the human and the steward from this host's
+    `oats-local.yaml` each time, so a home spawned before the bind attaches,
+    and a home whose host has since set `none` is issued nothing.
   - Readiness now says "until it is attached", not "until it is respawned".
   - With `attribution` absent or `none`, nothing changes: no aw call at start,
     and attach refuses with `E_ATTACH_NO_HUMAN`.

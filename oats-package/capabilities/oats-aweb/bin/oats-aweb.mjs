@@ -1772,14 +1772,13 @@ function assertMintingRootIssuesNothing(root) {
   if (typeof steward === "string" && resolve(steward) === resolve(root)) fatal(`the steward's home ${steward} is this deployment's minting root; the steward issues identities and the root mints them, so they must be separate homes → bind the human again with a steward home of its own, separate from the minting root`);
   if (existsSync(join(root, ".aw", "id-chain.json"))) fatal(`this deployment's minting root ${root} carries an identity chain, so aw would make it every child's parent → use a chainless minting root`);
 }
-/** The attach a start makes for its own home (lib/attach.mjs startAttach):
- *  one warning when it fails, and a lasting refusal kept in the meta. Mode
- *  none returns the meta untouched, with no aw call. */
+/** The attach a start makes for its own home (lib/attach.mjs startAttach),
+ *  by this host's attribution now, not the settings captured at spawn: one
+ *  warning when it fails, and a lasting refusal kept in the meta. Mode none
+ *  returns the meta untouched, with no aw call. */
 function attachAtStart(meta, local) {
-  let origins;
-  try { origins = JSON.parse(process.env.OATS_SETTINGS_ORIGINS || "{}"); } catch { origins = undefined; }
   let result;
-  try { result = startAttach({ home, instance, settings, origins, deployment: process.env.OATS_WORKSPACE || "", local, env: process.env }); }
+  try { result = startAttach({ home, instance, deployment: process.env.OATS_WORKSPACE || "", local, env: process.env }); }
   catch (e) { outNotes.push(`this home could not be attached at start: ${String(e.message || e).slice(0, 200)}; the next start tries again`); return meta; }
   if (!result) return meta;
   if (result.note) outNotes.push(result.note);

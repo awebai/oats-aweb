@@ -11,6 +11,7 @@ import { attachStateDir, readAttachRefusal, startAttach } from "../oats-package/
 import { homeKeyIds } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { fakeAwChain, writeIdentity } from "./helpers/fake-aw-chain.mjs";
 import { currentRootQuery } from "./helpers/current-root-query.mjs";
+import { writeHostSettings } from "./helpers/host-settings.mjs";
 
 /** `oats status` for a test deployment: every instance home under agents/. */
 function listAll(ws) {
@@ -29,7 +30,7 @@ function keyedHome(dir, { did } = {}) {
   return dir;
 }
 
-function fixture(t, { attribution = "human", record = { spawnedBy: null }, did, parentChained = true } = {}) {
+function fixture(t, { attribution = "human", record = { spawnedBy: null }, did, parentChained = true, host } = {}) {
   const ws = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-attach-start-")));
   t.after(() => rmSync(ws, { recursive: true, force: true }));
   writeFileSync(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
@@ -40,23 +41,27 @@ function fixture(t, { attribution = "human", record = { spawnedBy: null }, did, 
   const home = keyedHome(join(ws, "agents", "dev", "instances", "dev-1"), { did });
   writeFileSync(join(home, "instance.json"), JSON.stringify(record));
   const settings = { ...(attribution ? { attribution } : {}), human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: stewardHome } };
+  // This host's oats-local.yaml, as the bind writes it; `host` replaces it.
+  if (host === undefined) writeHostSettings(ws, settings);
+  else if (typeof host === "string") writeFileSync(join(ws, "oats-local.yaml"), host);
+  else if (host) writeHostSettings(ws, host);
   const fake = fakeAwChain(t);
-  const start = ({ env, ...extra } = {}) => startAttach({ home, instance: "dev-1", settings, deployment: ws, local: true, env: { PATH: fake.path, ...env }, listHomes: listAll(ws), ...extra });
-  return { ws, home, lead, fake, start };
+  const start = ({ env, ...extra } = {}) => startAttach({ home, instance: "dev-1", deployment: ws, local: true, env: { PATH: fake.path, ...env }, listHomes: listAll(ws), ...extra });
+  return { ws, home, lead, fake, start, stewardHome };
 }
 const idCalls = (fake) => fake.calls().filter((c) => c.args[0] === "id");
 
-test("mode none or absent, or attribution set outside this host: nothing, and no aw call", (t) => {
-  for (const [attribution, origins] of [[null, undefined], ["none", undefined], ["human", { "/attribution": { kind: "workspace" } }]]) {
-    const fx = fixture(t, { attribution });
-    assert.equal(fx.start({ origins }), null);
-    assert.deepEqual(fx.fake.calls(), []);
+test("mode none or absent on this host, or no human bound on it: nothing, and no aw call", (t) => {
+  for (const host of [null, { attribution: "none" }, { human: { id: HUMAN } }, { attribution: "human" }]) {
+    const fx = fixture(t, { host });
+    assert.equal(fx.start(), null, JSON.stringify(host));
+    assert.deepEqual(fx.fake.calls(), [], JSON.stringify(host));
   }
 });
 
 test("a grant seat or a home that already has a chain: nothing to attach", (t) => {
   const fx = fixture(t);
-  assert.equal(startAttach({ home: fx.home, instance: "dev-1", settings: { attribution: "human", human: { id: HUMAN }, steward: { id: STEWARD, home: "/x" } }, deployment: fx.ws, local: false, env: {} }), null);
+  assert.equal(startAttach({ home: fx.home, instance: "dev-1", deployment: fx.ws, local: false, env: {} }), null);
   writeFileSync(join(fx.home, ".aw", "id-chain.json"), "{}");
   assert.deepEqual(fx.start(), { attach: undefined, note: null });
   assert.deepEqual(fx.fake.calls(), []);
@@ -125,14 +130,17 @@ test("the start's budget bounds its lock waits too: a busy lock gate ends it wit
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
-function launch(fx, { preview = false, attribution = "human" } = {}) {
-  const settings = { root: fx.ws, ...(attribution ? { attribution } : {}), human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: join(fx.ws, ".aweb-stewards", "s") } };
+/** The kernel starts the home with the settings its spawn captured: by
+ *  default the bound human's, or `captured` (what a spawn before the bind
+ *  saw), with `origins` as the kernel records them. */
+function launch(fx, { preview = false, attribution = "human", captured, origins } = {}) {
+  const settings = { root: fx.ws, ...(captured ?? { ...(attribution ? { attribution } : {}), human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: join(fx.ws, ".aweb-stewards", "s") } }) };
   const meta = { team: "legacy:example.test", alias: "dev-1", delivery: "channel", runtime: "claude", identity: { mode: "local" }, defaultTeam: { label: "default", team: "legacy:example.test", from: "deployment" } };
   const rows = listAll(fx.ws)().rows;
   const kernel = currentRootQuery(fx.ws, { home: fx.home, deployment: fx.ws, settings, change: `if(args[0]==='status')doc={root:${JSON.stringify(fx.ws)},agents:[{instances:${JSON.stringify(rows)}}]};` });
   const r = spawnSync(process.execPath, [HOOK, "launch"], { cwd: fx.home, encoding: "utf8", timeout: 60000, env: {
     PATH: fx.fake.path, HOME: process.env.HOME, OATS_EVENT: "launch", OATS_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_TEAM_SCOPE: fx.ws, OATS_CLI_BIN: kernel.cli, OATS_RUNTIME: "claude", OATS_PREVIOUS_RUNTIME: "claude",
-    OATS_SETTINGS: JSON.stringify(settings), OATS_META: JSON.stringify(meta), OATS_TEAMS: "[]", OATS_TEAMS_SOURCE: "live", ...(preview ? { OATS_LAUNCH_PREVIEW: "1" } : {}),
+    OATS_SETTINGS: JSON.stringify(settings), ...(origins ? { OATS_SETTINGS_ORIGINS: JSON.stringify(origins) } : {}), OATS_META: JSON.stringify(meta), OATS_TEAMS: "[]", OATS_TEAMS_SOURCE: "live", ...(preview ? { OATS_LAUNCH_PREVIEW: "1" } : {}),
   } });
   return { status: r.status, doc: JSON.parse(r.stdout.trim().split("\n").pop() || "{}"), stderr: r.stderr };
 }
@@ -163,6 +171,50 @@ test("launch in mode none: no attach call and no attach in the meta", (t) => {
   assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
   assert.deepEqual(idCalls(fx.fake), []);
   assert.equal(Object.hasOwn(r.doc.meta, "attach"), false);
+});
+
+test("launch: the mode is this host's now, not the spawn's: workspace-committed human with nothing on this host is off", (t) => {
+  const fx = fixture(t, { host: null });
+  const r = launch(fx, { origins: { "/attribution": { kind: "workspace" } } });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual(idCalls(fx.fake), []);
+  assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), false);
+  assert.equal(Object.hasOwn(r.doc.meta, "attach"), false);
+});
+
+test("launch: a home spawned in mode human whose host has since opted out is issued nothing", (t) => {
+  const fx = fixture(t, { host: { attribution: "none", human: { id: HUMAN, label: "Juan" }, steward: { id: STEWARD, home: join(tmpdir(), "unused") } } });
+  const r = launch(fx);
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual(idCalls(fx.fake), []);
+  assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), false);
+});
+
+test("launch: a home spawned before the bind attaches at its next start, by this host's bound human and steward", (t) => {
+  const fx = fixture(t);
+  const r = launch(fx, { captured: {} });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.equal(idCalls(fx.fake).find((c) => c.args[1] === "child" && c.args[2] === "invite")?.cwd, fx.stewardHome);
+  assert.equal(existsSync(join(fx.home, ".aw", "id-chain.json")), true);
+});
+
+test("launch: an oats.aweb block in a form oats.aweb doesn't write counts as off, with one fixed warning", (t) => {
+  const fx = fixture(t, { host: "schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb: {attribution: human}\n" });
+  const r = launch(fx);
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual(idCalls(fx.fake), []);
+  assert.equal((r.doc.warning.match(/attribution counts as off at this start/g) || []).length, 1);
+  assert.match(r.doc.warning, /oats-local\.yaml's settings\.oats\.aweb is not in the block style oats\.aweb writes, so attribution counts as off at this start and nothing is attached → write it in block style/);
+  assert.equal(r.doc.warning.includes(fx.ws), false, "no path");
+});
+
+test("the host read counts against the start's budget", (t) => {
+  const fx = fixture(t);
+  const began = Date.now();
+  const r = fx.start({ budgetMs: 1500, readHost: () => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1600); return { settings: { attribution: "human", human: { id: HUMAN }, steward: { id: STEWARD, home: fx.stewardHome } } }; } });
+  assert.ok(Date.now() - began < 2500, `took ${Date.now() - began} ms`);
+  assert.match(r.note, /budget of 1\.5 s ran out/);
+  assert.deepEqual(fx.fake.calls(), []);
 });
 
 test("the steward's evidence unavailable at start is a warning for now, never a lasting refusal of the home", (t) => {
