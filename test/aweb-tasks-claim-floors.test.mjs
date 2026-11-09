@@ -32,7 +32,9 @@ test('the floors are the final releases, and the local AW_MIN is oats.aweb\'s', 
   assert.equal(floors.AW_MIN, awFloor.AW_MIN, 'oats-aweb-tasks/lib/claim-floors.mjs AW_MIN must equal oats-aweb/lib/aw-floor.mjs AW_MIN');
   // Read from the files too, so a copy that only re-exports cannot pass.
   const constant = (path, name) => new RegExp(`export const ${name} = '([^']+)';`).exec(readFileSync(join(root, path), 'utf8'))?.[1];
-  assert.equal(constant('oats-package/capabilities/oats-aweb-tasks/lib/claim-floors.mjs', 'AW_MIN'), constant('oats-package/capabilities/oats-aweb/lib/aw-floor.mjs', 'AW_MIN'));
+  // oats.aweb's AW_MIN is aw-compat.json's min.
+  const compat = JSON.parse(readFileSync(join(root, 'oats-package/capabilities/oats-aweb/aw-compat.json'), 'utf8'));
+  assert.equal(constant('oats-package/capabilities/oats-aweb-tasks/lib/claim-floors.mjs', 'AW_MIN'), compat.min);
   for (const file of ['claim-floors.mjs', 'version.mjs', 'binding.mjs']) assert.doesNotMatch(readFileSync(join(cap, 'lib', file), 'utf8'), /from '[^']*oats-aweb\//, `${file} imports nothing of oats.aweb`);
   // oats.aweb-tasks never reads oats.aweb's instance.json meta or its private files.
   for (const file of ['claim-floors.mjs', 'binding.mjs']) assert.doesNotMatch(readFileSync(join(cap, 'lib', file), 'utf8'), /capabilityMeta|\.oats-aweb\b/, file);
