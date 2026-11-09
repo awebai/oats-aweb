@@ -120,8 +120,21 @@ function journeyCoverProblems(ci, compat) {
   const problems = [];
   const job = ciJob(ci, "resident-journey");
   if (!job) return ["ci.yml has no resident-journey job"];
-  const matrix = /\n( +)matrix:\n((?:\1 +.*\n)+)/.exec(job);
-  const entries = matrix ? matrix[2].split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#")) : [];
+  // The matrix is every line under `matrix:` until one indented no deeper; a
+  // blank or comment line inside it doesn't end it. Any form other than the
+  // block mapping (`matrix: {...}`, an expression) finds no entries and fails.
+  const lines = job.split("\n");
+  const at = lines.findIndex((l) => /^ +matrix:$/.test(l));
+  const entries = [];
+  if (at >= 0) {
+    const indent = lines[at].length - lines[at].trimStart().length;
+    for (const line of lines.slice(at + 1)) {
+      const text = line.trim();
+      if (!text || text.startsWith("#")) continue;
+      if (line.length - line.trimStart().length <= indent) break;
+      entries.push(text);
+    }
+  }
   const aw = entries.length === 1 ? /^aw:\s*\[([^\]]*)\]$/.exec(entries[0]) : null;
   // Each entry is quoted: YAML reads a plain 1.40 as the number 1.4.
   if (!aw) problems.push(`the resident-journey matrix must be the one line aw: [...] (found ${JSON.stringify(entries)})`);
@@ -159,6 +172,13 @@ test("the journey guard fails when the matrix and aw-compat.json differ", () => 
   }
   const included = CI.replace(matrixLine[0], `${matrixLine[0]}${matrixLine[1]}include:\n${matrixLine[1]}  - aw: '1.36.40'\n`);
   assert.match(journeyCoverProblems(included, COMPAT).join("\n"), /must be the one line aw:/);
+  // A blank or comment line inside the matrix doesn't end it.
+  for (const gap of ["\n", `${matrixLine[1]}# a comment\n`, "\n\n"]) {
+    for (const [key, entry] of [["exclude", `'${COMPAT.tested}'`], ["include", "'1.36.40'"]]) {
+      const hidden = CI.replace(matrixLine[0], `${matrixLine[0]}${gap}${matrixLine[1]}${key}:\n${matrixLine[1]}  - aw: ${entry}\n`);
+      assert.match(journeyCoverProblems(hidden, COMPAT).join("\n"), /must be the one line aw:/, `${key} after ${JSON.stringify(gap)}`);
+    }
+  }
 });
 
 test("the journey guard fails when a job could run another aw than its entry, or skip", () => {
