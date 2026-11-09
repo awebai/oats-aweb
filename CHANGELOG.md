@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Fixed: `setup --create <label> --namespace <domain>` takes `--name <alias>`
+  (#208).** On a fresh deployment there is no root identity for the per-team
+  root's alias, and setup refused `--name` with `--create`, so the create could
+  never finish. `--name` now names that identity, checked against the aweb
+  alias rule. Without `--name` or a root identity, setup refuses before
+  `aw id team create` runs, naming `--name <alias>`, and nothing is created. A
+  create left partial (team key written, no root) resumes when the same
+  command is re-run with `--name`: aw's create on the kept key returns the
+  same team, then register, invite, accept and connect follow.
 - **Added: aw-compat.json published; tested aw 1.36.56.** oats.aweb states
   the aw it supports in one public file,
   `oats-package/capabilities/oats-aweb/aw-compat.json`: `min` (1.36.33,

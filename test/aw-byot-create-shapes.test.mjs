@@ -108,7 +108,9 @@ test('real aw: the offline answers still have the captured shapes', { skip: !rea
   assert.deepEqual(readdirSync(join(home, '.config', 'aw', 'team-invites')), [`${minted.invite_id}.json`], 'aw keeps the invite record user-wide');
 });
 
-test('real aw: setup --create with no namespace controller key names it and creates nothing', { skip: !realAw && 'set OATS_AWEB_TEST_AW to an aw 1.36.56 or later binary' }, (t) => {
+// A fresh deployment, as the real binary sees one: an empty HOME, so `aw whoami` finds no root
+// identity, and no namespace controller key. Nothing reaches a registry.
+function realSetupCreate(t, more = []) {
   const dir = scratch(t), home = join(dir, 'home'), deployment = join(home, 'deployment'), bin = join(dir, 'bin');
   mkdirSync(bin);
   writeFileSync(join(bin, 'aw'), `#!/bin/sh\nexec ${JSON.stringify(realAw)} "$@"\n`);
@@ -118,10 +120,24 @@ test('real aw: setup --create with no namespace controller key names it and crea
   const teams = { teamsApi: 1, deployment, defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
   writeFileSync(cli, `#!${process.execPath}\nif (process.argv[2] === "teams" && process.argv[3] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
   const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, AWID_REGISTRY_URL: 'http://127.0.0.1:9', AWEB_URL: 'http://127.0.0.1:9/api', OATS_EVENT: 'setup', OATS_WORKSPACE: deployment, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root: deployment }) };
-  const r = spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', NS], { cwd: deployment, env, encoding: 'utf8', timeout: 60000 });
+  const r = spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', NS, ...more], { cwd: deployment, env, encoding: 'utf8', timeout: 60000 });
+  return { r, home, deployment };
+}
+
+test('real aw: setup --create with no namespace controller key names it and creates nothing', { skip: !realAw && 'set OATS_AWEB_TEST_AW to an aw 1.36.56 or later binary' }, (t) => {
+  const { r, home, deployment } = realSetupCreate(t, ['--name', 'lab-root']);
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /aw id team failed \(exit 2\) \(output withheld: this command handles credentials; the namespace controller key for this namespace is not on this machine\); run `aw id namespace prepare-controller --domain example\.invalid` as this user, or create the team where that key is, then re-run; nothing was created/);
   assert.doesNotMatch(r.stdout + r.stderr, /pass --hosted/);
   assert.equal(existsSync(join(deployment, '.aweb-roots')), false);
   assert.equal(existsSync(join(home, '.awid', 'team-keys')), false);
+});
+
+// awebai/oats-aweb#208, live lab: without --name, a fresh deployment's create stops before aw writes a team key.
+test('real aw: setup --create on a fresh deployment without --name stops before create, naming --name <alias>', { skip: !realAw && 'set OATS_AWEB_TEST_AW to an aw 1.36.56 or later binary' }, (t) => {
+  const { r, home, deployment } = realSetupCreate(t);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.stderr, 'oats aweb setup: --name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule; nothing was created\n');
+  assert.equal(existsSync(join(deployment, '.aweb-roots')), false);
+  assert.equal(existsSync(join(home, '.awid')), false);
 });

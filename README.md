@@ -1156,7 +1156,7 @@ Supported acts:
 - `oats aweb setup` with the selected team API key supplied only through the
   operator's protected child environment (`AWEB_API_KEY`): runs `aw init
   --do-not-touch-agents-md` for that hosted team. `--service` stays join-only; `--name` is supported for
-  join and additionally required for `--username`. Neither flag extends the
+  join and `--create`, and required for `--username`. Neither flag extends the
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
@@ -1164,7 +1164,10 @@ Supported acts:
   rule and, before any aw call, resolves the aweb service: `AWEB_URL` (the
   server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
   `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
-  neither, it refuses and nothing is created. It then runs `aw id team create
+  neither, it refuses and nothing is created. The per-team root's identity
+  takes `--name <alias>`, else the alias of the deployment's root identity
+  (`aw whoami`); a fresh deployment has none, so it needs `--name`, and
+  without either setup refuses before any team key is written. It then runs `aw id team create
   --name <normalized> --namespace <domain>`, registers the team with that
   service (`aw id team register --service <url> --team <team id>`), mints a
   local invite with the team key aw just wrote (`aw id team invite`), accepts

@@ -2240,7 +2240,7 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
-  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
+  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] [--name <alias>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
   let setupDir, setupLabel, setupPlan = false;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
@@ -2285,13 +2285,15 @@ if (event === "launch") {
     try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }
     if (!invite) { console.error("oats aweb setup: --invite-stdin read no invite token from stdin"); process.exit(1); }
   }
-  if ((joinService || (joinName && !username)) && !joinLabel && !inviteForm) { console.error(`oats aweb setup: --service/--name require --join <label> or an invite\n${usage}`); process.exit(2); }
+  if ((joinService || (joinName && !username && !createLabel)) && !joinLabel && !inviteForm) { console.error(`oats aweb setup: --service/--name require --join <label> or an invite\n${usage}`); process.exit(2); }
   // New hosted accounts have no recorded root alias to reuse. Require the
   // operator's explicit name before installation, directory creation or init.
   if (username && (!joinName || !AWEB_ALIAS_RE.test(joinName))) {
     console.error(`oats aweb setup: --username requires --name <alias>; ${AWEB_ALIAS_RULE}`);
     process.exit(2);
   }
+  // --create names its team root's identity with --name when there is no root identity to reuse.
+  if (createLabel && joinName && !AWEB_ALIAS_RE.test(joinName)) { console.error(`oats aweb setup: --name ${joinName}: ${AWEB_ALIAS_RULE}`); process.exit(2); }
   const apiKey = !!process.env.AWEB_API_KEY;
   const actions = [username ? "--username" : null, joinLabel || inviteForm ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
@@ -2421,8 +2423,9 @@ ${JSON.stringify(problem.details || {})}`);
   const rootAlias = () => {
     try { const who = JSON.parse(run(["aw", "whoami", "--json"], scope)); return who.alias || who.name; } catch { return undefined; }
   };
+  let resolvedAlias;
   const setupAlias = () => {
-    const alias = joinName || rootAlias();
+    const alias = resolvedAlias ??= joinName || rootAlias();
     if (!alias || !AWEB_ALIAS_RE.test(alias)) throw new Error(`--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule`);
     return alias;
   };
@@ -2511,6 +2514,10 @@ ${JSON.stringify(problem.details || {})}`);
   const createTeam = (label, service) => {
     if (!createNamespace) throw new Error(hostedCreateUnavailable());
     const name = normalizeAwebTeamName(label);
+    // The alias the team root will accept under, settled before create writes a team key.
+    if (!existsSync(join(teamRootFor(label, candidateTeamId(name)).teamRoot, ".aw", "identity.yaml"))) {
+      try { setupAlias(); } catch (e) { throw new Error(`${e.message}; nothing was created`); }
+    }
     const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
     let created;
     try {

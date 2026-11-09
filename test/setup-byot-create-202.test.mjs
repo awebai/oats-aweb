@@ -28,7 +28,7 @@ function fixture(t) {
   const fake = fakeAwSetupPath(t);
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AW_)/.test(k)));
   Object.assign(env, { PATH: fake.path, AWEB_API_KEY: '', AWEB_URL: SERVICE, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root }) });
-  const run = (extra = {}, namespace = NS) => spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', namespace], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000 });
+  const run = (extra = {}, namespace = NS, more = []) => spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', namespace, ...more], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000 });
   const calls = () => fake.readCalls().map((c) => c.args.join(' '));
   const kernel = () => existsSync(kernelCalls) ? readFileSync(kernelCalls, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l).args) : [];
   const teamRoot = join(root, '.aweb-roots', 'eng');
@@ -40,10 +40,10 @@ test('a BYOT create registers the team, mints a local invite and accepts it; the
   const f = fixture(t), r = f.run();
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(f.calls(), [
+    'whoami --json',
     `id team create --name=eng --namespace=${NS} --json`,
     `id team register --service=${SERVICE} --team=${TEAM} --json`,
     `id team invite --team=eng --namespace=${NS} --json`,
-    'whoami --json',
     'id team accept-invite --token-stdin --name=fixture --local --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
     'team list --json',
@@ -75,7 +75,7 @@ for (const mode of ['pinned', 'registry-409']) {
     assert.equal(r.status, 1);
     assert.match(r.stderr, /team eng:example\.invalid already exists in the registry, and its team key is not on this machine; choose another label \(--create <label>\), or run setup as the user whose ~\/\.awid\/team-keys\/example\.invalid\/ holds its key; nothing was created/);
     assert.doesNotMatch(r.stdout + r.stderr, /pinned|did:key|Team already exists|http 409/);
-    assert.deepEqual(f.calls(), [`id team create --name=eng --namespace=${NS} --json`]);
+    assert.deepEqual(f.calls(), ['whoami --json', `id team create --name=eng --namespace=${NS} --json`]);
     assert.equal(existsSync(f.teamRoot), false);
     assert.deepEqual(f.kernel(), [['teams', '--json']]);
   });
@@ -85,7 +85,7 @@ test('a namespace given in another case or with a trailing dot is aw\'s normaliz
   const f = fixture(t), r = f.run({ AW_CREATE_MODE: 'pinned' }, 'Example.INVALID.');
   assert.equal(r.status, 1);
   assert.match(r.stderr, /team eng:example\.invalid already exists in the registry, and its team key is not on this machine; choose another label \(--create <label>\), or run setup as the user whose ~\/\.awid\/team-keys\/example\.invalid\/ holds its key; nothing was created/);
-  assert.deepEqual(f.calls(), [`id team create --name=eng --namespace=${NS} --json`]);
+  assert.deepEqual(f.calls(), ['whoami --json', `id team create --name=eng --namespace=${NS} --json`]);
 });
 
 test('a create that prints a token (a future aw) still registers, and mints no invite', (t) => {
@@ -154,7 +154,7 @@ test('a missing namespace controller key gets the fixed cause and remedy, never 
   assert.match(r.stderr, /aw id team failed \(exit 2\) \(output withheld: this command handles credentials; the namespace controller key for this namespace is not on this machine\); run `aw id namespace prepare-controller --domain example\.invalid` as this user, or create the team where that key is, then re-run; nothing was created/);
   assert.doesNotMatch(r.stdout + r.stderr, new RegExp(SENTINEL));
   assert.doesNotMatch(r.stderr, /pass --hosted/);
-  assert.deepEqual(f.calls(), [`id team create --name=eng --namespace=${NS} --json`]);
+  assert.deepEqual(f.calls(), ['whoami --json', `id team create --name=eng --namespace=${NS} --json`]);
 });
 
 test('a register refusal names the HTTP status and the known code, and nothing else of the body', (t) => {
@@ -212,4 +212,62 @@ test('no provider code, README or skill advises copying a team key to another us
   walk(pkg);
   walk(fileURLToPath(new URL('../docs/', import.meta.url)));
   for (const file of files) assert.doesNotMatch(readFileSync(file, 'utf8'), advice, file);
+});
+
+// awebai/oats-aweb#208, live lab: a fresh deployment has no root identity for `aw whoami` to name,
+// so the team root's alias comes from --name. Without either, setup stops before any create.
+test('a fresh deployment without --name stops before aw id team create, naming --name <alias>', (t) => {
+  const f = fixture(t), r = f.run({ AW_WHOAMI_FAIL: '1' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule; nothing was created/);
+  assert.deepEqual(f.calls(), ['whoami --json']);
+  assert.equal(existsSync(join(dirname(f.fake.path), 'team-keys')), false, 'no team key');
+  assert.equal(existsSync(f.teamRoot), false);
+});
+
+test('--create takes --name: the team root accepts the invite under that alias, with no root identity', (t) => {
+  const f = fixture(t), r = f.run({ AW_WHOAMI_FAIL: '1' }, NS, ['--name', 'lab2-root']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(f.calls(), [
+    `id team create --name=eng --namespace=${NS} --json`,
+    `id team register --service=${SERVICE} --team=${TEAM} --json`,
+    `id team invite --team=eng --namespace=${NS} --json`,
+    'id team accept-invite --token-stdin --name=lab2-root --local --json',
+    `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
+    'team list --json',
+  ]);
+  assert.match(readFileSync(join(f.root, 'oats-local.yaml'), 'utf8'), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/);
+});
+
+test('--create with an alias outside the aweb rule is refused before any aw call', (t) => {
+  const f = fixture(t), r = f.run({}, NS, ['--name', '-bad alias']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /oats aweb setup: --name -bad alias: invalid alias: aweb aliases must be 1-64 characters/);
+  assert.deepEqual(f.calls(), []);
+});
+
+// The lab's state: an earlier create wrote the team key and the registry holds the team under it,
+// but no root, invite or accept followed. aw's create on that key is its own resume
+// (ensureLocalTeamRegistered, id_team.go:4147 at aw-v1.36.56): it loads the key, takes the
+// registry's 409, finds its own did:key pinned and prints create-created again. No new key or team.
+test('the lab\'s partial create (team key kept, no root) resumes with --name: one create, then register, invite, accept, connect', (t) => {
+  const f = fixture(t);
+  const key = join(dirname(f.fake.path), 'team-keys', NS, 'eng.key');
+  mkdirSync(dirname(key), { recursive: true });
+  writeFileSync(key, 'FIXTURE-LAB-TEAM-KEY\n');
+  const r = f.run({ AW_WHOAMI_FAIL: '1' }, NS, ['--name', 'lab2-root']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(f.calls(), [
+    `id team create --name=eng --namespace=${NS} --json`,
+    `id team register --service=${SERVICE} --team=${TEAM} --json`,
+    `id team invite --team=eng --namespace=${NS} --json`,
+    'id team accept-invite --token-stdin --name=lab2-root --local --json',
+    `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
+    'team list --json',
+  ]);
+  assert.equal(readFileSync(key, 'utf8'), 'FIXTURE-LAB-TEAM-KEY\n', 'the kept key, not a new one');
+  assert.ok(r.stdout.includes(`  team key: ${key} (user-wide`), r.stdout);
+  assert.match(r.stdout, new RegExp(`created ${TEAM}, accepted it into ${f.teamRoot}`));
+  assert.match(readFileSync(join(f.root, 'oats-local.yaml'), 'utf8'), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/);
+  assert.deepEqual(f.kernel().filter((a) => a[1] === 'add'), [['teams', 'add', 'eng', `--team=${TEAM}`]]);
 });
