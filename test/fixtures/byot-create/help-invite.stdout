@@ -1,0 +1,22 @@
+Generate an invite token for a team.
+
+Defaults to the active local team when --team and --namespace are omitted.
+Invites create local workspace members unless --member-global is set. Hosted teams use cloud
+invite authority; local-controller teams use the local team controller key.
+
+Usage:
+  aw id team invite [flags]
+
+Flags:
+  -h, --help               help for invite
+      --member-global      Create global member invite
+      --member-local       Create local workspace member invite (default)
+      --namespace string   Namespace domain
+      --team string        Team name
+
+Global Flags:
+      --debug                  Log background errors to stderr
+      --identity-home string   Use this absolute credential directory (contains signing.key or grant.yaml; usually <workspace>/.aw, not its parent)
+      --json                   Output as JSON
+      --server-name string     Override the server host or name for this command
+      --trace                  Trace redacted HTTP requests and responses to stderr

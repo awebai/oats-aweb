@@ -1,0 +1,1 @@
+no local controller key for --namespace example.invalid; pass --hosted for a hosted sibling, or install the namespace controller key for BYOT (aw id namespace prepare-controller --domain example.invalid)

@@ -76,3 +76,30 @@ export function withheldFailureCause({ stderr, stdout }) {
   if (NETWORK_FAILURE_RE.test(text)) return "the aweb service could not be reached: a network or TLS failure";
   return "no HTTP status, aw error code or network failure in its output";
 }
+
+/** A namespace domain as aw normalizes it before it uses or prints one
+ *  (awconfig.NormalizeDomain): trimmed, lowercased, without one trailing dot. */
+export function normalizeAwDomain(domain) {
+  const lower = String(domain ?? "").trim().toLowerCase();
+  return lower.endsWith(".") ? lower.slice(0, -1) : lower;
+}
+
+/** Whether `aw id team create --name <name> --namespace <domain> --json` was
+ *  refused because the name is already held in the namespace under a team key
+ *  that is not this machine's (awebai/oats-aweb#208). Read only from aw's --json
+ *  error envelope, in exactly the two shapes aw 1.36.56 prints for it
+ *  (ensureLocalTeamRegistered): "team <domain>/<name> is already pinned to
+ *  <did:key>" under code `error`, and the registry's own 409 under code
+ *  `http_error` ("create team at registry: ..."). A re-create with this
+ *  machine's own key is not a refusal: aw answers it as created. */
+export function teamNameTaken(stdout, domain, name) {
+  domain = normalizeAwDomain(domain);
+  let error;
+  try { error = leadingJsonObject(String(stdout ?? "").trim())?.error; } catch { return false; }
+  if (!error || typeof error.message !== "string") return false;
+  if (error.code === "error") {
+    const pinned = `team ${domain}/${name} is already pinned to did:key:`;
+    return error.message.startsWith(pinned) && /^\S+$/.test(error.message.slice(pinned.length));
+  }
+  return error.code === "http_error" && error.http_status === 409 && error.message.startsWith("create team at registry: ");
+}

@@ -5,10 +5,10 @@
 // create; a missing key gets a fixed cause; aw's own text never passes through.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
@@ -28,7 +28,7 @@ function fixture(t) {
   const fake = fakeAwSetupPath(t);
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AW_)/.test(k)));
   Object.assign(env, { PATH: fake.path, AWEB_API_KEY: '', AWEB_URL: SERVICE, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root }) });
-  const run = (extra = {}) => spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', NS], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000 });
+  const run = (extra = {}, namespace = NS) => spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', namespace], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000 });
   const calls = () => fake.readCalls().map((c) => c.args.join(' '));
   const kernel = () => existsSync(kernelCalls) ? readFileSync(kernelCalls, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l).args) : [];
   const teamRoot = join(root, '.aweb-roots', 'eng');
@@ -57,6 +57,35 @@ test('a BYOT create registers the team, mints a local invite and accepts it; the
   assert.match(readFileSync(join(f.teamRoot, '.aw', 'workspace.yaml'), 'utf8'), new RegExp(`aweb_url: ${SERVICE}`));
   assert.match(readFileSync(join(f.root, 'oats-local.yaml'), 'utf8'), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/);
   assert.deepEqual(f.kernel(), [['teams', '--json'], ['teams', 'add', 'eng', `--team=${TEAM}`]]);
+});
+
+test('the result names where the team key is, user-wide, and never prints the key', (t) => {
+  const f = fixture(t), r = f.run();
+  assert.equal(r.status, 0, r.stderr);
+  const keyPath = join(dirname(f.fake.path), 'team-keys', NS, 'eng.key');
+  assert.ok(r.stdout.includes(`  team key: ${keyPath} (user-wide: every process this user runs can read it; never share it)\n`), r.stdout);
+  assert.doesNotMatch(r.stdout + r.stderr, /FIXTURE-TEAM-KEY/);
+});
+
+// awebai/oats-aweb#208: aw 1.36.56 answers a name already held in the namespace under another
+// team key in two shapes (test/fixtures/byot-create/source-derived); setup never picks another name.
+for (const mode of ['pinned', 'registry-409']) {
+  test(`a name taken under another team key (${mode}) stops with the fixed cause: no -2 suffix, no register, nothing of aw's text`, (t) => {
+    const f = fixture(t), r = f.run({ AW_CREATE_MODE: mode });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /team eng:example\.invalid already exists in the registry, and its team key is not on this machine; choose another label \(--create <label>\), or run setup as the user whose ~\/\.awid\/team-keys\/example\.invalid\/ holds its key; nothing was created/);
+    assert.doesNotMatch(r.stdout + r.stderr, /pinned|did:key|Team already exists|http 409/);
+    assert.deepEqual(f.calls(), [`id team create --name=eng --namespace=${NS} --json`]);
+    assert.equal(existsSync(f.teamRoot), false);
+    assert.deepEqual(f.kernel(), [['teams', '--json']]);
+  });
+}
+
+test('a namespace given in another case or with a trailing dot is aw\'s normalized one, in argv and in the taken-name cause', (t) => {
+  const f = fixture(t), r = f.run({ AW_CREATE_MODE: 'pinned' }, 'Example.INVALID.');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /team eng:example\.invalid already exists in the registry, and its team key is not on this machine; choose another label \(--create <label>\), or run setup as the user whose ~\/\.awid\/team-keys\/example\.invalid\/ holds its key; nothing was created/);
+  assert.deepEqual(f.calls(), [`id team create --name=eng --namespace=${NS} --json`]);
 });
 
 test('a create that prints a token (a future aw) still registers, and mints no invite', (t) => {
@@ -149,8 +178,9 @@ for (const [what, code] of [['a code with a newline', 'service_url_mismatch\nINJ
 test('a team key that is not on this machine gets the fixed cause and remedy, never aw\'s text', (t) => {
   const f = fixture(t), r = f.run({ AW_CREATE_MODE: 'keyless' });
   assert.equal(r.status, 1);
-  assert.match(r.stderr, new RegExp(`registering ${TEAM} with the aweb service at ${SERVICE} failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials; the team key is not on this machine\\); team ${TEAM} exists: run setup as the user whose ~/\\.awid/team-keys/example\\.invalid/ holds its key, or copy the key there, then re-run the same command to resume`));
+  assert.match(r.stderr, new RegExp(`registering ${TEAM} with the aweb service at ${SERVICE} failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials; the team key is not on this machine\\); team ${TEAM} exists: run setup as the user whose ~/\\.awid/team-keys/example\\.invalid/ holds its key, then re-run the same command to resume`));
   assert.doesNotMatch(r.stdout + r.stderr, new RegExp(`${SENTINEL}|no such file|key is kept`));
+  assert.doesNotMatch(r.stdout + r.stderr, /\bcop(?:y|ying|ied)\b/i, 'the remedy never suggests moving the key (#208)');
   assert.deepEqual(named(f.calls(), 'id team invite'), []);
 });
 
@@ -170,4 +200,16 @@ test('a retry whose only service is the retained root it connected resumes there
   ]);
   assert.match(r.stdout, new RegExp(`registered with ${service}`));
   assert.deepEqual(f.kernel().filter((a) => a[1] === 'add'), Array(2).fill(['teams', 'add', 'eng', `--team=${TEAM}`]));
+});
+
+// awebai/oats-aweb#208: a team key stays with the user that holds it. No remedy or note
+// in the provider, its README or its skills tells anyone to copy it elsewhere.
+test('no provider code, README or skill advises copying a team key to another user or machine', () => {
+  const advice = /\bor copy (?:the|its) (?:team )?key\b|\bcopy (?:the|its) (?:team )?key there\b|\bneeds the key in its own\b/i;
+  const pkg = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/', import.meta.url));
+  const files = [fileURLToPath(new URL('../README.md', import.meta.url))];
+  const walk = (dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) { const p = join(dir, e.name); if (e.isDirectory()) walk(p); else if (/\.(md|mjs)$/.test(e.name)) files.push(p); } };
+  walk(pkg);
+  walk(fileURLToPath(new URL('../docs/', import.meta.url)));
+  for (const file of files) assert.doesNotMatch(readFileSync(file, 'utf8'), advice, file);
 });

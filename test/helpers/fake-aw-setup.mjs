@@ -28,27 +28,35 @@
 //                     the version from it, so a fake npm can upgrade aw
 //   accept-invite --token-stdin reads the token from stdin; the call records
 //                     `stdin: true` and the token's sha256, never the token
-//   id team create    as aw 1.36.53 does it for --namespace (BYOT): no invite token;
+//   id team create    as aw 1.36.56 does it for --namespace (BYOT): no invite token;
 //                     it writes the team key under team-keys/ beside the bin
 //                     directory, and a re-run with that key prints the same team.
 //                     AW_CREATE_MODE: no-controller-key (aw's exit 2 usage error,
 //                     with RAW-AW-SENTINEL in its text), token (a future aw that
 //                     prints an invite token), keyless (the key lands where this
-//                     user's aw cannot read it), missing-id, conflict, conflict-once,
-//                     network-error, token-leak-error
+//                     user's aw cannot read it), missing-id, network-error,
+//                     token-leak-error, and a name taken under another team key,
+//                     replayed byte for byte from test/fixtures/byot-create/
+//                     source-derived/: pinned (create-team-pinned) and
+//                     registry-409 (create-team-registry-409)
 //   id team register  needs the team key; prints created, then synced. With
 //                     AW_REGISTER_FAIL_CODE it is refused as aw reports a server
 //                     refusal: `aweb: http <AW_REGISTER_FAIL_STATUS, 422> (...): <body>`
 //                     whose detail is {code: <that code>, message: RAW-AW-SENTINEL}
 //   id team invite    needs the team key ("no team key for D/N"); prints a local
-//                     invite token, SECRET-LOCAL-INVITE__<team>
+//                     invite as aw 1.36.56 does ({invite_id, status, token},
+//                     test/fixtures/byot-create/invite-team-key.stdout) whose
+//                     token is SECRET-LOCAL-INVITE__<team>
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
 //                     (default "403 forbidden") on stderr and AW_INVITE_FAIL_STDOUT,
 //                     when set, on stdout (aw's --json error envelope)
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { joinFromFake } from "./fake-aw-join-from.mjs";
+
+const sourceDerived = fileURLToPath(new URL("../fixtures/byot-create/source-derived", import.meta.url));
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), "oats-aweb-fake-aw-"));
@@ -116,7 +124,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "invite") {
   const name = flag("--team"), namespace = flag("--namespace");
   if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "no team key for " + namespace + "/" + name + "; run \`aw id team create\` first"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(2); }
-  console.log(JSON.stringify({ token: "SECRET-LOCAL-INVITE__" + name + ":" + namespace, team_id: name + ":" + namespace, expires_at: null }));
+  console.log(JSON.stringify({ invite_id: "00000000-0000-4000-8000-000000000208", status: "created", token: "SECRET-LOCAL-INVITE__" + name + ":" + namespace }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "register") {
   const team = flag("--team"), [name, namespace] = team.split(":");
   if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "local team controller key for " + team + " was not found: open " + path.join(teamKeys, namespace, name + ".key") + ": no such file or directory RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
@@ -132,8 +140,8 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_CREATE_MODE === "no-controller-key") { const m = "no local controller key for --namespace " + namespace + "; pass --hosted for a hosted sibling, or install the namespace controller key for BYOT (aw id namespace prepare-controller --domain " + namespace + ") RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(2); }
   if (process.env.AW_CREATE_MODE === "network-error") { console.error("network unavailable"); process.exit(73); }
   if (process.env.AW_CREATE_MODE === "token-leak-error") { console.error("network unavailable token=SECRET-FRESH-INVITE"); process.exit(73); }
-  if (process.env.AW_CREATE_MODE === "conflict") { console.error("409 conflict: team exists"); process.exit(9); }
-  if (process.env.AW_CREATE_MODE === "conflict-once") { const creates = fs.readFileSync(calls, "utf8").trim().split("\\n").filter((l) => JSON.parse(l).args.slice(0,3).join(" ") === "id team create").length; if (creates === 1) { console.error("409 conflict: team exists"); process.exit(9); } }
+  const taken = { pinned: "create-team-pinned", "registry-409": "create-team-registry-409" }[process.env.AW_CREATE_MODE];
+  if (taken) { const f = (ext) => fs.readFileSync(path.join(${JSON.stringify(sourceDerived)}, taken + "." + ext), "utf8"); process.stderr.write(f("stderr")); process.stdout.write(f("stdout")); process.exit(Number(f("exit"))); }
   if (process.env.AW_CREATE_MODE === "missing-id") { console.log(JSON.stringify({ invite_token: "TOKEN__" + team })); process.exit(0); }
   const key = path.join(teamKeys, namespace, name + ".key");
   if (process.env.AW_CREATE_MODE !== "keyless") { fs.mkdirSync(path.dirname(key), { recursive: true }); if (!fs.existsSync(key)) fs.writeFileSync(key, "FIXTURE-TEAM-KEY\\n"); }
