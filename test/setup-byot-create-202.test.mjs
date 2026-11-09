@@ -17,6 +17,8 @@ const hook = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/bin/o
 const SERVICE = 'https://aweb.example.invalid/api', NS = 'example.invalid', TEAM = `eng:${NS}`;
 const TOKEN = `SECRET-LOCAL-INVITE__${TEAM}`;
 const SENTINEL = 'RAW-AW-SENTINEL';
+const SHOW = `id team show-server --team=eng --namespace=${NS} --json`;
+const publish = (service = SERVICE) => [SHOW, `id team set-server --team=eng --namespace=${NS} --url=${service} --json`, SHOW];
 
 function fixture(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'byot-create-202-')));
@@ -42,7 +44,9 @@ test('a BYOT create registers the team, mints a local invite and accepts it; the
   assert.deepEqual(f.calls(), [
     'whoami --json',
     `id team create --name=eng --namespace=${NS} --json`,
+    SHOW,
     `id team register --service=${SERVICE} --team=${TEAM} --json`,
+    ...publish(),
     `id team invite --team=eng --namespace=${NS} --json`,
     'id team accept-invite --token-stdin --name=fixture --local --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
@@ -138,6 +142,7 @@ test('a create that dies after the accept resumes on re-run without minting anot
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(f.calls().slice(before), [
     `id team create --name=eng --namespace=${NS} --json`,
+    SHOW,
     `id team register --service=${SERVICE} --team=${TEAM} --json`,
     'id team list --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
@@ -194,6 +199,7 @@ test('a retry whose only service is the retained root it connected resumes there
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(f.calls().slice(before), [
     `id team create --name=eng --namespace=${NS} --json`,
+    SHOW,
     `id team register --service=${service} --team=${TEAM} --json`,
     'id team list --json',
     'team list --json',
@@ -230,7 +236,9 @@ test('--create takes --name: the team root accepts the invite under that alias, 
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(f.calls(), [
     `id team create --name=eng --namespace=${NS} --json`,
+    SHOW,
     `id team register --service=${SERVICE} --team=${TEAM} --json`,
+    ...publish(),
     `id team invite --team=eng --namespace=${NS} --json`,
     'id team accept-invite --token-stdin --name=lab2-root --local --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
@@ -259,7 +267,9 @@ test('the lab\'s partial create (team key kept, no root) resumes with --name: on
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(f.calls(), [
     `id team create --name=eng --namespace=${NS} --json`,
+    SHOW,
     `id team register --service=${SERVICE} --team=${TEAM} --json`,
+    ...publish(),
     `id team invite --team=eng --namespace=${NS} --json`,
     'id team accept-invite --token-stdin --name=lab2-root --local --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
@@ -270,4 +280,77 @@ test('the lab\'s partial create (team key kept, no root) resumes with --name: on
   assert.match(r.stdout, new RegExp(`created ${TEAM}, accepted it into ${f.teamRoot}`));
   assert.match(readFileSync(join(f.root, 'oats-local.yaml'), 'utf8'), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/);
   assert.deepEqual(f.kernel().filter((a) => a[1] === 'add'), [['teams', 'add', 'eng', `--team=${TEAM}`]]);
+});
+
+// The AWID team-server record (aw id team set-server / show-server, aw 1.36.56 id_team_server.go):
+// setup publishes it for the service it registered the team with, then verifies it. A record that
+// already names another URL is never replaced: setup reads it before register and stops.
+test('a create publishes the team-server record for the service and verifies it', (t) => {
+  const f = fixture(t), r = f.run();
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(`  team server: ${SERVICE} (published at AWID and verified against the team key)\n`), r.stdout);
+});
+
+test('a record already naming the same service is left as it is: no set-server', (t) => {
+  const f = fixture(t), r = f.run({ AW_SERVER_RECORD: SERVICE });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(named(f.calls(), 'id team set-server'), []);
+  assert.deepEqual(named(f.calls(), 'id team show-server'), [SHOW]);
+  assert.ok(r.stdout.includes(`  team server: ${SERVICE} (already published at AWID; verified against the team key)\n`), r.stdout);
+});
+
+test('a record naming another URL stops before register, naming both URLs and the owner\'s remedy', (t) => {
+  const f = fixture(t), other = 'https://elsewhere.example.invalid/api', r = f.run({ AW_SERVER_RECORD: other });
+  assert.equal(r.status, 1);
+  assert.ok(r.stderr.includes(`team ${TEAM}'s AWID team-server record names ${other}, not ${SERVICE}, the aweb service this setup uses; setup does not replace a record it finds. If the team has moved to ${SERVICE}, its owner republishes the record with \`aw id team set-server --team eng --namespace ${NS} --url ${SERVICE}\` and re-runs setup; otherwise set AWEB_URL to ${other} and re-run`), r.stderr);
+  assert.deepEqual(f.calls(), ['whoami --json', `id team create --name=eng --namespace=${NS} --json`, SHOW]);
+  assert.equal(existsSync(f.teamRoot), false);
+});
+
+for (const [what, extra] of [['is not there after publishing', { AW_SET_SERVER_UNSTORED: '1' }], ['verifies against another team key', { AW_SHOW_SERVER_DID: 'did:key:zOtherTeam' }]]) {
+  test(`a published record that ${what} stops before the invite`, (t) => {
+    const f = fixture(t), r = f.run(extra);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, new RegExp(`the AWID team-server record for ${TEAM} did not verify as ${SERVICE} under the team key create reported; team ${TEAM} exists and its key is kept on this machine; re-run the same command to resume`));
+    assert.deepEqual(named(f.calls(), 'id team invite'), []);
+  });
+}
+
+test('a refused publish names no aw text, keeps the team and resumes', (t) => {
+  const f = fixture(t), r = f.run({ AW_SET_SERVER_FAIL: '1' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, new RegExp(`publishing the AWID team-server record for ${TEAM} \\(${SERVICE}\\) failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials[^)]*\\); team ${TEAM} exists and its key is kept on this machine; re-run the same command to resume`));
+  assert.doesNotMatch(r.stdout + r.stderr, new RegExp(SENTINEL));
+  assert.deepEqual(named(f.calls(), 'id team invite'), []);
+  const again = f.run();
+  assert.equal(again.status, 0, again.stderr);
+});
+
+test('a record published for another URL while register runs is refused, not replaced', (t) => {
+  const f = fixture(t), other = 'https://elsewhere.example.invalid/api', r = f.run({ AW_SERVER_RECORD_AFTER_REGISTER: other });
+  assert.equal(r.status, 1);
+  assert.ok(r.stderr.includes(`team ${TEAM}'s AWID team-server record names ${other}, not ${SERVICE}`), r.stderr);
+  assert.deepEqual(named(f.calls(), 'id team set-server'), []);
+  assert.equal(readFileSync(join(dirname(f.fake.path), 'team-keys', NS, 'eng.server'), 'utf8'), other);
+});
+
+test('a service with a trailing slash is the canonical service: registered, published and connected without it', (t) => {
+  const f = fixture(t), r = f.run({ AWEB_URL: `${SERVICE}/` });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(named(f.calls(), 'id team register'), [`id team register --service=${SERVICE} --team=${TEAM} --json`]);
+  assert.deepEqual(named(f.calls(), 'id team set-server'), [publish()[1]]);
+  assert.deepEqual(named(f.calls(), 'workspace connect'), [`workspace connect --service=${SERVICE} --team=${TEAM} --json`]);
+});
+
+test('a service with a trailing slash matches the record already published for its canonical form', (t) => {
+  const f = fixture(t), r = f.run({ AWEB_URL: `${SERVICE}/`, AW_SERVER_RECORD: SERVICE });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(named(f.calls(), 'id team set-server'), []);
+});
+
+test('a service URL a team-server record cannot hold is refused before any aw call', (t) => {
+  const f = fixture(t), r = f.run({ AWEB_URL: 'http://aweb.example.invalid/api' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /the aweb service URL cannot be published as the team's AWID server: server_url must use https outside loopback hosts; set AWEB_URL to the server's public URL and re-run; nothing was created/);
+  assert.deepEqual(f.calls(), []);
 });

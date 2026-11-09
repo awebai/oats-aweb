@@ -47,6 +47,18 @@
 //                     invite as aw 1.36.56 does ({invite_id, status, token},
 //                     test/fixtures/byot-create/invite-team-key.stdout) whose
 //                     token is SECRET-LOCAL-INVITE__<team>
+//   id team set-server / show-server  as aw 1.36.56 (test/fixtures/byot-create/
+//                     source-derived/set-server-published, show-server-verified,
+//                     show-server-none): set-server needs the team key and keeps
+//                     the record's URL beside it; show-server prints it verified,
+//                     or "no team server record is published for <team>" (exit 1).
+//                     AW_SERVER_RECORD=<url> a record already published before setup;
+//                     AW_SERVER_RECORD_AFTER_REGISTER=<url> another writer publishes
+//                     that record while register runs;
+//                     AW_SET_SERVER_FAIL the registry refuses the publish;
+//                     AW_SET_SERVER_UNSTORED set-server reports published but the
+//                     registry keeps nothing; AW_SHOW_SERVER_DID the team key the
+//                     record verifies against (default did:key:zFixtureTeam)
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
 //                     (default "403 forbidden") on stderr and AW_INVITE_FAIL_STDOUT,
 //                     when set, on stdout (aw's --json error envelope)
@@ -132,7 +144,22 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   const registered = path.join(teamKeys, namespace, name + ".registered");
   const status = fs.existsSync(registered) ? "synced" : "created";
   fs.writeFileSync(registered, flag("--service"));
+  if (process.env.AW_SERVER_RECORD_AFTER_REGISTER) fs.writeFileSync(path.join(teamKeys, namespace, name + ".server"), process.env.AW_SERVER_RECORD_AFTER_REGISTER);
   console.log(JSON.stringify({ status, team_id: team, service: flag("--service") }));
+} else if (args[0] === "id" && args[1] === "team" && (args[2] === "set-server" || args[2] === "show-server")) {
+  const name = flag("--team"), namespace = flag("--namespace"), team = name + ":" + namespace;
+  const record = path.join(teamKeys, namespace, name + ".server");
+  const out = (status, url) => console.log(JSON.stringify({ status, team_id: team, server_url: url, audience: new URL(url).origin, issued_at: "2026-11-09T00:00:00Z", team_did_key: process.env.AW_SHOW_SERVER_DID || "did:key:zFixtureTeam", registry_url: "https://api.awid.ai" }));
+  if (args[2] === "set-server") {
+    if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "local team controller key for " + team + " was not found: open " + path.join(teamKeys, namespace, name + ".key") + ": no such file or directory RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
+    if (process.env.AW_SET_SERVER_FAIL) { const m = "publish team server for " + team + ": registry http 503: RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
+    if (!process.env.AW_SET_SERVER_UNSTORED) fs.writeFileSync(record, flag("--url"));
+    out("published", flag("--url"));
+  } else {
+    const url = fs.existsSync(record) ? fs.readFileSync(record, "utf8") : process.env.AW_SERVER_RECORD;
+    if (!url) { const m = "no team server record is published for " + team; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
+    out("verified", url);
+  }
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "create") {
   const name = flag("--name");
   const namespace = flag("--namespace") || "aweb.ai";

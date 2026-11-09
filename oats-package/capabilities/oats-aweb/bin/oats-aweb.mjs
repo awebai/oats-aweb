@@ -60,7 +60,8 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
+import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
@@ -2459,7 +2460,8 @@ ${JSON.stringify(problem.details || {})}`);
     const { configured, teamRoot } = teamRootFor(label, expectedTeam);
     const idHome = join(teamRoot, ".aw");
     const resumeCommand = setupResumeCommand(label);
-    const docs = [...setupServiceDocs(teamRoot), ...serviceDocs];
+    // The caller's own service (create's canonical one) comes before setup's general sources.
+    const docs = [...serviceDocs, ...setupServiceDocs(teamRoot)];
     const recordTeam = expectedTeam || configuredTeamForLabel(label) || `<team for ${label}>`;
     assertAwebRootSettingRecordable(recordTeam, teamRoot, { start: deployment });
     let joined;
@@ -2533,8 +2535,43 @@ ${JSON.stringify(problem.details || {})}`);
     const after = (e) => withheldFailureCause(e) === TEAM_KEY_MISSING
       ? `; team ${team} exists: run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key, then re-run the same command to resume`
       : `; ${resume}`;
+    // The AWID team-server record binds the team to its aweb service. aw's set-server always signs a
+    // newer record, so it is read first: a record setup finds naming another URL is not replaced.
+    const serverTarget = [flagEq("--team", name), flagEq("--namespace", createNamespace)];
+    const readServerRecord = () => {
+      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team show-server"); }
+      catch (e) {
+        if (teamServerRecordMissing(e.stdout, team)) return undefined;
+        throw new Error(`reading the AWID team-server record for ${team} failed: ${e.message}${after(e)}`);
+      }
+    };
+    // show-server verifies the record against the team's current key at the registry; that key must
+    // also be the one create reported, when it reported one.
+    const recordVerifies = (record) => record?.status === "verified" && record.team_id === team && record.server_url === service && (typeof created.team_did_key !== "string" || record.team_did_key === created.team_did_key);
+    const notVerified = `the AWID team-server record for ${team} did not verify as ${service} under the team key create reported; ${resume}`;
+    /** The published record, refused when it names another URL or does not verify; undefined when none is published. */
+    const checkedServerRecord = () => {
+      const record = readServerRecord();
+      if (record && record.server_url !== service) {
+        const other = typeof record.server_url === "string" && /^https?:\/\/[\x21-\x7e]+$/.test(record.server_url) ? record.server_url : "another URL";
+        throw new Error(`team ${team}'s AWID team-server record names ${other}, not ${service}, the aweb service this setup uses; setup does not replace a record it finds. If the team has moved to ${service}, its owner republishes the record with \`aw id team set-server --team ${name} --namespace ${createNamespace} --url ${service}\` and re-runs setup; otherwise set AWEB_URL to ${other} and re-run`);
+      }
+      if (record && !recordVerifies(record)) throw new Error(notVerified);
+      return record;
+    };
+    // Read before register, so a record for another URL stops setup before the service is touched,
+    // and again just before publishing, so one published while register ran is not replaced. aw has
+    // no publish-if-absent: a record published between that read and set-server is replaced, and the
+    // verify after it, which reads setup's own record, does not notice.
+    const published = checkedServerRecord();
     try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
     catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
+    const publishedNow = !published && !checkedServerRecord();
+    if (publishedNow) {
+      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+      catch (e) { throw new Error(`publishing the AWID team-server record for ${team} (${service}) failed: ${e.message}${after(e)}`); }
+      if (!recordVerifies(readServerRecord())) throw new Error(notVerified);
+    }
     // A future aw may print a token itself; an accepted identity in the root needs none.
     let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
     if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
@@ -2546,7 +2583,7 @@ ${JSON.stringify(problem.details || {})}`);
     }
     // Where aw keeps the team key: a locator, never the key (#208).
     const teamKeyPath = typeof created.team_key_path === "string" && isAbsolute(created.team_key_path) && !/[\u0000-\u001f\u007f]/.test(created.team_key_path) ? created.team_key_path : undefined;
-    return { ...acceptIntoTeamRoot(label, token, team, { aweb_url: service }), ...(teamKeyPath ? { teamKeyPath } : {}) };
+    return { ...acceptIntoTeamRoot(label, token, team, { aweb_url: service }), ...(teamKeyPath ? { teamKeyPath } : {}), teamServer: { url: service, publishedNow } };
   };
   const recordLocalTeam = (label, team) => {
     const cli = process.env.OATS_CLI_BIN;
@@ -2647,8 +2684,10 @@ ${JSON.stringify(problem.details || {})}`);
       let localTeams;
       try { localTeams = readLocalTeams(); }
       catch (e) { throw new Error(`could not tell whether this workspace allows local teams (oats teams --json: ${String(e.message || e).replace(/\s+/g, " ").trim()}); nothing was created`); }
-      const service = createService(label);
-      if (!service) throw new Error(noCreateService(label));
+      const resolvedService = createService(label);
+      if (!resolvedService) throw new Error(noCreateService(label));
+      const { url: service, reason } = canonicalTeamServerURL(resolvedService);
+      if (!service) throw new Error(`the aweb service URL cannot be published as the team's AWID server: server_url ${reason}; set AWEB_URL to the server's public URL and re-run; nothing was created`);
       mkdirSync(scope, { recursive: true });
       console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root, registered with ${service}.`);
       const created = createTeam(label, service);
@@ -2662,6 +2701,7 @@ ${JSON.stringify(problem.details || {})}`);
         console.log(`${done}, and recorded local team ${label} with \`oats teams add ${label} --team ${created.team}\`.`);
       }
       if (created.teamKeyPath) console.log(`  team key: ${created.teamKeyPath} (user-wide: every process this user runs can read it; never share it)`);
+      console.log(`  team server: ${created.teamServer.url} (${created.teamServer.publishedNow ? "published at AWID and verified" : "already published at AWID; verified"} against the team key)`);
       printVerdict(teams);
       process.exit(0);
     }

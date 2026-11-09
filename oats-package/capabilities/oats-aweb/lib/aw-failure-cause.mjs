@@ -103,3 +103,11 @@ export function teamNameTaken(stdout, domain, name) {
   }
   return error.code === "http_error" && error.http_status === 409 && error.message.startsWith("create team at registry: ");
 }
+
+/** Whether aw's --json answer to `aw id team show-server` is that no team-server record is
+ *  published for `team` (aw 1.36.56 id_team_server.go:226-227: the registry's 404, a plain error). */
+export function teamServerRecordMissing(stdout, team) {
+  let error;
+  try { error = leadingJsonObject(String(stdout ?? "").trim())?.error; } catch { return false; }
+  return error?.code === "error" && error.message === `no team server record is published for ${team}`;
+}

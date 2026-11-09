@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Added: `setup --create <label> --namespace <domain>` publishes and
+  verifies the team's AWID team-server record (#208).** After register, setup
+  runs `aw id team set-server --team <name> --namespace <domain> --url
+  <service>`, then `aw id team show-server`, and checks the record's team, its
+  current key and its URL against the service setup used. Setup reads the
+  record before register and again just before publishing. One that names the
+  same URL is left as it is, so a re-run stays idempotent. One that names
+  another URL stops setup with a fixed cause naming both URLs and the owner's
+  remedy; setup does not replace a record it finds. aw has no publish-if-absent,
+  so a record published between that last read and `set-server` is replaced
+  unnoticed. A refused publish or a record that does not verify keeps the team
+  and resumes on re-run. The service URL is put in aw's
+  canonical team-server form first (a trailing slash dropped) and used in that
+  form for register, the record and connect; one the record cannot hold is
+  refused before anything is created; `localhost`, 127.0.0.0/8, `::1` and
+  IPv4-mapped 127.0.0.0/8 count as loopback, as in aw.
 - **Fixed: `setup --create <label> --namespace <domain>` takes `--name <alias>`
   (#208).** On a fresh deployment there is no root identity for the per-team
   root's alias, and setup refused `--name` with `--create`, so the create could
@@ -57,9 +73,7 @@
   agent instance spawned there included. They also say that aw keeps each
   local invite's secret in `~/.config/aw/team-invites/<id>.json` until it is
   accepted, and that spawned instances' `aw init --join-from` uses the same
-  team key. Publishing the team's coordination server (`aw id team
-  set-server`) is left to the team owner: setup's accept, connect and
-  `--join-from` don't read it.
+  team key.
 - **Tests: the fake aw for BYOT create answers as aw 1.36.56 does.**
   `test/fixtures/byot-create/` holds the real binary's offline output
   (`capture.sh`), plus shapes read from aw's source for what needs a registry.

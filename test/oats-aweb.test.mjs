@@ -615,7 +615,11 @@ test("setup --create with namespace creates a local BYOT team, registers it, min
   assert.deepEqual(fake.readCalls().map((c) => c.args), [
     ["whoami", "--json"],
     ["id", "team", "create", `--name=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
+    ["id", "team", "show-server", `--team=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
     ["id", "team", "register", "--service=https://aweb.example.invalid/api", `--team=${team}`, "--json"],
+    ["id", "team", "show-server", `--team=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
+    ["id", "team", "set-server", `--team=${teamName(label)}`, `--namespace=${namespace}`, "--url=https://aweb.example.invalid/api", "--json"],
+    ["id", "team", "show-server", `--team=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
     ["id", "team", "invite", `--team=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
     ["id", "team", "accept-invite", "--token-stdin", "--name=fixture", "--local", "--json"],
     ["workspace", "connect", "--service=https://aweb.example.invalid/api", `--team=${team}`, "--json"],

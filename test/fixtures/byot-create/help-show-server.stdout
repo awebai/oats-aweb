@@ -1,0 +1,18 @@
+Read the team's aweb.team-server/1 record from AWID and verify it against the
+team's current key. A record signed by any other key is refused.
+
+Usage:
+  aw id team show-server [flags]
+
+Flags:
+  -h, --help               help for show-server
+      --namespace string   Namespace domain
+      --registry string    Registry origin override
+      --team string        Team name
+
+Global Flags:
+      --debug                  Log background errors to stderr
+      --identity-home string   Use this absolute credential directory (contains signing.key or grant.yaml; usually <workspace>/.aw, not its parent)
+      --json                   Output as JSON
+      --server-name string     Override the server host or name for this command
+      --trace                  Trace redacted HTTP requests and responses to stderr
