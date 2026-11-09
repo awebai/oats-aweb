@@ -60,7 +60,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, serviceDetailCode, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, serviceDetailCode, teamNameTaken, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
@@ -2444,7 +2444,6 @@ ${JSON.stringify(problem.details || {})}`);
   };
   const hostedCreateUnavailable = () => "provider setup --create without --namespace is not supported; native aw 1.36.24 supports id team create --hosted (not available in aw 1.36.23). Follow the version-matched native owner procedure, keeping invite/private output out of logs and messages, then use provider setup --join <label> --invite-stdin with the appropriate invite; use --namespace <domain> for the existing controller-owned route";
   const candidateTeamId = (name) => `${name}:${createNamespace}`;
-  const teamExistsError = (e) => e?.status === 409 || /\b409\b|\bconflict\b|\balready exists\b|\bexists\b/i.test(commandOutput(e));
   const configuredTeamForLabel = (label) => parseOatsTeams().find((t) => t.label === label && t.team)?.team || (label === defaultTeamLabel() ? defaultTeamId() : undefined);
   /** The root a team accepts into: its recorded root, else the label's per-team root. */
   const teamRootFor = (label, expectedTeam) => {
@@ -2507,45 +2506,40 @@ ${JSON.stringify(problem.details || {})}`);
   const noCreateService = (label) => `--create ${label} --namespace ${createNamespace} needs the aweb service to register the new team with, and none is known: set AWEB_URL to the server's public URL (hosted aweb is https://app.aweb.ai/api) and re-run; nothing was created`;
   /** aw prints no invite token for a BYOT create (awebai/oats-aweb#202). The team key create just
    *  wrote does the rest: register the team with the service, mint a local invite, accept it. Each
-   *  step is safe to re-run, so a re-run of the same command resumes a partial create. */
+   *  step is safe to re-run, so a re-run of the same command resumes a partial create. A name already
+   *  held in the namespace under another team key stops: setup never picks another name (#208). */
   const createTeam = (label, service) => {
     if (!createNamespace) throw new Error(hostedCreateUnavailable());
-    const base = normalizeAwebTeamName(label);
-    for (let n = 1; n <= 20; n++) {
-      const name = n === 1 ? base : `${base}-${n}`;
-      const expectedTeam = candidateTeamId(name);
-      const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
-      let created;
-      try {
-        created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
-      } catch (e) {
-        // A missing controller key is named before the suffix logic can read its text.
-        if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
-        if (!teamExistsError(e)) throw e;
-        const teams = readTeams();
-        if (teamIdsOf(teams).some((tid) => String(tid) === expectedTeam)) { recordAwebRootSetting(expectedTeam, scope, { start: deployment }); return { team: expectedTeam, teamRoot: scope, reused: true }; }
-        if (n === 20) throw new Error(`could not create a unique aweb team for ${JSON.stringify(label)} after suffixing through -20`);
-        continue;
-      }
-      if (!created?.team_id || typeof created.team_id !== "string") throw new Error("aw id team create returned no team_id");
-      const team = created.team_id;
-      const resume = `team ${team} exists and its key is kept on this machine; re-run the same command to resume`;
-      const after = (e) => withheldFailureCause(e) === TEAM_KEY_MISSING
-        ? `; team ${team} exists: run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key, or copy the key there, then re-run the same command to resume`
-        : `; ${resume}`;
-      try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
-      catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
-      // A future aw may print a token itself; an accepted identity in the root needs none.
-      let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
-      if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
-        let minted;
-        try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
-        catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
-        token = minted?.token;
-        if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);
-      }
-      return acceptIntoTeamRoot(label, token, team, { aweb_url: service });
+    const name = normalizeAwebTeamName(label);
+    const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
+    let created;
+    try {
+      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
+    } catch (e) {
+      if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
+      if (teamNameTaken(e.stdout, createNamespace, name)) throw new Error(`team ${candidateTeamId(name)} already exists in the registry, and its team key is not on this machine; choose another label (--create <label>), or run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key; nothing was created`);
+      throw e;
     }
+    if (!created?.team_id || typeof created.team_id !== "string") throw new Error("aw id team create returned no team_id");
+    const team = created.team_id;
+    const resume = `team ${team} exists and its key is kept on this machine; re-run the same command to resume`;
+    const after = (e) => withheldFailureCause(e) === TEAM_KEY_MISSING
+      ? `; team ${team} exists: run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key, or copy the key there, then re-run the same command to resume`
+      : `; ${resume}`;
+    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+    catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
+    // A future aw may print a token itself; an accepted identity in the root needs none.
+    let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
+    if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
+      let minted;
+      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
+      catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
+      token = minted?.token;
+      if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);
+    }
+    // Where aw keeps the team key: a locator, never the key (#208).
+    const teamKeyPath = typeof created.team_key_path === "string" && isAbsolute(created.team_key_path) && !/[\u0000-\u001f\u007f]/.test(created.team_key_path) ? created.team_key_path : undefined;
+    return { ...acceptIntoTeamRoot(label, token, team, { aweb_url: service }), ...(teamKeyPath ? { teamKeyPath } : {}) };
   };
   const recordLocalTeam = (label, team) => {
     const cli = process.env.OATS_CLI_BIN;
@@ -2652,7 +2646,7 @@ ${JSON.stringify(problem.details || {})}`);
       console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root, registered with ${service}.`);
       const created = createTeam(label, service);
       teams = readTeams();
-      const done = `✓ created ${created.team}, ${created.reused ? `reused existing member root ${created.teamRoot}` : `accepted it into ${created.teamRoot}`}, recorded roots[${created.team}]`;
+      const done = `✓ created ${created.team}, accepted it into ${created.teamRoot}, recorded roots[${created.team}]`;
       if (localTeams.closed) {
         console.log(`${done}.`);
         printWorkspaceTeam(label, created.team, localTeams);
@@ -2660,6 +2654,7 @@ ${JSON.stringify(problem.details || {})}`);
         recordLocalTeam(label, created.team);
         console.log(`${done}, and recorded local team ${label} with \`oats teams add ${label} --team ${created.team}\`.`);
       }
+      if (created.teamKeyPath) console.log(`  team key: ${created.teamKeyPath} (user-wide: every process this user runs can read it; never share it)`);
       printVerdict(teams);
       process.exit(0);
     }

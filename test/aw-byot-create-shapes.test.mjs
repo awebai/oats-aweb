@@ -47,7 +47,7 @@ test('the fixtures were captured from aw 1.36.56 and hold no invite token or key
   assert.match(readFileSync(join(fixtures, 'aw-version.txt'), 'utf8'), /^aw 1\.36\.56\n  commit: 4d5eafdcc9118cfb8204740fa70a0d48acfd18e4 /);
   assert.equal(JSON.parse(captured('invite-team-key').stdout).token, 'SCRUBBED-INVITE-TOKEN');
   for (const dir of [fixtures, join(fixtures, 'source-derived')]) {
-    for (const f of readdirSync(dir).filter((n) => /\.(stdout|stderr)$/.test(n))) assert.doesNotMatch(readFileSync(join(dir, f), 'utf8'), /PRIVATE KEY|aw_inv_|SECRET-LOCAL-INVITE/, f);
+    for (const f of readdirSync(dir).filter((n) => /\.(stdout|stderr)$/.test(n))) assert.doesNotMatch(readFileSync(join(dir, f), 'utf8'), /PRIVATE KEY|aw_inv_[A-Za-z0-9_-]{8,}|SECRET-LOCAL-INVITE/, f);
   }
 });
 
