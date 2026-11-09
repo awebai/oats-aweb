@@ -1182,9 +1182,10 @@ Supported acts:
     Accept, connect and `--join-from` do not read that record; installed apps
     do. Publishing it is the team owner's act, when the team's apps need it.
   - A local-controller invite can be accepted only where the team key is: the
-    same user on the same machine. Another user's deployment on that machine
-    needs the key in its own `~/.awid/team-keys/`. Without it, aw falls back
-    to a hosted invite, which a self-hosted server answers with 404.
+    same user on the same machine. Run setup, and the deployment's instances,
+    as that user; another user's deployment on that machine cannot accept it.
+    aw then falls back to a hosted invite, which a self-hosted server answers
+    with 404.
   - A self-hosted aweb accepts signed requests only for its public origin:
     `AWEB_URL` must be the server's public URL, not a port forward.
   - Without `AWEB_URL`, the team is registered with the service an existing

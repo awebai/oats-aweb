@@ -2524,7 +2524,7 @@ ${JSON.stringify(problem.details || {})}`);
     const team = created.team_id;
     const resume = `team ${team} exists and its key is kept on this machine; re-run the same command to resume`;
     const after = (e) => withheldFailureCause(e) === TEAM_KEY_MISSING
-      ? `; team ${team} exists: run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key, or copy the key there, then re-run the same command to resume`
+      ? `; team ${team} exists: run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key, then re-run the same command to resume`
       : `; ${resume}`;
     try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
     catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }

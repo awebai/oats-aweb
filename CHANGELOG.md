@@ -12,6 +12,12 @@
   this machine's own key still resumes. Setup reads aw 1.36.56's two answers
   for a taken name: "team <domain>/<name> is already pinned to <did:key>", and
   the registry's own 409.
+- **Changed: no remedy suggests copying the team key.** When a resumed
+  create finds that the team key is not on this machine, the remedy is now
+  only to run setup as the user whose `~/.awid/team-keys/<domain>/` holds it.
+  The README and the oats-aweb skill no longer say another user's deployment
+  needs the key in its own `~/.awid/`. Instead they say to run setup, and the
+  deployment's instances, as the user that holds the key.
 - **Added: setup names where the team key is.** A completed create prints
   `team key: <path>` (aw's `team_key_path`, under
   `~/.awid/team-keys/<domain>/`), never the key.

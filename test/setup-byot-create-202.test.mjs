@@ -5,7 +5,7 @@
 // create; a missing key gets a fixed cause; aw's own text never passes through.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -178,8 +178,9 @@ for (const [what, code] of [['a code with a newline', 'service_url_mismatch\nINJ
 test('a team key that is not on this machine gets the fixed cause and remedy, never aw\'s text', (t) => {
   const f = fixture(t), r = f.run({ AW_CREATE_MODE: 'keyless' });
   assert.equal(r.status, 1);
-  assert.match(r.stderr, new RegExp(`registering ${TEAM} with the aweb service at ${SERVICE} failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials; the team key is not on this machine\\); team ${TEAM} exists: run setup as the user whose ~/\\.awid/team-keys/example\\.invalid/ holds its key, or copy the key there, then re-run the same command to resume`));
+  assert.match(r.stderr, new RegExp(`registering ${TEAM} with the aweb service at ${SERVICE} failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials; the team key is not on this machine\\); team ${TEAM} exists: run setup as the user whose ~/\\.awid/team-keys/example\\.invalid/ holds its key, then re-run the same command to resume`));
   assert.doesNotMatch(r.stdout + r.stderr, new RegExp(`${SENTINEL}|no such file|key is kept`));
+  assert.doesNotMatch(r.stdout + r.stderr, /\bcop(?:y|ying|ied)\b/i, 'the remedy never suggests moving the key (#208)');
   assert.deepEqual(named(f.calls(), 'id team invite'), []);
 });
 
@@ -199,4 +200,16 @@ test('a retry whose only service is the retained root it connected resumes there
   ]);
   assert.match(r.stdout, new RegExp(`registered with ${service}`));
   assert.deepEqual(f.kernel().filter((a) => a[1] === 'add'), Array(2).fill(['teams', 'add', 'eng', `--team=${TEAM}`]));
+});
+
+// awebai/oats-aweb#208: a team key stays with the user that holds it. No remedy or note
+// in the provider, its README or its skills tells anyone to copy it elsewhere.
+test('no provider code, README or skill advises copying a team key to another user or machine', () => {
+  const advice = /\bor copy (?:the|its) (?:team )?key\b|\bcopy (?:the|its) (?:team )?key there\b|\bneeds the key in its own\b/i;
+  const pkg = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/', import.meta.url));
+  const files = [fileURLToPath(new URL('../README.md', import.meta.url))];
+  const walk = (dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) { const p = join(dir, e.name); if (e.isDirectory()) walk(p); else if (/\.(md|mjs)$/.test(e.name)) files.push(p); } };
+  walk(pkg);
+  walk(fileURLToPath(new URL('../docs/', import.meta.url)));
+  for (const file of files) assert.doesNotMatch(readFileSync(file, 'utf8'), advice, file);
 });
