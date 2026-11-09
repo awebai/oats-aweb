@@ -519,6 +519,8 @@ named blocker; do not substitute a value or ask permission again at each step.
 
 ### Version and selected context
 
+The aw this provider supports is in the capability's `aw-compat.json`: `min`, the client floor every path is held to, and `tested`, the highest aw its CI journeys pass on (the package README, "aw-compat.json").
+
 These are source-qualified cards, not an installation or live-acceptance receipt.
 
 | Selected version | Supported boundary |

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Added: aw-compat.json published; tested aw 1.36.56.** oats.aweb states
+  the aw it supports in one public file,
+  `oats-package/capabilities/oats-aweb/aw-compat.json`: `min` (1.36.33,
+  unchanged), the client floor every path is held to, and `tested` (1.36.56,
+  from 1.36.53), the highest aw the CI journeys pass on. `lib/aw-floor.mjs`
+  reads it beside itself; `AW_MIN` and `AW_TESTED` keep their names, and the
+  module fails to load, naming the file, when the file is missing, isn't JSON,
+  holds other keys, a value that isn't an exact semver version, or a `min`
+  above `tested`. OATS's getting-started skill reads the file at the
+  oats.aweb ref the OATS catalog pins; its path and keys stay, and a change to
+  a field is release-noted. `aw-newer-than-tested` now warns only above
+  1.36.56, and the pin it and the mint refusal name is
+  `npm i -g @awebai/aw@1.36.56`. `setup --install-aw` still installs
+  `^1.36.33`.
+- **CI: the real-aw journeys run exactly `[min, tested]`.** The
+  resident-journey matrix is 1.36.33 and 1.36.56, on aweb's aw-v1.36.56
+  release stack (e3a1d9f, server 1.27.48), and a test fails `npm test` when
+  the matrix and `aw-compat.json` differ. Each job fails unless the aw it
+  installed is its matrix entry. The jobs are now `resident-journey (1.36.33)`
+  and `resident-journey (1.36.56)`.
 - **Changed: `setup --create <label> --namespace <domain>` stops on a taken
   team name (#208).** When the name is already held in the namespace under a
   team key that is not on this machine, setup stops after that one create with

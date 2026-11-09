@@ -5,6 +5,39 @@ Official [OATS](https://github.com/awebai/oats) messaging and tasks integrations
 skills, team roster discovery and session/channel delivery integration. Messaging
 is separate from durable task tracking; the selected tasks provider owns tasks.
 
+## aw-compat.json: the aw this provider supports
+
+`oats-package/capabilities/oats-aweb/aw-compat.json` states which aw releases
+this oats.aweb supports, in two fields:
+
+```json
+{
+  "min": "1.36.33",
+  "tested": "1.36.56"
+}
+```
+
+- **`min`** is the client floor every path is held to: spawn, the commands, the
+  hooks, the probe and a grant seat's custody refuse an older aw ("aw floor"
+  below).
+- **`tested`** is the highest aw the CI journeys pass on. CI's resident-journey
+  matrix runs exactly `min` and `tested`, each checked to be the aw it
+  installed. Above `tested`, on a server other than the aweb Cloud, readiness
+  and spawn warn `aw-newer-than-tested`.
+
+Each value is an exact semver version, never a range, and `min` is never above
+`tested`. `lib/aw-floor.mjs` reads the file beside it, so the copy of the
+capability in a home reads its own, and exports the two values as `AW_MIN` and
+`AW_TESTED`. The module fails to load, naming the file, when the file is
+missing or breaks these rules. No other oats.aweb code holds either value;
+oats.aweb-tasks, copied into a home on its own, keeps its own `AW_MIN`, and a
+test holds it equal to `min`.
+
+The file is public. OATS's getting-started skill reads it at the oats.aweb ref
+the OATS catalog pins, never at `main`, to install the tested aw for a
+customer-run aweb server. Its path and its two keys stay as they are, and any
+change to a field is release-noted.
+
 ## 1.38.0 — pi 0.5.0 without the skills filter
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
@@ -517,7 +550,8 @@ The rest:
   restart the host wake daemon" and goes on to assess the target. A daemon that
   is not running or reports no version is still a problem.
 - **`aw-newer-than-tested` is a warning.** When the aw on PATH is above the
-  highest aw this provider's CI journeys pass on (`AW_TESTED`, 1.36.53), and
+  highest aw this provider's CI journeys pass on (`tested` in
+  `aw-compat.json`), and
   the home's own team root (or, at spawn, the root of a team it also joins)
   names a service other than the aweb Cloud (an exact
   origin match on `https://app.aweb.ai`), readiness and spawn say so: a server
@@ -1274,8 +1308,8 @@ owner removes the member.
 
 ### aw floor
 
-Every path requires `aw >= 1.36.33` (`AW_MIN` in `lib/aw-floor.mjs`, the one
-client floor; the probe and grant seats' custody use it too). A missing, older or unreadable `aw` is a
+Every path requires `aw >= 1.36.33` (`AW_MIN` in `lib/aw-floor.mjs`, read from
+`aw-compat.json`'s `min`: the one client floor; the probe and grant seats' custody use it too). A missing, older or unreadable `aw` is a
 readiness problem, a refused command and a required spawn-hook failure, all with
 one message naming the installed version, the floor and the install command,
 for example `aw 1.36.31 is older than required 1.36.33; upgrade with
@@ -1328,7 +1362,8 @@ installation, Claude admission or live delivery.
 verbs" runs `aw <verb> --help` for every aw verb the hook, the inject and this
 README name. It needs a real aw 1.36.6 or later on PATH and skips without one.
 CI's validate-and-test installs the aw the provider is tested with (`AW_TESTED`
-in `lib/aw-floor.mjs`, read in the step, never written twice) into an isolated
+from `lib/aw-floor.mjs`, which reads `aw-compat.json`'s `tested`; read in the
+step, never written twice) into an isolated
 prefix on the `npm test` step's PATH, and sets `OATS_AW_VERBS_REQUIRED=1`, so
 the guard fails there instead of skipping.
 
@@ -1559,9 +1594,10 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   real pseudo-terminal through `python3`. `test/resident-docs.test.mjs` fails
   when an envelope in the doc differs from the command's real output.
 - `test/resident-journey.test.mjs` runs real aw against aweb's local stack. Bring
-  the stack up from an aweb checkout with `docker compose -f
-  docker-compose.e2e.yml up -d --build --wait postgres redis awid aweb`, then set
-  `OATS_RESIDENT_JOURNEY_AW` (an aw 1.36.33 executable),
+  the stack up from an aweb checkout at ci.yml's `AWEB_STACK_COMMIT` with
+  `docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis
+  awid aweb`, then set `OATS_RESIDENT_JOURNEY_AW` (an aw executable of
+  `aw-compat.json`'s `min` or `tested`, at the commit the test qualifies it on),
   `OATS_RESIDENT_JOURNEY_AWEB_URL=http://127.0.0.1:18000` and
   `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`, and
   `OATS_RESIDENT_JOURNEY_KERNEL` (a checkout of an OATS kernel with
@@ -1571,7 +1607,12 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   `XDG_RUNTIME_DIR`) and remove it afterwards. The last three run the printed
   next steps through that kernel in a fixture workspace: the spawn mints a real
   grant at the resident's custody, and the retire revokes it. CI's
-  `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`.
+  `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`, once
+  for each of `min` and `tested`. Moving `tested` moves three things together:
+  the matrix (`test/health-aw-floor.test.mjs` fails until it matches), the
+  journey test's qualified aw and commit (its first test fails until they
+  match), and the stack commit, to aweb's release of that aw (no test checks
+  it).
 - When aw's output contract changes, refresh the fixtures with
   `test/fixtures/resident/capture.sh <aw> <scratch dir>` against the same stack,
   and update its README's version, commit and date.

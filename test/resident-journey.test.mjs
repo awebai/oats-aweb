@@ -3,7 +3,8 @@
 // server) and a real OATS kernel, with no fixture and no fake. CI runs them
 // (see ci.yml); locally, bring the stack up and set:
 //
-//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 or 1.36.53 executable
+//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 or 1.36.56 executable
+//                                   (aw-compat.json's min or tested)
 //   OATS_RESIDENT_JOURNEY_AWEB_URL  e.g. http://127.0.0.1:18000
 //   OATS_RESIDENT_JOURNEY_AWID_URL  e.g. http://127.0.0.1:18010
 //   OATS_RESIDENT_JOURNEY_KERNEL    a checkout of an OATS kernel with the
@@ -19,7 +20,7 @@
 // The OSS server does not serve aweb Cloud's /api/v1/workspaces/init, so with
 // aw 1.36.33 an API-key init here registers the identity at awid and then
 // fails. That proves registration, same-DID resume and the key's absence on a
-// failure. aw 1.36.53 reads the key's team first, which this server doesn't
+// failure. From aw 1.36.53, aw reads the key's team first, which this server doesn't
 // answer, so it stops before minting: that proves aw's refusal reaches the
 // operator unchanged, with no partial and no key anywhere, and a rerun into
 // what it left runs aw again. A complete create, a quarantined partial and a
@@ -34,12 +35,24 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { seatGrantLabel, teamGrants } from "../oats-package/capabilities/oats-aweb/lib/seat-grants.mjs";
+import { AW_MIN, AW_TESTED, versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 
 const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
 const CAPABILITY = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb", import.meta.url));
 const AW = process.env.OATS_RESIDENT_JOURNEY_AW, AWEB_URL = process.env.OATS_RESIDENT_JOURNEY_AWEB_URL, AWID_URL = process.env.OATS_RESIDENT_JOURNEY_AWID_URL;
 const KERNEL = process.env.OATS_RESIDENT_JOURNEY_KERNEL;
 const OATS = KERNEL ? join(KERNEL, "bin", "oats.mjs") : undefined;
+
+/** The aw releases the journeys are qualified on, each with the commit its
+ *  `aw version` prints: aw-compat.json's min and tested, in that order. */
+const QUALIFIED_AW = Object.freeze({
+  "1.36.33": "877bbee94ce45aa1ff103912bc9850556e61dfb4",
+  "1.36.56": "4d5eafdcc9118cfb8204740fa70a0d48acfd18e4",
+});
+
+test("the journeys are qualified on exactly aw-compat.json's [min, tested]", () => {
+  assert.deepEqual(Object.keys(QUALIFIED_AW), [AW_MIN, AW_TESTED]);
+});
 
 function configured(t) {
   if (AW && AWEB_URL && AWID_URL && KERNEL) return true;
@@ -55,10 +68,11 @@ function journey(t) {
   writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: local\n");
   symlinkSync(realpathSync(AW), join(bin, "aw"));
   const version = spawnSync(join(bin, "aw"), ["version"], { encoding: "utf8" });
-  assert.match(version.stdout, /^aw (1\.36\.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4|1\.36\.53\n  commit: 98a5ae85c3c6ee3bfda814da2f5a5d4e6b1563ea) /, "the journeys are qualified on aw 1.36.33 (877bbee9) and 1.36.53 (98a5ae85)");
-  // aw 1.36.53 reads the API key's team before it mints anything; the OSS
-  // server does not answer that read, so init stops there and leaves no partial.
-  const teamReadFirst = version.stdout.startsWith("aw 1.36.53\n");
+  const [, awVersion, awCommit] = /^aw (\S+)\n  commit: ([0-9a-f]{40}) /.exec(version.stdout) ?? [];
+  assert.ok(awVersion && QUALIFIED_AW[awVersion] === awCommit, `the journeys are qualified on ${Object.entries(QUALIFIED_AW).map(([v, c]) => `aw ${v} (${c.slice(0, 8)})`).join(" and ")}, not ${JSON.stringify(version.stdout)}`);
+  // From aw 1.36.53, aw reads the API key's team before it mints anything; the
+  // OSS server does not answer that read, so init stops there and leaves no partial.
+  const teamReadFirst = versionAtLeast(awVersion, "1.36.53");
   // The printed steps start with `oats`; a spawn's preflight looks for the
   // harness, which --preview and --no-launch never start.
   writeFileSync(join(bin, "oats"), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(OATS)} "$@"\n`, { mode: 0o755 });
@@ -124,7 +138,7 @@ function filesUnder(dir) {
   return out;
 }
 
-test("a forced API-key init failure leaves no key anywhere; on aw 1.36.33 it registers at awid and a rerun keeps the same DID, on aw 1.36.53 aw refuses before minting and a rerun runs aw again", async (t) => {
+test("a forced API-key init failure leaves no key anywhere; on aw 1.36.33 it registers at awid and a rerun keeps the same DID, from aw 1.36.53 aw refuses before minting and a rerun runs aw again", async (t) => {
   if (!configured(t)) return;
   const j = journey(t);
   const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
@@ -176,11 +190,11 @@ test("a forced API-key init failure leaves no key anywhere; on aw 1.36.33 it reg
   assert.equal(statSync(join(root, ".oats-resident")).mode & 0o777, 0o700);
 });
 
-test("a rerun with another registry gets aw's own refusal, unchanged (aw 1.36.33: aw 1.36.53 leaves no partial to carry a registry)", (t) => {
+test("a rerun with another registry gets aw's own refusal, unchanged (aw 1.36.33: from aw 1.36.53 aw leaves no partial to carry a registry)", (t) => {
   if (!configured(t)) return;
   const j = journey(t);
   const key = `aw_sk_journey_${randomBytes(12).toString("hex")}`;
-  if (j.teamReadFirst) { t.skip("aw 1.36.53 refuses before writing a partial on this server, so no rerun carries a registry; the previous journey covers its refusal"); return; }
+  if (j.teamReadFirst) { t.skip("from aw 1.36.53, aw refuses before writing a partial on this server, so no rerun carries a registry; the previous journey covers its refusal"); return; }
   assert.equal(j.run(["create", "alice"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL }).status, 1);
   const other = AWID_URL.replace("127.0.0.1", "localhost");
   const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: other });
