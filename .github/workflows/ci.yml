@@ -93,7 +93,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The provider's floor and the newest aw checked against it.
+        # Exactly [min, tested] from oats-package/capabilities/oats-aweb/aw-compat.json,
+        # in that order; test/health-aw-floor.test.mjs fails when they differ.
         aw: ['1.36.33', '1.36.53']
     env:
       # aweb's release of aw 1.36.53, server 1.27.45 and awid 0.5.35: AW_TESTED
@@ -122,11 +123,15 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/conditional-default-kernel" rev-parse HEAD)" = "$OATS_KERNEL_COMMIT"
           cd "$RUNNER_TEMP/conditional-default-kernel"
           npm ci --ignore-scripts --no-audit --no-fund
+      # The job fails unless the aw installed is exactly its matrix entry, so an
+      # npm resolution to another version never passes as that entry.
       - name: Install the released aw in an isolated prefix
         shell: bash
         run: |
           npm install --prefix "$RUNNER_TEMP/aw" --no-audit --no-fund "@awebai/aw@$AW_VERSION"
-          "$RUNNER_TEMP/aw/node_modules/.bin/aw" version
+          installed="$("$RUNNER_TEMP/aw/node_modules/.bin/aw" version)"
+          echo "$installed"
+          test "${installed%%$'\n'*}" = "aw $AW_VERSION"
       # The journeys below run even when this step fails, so a red real-aw
       # step never hides whether the resident journeys still pass.
       - name: Real-aw tests at this version
