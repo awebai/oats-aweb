@@ -1,8 +1,9 @@
 // awebai/oats-aweb#52: the cause of a failed, output-withheld aw call, named
 // from a fixed vocabulary. aw's own text is matched, never relayed.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, serviceDetailCode, withheldFailureCause } from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, serviceDetailCode, teamNameTaken, withheldFailureCause } from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
 const NETWORK = 'the aweb service could not be reached: a network or TLS failure';
 const NONE = 'no HTTP status, aw error code or network failure in its output';
 const SECRET = 'aw_inv_SECRET0123456789abcdef';
@@ -57,4 +58,25 @@ for (const [message, cause] of [
 test('a service detail code is named only from the table or as one short snake_case word', () => {
   for (const code of ['service_url_mismatch', 'awid_team_not_found', 'awid_team_controller_mismatch', 'awid_team_missing_controller', 'invalid_controller_signature', 'invalid_controller_timestamp', 'validation_error', 'a', `a${'b'.repeat(47)}`]) assert.equal(serviceDetailCode(code), code);
   for (const code of [`a${'b'.repeat(48)}`, 'service_url_mismatch\n', 'service_url_mismatch\nx', 'x\nservice_url_mismatch', 'Service_url', '1code', 'code-with-dash', 'code with space', '', SECRET, 42, null, undefined, {}, ['service_url_mismatch']]) assert.equal(serviceDetailCode(code), SERVICE_REFUSED, JSON.stringify(code));
+});
+
+// awebai/oats-aweb#208: aw 1.36.56's two answers to a team name already held in the namespace
+// under another team key, from test/fixtures/byot-create/source-derived, and nothing else.
+test('a team name taken under another team key is read only from aw\'s exact --json shapes', () => {
+  const fixture = (name) => readFileSync(new URL(`./fixtures/byot-create/source-derived/${name}.stdout`, import.meta.url), 'utf8');
+  assert.equal(teamNameTaken(fixture('create-team-pinned'), 'example.invalid', 'eng'), true);
+  assert.equal(teamNameTaken(fixture('create-team-registry-409'), 'example.invalid', 'eng'), true);
+  assert.equal(teamNameTaken(fixture('create-team-pinned'), 'example.invalid', 'other'), false, 'another team\'s name');
+  assert.equal(teamNameTaken(fixture('create-team-pinned'), 'other.invalid', 'eng'), false, 'another namespace');
+  for (const stdout of [
+    '{"error":{"code":"error","message":"ensure namespace at registry: registry http 409: {\\"detail\\":\\"exists\\"}"}}',
+    '{"error":{"code":"http_error","message":"ensure namespace at registry: registry http 409: x","http_status":409}}',
+    '{"error":{"code":"http_error","message":"create team at registry: registry http 422: x","http_status":422}}',
+    '{"error":{"code":"error","message":"team example.invalid/eng is already pinned to did:key:z6Mk x"}}',
+    '{"error":{"code":"other","message":"team example.invalid/eng is already pinned to did:key:z6Mk"}}',
+    'team example.invalid/eng is already pinned to did:key:z6Mk',
+    '409 conflict: team exists',
+    '',
+    undefined,
+  ]) assert.equal(teamNameTaken(stdout, 'example.invalid', 'eng'), false, String(stdout));
 });

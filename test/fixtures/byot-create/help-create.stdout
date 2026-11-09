@@ -1,0 +1,38 @@
+Create a hosted sibling team using the selected team certificate, or create
+a customer-controlled AWID team using a local namespace controller key.
+
+Without --namespace, creation is hosted. An explicit --namespace selects BYOT
+and requires a local controller key and a native identity home. BYOT refuses
+--team. --hosted explicitly selects hosted creation; a namespace supplied in
+that mode must match the selected source team. The hosted service URL is printed
+to stderr before the request.
+Hosted authorization is decided by the service; no human login is performed.
+
+Hosted creation generates a request UUID. Replay with the same --request-id and
+parameters after an uncertain result; there are no automatic retries. A replay
+returns the same team and replaces its unused invite. JSON includes the secret
+invite token; text hides it unless --show-token is set. The caller is not joined.
+Accept into <fresh-directory>/.aw, then run aw init from that directory with
+AWEB_IDENTITY_HOME unset.
+
+Usage:
+  aw id team create [flags]
+
+Flags:
+      --display-name string   Team display name
+  -h, --help                  help for create
+      --hosted                Create a hosted sibling using the selected team certificate
+      --name string           Team name
+      --namespace string      Namespace domain
+      --org string            Hosted organization slug or ID (requires aw auth login)
+      --registry string       Registry origin override
+      --request-id string     Hosted create UUID (reuse the same UUID and parameters to replay)
+      --show-token            Print the hosted invite token in text output (JSON includes it)
+      --team string           Override the selected team_id for this command
+
+Global Flags:
+      --debug                  Log background errors to stderr
+      --identity-home string   Use this absolute credential directory (contains signing.key or grant.yaml; usually <workspace>/.aw, not its parent)
+      --json                   Output as JSON
+      --server-name string     Override the server host or name for this command
+      --trace                  Trace redacted HTTP requests and responses to stderr

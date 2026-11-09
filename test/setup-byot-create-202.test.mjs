@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
@@ -58,6 +58,28 @@ test('a BYOT create registers the team, mints a local invite and accepts it; the
   assert.match(readFileSync(join(f.root, 'oats-local.yaml'), 'utf8'), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/);
   assert.deepEqual(f.kernel(), [['teams', '--json'], ['teams', 'add', 'eng', `--team=${TEAM}`]]);
 });
+
+test('the result names where the team key is, user-wide, and never prints the key', (t) => {
+  const f = fixture(t), r = f.run();
+  assert.equal(r.status, 0, r.stderr);
+  const keyPath = join(dirname(f.fake.path), 'team-keys', NS, 'eng.key');
+  assert.ok(r.stdout.includes(`  team key: ${keyPath} (user-wide: every process this user runs can read it; never share it)\n`), r.stdout);
+  assert.doesNotMatch(r.stdout + r.stderr, /FIXTURE-TEAM-KEY/);
+});
+
+// awebai/oats-aweb#208: aw 1.36.56 answers a name already held in the namespace under another
+// team key in two shapes (test/fixtures/byot-create/source-derived); setup never picks another name.
+for (const mode of ['pinned', 'registry-409']) {
+  test(`a name taken under another team key (${mode}) stops with the fixed cause: no -2 suffix, no register, nothing of aw's text`, (t) => {
+    const f = fixture(t), r = f.run({ AW_CREATE_MODE: mode });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /team eng:example\.invalid already exists in the registry, and its team key is not on this machine; choose another label \(--create <label>\), or run setup as the user whose ~\/\.awid\/team-keys\/example\.invalid\/ holds its key; nothing was created/);
+    assert.doesNotMatch(r.stdout + r.stderr, /pinned|did:key|Team already exists|http 409/);
+    assert.deepEqual(f.calls(), [`id team create --name=eng --namespace=${NS} --json`]);
+    assert.equal(existsSync(f.teamRoot), false);
+    assert.deepEqual(f.kernel(), [['teams', '--json']]);
+  });
+}
 
 test('a create that prints a token (a future aw) still registers, and mints no invite', (t) => {
   const f = fixture(t), r = f.run({ AW_CREATE_MODE: 'token' });

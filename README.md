@@ -1138,7 +1138,14 @@ Supported acts:
   `roots[<team id>]`, then records the local mapping with
   `OATS_CLI_BIN teams add <label> --team <id>`. A re-run of the same command
   resumes a partial create: no second team, no `-2` suffix, and no second
-  invite once the root's identity is accepted. A refused registration names
+  invite once the root's identity is accepted. The result names where aw keeps
+  the team key (`team key: <path>`, under `~/.awid/team-keys/<domain>/`),
+  never the key. A name already held in the namespace under a team key that is
+  not on this machine stops after that one create: setup says "team
+  <name>:<domain> already exists in the registry, and its team key is not on
+  this machine", and names the remedy: choose another label, or run setup as
+  the user whose `~/.awid/team-keys/<domain>/` holds its key. Setup never
+  tries another name, and nothing is created. A refused registration names
   the HTTP status and the server's short code (such as
   `http 422 ... service_url_mismatch`) and says the team exists with its key
   kept; a re-run resumes. Without the namespace controller key, setup says
@@ -1157,6 +1164,23 @@ Supported acts:
   additional-team creation: the provider has no wrapper. Native aw 1.36.24
   supports `id team create --hosted`; aw 1.36.23 does not. Native JSON
   contains an invite token and must be captured privately. Operator notes:
+  - **One trust boundary.** The namespace controller key
+    (`~/.awid/controllers/<domain>.key`) and each team key
+    (`~/.awid/team-keys/<domain>/<team>.key`) are user-wide on the deployment
+    host, not inside the deployment. Every process that user runs can read
+    them: the operator's shell, the deployment, and every agent instance
+    spawned there. Whoever runs as that user can add members to the team, and
+    with the controller key, create teams in the namespace. aw also keeps each
+    local invite, its secret included, in `~/.config/aw/team-invites/<id>.json`
+    until it is accepted. Setup passes the invite token only through memory and
+    accept's stdin, never argv, a file or its output.
+  - Each spawned instance joins the team with `aw init --join-from <root>
+    --join-team <team id>`, which mints a local invite with that same team key.
+    So spawns work only as the user that holds the key.
+  - Setup does not publish the team's coordination server at AWID (`aw id
+    team set-server --team <name> --namespace <domain> --url <aweb url>`).
+    Accept, connect and `--join-from` do not read that record; installed apps
+    do. Publishing it is the team owner's act, when the team's apps need it.
   - A local-controller invite can be accepted only where the team key is: the
     same user on the same machine. Another user's deployment on that machine
     needs the key in its own `~/.awid/team-keys/`. Without it, aw falls back

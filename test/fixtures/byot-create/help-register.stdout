@@ -1,0 +1,25 @@
+Register or sync a customer-controlled AWID team with an aw-compatible service.
+
+This command is service-generic: it signs a registration request with the
+local team controller key and sends only public/signed team facts to the
+service. It never uploads namespace or team controller private keys and does
+not initialize any agent workspace. Services may return their own next steps,
+such as `aw service init` or `aw claim-human`.
+
+Usage:
+  aw id team register [flags]
+
+Flags:
+      --dry-run            Preview registration without mutating the service projection
+  -h, --help               help for register
+      --registry string    Registry origin override
+      --service string     Service URL to register with
+      --team string        Canonical AWID team id (<team>:<namespace>)
+      --timestamp string   RFC3339 timestamp to sign (defaults to now; accepted for five minutes by service)
+
+Global Flags:
+      --debug                  Log background errors to stderr
+      --identity-home string   Use this absolute credential directory (contains signing.key or grant.yaml; usually <workspace>/.aw, not its parent)
+      --json                   Output as JSON
+      --server-name string     Override the server host or name for this command
+      --trace                  Trace redacted HTTP requests and responses to stderr

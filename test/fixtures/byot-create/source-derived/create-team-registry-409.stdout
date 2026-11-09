@@ -1,0 +1,1 @@
+{"error":{"code":"http_error","message":"create team at registry: registry http 409: {\"detail\":\"Team already exists\"}","http_status":409,"detail":"Team already exists"}}

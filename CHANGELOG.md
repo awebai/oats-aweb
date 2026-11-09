@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **Changed: `setup --create <label> --namespace <domain>` stops on a taken
+  team name (#208).** When the name is already held in the namespace under a
+  team key that is not on this machine, setup stops after that one create with
+  a fixed cause: "team <name>:<domain> already exists in the registry, and its
+  team key is not on this machine". It names the remedy: choose another label,
+  or run setup as the user that holds its key. It no longer tries `-2` through
+  `-20`, and aw's text (the other team's key) is never relayed. A re-run with
+  this machine's own key still resumes. Setup reads aw 1.36.56's two answers
+  for a taken name: "team <domain>/<name> is already pinned to <did:key>", and
+  the registry's own 409.
+- **Added: setup names where the team key is.** A completed create prints
+  `team key: <path>` (aw's `team_key_path`, under
+  `~/.awid/team-keys/<domain>/`), never the key.
+- **Docs: the team key and the namespace controller key are user-wide: one
+  trust boundary.** The README and the oats-aweb skill now say that both keys
+  live in the deployment host user's `~/.awid/`, not inside the deployment.
+  So every process that user runs can read them, the deployment and every
+  agent instance spawned there included. They also say that aw keeps each
+  local invite's secret in `~/.config/aw/team-invites/<id>.json` until it is
+  accepted, and that spawned instances' `aw init --join-from` uses the same
+  team key. Publishing the team's coordination server (`aw id team
+  set-server`) is left to the team owner: setup's accept, connect and
+  `--join-from` don't read it.
+- **Tests: the fake aw for BYOT create answers as aw 1.36.56 does.**
+  `test/fixtures/byot-create/` holds the real binary's offline output
+  (`capture.sh`), plus shapes read from aw's source for what needs a registry.
+  The fake's `aw id team invite` answer is now aw's `{invite_id, status,
+  token}`. `test/aw-byot-create-shapes.test.mjs` compares the fake with those
+  fixtures. With `OATS_AWEB_TEST_AW` set to an aw binary, it also runs the
+  offline commands, and setup's create, on that binary.
 - **Docs: `setup --create --namespace` without `AWEB_URL` uses an existing
   root's service.** The README and the oats-aweb skill now say that the team
   is then registered with the service an existing root already uses, which

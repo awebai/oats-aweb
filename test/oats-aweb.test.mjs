@@ -742,30 +742,27 @@ test("plain setup with an unmapped default asks for the owner id or invite and c
   assert.deepEqual(kernel.readCalls(), []);
 });
 
-test("setup --create suffixes only on 409 conflicts", async (t) => {
+test("setup --create never suffixes: a normalized name taken in the namespace stops after one create", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const fake = fakeAwSetupPath(t);
   const kernel = fakeOatsCli(t);
   const label = "My.Team";
   const namespace = "example.invalid";
-  const team = `${teamName(label)}-2:${namespace}`;
   const result = await run(["setup", "--create", label, "--namespace", namespace], {
     PATH: fake.path,
     AWEB_API_KEY: "",
     AWEB_URL: "https://aweb.example.invalid/api",
-    AW_CREATE_MODE: "conflict-once",
+    AW_CREATE_MODE: "registry-409",
     OATS_EVENT: "setup", OATS_WORKSPACE: root,
     OATS_CLI_BIN: kernel.cli,
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
-  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, new RegExp(`team ${teamName(label)}:example\\.invalid already exists in the registry`));
   const createCalls = fake.readCalls().filter((c) => c.args.slice(0, 3).join(" ") === "id team create").map((c) => c.args);
-  assert.deepEqual(createCalls, [
-    ["id", "team", "create", `--name=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
-    ["id", "team", "create", `--name=${teamName(label)}-2`, `--namespace=${namespace}`, "--json"],
-  ]);
-  assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"], ["teams", "add", label, `--team=${team}`]]);
+  assert.deepEqual(createCalls, [["id", "team", "create", `--name=${teamName(label)}`, `--namespace=${namespace}`, "--json"]]);
+  assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"]]);
 });
 
 test("setup --create reports non-409 create errors once without leaking minted tokens", async (t) => {
