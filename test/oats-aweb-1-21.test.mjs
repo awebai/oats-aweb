@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 import { fakeKernelTeamConfig, joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
+import { AW_TESTED } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -189,6 +190,17 @@ test("setup --install-aw below the floor installs, and --aw-version picks the ve
   const doc = checkOnly(result.stdout);
   assert.equal(doc.aw.status, "done");
   assert.match(doc.aw.detail, /installed aw 1\.36\.33 \(was 1\.30\.0\)/);
+});
+
+// setup --create --namespace needs aw >= 1.36.53 (lib/byot-create.mjs): --install-aw installs
+// aw-compat's tested aw, and re-checks that floor after npm.
+test("setup --create --namespace --install-aw installs the tested aw, and refuses when npm leaves an aw below the create floor", async (t) => {
+  const root = tempDir(t);
+  const npm = fakeNpmPath(t, { aw: "1.36.33" });
+  const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid", "--name", "lab-root", "--install-aw"], deploymentEnv(root, { PATH: npm.path }), root);
+  assert.equal(result.code, 1);
+  assert.deepEqual(npm.readCalls(), [["install", "-g", `@awebai/aw@${AW_TESTED}`]]);
+  assert.match(result.stderr, new RegExp(`npm install -g @awebai/aw@${AW_TESTED.replaceAll(".", "\\.")} ran, but aw 1\\.36\\.33 is older than 1\\.36\\.53`));
 });
 
 test("setup --install-aw at or above the floor does not run npm", async (t) => {

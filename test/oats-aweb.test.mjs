@@ -594,7 +594,7 @@ test("setup --join connect failure keeps the root and can resume without a new i
 test("setup --create with namespace creates a local BYOT team, registers it, mints and accepts a local invite into a per-team root, and records it with the kernel", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-  const fake = fakeAwSetupPath(t);
+  const fake = fakeAwSetupPath(t, { version: "1.36.56" });
   const kernel = fakeOatsCli(t);
   const label = "My_Team";
   const namespace = "example.invalid";
@@ -636,7 +636,7 @@ const setupCreateEnv = (root, kernel, fake) => ({ OATS_WORKSPACE: root, PATH: fa
 test("setup --create on a closed workspace creates the team, records nothing local, and prints what to commit", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-  const fake = fakeAwSetupPath(t);
+  const fake = fakeAwSetupPath(t, { version: "1.36.56" });
   const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
   const team = "eng:example.invalid";
   const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
@@ -653,7 +653,7 @@ test("setup --create on a closed workspace creates the team, records nothing loc
 test("setup --create on a closed workspace with a default team prints no defaultTeam line", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-  const fake = fakeAwSetupPath(t);
+  const fake = fakeAwSetupPath(t, { version: "1.36.56" });
   const kernel = fakeOatsCli(t, { teams: { ...TEAMS_CLOSED, defaultTeam: { label: "main", team: "main:example.invalid", from: "workspace" } } });
   const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
   assert.equal(result.code, 0, result.stderr);
@@ -665,7 +665,7 @@ test("setup --create on a closed workspace quotes a label YAML would read as a n
   for (const label of ["01", "true", "123"]) {
     const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-    const fake = fakeAwSetupPath(t);
+    const fake = fakeAwSetupPath(t, { version: "1.36.56" });
     const kernel = fakeOatsCli(t, { teams: TEAMS_CLOSED });
     const result = await run(["setup", "--create", label, "--namespace", "example.invalid"], setupCreateEnv(root, kernel, fake), root);
     assert.equal(result.code, 0, result.stderr);
@@ -683,7 +683,7 @@ test("setup --create refuses before creating anything when it cannot tell whethe
   for (const kernel of [fakeOatsCli(t, { teams: "fail" }), undefined]) {
     const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-    const fake = fakeAwSetupPath(t);
+    const fake = fakeAwSetupPath(t, { version: "1.36.56" });
     const env = setupCreateEnv(root, kernel ?? { cli: "" }, fake);
     if (!kernel) delete env.OATS_CLI_BIN;
     const result = await run(["setup", "--create", "eng", "--namespace", "example.invalid"], env, root);
@@ -749,7 +749,7 @@ test("plain setup with an unmapped default asks for the owner id or invite and c
 test("setup --create never suffixes: a normalized name taken in the namespace stops after one create", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-  const fake = fakeAwSetupPath(t);
+  const fake = fakeAwSetupPath(t, { version: "1.36.56" });
   const kernel = fakeOatsCli(t);
   const label = "My.Team";
   const namespace = "example.invalid";
@@ -772,7 +772,7 @@ test("setup --create never suffixes: a normalized name taken in the namespace st
 test("setup --create reports non-409 create errors once without leaking minted tokens", async (t) => {
   const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-  const fake = fakeAwSetupPath(t);
+  const fake = fakeAwSetupPath(t, { version: "1.36.56" });
   const result = await run(["setup", "--create", "My.Team", "--namespace", "example.invalid"], {
     PATH: fake.path,
     AWEB_API_KEY: "",
@@ -793,7 +793,7 @@ test("setup --create fails when aw create omits team_id", async (t) => {
   for (const [mode, message] of [["missing-id", /aw id team create returned no team_id/]]) {
     const root = tempDir(t);
   writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
-    const fake = fakeAwSetupPath(t);
+    const fake = fakeAwSetupPath(t, { version: "1.36.56" });
     const result = await run(["setup", "--create", "missing", "--namespace", "example.invalid"], {
       PATH: fake.path,
       AWEB_API_KEY: "",

@@ -29,7 +29,7 @@ function fixture(t) {
   writeFileSync(cli, `#!${process.execPath}\nconst fs = require("node:fs");\nconst args = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(kernelCalls)}, JSON.stringify({ args }) + "\\n");\nif (args[0] === "teams" && args[1] === "add" && process.env.FIXTURE_TEAMS_ADD_FAIL) { console.error("fixture teams add refusal"); process.exit(1); }\nif (args[0] === "teams" && args[1] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
   const fake = fakeAwSetupPath(t);
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AW_)/.test(k)));
-  Object.assign(env, { PATH: fake.path, AWEB_API_KEY: '', AWEB_URL: SERVICE, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root }) });
+  Object.assign(env, { PATH: fake.path, AW_FAKE_VERSION: '1.36.56', AWEB_API_KEY: '', AWEB_URL: SERVICE, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root }) });
   const run = (extra = {}, namespace = NS, more = []) => spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', namespace, ...more], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000 });
   const calls = () => fake.readCalls().map((c) => c.args.join(' '));
   const kernel = () => existsSync(kernelCalls) ? readFileSync(kernelCalls, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l).args) : [];
@@ -353,4 +353,22 @@ test('a service URL a team-server record cannot hold is refused before any aw ca
   assert.equal(r.status, 1);
   assert.match(r.stderr, /the aweb service URL cannot be published as the team's AWID server: server_url must use https outside loopback hosts; set AWEB_URL to the server's public URL and re-run; nothing was created/);
   assert.deepEqual(f.calls(), []);
+});
+
+// aw below 1.36.53 lacks the team-server commands or the --json error envelope setup reads
+// (lib/byot-create.mjs): setup refuses before any aw call but `aw version`, and before the kernel.
+for (const version of ['1.36.33', '1.36.51']) {
+  test(`aw ${version} is refused before anything is created, naming the floor and the tested aw`, (t) => {
+    const f = fixture(t), r = f.run({ AW_FAKE_VERSION: version }, NS, ['--name', 'lab2-root']);
+    assert.equal(r.status, 1);
+    assert.equal(r.stderr, `oats aweb setup: --create --namespace needs aw >= 1.36.53 (this host has ${version}): upgrade with npm install -g @awebai/aw@1.36.56; nothing was created\n`);
+    assert.deepEqual(f.calls(), []);
+    assert.deepEqual(f.kernel(), []);
+    assert.equal(existsSync(join(dirname(f.fake.path), 'team-keys')), false);
+  });
+}
+
+test('aw 1.36.53, the floor, passes the check', (t) => {
+  const f = fixture(t), r = f.run({ AW_FAKE_VERSION: '1.36.53' });
+  assert.equal(r.status, 0, r.stderr);
 });

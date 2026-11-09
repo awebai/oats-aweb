@@ -24,6 +24,7 @@
 //                     AW_INSPECT_FAIL=<code>, aw's --json error envelope on stdout
 //                     whose message echoes the token, exit 1, with aw's `invite`
 //                     (canonical_team_id, server_url) when AW_INSPECT_FAIL_INVITE is set
+//   AW_FAKE_VERSION   the version `aw version` reports; default: the `version` option (1.36.33)
 //   AW_FAKE_VERSION_FILE when it exists, `aw version` (and the inspect gate) read
 //                     the version from it, so a fake npm can upgrade aw
 //   accept-invite --token-stdin reads the token from stdin; the call records
@@ -76,7 +77,7 @@ function tempDir(t) {
   return dir;
 }
 
-export function fakeAwSetupPath(t, { activeTeam = "active:example.invalid" } = {}) {
+export function fakeAwSetupPath(t, { activeTeam = "active:example.invalid", version = "1.36.33" } = {}) {
   const dir = tempDir(t);
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -91,7 +92,7 @@ if (process.env.AWEB_IDENTITY_HOME) { console.error("unexpected ambient identity
 let args = process.argv.slice(2);
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
-const fakeVersion = () => (process.env.AW_FAKE_VERSION_FILE && fs.existsSync(process.env.AW_FAKE_VERSION_FILE) ? fs.readFileSync(process.env.AW_FAKE_VERSION_FILE, "utf8").trim() : process.env.AW_FAKE_VERSION) || "1.36.33";
+const fakeVersion = () => (process.env.AW_FAKE_VERSION_FILE && fs.existsSync(process.env.AW_FAKE_VERSION_FILE) ? fs.readFileSync(process.env.AW_FAKE_VERSION_FILE, "utf8").trim() : process.env.AW_FAKE_VERSION) || ${JSON.stringify(version)};
 if (args[0] === "version") { console.log("aw " + fakeVersion()); process.exit(0); }
 const awDir = identityHome || path.join(process.cwd(), ".aw");
 const deleting = args[0] === "workspace" && args[1] === "delete";

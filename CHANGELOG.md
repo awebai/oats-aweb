@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Changed: `setup --create <label> --namespace <domain>` needs aw 1.36.53
+  or later, and refuses an older aw up front (#208).** `aw id team set-server`
+  and `show-server` first ship in aw-v1.36.44 (880ccf5), and aw's `--json`
+  error envelope, which setup reads to tell "no team server record is
+  published" and a taken team name from a failure, first ships in aw-v1.36.53
+  (755f3dc). On aw-compat's `min` (1.36.33) the create used to fail half-way.
+  Setup now checks the installed aw before the kernel and before any other aw
+  call, and below 1.36.53 refuses: "--create --namespace needs aw >= 1.36.53
+  (this host has <version>): upgrade with npm install -g @awebai/aw@<tested>;
+  nothing was created". `--install-aw` on this route installs aw-compat's
+  `tested` (1.36.56). The provider's floor for every other path stays 1.36.33.
+  The real-aw CI step checks the refusal on 1.36.33 and the passing check on
+  1.36.56. The skill-citation check leaves out `aw id team set-server` and
+  `show-server` on an aw below 1.36.53, naming each one it leaves out.
 - **Added: `setup --create <label> --namespace <domain>` publishes and
   verifies the team's AWID team-server record (#208).** After register, setup
   runs `aw id team set-server --team <name> --namespace <domain> --url

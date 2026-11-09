@@ -61,6 +61,7 @@ import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/cap
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
+import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
@@ -2393,7 +2394,9 @@ ${JSON.stringify(problem.details || {})}`);
   }
 
   if ((installAw && !awEnsured) || checkOnly) {
-    const aw = await ensureAw({ install: installAw, version: awVersion });
+    // --create --namespace installs aw-compat's tested aw and holds it to the route's floor.
+    const byotCreate = !!(createLabel && createNamespace);
+    const aw = await ensureAw({ install: installAw, version: awVersion || (byotCreate ? AW_TESTED : undefined), min: byotCreate ? AW_BYOT_CREATE : undefined });
     if (checkOnly) {
       // The host's answer to `oats aweb connect`: aw, the default team, and whether the root
       // minting for that team is a member of it (null when aw cannot be asked).
@@ -2679,6 +2682,9 @@ ${JSON.stringify(problem.details || {})}`);
     if (createLabel) {
       const label = createLabel;
       if (!createNamespace) throw new Error(hostedCreateUnavailable());
+      // Before the kernel or any aw call that writes: below this floor setup would fail half-way.
+      const tooOld = byotCreateAwRefusal(await readAwVersion());
+      if (tooOld) throw new Error(tooOld);
       // Asked before anything is created, so a workspace that refuses local teams never leaves a team
       // created here and its recording refused half-way.
       let localTeams;

@@ -1160,7 +1160,13 @@ Supported acts:
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
-  a customer-controlled namespace. It normalizes `<label>` to aweb's team-name
+  a customer-controlled namespace. It needs aw 1.36.53 or later: `aw id team
+  set-server`/`show-server` first ship in aw 1.36.44, and the `--json` error
+  answers setup reads first ship in aw 1.36.53. Below that it refuses before
+  any other aw call and before the kernel: "--create --namespace needs aw >=
+  1.36.53 (this host has <version>): upgrade with npm install -g
+  @awebai/aw@<tested>; nothing was created", `<tested>` being aw-compat.json's
+  `tested`. With `--install-aw` it installs that tested aw. It normalizes `<label>` to aweb's team-name
   rule and, before any aw call, resolves the aweb service: `AWEB_URL` (the
   server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
   `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
