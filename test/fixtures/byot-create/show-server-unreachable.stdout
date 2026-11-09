@@ -1,0 +1,1 @@
+{"error":{"code":"error","message":"read team server for eng:example.invalid: Get \"http://127.0.0.1:9/v1/namespaces/example.invalid/teams/eng/server\": dial tcp 127.0.0.1:9: connect: connection refused"}}

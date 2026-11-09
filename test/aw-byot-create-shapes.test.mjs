@@ -51,8 +51,8 @@ test('the fixtures were captured from aw 1.36.56 and hold no invite token or key
   }
 });
 
-test('every flag setup passes to create, invite, accept-invite and register is one aw 1.36.56 has', () => {
-  const flags = { create: ['--name', '--namespace', '--json'], invite: ['--team', '--namespace', '--json'], 'accept-invite': ['--token-stdin', '--name', '--local', '--json'], register: ['--service', '--team', '--json'] };
+test('every flag setup passes to create, invite, accept-invite, register, set-server and show-server is one aw 1.36.56 has', () => {
+  const flags = { create: ['--name', '--namespace', '--json'], invite: ['--team', '--namespace', '--json'], 'accept-invite': ['--token-stdin', '--name', '--local', '--json'], register: ['--service', '--team', '--json'], 'set-server': ['--team', '--namespace', '--url', '--json'], 'show-server': ['--team', '--namespace', '--json'] };
   for (const [command, wanted] of Object.entries(flags)) {
     const help = captured(`help-${command}`);
     assert.equal(help.exit, 0, command);
@@ -91,6 +91,24 @@ test('the fake\'s answers have real aw\'s shapes: create, invite and their refus
   }
 });
 
+test('the fake\'s team-server record has real aw\'s shapes: none, published, verified', (t) => {
+  const fake = fakeAwSetupPath(t), dir = scratch(t), cwd = join(dir, 'home', 'deployment');
+  const aw = (args) => spawnSync(join(fake.path, 'aw'), args, { cwd, encoding: 'utf8', timeout: 30000, env: { PATH: fake.path } });
+  const target = ['--team=eng', `--namespace=${NS}`];
+  assert.equal(aw(['id', 'team', 'create', '--name=eng', `--namespace=${NS}`, '--json']).status, 0);
+
+  const none = aw(['id', 'team', 'show-server', ...target, '--json']), noneShape = derived('show-server-none');
+  assert.deepEqual([none.status, none.stdout, none.stderr], [noneShape.exit, noneShape.stdout, noneShape.stderr]);
+
+  for (const [args, name] of [[['set-server', ...target, '--url=https://aweb.example.invalid/api'], 'set-server-published'], [['show-server', ...target], 'show-server-verified']]) {
+    const r = aw(['id', 'team', ...args, '--json']), shape = JSON.parse(derived(name).stdout);
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.deepEqual(Object.keys(out), Object.keys(shape), name);
+    for (const k of ['status', 'team_id', 'server_url', 'audience']) assert.equal(out[k], shape[k], `${name} ${k}`);
+  }
+});
+
 test('real aw: the offline answers still have the captured shapes', { skip: !realAw && 'set OATS_AWEB_TEST_AW to an aw 1.36.56 or later binary' }, (t) => {
   const dir = scratch(t), home = join(dir, 'home'), cwd = join(home, 'deployment');
   const refused = runAw(realAw, home, cwd, ['id', 'team', 'create', '--name=eng', `--namespace=${NS}`, '--json']);
@@ -106,9 +124,16 @@ test('real aw: the offline answers still have the captured shapes', { skip: !rea
   assert.ok(minted.token.length > 0);
   assert.equal(invite.stderr, '');
   assert.deepEqual(readdirSync(join(home, '.config', 'aw', 'team-invites')), [`${minted.invite_id}.json`], 'aw keeps the invite record user-wide');
+
+  for (const [name, args] of [['set-server-unreachable', ['set-server', '--team=eng', `--namespace=${NS}`, '--url=http://127.0.0.1:9/api']], ['show-server-unreachable', ['show-server', '--team=eng', `--namespace=${NS}`]]]) {
+    const r = runAw(realAw, home, cwd, ['id', 'team', ...args, '--json']), shape = captured(name);
+    assert.deepEqual([r.status, r.stdout, r.stderr], [shape.exit, shape.stdout, shape.stderr], name);
+  }
 });
 
-test('real aw: setup --create with no namespace controller key names it and creates nothing', { skip: !realAw && 'set OATS_AWEB_TEST_AW to an aw 1.36.56 or later binary' }, (t) => {
+// A fresh deployment, as the real binary sees one: an empty HOME, so `aw whoami` finds no root
+// identity, and no namespace controller key. Nothing reaches a registry.
+function realSetupCreate(t, more = []) {
   const dir = scratch(t), home = join(dir, 'home'), deployment = join(home, 'deployment'), bin = join(dir, 'bin');
   mkdirSync(bin);
   writeFileSync(join(bin, 'aw'), `#!/bin/sh\nexec ${JSON.stringify(realAw)} "$@"\n`);
@@ -118,10 +143,24 @@ test('real aw: setup --create with no namespace controller key names it and crea
   const teams = { teamsApi: 1, deployment, defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
   writeFileSync(cli, `#!${process.execPath}\nif (process.argv[2] === "teams" && process.argv[3] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
   const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, AWID_REGISTRY_URL: 'http://127.0.0.1:9', AWEB_URL: 'http://127.0.0.1:9/api', OATS_EVENT: 'setup', OATS_WORKSPACE: deployment, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root: deployment }) };
-  const r = spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', NS], { cwd: deployment, env, encoding: 'utf8', timeout: 60000 });
+  const r = spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', NS, ...more], { cwd: deployment, env, encoding: 'utf8', timeout: 60000 });
+  return { r, home, deployment };
+}
+
+test('real aw: setup --create with no namespace controller key names it and creates nothing', { skip: !realAw && 'set OATS_AWEB_TEST_AW to an aw 1.36.56 or later binary' }, (t) => {
+  const { r, home, deployment } = realSetupCreate(t, ['--name', 'lab-root']);
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /aw id team failed \(exit 2\) \(output withheld: this command handles credentials; the namespace controller key for this namespace is not on this machine\); run `aw id namespace prepare-controller --domain example\.invalid` as this user, or create the team where that key is, then re-run; nothing was created/);
   assert.doesNotMatch(r.stdout + r.stderr, /pass --hosted/);
   assert.equal(existsSync(join(deployment, '.aweb-roots')), false);
   assert.equal(existsSync(join(home, '.awid', 'team-keys')), false);
+});
+
+// awebai/oats-aweb#208, live lab: without --name, a fresh deployment's create stops before aw writes a team key.
+test('real aw: setup --create on a fresh deployment without --name stops before create, naming --name <alias>', { skip: !realAw && 'set OATS_AWEB_TEST_AW to an aw 1.36.56 or later binary' }, (t) => {
+  const { r, home, deployment } = realSetupCreate(t);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.stderr, 'oats aweb setup: --name <alias> is required when no root identity is available; aliases must match the aweb 1-64 character rule; nothing was created\n');
+  assert.equal(existsSync(join(deployment, '.aweb-roots')), false);
+  assert.equal(existsSync(join(home, '.awid')), false);
 });

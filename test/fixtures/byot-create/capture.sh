@@ -28,7 +28,7 @@ capture() { # capture <name> <cwd> [stdin-file] -- aw args...
 date -u +%Y-%m-%dT%H:%M:%SZ > "$OUT/captured-at.txt"
 D="$WORK/home/deployment"
 
-for c in create invite accept-invite register; do
+for c in create invite accept-invite register set-server show-server; do
   capture "help-$c" "$D" /dev/null -- id team "$c" --help
 done
 
@@ -48,6 +48,9 @@ sed -i.bak 's/^.*$/<invite-id>.json/' "$OUT/invite-team-key.records" && rm "$OUT
 
 capture invite-no-team-key "$D" /dev/null -- id team invite --team=nokey --namespace=example.invalid --json
 capture register-unreachable "$D" /dev/null -- id team register --service=http://127.0.0.1:9/api --team=eng:example.invalid --json
+capture set-server-unreachable "$D" /dev/null -- id team set-server --team=eng --namespace=example.invalid --url=http://127.0.0.1:9/api --json
+capture set-server-no-team-key "$D" /dev/null -- id team set-server --team=nokey --namespace=example.invalid --url=http://127.0.0.1:9/api --json
+capture show-server-unreachable "$D" /dev/null -- id team show-server --team=eng --namespace=example.invalid --json
 
 mkdir -p "$D/.aweb-roots/eng"
 capture accept-invite-unreachable "$D/.aweb-roots/eng" "$TOKEN_FILE" -- id team accept-invite --token-stdin --name=fixture --local --json

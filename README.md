@@ -1156,17 +1156,28 @@ Supported acts:
 - `oats aweb setup` with the selected team API key supplied only through the
   operator's protected child environment (`AWEB_API_KEY`): runs `aw init
   --do-not-touch-agents-md` for that hosted team. `--service` stays join-only; `--name` is supported for
-  join and additionally required for `--username`. Neither flag extends the
+  join and `--create`, and required for `--username`. Neither flag extends the
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
-  a customer-controlled namespace. It normalizes `<label>` to aweb's team-name
+  a customer-controlled namespace. It needs aw 1.36.53 or later: `aw id team
+  set-server`/`show-server` first ship in aw 1.36.44, and the `--json` error
+  answers setup reads first ship in aw 1.36.53. Below that it refuses before
+  any other aw call and before the kernel: "--create --namespace needs aw >=
+  1.36.53 (this host has <version>): upgrade with npm install -g
+  @awebai/aw@<tested>; nothing was created", `<tested>` being aw-compat.json's
+  `tested`. With `--install-aw` it installs that tested aw. It normalizes `<label>` to aweb's team-name
   rule and, before any aw call, resolves the aweb service: `AWEB_URL` (the
   server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
   `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
-  neither, it refuses and nothing is created. It then runs `aw id team create
+  neither, it refuses and nothing is created. The per-team root's identity
+  takes `--name <alias>`, else the alias of the deployment's root identity
+  (`aw whoami`); a fresh deployment has none, so it needs `--name`, and
+  without either setup refuses before any team key is written. It then runs `aw id team create
   --name <normalized> --namespace <domain>`, registers the team with that
-  service (`aw id team register --service <url> --team <team id>`), mints a
+  service (`aw id team register --service <url> --team <team id>`),
+  publishes and verifies its AWID team-server record for that service (see
+  below), mints a
   local invite with the team key aw just wrote (`aw id team invite`), accepts
   it into a new per-team root, connects the root to the service, records
   `roots[<team id>]`, then records the local mapping with
@@ -1211,10 +1222,25 @@ Supported acts:
   - Each spawned instance joins the team with `aw init --join-from <root>
     --join-team <team id>`, which mints a local invite with that same team key.
     So spawns work only as the user that holds the key.
-  - Setup does not publish the team's coordination server at AWID (`aw id
-    team set-server --team <name> --namespace <domain> --url <aweb url>`).
-    Accept, connect and `--join-from` do not read that record; installed apps
-    do. Publishing it is the team owner's act, when the team's apps need it.
+  - Setup publishes the team's coordination server at AWID, the
+    `aweb.team-server/1` record that installed apps read: after register it
+    runs `aw id team set-server --team <name> --namespace <domain> --url
+    <aweb url>`, signed with the team key, then verifies it with `aw id team
+    show-server`: the team, its current key and the URL it registered the team
+    with. It reads the record before register and again just before
+    publishing. One that already names that URL is left as it is, so a re-run
+    stays idempotent. One that names another URL stops setup, naming both
+    URLs: setup does not replace a record it finds. The team's owner then
+    republishes it for the new URL, or the operator sets `AWEB_URL` to the
+    published one. aw has no publish-if-absent, so a record another writer
+    publishes between that last read and `set-server` is replaced, and nothing
+    reports it: the verify that follows reads setup's own record.
+  - The service URL is put in the canonical form the record holds (aw's
+    `CanonicalTeamServerURL`) before any aw call, and that form is what setup
+    registers, publishes and connects: a trailing slash is dropped, and the
+    host is lowercased. A URL the record cannot hold (http outside loopback,
+    a literal IP, a query, fragment or userinfo) is refused before anything
+    is created.
   - A local-controller invite can be accepted only where the team key is: the
     same user on the same machine. Run setup, and the deployment's instances,
     as that user; another user's deployment on that machine cannot accept it.

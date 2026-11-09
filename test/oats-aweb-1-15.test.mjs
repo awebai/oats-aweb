@@ -10,6 +10,8 @@ import { assertKernelOperationAnswer } from "./helpers/kernel-operation-envelope
 import { flagValue, joinFromCalls } from "./helpers/fake-aw-join-from.mjs";
 import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
+import { AW_BYOT_CREATE } from "../oats-package/capabilities/oats-aweb/lib/byot-create.mjs";
+import { AW_TESTED, versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
@@ -417,8 +419,14 @@ function parseInvocation(inv) {
   return { path, flags, alt };
 }
 
+/** Commands the guidance cites only for a route that refuses an older aw up front: the version it
+ *  refuses below. On an older aw they are not checked, and the test says so. */
+const ROUTE_ONLY_COMMANDS = { "id team set-server": AW_BYOT_CREATE, "id team show-server": AW_BYOT_CREATE };
+
 test("real aw: every aw invocation in the skills and inject exists with its flags", (t) => {
-  if (!realAw(t)) return;
+  const aw = realAw(t);
+  if (!aw) return;
+  const installed = aw.join(".");
   const files = [
     join(CAPABILITY, "injects", "aweb.md"),
     ...["oats-aweb", "aweb-messaging", "aweb-team-membership", "aweb-identity"].map((s) => join(CAPABILITY, "skills", s, "SKILL.md")),
@@ -437,6 +445,8 @@ test("real aw: every aw invocation in the skills and inject exists with its flag
       if (!path.length && !alt) continue;
       const paths = alt ? alt.split("|").map((a) => [...path, a]) : [path];
       for (const full of paths) {
+        const routeMin = ROUTE_ONLY_COMMANDS[full.join(" ")];
+        if (routeMin && !versionAtLeast(installed, routeMin)) { t.diagnostic(`not checked on aw ${installed}: \`${inv}\` is cited for setup --create --namespace, which refuses aw below ${routeMin}`); continue; }
         // The longest prefix that is a command; any remaining words must be
         // positionals that command's usage line declares (<arg> or [arg]).
         const isCommand = (q) => { const h = help(q); return h.ok && new RegExp(`Usage:\\s*\\n\\s*aw ${q.join(" ")}(\\s|$)`).test(h.text); };
@@ -577,4 +587,27 @@ test("teams defaultTeam.from is always present and derived from kernel env for o
   writeFileSync(join(fx.home, "instance.json"), JSON.stringify(instanceJson));
   const v = assertKernelOperationAnswer(runOperation("messaging:teams", "teams", { cwd: fx.home, env }), { ok: true, label: "messaging:teams deployment" });
   assert.equal(v.result.defaultTeam.from, "deployment");
+});
+
+// setup --create --namespace on the aw this job installed, offline (a throwaway HOME, an unreachable
+// registry): below lib/byot-create.mjs's floor it is refused before any aw call that writes; at or
+// above it, setup passes the check and stops at the missing namespace controller key. Either way
+// nothing is created.
+test("real aw: setup --create --namespace refuses an aw below its floor up front, and passes it at or above", (t) => {
+  const aw = realAw(t);
+  if (!aw) return;
+  const installed = aw.join(".");
+  const dir = tempDir(t), home = join(dir, "home"), deployment = join(home, "deployment"), cli = join(dir, "oats");
+  write(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const teams = { teamsApi: 1, deployment, defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
+  writeFileSync(cli, `#!${process.execPath}\nif (process.argv[2] === "teams" && process.argv[3] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
+  const awBin = dirname(spawnSync("sh", ["-c", "command -v aw"], { encoding: "utf8" }).stdout.trim());
+  const env = { HOME: home, PATH: `${awBin}:${dirname(process.execPath)}:/usr/bin:/bin`, AWID_REGISTRY_URL: "http://127.0.0.1:9", AWEB_URL: "http://127.0.0.1:9/api", OATS_EVENT: "setup", OATS_WORKSPACE: deployment, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root: deployment }) };
+  const r = spawnSync(process.execPath, [HOOK, "setup", "--create", "eng", "--namespace", "example.invalid", "--name", "lab-root"], { cwd: deployment, env, encoding: "utf8", timeout: 60000 });
+  t.diagnostic(`aw ${installed}: ${versionAtLeast(installed, AW_BYOT_CREATE) ? "at or above" : "below"} the --create --namespace floor ${AW_BYOT_CREATE}`);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  if (versionAtLeast(installed, AW_BYOT_CREATE)) assert.match(r.stderr, /the namespace controller key for this namespace is not on this machine\); run `aw id namespace prepare-controller --domain example\.invalid` as this user, or create the team where that key is, then re-run; nothing was created/);
+  else assert.equal(r.stderr, `oats aweb setup: --create --namespace needs aw >= ${AW_BYOT_CREATE} (this host has ${installed}): upgrade with npm install -g @awebai/aw@${AW_TESTED}; nothing was created\n`);
+  assert.equal(existsSync(join(deployment, ".aweb-roots")), false);
+  assert.equal(existsSync(join(home, ".awid", "team-keys")), false);
 });

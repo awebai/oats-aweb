@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, normalizeAwDomain, serviceDetailCode, teamNameTaken, withheldFailureCause } from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
 const NETWORK = 'the aweb service could not be reached: a network or TLS failure';
 const NONE = 'no HTTP status, aw error code or network failure in its output';
 const SECRET = 'aw_inv_SECRET0123456789abcdef';
@@ -81,4 +81,20 @@ test('a team name taken under another team key is read only from aw\'s exact --j
     '',
     undefined,
   ]) assert.equal(teamNameTaken(stdout, 'example.invalid', 'eng'), false, String(stdout));
+});
+
+// aw 1.36.56's answer when no team-server record is published (source-derived/show-server-none), and nothing else.
+test('a missing team-server record is read only from aw\'s exact --json shape for that team', () => {
+  const none = readFileSync(new URL('./fixtures/byot-create/source-derived/show-server-none.stdout', import.meta.url), 'utf8');
+  assert.equal(teamServerRecordMissing(none, 'eng:example.invalid'), true);
+  assert.equal(teamServerRecordMissing(none, 'other:example.invalid'), false, 'another team');
+  const unreachable = readFileSync(new URL('./fixtures/byot-create/show-server-unreachable.stdout', import.meta.url), 'utf8');
+  for (const stdout of [
+    unreachable,
+    '{"error":{"code":"http_error","message":"no team server record is published for eng:example.invalid","http_status":404}}',
+    '{"error":{"code":"error","message":"no team server record is published for eng:example.invalid x"}}',
+    'no team server record is published for eng:example.invalid',
+    '',
+    undefined,
+  ]) assert.equal(teamServerRecordMissing(stdout, 'eng:example.invalid'), false, String(stdout));
 });
