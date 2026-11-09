@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, serviceDetailCode, teamNameTaken, withheldFailureCause } from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, normalizeAwDomain, serviceDetailCode, teamNameTaken, withheldFailureCause } from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
 const NETWORK = 'the aweb service could not be reached: a network or TLS failure';
 const NONE = 'no HTTP status, aw error code or network failure in its output';
 const SECRET = 'aw_inv_SECRET0123456789abcdef';
@@ -66,6 +66,8 @@ test('a team name taken under another team key is read only from aw\'s exact --j
   const fixture = (name) => readFileSync(new URL(`./fixtures/byot-create/source-derived/${name}.stdout`, import.meta.url), 'utf8');
   assert.equal(teamNameTaken(fixture('create-team-pinned'), 'example.invalid', 'eng'), true);
   assert.equal(teamNameTaken(fixture('create-team-registry-409'), 'example.invalid', 'eng'), true);
+  for (const domain of ['EXAMPLE.INVALID', 'example.invalid.', ' Example.Invalid. ']) assert.equal(teamNameTaken(fixture('create-team-pinned'), domain, 'eng'), true, `aw normalizes ${JSON.stringify(domain)} before it answers`);
+  assert.equal(normalizeAwDomain(' Example.Invalid. '), 'example.invalid');
   assert.equal(teamNameTaken(fixture('create-team-pinned'), 'example.invalid', 'other'), false, 'another team\'s name');
   assert.equal(teamNameTaken(fixture('create-team-pinned'), 'other.invalid', 'eng'), false, 'another namespace');
   for (const stdout of [

@@ -60,7 +60,7 @@ import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:pa
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, serviceDetailCode, teamNameTaken, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
@@ -2263,8 +2263,8 @@ if (event === "launch") {
     if (arg.startsWith("--join=") && arg.length > "--join=".length) { joinLabel = arg.slice("--join=".length); continue; }
     if (arg === "--create" && args[i + 1]) { createLabel = args[++i]; continue; }
     if (arg.startsWith("--create=") && arg.length > "--create=".length) { createLabel = arg.slice("--create=".length); continue; }
-    if (arg === "--namespace" && args[i + 1]) { createNamespace = args[++i]; continue; }
-    if (arg.startsWith("--namespace=") && arg.length > "--namespace=".length) { createNamespace = arg.slice("--namespace=".length); continue; }
+    if (arg === "--namespace" && args[i + 1]) { createNamespace = normalizeAwDomain(args[++i]); continue; }
+    if (arg.startsWith("--namespace=") && arg.length > "--namespace=".length) { createNamespace = normalizeAwDomain(arg.slice("--namespace=".length)); continue; }
     if (arg === "--service" && args[i + 1]) { joinService = args[++i]; continue; }
     if (arg.startsWith("--service=") && arg.length > "--service=".length) { joinService = arg.slice("--service=".length); continue; }
     if (arg === "--name" && args[i + 1]) { joinName = args[++i]; continue; }

@@ -28,7 +28,7 @@ function fixture(t) {
   const fake = fakeAwSetupPath(t);
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AW_)/.test(k)));
   Object.assign(env, { PATH: fake.path, AWEB_API_KEY: '', AWEB_URL: SERVICE, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root }) });
-  const run = (extra = {}) => spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', NS], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000 });
+  const run = (extra = {}, namespace = NS) => spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', namespace], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 30000 });
   const calls = () => fake.readCalls().map((c) => c.args.join(' '));
   const kernel = () => existsSync(kernelCalls) ? readFileSync(kernelCalls, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l).args) : [];
   const teamRoot = join(root, '.aweb-roots', 'eng');
@@ -80,6 +80,13 @@ for (const mode of ['pinned', 'registry-409']) {
     assert.deepEqual(f.kernel(), [['teams', '--json']]);
   });
 }
+
+test('a namespace given in another case or with a trailing dot is aw\'s normalized one, in argv and in the taken-name cause', (t) => {
+  const f = fixture(t), r = f.run({ AW_CREATE_MODE: 'pinned' }, 'Example.INVALID.');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /team eng:example\.invalid already exists in the registry, and its team key is not on this machine; choose another label \(--create <label>\), or run setup as the user whose ~\/\.awid\/team-keys\/example\.invalid\/ holds its key; nothing was created/);
+  assert.deepEqual(f.calls(), [`id team create --name=eng --namespace=${NS} --json`]);
+});
 
 test('a create that prints a token (a future aw) still registers, and mints no invite', (t) => {
   const f = fixture(t), r = f.run({ AW_CREATE_MODE: 'token' });

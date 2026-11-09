@@ -77,6 +77,13 @@ export function withheldFailureCause({ stderr, stdout }) {
   return "no HTTP status, aw error code or network failure in its output";
 }
 
+/** A namespace domain as aw normalizes it before it uses or prints one
+ *  (awconfig.NormalizeDomain): trimmed, lowercased, without one trailing dot. */
+export function normalizeAwDomain(domain) {
+  const lower = String(domain ?? "").trim().toLowerCase();
+  return lower.endsWith(".") ? lower.slice(0, -1) : lower;
+}
+
 /** Whether `aw id team create --name <name> --namespace <domain> --json` was
  *  refused because the name is already held in the namespace under a team key
  *  that is not this machine's (awebai/oats-aweb#208). Read only from aw's --json
@@ -86,6 +93,7 @@ export function withheldFailureCause({ stderr, stdout }) {
  *  `http_error` ("create team at registry: ..."). A re-create with this
  *  machine's own key is not a refusal: aw answers it as created. */
 export function teamNameTaken(stdout, domain, name) {
+  domain = normalizeAwDomain(domain);
   let error;
   try { error = leadingJsonObject(String(stdout ?? "").trim())?.error; } catch { return false; }
   if (!error || typeof error.message !== "string") return false;
