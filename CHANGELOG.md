@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.39.0 — 2026-11-10
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw is now 1.36.56, published in `aw-compat.json`. `oats aweb setup --create <label> --namespace <domain>` (bring your own team) now runs to the end: it creates the team, registers it with the aweb service, publishes and verifies its AWID team-server record, mints and accepts a local invite into a per-team root, and records the root. A re-run of the same command resumes a partial create. `--name` names the per-team root's identity; with no root identity available it is required. This route needs aw 1.36.53 or later and refuses an older aw before it creates anything; with `--install-aw`, an older aw is replaced by the tested one. A taken team name stops the create; setup never tries another name. A completed create names the team key's path, never the key.
+
 - **Changed: `setup --create <label> --namespace <domain>` needs aw 1.36.53
   or later, and refuses an older aw up front (#208).** `aw id team set-server`
   and `show-server` first ship in aw-v1.36.44 (880ccf5), and aw's `--json`

@@ -38,6 +38,17 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## 1.39.0 — bring-your-own-team setup completes
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33, and the tested aw is
+1.36.56, published in `aw-compat.json` (above). `oats aweb setup --create
+<label> --namespace <domain>` now creates, registers, publishes and verifies
+the team-server record, and records a per-team root. Re-running the same
+command resumes a partial create. `--name` names that root's identity. The
+route needs aw 1.36.53 or later and refuses an older aw up front, with nothing
+created. A taken team name stops it; a completed create names where the team
+key is ("Supported acts" below).
+
 ## 1.38.0 — pi 0.5.0 without the skills filter
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw 1.36.53.
