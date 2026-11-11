@@ -335,9 +335,9 @@ test("a start under an empty runtime is a broker start, recorded as such, even a
 
 test("readiness requires the wake daemon for a home the broker delivers to, by its recorded runtime", (t) => {
   for (const [delivery, runtime, relies] of [["channel", "codex", true], ["session", "claude", true], ["channel", "claude", false], ["channel", "pi", false]]) {
-    const fx = fixture(t, { delivery, runtime, daemon: false });
+    const fx = fixture(t, { delivery, runtime });
     fx.record(fx.spawn().meta, runtime);
-    const result = fx.readiness();
+    const result = fx.readiness({ extra: { FAKE_DAEMON_DOWN: "1" } });
     const problem = result.problems.find((p) => p.code === "wake-daemon-not-running");
     assert.equal(!!problem, relies, `${delivery}/${runtime}: ${JSON.stringify(result)}`);
     assert.equal(result.status, relies ? "unavailable" : "ready");
