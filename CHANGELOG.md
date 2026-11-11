@@ -10,12 +10,32 @@
   `aw-newer-than-tested` now warns only above 1.36.58; `setup --create
   --namespace` refuses an aw below 1.36.53 naming
   `npm install -g @awebai/aw@1.36.58`, and `--install-aw` on that route
-  installs 1.36.58. aweb's changes
-  between the two releases need nothing from oats.aweb: `aw wake deregister`'s
-  help text and the wake broker's ignored `PendingExpiry` and `IdleProbe`
-  settings (oats.aweb runs the command and reads neither the help nor those
-  settings), the server's registry reads refusing a 401 or 403 instead of
-  serving the cache (server side, in the AWID SDK), and the Go 1.26.11 build.
+  installs 1.36.58.
+
+  What changed in aw between 1.36.56 and 1.36.58 that reaches oats.aweb, and
+  what oats.aweb does with it:
+  - **The host wake broker no longer stops a refused stream (aw 1.36.58).**
+    Up to 1.36.57 a stream the server refused (401, 403, 404, 422) ended as
+    `quarantined`. From 1.36.58 `aw wake status` shows it as `refused`, never
+    admitted, with `cause` and `next_attempt_at`, and the broker retries it
+    every 1 to 15 minutes, reading the identity from disk again before each
+    attempt; a repeated `aw wake register` retries it at once. oats.aweb's
+    readiness does not know the `refused` phase yet. It reports such a stream
+    as the problem `wake-stream-unavailable`, as it did a `quarantined` one;
+    for a grant seat the message names the phase "unknown (\"refused\")" and
+    gives the same remedy (restart the seat, which registers the home again).
+    A refused stream never reads as ready.
+  - **The broker's lock is now an OS file lock (aw 1.36.58),** `daemon.lock`
+    in the wake state directory. A broker from an earlier aw does not hold
+    it, so it must be stopped before the new one starts. `oats aweb wake
+    install`, rerun after an aw upgrade, restarts its unit, which does that; a
+    broker started by hand is stopped by hand first.
+  - Not reaching oats.aweb: `aw wake deregister`'s help text (oats.aweb runs
+    the command and does not read its help); the broker's `PendingExpiry` and
+    `IdleProbe` settings, now documented as ignored (oats.aweb sets neither);
+    the server's registry reads refusing a 401 or 403 instead of serving the
+    cache (server 1.27.50 and awid 0.5.39, the stack CI now runs against);
+    and the Go 1.26.11 build.
 
 ## 1.39.0 — 2026-11-10
 
