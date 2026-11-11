@@ -38,6 +38,14 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## 1.40.0 — a broker-delivered home needs a running broker
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
+1.36.58. `oats spawn` and every start refuse a home the host wake broker
+delivers to (Codex, or `delivery: session`) while no broker runs, with
+`wake-daemon-not-running` and how to start it on that host. Claude and pi
+homes under channel delivery never ask.
+
 ## 1.39.1 — tested aw 1.36.58
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33, and the tested aw is
