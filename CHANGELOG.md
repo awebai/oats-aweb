@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Fixed: a registration the wake broker refuses no longer tells the
+  operator to install another aw.** When `aw wake register` failed, the
+  refusal said the home "needs an aw with the wake broker CLI" and to
+  "install the aweb release that ships aw wake". Since 1.40.0 the hook has
+  read `aw wake status` a moment before, so the commands are there; the cause
+  is the broker. The refusal now says that registering the home with the
+  host wake broker failed, with aw's own error, and to check `aw wake status`
+  and start again. OATS's own tests of the mirrored hook assert the old
+  words in two places (`test/oats-aweb-hook-1-10.test.mjs`); they change with
+  the pin of this release.
+
 ## 1.40.0 — 2026-11-11
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A spawn or a start of a home the host wake broker delivers to (Codex, `delivery: session`, or a runtime with no aweb channel) is now refused while no broker runs, with `wake-daemon-not-running` and the start for the host: `oats aweb wake install`, or `aw wake run` where there is no service manager. Start the broker before such a home's next start. A Claude or pi home under channel delivery is not affected.

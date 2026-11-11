@@ -148,6 +148,9 @@ test("a start that cannot leave exactly one path is refused", (t) => {
   r = fx.launch(meta, "codex", { extra: { FAKE_WAKE_FAIL: "register" } });
   assert.notEqual(r.status, 0, "a codex start the broker cannot deliver to would hear nothing");
   assert.match(r.doc.warning, /aw wake register/);
+  // The broker answered its status a moment before: the aw has the wake commands, and the operator is not sent to install another.
+  assert.match(r.doc.warning, /registering this home with the host wake broker failed \(.*\); check `aw wake status`, then start it again/);
+  assert.doesNotMatch(r.doc.warning, /needs an aw with|install the aweb release/);
 });
 
 // ---------------------------------------------------------------- retire
