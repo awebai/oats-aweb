@@ -20,11 +20,14 @@
     admitted, with `cause` and `next_attempt_at`, and the broker retries it
     every 1 to 15 minutes, reading the identity from disk again before each
     attempt; a repeated `aw wake register` retries it at once. oats.aweb's
-    readiness does not know the `refused` phase yet. It reports such a stream
-    as the problem `wake-stream-unavailable`, as it did a `quarantined` one;
-    for a grant seat the message names the phase "unknown (\"refused\")" and
-    gives the same remedy (restart the seat, which registers the home again).
-    A refused stream never reads as ready.
+    readiness does not know the `refused` phase yet. Because aw reports the
+    home's broker target as not admitted, readiness reports the problem
+    `wake-stream-unavailable` with its general message, "broker target
+    reports streams not admitted or malformed admission evidence", for every
+    home: the problem code a `quarantined` stream gets, but with no phase and
+    no remedy named. A refused stream never reads as ready. To recover, fix
+    what the server refused; the broker then retries on its own, and
+    restarting the home registers it again, which retries at once.
   - **The broker's lock is now an OS file lock (aw 1.36.58),** `daemon.lock`
     in the wake state directory. A broker from an earlier aw does not hold
     it, so it must be stopped before the new one starts. `oats aweb wake
