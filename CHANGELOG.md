@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Changed: the tested aw is now 1.36.58 (from 1.36.56); the floor stays
+  1.36.33.** `aw-compat.json` records `tested: 1.36.58`. CI's resident-journey
+  matrix runs aw 1.36.33 and 1.36.58 against aweb's stack at aw-v1.36.58
+  (679d500: server 1.27.50, awid 0.5.39), and the journeys are qualified on
+  the npm binary's commit a3223c1d. What follows from `tested`:
+  `aw-newer-than-tested` now warns only above 1.36.58; `setup --create
+  --namespace` refuses an aw below 1.36.53 naming
+  `npm install -g @awebai/aw@1.36.58`, and `--install-aw` on that route
+  installs 1.36.58. aweb's changes
+  between the two releases need nothing from oats.aweb: `aw wake deregister`'s
+  help text and the wake broker's ignored `PendingExpiry` and `IdleProbe`
+  settings (oats.aweb runs the command and reads neither the help nor those
+  settings), the server's registry reads refusing a 401 or 403 instead of
+  serving the cache (server side, in the AWID SDK), and the Go 1.26.11 build.
+
 ## 1.39.0 — 2026-11-10
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw is now 1.36.56, published in `aw-compat.json`. `oats aweb setup --create <label> --namespace <domain>` (bring your own team) now runs to the end: it creates the team, registers it with the aweb service, publishes and verifies its AWID team-server record, mints and accepts a local invite into a per-team root, and records the root. A re-run of the same command resumes a partial create. `--name` names the per-team root's identity; with no root identity available it is required. This route needs aw 1.36.53 or later and refuses an older aw before it creates anything; with `--install-aw`, an older aw is replaced by the tested one. A taken team name stops the create; setup never tries another name. A completed create names the team key's path, never the key.

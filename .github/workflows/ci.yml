@@ -95,11 +95,11 @@ jobs:
       matrix:
         # Exactly [min, tested] from oats-package/capabilities/oats-aweb/aw-compat.json,
         # in that order; test/health-aw-floor.test.mjs fails when they differ.
-        aw: ['1.36.33', '1.36.56']
+        aw: ['1.36.33', '1.36.58']
     env:
-      # aweb's release of aw 1.36.56 (tag aw-v1.36.56), server 1.27.48 and awid
-      # 0.5.36: the tested aw runs against the server it was released with.
-      AWEB_STACK_COMMIT: e3a1d9f76cb4f08913603accd48ba04120f3df82
+      # aweb's release of aw 1.36.58 (tag aw-v1.36.58), server 1.27.50 and awid
+      # 0.5.39: the tested aw runs against the server it was released with.
+      AWEB_STACK_COMMIT: 679d50066d4160748f6f9cfa0537161992399573
       AW_VERSION: ${{ matrix.aw }}
     steps:
       - uses: actions/checkout@v4
