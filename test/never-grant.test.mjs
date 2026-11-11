@@ -151,9 +151,9 @@ test("a capped never request starts and renews with its finite expiry and record
     assert.doesNotMatch(spawned.doc.brief, /never expires/);
     s.record(spawned.doc.meta);
     const ready = s.readiness(identity);
-    // This fixture deliberately has no wake daemon; isolate grant/custody
+    // This fixture's wake daemon lists no home; isolate grant/custody
     // readiness from that unrelated receive diagnostic.
-    assert.deepEqual(ready.problems.map(p => p.code), ["wake-daemon-not-running"]);
+    assert.deepEqual(ready.problems.map(p => p.code), ["wake-target-missing"]);
     const expiring = ready.warnings.find(w => w.code === "grant-expiring");
     assert.ok(expiring, JSON.stringify(ready));
     assert.ok(expiring.message.includes(`oats session restart --home ${s.home}`), expiring.message);
@@ -182,7 +182,7 @@ test("a capped never request starts and renews with its finite expiry and record
     assert.deepEqual(mints(s.calls()).map(a => a.filter(x => x.startsWith("--ttl"))), [["--ttl=never"], ["--ttl=never"]]);
     assert.deepEqual(revokes(s.calls()).map(a => a[3]), ["grant-spawn"]);
     s.record(launched.doc.meta);
-    assert.deepEqual(s.readiness(identity).problems.map(p => p.code), ["wake-daemon-not-running"]);
+    assert.deepEqual(s.readiness(identity).problems.map(p => p.code), ["wake-target-missing"]);
   }
 });
 

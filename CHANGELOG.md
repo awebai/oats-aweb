@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Changed: `oats spawn` and every start refuse a home the host wake broker
+  delivers to while no broker runs.** `aw wake register` stores a
+  registration and exits 0 with no broker running, so such a spawn succeeded
+  and the agent was never woken. The spawn hook and the launch hook now read
+  `aw wake status --json` before they change anything. When it does not
+  confirm a running daemon they read it once more after 3 seconds, which
+  covers the restart `oats aweb wake install` makes, and then refuse. The
+  refusal starts with `wake-daemon-not-running`, the code readiness reports
+  for the same fact, and names the start for the host: `oats aweb wake
+  install` where launchd or systemd runs the broker, `aw wake run` where
+  there is no service manager, as in a container.
+
+  Which commands refuse: `oats spawn`, and `oats session start`, `restart`
+  and every other start that runs the launch hook, including a triggered or
+  scheduled one. A launch preview asks nothing and refuses nothing. Which
+  homes: `delivery: session` under any runtime, and `delivery: channel`
+  under a runtime with no aweb channel of its own (Codex, or one the provider
+  does not know). A Claude or pi home under `delivery: channel` never asks
+  about the broker. A status that cannot be read counts as no broker.
+
 ## 1.39.1 — 2026-11-11
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw is now 1.36.58, published in `aw-compat.json`, and `setup --create --namespace` and `--install-aw` name and install it. Two aw 1.36.58 broker changes reach oats.aweb: a stream the server refused now shows as `refused` and is retried, which readiness still reports as `wake-stream-unavailable`; and the broker's lock is now an OS file lock, so stop an older broker before the new one starts (`oats aweb wake install`, rerun after the aw upgrade, restarts its unit).

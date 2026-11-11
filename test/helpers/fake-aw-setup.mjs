@@ -198,6 +198,8 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   console.log(JSON.stringify({ status: "connected" }));
 } else if (args[0] === "workspace" && args[1] === "status") {
   console.log(JSON.stringify({ selected_team: ${JSON.stringify(activeTeam)}, workspace: { alias: "fixture", workspace_path: process.cwd() } }));
+} else if (args[0] === "wake" && args[1] === "status") {
+  console.log(JSON.stringify({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.33", instances: [] }));
 } else if (args[0] === "wake") {
   console.log("ok");
 } else {

@@ -60,6 +60,7 @@ if (args[0] === "version") {
 record({});
 (${joinFromFake})(args);
 const span = (ms) => { const start = Date.now(); block(ms); record({ span: { start, end: Date.now() } }); };
+if (args[0] === "wake" && args[1] === "status") { console.log(JSON.stringify({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.33", instances: [] })); process.exit(0); }
 if (args[0] === "wake" && args[1] === "register") { const r = regs(); r[flag("--home")] = { identity_home: flag("--identity-home"), delivery: flag("--delivery") }; saveRegs(r); console.log("registered"); process.exit(0); }
 if (args[0] === "wake" && args[1] === "deregister") { span(Number(process.env.FAKE_DEREGISTER_MS || 0)); if (process.env.FAKE_DEREGISTER_FAIL) { console.error("broker socket refused"); process.exit(1); } const r = regs(); delete r[flag("--home")]; saveRegs(r); console.log("deregistered"); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "delete") {
@@ -120,7 +121,7 @@ test("spawn mints with exactly one aw init --join-from from the home, then regis
   assert.deepEqual(mints[0].args, ["init", `--join-from=${fx.ws}`, `--join-team=${TEAM}`, "--name=dev-1", "--json", "--do-not-touch-agents-md"]);
   assert.equal(mints[0].cwd, fx.home);
   assert.deepEqual(mints[0].env, { AW_NO_UPDATE_CHECK: "1" }, "the mint takes no ambient locator, key, role or identity home");
-  assert.deepEqual(calls.map((c) => c.args.slice(0, 2).join(" ")), ["version", `init --join-from=${fx.ws}`, "wake register"]);
+  assert.deepEqual(calls.map((c) => c.args.slice(0, 2).join(" ")), ["version", "wake status", `init --join-from=${fx.ws}`, "wake register"]);
   for (const c of calls) assert.equal(c.env.AW_NO_UPDATE_CHECK, "1", `aw ${c.args.join(" ")} runs with AW_NO_UPDATE_CHECK=1`);
   const wake = calls.find((c) => c.args[0] === "wake");
   assert.equal(wake.env.AWEB_URL, "https://ambient.example.invalid/api", "only the mint drops AWEB_URL");
@@ -246,7 +247,7 @@ test("a mint that fails after writing the home reports the identity for compensa
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
   assert.match(r.doc.warning, /aw init --join-from was reported failed .*reported for compensation/);
-  assert.equal(fx.fake.readCalls().some((c) => c.args[0] === "wake"), false, "no wake registration for a failed mint");
+  assert.equal(fx.fake.readCalls().some((c) => c.args[0] === "wake" && c.args[1] === "register"), false, "no wake registration for a failed mint");
 
   // Retire compensates it by its workspace id.
   const retired = fx.hook("retire", { OATS_META: JSON.stringify(r.doc.meta) });

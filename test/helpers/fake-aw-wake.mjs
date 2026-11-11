@@ -18,7 +18,9 @@ function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync
  *  fails the test: 1.15 defers default-team enrollment to 1.16.
  *  FAKE_WAKE_FAIL=register|deregister makes that `aw wake` subcommand fail;
  *  FAKE_WAKE_DEREGISTER_LATE makes deregister exit 0 and keep the registration,
- *  as aw does when the daemon does not answer in time. */
+ *  as aw does when the daemon does not answer in time;
+ *  FAKE_DAEMON_DOWN reports no daemon, FAKE_DAEMON_DOWN_READS=<n> only for the
+ *  first n status reads. */
 export function fakeAwWake(t, { daemon = true, version = "1.36.33", daemonVersion = "1.36.33" } = {}) {
   // Registered before tempDir's cleanup so it still sees the call log.
   let readCalls = () => [];
@@ -70,7 +72,9 @@ if (args[0] === "wake" && args[1] === "deregister" && process.env.FAKE_WAKE_DERE
 if (args[0] === "wake" && args[1] === "deregister") { const r = regs(); delete r[flag("--home")]; saveRegs(r); console.log("deregistered"); process.exit(0); }
 if (args[0] === "wake" && args[1] === "status") {
   if (fs.existsSync(${JSON.stringify(statusFile)})) { console.log(fs.readFileSync(${JSON.stringify(statusFile)}, "utf8")); process.exit(0); }
-  const running = !process.env.FAKE_DAEMON_DOWN && ${JSON.stringify(daemon)};
+  // FAKE_DAEMON_DOWN_READS=<n>: the first n status reads find no daemon, as during a unit restart.
+  const reads = fs.readFileSync(${JSON.stringify(calls)}, "utf8").trim().split("\\n").filter((l) => JSON.parse(l).args.slice(0, 2).join(" ") === "wake status").length;
+  const running = !process.env.FAKE_DAEMON_DOWN && reads > Number(process.env.FAKE_DAEMON_DOWN_READS || 0) && ${JSON.stringify(daemon)};
   const instances = Object.values(regs()).map((doc) => ({ home: doc.home, identity_home: doc.identity_home || doc.receive_identities?.[0]?.identity_home, primary_identity_home: doc.primary_identity_home, delivery: doc.delivery, runtime_delivery: doc.runtime_delivery || "external-session", phase: running ? "active" : "pending", paused: false, receive_identities: (doc.receive_identities || [{ identity_home: doc.identity_home, controls: true }]).map((ri) => ({ ...ri, delivery_owner: "session-hints", stream_admitted: running, stream_phase: running ? "streaming" : "daemon-down" })) }));
   emit({ daemon_running: running, daemon_version_state: running ? "reported" : "not_running", daemon_version: running ? ${JSON.stringify(daemonVersion)} : undefined, instances });
   process.exit(0);

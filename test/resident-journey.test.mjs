@@ -28,7 +28,7 @@
 // local aweb Cloud.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
@@ -106,6 +106,22 @@ function journey(t) {
     const git = (...args) => spawnSync("git", ["-C", host, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...args], { env, encoding: "utf8" });
     for (const args of [["init", "-q"], ["add", "."], ["commit", "-qm", "fixture workspace"]]) assert.equal(git(...args).status, 0, `git ${args[0]}`);
     writeFileSync(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    delivery: session\n`);
+    wakeBroker();
+  };
+  /** This user's host wake broker, running as a supervisor would run it. A
+   *  seat under session delivery is refused while none runs. */
+  const wakeBroker = () => {
+    const child = spawn(join(bin, "aw"), ["wake", "run"], { cwd: home, env: { ...env, AW_NO_UPDATE_CHECK: "1" }, stdio: "ignore" });
+    child.unref();
+    cleanups.push(() => child.kill("SIGTERM"));
+    for (const deadline = Date.now() + 20000; ;) {
+      const status = aw(home, ["wake", "status", "--json"]);
+      let running = false;
+      try { running = JSON.parse(status.stdout).daemon_running === true; } catch { /* not answering yet */ }
+      if (running) return;
+      assert.ok(Date.now() < deadline, `aw wake run did not come up: ${status.stdout}${status.stderr}`);
+      spawnSync("sleep", ["0.2"]);
+    }
   };
   return { base, deployment, home, bin, env, run, shell, aw, workspace, cleanups, teamReadFirst };
 }
