@@ -3,7 +3,7 @@
 // server) and a real OATS kernel, with no fixture and no fake. CI runs them
 // (see ci.yml); locally, bring the stack up and set:
 //
-//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 or 1.36.56 executable
+//   OATS_RESIDENT_JOURNEY_AW        a real aw 1.36.33 or 1.36.58 executable
 //                                   (aw-compat.json's min or tested)
 //   OATS_RESIDENT_JOURNEY_AWEB_URL  e.g. http://127.0.0.1:18000
 //   OATS_RESIDENT_JOURNEY_AWID_URL  e.g. http://127.0.0.1:18010
@@ -47,7 +47,7 @@ const OATS = KERNEL ? join(KERNEL, "bin", "oats.mjs") : undefined;
  *  `aw version` prints: aw-compat.json's min and tested, in that order. */
 const QUALIFIED_AW = Object.freeze({
   "1.36.33": "877bbee94ce45aa1ff103912bc9850556e61dfb4",
-  "1.36.56": "4d5eafdcc9118cfb8204740fa70a0d48acfd18e4",
+  "1.36.58": "a3223c1d32b8144abfd34d63b521b38d2b227ad5",
 });
 
 test("the journeys are qualified on exactly aw-compat.json's [min, tested]", () => {

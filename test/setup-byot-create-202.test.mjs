@@ -361,7 +361,7 @@ for (const version of ['1.36.33', '1.36.51']) {
   test(`aw ${version} is refused before anything is created, naming the floor and the tested aw`, (t) => {
     const f = fixture(t), r = f.run({ AW_FAKE_VERSION: version }, NS, ['--name', 'lab2-root']);
     assert.equal(r.status, 1);
-    assert.equal(r.stderr, `oats aweb setup: --create --namespace needs aw >= 1.36.53 (this host has ${version}): upgrade with npm install -g @awebai/aw@1.36.56; nothing was created\n`);
+    assert.equal(r.stderr, `oats aweb setup: --create --namespace needs aw >= 1.36.53 (this host has ${version}): upgrade with npm install -g @awebai/aw@1.36.58; nothing was created\n`);
     assert.deepEqual(f.calls(), []);
     assert.deepEqual(f.kernel(), []);
     assert.equal(existsSync(join(dirname(f.fake.path), 'team-keys')), false);

@@ -13,7 +13,7 @@ this oats.aweb supports, in two fields:
 ```json
 {
   "min": "1.36.33",
-  "tested": "1.36.56"
+  "tested": "1.36.58"
 }
 ```
 

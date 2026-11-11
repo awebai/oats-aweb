@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **Changed: the tested aw is now 1.36.58 (from 1.36.56); the floor stays
+  1.36.33.** `aw-compat.json` records `tested: 1.36.58`. CI's resident-journey
+  matrix runs aw 1.36.33 and 1.36.58 against aweb's stack at aw-v1.36.58
+  (679d500: server 1.27.50, awid 0.5.39), and the journeys are qualified on
+  the npm binary's commit a3223c1d. What follows from `tested`:
+  `aw-newer-than-tested` now warns only above 1.36.58; `setup --create
+  --namespace` refuses an aw below 1.36.53 naming
+  `npm install -g @awebai/aw@1.36.58`, and `--install-aw` on that route
+  installs 1.36.58.
+
+  What changed in aw between 1.36.56 and 1.36.58 that reaches oats.aweb, and
+  what oats.aweb does with it:
+  - **The host wake broker no longer stops a refused stream (aw 1.36.58).**
+    Up to 1.36.57 a stream the server refused (401, 403, 404, 422) ended as
+    `quarantined`. From 1.36.58 `aw wake status` shows it as `refused`, never
+    admitted, with `cause` and `next_attempt_at`, and the broker retries it
+    every 1 to 15 minutes, reading the identity from disk again before each
+    attempt; a repeated `aw wake register` retries it at once. oats.aweb's
+    readiness does not know the `refused` phase yet. Because aw reports the
+    home's broker target as not admitted, readiness reports the problem
+    `wake-stream-unavailable` with its general message, "broker target
+    reports streams not admitted or malformed admission evidence", for every
+    home: the problem code a `quarantined` stream gets, but with no phase and
+    no remedy named. A refused stream never reads as ready. To recover, fix
+    what the server refused; the broker then retries on its own, and
+    restarting the home registers it again, which retries at once.
+  - **The broker's lock is now an OS file lock (aw 1.36.58),** `daemon.lock`
+    in the wake state directory. A broker from an earlier aw does not hold
+    it, so it must be stopped before the new one starts. `oats aweb wake
+    install`, rerun after an aw upgrade, restarts its unit, which does that; a
+    broker started by hand is stopped by hand first.
+  - Not reaching oats.aweb: `aw wake deregister`'s help text (oats.aweb runs
+    the command and does not read its help); the broker's `PendingExpiry` and
+    `IdleProbe` settings, now documented as ignored (oats.aweb sets neither);
+    the server's registry reads refusing a 401 or 403 instead of serving the
+    cache (server 1.27.50 and awid 0.5.39, the stack CI now runs against);
+    and the Go 1.26.11 build.
+
 ## 1.39.0 — 2026-11-10
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw is now 1.36.56, published in `aw-compat.json`. `oats aweb setup --create <label> --namespace <domain>` (bring your own team) now runs to the end: it creates the team, registers it with the aweb service, publishes and verifies its AWID team-server record, mints and accepts a local invite into a per-team root, and records the root. A re-run of the same command resumes a partial create. `--name` names the per-team root's identity; with no root identity available it is required. This route needs aw 1.36.53 or later and refuses an older aw before it creates anything; with `--install-aw`, an older aw is replaced by the tested one. A taken team name stops the create; setup never tries another name. A completed create names the team key's path, never the key.
