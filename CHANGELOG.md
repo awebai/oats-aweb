@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.39.1 — 2026-11-11
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33; the tested aw is now 1.36.58, published in `aw-compat.json`, and `setup --create --namespace` and `--install-aw` name and install it. Two aw 1.36.58 broker changes reach oats.aweb: a stream the server refused now shows as `refused` and is retried, which readiness still reports as `wake-stream-unavailable`; and the broker's lock is now an OS file lock, so stop an older broker before the new one starts (`oats aweb wake install`, rerun after the aw upgrade, restarts its unit).
+
 - **Changed: the tested aw is now 1.36.58 (from 1.36.56); the floor stays
   1.36.33.** `aw-compat.json` records `tested: 1.36.58`. CI's resident-journey
   matrix runs aw 1.36.33 and 1.36.58 against aweb's stack at aw-v1.36.58
