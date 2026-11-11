@@ -537,9 +537,10 @@ function deliveryFor(runtime = process.env.OATS_RUNTIME || "", delivery = delive
 const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ delivery: meta.delivery, runtime: instanceRuntime(meta) });
 // Session delivery registers the home with the host wake broker (aweb-abil:
 // `aw wake register --home <abs> --identity-home <abs> --delivery session
-// [--backend tmux|herdr]`, durable even when the daemon is down). An aw
-// without `aw wake` cannot deliver in session mode: refuse, never silently
-// turn a working channel into a poll-only instance.
+// [--backend tmux|herdr]`, durable even when the daemon is down). A home
+// whose registration failed cannot be delivered to: refuse, never silently
+// turn a working channel into a poll-only instance. The status read before
+// it (requireWakeBroker) has already shown that this aw has the wake commands.
 // Throws, never exits: both callers run it inside a try whose catch performs
 // the rollback (the seat path restores the binding; the mint path hands the
 // minted identity to compensation).
@@ -548,7 +549,7 @@ function wakeRegister(instanceHome, identityHome) {
   try {
     run(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
-    throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
+    throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel), and registering this home with the host wake broker failed (${e.message || e}); check \`aw wake status\`, then start it again (aw wake register)`);
   }
 }
 function wakeDeregister(instanceHome) {
