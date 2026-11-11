@@ -38,6 +38,14 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## 1.39.1 — tested aw 1.36.58
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33, and the tested aw is
+1.36.58, published in `aw-compat.json` (above). With aw 1.36.58 a refused
+wake stream reads `refused` and is retried; readiness reports it as
+`wake-stream-unavailable`. Its broker lock is an OS file lock: stop an older
+broker before the new one starts, which `oats aweb wake install` does.
+
 ## 1.39.0 — bring-your-own-team setup completes
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33, and the tested aw is
