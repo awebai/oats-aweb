@@ -262,7 +262,7 @@ test("roster counts several leftovers in its footer", (t) => {
   fx.members(["x-1", "x-2"].map((alias) => ({ certificate_id: `c-${alias}`, team_id: DEFAULT, alias })));
   const text = fx.hook("roster");
   assert.equal(text.status, 0, text.stdout + text.stderr);
-  assert.match(text.stdout, /x-1 .*; retired by OATS on this host 2026-11-04; the team controller removes it with: aw id team remove-member --namespace example\.test --team default --cert-id c-x-1 --json \(the registry was not recorded, so aw uses its default\)\n/);
+  assert.match(text.stdout, /x-1 .*; retired by OATS on this host 2026-11-04; the team controller removes it with: aw id team remove-member --namespace example\.test --team default --cert-id c-x-1 --json \(the registry was not recorded; the command omits --registry\)\n/);
   assert.ok(text.stdout.includes("\n2 certificates belong to instances OATS retired on this host; only the team's controller can remove them.\n"), text.stdout);
 });
 
@@ -306,7 +306,7 @@ test("roster with no record shows nothing more", (t) => {
 
 // awebai/oats-aweb#230: the roster never prints a stored controller command. Retire and roster
 // build it with one builder from validated fields: the team, the certificate id and the registry.
-const NO_REGISTRY_NOTE = "(the registry was not recorded, so aw uses its default)";
+const NO_REGISTRY_NOTE = "(the registry was not recorded; the command omits --registry)";
 const recorded = (fields) => ({ team: DEFAULT, alias: "dev-1", instance: "dev-1", retiredAt: "2026-11-04T10:00:00.000Z", ...fields });
 const rosterOf = (fx) => {
   const json = fx.hook("roster", ["--json"]);

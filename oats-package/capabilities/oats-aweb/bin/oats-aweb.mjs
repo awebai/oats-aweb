@@ -1097,61 +1097,28 @@ function membershipRows(text) {
   }
   return rows;
 }
-const DISCOVERY_TIMEOUT_MS = 10000;
-const DISCOVERY_MAX_BYTES = 1 << 20;
-/** The registry `aw id team members` reads `team`'s certificates from at `root`, so one
- *  registry serves the read, the controller's command and the record. aw's rule
- *  (cmd/aw/id_team.go:1643-1656, registryURLForTeamMembersMembership, at the tested
- *  version) is mirrored here: the registry_url of the team's membership in the root's
- *  .aw/teams.yaml; failing that, the registry_url the membership's aweb_url answers in
- *  its discovery (GET <aweb_url>/api/v1/discovery, or /v1/discovery when the URL ends
- *  in /api); failing both, aw's default.
- *  → `{ registry }` (passed to the read as --registry), `{ registry: null, registryError }`
- *  (aw's default, and why), or `{ unknown }`: the registry cannot be established or
- *  named, so whether this mint registered is not known either. Redirects are refused and
- *  the request ends within the hook's deadline. */
-async function mintRegistryForTeam(root, team) {
+/** The registry retire names for `team`'s certificates at `root`: only one the root
+ *  records. Retire never decides a registry aw would decide differently: it passes the
+ *  registry_url of the team's membership in the root's .aw/teams.yaml (aw
+ *  awconfig/team_state.go) when that is a plain origin, or none, and aw then resolves
+ *  the registry itself, as for any read from that root (cmd/aw/id_team.go:1643-1656,
+ *  which discovers it from the membership's aweb_url). There is no copy of aw's
+ *  discovery here.
+ *  → `{ registry }`, or `{ registry: null, registryError }`: the fixed text that says the
+ *  registry is not recorded here and what the controller adds. */
+function mintRegistryForTeam(root, team) {
+  const teamsFile = join(root, ".aw", "teams.yaml");
   let text;
-  try { text = readFileSync(join(root, ".aw", "teams.yaml"), "utf8"); }
-  catch { return { registry: null, registryError: "the root's teams.yaml could not be read, so the command omits --registry and aw uses its default" }; }
+  try { text = readFileSync(teamsFile, "utf8"); }
+  catch { return { registry: null, registryError: `the team's registry is not recorded here (${teamsFile} could not be read); the command omits --registry` }; }
   const row = membershipRows(text).find((r) => sameAwebTeamId(r.team_id, team));
-  if (!row) return { registry: null, registryError: `the root's teams.yaml has no membership of ${team}, so the command omits --registry and aw uses its default` };
+  if (!row) return { registry: null, registryError: `the team's registry is not recorded here (${teamsFile} has no membership of ${team}); the command omits --registry` };
   if (row.registry_url) {
     const registry = registryOrigin(row.registry_url);
-    return registry ? { registry } : { unknown: `the registry the root records for the team in ${join(root, ".aw", "teams.yaml")} is not a plain origin, so no command can name it` };
+    return registry ? { registry } : { registry: null, registryError: `the registry ${teamsFile} records for the team is not a plain origin, so the command omits --registry: the controller adds --registry with the registry_url of the team's membership there` };
   }
-  if (!row.aweb_url) return { registry: null, registryError: "the root records no registry and no service for the team, so the command omits --registry and aw uses its default, as the root does" };
-  const service = plainServiceUrl(row.aweb_url.trim());
-  if (!service) return { unknown: `the service the root records for the team in ${join(root, ".aw", "teams.yaml")} is not a plain service URL, so the registry aw discovers from it cannot be established` };
-  const base = service.replace(/\/+$/, "");
-  const url = `${base}${base.endsWith("/api") ? "/v1/discovery" : "/api/v1/discovery"}`;
-  const timeout = hookTimeout(DISCOVERY_TIMEOUT_MS);
-  const failed = (why) => ({ unknown: `the registry aw reads the team from is the one ${url} names, and that discovery ${why}` });
-  if (timeout <= 0) return failed(`was not started: the hook's ${Math.round(HOOK_BUDGET_MS / 1000)} s deadline had passed`);
-  let res, body;
-  try {
-    res = await fetch(url, { redirect: "manual", headers: { accept: "application/json" }, signal: AbortSignal.timeout(timeout) });
-    if (res.status >= 300 && res.status < 400) return failed(`answered a redirect (HTTP ${res.status}), which is not followed`);
-    if (!res.ok) return failed(`answered HTTP ${res.status}`);
-    body = await res.text();
-  } catch (e) { return failed(e?.name === "TimeoutError" ? `did not answer within ${Math.round(timeout / 1000)} s` : `failed (${String(e?.cause?.code || e?.code || e?.name || "error").replace(/[^A-Za-z0-9_]/g, "").slice(0, 40)})`); }
-  if (body.length > DISCOVERY_MAX_BYTES) return failed("answered more than 1 MiB");
-  let doc; try { doc = JSON.parse(body); } catch { return failed("answered no JSON"); }
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return failed("answered JSON that is not an object");
-  // The rule: retire uses exactly the registry aw 1.36.58 would resolve from this
-  // answer, and anything it can't decide that way is an unknown outcome.
-  // - aw decodes registry_url into a Go string (awid/discovery.go:14-21, 50-58), so an
-  //   absent field and null both read "", and after TrimSpace (cmd/aw/id_team.go:1651-1652)
-  //   so does whitespace: aw then uses its default registry.
-  // - Any other non-string fails aw's decode, and aw's own discovery would fail: unknown.
-  // - A string is used as aw's cleanBaseURL leaves it (cmd/aw/helpers.go:863-880: trim
-  //   whitespace, then at most one trailing slash). Only a plain origin, with at most
-  //   that one slash, is the same registry in a command; anything else is unknown.
-  if (doc.registry_url !== undefined && doc.registry_url !== null && typeof doc.registry_url !== "string") return failed("names a registry_url that is not a string");
-  const named = typeof doc.registry_url === "string" ? doc.registry_url.trim() : "";
-  if (!named) return { registry: null, registryError: `the team's service names no registry in its discovery (${url}), so the command omits --registry and aw uses its default` };
-  const registry = registryOrigin(named);
-  return registry ? { registry: registry.replace(/\/$/, "") } : failed("names a registry that is not a plain origin, so no command can name it");
+  if (row.aweb_url) return { registry: null, registryError: `the team's registry is not recorded here; aw discovers it from ${plainServiceUrl(row.aweb_url.trim()) || "the root's service"}: the controller adds --registry <that registry> if it is not aw's default` };
+  return { registry: null, registryError: "the team's registry is not recorded here (the root records no registry and no service for the team); the command omits --registry" };
 }
 /** A join that the CLI reported as failed (or that this hook killed on
  *  timeout) may still have completed server-side: the home then holds a
@@ -1837,7 +1804,7 @@ function rosterLine(m) {
   if (notes?.conflict) return `${rosterLineHead(m, status, kind)}; recorded as retired, but its workspace is active: check before removing`;
   const cleanup = !notes ? ""
     : notes.problem ? `; its record entry is malformed (${notes.problem}), so no command to remove it is shown`
-      : `; the team controller removes it with: ${m.retired.command}${notes.registryRecorded ? "" : " (the registry was not recorded, so aw uses its default)"}`;
+      : `; the team controller removes it with: ${m.retired.command}${notes.registryRecorded ? "" : " (the registry was not recorded; the command omits --registry)"}`;
   const retired = m.retired ? `; retired by OATS on this host${typeof m.retired.at === "string" && /^\d{4}-\d{2}-\d{2}/.test(m.retired.at) ? ` ${m.retired.at.slice(0, 10)}` : ""}${cleanup}` : "";
   return `${rosterLineHead(m, status, kind)}${retired}`;
 }
@@ -2480,21 +2447,16 @@ if (event === "launch") {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
     const root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team);
     const where = root ? ` in ${lockField(root) || "the team's root"}` : " in a root that is a member of the team";
-    let doc, why, registry, registryError, unestablished;
+    let doc, why, registry = null, registryError;
     if (!root) why = "no root that holds the team is on this host";
-    else {
-      const resolved = await mintRegistryForTeam(root, team);
-      ({ registry = null, registryError } = resolved);
-      if (resolved.unknown) unestablished = resolved.unknown;
-    }
-    if (root && !unestablished) {
+    else ({ registry = null, registryError } = mintRegistryForTeam(root, team));
+    if (root) {
       try {
         doc = parseAwJson(run(["aw", "id", "team", "members", flagEq("--team-id", team), ...(registry ? [flagEq("--registry", registry)] : []), "--json"], root, 60000), "aw id team members");
         if (!Array.isArray(doc?.members)) { doc = undefined; why = "aw id team members returned JSON without a members list"; }
       } catch (e) { why = String(e.message || e).replace(/\s+/g, " ").trim().slice(0, 200); }
     }
     // Unknown: the home, its key and the intent stay for the retry.
-    if (unestablished) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: ${unestablished}; once it can be (the discovery answers, or the team's membership in that teams.yaml records a plain registry_url), retire again; this home and its record of the mint are kept`) }, 1);
     if (!doc) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: the team's members could not be read (${why}); run ${membersRead(team)}${where} to see whether "${alias}" holds a certificate there, then retire again; this home and its record of the mint are kept`) }, 1);
     const held = doc.members.filter((m) => m && typeof m === "object" && m.alias === alias && !m.revoked_at && (m.team_id === undefined || sameAwebTeamId(m.team_id, team)));
     let key; try { key = readFileSync(join(home, ".aw", "signing.key"), "utf8"); } catch { key = undefined; }

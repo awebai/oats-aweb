@@ -23,11 +23,14 @@
   - A members read that fails: the outcome is unknown. Retire names the read,
     and exits nonzero with the home kept.
 
-  The read, the controller's command and the record name one registry: the
-  one aw uses for the team at the root. That is the membership's
-  `registry_url`, or else the registry its `aweb_url` names in discovery,
-  which retire fetches with no redirects. A discovery that fails, or a
-  registry that isn't a plain origin, is an unknown outcome too.
+  Retire never decides a registry aw would decide differently. When the
+  root records a plain `registry_url` for the team's membership, the members
+  read, the command and the record carry it. Otherwise the read passes no
+  `--registry`, so aw resolves the registry itself. The record then stores
+  none, and the command omits `--registry` and says the registry isn't
+  recorded here. The roster's note on a command with no recorded registry is
+  now `(the registry was not recorded; the command omits --registry)`, for
+  every entry.
 
   A later spawn's alias refusal says when this host's record names a
   certificate a retire left for that alias and team, and points to

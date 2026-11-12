@@ -721,7 +721,7 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   as retire does. An entry it can't be built from shows `; its record entry is
   malformed (<why>), so no command to remove it is shown` (and `--json` gives
   `command: null`, with a `retired-record` problem); one recorded with no
-  registry adds `(the registry was not recorded, so aw uses its default)` to
+  registry adds `(the registry was not recorded; the command omits --registry)` to
   its command. The record lives on the host where the retire ran: a roster read
   on another host doesn't show those leftovers.
 - The record is a claim, not proof, since any agent on the host can write it.
@@ -1461,16 +1461,21 @@ Any other failed mint answers `pendingMint` in its meta.
 Retire acts on an intent, from the home or from that meta, only when the home
 holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
 self-deleted as usual. Otherwise retire reads `aw id team members
---team-id=<team> --registry=<registry> --json` from the recorded root (team ids
-compared as aw spells them: name and domain lowercased), from the
-registry aw itself would use there: the `registry_url` of the team's membership
-in the root's `.aw/teams.yaml`, or else the `registry_url` that the
-membership's `aweb_url` names in its discovery (`<aweb_url>/api/v1/discovery`,
-no redirects followed; an absent, empty or null one there means aw's default, as
-aw reads it). With neither, aw's default is used and the command says so. A
-registry is taken as aw cleans it (whitespace and one trailing slash trimmed) and
-must then be a plain origin. The read, the controller's command and the record all name that one
-registry. It never runs `aw workspace
+--team-id=<team> --json` from the recorded root (team ids compared as aw
+spells them: name and domain lowercased). Retire never decides a registry aw
+would decide differently: it passes a registry the root records, or none.
+
+- When the team's membership in the root's `.aw/teams.yaml` records a plain
+  `registry_url`, the read gets `--registry`, and the command and the record
+  name it.
+- Otherwise the read gets no `--registry`, and aw resolves the registry itself,
+  as for any read from that root (from the membership's `aweb_url` when it has
+  one). The record stores no registry, and the command omits `--registry` and
+  says so: `the team's registry is not recorded here; aw discovers it from
+  <aweb_url>: the controller adds --registry <that registry> if it is not aw's
+  default`.
+
+It never runs `aw workspace
 connect` to finish a half-done mint, and never retries the mint. A certificate
 is this mint's only when its `member_did_key` is the did:key of the home's
 `signing.key`:
@@ -1487,11 +1492,6 @@ is this mint's only when its `member_did_key` is the did:key of the home's
   registered, and the intent is dropped.
 - **The members read fails:** the outcome is unknown. Retire names the read to
   run, keeps the home and the intent, and exits nonzero for a retry.
-- **The registry can't be established:** the discovery fails, redirects or
-  answers something other than a JSON object, or the root records or discovers
-  a `registry_url` that is present but isn't a plain origin. The
-  outcome is unknown, as for a failed read: retire names the cause, keeps the
-  home and the intent, and exits nonzero.
 
 Where a certificate is found, the intent stays until the kernel removes the
 home. So a retire killed before it records or answers the handoff leaves the
