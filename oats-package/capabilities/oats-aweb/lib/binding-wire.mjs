@@ -11,6 +11,7 @@ import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
 import {healthSettings} from './health-settings.mjs';
+import { identityBooleans } from './boolean-setting.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
 import {
@@ -291,6 +292,9 @@ function needsMintingRoot(settings) {
 async function readinessDetails(settings,{deployment,env=process.env}={}) {
   try { selectClaudeChannel(settings.claudeChannelMode); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
+  // The refusal spawn and start give for a boolean setting that is neither a boolean nor its string.
+  try { identityBooleans(obj(settings.identity)?settings.identity:{}); }
+  catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
@@ -373,7 +377,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
           // duration; a new seat's default is never), decides the custody's ops.
           const recorded=ctx.home?recordedStart(ctx.home).meta?.identity?.grant:undefined;
           const next=recorded?.id?renewalGrantTTL(identity.ttl,recorded.ttl):resolveGrantTTL(identity.ttl);
-          const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,ttl:recorded?.expiresAt==='never'?'never':next,fatalOnError:false,runAw:localAw});
+          const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identityBooleans(identity).e2ee,ttl:recorded?.expiresAt==='never'?'never':next,fatalOnError:false,runAw:localAw});
           for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
           // This seat's active grants other than the current one, from the custody's
           // list: each stays valid until the next start or retire revokes it.
@@ -449,7 +453,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   const excludedGrantSeat = mode === 'global' && (!ctx.home || recordedStart(ctx.home).meta?.retained !== true);
   // A home's settings are its spawn's capture: it asks whether health
   // publishes now, so a later `health enable` or `disable` counts.
-  if (primaryBroker && !excludedGrantSeat && !problems.length && (ctx.home ? healthPublishesNow(ctx,env,deadline) : req.settings.health?.publish === true)) {
+  if (primaryBroker && !excludedGrantSeat && !problems.length && (ctx.home ? healthPublishesNow(ctx,env,deadline) : healthSettings(req.settings).publish)) {
     let countOnly = false;
     try { countOnly = localAw(['aw','mail','inbox','--help'],ctx.deployment).includes('--count-only'); } catch { /* unknown capability */ }
     if (!countOnly) warnings.push({code:'unread-count-unavailable',message:'aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.'});

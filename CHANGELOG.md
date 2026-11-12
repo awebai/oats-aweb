@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Fixed: boolean settings given as strings are read (#232).** `oats spawn
+  --provider oats.aweb key=value` passes every value as a string, and oats.aweb
+  compared its boolean settings with `true` and `false` only, so
+  `identity.e2ee=false` was ignored and the seat still required E2EE. Every
+  boolean setting, `identity.e2ee`, `identity.takeOver` and `health.publish`,
+  now accepts `true`/`false` and the strings `"true"`/`"false"`, through one
+  reader that spawn, start and readiness share. Any other value, which before
+  this release was either ignored (`identity.e2ee`, `identity.takeOver`) or
+  refused (`health.publish`), is now refused before any effect, by spawn and
+  start and by readiness as a `needs-configuration` problem, with text that
+  names the setting, the accepted values and where to set it: `identity.e2ee
+  must be true or false (the strings "true" and "false" are accepted too); set
+  it under settings.oats.aweb.identity in …`. `health.publish`'s refusal keeps
+  its first words and now adds the accepted strings and where to set it. A
+  retire reads neither `identity` setting, so a bad value never fails a
+  retire. **If a soul or workspace sets `identity.e2ee` or
+  `identity.takeOver` to anything but a boolean or its string,** its next
+  spawn or start refuses: set the value to `true` or `false`.
+
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode
   `global` with no grant, so no start answered an identity home for it, and
