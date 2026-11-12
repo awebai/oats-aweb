@@ -76,9 +76,9 @@ if (args[0] === "workspace" && args[1] === "delete") {
   const own = process.env.FAKE_OWN_WORKSPACE_ID || (text.match(/workspace_id:\\s*(\\S+)/) || [])[1], alias = (identity.match(/alias:\\s*(\\S+)/) || [])[1];
   if (target !== own && target !== alias) { console.error("workspace name " + JSON.stringify(target) + " not found"); process.exit(1); }
   if (process.env.FAKE_RETRY_401_AFTER_DELETE) fs.writeFileSync(path.join(process.cwd(), ".aw", "revoked"), "1\\n");
-  else fs.rmSync(path.join(process.cwd(), ".aw"), { recursive: true, force: true });
+  else if (!process.env.FAKE_DELETE_KEEP_HOME) fs.rmSync(path.join(process.cwd(), ".aw"), { recursive: true, force: true });
   const held = !!process.env.FAKE_DELETE_ALIAS_HELD;
-  console.log(JSON.stringify({ workspace_id: own, alias, deleted_at: "", identity_deleted: true, alias_released: !held, alias_released_reason: held ? "alias_held" : "released" }));
+  console.log(JSON.stringify({ workspace_id: own, alias, deleted_at: "", identity_deleted: true, alias_released: !held, alias_released_reason: process.env.FAKE_DELETE_REASON || (held ? "alias_held" : "released") }));
   process.exit(0);
 }
 // The 1.17.3 sequence, so a regression back to it is visible as a call.
@@ -327,6 +327,22 @@ test("the hook's deadline ends a wake deregistration that keeps running after SI
   const started = Date.now();
   fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", FAKE_HOLD_TERM: "1", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
   assert.ok(Date.now() - started < 10000, `retire ends by the deadline, not the deregistration's 20 s (${Date.now() - started} ms)`);
+});
+
+test("no bookkeeping after the self-delete lets a wake deregistration apply past the hook's deadline", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  assert.ok(fx.fake.registrations()[fx.home], "the spawn registered the wake");
+  // A team_not_hosted self-delete leaves a controller cleanup to record, and a stale
+  // record lock makes recording it wait (up to 5 s) after the deadline has passed.
+  writeFileSync(join(fx.home, ".aw", "team-certs", `${TEAM.replace(/:/g, "__")}.pem`), JSON.stringify({ version: 1, certificate_id: "cert-default-123", team_id: TEAM, alias: "dev-1" }));
+  writeFileSync(join(fx.ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  mkdirSync(join(fx.ws, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(fx.ws, ".oats-aweb", "retired-certificates.json.lock"), "stale\n");
+  const retired = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DELETE_REASON: "team_not_hosted", FAKE_DELETE_ALIAS_HELD: "1", FAKE_DELETE_KEEP_HOME: "1", FAKE_DEREGISTER_MS: "3000", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
+  assert.match(retired.doc.warning, /controller cleanup: aw id team remove-member/, "the path records a controller cleanup");
+  assert.ok(fx.fake.registrations()[fx.home], "the deregistration, due 1 s after the deadline, never applied");
 });
 
 test("mint output that is not JSON is withheld and still compensated", (t) => {

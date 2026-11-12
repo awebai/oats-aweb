@@ -2132,9 +2132,11 @@ if (event === "launch") {
   // way out of this branch awaits it through finish().
   const deregistration = brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
   const finish = async (o, code) => {
+    // The deregistration is awaited first: its kill at the hook's deadline is a
+    // timer, which the record's synchronous lock wait below would hold off.
+    if (deregistration && !(await deregistration)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n");
     try { recordControllerCleanup(); }
     catch { outNotes.push("could not record the controller cleanup on this host: the record could not be written"); }
-    if (deregistration && !(await deregistration)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n");
     if (failedLeaves.length) {
       const incomplete = o.meta.retired === false && o.meta.reason !== "nothing-to-delete";
       o = { ...o, meta: { ...o.meta, ...(incomplete ? {} : { retired: false, reason: "joined-team-leave-failed" }), failedLeaves } };
