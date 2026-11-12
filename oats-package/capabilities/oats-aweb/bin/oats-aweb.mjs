@@ -55,7 +55,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await w
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -1080,22 +1080,46 @@ function activeTeamAt(root) {
     return yamlScalar(text, "active_team") || yamlScalar(text, "active");
   } catch { return undefined; }
 }
+/** A field a retained seat's lock names, when it is short and printable. */
+const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
+/** The refusal for a retained seat's lock whose holder home is not on this host
+ *  (`held`, the parsed lock) or that cannot be read (`held` undefined). The lock is
+ *  written by whoever runs as this user, so each field it names is bounded and
+ *  printable only. The remedy comes first; the text is not cut at fatal's 300
+ *  characters, so the lock path and the holder are always named in full. */
+function refuseUnheldLock(lockPath, held) {
+  const release = `once that is confirmed, spawn with identity.takeOver: true (\`--provider oats.aweb identity.takeOver=true\`), which clears the lock with a warning, or remove ${lockPath}`;
+  const text = held
+    ? `the retained identity's lock is held by a seat whose home is not on this host, and a lock is never released by age or automatically: confirm that seat is gone (retired, or its host or container removed); ${release}. Holder: ${["instance " + (lockField(held.instance) || "(not recorded)"), "host " + (lockField(held.host) || "(not recorded)"), "since " + (lockField(held.takenAt) || "(not recorded)"), "home " + (lockField(held.home) || "(not printable)")].join(", ")}`
+    : `the retained identity's lock ${lockPath} cannot be read, so its holder is unknown, and a lock is never released by age or automatically: confirm that no seat holds this identity; ${release}`;
+  out({ warning: `oats-aweb: ${text}` }, 1);
+}
 function retainedSeatSpawn(source, takeOver) {
   if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
   const lockPath = seatLockPath(source);
-  let takenOver;
-  if (existsSync(lockPath)) {
-    let held; try { held = JSON.parse(readFileSync(lockPath, "utf8")); } catch { held = {}; }
-    const holderHome = held.home;
+  let takenOver, takeOverNote = "";
+  // lstat, not exists: a dangling symlink at the lock path is a lock that cannot be read.
+  const lockPresent = (() => { try { lstatSync(lockPath); return true; } catch { return false; } })();
+  if (lockPresent) {
+    let held; try { held = JSON.parse(readFileSync(lockPath, "utf8")); } catch { held = undefined; }
+    const holderHome = typeof held?.home === "string" && held.home ? held.home : undefined;
     // Held means the holder's home still exists: retire removes both the lock
     // and the home, so a home that is there is a seat that was never retired.
     // No process liveness is inferred (the spawner's pid says nothing about the
     // runtime). The only escape is the explicit, warned take-over for a seat
     // whose runtime is known to be dead.
     if (holderHome && existsSync(holderHome)) {
-      if (takeOver !== true) fatal(`identity at ${source} is already held by ${holderHome} (${lockPath}); a seat is never taken from a holder whose home exists — retire that instance first, or set identity.takeOver: true only if you know its runtime is dead`);
-      takenOver = holderHome;
+      if (takeOver !== true) fatal(`identity at ${source} is already held by ${lockField(holderHome) || "a holder home that is not printable"} (${lockPath}); a seat is never taken from a holder whose home exists — retire that instance first, or set identity.takeOver: true only if you know its runtime is dead`);
+      takenOver = lockField(holderHome) || "a holder home that is not printable";
+    } else {
+      // A home that is not on this host may be on another one: the source can sit
+      // on state several hosts or containers share, so "gone" is never judged
+      // here, by age or otherwise (awebai/oats-aweb#227). The operator who has
+      // confirmed it says so with identity.takeOver: true.
+      if (takeOver !== true) refuseUnheldLock(lockPath, holderHome ? held : undefined);
+      takenOver = holderHome ? lockField(holderHome) || "a holder home that is not printable" : "an unreadable lock";
+      takeOverNote = holderHome ? " (its home is not on this host)" : "";
     }
   }
   const srcWorkspace = existsSync(join(source, "workspace.yaml")) ? readFileSync(join(source, "workspace.yaml"), "utf8") : "";
@@ -1182,7 +1206,7 @@ function retainedSeatSpawn(source, takeOver) {
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) wakeRegister(home, dest);
     const warnings = [];
-    if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
+    if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver}${takeOverNote} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
     out({
       meta: startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "local", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }),
@@ -2008,7 +2032,8 @@ if (event === "launch") {
   if (identityMode === "global") checkedGrantTTL(); // a setting that cannot be used refuses before the broker is asked
   requireWakeBroker();
   if (identityMode === "global") globalGrantSpawn();
-  if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true);
+  // `--provider oats.aweb identity.takeOver=true` reaches the hook as the string "true".
+  if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true || settings.identity.takeOver === "true");
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
