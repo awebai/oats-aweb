@@ -38,6 +38,16 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## 1.41.0 — an interrupted join is settled, and roster marks retired certificates
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
+1.36.58. A join killed after aw accepted its invite is written ahead as
+`pendingJoins` in the home's `.oats-aweb/teams.json`: the next `oats aweb
+join`, `leave` or retire finishes or releases it, and a start warns. `oats
+aweb roster` marks a certificate a retire on this host left in a team whose
+controller key people hold, with the command its controller removes it with.
+Readiness names a `refused` wake stream with aw's cause and next attempt.
+
 ## 1.40.0 — a broker-delivered home needs a running broker
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is

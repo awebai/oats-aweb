@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.41.0 — 2026-11-12
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A join killed after aw accepted its invite no longer leaves a membership the home doesn't know about: the next join, leave or retire settles it (#217). `oats aweb roster` marks the certificates a retire on this host left in a people-controlled team, with the controller's command (#207). Readiness names a wake stream aw 1.36.58 reports as `refused` (#214), and CI runs the BYOT create shapes against the real tested aw (#215). Nothing a deployment must change.
 
 - **CI: the BYOT create shapes run against the real tested aw.**
   `test/aw-byot-create-shapes.test.mjs`'s three real-aw tests ran only with
