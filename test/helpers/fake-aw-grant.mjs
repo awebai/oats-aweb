@@ -26,8 +26,26 @@ if (s.startsWith("wake status")) { console.log(process.env.FAKE_WAKE_STATUS || j
 if (a[0] === "wake" && a[1] === "register" && (process.env.FAKE_WAKE_REGISTER_FAIL || (process.env.FAKE_WAKE_REGISTER_FAIL_UNLESS && val("--identity-home") !== process.env.FAKE_WAKE_REGISTER_FAIL_UNLESS))) { console.error("broker socket refused"); process.exit(1); }
 if (s.startsWith("wake ")) process.exit(0);
 // Retained-seat responses are opt-in and stay inside the temporary fixture.
+// workspace connect binds the identity to the directory it runs in, writing
+// <cwd>/.aw/workspace.yaml as aw does. Opt-in failure points:
+//   FAKE_RETAINED_KILL=after-connect  connect writes the binding, then SIGKILLs its parent (the hook)
+//   FAKE_RETAINED_KILL=mid-connect    the server accepts the connect, and the parent is SIGKILLed
+//                                     before the local workspace.yaml is written (aw posts first)
+//   FAKE_RETAINED_FAIL=check          aw check --online fails after the connect
+//   FAKE_RETAINED_FAIL=connect        the server accepts a connect from OATS_HOME, which then exits 1
+//                                     before the local workspace.yaml is written (aw posts first)
+//   FAKE_RETAINED_RESTORE_FAIL=1      a connect from any directory but OATS_HOME fails
 if (process.env.FAKE_RETAINED === "1") {
-  if (a[0] === "workspace" && a[1] === "connect") process.exit(0);
+  if (a[0] === "workspace" && a[1] === "connect") {
+    if (process.env.FAKE_RETAINED_RESTORE_FAIL && process.cwd() !== process.env.OATS_HOME) { console.error("connect refused"); process.exit(1); }
+    if (process.env.FAKE_RETAINED_KILL === "mid-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
+    if (process.env.FAKE_RETAINED_FAIL === "connect" && process.cwd() === process.env.OATS_HOME) { console.error("write workspace.yaml: input/output error"); process.exit(1); }
+    fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true });
+    fs.writeFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "aweb_url: " + (val("--service") || "https://fixture.invalid/api") + "\\nmemberships:\\n  - team_id: " + (val("--team") || "t:example.test") + "\\n    alias: retained\\n    workspace_id: 0f1e2d3c-4b5a-4968-8776-655443322110\\n");
+    if (process.env.FAKE_RETAINED_KILL === "after-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
+    process.exit(0);
+  }
+  if (a[0] === "check" && process.env.FAKE_RETAINED_FAIL === "check") { console.error("check failed"); process.exit(1); }
   if (a[0] === "check" || a[0] === "heartbeat") process.exit(0);
   if (s === "workspace status --json") { console.log(j({workspace:{alias:"retained",workspace_path:process.cwd()}})); process.exit(0); }
   if (s === "whoami --json") { console.log(j({did:"did:key:zRetained",address:"fixture.test/retained"})); process.exit(0); }
