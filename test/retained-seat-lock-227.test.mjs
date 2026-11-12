@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
@@ -147,4 +147,26 @@ test("identity.takeOver given on the command line, as the string \"true\", takes
     write(other.lock, JSON.stringify(goneHolder(other)));
     assert.notEqual(spawnSeat(other, { takeOver: value }).status, 0, `takeOver ${JSON.stringify(value)} takes nothing over`);
   }
+});
+
+test("a dangling symlink at the lock path is a lock that cannot be read", (t) => {
+  const fx = fixture(t);
+  symlinkSync(join(fx.base, "nowhere.json"), fx.lock);
+  const r = spawnSeat(fx);
+  assert.notEqual(r.status, 0);
+  assert.match(r.doc.warning, /cannot be read/);
+  assert.doesNotMatch(r.doc.warning, /a moment ago/);
+  assert.equal(existsSync(join(fx.home, ".aw")), false, "nothing copied");
+});
+
+test("a holder home that exists here but is not printable is not printed", (t) => {
+  const fx = fixture(t);
+  const holder = join(fx.base, "live\u001b[2Jholder"); mkdirSync(holder);
+  write(fx.lock, JSON.stringify({ home: holder }));
+  const refused = spawnSeat(fx);
+  assert.notEqual(refused.status, 0);
+  assert.ok(printableAndBounded(refused.doc.warning), refused.doc.warning);
+  const taken = spawnSeat(fx, { takeOver: true });
+  assert.equal(taken.status, 0, taken.stdout + taken.stderr);
+  assert.ok(printableAndBounded(taken.doc.warning) && printableAndBounded(String(taken.doc.meta.tookOverFrom)), taken.doc.warning);
 });

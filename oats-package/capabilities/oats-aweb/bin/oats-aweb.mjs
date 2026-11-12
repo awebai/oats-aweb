@@ -55,7 +55,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await w
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
@@ -1065,7 +1065,9 @@ function retainedSeatSpawn(source, takeOver) {
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
   const lockPath = seatLockPath(source);
   let takenOver, takeOverNote = "";
-  if (existsSync(lockPath)) {
+  // lstat, not exists: a dangling symlink at the lock path is a lock that cannot be read.
+  const lockPresent = (() => { try { lstatSync(lockPath); return true; } catch { return false; } })();
+  if (lockPresent) {
     let held; try { held = JSON.parse(readFileSync(lockPath, "utf8")); } catch { held = undefined; }
     const holderHome = typeof held?.home === "string" && held.home ? held.home : undefined;
     // Held means the holder's home still exists: retire removes both the lock
@@ -1074,8 +1076,8 @@ function retainedSeatSpawn(source, takeOver) {
     // runtime). The only escape is the explicit, warned take-over for a seat
     // whose runtime is known to be dead.
     if (holderHome && existsSync(holderHome)) {
-      if (takeOver !== true) fatal(`identity at ${source} is already held by ${holderHome} (${lockPath}); a seat is never taken from a holder whose home exists — retire that instance first, or set identity.takeOver: true only if you know its runtime is dead`);
-      takenOver = holderHome;
+      if (takeOver !== true) fatal(`identity at ${source} is already held by ${lockField(holderHome) || "a holder home that is not printable"} (${lockPath}); a seat is never taken from a holder whose home exists — retire that instance first, or set identity.takeOver: true only if you know its runtime is dead`);
+      takenOver = lockField(holderHome) || "a holder home that is not printable";
     } else {
       // A home that is not on this host may be on another one: the source can sit
       // on state several hosts or containers share, so "gone" is never judged
