@@ -921,12 +921,11 @@ test("no-team readiness and spawn refuse without kernel default", async (t) => {
   writeFileSync(join(root, ".aw", "teams.yaml"), "active_team: active:example.invalid\n");
   writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] }));
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
-  const binding = { schemaVersion: 1, capability: "oats.aweb", payloadContract: "oats.aweb.messaging", payloadVersion: 1, payload: { responsibleHuman: { provider: "oats.aweb", id: "human" }, context: { kind: "standalone", key: "fixture" }, privateTeam: { provider: "oats.aweb", id: "private:example.invalid" }, wider: [] }, credentialRefs: {}, provenance: [] };
-  const request = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root }, input: { binding, context: binding.payload.context, action: { kind: "inspect" } } };
+  const request = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root }, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: root, deployment: root, soul: "dev" } } };
   const checked = spawnSync(process.execPath, [BINDING, "check"], { cwd: root, env: { ...process.env, PATH: fake.path, OATS_WORKSPACE: root }, input: JSON.stringify(request), encoding: "utf8" });
   assert.equal(checked.status, 0, checked.stderr);
-  assertKernelCheckAnswerRule(checked.stdout, request, "oats-aweb captured binding check");
-  assert.deepEqual(JSON.parse(checked.stdout).result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "no teams configured: run `oats aweb setup`" }] });
+  assertKernelCheckAnswerRule(checked.stdout, request, "oats-aweb readiness check");
+  assert.deepEqual(JSON.parse(checked.stdout).result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "no teams configured: run `oats aweb setup`" }], warnings: [] });
   const spawned = await run(["spawn"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "fixture-1", OATS_WORKSPACE: root, OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(spawned.code, 0, spawned.stdout + spawned.stderr);
   assert.match(JSON.parse(spawned.stdout).warning, /no teams configured/);
