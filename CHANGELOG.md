@@ -23,6 +23,12 @@
   - A members read that fails: the outcome is unknown. Retire names the read,
     and exits nonzero with the home kept.
 
+  The read, the controller's command and the record name one registry: the
+  one aw uses for the team at the root. That is the membership's
+  `registry_url`, or else the registry its `aweb_url` names in discovery,
+  which retire fetches with no redirects. A discovery that fails, or a
+  registry that isn't a plain origin, is an unknown outcome too.
+
   A later spawn's alias refusal says when this host's record names a
   certificate a retire left for that alias and team, and points to
   `oats aweb roster`, which decides whether to show the controller's command. A new on-disk

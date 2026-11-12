@@ -1453,14 +1453,20 @@ Any other failed mint answers `pendingMint` in its meta.
 Retire acts on an intent, from the home or from that meta, only when the home
 holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
 self-deleted as usual. Otherwise retire reads `aw id team members
---team-id=<team> --json` from the recorded root. It never runs `aw workspace
+--team-id=<team> --registry=<registry> --json` from the recorded root, from the
+registry aw itself would use there: the `registry_url` of the team's membership
+in the root's `.aw/teams.yaml`, or else the `registry_url` that the
+membership's `aweb_url` names in its discovery (`<aweb_url>/api/v1/discovery`,
+no redirects followed). With neither, aw's default is used and the command says
+so. The read, the controller's command and the record all name that one
+registry. It never runs `aw workspace
 connect` to finish a half-done mint, and never retries the mint. A certificate
 is this mint's only when its `member_did_key` is the did:key of the home's
 `signing.key`:
 
 - **This mint's certificate:** retire records it in the retired-certificates
   record, with the controller's `aw id team remove-member` command (its
-  `--registry` is the one the root's `teams.yaml` records for that team), and says
+  `--registry` is the registry the read used), and says
   the identity was registered but could not be released. It exits 0, because
   the home's key can't release it.
 - **No key in the home:** ownership can't be established, so the certificate
@@ -1470,6 +1476,10 @@ is this mint's only when its `member_did_key` is the did:key of the home's
   registered, and the intent is dropped.
 - **The members read fails:** the outcome is unknown. Retire names the read to
   run, keeps the home and the intent, and exits nonzero for a retry.
+- **The registry can't be established:** the discovery fails or redirects, or
+  the root records or discovers a registry that isn't a plain origin. The
+  outcome is unknown, as for a failed read: retire names the cause, keeps the
+  home and the intent, and exits nonzero.
 
 Where a certificate is found, the intent stays until the kernel removes the
 home. So a retire killed before it records or answers the handoff leaves the

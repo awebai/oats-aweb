@@ -12,7 +12,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { createPrivateKey, sign } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,7 +37,7 @@ function tempDir(t) {
   return dir;
 }
 
-const rootTeams = (rows) => `active_team: ${TEAM}\nmemberships:\n${rows.map((r) => `    - team_id: ${r.team_id}\n      alias: root\n      cert_path: team-certs/${r.team_id.replace(/:/g, "__")}.pem\n${r.registry_url ? `      registry_url: ${r.registry_url}\n` : ""}`).join("")}`;
+const rootTeams = (rows) => `active_team: ${TEAM}\nmemberships:\n${rows.map((r) => `    - team_id: ${r.team_id}\n      alias: root\n      cert_path: team-certs/${r.team_id.replace(/:/g, "__")}.pem\n${r.registry_url ? `      registry_url: ${r.registry_url}\n` : ""}${r.aweb_url ? `      aweb_url: ${r.aweb_url}\n` : ""}`).join("")}`;
 
 function fakeAw(t) {
   const base = tempDir(t), bin = join(base, "bin"), calls = join(base, "calls.jsonl");
@@ -90,7 +91,14 @@ function fixture(t) {
   const members = () => { try { return JSON.parse(readFileSync(registry, "utf8"))[TEAM] || []; } catch { return []; } };
   const setMembers = (list) => writeFileSync(registry, JSON.stringify({ [TEAM]: list }));
   const retire = (meta, more = {}) => hook("retire", { OATS_META: JSON.stringify(meta), ...more });
-  return { fake, ws, home, env, hook, retire, intentFile, recordFile, members, setMembers };
+  // A retire that runs while this process serves a loopback discovery answer.
+  const retireAsync = (meta, more = {}) => new Promise((done) => {
+    const c = spawn(process.execPath, [HOOK, "retire"], { cwd: home, env: { ...env, OATS_EVENT: "retire", OATS_META: JSON.stringify(meta), ...more } });
+    let stdout = "", stderr = "";
+    c.stdout.on("data", (d) => { stdout += d; }); c.stderr.on("data", (d) => { stderr += d; });
+    c.on("close", (status) => done({ status, stdout, stderr, doc: (() => { try { return JSON.parse(stdout); } catch { return undefined; } })() }));
+  });
+  return { fake, ws, home, env, hook, retire, retireAsync, intentFile, recordFile, members, setMembers };
 }
 
 /** The failed spawn's answer for a mint cut where `mode` says. */
@@ -239,13 +247,13 @@ test("the controller command takes the registry the root records for that team's
   assert.equal(JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0].registry, REGISTRY);
 });
 
-test("a root that records no registry for the team: the command omits --registry and says so", (t) => {
+test("a root that records no registry and no service for the team: the command omits --registry and says so", (t) => {
   const fx = fixture(t);
   writeFileSync(join(fx.ws, ".aw", "teams.yaml"), rootTeams([{ team_id: "other:example.test", registry_url: "https://other-registry.example.test" }, { team_id: TEAM }]));
   const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
   const retired = fx.retire(r.doc.meta);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
-  assert.ok(retired.doc.warning.includes("aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --json (the root records no registry for the team, so the command omits --registry and aw uses its default, as the root does)"), retired.doc.warning);
+  assert.ok(retired.doc.warning.includes("aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --json (the root records no registry and no service for the team, so the command omits --registry and aw uses its default, as the root does)"), retired.doc.warning);
 });
 
 test("a failure after the registration whose text only looks like an alias refusal keeps the intent for retire", (t) => {
@@ -253,7 +261,7 @@ test("a failure after the registration whose text only looks like an alias refus
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_FAIL_AFTER_REGISTER: "write /var/cache/conflict-1/cert: no space left on device" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.deepEqual(pendingMintOf(r), { team: TEAM, alias: "dev-1" });
-  assert.match(r.doc.warning, /did not confirm by its code, so whether an identity was registered is unknown/);
+  assert.match(r.doc.warning, /did not confirm by its code, so whether it registered an identity is unknown/);
   assert.equal(existsSync(fx.intentFile), true);
   const retired = fx.retire(r.doc.meta);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
@@ -339,4 +347,79 @@ test("didKeyOfSigningKey is the did:key that verifies the key's signatures", () 
   const bytes = Buffer.from("oats-aweb#240");
   assert.equal(verifySignature(bytes, sign(null, bytes, key).toString("base64").replace(/=+$/, ""), did), true);
   assert.equal(didKeyOfSigningKey("not a key"), undefined);
+});
+
+/** A loopback aweb service whose discovery answers `reply(req, res)`; closed after the test. */
+async function discoveryService(t, reply) {
+  const seen = [];
+  const server = createServer((req, res) => { seen.push(req.url); reply(req, res); });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  t.after(() => new Promise((ok) => server.close(ok)));
+  return { url: `http://127.0.0.1:${server.address().port}`, seen };
+}
+const serviceOnlyRoot = (fx, service) => writeFileSync(join(fx.ws, ".aw", "teams.yaml"), rootTeams([{ team_id: "other:example.test", registry_url: "https://other-registry.example.test" }, { team_id: TEAM, aweb_url: service }]));
+const membersCalls = (fx) => fx.fake.readCalls().filter((c) => c.args.slice(0, 3).join(" ") === "id team members");
+
+test("a root that records only the team's service: the members read, the command and the record take the registry its discovery names", async (t) => {
+  const fx = fixture(t);
+  const discovered = "http://127.0.0.1:9";
+  const service = await discoveryService(t, (req, res) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ aweb_url: "http://127.0.0.1", registry_url: discovered })); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(service.seen, ["/api/v1/discovery"]);
+  assert.ok(membersCalls(fx).every((c) => c.args.includes(`--registry=${discovered}`)), JSON.stringify(membersCalls(fx)));
+  assert.ok(retired.doc.warning.includes(`aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --registry ${discovered} --json`), retired.doc.warning);
+  assert.doesNotMatch(retired.doc.warning, /omits --registry/);
+  assert.equal(JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0].registry, discovered);
+});
+
+test("a root that records only the team's service, whose discovery fails: the outcome is unknown and the home is kept", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.statusCode = 503; res.end("down"); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.reason, "mint-outcome-unknown");
+  assert.ok(retired.doc.warning.includes(`${service.url}/api/v1/discovery`), retired.doc.warning);
+  assert.match(retired.doc.warning, /HTTP 503/);
+  assert.equal(existsSync(fx.intentFile), true);
+  assert.equal(existsSync(fx.recordFile), false);
+});
+
+test("a discovery that redirects is not followed: the outcome is unknown", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.statusCode = 302; res.setHeader("location", "http://127.0.0.1:9/api/v1/discovery"); res.end(); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.reason, "mint-outcome-unknown");
+  assert.match(retired.doc.warning, /redirect/);
+  assert.deepEqual(service.seen, ["/api/v1/discovery"]);
+});
+
+test("a discovery whose registry is not a plain origin: the outcome is unknown, and nothing reads or names it", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.end(JSON.stringify({ registry_url: "https://registry.example.test/x; rm -rf ~" })); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.reason, "mint-outcome-unknown");
+  assert.doesNotMatch(retired.doc.warning, /rm -rf/);
+  assert.equal(membersCalls(fx).length, 0);
+});
+
+test("a discovery that names no registry: the read and the command use aw's default, and the warning says so", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.end(JSON.stringify({ aweb_url: "http://127.0.0.1" })); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.ok(membersCalls(fx).every((c) => !c.args.some((a) => a.startsWith("--registry"))), JSON.stringify(membersCalls(fx)));
+  assert.ok(retired.doc.warning.includes(`--cert-id cert-dev-1 --json (the team's service names no registry in its discovery (${service.url}/api/v1/discovery), so the command omits --registry and aw uses its default)`), retired.doc.warning);
 });

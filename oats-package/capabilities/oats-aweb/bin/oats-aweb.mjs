@@ -1079,18 +1079,51 @@ function membershipRows(text) {
   }
   return rows;
 }
-/** The registry a root uses for `team`: the registry_url of that team's membership in
- *  the root's .aw/teams.yaml (aw awconfig/team_state.go), as a plain origin.
- *  `{ registry }`, or `{ registry: null, registryError }` saying why none is known. */
-function rootRegistryForTeam(root, team) {
+const DISCOVERY_TIMEOUT_MS = 10000;
+const DISCOVERY_MAX_BYTES = 1 << 20;
+/** The registry `aw id team members` reads `team`'s certificates from at `root`, so one
+ *  registry serves the read, the controller's command and the record. aw's rule
+ *  (cmd/aw/id_team.go:1643-1656, registryURLForTeamMembersMembership, at the tested
+ *  version) is mirrored here: the registry_url of the team's membership in the root's
+ *  .aw/teams.yaml; failing that, the registry_url the membership's aweb_url answers in
+ *  its discovery (GET <aweb_url>/api/v1/discovery, or /v1/discovery when the URL ends
+ *  in /api); failing both, aw's default.
+ *  → `{ registry }` (passed to the read as --registry), `{ registry: null, registryError }`
+ *  (aw's default, and why), or `{ unknown }`: the registry cannot be established or
+ *  named, so whether this mint registered is not known either. Redirects are refused and
+ *  the request ends within the hook's deadline. */
+async function mintRegistryForTeam(root, team) {
   let text;
   try { text = readFileSync(join(root, ".aw", "teams.yaml"), "utf8"); }
   catch { return { registry: null, registryError: "the root's teams.yaml could not be read, so the command omits --registry and aw uses its default" }; }
   const row = membershipRows(text).find((r) => r.team_id === team);
   if (!row) return { registry: null, registryError: `the root's teams.yaml has no membership of ${team}, so the command omits --registry and aw uses its default` };
-  const registry = registryOrigin(row.registry_url);
-  if (registry) return { registry };
-  return { registry: null, registryError: row.registry_url ? "the registry the root records for the team is not a plain origin, so the command omits --registry and aw uses its default" : "the root records no registry for the team, so the command omits --registry and aw uses its default, as the root does" };
+  if (row.registry_url) {
+    const registry = registryOrigin(row.registry_url);
+    return registry ? { registry } : { unknown: `the registry the root records for the team in ${join(root, ".aw", "teams.yaml")} is not a plain origin, so no command can name it` };
+  }
+  if (!row.aweb_url) return { registry: null, registryError: "the root records no registry and no service for the team, so the command omits --registry and aw uses its default, as the root does" };
+  const service = plainServiceUrl(row.aweb_url.trim());
+  if (!service) return { unknown: `the service the root records for the team in ${join(root, ".aw", "teams.yaml")} is not a plain service URL, so the registry aw discovers from it cannot be established` };
+  const base = service.replace(/\/+$/, "");
+  const url = `${base}${base.endsWith("/api") ? "/v1/discovery" : "/api/v1/discovery"}`;
+  const timeout = hookTimeout(DISCOVERY_TIMEOUT_MS);
+  const failed = (why) => ({ unknown: `the registry aw reads the team from is the one ${url} names, and that discovery ${why}` });
+  if (timeout <= 0) return failed(`was not started: the hook's ${Math.round(HOOK_BUDGET_MS / 1000)} s deadline had passed`);
+  let res, body;
+  try {
+    res = await fetch(url, { redirect: "manual", headers: { accept: "application/json" }, signal: AbortSignal.timeout(timeout) });
+    if (res.status >= 300 && res.status < 400) return failed(`answered a redirect (HTTP ${res.status}), which is not followed`);
+    if (!res.ok) return failed(`answered HTTP ${res.status}`);
+    body = await res.text();
+  } catch (e) { return failed(e?.name === "TimeoutError" ? `did not answer within ${Math.round(timeout / 1000)} s` : `failed (${String(e?.cause?.code || e?.code || e?.name || "error").replace(/[^A-Za-z0-9_]/g, "").slice(0, 40)})`); }
+  if (body.length > DISCOVERY_MAX_BYTES) return failed("answered more than 1 MiB");
+  let doc; try { doc = JSON.parse(body); } catch { return failed("answered no JSON"); }
+  const named = typeof doc?.registry_url === "string" ? doc.registry_url.trim() : "";
+  // aw falls back to its default when the discovery names no registry.
+  if (!named) return { registry: null, registryError: `the team's service names no registry in its discovery (${url}), so the command omits --registry and aw uses its default` };
+  const registry = registryOrigin(named.replace(/\/+$/, ""));
+  return registry ? { registry } : failed("names a registry that is not a plain origin, so no command can name it");
 }
 /** A join that the CLI reported as failed (or that this hook killed on
  *  timeout) may still have completed server-side: the home then holds a
@@ -2174,7 +2207,7 @@ if (event === "launch") {
       // An alias refusal aw did not confirm by its code may be another failure whose
       // text only looks like one, after the registration: say so, and answer the
       // intent for retire to settle.
-      if (e.aliasConflict && !refused && intent) fatal(`aw init --join-from failed with what may be a refusal of alias "${instance}", which aw did not confirm by its code, so whether an identity was registered is unknown; retire settles the recorded mint. If another instance holds that alias, spawn with a different --name. Team: ${team}`, { pendingMint: intent });
+      if (e.aliasConflict && !refused && intent) fatal(`aw init --join-from failed with what may be a refusal of alias "${instance}" that aw did not confirm by its code, so whether it registered an identity is unknown and retire settles the recorded mint; spawn with a different --name. Team: ${team}`, { pendingMint: intent });
       if (e.aliasConflict) {
         const refusal = `alias "${instance}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
         // A certificate a retire on this host recorded for this alias and team
@@ -2414,20 +2447,27 @@ if (event === "launch") {
   // add a remote effect): it reads the team's members from the root the spawn minted
   // from, and a certificate is this mint's only when its member_did_key is the home
   // key's did:key.
+  // The read a person runs at the root: aw there resolves the same registry the hook passed.
   const membersRead = (team) => `\`aw id team members --team-id=${team} --json\``;
   const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
     const root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team);
     const where = root ? ` in ${lockField(root) || "the team's root"}` : " in a root that is a member of the team";
-    let doc, why;
+    let doc, why, registry, registryError, unestablished;
     if (!root) why = "no root that holds the team is on this host";
     else {
+      const resolved = await mintRegistryForTeam(root, team);
+      ({ registry = null, registryError } = resolved);
+      if (resolved.unknown) unestablished = resolved.unknown;
+    }
+    if (root && !unestablished) {
       try {
-        doc = parseAwJson(run(["aw", "id", "team", "members", flagEq("--team-id", team), "--json"], root, 60000), "aw id team members");
+        doc = parseAwJson(run(["aw", "id", "team", "members", flagEq("--team-id", team), ...(registry ? [flagEq("--registry", registry)] : []), "--json"], root, 60000), "aw id team members");
         if (!Array.isArray(doc?.members)) { doc = undefined; why = "aw id team members returned JSON without a members list"; }
       } catch (e) { why = String(e.message || e).replace(/\s+/g, " ").trim().slice(0, 200); }
     }
     // Unknown: the home, its key and the intent stay for the retry.
+    if (unestablished) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: ${unestablished}; once it can be (the discovery answers, or the team's membership in that teams.yaml records a plain registry_url), retire again; this home and its record of the mint are kept`) }, 1);
     if (!doc) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: the team's members could not be read (${why}); run ${membersRead(team)}${where} to see whether "${alias}" holds a certificate there, then retire again; this home and its record of the mint are kept`) }, 1);
     const held = doc.members.filter((m) => m && typeof m === "object" && m.alias === alias && !m.revoked_at && (m.team_id === undefined || m.team_id === team));
     let key; try { key = readFileSync(join(home, ".aw", "signing.key"), "utf8"); } catch { key = undefined; }
@@ -2437,7 +2477,6 @@ if (event === "launch") {
     const ours = did ? held.find((m) => m.member_did_key === did) : undefined;
     if (did && !ours) await nothing("the alias's certificate is held by another key, not this home's");
     const cert = ours || held[0];
-    const { registry, registryError } = rootRegistryForTeam(root, team);
     const cleanup = { team, certificateId: cert.certificate_id, registry };
     const problem = controllerCleanupProblem(cleanup);
     const command = problem ? undefined : controllerCleanupCommand(cleanup);
