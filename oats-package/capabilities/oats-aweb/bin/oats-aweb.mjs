@@ -1198,6 +1198,15 @@ function validateJoinLabels(labels, { action = "join" } = {}) {
   return labels.map((label) => byLabel.get(label));
 }
 const joinedTeamsOf = (meta = {}) => Array.isArray(meta.joinedTeams) ? meta.joinedTeams.filter((j) => j && typeof j === "object" && j.label && j.team && j.identityHome) : [];
+/** Joins written ahead of their accept (awebai/oats-aweb#217): each is
+ *  dropped in the one write that records its joined team, so one that
+ *  remains is a join killed or failed after that write. */
+const pendingJoinsOf = (meta = {}) => Array.isArray(meta.pendingJoins) ? meta.pendingJoins.filter((p) => p && typeof p === "object" && p.label && p.team && p.identityHome) : [];
+const withoutPendingJoin = (meta, label) => {
+  const { pendingJoins: _all, ...rest } = meta;
+  const kept = pendingJoinsOf(meta).filter((p) => p.label !== label);
+  return kept.length ? { ...rest, pendingJoins: kept } : rest;
+};
 const leftTeamsOf = (meta = {}) => Array.isArray(meta.left) ? meta.left.filter((j) => j && typeof j === "object" && j.label && j.team && j.at && j.reason).slice(-20) : [];
 const providerStateDir = () => join(home, ".oats-aweb");
 const providerTeamsFile = () => join(providerStateDir(), "teams.json");
@@ -1228,14 +1237,19 @@ function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReaso
 function readProviderTeamsState(meta = {}) {
   try {
     const doc = JSON.parse(readFileSync(providerTeamsFile(), "utf8"));
-    return { joinedTeams: joinedTeamsOf(doc), wakeJoined: doc.wakeJoined === true, left: leftTeamsOf(doc) };
-  } catch { return { joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true, left: leftTeamsOf(meta) }; }
+    return { joinedTeams: joinedTeamsOf(doc), wakeJoined: doc.wakeJoined === true, left: leftTeamsOf(doc), pendingJoins: pendingJoinsOf(doc) };
+  } catch { return { joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true, left: leftTeamsOf(meta), pendingJoins: pendingJoinsOf(meta) }; }
 }
 function writeProviderTeamsState(meta) {
   mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
-  atomicWrite(providerTeamsFile(), JSON.stringify({ joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true, left: leftTeamsOf(meta) }, null, 2) + "\n");
+  const pendingJoins = pendingJoinsOf(meta);
+  atomicWrite(providerTeamsFile(), JSON.stringify({ joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true, left: leftTeamsOf(meta), ...(pendingJoins.length ? { pendingJoins } : {}) }, null, 2) + "\n");
 }
-function withProviderTeams(meta = {}) { const state = readProviderTeamsState(meta); return { ...meta, joinedTeams: state.joinedTeams, wakeJoined: state.wakeJoined, left: state.left }; }
+function withProviderTeams(meta = {}) {
+  const state = readProviderTeamsState(meta);
+  const { pendingJoins: _mirror, ...rest } = meta;
+  return { ...rest, joinedTeams: state.joinedTeams, wakeJoined: state.wakeJoined, left: state.left, ...(state.pendingJoins.length ? { pendingJoins: state.pendingJoins } : {}) };
+}
 function identityHomeForLabel(label) { return join(home, `.aweb-identity-${label}`); }
 function awWithIdentity(identityHome, args) { return ["aw", "--identity-home", identityHome, ...args]; }
 function commandOutput(e) { return [e?.stdout, e?.stderr, e?.message].filter(Boolean).join("\n"); }
@@ -1319,6 +1333,41 @@ function connectJoinedWorkspace({ label, team, identityHome, root, cwd = home, s
   }
   return { label, team, identityHome, receive: "poll", since: new Date().toISOString() };
 }
+/** Whether aw wrote an identity into this home: any of the files that make one. */
+const holdsIdentity = (identityHome) => IDENTITY_AUTHORITY.some((name) => existsSync(join(identityHome, name)));
+const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to finish it or oats aweb leave --labels ${label} to release it`;
+/** What a pending join left in its identity home (awebai/oats-aweb#217):
+ *  `{ absent: true }` once it is confirmed to hold no membership of the
+ *  recorded team (no identity, an empty directory removed; or a team list that
+ *  does not show the team, the home removed), else `{ joined }`, adopted for
+ *  the recorded team with its workspace connected. Throws, removing nothing,
+ *  when aw cannot say (its team list fails) or the connect fails. */
+function settlePendingJoin(pending, { root, resumeCommand }) {
+  const { label, team, identityHome } = pending;
+  if (!holdsIdentity(identityHome)) {
+    // ENOENT (never created) or ENOTEMPTY (what is there is not an identity, and the next accept decides): both leave nothing to release.
+    try { rmdirSync(identityHome); } catch { /* see above */ }
+    return { absent: true };
+  }
+  let member;
+  try { member = acceptedTeamMembership(identityHome, team); }
+  catch (e) {
+    throw new Error(`the unfinished join of ${label} (${team}) could not be checked: aw id team list failed in ${identityHome} (${String(e.message || e).slice(0, 200)}); kept it and its identity home; rerun ${resumeCommand} once aw answers`);
+  }
+  if (!member) { rmSync(identityHome, { recursive: true, force: true }); return { absent: true }; }
+  const joined = connectJoinedWorkspace({ label, team, identityHome, root, cwd: home, resumeCommand });
+  return { joined: pending.alias ? { ...joined, alias: pending.alias } : joined };
+}
+/** Release a pending join through the one release path: adopt it, then
+ *  cleanupJoinedIdentity (remote first, the key last). Answers the meta
+ *  without it; throws, keeping it and its identity home, on any failure. */
+function releasePendingJoin(pending, meta, { resumeCommand = `oats aweb leave --labels ${pending.label}` } = {}) {
+  const settled = settlePendingJoin(pending, { root: () => awebRootForTeam(pending.team), resumeCommand });
+  const next = withoutPendingJoin(meta, pending.label);
+  if (settled.absent) return { meta: next, changed: true };
+  const { released, receipt } = cleanupJoinedIdentity(settled.joined, meta.alias || instance, home);
+  return { meta: next, changed: true, released, receipt };
+}
 function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true }) {
   if (!token || typeof token !== "string") throw new Error(`aw id team accept-invite received no invite token for ${label}`);
   // The token reaches aw on stdin, never its argv (`--token-stdin`: aw 1.36.33, the provider's floor).
@@ -1371,7 +1420,23 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
   if (existing) return { meta, joined: existing, changed: false };
   const identityHome = identityHomeForLabel(row.label);
-  const { root, source } = current ? currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }) : { root: awebRootForTeam(row.team), source: rootSourceOf(row.team) };
+  const chooseRoot = () => current ? currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }) : { root: awebRootForTeam(row.team), source: rootSourceOf(row.team) };
+  const resumeCommand = `oats aweb join --labels ${row.label}`;
+  // A join killed or failed after its accept: adopt what it accepted, or
+  // drop it once confirmed absent. One recorded for another team (the label's
+  // team id changed) is released for that team, never adopted into this one.
+  const pending = pendingJoinsOf(meta).find((p) => p.label === row.label);
+  if (pending) {
+    if (pending.team === row.team) {
+      const settled = settlePendingJoin(pending, { root: () => chooseRoot().root, resumeCommand });
+      if (settled.joined) return { meta: { ...withoutPendingJoin(meta, row.label), joinedTeams: [...joinedTeamsOf(meta), settled.joined] }, joined: settled.joined, changed: true };
+      meta = withoutPendingJoin(meta, row.label);
+    } else {
+      meta = releasePendingJoin(pending, meta, { resumeCommand }).meta;
+    }
+    writeProviderTeamsState(meta);
+  }
+  const { root, source } = chooseRoot();
   if (!root) throw new Error(joinedTeamRootRefusal(row.team, row.label));
   let minted;
   try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
@@ -1383,9 +1448,25 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   }
   const inv = parseSecretJson(minted, "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
-  const { joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias: instance || meta.alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] });
-  const next = { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] };
-  return { meta: next, joined, changed: true };
+  const alias = instance || meta.alias;
+  // Write-ahead: the intended join is on disk before aw accepts it, so a hook
+  // killed after the accept leaves it for the next join, leave or retire.
+  // An identity already in the home is not this join's (aw refuses to
+  // overwrite it), so it is never recorded as one to settle.
+  const preexisting = holdsIdentity(identityHome);
+  const hadState = existsSync(providerTeamsFile());
+  if (!preexisting) writeProviderTeamsState({ ...meta, pendingJoins: [...pendingJoinsOf(meta), { label: row.label, team: row.team, identityHome, alias, at: new Date().toISOString() }] });
+  let joined;
+  try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] })); }
+  catch (e) {
+    if (preexisting) throw e;
+    if (holdsIdentity(identityHome)) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
+    // Confirmed: aw left no identity, so nothing was joined and nothing needs releasing.
+    try { rmdirSync(identityHome); } catch { /* never created, or holds what is not an identity */ }
+    if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });
+    throw e;
+  }
+  return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true };
 }
 const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).includes(team);
 /** `join --plan`: the root each label's join would mint from, chosen exactly as
@@ -1408,7 +1489,10 @@ function outputJoinPlan(plan, json) {
 function leaveJoinedTeam(label, meta) {
   const joined = joinedTeamsOf(meta);
   const entry = joined.find((j) => j.label === label);
-  if (!entry) return { meta, changed: false };
+  if (!entry) {
+    const pending = pendingJoinsOf(meta).find((p) => p.label === label);
+    return pending ? releasePendingJoin(pending, meta) : { meta, changed: false };
+  }
   const { released, receipt } = cleanupJoinedIdentity(entry, meta.alias || instance, home);
   return { meta: { ...meta, joinedTeams: joined.filter((j) => j.label !== label) }, changed: true, released, receipt };
 }
@@ -1692,6 +1776,9 @@ function runTeamsCommand(kind) {
       // What already happened travels with the failure, so a caller can
       // reconcile (the operation envelope carries it as error.details).
       e.partial = { actions };
+      // A failed row may have written state of its own (a pending join kept
+      // or dropped): what is on disk is what the final write keeps.
+      meta = withProviderTeams(meta);
       throw e;
     } finally {
       const synced = syncWakeReceive(meta);
@@ -1788,6 +1875,9 @@ if (event === "launch") {
     const note = channelCacheNote(configDir && clearChannelFailure(configDir), "this start's Claude config dir is not known (the home's recorded CLAUDE_CONFIG_DIR is not a literal path)");
     if (note) outNotes.push(note);
   }
+  // A pending join is settled only by an explicit join or leave: a start
+  // changes nothing remote for it and names both (awebai/oats-aweb#217).
+  for (const p of pendingJoinsOf(withProviderTeams(started))) outNotes.push(`unfinished join of team ${p.label} (${p.team}) since ${p.at || "an earlier run"}: its membership may exist in ${p.identityHome} but this home has not recorded it; ${unfinishedJoinFix(p.label)}`);
   requireWakeBroker();
   syncPrimaryDelivery(primaryIdentityHomeOf(started));
   if (globalLaunch) globalGrantRenew(started);
@@ -1951,7 +2041,8 @@ if (event === "launch") {
     // A join may already have created a REMOTE identity before the failure.
     // Hand it back as meta so the kernel's compensation can delete it — losing
     // it here would strand a roster entry no one owns.
-    fatal(`identity minting failed: ${e.message || e}`, minted && joinedTeamsOf(spawnMeta).length ? { ...minted, joinedTeams: joinedTeamsOf(spawnMeta) } : minted);
+    const pendingJoins = minted ? readProviderTeamsState().pendingJoins : [];
+    fatal(`identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted);
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
@@ -1979,7 +2070,7 @@ if (event === "launch") {
   // teams.json still lists the team, and its default-retire marker stops a
   // second self-delete of the default identity.
   const failedLeaves = [];
-  const retiredMeta = (fields = {}) => ({ ...fields, ...(pendingControllerCleanup.length ? { pendingControllerCleanup } : {}) });
+  const retiredMeta = (fields = {}) => ({ ...fields, ...(pendingControllerCleanup.length ? { pendingControllerCleanup } : {}), ...(pendingJoinsOf(meta).length ? { pendingJoins: pendingJoinsOf(meta) } : {}) });
   // Each controller cleanup is also recorded at the deployment, for `oats aweb roster` on
   // this host (lib/retired-certificates.mjs). Best effort: a failure is one more warning,
   // never another exit code or meta.
@@ -2028,6 +2119,12 @@ if (event === "launch") {
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
     catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
+  }
+  // A join killed or failed after its accept is released the same way
+  // (adopted, then left), with the same rule for keeping the key.
+  for (const pending of pendingJoinsOf(meta)) {
+    try { meta = releasePendingJoin(pending, meta).meta; }
+    catch (e) { const failed = failedLeaveDisposition(pending, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(pending.label); }
   }
   // A native (channel/pi) home registered with the broker only for its joined
   // teams; a broker home was deregistered above.

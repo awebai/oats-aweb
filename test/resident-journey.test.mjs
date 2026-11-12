@@ -389,3 +389,56 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   // Neither team is hosted here, so aw's refusal hands both memberships to the controller.
   assert.deepEqual(JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup.map((c) => c.label).sort(), ["alpha", "default"]);
 });
+
+test("a real join killed right after this aw accepted the invite (awebai/oats-aweb#217): retire releases the unrecorded membership, and nothing stays at the service", (t) => {
+  if (!configured(t)) return;
+  if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
+  const j = journey(t);
+  const ns = `killed-${randomBytes(4).toString("hex")}.test`;
+  const team = `default:${ns}`, joinedTeam = `alpha:${ns}`;
+  j.workspace({ teams: `teams:\n  default: { team: '${team}' }\n  alpha: { team: '${joinedTeam}' }\nsouls:\n  '*':\n    teams: any\n`, defaultTeam: "default" });
+  globalIdentity(j, j.deployment, "root", ns);
+  const step = (args) => { const r = j.aw(j.deployment, args, { AWID_SKIP_DNS_VERIFY: "1" }); assert.equal(r.status, 0, `aw ${args.join(" ")}: ${r.stdout}${r.stderr}`); return r.stdout; };
+  step(["id", "team", "create", "--namespace", ns, "--name", "alpha", "--registry", AWID_URL, "--json"]);
+  const cert = JSON.parse(step(["id", "team", "add-member", "--namespace", ns, "--team", "alpha", "--member", `${ns}/root`, "--json"])).certificate_id;
+  step(["id", "team", "fetch-cert", "--namespace", ns, "--team", "alpha", "--cert-id", cert, "--registry", AWID_URL, "--json"]);
+  const local = join(j.deployment, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replace("    delivery: session\n", `    delivery: session\n    root: ${j.deployment}\n`));
+  Object.assign(j.env, { AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+
+  const spawned = j.shell("oats spawn probe --name killed-seat --no-launch --json");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const { home } = spawned.doc.result;
+  const identityHome = join(home, ".aweb-identity-alpha");
+
+  // The real aw, except that a successful accept-invite then kills its
+  // caller, the hook, before it can record the joined team.
+  const killBin = join(j.base, "kill-bin");
+  mkdirSync(killBin);
+  writeFileSync(join(killBin, "aw"), `#!/bin/sh\ncase " $* " in\n  *" id team accept-invite "*) ${JSON.stringify(join(j.bin, "aw"))} "$@" || exit $?; kill -9 $PPID; exit 0 ;;\nesac\nexec ${JSON.stringify(join(j.bin, "aw"))} "$@"\n`, { mode: 0o755 });
+  const path = j.env.PATH;
+  j.env.PATH = `${killBin}:${path}`;
+  const killed = j.shell(`cd ${JSON.stringify(home)} && oats aweb join --labels alpha --json`);
+  j.env.PATH = path;
+  assert.notEqual(killed.status, 0, killed.stdout + killed.stderr);
+  const state = JSON.parse(readFileSync(join(home, ".oats-aweb", "teams.json"), "utf8"));
+  assert.deepEqual(state.joinedTeams, [], "the hook died before it recorded the join");
+  assert.deepEqual(state.pendingJoins.map((p) => [p.label, p.team, p.identityHome]), [["alpha", joinedTeam, identityHome]]);
+  const listed = j.aw(home, ["--identity-home", identityHome, "id", "team", "list", "--json"]);
+  assert.equal(listed.status, 0, listed.stdout + listed.stderr);
+  assert.match(listed.stdout, new RegExp(joinedTeam.replace(/\./g, "\\.")), "aw holds the accepted membership");
+  const members = () => step(["id", "team", "members", "--team-id", joinedTeam, "--registry", AWID_URL, "--json"]);
+  const before = members();
+
+  const retired = j.shell("oats retire killed-seat --json");
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(existsSync(identityHome), false);
+  // As for a recorded joined team, aw refuses a self-release on a team not
+  // hosted here, so retire hands the membership to the controller.
+  const cleanup = JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup.find((c) => c.label === "alpha");
+  assert.ok(cleanup?.command, `retire names the controller cleanup of the unrecorded membership: ${retired.stdout}`);
+  assert.ok(before.includes(cleanup.certificateId), `the team listed the killed join's certificate before the retire: ${before}`);
+  const [, ...cleanupArgs] = cleanup.command.split(" ");
+  step(cleanupArgs);
+  assert.ok(!members().includes(cleanup.certificateId), "the team no longer lists the member");
+});
