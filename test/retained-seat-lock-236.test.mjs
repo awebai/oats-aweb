@@ -17,6 +17,7 @@ import { checkSeatLockLeftovers } from "../oats-package/capabilities/oats-aweb/l
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "t:example.test";
+const CONNECT = `\`aw workspace connect --service=https://fixture.invalid/api --team=${TEAM}\``;
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 function fixture(t) {
@@ -109,6 +110,29 @@ fs.openSync = function (p, flags, ...args) {
     while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
   }
   return open.call(this, p, flags, ...args);
+};
+syncBuiltinESMExports();
+`);
+  return file;
+}
+/** The first time the hook reads LOCK (a spawn's rollback, when it held a fresh lock),
+ *  or creates PAUSE_DIR (a spawn's copy, right after its take): say so (PAUSE_MARK),
+ *  then wait for GO. */
+function pauseAtPreload(fx) {
+  const file = join(fx.base, "pause-at.mjs");
+  writeFileSync(file, `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const wait = () => { fs.writeFileSync(process.env.PAUSE_MARK, "paused"); while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); };
+const read = fs.readFileSync, mkdir = fs.mkdirSync;
+let readOnce = false, mkdirOnce = false;
+fs.readFileSync = function (p, ...args) {
+  const result = read.call(this, p, ...args);
+  if (process.env.LOCK && !readOnce && String(p) === process.env.LOCK) { readOnce = true; wait(); }
+  return result;
+};
+fs.mkdirSync = function (p, ...args) {
+  if (process.env.PAUSE_DIR && !mkdirOnce && String(p) === process.env.PAUSE_DIR) { mkdirOnce = true; wait(); }
+  return mkdir.call(this, p, ...args);
 };
 syncBuiltinESMExports();
 `);
@@ -312,7 +336,7 @@ test("a take-over that completes while a spawn is seated: the spawn leaves the s
     .filter((c) => c.argv[0] === "workspace" && c.argv[1] === "connect").map((c) => c.cwd);
   assert.deepEqual(connects, [a, b], "the binding is not taken back to the legacy home");
   assert.match(lost.doc.warning, /was not restored to the legacy home/);
-  assert.ok(lost.doc.warning.includes(`aw workspace connect\` from ${b}`), lost.doc.warning);
+  assert.ok(lost.doc.warning.includes(`the binding may point at this home, if this spawn's connect ran after that seat's: run ${CONNECT} from ${b}`), lost.doc.warning);
   assert.equal(existsSync(join(a, ".aw")), false, "the losing seat's copy was removed");
 });
 
@@ -329,4 +353,46 @@ test("the moved-aside lock's recovery command works for a path with spaces and q
   assert.equal(r.status, 0, r.stderr);
   assert.equal(existsSync(`${lock}.held`), false);
   assert.equal(JSON.parse(readFileSync(lock, "utf8")).instance, "seat-a");
+});
+
+const connectsIn = (fx) => readFileSync(join(fx.base, "aw.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+  .filter((c) => c.argv[0] === "workspace" && c.argv[1] === "connect").map((c) => c.cwd);
+
+test("a take-over that lands while a spawn's rollback reconnects the legacy home: the spawn says the binding may be the legacy home's, and names the fix", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
+  // A connects, fails its check, and pauses at its rollback's read of its own lock.
+  const pending = startHook(fx, "spawn", a, { preload: pauseAtPreload(fx), env: { LOCK: fx.lock, PAUSE_MARK: paused, GO: go, FAKE_RETAINED_FAIL: "check" } });
+  let won;
+  try {
+    await until(() => existsSync(paused), "the rollback's read");
+    won = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+  } finally { writeFileSync(go, "go"); }
+  const lost = await pending;
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.deepEqual(connectsIn(fx), [a, b, dirname(fx.source)]);
+  assert.ok(lost.doc.warning.includes("the server binding was restored to the legacy home and the copy removed, but another seat took the identity over while that ran"), lost.doc.warning);
+  assert.ok(lost.doc.warning.includes(`so the binding may point at the legacy home, not at that seat: run ${CONNECT} from ${b}`), lost.doc.warning);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b, "the successor's lock is left alone");
+});
+
+test("a take-over that lands between a spawn's take and its connect: the spawn fails, saying the binding may be this home's, and names the fix", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
+  const pending = startHook(fx, "spawn", a, { preload: pauseAtPreload(fx), env: { PAUSE_DIR: join(a, ".aw"), PAUSE_MARK: paused, GO: go } });
+  let won;
+  try {
+    await until(() => existsSync(paused), "the spawn's copy, after its take");
+    won = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+  } finally { writeFileSync(go, "go"); }
+  const lost = await pending;
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.deepEqual(connectsIn(fx), [b, a], "the legacy home is not reconnected");
+  assert.ok(lost.doc.warning.includes(`the binding may point at this home, if this spawn's connect ran after that seat's: run ${CONNECT} from ${b}`), lost.doc.warning);
+  assert.equal(existsSync(join(a, ".aw")), false);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });

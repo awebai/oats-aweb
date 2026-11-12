@@ -1457,12 +1457,23 @@ So a retire never removes a lock another seat took over after it looked, and
 of two take-overs of one lock only one wins. The other refuses and names the
 holder. A spawn that fails after another seat took the lock over leaves that
 seat's server binding alone: it doesn't connect the legacy home again, and it
-removes only its own copy. If its own connect ran last, its failure names the
-`aw workspace connect` to run from the new holder's home.
+removes only its own copy.
 
-On a filesystem where `rename`, `link` or an exclusive create isn't atomic,
-which includes some network and FUSE filesystems, two changes can still
-interleave, and nothing detects it.
+Two limits remain:
+
+- **On a filesystem where `rename`, `link` or an exclusive create isn't
+  atomic,** which includes some network and FUSE filesystems, two changes can
+  still interleave, and nothing detects it.
+- **The guard covers file operations, never an aw call.** A take-over can land
+  while a spawn's `aw workspace connect` runs, or while its rollback reconnects
+  the legacy home. Then the server binding may end up with the spawn's home or
+  the legacy home rather than with the seat that now holds the lock. Each exit
+  after a connect reads the lock again. If another seat holds it, the spawn
+  fails, says where the binding may point, and names the
+  `aw workspace connect --service=… --team=…` to run from that seat's home. This
+  needs a take-over of a seat whose runtime is still alive, and the take-over
+  already warns about that: there are then two seats with one key, and the old
+  one must be stopped.
 
 A change that was killed can leave either private file behind. The next spawn
 or take-over refuses with the file and its fix, and the next retire reports it

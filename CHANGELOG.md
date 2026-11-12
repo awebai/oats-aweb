@@ -16,7 +16,14 @@
   A retire that finds another seat's lock says it did not remove it, and of
   two take-overs one refuses, naming the holder. A spawn whose seat another
   took over before it finished fails without taking the server binding back to
-  the legacy home, and removes only its own copy. The two private files are
+  the legacy home, and removes only its own copy. The guard covers file
+  operations, never an aw call, so a take-over can still land while a spawn
+  connects or its rollback reconnects the legacy home. Each exit after a
+  connect then reads the lock again. If another seat holds it, the spawn says
+  where the binding may point and names the `aw workspace connect` to run
+  from that seat's home. That needs a take-over of a seat that is still
+  running, which the take-over already warns against. On a filesystem whose
+  rename, link or exclusive create isn't atomic, changes can still interleave. The two private files are
   new on-disk files beside the lock. A change that was killed may leave one
   behind: the next spawn or take-over refuses with it and its fix, and the
   next retire reports it; none adopts or removes it. The lock's name and fields are unchanged; its
