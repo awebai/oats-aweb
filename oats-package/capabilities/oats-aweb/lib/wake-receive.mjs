@@ -290,7 +290,9 @@ export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
   try { state = JSON.parse(readFileSync(join(home, '.oats-aweb', 'teams.json'), 'utf8')); }
   catch (error) {
     if (!absentFile(join(home, '.oats-aweb', 'teams.json'), error)) return fail('retained joined-team state is unreadable or malformed');
-    if (meta.identity?.mode === 'global' && (grant || meta.retained === true) &&
+    // A grant seat, and a retained seat (local since awebai/oats-aweb#226, global
+    // before it), record no joined-team file until they join a team.
+    if ((meta.retained === true || (meta.identity?.mode === 'global' && grant)) &&
         (meta.joinedTeams === undefined || (Array.isArray(meta.joinedTeams) && meta.joinedTeams.length === 0))) state = {joinedTeams: []};
     else if (incomplete) {
       state = {joinedTeams: meta.joinedTeams === undefined ? [] : meta.joinedTeams};
