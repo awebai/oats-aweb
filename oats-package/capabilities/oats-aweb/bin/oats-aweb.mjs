@@ -1363,8 +1363,9 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
     // and removes the marker only once the certificate is stored (aw
     // cli/go/cmd/aw/id_team.go, from aw 1.36.33): with it, an empty team list
     // means the accept was cut short, not that the server holds no membership.
-    // The remedy precedes the path: retire keeps 300 characters of it.
-    if (existsSync(join(identityHome, HOSTED_ACCEPT_PENDING_MARKER))) throw new Error(`hosted accept interrupted for ${label} (${team}): the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
+    // The whole remedy comes first, the label once: retire keeps 300
+    // characters of it, which hold it for a label of 64.
+    if (existsSync(join(identityHome, HOSTED_ACCEPT_PENDING_MARKER))) throw new Error(`hosted accept interrupted: the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Team ${team}: kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
     rmSync(identityHome, { recursive: true, force: true });
     return { absent: true };
   }

@@ -107,7 +107,7 @@ console.error("unexpected aw " + args.join(" ")); process.exit(93);
 
 /** `captured`: the settings the home was spawned with (OATS_SETTINGS); the
  *  live settings, which an explicit join reads, always name `root: ws`. */
-function fixture(t, { teamOf = {}, captured } = {}) {
+function fixture(t, { teamOf = {}, captured, sharedLabel = "shared" } = {}) {
   const ws = tempDir(t), home = join(ws, "agents", "dev", "instances", "dev-1");
   write(join(ws, ".aw", "workspace.yaml"), "aweb_url: https://service.example.test/api\n");
   write(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
@@ -115,7 +115,7 @@ function fixture(t, { teamOf = {}, captured } = {}) {
   const fake = fakeAw(t);
   const teams = (over = {}) => JSON.stringify([
     { label: "personal", team: DEFAULT, default: true, from: "local" },
-    { label: "shared", team: over.shared || SHARED, default: false, from: "shared" },
+    { label: sharedLabel, team: over.shared || SHARED, default: false, from: "shared" },
     { label: "extra", team: EXTRA, default: false, from: "shared" },
   ]);
   const env = {
@@ -400,24 +400,24 @@ test("a killed join through a root only the live settings name is released by re
 // server call, and removes the marker only once the certificate is stored. A kill
 // in between leaves a key, the marker and no certificate: the team list is
 // empty, yet the server may hold the membership.
-function killedInHostedAccept(fx) {
-  const r = join217(fx, "shared", { FAKE_KILL: "hosted-accept" });
+function killedInHostedAccept(fx, label = "shared") {
+  const r = join217(fx, label, { FAKE_KILL: "hosted-accept" });
   assert.equal(r.signal, "SIGKILL", `the fake killed the hook: ${r.status} ${r.stdout}${r.stderr}`);
-  const home = fx.identityHome("shared");
+  const home = fx.identityHome(label);
   assert.ok(existsSync(join(home, "pending-hosted-accept")) && existsSync(join(home, "signing.key")));
   assert.ok(!existsSync(join(home, "team-certs")), "no certificate was stored");
   return home;
 }
-const assertHostedAcceptKept = (fx, home, output) => {
+const assertHostedAcceptKept = (fx, home, output, label = "shared") => {
   assert.ok(existsSync(join(home, "signing.key")), "the key is kept");
   assert.ok(existsSync(join(home, "pending-hosted-accept")), "the marker is kept");
-  assert.deepEqual(fx.state().pendingJoins.map((p) => p.label), ["shared"], "the intent is kept");
+  assert.deepEqual(fx.state().pendingJoins.map((p) => p.label), [label], "the intent is kept");
   assert.deepEqual(fx.deletes().filter((c) => c.identityHome === home), [], "nothing was released from it");
   assert.match(output, /hosted accept interrupted/);
   assert.match(output, /server may hold/);
   assert.match(output, /rerun the same aw id team accept-invite with the original invite/);
   assert.match(output, /team controller remove the member and delete the marker/);
-  assert.match(output, /oats aweb leave --labels shared/);
+  assert.ok(output.includes(`oats aweb leave --labels ${label}`), `the whole fix is named: ${output}`);
 };
 for (const kind of ["join", "leave"]) test(`an interrupted hosted accept (marker, no certificate) is not absent: ${kind} keeps everything, exits nonzero and names the recovery`, (t) => {
   const fx = fixture(t);
@@ -436,6 +436,14 @@ test("an interrupted hosted accept is not absent: retire keeps everything and ex
   const doc = lastDoc(r);
   assert.deepEqual(doc.meta.failedLeaves, ["shared"]);
   assertHostedAcceptKept(fx, home, doc.warning);
+});
+test("retire names the whole recovery of an interrupted hosted accept within its bounded warning, for the longest label", (t) => {
+  const label = "L".padEnd(64, "x");
+  const fx = fixture(t, { sharedLabel: label });
+  const home = killedInHostedAccept(fx, label);
+  const r = retire217(fx);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assertHostedAcceptKept(fx, home, lastDoc(r).warning, label);
 });
 test("after an interrupted hosted accept, rerunning the same accept-invite lets leave release the membership", (t) => {
   const fx = fixture(t);
