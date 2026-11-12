@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Fixed: a joined team's controller command names the registry aw uses
+  (#250).** A joined-team release that answered `team_not_hosted` took any
+  registry it found in the joined identity's files, or said "aw will use its
+  default". The registry it took could be another membership's `registry_url`
+  in `teams.yaml`, or one aw doesn't use for team commands. When the membership
+  records only its `aweb_url`, aw discovers the registry from that service
+  instead. Now the registry comes from the team's own membership, by #240's
+  rule:
+  - a plain `registry_url` goes into the command and the record;
+  - with only an `aweb_url`, the command omits `--registry`, the record stores
+    none, and the warning says the registry isn't recorded here and aw
+    discovers it from that service;
+  - a membership that records neither is unchanged: no `--registry`, and aw
+    uses its default.
+
+  A registry aw reports in `aw id team list --json` still comes first.
+  Nothing a deployment must change.
+
 - **Removed: the captured-execution path (#242).** The captured bindings
   (the `OATS_BINDING_FILE`, `OATS_INVOCATION_CONTEXT_FILE` and
   `OATS_SOURCE_RECEIPT_FILE` variables, and the `binding` and `invocation`
