@@ -103,11 +103,41 @@ function releaseGuard(guard, mine) {
   if (now?.token === mine.token) { try { unlinkSync(guard); } catch { /* left: the next change reports it */ } }
 }
 
+/** The whole fix for a moved-aside lock (`stray`, as readSeatLock answers for `held`),
+ *  by what is at the lock's name: nothing, a lock, or bytes that are not a lock (a
+ *  write that did not finish), which the moved lock may replace. */
+function strayHeldText(lock, held, stray) {
+  let at; try { at = readSeatLock(lock); } catch { at = { present: true, doc: undefined }; }
+  const fix = at.present && !at.doc
+    ? `if the seat it names still holds the identity, move it back over ${lock}, which is not a lock that can be read (\`mv -f -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}`
+    : `if the seat it names still holds the identity and ${lock} does not exist, move it back (\`mv -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}`;
+  return `${held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (${stray.doc ? seatLockHolderText(stray.doc) : "it cannot be read"}); it is never adopted or removed automatically. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: ${fix}; then retry`;
+}
 function refuseStrayHeld(lock, held) {
   const stray = readSeatLock(held);
-  if (stray.present) {
-    throw new SeatLockRefusal("held-stray", `${held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (${stray.doc ? seatLockHolderText(stray.doc) : "it cannot be read"}); it is never adopted or removed automatically. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: if the seat it names still holds the identity and ${lock} does not exist, move it back (\`mv -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}; then retry`, held);
+  if (stray.present) throw new SeatLockRefusal("held-stray", strayHeldText(lock, held, stray), held);
+}
+/** After this change's exclusive create of the lock failed: what it left at the lock's
+ *  name is removed when it is a prefix of the bytes it wrote (under the guard nothing
+ *  else writes that name), and the moved lock is put back. → "" when the lock is as it
+ *  was before this change, else the whole fix for what is left. */
+function undoFailedWrite(lock, held, captured, next) {
+  let left; try { left = readSeatLock(lock); } catch (e) { left = { present: true, text: null, code: errorCode(e) }; }
+  let stuck;
+  if (left.present && left.text !== null && next.startsWith(left.text)) {
+    try { unlinkSync(lock); left = { present: false }; } catch (e) { stuck = errorCode(e); }
   }
+  if (!captured.present) {
+    if (!left.present) return "";
+    return `${lock} ${stuck ? `holds this change's partial write, which could not be removed (${stuck})` : left.code ? `could not be checked (${left.code})` : "was left, and it is not this change's write"}. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: if it is not a lock that can be read, remove it; then retry`;
+  }
+  if (!left.present) {
+    const restore = restoreHeld(lock, held, captured);
+    if (restore.restored && !restore.problem) return "";
+    if (restore.restored) return `the lock was put back, but ${restore.problem}: once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}, remove ${held}; then retry`;
+    return `the lock could not be put back (${restore.problem}); ${strayHeldText(lock, held, readSeatLock(held))}`;
+  }
+  return strayHeldText(lock, held, readSeatLock(held));
 }
 /** Put the moved lock back at its name, never over a lock that is there now.
  *  → `{ restored: true }`, or `{ restored: false, problem }` with the moved lock kept. */
@@ -131,7 +161,8 @@ function restoreHeld(lock, held, captured) {
  *  → `{ done: true, captured }`, or `{ done: false, captured, restore }` (`restore` as
  *  restoreHeld answers, absent when nothing was there). Throws a SeatLockRefusal for a
  *  guard or a moved lock left by another change, and an error with `code` (and
- *  `stage`) when a step fails for any other reason. `who` ({op, instance, home}) is
+ *  `stage`) when a step fails for any other reason; a failed write's error also carries
+ *  `recovery`, the whole fix for what it could not undo ("" when it undid it all). `who` ({op, instance, home}) is
  *  written into the guard, for the refusal another change prints. */
 export function swapSeatLock(lock, { who, expect, next }) {
   const guard = seatGuardPath(lock), held = seatHeldPath(lock);
@@ -147,8 +178,7 @@ export function swapSeatLock(lock, { who, expect, next }) {
       catch (e) {
         // Our moved lock stays at its private name, where the next change finds it.
         if (e?.code === "EEXIST") return { done: false, captured: readSeatLock(lock), restore: { restored: false, problem: `a new lock appeared at ${lock} while it was moved aside; the one this change inspected is kept at ${held}` } };
-        if (captured.present) restoreHeld(lock, held, captured);
-        throw Object.assign(e, { stage: "write" });
+        throw Object.assign(e, { stage: "write", recovery: undoFailedWrite(lock, held, captured, next) });
       }
     }
     if (captured.present) { try { unlinkSync(held); } catch (e) { throw Object.assign(e, { stage: "remove" }); } }

@@ -662,3 +662,63 @@ syncBuiltinESMExports();
   assert.ok(lost.doc.warning.includes(`run ${CONNECT} from ${c}`), lost.doc.warning);
   assert.equal(lost.doc.warning.includes(b), false, `the displaced seat is named nowhere: ${lost.doc.warning}`);
 });
+
+/** The take-over's exclusive create of the lock writes 20 bytes, then fails with ENOSPC
+ *  (a full disk); with STUCK_UNLINK set, removing that partial file fails too. */
+function partialWritePreload(fx) {
+  const file = join(fx.base, "partial-write.mjs");
+  writeFileSync(file, `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const write = fs.writeFileSync, unlink = fs.unlinkSync;
+const lock = ${JSON.stringify(fx.lock)};
+fs.writeFileSync = function (path, data, options, ...rest) {
+  if (String(path) === lock && options?.flag === "wx") {
+    write.call(this, path, String(data).slice(0, 20), options);
+    throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
+  }
+  return write.call(this, path, data, options, ...rest);
+};
+fs.unlinkSync = function (path, ...rest) {
+  if (process.env.STUCK_UNLINK && String(path) === lock) throw Object.assign(new Error("EACCES: permission denied, unlink"), { code: "EACCES" });
+  return unlink.call(this, path, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  return file;
+}
+
+test("a take-over whose lock write fails part-way removes its own partial write and puts the holder's lock back", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const before = readFileSync(fx.lock, "utf8");
+  const b = fx.homeOf("seat-b");
+  const r = runHook(fx, "spawn", b, { identity: { takeOver: true }, preload: partialWritePreload(fx) });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.doc.warning.includes(`the retained identity's lock ${fx.lock} could not be taken (ENOSPC); nothing copied`), r.doc.warning);
+  assert.equal(readFileSync(fx.lock, "utf8"), before, "the holder's lock is back at its name");
+  assert.equal(existsSync(fx.held), false);
+  assert.equal(existsSync(fx.guard), false);
+  assert.equal(existsSync(join(b, ".aw")), false, "nothing copied");
+});
+
+test("a take-over whose partial lock write can't be removed names the moved lock and the whole fix, uncut", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const before = readFileSync(fx.lock, "utf8");
+  const b = fx.homeOf("seat-b");
+  const r = runHook(fx, "spawn", b, { identity: { takeOver: true }, preload: partialWritePreload(fx), env: { STUCK_UNLINK: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(readFileSync(fx.held, "utf8"), before, "the holder's lock is kept at the private name");
+  assert.equal(existsSync(fx.guard), false);
+  const w = r.doc.warning;
+  assert.ok(w.includes(`could not be taken (ENOSPC); nothing copied`), w);
+  assert.ok(w.includes(`${fx.held} is this retained identity's lock, moved aside`), w);
+  assert.ok(w.includes(`${fx.lock}, which is not a lock that can be read`), w);
+  assert.ok(w.includes(`\`mv -f -- '${fx.held}' '${fx.lock}'\``), w);
+  assert.ok(w.includes(`otherwise remove ${fx.held}`), w);
+  assert.ok(w.endsWith("then retry"), w);
+  // The next spawn reports the same pair with the same fix.
+  const next = runHook(fx, "spawn", fx.homeOf("seat-c"), { identity: { takeOver: true } });
+  assert.notEqual(next.status, 0, next.stdout + next.stderr);
+  assert.ok(next.doc.warning.includes(`\`mv -f -- '${fx.held}' '${fx.lock}'\``), next.doc.warning);
+});

@@ -1184,7 +1184,8 @@ function retainedSeatSpawn(source, takeOver) {
   try { taken = swapSeatLock(lockPath, { who: seatOp(takenOver ? "take-over" : "spawn"), expect: (c) => seen.present ? sameSeatLock(c, seen) : !c.present, next: lockDoc() }); }
   catch (e) {
     if (isSeatLockRefusal(e)) out({ warning: `oats-aweb: identity at ${source} was not seated, and nothing was copied: ${e.message}` }, 1);
-    fatal(`the retained identity's lock ${lockPath} could not be taken (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}); nothing copied`);
+    // Uncut: a failed write's recovery is its whole fix (lib/seat-lock.mjs).
+    out({ warning: `oats-aweb: the retained identity's lock ${lockPath} could not be taken (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}); nothing copied${e?.recovery ? `; ${e.recovery}` : ""}` }, 1);
   }
   if (!taken.done) {
     const kept = taken.restore?.restored === false ? `; ${taken.restore.problem}, and the lock this spawn inspected is kept at ${seatHeldPath(lockPath)}, which the next spawn, take-over or retire reports` : "";

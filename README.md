@@ -1511,7 +1511,12 @@ removes one, or judges age, pid or liveness:
   host that shares the directory.
 - **A moved lock:** move it back (`mv .aw-retained-seat.json.held
   .aw-retained-seat.json`) if the seat it names still holds the identity and
-  no lock exists. Otherwise remove it.
+  no lock exists. If the lock's name holds bytes that are not a lock (a write
+  that did not finish), move it back over them (`mv -f`). Otherwise remove it.
+
+A lock write that fails part-way (a full disk) removes its own partial bytes
+and puts the moved lock back, under the guard. Only what it can't undo is
+left, and the failure names it with its fix.
 
 ## Isolated hostOnly contract verification
 
