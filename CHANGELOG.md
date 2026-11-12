@@ -9,16 +9,15 @@
   meta. Its compensating retire then took the alias from the home's
   `.aw/workspace.yaml` and ran `aw workspace delete` with the standing
   identity's key, deleting the workspace of a seat the operator admitted by
-  hand. The spawn now writes a record of the retained seat to
-  `.oats-aweb/retained-seat.json` before it takes the lock, and a retire with
-  no meta that finds it retires the home as a retained seat: no workspace
-  delete, the lock released, and, when the spawn had bound the identity to
-  this home, the `aw workspace connect` command that binds it back to its
-  source (its values printed only when they pass their own shapes). A record
-  that cannot be read makes the retire fail with nothing deleted, naming the
-  file and what to do. A retained seat's retire now releases its lock only
-  when the lock names this home: a lock another seat took over, or one that
-  cannot be read, is left in place, and the retire says so.
+  hand. Such a retire now goes by the home's captured settings, whose
+  `identity.source` is what made the spawn take the retained route: it
+  retires the home as a retained seat, with no workspace delete, the lock
+  released, and, when the spawn had bound the identity to this home, the
+  `aw workspace connect` command that binds it back to its source (its values
+  printed only when they pass their own shapes). Nothing in the home's
+  provider state decides it. A retained seat's retire now releases its lock
+  only when the lock names this home: a lock another seat took over, or one
+  that cannot be read, is left in place, and the retire says so.
 
 ## 1.41.0 — 2026-11-12
 

@@ -1,8 +1,8 @@
 // awebai/oats-aweb#228: a retained seat's spawn that fails or is killed never
-// deletes the standing identity's workspace. Before it takes the lock, the spawn
-// writes a record of the retained seat to the home's .oats-aweb, so a compensating
-// retire that has no meta (a hook killed, or a failure after `aw workspace connect`)
-// still knows the home is a retained seat: it never runs `aw workspace delete`,
+// deletes the standing identity's workspace. A compensating retire that has no meta
+// (a hook killed, or a failure after `aw workspace connect`) still has the home's
+// captured settings, whose identity.source is what made spawn take the retained
+// route: it retires the home as a retained seat, never runs `aw workspace delete`,
 // releases the lock only when the lock names this home, and names the way to point
 // the identity's binding back at its source.
 import test from "node:test";
@@ -94,14 +94,26 @@ test("a retained seat's retire leaves a lock another seat has taken over, and sa
   assert.deepEqual(deletes(fx), []);
 });
 
-test("an unreadable retained-seat record fails closed: nothing is deleted and the retire is incomplete", (t) => {
+test("a killed retained spawn's home never reaches the self-delete, however often it is retired", (t) => {
   const fx = fixture(t);
-  write(join(fx.home, ".oats-aweb", "retained-seat.json"), "{ not json");
-  write(join(fx.home, ".aw", "workspace.yaml"), "memberships:\n  - team_id: t:example.test\n    alias: retained\n");
-  const retired = compensate(fx);
-  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  runHook(fx, "spawn", { FAKE_RETAINED_KILL: "after-connect" });
+  for (let i = 0; i < 2; i++) assert.equal(compensate(fx).status, 0);
+  rmSync(join(fx.home, ".oats-aweb"), { recursive: true, force: true });
+  assert.equal(compensate(fx).status, 0, "nothing in the home's provider state decides it");
   assert.deepEqual(deletes(fx), []);
-  assert.match(retired.doc.warning, /retained-seat record/);
+});
+
+test("a lock that cannot be read is left in place by a retained retire, and the retire says why", (t) => {
+  for (const content of ["null", "[]", "{ not json", JSON.stringify({ home: 7 })]) {
+    const fx = fixture(t);
+    const spawned = runHook(fx, "spawn");
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    write(fx.lock, content);
+    const retired = runHook(fx, "retire", { OATS_META: JSON.stringify(spawned.doc.meta) });
+    assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+    assert.equal(readFileSync(fx.lock, "utf8"), content, `lock ${content} left in place`);
+    assert.match(retired.doc.warning, /left in place: it cannot be read/, content);
+  }
 });
 
 test("the restore command is printed only from values of their own shapes", (t) => {
