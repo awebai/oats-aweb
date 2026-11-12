@@ -27,6 +27,44 @@
   Readiness through `oats readiness` is unchanged. To migrate, unset the
   variables and use `oats readiness`.
 
+- **Fixed: a mint killed after the service registered the identity is
+  released or named, no longer orphaned (#240).** A spawn's
+  `aw init --join-from` could register the new identity and then be killed or
+  fail before aw wrote the home's workspace binding. Spawn found no bound
+  identity and answered no meta, so no retire could find the registration, and
+  the alias kept a certificate that no home knew about. Spawn now writes the
+  intended mint (team, alias, root, time) to the home's
+  `.oats-aweb/pending-mint.json` before aw starts. It removes the file once the
+  identity is in its answer, or once aw confirms a refusal. A mint that fails
+  any other way answers `pendingMint` in its meta. Retire acts on the intent
+  when the home holds no binding: it reads the team's members from the root,
+  and never finishes the mint.
+  - A certificate whose `member_did_key` is the home key's is recorded with
+    the controller's `aw id team remove-member` command, and the warning says
+    the identity was registered but could not be released.
+  - A home with no key gets no command, since the certificate is most likely
+    another instance's: retire points to `oats aweb roster` and the members
+    read. Nothing is recorded.
+  - No certificate for the alias: retire says nothing was registered.
+  - A members read that fails: the outcome is unknown. Retire names the read,
+    and exits nonzero with the home kept.
+
+  Retire never decides a registry aw would decide differently. When the
+  root records a plain `registry_url` for the team's membership, the members
+  read, the command and the record carry it. Otherwise the read passes no
+  `--registry`, so aw resolves the registry itself. The record then stores
+  none, and the command omits `--registry` and says the registry isn't
+  recorded here. The roster's note on a command with no recorded registry is
+  now `(the registry was not recorded; the command omits --registry)`, for
+  every entry.
+
+  A later spawn's alias refusal says when this host's record names a
+  certificate a retire left for that alias and team, and points to
+  `oats aweb roster`, which decides whether to show the controller's command. A new on-disk
+  file in the home, `.oats-aweb/pending-mint.json`, and a new meta key,
+  `pendingMint`, which a failed spawn answers. Nothing a deployment must
+  change.
+
 - **Fixed: spawn, take-over and retire never interleave on a retained seat's
   lock (#236).** A retire read `.aw-retained-seat.json` and then removed it,
   so a take-over that landed in between lost its lock, and the next spawn

@@ -730,7 +730,7 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   as retire does. An entry it can't be built from shows `; its record entry is
   malformed (<why>), so no command to remove it is shown` (and `--json` gives
   `command: null`, with a `retired-record` problem); one recorded with no
-  registry adds `(the registry was not recorded, so aw uses its default)` to
+  registry adds `(the registry was not recorded; the command omits --registry)` to
   its command. The record lives on the host where the retire ran: a roster read
   on another host doesn't show those leftovers.
 - The record is a claim, not proof, since any agent on the host can write it.
@@ -1451,6 +1451,66 @@ with no second invite. `oats aweb leave` of the label, and every retire, adopt i
 and release it with the same `aw workspace delete` as a recorded joined team. A
 start changes nothing at the service for it, and warns naming both commands
 (awebai/oats-aweb#217).
+
+Before the default-team mint, spawn writes its intent to
+`.oats-aweb/pending-mint.json` in the home (team, alias, the root it mints
+from, time), in one atomic write. aw registers the identity before it writes
+the workspace binding: aw 1.36.58 writes `signing.key` first, registers the
+member, then writes `team-certs/` and `identity.yaml`, and writes
+`workspace.yaml` last. So a mint killed or failed in between leaves a
+registration that no local file proves (awebai/oats-aweb#240). The intent is
+removed once the minted identity is in the spawn's answer, or once aw confirms
+a refusal. Two refusals count, by their code in aw's `--json` error answer: an
+alias another member holds, and an invite the server refuses. So does a root
+that can't create the invite, which aw reports before it writes the key. A
+failure that only reads like an alias refusal keeps the intent. A home that already holds
+identity material gets no intent, since aw refuses it before doing anything.
+Any other failed mint answers `pendingMint` in its meta.
+
+Retire acts on an intent, from the home or from that meta, only when the home
+holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
+self-deleted as usual. Otherwise retire reads `aw id team members
+--team-id=<team> --json` from the recorded root (team ids compared as aw
+spells them: name and domain lowercased). Retire never decides a registry aw
+would decide differently: it passes a registry the root records, or none.
+
+- When the team's membership in the root's `.aw/teams.yaml` records a plain
+  `registry_url`, the read gets `--registry`, and the command and the record
+  name it.
+- Otherwise the read gets no `--registry`, and aw resolves the registry itself,
+  as for any read from that root (from the membership's `aweb_url` when it has
+  one). The record stores no registry, and the command omits `--registry` and
+  says so: `the team's registry is not recorded here; aw discovers it from
+  <aweb_url>: the controller adds --registry <that registry> if it is not aw's
+  default`.
+
+It never runs `aw workspace
+connect` to finish a half-done mint, and never retries the mint. A certificate
+is this mint's only when its `member_did_key` is the did:key of the home's
+`signing.key`:
+
+- **This mint's certificate:** retire records it in the retired-certificates
+  record, with the controller's `aw id team remove-member` command (its
+  `--registry` is the registry the read used), and says
+  the identity was registered but could not be released. It exits 0, because
+  the home's key can't release it.
+- **No key in the home:** aw writes the key before it registers, so the
+  certificate is most likely another instance's. Retire shows no command to
+  remove it and records nothing. It points to `oats aweb roster` and the
+  members read at the root instead, to check the member first. It exits 0.
+- **No certificate for the alias, or one held by another key:** nothing was
+  registered, and the intent is dropped.
+- **The members read fails:** the outcome is unknown. Retire names the read to
+  run, keeps the home and the intent, and exits nonzero for a retry.
+
+Where a certificate is found, the intent stays until the kernel removes the
+home. So a retire killed before it records or answers the handoff leaves the
+intent, and the next retire hands the certificate over again.
+
+A later spawn of the same name still meets the alias refusal; when this host's
+record holds a certificate for that alias and team, the refusal says so and
+points to `oats aweb roster`. It names no command: the roster decides whether
+the controller's command is shown, after it checks the member's presence.
 
 Retire self-deletes with `aw workspace delete <workspace_id>`, taking the id
 from the membership in `<home>/.aw/workspace.yaml` whose team and alias match
