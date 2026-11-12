@@ -362,7 +362,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   // its refusal with the same resolver. A seated home's start does not read the source again.
   if(!ctx.home && mode==='local' && typeof identity.source==='string' && isAbsolute(identity.source)) {
     const seat=retainedSeatService(identity.source);
-    if(!seat.service) problems.push({code:'needs-configuration',message:unknownSeatServiceMessage(identity.source,seat.serviceRecorded,env)});
+    if(!seat.service) problems.push({code:'needs-configuration',message:unknownSeatServiceMessage(identity.source,seat.record,env)});
   }
   if(mode==='global') {
     const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);

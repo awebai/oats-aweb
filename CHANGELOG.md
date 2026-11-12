@@ -10,8 +10,12 @@
   now comes only from that `aweb_url` (aw writes it at `aw workspace
   connect`): any http or https URL with a host, a path prefix or an IPv6
   literal included, with no userinfo, query, fragment, whitespace or control
-  characters. `OATS_AWEB_URL` is no longer read. A seat with no such
-  `aweb_url` is refused before anything is
+  characters. The file is read in the form aw writes it (a top-level key and
+  its value on one line, nested lines only under a key with no value), and a
+  `workspace.yaml` in any other form is refused whole; the seat's
+  `role_name` is read the same way. The service is never printed: a failed
+  spawn withholds aw's own output, which may name it. `OATS_AWEB_URL` is no
+  longer read. A seat with no such `aweb_url` is refused before anything is
   copied or locked, and the refusal names the fix: run `aw workspace connect
   --service <the team's aweb server>` in the seat's parent directory (the one
   that holds its `.aw`), then spawn again. A soul's readiness reports the same

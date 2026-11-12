@@ -1097,14 +1097,14 @@ function activeTeamAt(root) {
  *  undefined. */
 function retainedSeatTarget(source) {
   const read = (name) => { try { return readFileSync(join(source, name), "utf8"); } catch { return ""; } };
-  const srcWorkspace = read("workspace.yaml"), srcTeams = read("teams.yaml");
+  const srcTeams = read("teams.yaml");
   const team = defaultTeamId() || yamlScalar(srcTeams, "active_team") || yamlScalar(srcTeams, "active");
-  return { ...retainedSeatService(source), role: yamlScalar(srcWorkspace, "role_name"), team };
+  return { ...retainedSeatService(source), team };
 }
 /** The refusal for a retained seat whose record names no usable service, before any copy or
  *  effect. The remedy is named in full, so the text is not cut at fatal's 300 characters. */
-function refuseUnknownSeatService(source, serviceRecorded) {
-  out({ warning: `oats-aweb: ${unknownSeatServiceMessage(source, serviceRecorded)}` }, 1);
+function refuseUnknownSeatService(source, record) {
+  out({ warning: `oats-aweb: ${unknownSeatServiceMessage(source, record)}` }, 1);
 }
 /** A field a retained seat's lock names, when it is short and printable. */
 const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
@@ -1123,8 +1123,8 @@ function refuseUnheldLock(lockPath, held) {
 function retainedSeatSpawn(source, takeOver) {
   if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
-  const { service, serviceRecorded, role, team } = retainedSeatTarget(source);
-  if (!service) refuseUnknownSeatService(source, serviceRecorded);
+  const { service, record, role, team } = retainedSeatTarget(source);
+  if (!service) refuseUnknownSeatService(source, record);
   const lockPath = seatLockPath(source);
   let takenOver, takeOverNote = "";
   // lstat, not exists: a dangling symlink at the lock path is a lock that cannot be read.
@@ -1165,9 +1165,9 @@ function retainedSeatSpawn(source, takeOver) {
     fatal(`identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied`);
   }
   let connected = false;
-  // A service that is not a plain service URL is bound but never printed, and aw's
-  // diagnostics may name it (a network error does), so its calls here show none.
-  const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, plainServiceUrl(service) ? {} : { withhold: "aw's output may name the seat's service, which is not a plain service URL" });
+  // The seat's service is never printed, and aw's diagnostics may name it (a network
+  // error does), so its calls here show none.
+  const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, { withhold: "aw's output may name the seat's service, which is never printed" });
   const rollback = () => {
     // Once `aw workspace connect` has started, the server binding may point at the
     // new home (aw binds on the service before it writes locally, so a connect
@@ -1218,7 +1218,9 @@ function retainedSeatSpawn(source, takeOver) {
     // The same-identity check the contract is for: `aw whoami --json` from the
     // new home reports the did and address the CLI now acts as (workspace
     // status carries no did); both must equal the copied identity.yaml.
-    let who; try { who = JSON.parse(String(seatRun(["aw", "whoami", "--json"], home, 60000))); } catch (e) { throw new Error(`aw whoami from ${home} answered no JSON (${e.message || e}); the seat is not verified`); }
+    // A failed call's message is already withheld; a parse error would quote aw's output, so neither is shown.
+    let whoText; try { whoText = String(seatRun(["aw", "whoami", "--json"], home, 60000)); } catch (e) { throw new Error(`aw whoami from ${home} failed (${e.message || e}); the seat is not verified`); }
+    let who; try { who = JSON.parse(whoText); } catch { throw new Error(`aw whoami from ${home} answered no JSON; the seat is not verified`); }
     const shownDid = who.did || who.identity?.did;
     const shownAddress = who.address || who.identity?.address;
     if (expectedDid && shownDid !== expectedDid) throw new Error(`aw whoami shows did ${shownDid || "(none)"}, not the retained identity's ${expectedDid}; the seat is not the same identity`);
@@ -1244,7 +1246,8 @@ function retainedSeatSpawn(source, takeOver) {
     });
   } catch (e) {
     const restored = rollback();
-    fatal(`retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}`);
+    // Not fatal's 300 characters: the recovery step at the end must survive the cause before it.
+    out({ warning: `oats-aweb: retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}` }, 1);
   }
 }
 

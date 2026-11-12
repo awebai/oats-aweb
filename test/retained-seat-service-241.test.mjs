@@ -127,48 +127,56 @@ for (const [name, url] of [
   assert.deepEqual(connectServices(fx), [`--service=${url}`]);
 });
 
-// Refused before parsing (whitespace, control characters: WHATWG URL parsing would drop a tab
-// or a newline) or after it (not http(s), userinfo, a query, a fragment). Each names the whole
-// fix and never prints the value.
+// Refused as a service (`unusable`: not http(s), userinfo, a query, a fragment, whitespace,
+// control characters, a backslash, no host; the raw string is checked before it is parsed, as
+// WHATWG URL parsing would drop a tab or a newline) or as a record (`outside`: a file outside
+// the form aw writes, from which nothing is taken; lib/aw-record.mjs has the grammar's table).
+// Each names the whole fix, before any effect, and never prints the value.
 const MARK = "secretmark";
-for (const [name, value] of [
-  ["userinfo", `https://${MARK}:pw@record.invalid/api`],
-  ["an empty userinfo", `https://@record.invalid/${MARK}`],
-  ["a query", `https://record.invalid/api?token=${MARK}`],
-  ["an empty query", `https://record.invalid/${MARK}?`],
-  ["a fragment", `https://record.invalid/api#${MARK}`],
-  ["a space", `"https://record.invalid/${MARK} x"`],
-  ["a tab", `"https://record.invalid/${MARK}\tx"`],
-  ["a control character", `"https://record.invalid/${MARK}\u0001"`],
-  ["a backslash", `https://record.invalid\\${MARK}`],
-  ["another scheme", `ftp://record.invalid/${MARK}`],
-  ["no host", `https:///${MARK}`],
-  // A YAML plain scalar continues on an indented line, folded with a space; only its first line
-  // is not the value. Nor is a value cut at a Unicode line separator, or one of two records.
-  ["a continuation line", `https://record.invalid/path\n  ${MARK}`],
-  ["a continuation after blank lines", `https://record.invalid/path\n\n  \n  ${MARK}`],
-  ["a line separator and a continuation", `https://record.invalid/path\u2028  ${MARK}`],
-  ["a paragraph separator", `https://record.invalid/path\u2029${MARK}`],
-  ["a second aweb_url", `https://record.invalid/api\naweb_url: https://other.invalid/${MARK}`],
+const UNUSABLE = /is not a usable service URL \(http or https and a host, with no userinfo, query, fragment, whitespace or control characters\)/;
+const OUTSIDE = /workspace\.yaml is not in the form aw writes/;
+for (const [name, value, why] of [
+  ["userinfo", `https://${MARK}:pw@record.invalid/api`, UNUSABLE],
+  ["an empty userinfo", `https://@record.invalid/${MARK}`, UNUSABLE],
+  ["a query", `https://record.invalid/api?token=${MARK}`, UNUSABLE],
+  ["an empty query", `https://record.invalid/${MARK}?`, UNUSABLE],
+  ["a fragment", `https://record.invalid/api#${MARK}`, UNUSABLE],
+  ["a space", `"https://record.invalid/${MARK} x"`, UNUSABLE],
+  ["a tab", `"https://record.invalid/${MARK}\tx"`, UNUSABLE],
+  ["a control character", `"https://record.invalid/${MARK}\u0001"`, UNUSABLE],
+  ["a backslash", `https://record.invalid\\${MARK}`, UNUSABLE],
+  ["another scheme", `ftp://record.invalid/${MARK}`, UNUSABLE],
+  ["no host", `https:///${MARK}`, UNUSABLE],
+  ["a line separator", `https://record.invalid/path\u2028  ${MARK}`, OUTSIDE],
+  ["a paragraph separator", `https://record.invalid/path\u2029${MARK}`, OUTSIDE],
+  ["a continuation line", `https://record.invalid/path\n  ${MARK}`, OUTSIDE],
+  ["a continuation after blank lines", `https://record.invalid/path\n\n  \n  ${MARK}`, OUTSIDE],
+  ["a second aweb_url", `https://record.invalid/api\naweb_url: https://other.invalid/${MARK}`, OUTSIDE],
+  ["a flow mapping holding another aweb_url", `https://record.invalid/api\nother: {\naweb_url: https://other.invalid/${MARK}\n}`, OUTSIDE],
+  ["a quoted key beside an aweb_url in a flow mapping", `https://other.invalid/${MARK}\n"aweb_url": https://record.invalid/api`, OUTSIDE],
 ]) test(`a seat whose aweb_url has ${name} is refused with the whole fix, before any effect, and never printed`, (t) => {
   const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${value}\n` });
   const refused = runHook(fx, "spawn");
   assertNoEffect(fx, refused);
   assert.ok(refused.doc.warning.includes(fix(fx)), refused.doc.warning);
-  assert.match(refused.doc.warning, /is not a usable service URL \(http or https and a host, with no userinfo, query, fragment, whitespace or control characters\)/);
+  assert.match(refused.doc.warning, why);
   assert.ok(!refused.stdout.includes(MARK) && !refused.stderr.includes(MARK), "the value is never printed");
 });
 
-// Pinned acceptance: the retire rebind command names the same server as spawn used, for the same seat.
-test("the rebind command a retire prints names the server the spawn used, never the variable", (t) => {
-  const fx = fixture(t);
-  const spawned = runHook(fx, "spawn", { OATS_AWEB_URL: VARIABLE, FAKE_RETAINED_KILL: "after-connect" });
-  assert.equal(spawned.signal, "SIGKILL", "the hook was killed after the connect");
-  assert.deepEqual(connectServices(fx), [`--service=${RECORD}`]);
-  const retired = runHook(fx, "retire", { OATS_META: "{}", OATS_AWEB_URL: VARIABLE });
-  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
-  assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=${RECORD} --team=${TEAM}\` from ${fx.legacyHome}`), retired.doc.warning);
-  assert.ok(!retired.doc.warning.includes(VARIABLE), "the variable's value is never printed");
+// The reviewer's case: YAML gives the quoted top-level key's value; a line search would take
+// the one inside the flow mapping. The record is outside aw's form, so neither is taken.
+test("a record whose aweb_url line sits inside a flow mapping is refused, not read", (t) => {
+  const fx = fixture(t, { workspace: `"aweb_url": https://actual.invalid/api\nother: {\naweb_url: https://wrong.invalid/${MARK}\n}\n` });
+  const refused = runHook(fx, "spawn");
+  assertNoEffect(fx, refused);
+  assert.match(refused.doc.warning, OUTSIDE);
+  assert.ok(!refused.stdout.includes("wrong.invalid"), refused.stdout);
+});
+test("a record whose aweb_url line sits inside a multi-line quoted scalar is refused, not read", (t) => {
+  const fx = fixture(t, { workspace: `alias: retained\nnote: "first\naweb_url: https://wrong.invalid/${MARK}\n"\n` });
+  const refused = runHook(fx, "spawn");
+  assertNoEffect(fx, refused);
+  assert.match(refused.doc.warning, OUTSIDE);
 });
 
 test("a record with Windows line endings names its service without the carriage return", (t) => {
@@ -178,25 +186,20 @@ test("a record with Windows line endings names its service without the carriage 
   assert.deepEqual(connectServices(fx), ["--service=https://record.invalid/aweb/api"]);
 });
 
-// A service that is not a plain service URL is never printed, so aw's own diagnostics, which
-// may name it, are withheld from a failed spawn's refusal; a plain one's are shown.
-const ECHOED = "https://record.invalid/mark-$(id)/api";
-for (const call of ["connect", "check", "heartbeat", "status", "whoami"]) {
-  test(`a spawn whose ${call} fails never prints a service that is not a plain service URL`, (t) => {
-    const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${ECHOED}\n` });
-    const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: call });
-    assert.equal(refused.status, 1, refused.stdout + refused.stderr);
-    assert.match(refused.doc.warning, /retained identity could not be seated/);
-    assert.match(refused.doc.warning, /output withheld: aw's output may name the seat's service, which is not a plain service URL/);
-    assert.ok(!refused.stdout.includes("mark-$(id)") && !refused.stderr.includes("mark-$(id)"), refused.stdout + refused.stderr);
-  });
+// The seat's service is never printed, and aw's diagnostics may name it, so a failed spawn's
+// aw calls show none of their output, whatever the service's shape.
+for (const [shape, url] of [["a plain service URL", RECORD], ["a service with a path prefix and shell text", "https://record.invalid/mark-$(id)/api"]]) {
+  for (const call of ["connect", "check", "heartbeat", "status", "whoami"]) {
+    test(`a spawn whose ${call} fails never prints its service, ${shape}`, (t) => {
+      const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${url}\n` });
+      const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: call });
+      assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+      assert.match(refused.doc.warning, /retained identity could not be seated/);
+      assert.match(refused.doc.warning, /output withheld: aw's output may name the seat's service, which is never printed/);
+      assert.ok(!refused.stdout.includes(url) && !refused.stderr.includes(url), refused.stdout + refused.stderr);
+    });
+  }
 }
-test("a spawn whose connect fails on a plain service shows aw's diagnostic", (t) => {
-  const fx = fixture(t);
-  const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: "connect" });
-  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
-  assert.ok(refused.doc.warning.includes(`Post "${RECORD}/v1/workspaces": dial tcp: connection refused`), refused.doc.warning);
-});
 
 // The rebind a retire prints is a command only for a plain service URL; for any other accepted
 // service it says where the service is, in prose, and never prints it.
