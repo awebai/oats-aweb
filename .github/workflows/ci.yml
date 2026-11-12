@@ -139,6 +139,19 @@ jobs:
         run: |
           PATH="$RUNNER_TEMP/aw/node_modules/.bin:$PATH" node --test --test-reporter=tap --test-name-pattern='real aw|published aw' test/oats-aweb-1-14.test.mjs test/oats-aweb-1-15.test.mjs | tee "$RUNNER_TEMP/real-aw.tap"
           grep -q '^# skipped 0$' "$RUNNER_TEMP/real-aw.tap"
+      # aw-byot-create-shapes' real-aw tests check the captured `aw id team`
+      # shapes against the binary. They need aw 1.36.56 or later, so they run
+      # on the tested leg only (AW_TESTED, as the validate job reads it), and
+      # fail there when any is skipped or fewer than its three ran.
+      - name: Real-aw BYOT create shapes at the tested aw
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          tested="$(node --input-type=module -e "import {AW_TESTED} from './oats-package/capabilities/oats-aweb/lib/aw-floor.mjs'; console.log(AW_TESTED)")"
+          if [ "$AW_VERSION" != "$tested" ]; then echo "aw $AW_VERSION is not the tested aw $tested; the BYOT create shapes run on that leg"; exit 0; fi
+          OATS_AWEB_TEST_AW="$RUNNER_TEMP/aw/node_modules/.bin/aw" node --test --test-reporter=tap test/aw-byot-create-shapes.test.mjs | tee "$RUNNER_TEMP/byot-shapes.tap"
+          grep -q '^# skipped 0$' "$RUNNER_TEMP/byot-shapes.tap"
+          test "$(grep -c '^ok [0-9]* - real aw: ' "$RUNNER_TEMP/byot-shapes.tap")" -eq 3
       - name: Give the runner a systemd user manager
         if: ${{ !cancelled() }}
         shell: bash

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **CI: the BYOT create shapes run against the real tested aw.**
+  `test/aw-byot-create-shapes.test.mjs`'s three real-aw tests ran only with
+  `OATS_AWEB_TEST_AW` set, which CI never set, so they always skipped. The
+  resident-journey leg at the tested aw (`AW_TESTED`, now 1.36.58) now sets
+  it to that leg's installed aw and fails when any test skips or fewer than
+  the three real-aw tests pass. The floor leg skips the step: those tests
+  need aw 1.36.56 or later.
+
 - **Changed: readiness names a stream aw 1.36.58 reports as `refused`.** From
   aw 1.36.58 the host wake broker shows a stream the server refused as
   `refused`, never admitted, with its cause and next attempt, and retries it.
