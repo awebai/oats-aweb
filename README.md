@@ -1523,9 +1523,15 @@ removes one, or judges age, pid or liveness:
   no lock exists. If the lock's name holds bytes that are not a lock (a write
   that did not finish), move it back over them (`mv -f`). Otherwise remove it.
 
-A lock write that fails part-way (a full disk) removes its own partial bytes
-and puts the moved lock back, under the guard. Only what it can't undo is
-left, and the failure names it with its fix.
+A change whose step fails (a full disk, an I/O error) undoes its own effect
+before it releases the guard:
+- a guard it could not record itself in is removed;
+- a lock write's partial bytes are removed;
+- a moved lock it could not remove goes back to the lock's name, over the
+  lock it wrote.
+
+Only what it can't undo is left, and that change's failure names it with its
+fix.
 
 ## Isolated hostOnly contract verification
 

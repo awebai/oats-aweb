@@ -54,9 +54,9 @@
   rename, link or exclusive create isn't atomic, changes can still interleave. The two private files are
   new on-disk files beside the lock. A change that was killed may leave one
   behind: the next spawn or take-over refuses with it and its fix, and the
-  next retire reports it; none adopts or removes it. A lock write that fails
-  part-way removes its own partial bytes and puts the moved lock back; what it
-  can't undo, it names with its fix. The lock's name and fields are unchanged; its
+  next retire reports it; none adopts or removes it. A step that fails (the
+  guard's record, the lock's write, the moved lock's removal) undoes its own
+  effect under the guard; what it can't undo, its failure names with its fix. The lock's name and fields are unchanged; its
   `takenAt` is now when the seat was taken, kept when the spawn's success adds
   the alias. Nothing a deployment must change.
 

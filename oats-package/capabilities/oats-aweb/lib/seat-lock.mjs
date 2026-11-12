@@ -36,7 +36,7 @@
 // Nothing here infers age, a pid or liveness. A guard or a moved lock that a killed
 // change left behind is found by the next change: it is refused with its whole fix,
 // never adopted and never removed automatically.
-import { closeSync, linkSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, fstatSync, linkSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
@@ -94,9 +94,22 @@ function takeGuard(guard, who) {
       sleep(GUARD_POLL_MS);
       continue;
     }
-    try { writeSync(fd, JSON.stringify(mine) + "\n"); } finally { closeSync(fd); }
+    try { writeSync(fd, JSON.stringify(mine) + "\n"); }
+    catch (e) {
+      // Unknown inode: the guard is not removed, and the error names it.
+      let ino; try { ino = fstatSync(fd).ino; } catch { ino = undefined; }
+      closeSync(fd);
+      throw Object.assign(e, { stage: "guard", ...(ino !== undefined && dropUnrecordedGuard(guard, ino) ? {} : { recovery: `${guard} is this change's guard, left by a write that failed; it is never removed automatically or by age. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(guard)}, remove ${guard} and retry` }) });
+    }
+    closeSync(fd);
     return mine;
   }
+}
+/** The guard this change created and could not record itself in: removed while it is
+ *  still that file (its inode, taken before the close). → true when it is gone. */
+function dropUnrecordedGuard(guard, ino) {
+  try { if (lstatSync(guard).ino !== ino) return false; unlinkSync(guard); return true; }
+  catch (e) { return e?.code === "ENOENT"; }
 }
 function releaseGuard(guard, mine) {
   let now; try { now = JSON.parse(readFileSync(guard, "utf8")); } catch { now = undefined; }
@@ -105,10 +118,13 @@ function releaseGuard(guard, mine) {
 
 /** The whole fix for a moved-aside lock (`stray`, as readSeatLock answers for `held`),
  *  by what is at the lock's name: nothing, a lock, or bytes that are not a lock (a
- *  write that did not finish), which the moved lock may replace. */
-function strayHeldText(lock, held, stray) {
+ *  write that did not finish), which the moved lock may replace. `failed`: the lock at
+ *  the name is the one a change that failed just wrote, which the moved lock replaces. */
+function strayHeldText(lock, held, stray, { failed = false } = {}) {
   let at; try { at = readSeatLock(lock); } catch { at = { present: true, doc: undefined }; }
-  const fix = at.present && !at.doc
+  const fix = failed && at.present
+    ? `move it back over ${lock}, which holds the lock of the change that failed (\`mv -f -- ${shellWord(held)} ${shellWord(lock)}\`)`
+    : at.present && !at.doc
     ? `if the seat it names still holds the identity, move it back over ${lock}, which is not a lock that can be read (\`mv -f -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}`
     : `if the seat it names still holds the identity and ${lock} does not exist, move it back (\`mv -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}`;
   return `${held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (${stray.doc ? seatLockHolderText(stray.doc) : "it cannot be read"}); it is never adopted or removed automatically. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: ${fix}; then retry`;
@@ -116,6 +132,17 @@ function strayHeldText(lock, held, stray) {
 function refuseStrayHeld(lock, held) {
   const stray = readSeatLock(held);
   if (stray.present) throw new SeatLockRefusal("held-stray", strayHeldText(lock, held, stray), held);
+}
+/** After this change could not remove the lock it moved aside: the change is undone by
+ *  moving that lock back to its name, over this change's new lock when it wrote one
+ *  (under the guard nothing else writes either name). → "" when it is back, else the
+ *  whole fix for both files. */
+function undoFailedRemove(lock, held, next) {
+  try { renameSync(held, lock); return ""; }
+  catch (e) {
+    let stray; try { stray = readSeatLock(held); } catch { stray = { present: true, doc: undefined }; }
+    return `the moved lock could not be put back (${errorCode(e)}); ${strayHeldText(lock, held, stray, { failed: next !== null })}`;
+  }
 }
 /** After this change's exclusive create of the lock failed: what it left at the lock's
  *  name is removed when it is a prefix of the bytes it wrote (under the guard nothing
@@ -181,7 +208,7 @@ export function swapSeatLock(lock, { who, expect, next }) {
         throw Object.assign(e, { stage: "write", recovery: undoFailedWrite(lock, held, captured, next) });
       }
     }
-    if (captured.present) { try { unlinkSync(held); } catch (e) { throw Object.assign(e, { stage: "remove" }); } }
+    if (captured.present) { try { unlinkSync(held); } catch (e) { throw Object.assign(e, { stage: "remove", recovery: undoFailedRemove(lock, held, next) }); } }
     return { done: true, captured };
   } finally { releaseGuard(guard, mine); }
 }

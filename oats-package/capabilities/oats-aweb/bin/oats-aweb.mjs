@@ -1155,6 +1155,8 @@ function retainedSeatSpawn(source, takeOver) {
   const lockDoc = (extra = {}) => JSON.stringify({ home, instance, ...extra, team, takenAt, host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n";
   const ownLock = (c) => !!c.present && typeof c.doc?.home === "string" && samePath(c.doc.home, home) && c.doc.takenAt === takenAt;
   const seatOp = (op) => ({ op, instance, home });
+  // The whole fix for what a failed lock step could not undo (lib/seat-lock.mjs).
+  const lockRecovery = (e) => typeof e?.recovery === "string" && e.recovery ? `; ${e.recovery}` : "";
   let taken;
   try { taken = swapSeatLock(lockPath, { who: seatOp(takenOver ? "take-over" : "spawn"), expect: (c) => seen.present ? sameSeatLock(c, seen) : !c.present, next: lockDoc() }); }
   catch (e) {
@@ -1175,8 +1177,8 @@ function retainedSeatSpawn(source, takeOver) {
       lastSeen = r.done ? { kind: "none" } : describeHolder(r.captured);
       return r.done || !r.captured.present ? "" : `; the lock ${lockPath} names another seat now (${lastSeen.text}), so it was left in place`;
     } catch (e) {
-      lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` };
-      return `; the lock ${lockPath} was left in place: ${isSeatLockRefusal(e) ? e.message : `it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`}`;
+      lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}` };
+      return `; the lock ${lockPath} was left in place: ${isSeatLockRefusal(e) ? e.message : `it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}`}`;
     }
   };
   let lockNote = "";
@@ -1206,7 +1208,7 @@ function retainedSeatSpawn(source, takeOver) {
    *  taken for "no other holder". Recorded as lastSeen. */
   const holderNow = () => {
     try { return lastSeen = describeHolder(readSeatLockGuarded(lockPath, { who: seatOp("check") })); }
-    catch (e) { return lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
+    catch (e) { return lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}` }; }
   };
   // What the rollback did with the binding: "unknown" (holder unknown at its first read:
   // nothing done), "successor" (another seat held it: not reconnected), "restored" or
@@ -1286,7 +1288,9 @@ function retainedSeatSpawn(source, takeOver) {
     if (expectedAddress && !expectedAddress.endsWith(`/${alias}`)) throw new Error(`aw workspace status shows alias ${alias}, not the retained identity's address ${expectedAddress}; the seat is not the same identity`);
     // The seated lock names the alias. Rewritten only while it is still this spawn's:
     // a take-over that replaced it meanwhile wins, and this seat is not briefed.
-    const seated = swapSeatLock(lockPath, { who: seatOp("spawn"), expect: ownLock, next: lockDoc({ alias }) });
+    let seated;
+    try { seated = swapSeatLock(lockPath, { who: seatOp("spawn"), expect: ownLock, next: lockDoc({ alias }) }); }
+    catch (e) { if (isSeatLockRefusal(e)) throw e; throw new Error(`the retained identity's lock ${lockPath} could not be rewritten with the alias (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}; the seat is not briefed`); }
     // Holder-neutral: the exit names only the holder of the rollback's last guarded read.
     if (!seated.done) throw new Error(`the retained identity's lock ${lockPath} ${seated.captured.present ? "was taken by another seat" : "was removed"} during this spawn; the seat is not briefed`);
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
@@ -1297,7 +1301,7 @@ function retainedSeatSpawn(source, takeOver) {
     // Read under the guard; the seat is briefed only while the lock is still its own.
     let after;
     try { after = readSeatLockGuarded(lockPath, { who: seatOp("check") }); }
-    catch (e) { throw new Error(`who holds the retained identity's lock ${lockPath} is unknown after this spawn's last aw call (${isSeatLockRefusal(e) ? e.message : /^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}); the seat is not briefed`); }
+    catch (e) { throw new Error(`who holds the retained identity's lock ${lockPath} is unknown after this spawn's last aw call (${isSeatLockRefusal(e) ? e.message : `${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}${lockRecovery(e)}`}); the seat is not briefed`); }
     if (!ownLock(after)) throw new Error(`the retained identity's lock ${lockPath} ${after.present ? "was taken by another seat" : "was removed"} during this spawn; the seat is not briefed`);
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver}${takeOverNote} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
@@ -2380,7 +2384,7 @@ if (event === "launch") {
       catch (e) {
         const code = /^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error";
         // The guard can't be created: no change of the lock can be made from here.
-        if (isSeatLockRefusal(e)) leftover = e.message; else if (e?.stage === "guard") leftover = `it could not be removed (${code})`; else unchecked = code;
+        if (isSeatLockRefusal(e)) leftover = e.message; else if (e?.stage === "guard") leftover = `it could not be removed (${code})${typeof e?.recovery === "string" && e.recovery ? `; ${e.recovery}` : ""}`; else unchecked = code;
       }
       const present = !!now?.present;
       const holder = typeof now?.doc?.home === "string" && now.doc.home ? now.doc.home : undefined;
@@ -2402,7 +2406,7 @@ if (event === "launch") {
             lockText = `lock ${meta.lock} left in place: this seat no longer owns it (${typeof r.captured.doc?.home === "string" ? "another seat took it over" : "it cannot be read now"}), so retire did not remove it${kept}`;
           }
         } catch (e) {
-          lockText = isSeatLockRefusal(e) ? `lock ${meta.lock} left in place: ${e.message}` : `lock ${meta.lock} left in place: it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`;
+          lockText = isSeatLockRefusal(e) ? `lock ${meta.lock} left in place: ${e.message}` : `lock ${meta.lock} left in place: it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${typeof e?.recovery === "string" && e.recovery ? `; ${e.recovery}` : ""}`;
           if (isSeatLockRefusal(e)) heldHere = undefined;
         }
       }
