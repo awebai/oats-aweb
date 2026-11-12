@@ -65,6 +65,7 @@ import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, 
 import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
+import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awAliasRefusal, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
@@ -392,6 +393,14 @@ const identityMode = identitySettings.mode === undefined || identitySettings.mod
  *  the retained route on it (and refuses one that is not an absolute path before the
  *  lock), and retire classifies a home on the very same setting. */
 const retainedSourceSetting = identityMode === "local" && identitySettings.source ? identitySettings.source : undefined;
+/** identity.e2ee and identity.takeOver, read once through the boolean-setting helper.
+ *  Spawn and start refuse a value that is neither a boolean nor its string before any
+ *  effect, on every route, as readiness reports it; retire reads neither. */
+let identityFlags = { e2ee: true, takeOver: false };
+if (["spawn", "launch"].includes(event)) {
+  try { identityFlags = identityBooleans(identitySettings); }
+  catch (error) { out({ warning: `oats-aweb: ${error.message}` }, 1); }
+}
 /** Whether two paths name the same place, by their real paths where both exist. */
 const samePath = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
 if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
@@ -660,7 +669,7 @@ function grantScopes() {
   if (profile === "reviewer") return [...REVIEWER_GRANT_SCOPES];
   fatal(`identity.profile must be one of "normal" or "reviewer" (got ${JSON.stringify(identitySettings.profile)})`);
 }
-const grantE2eeRequired = () => identitySettings.e2ee !== false;
+const grantE2eeRequired = () => identityFlags.e2ee;
 const grantRenewMode = () => identitySettings.renew === undefined || identitySettings.renew === null || identitySettings.renew === "" ? "launch" : String(identitySettings.renew);
 function resolveResidentCustody(name) {
   if (!name) fatal(`identity.mode "global" requires identity.resident; set ${residentKeyHint("<name>")} to the absolute custody directory for that resident identity`);
@@ -2141,8 +2150,7 @@ if (event === "launch") {
   if (identityMode === "global") checkedGrantTTL(); // a setting that cannot be used refuses before the broker is asked
   requireWakeBroker();
   if (identityMode === "global") globalGrantSpawn();
-  // `--provider oats.aweb identity.takeOver=true` reaches the hook as the string "true".
-  if (retainedSourceSetting !== undefined) retainedSeatSpawn(retainedSourceSetting, identitySettings.takeOver === true || identitySettings.takeOver === "true");
+  if (retainedSourceSetting !== undefined) retainedSeatSpawn(retainedSourceSetting, identityFlags.takeOver);
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
