@@ -1311,7 +1311,8 @@ function retainedSeatSpawn(source, takeOver) {
     // The seated lock names the alias. Rewritten only while it is still this spawn's:
     // a take-over that replaced it meanwhile wins, and this seat is not briefed.
     const seated = swapSeatLock(lockPath, { who: seatOp("spawn"), expect: ownLock, next: lockDoc({ alias }) });
-    if (!seated.done) throw new Error(`the retained identity's lock ${lockPath} was taken by another seat during this spawn (now held by ${seated.captured.present ? seatLockHolderText(seated.captured.doc) : "no seat"}); the seat is not briefed`);
+    // Holder-neutral: the exit names only the holder of the rollback's last guarded read.
+    if (!seated.done) throw new Error(`the retained identity's lock ${lockPath} ${seated.captured.present ? "was taken by another seat" : "was removed"} during this spawn; the seat is not briefed`);
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) { wakeRegistering = true; wakeRegister(home, dest); }

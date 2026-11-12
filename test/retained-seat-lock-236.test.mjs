@@ -622,3 +622,43 @@ test("a take-over that lands after a rollback's reconnect and before its cleanup
   assert.ok(lost.doc.warning.includes("but another seat took the identity over while that ran"), lost.doc.warning);
   assert.ok(lost.doc.warning.includes(`run ${CONNECT} from ${b}`), lost.doc.warning);
 });
+
+test("a take-over during a spawn's success rewrite, then another during its cleanup: only the holder of the last guarded read is named anywhere", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b"), c = fx.homeOf("seat-c");
+  const m1 = join(fx.base, "m1"), g1 = join(fx.base, "g1"), m2 = join(fx.base, "m2"), g2 = join(fx.base, "g2");
+  const preload = join(fx.base, "pause-rewrite-remove.mjs");
+  // Pauses before the hook's third exclusive open of the guard (its success rewrite), and
+  // before it removes its copy in rollback.
+  writeFileSync(preload, `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const wait = (mark, go) => { fs.writeFileSync(mark, "paused"); while (!fs.existsSync(go)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); };
+const open = fs.openSync, rm = fs.rmSync;
+let opens = 0, removed = false;
+fs.openSync = function (p, flags, ...args) {
+  if (String(p) === process.env.GUARD && flags === "wx" && ++opens === 3) wait(process.env.MARK1, process.env.GO1);
+  return open.call(this, p, flags, ...args);
+};
+fs.rmSync = function (p, ...args) {
+  if (!removed && String(p) === process.env.PAUSE_REMOVE) { removed = true; wait(process.env.MARK2, process.env.GO2); }
+  return rm.call(this, p, ...args);
+};
+syncBuiltinESMExports();
+`);
+  const pending = startHook(fx, "spawn", a, { preload, env: { GUARD: fx.guard, PAUSE_REMOVE: join(a, ".aw"), MARK1: m1, GO1: g1, MARK2: m2, GO2: g2 } });
+  let wonB, wonC;
+  try {
+    await until(() => existsSync(m1), "A's success rewrite");
+    wonB = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+    writeFileSync(g1, "go");
+    await until(() => existsSync(m2), "A's cleanup");
+    wonC = runHook(fx, "spawn", c, { identity: { takeOver: true } });
+  } finally { writeFileSync(g1, "go"); writeFileSync(g2, "go"); }
+  const lost = await pending;
+  assert.equal(wonB.status, 0, wonB.stdout + wonB.stderr);
+  assert.equal(wonC.status, 0, wonC.stdout + wonC.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, c);
+  assert.ok(lost.doc.warning.includes(`run ${CONNECT} from ${c}`), lost.doc.warning);
+  assert.equal(lost.doc.warning.includes(b), false, `the displaced seat is named nowhere: ${lost.doc.warning}`);
+});
