@@ -122,7 +122,10 @@ test('all captured native entrypoints refuse before ambient lookup/enrollment/wa
  const f=fixture(t);
  for(const action of ['spawn','retire','setup','roster'])for(const marker of ['OATS_BINDING_FILE','OATS_INVOCATION_CONTEXT_FILE','OATS_SOURCE_RECEIPT_FILE']){
   const r=spawnSync(process.execPath,[join(cap,'bin/oats-aweb.mjs'),action],{env:{...f.env,OATS_SETTINGS:'{"delivery":"session"}',[marker]:'/must-not-read/private-fixture',OATS_TEAM_ID:'must-not-borrow:example.invalid'},cwd:f.home,encoding:'utf8',timeout:10000});
-  assert.equal(r.status,1);assert.match(JSON.parse(r.stdout).warning,/invalid or changed captured aweb execution input/);assert.doesNotMatch(r.stdout+r.stderr,/must-not-read|must-not-borrow/);assert.equal(fs.existsSync(f.marker),false);
+  // A retire never enters the captured path (awebai/oats-aweb#242): it runs the normal retire, naming the variable.
+  if(action==='retire'){assert.equal(r.status,0,r.stdout+r.stderr);assert.match(JSON.parse(r.stdout).warning,new RegExp(`${marker} is set in the environment and ignored for retire, which runs its normal path`));}
+  else{assert.equal(r.status,1);assert.match(JSON.parse(r.stdout).warning,/invalid or changed captured aweb execution input/);}
+  assert.doesNotMatch(r.stdout+r.stderr,/must-not-read|must-not-borrow/);assert.equal(fs.existsSync(f.marker),false);
  }
  const legacy=spawnSync(process.execPath,[join(cap,'bin/oats-aweb.mjs'),'retire'],{env:{...f.env,OATS_META:'{}'},cwd:f.home,encoding:'utf8',timeout:10000});assert.equal(legacy.status,0,legacy.stderr);assert.equal(JSON.parse(legacy.stdout).meta.reason,'nothing-to-delete');assert.equal(fs.existsSync(f.marker),false);
 });
