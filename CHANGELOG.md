@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
+  (#226).** A retained seat (`identity.source`) was recorded as identity mode
+  `global` with no grant, so no start answered an identity home for it, and
+  the kernel, which drops a provider's earlier env names before it merges a
+  start's answer, started the session without one: `aw` then worked only when
+  run from the home itself. A retained seat holds its identity in the home's
+  `.aw`, so spawn now records it as mode `local`, and every start answers
+  `AWEB_IDENTITY_HOME=<home>/.aw`. A seat recorded before this fix is
+  normalised at its next start: only its recorded mode changes, from `global`
+  to `local`, and only for a retained seat with no grant. Readiness accepts a
+  retained seat with no joined-team file in either mode. A retained seat now
+  takes the local path everywhere: its start runs no grant code, and
+  `oats aweb join` no longer refuses it with `E_TEAM_GLOBAL_MODE` as if it
+  acted through a session grant (retire already leaves a retained seat's
+  joined teams before it releases the seat).
+
 ## 1.41.0 — 2026-11-12
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A join killed after aw accepted its invite no longer leaves a membership the home doesn't know about: the next join, leave or retire settles it (#217). `oats aweb roster` marks the certificates a retire on this host left in a people-controlled team, with the controller's command (#207). Readiness names a wake stream aw 1.36.58 reports as `refused` (#214), and CI runs the BYOT create shapes against the real tested aw (#215). Nothing a deployment must change.

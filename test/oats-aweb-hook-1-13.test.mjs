@@ -636,7 +636,7 @@ for(const selection of [undefined,'approved','development']) test(`retained root
     assert.equal(launched.status,0,launched.stdout+launched.stderr);
     assertSelectedClaudeChannel(launched.doc,mode);
     assert.deepEqual(launched.doc.env,preview.doc.env);
-    assert.equal(launched.doc.env?.AWEB_IDENTITY_HOME ?? spawned.doc.env.AWEB_IDENTITY_HOME,locator,'launch leaves the captured retained locator intact');
+    assert.equal(launched.doc.env?.AWEB_IDENTITY_HOME,locator,'the launch answer alone carries the retained locator: the kernel drops the spawn\'s env names before it merges it (#226)');
     assert.deepEqual(launched.doc.meta.identity,spawned.doc.meta.identity);
     assert.equal(launched.doc.meta.source,source);
     assert.equal(readFileSync(join(locator,'identity.yaml'),'utf8'),copied);
