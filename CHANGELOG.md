@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Fixed: a stray captured-execution variable never fails a retire
+  (#242).** The captured-execution path is entered when `OATS_BINDING_FILE`,
+  `OATS_INVOCATION_CONTEXT_FILE` or `OATS_SOURCE_RECEIPT_FILE` is present in
+  the environment, before settings, and any error in it exits 1, so one stray
+  variable made every retire fail. A retire no longer enters it: with any of
+  them set, it runs its normal path, with its usual effects and exit status,
+  and warns naming the variables that were set and ignored (names only, never
+  their values or the files' contents). Spawn, launch and the other events are
+  unchanged. Nothing a deployment must change.
+
 - **Fixed: boolean settings given as strings are read (#232).** `oats spawn
   --provider oats.aweb key=value` passes every value as a string, and oats.aweb
   compared its boolean settings with `true` and `false` only, so
