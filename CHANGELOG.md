@@ -41,6 +41,51 @@
   `retired-record` problem. The record starts with retires after this upgrade,
   so earlier leftovers won't show, and only on the host where the retire ran.
 
+- **Fixed: a join killed after aw accepted its invite no longer leaves a
+  membership the home doesn't know about (#217).** `oats aweb join` and a
+  spawn's `join=` used to record a joined team only after `aw id team
+  accept-invite` and `aw workspace connect`, so a hook killed between them
+  left a membership that `leave` and retire never released. The join now
+  writes its intent (label, team, identity home, alias, the root it mints
+  from, time) to the home's
+  `.oats-aweb/teams.json` as `pendingJoins` before the accept. The write that
+  records the joined team drops the intent, in one atomic write. An intent
+  left behind is settled as follows:
+  - **`oats aweb join --labels <label>`** adopts it: it connects what the
+    accept left and records it. It mints no second invite and no longer
+    refuses the occupied identity home.
+  - **`oats aweb leave --labels <label>`** adopts it and releases it through
+    the same `aw workspace delete` as a recorded joined team.
+  - **Retire** does the same for every intent. While a release that needs the
+    member key fails, retire keeps the key and the intent and exits nonzero.
+    Retire already does this for a recorded joined team, and the
+    `team_not_hosted` controller hand-off is unchanged.
+  - **Nothing to release.** An identity home with no identity, or one whose
+    `aw id team list` doesn't list the team, has its intent dropped and the
+    home removed. When that list fails, nothing is removed, and the message
+    says to rerun.
+  - **An interrupted hosted accept is not "nothing".** aw's hosted accept
+    writes `pending-hosted-accept` beside the signing key before its server
+    call, and removes it only once the certificate is stored (aw 1.36.33 and
+    later). If that marker is in the identity home, an empty team list doesn't
+    mean the server holds no membership. join, leave and retire keep the home,
+    the key, the marker and the intent, and exit nonzero; join mints nothing.
+    The message names the recovery: rerun the same `aw id team accept-invite`
+    with the original invite (the provider doesn't keep the token), or have
+    the team's controller remove the member and delete the marker. Then run
+    `oats aweb leave --labels <label>` (or retry the retire).
+  - **The label's team changed.** An intent recorded for another team than
+    the one the label maps to now is released for its recorded team, never
+    adopted into the new one.
+  - **A start** changes nothing at the service for it. It warns `unfinished
+    join of team <label> …; run oats aweb join --labels <label> to finish it
+    or oats aweb leave --labels <label> to release it`.
+
+  If the identity home already held an identity before the join, it isn't
+  this join's: aw refuses the accept as before, and no intent is recorded.
+  The `oats aweb teams|join|leave` document is unchanged. `teams.json` is now
+  written atomically.
+
 ## 1.40.0 — 2026-11-11
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A spawn or a start of a home the host wake broker delivers to (Codex, `delivery: session`, or a runtime with no aweb channel) is now refused while no broker runs, with `wake-daemon-not-running` and the start for the host: `oats aweb wake install`, or `aw wake run` where there is no service manager. Start the broker before such a home's next start. A Claude or pi home under channel delivery is not affected.
