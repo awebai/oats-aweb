@@ -38,7 +38,8 @@
   spawn's `join=` used to record a joined team only after `aw id team
   accept-invite` and `aw workspace connect`, so a hook killed between them
   left a membership that `leave` and retire never released. The join now
-  writes its intent (label, team, identity home, alias, time) to the home's
+  writes its intent (label, team, identity home, alias, the root it mints
+  from, time) to the home's
   `.oats-aweb/teams.json` as `pendingJoins` before the accept. The write that
   records the joined team drops the intent, in one atomic write. An intent
   left behind is settled as follows:

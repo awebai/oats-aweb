@@ -1402,7 +1402,8 @@ the requested one: if aw reports another, the hook keeps the instance name and
 adds a warning that quotes nothing from aw's reply. Joined teams still use
 invite + `aw id team accept-invite` under `--identity-home`. Before the accept, the
 join writes its intent to `.oats-aweb/teams.json` (`pendingJoins`: label, team,
-identity home, alias, time). One atomic write records the joined team and drops
+identity home, alias, the root it mints from, time). Recovery connects through
+that root, so a root that only the live settings name still works. One atomic write records the joined team and drops
 the intent. A hook killed in between leaves the intent. The next `oats aweb join`
 of that label adopts the membership: it connects the workspace and records it,
 with no second invite. `oats aweb leave` of the label, and every retire, adopt it

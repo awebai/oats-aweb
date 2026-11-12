@@ -1337,7 +1337,8 @@ function connectJoinedWorkspace({ label, team, identityHome, root, cwd = home, s
 const holdsIdentity = (identityHome) => IDENTITY_AUTHORITY.some((name) => existsSync(join(identityHome, name)));
 const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to finish it or oats aweb leave --labels ${label} to release it`;
 /** What a pending join left in its identity home (awebai/oats-aweb#217):
- *  `{ absent: true }` once it is confirmed to hold no membership of the
+ *  `root` returns the root to take the service from when the intent's own
+ *  root is gone. `{ absent: true }` once it is confirmed to hold no membership of the
  *  recorded team (no identity, an empty directory removed; or a team list that
  *  does not show the team, the home removed), else `{ joined }`, adopted for
  *  the recorded team with its workspace connected. Throws, removing nothing,
@@ -1355,7 +1356,11 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
     throw new Error(`the unfinished join of ${label} (${team}) could not be checked: aw id team list failed in ${identityHome} (${String(e.message || e).slice(0, 200)}); kept it and its identity home; rerun ${resumeCommand} once aw answers`);
   }
   if (!member) { rmSync(identityHome, { recursive: true, force: true }); return { absent: true }; }
-  const joined = connectJoinedWorkspace({ label, team, identityHome, root, cwd: home, resumeCommand });
+  // The root the join minted from comes first: it names the service that join
+  // used, and the home's captured settings may never have named it (a root
+  // recorded in the live settings after the spawn).
+  const recordedRoot = typeof pending.root === "string" && isAbsolute(pending.root) && existsSync(join(pending.root, ".aw")) ? pending.root : undefined;
+  const joined = connectJoinedWorkspace({ label, team, identityHome, root: () => recordedRoot ?? root(), cwd: home, resumeCommand });
   return { joined: pending.alias ? { ...joined, alias: pending.alias } : joined };
 }
 /** Release a pending join through the one release path: adopt it, then
@@ -1455,7 +1460,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   // overwrite it), so it is never recorded as one to settle.
   const preexisting = holdsIdentity(identityHome);
   const hadState = existsSync(providerTeamsFile());
-  if (!preexisting) writeProviderTeamsState({ ...meta, pendingJoins: [...pendingJoinsOf(meta), { label: row.label, team: row.team, identityHome, alias, at: new Date().toISOString() }] });
+  if (!preexisting) writeProviderTeamsState({ ...meta, pendingJoins: [...pendingJoinsOf(meta), { label: row.label, team: row.team, identityHome, alias, root, at: new Date().toISOString() }] });
   let joined;
   try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] })); }
   catch (e) {

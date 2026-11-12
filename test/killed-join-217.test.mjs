@@ -94,7 +94,9 @@ console.error("unexpected aw " + args.join(" ")); process.exit(93);
   return { path: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, calls: () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : [] };
 }
 
-function fixture(t, { teamOf = {} } = {}) {
+/** `captured`: the settings the home was spawned with (OATS_SETTINGS); the
+ *  live settings, which an explicit join reads, always name `root: ws`. */
+function fixture(t, { teamOf = {}, captured } = {}) {
   const ws = tempDir(t), home = join(ws, "agents", "dev", "instances", "dev-1");
   write(join(ws, ".aw", "workspace.yaml"), "aweb_url: https://service.example.test/api\n");
   write(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
@@ -109,7 +111,7 @@ function fixture(t, { teamOf = {} } = {}) {
     PATH: fake.path, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: DEFAULT, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: teams(teamOf), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
-    OATS_SETTINGS: JSON.stringify({ root: ws }),
+    OATS_SETTINGS: JSON.stringify(captured ? captured(ws) : { root: ws }),
     OATS_CLI_BIN: currentRootQuery(ws, { home, deployment: ws, settings: { root: ws } }).cli,
   };
   const hook = (event, { args = [], extra = {} } = {}) => spawnSync(process.execPath, [HOOK, event, ...args], { cwd: home, env: { ...env, ...extra, OATS_EVENT: event }, encoding: "utf8", timeout: 20000 });
@@ -357,5 +359,28 @@ test("an identity home that held an identity before the join is refused as befor
     assert.doesNotMatch(r.stderr, /unfinished/);
   }
   assert.equal(readFileSync(join(fx.identityHome("shared"), "signing.key"), "utf8"), "other-key\n", "the identity is untouched");
+  assert.equal(fx.state().pendingJoins, undefined);
+});
+
+// A team root recorded in the live settings after the home's spawn: the join
+// mints from it, while the home's captured settings name only the default
+// team's root. The release still reaches the service the join used.
+const liveRootOnly = { captured: (ws) => ({ roots: { [DEFAULT]: ws } }) };
+test("a killed join through a root only the live settings name is released by leave", (t) => {
+  const fx = fixture(t, liveRootOnly);
+  killedAfterAccept(fx);
+  const r = leave217(fx, "shared");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.deletes().map((c) => c.identityHome), [fx.identityHome("shared")]);
+  assert.equal(existsSync(fx.identityHome("shared")), false);
+  assert.equal(fx.state().pendingJoins, undefined);
+});
+test("a killed join through a root only the live settings name is released by retire", (t) => {
+  const fx = fixture(t, liveRootOnly);
+  killedAfterAccept(fx);
+  const r = retire217(fx);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(fx.deletes().some((c) => c.identityHome === fx.identityHome("shared")));
+  assert.equal(existsSync(fx.identityHome("shared")), false);
   assert.equal(fx.state().pendingJoins, undefined);
 });
