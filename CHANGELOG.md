@@ -82,7 +82,10 @@
   that never held the lock is retired as releasing nothing. An
   `identity.source` that is not a string (a one-element list, say) is now
   refused at spawn before the lock: spawn read it as a path, while retire
-  didn't classify it as a retained seat.
+  didn't classify it as a retained seat. OATS's `docs/container.md`
+  ("Making a seat") still says not to interrupt a seat's spawn, because a
+  spawn killed after it connected can delete the standing identity's
+  workspace. The OATS pin PR that moves to this release changes that bullet.
 
 ## 1.41.0 — 2026-11-12
 
