@@ -18,6 +18,26 @@
   acted through a session grant (retire already leaves a retained seat's
   joined teams before it releases the seat).
 
+- **Fixed: the roster never prints a controller command it read from a file
+  (#230).** `oats aweb roster` printed, for a certificate a retire left
+  behind, the `command` stored in `<deployment>/.oats-aweb/retired-certificates.json`,
+  which any agent running as the deployment's user can write, and retire took
+  the command's `--registry` from any value in a home's identity files that
+  started with `http(s)://`. Retire and the roster now build the controller's
+  `aw id team remove-member` command with one builder, from a team that is a
+  valid aweb team id, a certificate id of letters, digits, `_` and `-`, and a
+  registry that is a plain origin (scheme, host and port only). A registry
+  that is not one is reported as "could not be determined", as a missing one
+  is, and the command omits `--registry`. The record now also holds the
+  structured `registry` (or `null`) beside `team` and `certificateId`, and
+  still writes `command`, rebuilt, so an older provider reads it as before.
+  A recorded entry the command can't be built from shows no command: its line
+  says its record entry is malformed and why, `--json` gives
+  `retired.command: null`, and `problems` names it; the rest of the roster is
+  unchanged. An entry recorded before this release has no registry: its
+  command omits `--registry`, and its line says the registry was not
+  recorded. Nothing a deployment must change.
+
 ## 1.41.0 — 2026-11-12
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A join killed after aw accepted its invite no longer leaves a membership the home doesn't know about: the next join, leave or retire settles it (#217). `oats aweb roster` marks the certificates a retire on this host left in a people-controlled team, with the controller's command (#207). Readiness names a wake stream aw 1.36.58 reports as `refused` (#214), and CI runs the BYOT create shapes against the real tested aw (#215). Nothing a deployment must change.
