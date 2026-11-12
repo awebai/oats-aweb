@@ -7,7 +7,7 @@
   so a take-over that landed in between lost its lock, and the next spawn
   copied the key with no take-over. A take-over removed the lock and created
   it again, so two concurrent take-overs could both pass. Every change of the
-  lock is now one guarded step:
+  lock, and every read of it that decides who holds it, is now one guarded step:
   - each change first creates `.aw-retained-seat.json.guard` exclusively;
   - it moves the lock aside to `.aw-retained-seat.json.held` and checks it;
   - it removes or replaces the lock only if it is still the one the change

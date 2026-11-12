@@ -5,6 +5,10 @@
 // of those changes goes through `swapSeatLock`, so none acts on a lock it did not
 // inspect at the moment it acts.
 //
+// The protocol, in one statement: every read, replace and remove of the lock happens
+// under the guard; no guard spans an aw call; every exit after an aw call states the
+// lock's holder as read under the guard, or says it is unknown.
+//
 // Two private names beside the lock, both written only inside swapSeatLock:
 // - `<lock>.guard`: created exclusively (O_CREAT|O_EXCL) for the change and removed
 //   after it. One change runs at a time; another waits GUARD_WAIT_MS for it, then
@@ -81,7 +85,7 @@ function takeGuard(guard, who) {
     let fd;
     try { fd = openSync(guard, "wx", 0o600); }
     catch (e) {
-      if (e?.code !== "EEXIST") throw e;
+      if (e?.code !== "EEXIST") throw Object.assign(e, { stage: "guard" });
       if (Date.now() >= deadline) {
         let held; try { held = JSON.parse(readFileSync(guard, "utf8")); } catch { held = undefined; }
         const by = held && typeof held === "object" ? ` (${lockField(held.op) || "a change"} by ${seatLockHolderText(held)})` : "";
@@ -153,13 +157,24 @@ export function swapSeatLock(lock, { who, expect, next }) {
 }
 export const isSeatLockRefusal = (e) => e instanceof SeatLockRefusal;
 
-/** Refuse, as swapSeatLock does, when a guard or a moved-aside lock left by another
- *  change is beside the lock; change nothing otherwise. For a change that would act on
- *  no lock at all (a retire that finds none of its own, a spawn that refuses the
- *  holder), so a killed change's leftovers are reported by every next change. */
-export function checkSeatLockLeftovers(lock, { who }) {
+/** The lock as it is between changes: read under the guard, so never in the moment
+ *  another change has it moved aside. → what readSeatLock answers. Throws a
+ *  SeatLockRefusal, as swapSeatLock does, when a guard or a moved-aside lock left by
+ *  another change is beside it (so every next change reports a killed change's
+ *  leftovers), and an error with `code` when it can't be checked (`stage: "guard"` when
+ *  the guard itself can't be created, so no change of the lock could be made either). Every decision on who
+ *  holds the lock is made on this read or inside swapSeatLock. */
+export function readSeatLockGuarded(lock, { who }) {
   const guard = seatGuardPath(lock), held = seatHeldPath(lock);
-  const mine = takeGuard(guard, who);
-  try { refuseStrayHeld(lock, held); }
+  let mine;
+  try { mine = takeGuard(guard, who); }
+  catch (e) {
+    // No guard, so no change of the lock can be made. A check of the lock's name only
+    // says which failure that is (a directory that can't be searched, or only not
+    // written); nothing is decided on it.
+    if (e?.stage === "guard") { try { lstatSync(lock); } catch (e2) { if (e2?.code !== "ENOENT") throw e2; } }
+    throw e;
+  }
+  try { refuseStrayHeld(lock, held); return readSeatLock(lock); }
   finally { releaseGuard(guard, mine); }
 }

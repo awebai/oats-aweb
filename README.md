@@ -1453,6 +1453,12 @@ files beside the lock:
   plain spawn, none. It then removes the lock, or replaces it with an
   exclusive create. Any other lock is linked back untouched.
 
+The protocol in one statement: every read, replace and remove of the lock
+happens under the guard; no guard spans an aw call; every exit after an aw call
+states the lock's holder as read under the guard, or says it is unknown. A read
+that can't be made (a guard or moved lock left by a killed change) is never
+taken for "no other holder": a spawn then reconnects nothing and keeps its copy.
+
 So a retire never removes a lock another seat took over after it looked, and
 of two take-overs of one lock only one wins. The other refuses and names the
 holder. A spawn that fails after another seat took the lock over leaves that

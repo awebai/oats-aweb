@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
-import { checkSeatLockLeftovers } from "../oats-package/capabilities/oats-aweb/lib/seat-lock.mjs";
+import { readSeatLockGuarded } from "../oats-package/capabilities/oats-aweb/lib/seat-lock.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "t:example.test";
@@ -79,13 +79,19 @@ syncBuiltinESMExports();
 /** After the hook's first read of the lock: say so (READ_MARK), then wait for GO. */
 function pausePreload(fx) {
   const file = join(fx.base, "pause.mjs");
+  // The read is made under the guard, so the pause comes once the guard is released.
   writeFileSync(file, `import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-const read = fs.readFileSync;
-let once = false;
+const read = fs.readFileSync, unlink = fs.unlinkSync;
+let readIt = false, once = false;
 fs.readFileSync = function (p, ...args) {
   const result = read.call(this, p, ...args);
-  if (!once && String(p) === process.env.LOCK) {
+  if (String(p) === process.env.LOCK) readIt = true;
+  return result;
+};
+fs.unlinkSync = function (p, ...args) {
+  const result = unlink.call(this, p, ...args);
+  if (readIt && !once && String(p) === process.env.LOCK + ".guard") {
     once = true;
     fs.writeFileSync(process.env.READ_MARK, "read");
     while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
@@ -115,7 +121,7 @@ syncBuiltinESMExports();
 `);
   return file;
 }
-/** The first time the hook reads LOCK (a spawn's rollback, when it held a fresh lock),
+/** Once the hook has read LOCK under the guard and released it (a spawn's rollback, when it held a fresh lock),
  *  or creates PAUSE_DIR (a spawn's copy, right after its take): say so (PAUSE_MARK),
  *  then wait for GO. */
 function pauseAtPreload(fx) {
@@ -123,11 +129,17 @@ function pauseAtPreload(fx) {
   writeFileSync(file, `import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 const wait = () => { fs.writeFileSync(process.env.PAUSE_MARK, "paused"); while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); };
-const read = fs.readFileSync, mkdir = fs.mkdirSync;
-let readOnce = false, mkdirOnce = false;
+const read = fs.readFileSync, mkdir = fs.mkdirSync, unlink = fs.unlinkSync;
+let readIt = false, readOnce = false, mkdirOnce = false;
+// The read is made under the guard, so the pause comes once the guard is released.
 fs.readFileSync = function (p, ...args) {
   const result = read.call(this, p, ...args);
-  if (process.env.LOCK && !readOnce && String(p) === process.env.LOCK) { readOnce = true; wait(); }
+  if (process.env.LOCK && String(p) === process.env.LOCK) readIt = true;
+  return result;
+};
+fs.unlinkSync = function (p, ...args) {
+  const result = unlink.call(this, p, ...args);
+  if (process.env.LOCK && readIt && !readOnce && String(p) === process.env.LOCK + ".guard") { readOnce = true; wait(); }
   return result;
 };
 fs.mkdirSync = function (p, ...args) {
@@ -314,8 +326,9 @@ test("a take-over killed between a spawn's take and its success rewrite: the spa
   assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
   assert.notEqual(r.status, 0, r.stdout + r.stderr);
   assert.ok(r.doc.warning.includes(`remove ${fx.guard} and retry`), r.doc.warning);
-  assert.match(r.doc.warning, /the lock .* was left in place/);
-  assert.equal(existsSync(join(a, ".aw")), false, "the copy was removed");
+  // The rollback cannot read the lock under its guard either: who holds it is unknown, so nothing is reconnected and the copy stays.
+  assert.match(r.doc.warning, /whether another seat took the identity over is unknown/);
+  assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept while ownership is unknown");
 });
 
 test("a take-over that completes while a spawn is seated: the spawn leaves the successor's binding and lock alone", async (t) => {
@@ -346,7 +359,7 @@ test("the moved-aside lock's recovery command works for a path with spaces and q
   const lock = join(base, "seat with 'spaces'", ".aw-retained-seat.json");
   write(`${lock}.held`, JSON.stringify({ home: "/elsewhere/seat-a", instance: "seat-a" }));
   let message = "";
-  try { checkSeatLockLeftovers(lock, { who: { op: "spawn", instance: "seat-b", home: "/elsewhere/seat-b" } }); } catch (e) { message = e.message; }
+  try { readSeatLockGuarded(lock, { who: { op: "spawn", instance: "seat-b", home: "/elsewhere/seat-b" } }); } catch (e) { message = e.message; }
   const command = message.match(/`(mv [^`]+)`/)?.[1];
   assert.ok(command, message);
   const r = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8" });
@@ -454,4 +467,91 @@ syncBuiltinESMExports();
   const deregistered = awCalls.findIndex((c) => c.argv[0] === "wake" && c.argv[1] === "deregister" && c.argv.includes(a));
   assert.ok(deregistered > awCalls.findIndex((c) => c.argv[0] === "wake" && c.argv[1] === "register" && c.argv.includes(a)), "the new registration is removed");
   assert.equal(existsSync(join(a, ".aw")), false);
+});
+
+/** Before the hook's first `aw <PAUSE_AW>` (words joined by spaces): say so (PAUSE_MARK),
+ *  then wait for GO. */
+function pauseAtAwPreload(fx) {
+  const file = join(fx.base, "pause-aw.mjs");
+  writeFileSync(file, `import cp from "node:child_process";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const exec = cp.execFileSync;
+let once = false;
+cp.execFileSync = function (f, args, ...rest) {
+  if (!once && f === "aw" && args.slice(0, process.env.PAUSE_AW.split(" ").length).join(" ") === process.env.PAUSE_AW) {
+    once = true;
+    fs.writeFileSync(process.env.PAUSE_MARK, "paused");
+    while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  }
+  return exec.call(this, f, args, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  return file;
+}
+/** Right after the hook's second move of the lock aside (a take-over's success rewrite,
+ *  holding the guard, with the lock's name empty): say so (PAUSE_MARK), wait for GO. */
+function pauseInRewritePreload(fx) {
+  const file = join(fx.base, "pause-held.mjs");
+  writeFileSync(file, `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const rename = fs.renameSync;
+let moved = 0;
+fs.renameSync = function (from, to, ...args) {
+  const result = rename.call(this, from, to, ...args);
+  if (String(to) === process.env.HELD && ++moved === 2) {
+    fs.writeFileSync(process.env.PAUSE_MARK, "paused");
+    while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+  return file;
+}
+/** A pauses before `aw <step>`; B takes over and pauses inside its success rewrite, with
+ *  the lock moved aside; A resumes and ends; then B. */
+async function midRewriteRace(fx, step, envA = {}) {
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const pausedA = join(fx.base, "a-paused"), goA = join(fx.base, "go-a"), pausedB = join(fx.base, "b-paused"), goB = join(fx.base, "go-b");
+  const pendingA = startHook(fx, "spawn", a, { preload: pauseAtAwPreload(fx), env: { PAUSE_AW: step, PAUSE_MARK: pausedA, GO: goA, ...envA } });
+  let pendingB, lost;
+  try {
+    await until(() => existsSync(pausedA), `A's aw ${step}`);
+    pendingB = startHook(fx, "spawn", b, { identity: { takeOver: true }, preload: pauseInRewritePreload(fx), env: { HELD: fx.held, PAUSE_MARK: pausedB, GO: goB } });
+    await until(() => existsSync(pausedB), "B's rewrite, with the lock moved aside");
+    assert.equal(existsSync(fx.lock), false);
+    writeFileSync(goA, "go");
+    lost = await pendingA;
+  } finally { writeFileSync(goA, "go"); writeFileSync(goB, "go"); }
+  const won = await pendingB;
+  return { a, b, lost, won };
+}
+
+test("a take-over mid-rewrite while a spawn registers with the wake broker: the spawn's read waits for the guard, and the spawn fails saying the holder is unknown", async (t) => {
+  const fx = fixture(t);
+  const { a, b, lost, won } = await midRewriteRace(fx, "wake register");
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.equal(lost.doc.brief, undefined, "the losing seat is not briefed");
+  assert.match(lost.doc.warning, /who holds the retained identity's lock .* is unknown after this spawn's last aw call/);
+  assert.match(lost.doc.warning, /whether another seat took the identity over is unknown/);
+  assert.ok(lost.doc.warning.includes(`kept at ${join(a, ".aw")}`), lost.doc.warning);
+  const awCalls = readFileSync(join(fx.base, "aw.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.ok(awCalls.some((c) => c.argv[0] === "wake" && c.argv[1] === "deregister" && c.argv.includes(a)), "the new registration is removed");
+  assert.deepEqual(connectsIn(fx), [a, b], "the legacy home is not reconnected while the holder is unknown");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
+});
+
+test("a take-over mid-rewrite while a failing spawn rolls back: the rollback's read waits for the guard, and nothing is reconnected while the holder is unknown", async (t) => {
+  const fx = fixture(t);
+  const { a, b, lost, won } = await midRewriteRace(fx, "check", { FAKE_RETAINED_FAIL: "check" });
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.match(lost.doc.warning, /whether another seat took the identity over is unknown/);
+  assert.ok(lost.doc.warning.includes(`run ${CONNECT} from the home of the seat that holds it, or from ${dirname(fx.source)} if none does`), lost.doc.warning);
+  assert.deepEqual(connectsIn(fx), [a, b]);
+  assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept while ownership is unknown");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });
