@@ -1106,9 +1106,9 @@ function activeTeamAt(root) {
  *  undefined. */
 function retainedSeatTarget(source) {
   const read = (name) => { try { return readFileSync(join(source, name), "utf8"); } catch { return ""; } };
-  const srcTeams = read("teams.yaml");
+  const srcWorkspace = read("workspace.yaml"), srcTeams = read("teams.yaml");
   const team = defaultTeamId() || yamlScalar(srcTeams, "active_team") || yamlScalar(srcTeams, "active");
-  return { ...retainedSeatService(source), team };
+  return { ...retainedSeatService(source), role: yamlScalar(srcWorkspace, "role_name"), team };
 }
 /** The refusal for a retained seat whose record names no usable service, before any copy or
  *  effect. The remedy is named in full, so the text is not cut at fatal's 300 characters. */

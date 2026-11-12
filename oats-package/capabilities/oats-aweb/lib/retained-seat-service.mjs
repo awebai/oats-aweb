@@ -9,7 +9,7 @@
 // (lib/plain-service.mjs).
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { readAwRecord } from './aw-record.mjs';
+import { readAwebUrl } from './aw-record.mjs';
 
 /** `value` when it is a service URL a retained seat may be bound on, else undefined: http or
  *  https and a host, with no userinfo, query or fragment, at most 2048 characters. The raw
@@ -23,19 +23,23 @@ export function seatServiceUrl(value) {
   try { return new URL(value).hostname ? value : undefined; } catch { return undefined; }
 }
 
-/** What the seat at `source` records in its workspace.yaml, read in aw's grammar
- *  (lib/aw-record.mjs): `service`, its `aweb_url` when that passes seatServiceUrl; `role`, its
- *  `role_name` when it has one; and `record`, why there is no service: 'missing' (no aweb_url),
- *  'unusable' (an aweb_url that does not pass) or 'outside' (a file outside aw's grammar, from
- *  which nothing is taken). */
+/** The service a workspace.yaml's text records, read in aw's grammar (lib/aw-record.mjs):
+ *  `service`, its top-level aweb_url when that passes seatServiceUrl, and `record`, why there is
+ *  none: 'missing' (no aweb_url), 'unusable' (an aweb_url that does not pass, a key with no value
+ *  included) or 'outside' (a file outside aw's grammar, from which nothing is taken). */
+export function seatServiceFromRecord(text) {
+  const read = readAwebUrl(text);
+  if (!read) return { service: undefined, record: 'outside' };
+  const service = typeof read.awebUrl === 'string' ? seatServiceUrl(read.awebUrl) : undefined;
+  return { service, record: service ? 'ok' : read.awebUrl === undefined ? 'missing' : 'unusable' };
+}
+
+/** seatServiceFromRecord for the seat at `source`: its `<source>/workspace.yaml`, none when it
+ *  cannot be read. */
 export function retainedSeatService(source) {
   let text = '';
   try { text = readFileSync(join(source, 'workspace.yaml'), 'utf8'); } catch { /* no record */ }
-  const entries = readAwRecord(text);
-  if (!entries) return { service: undefined, role: undefined, record: 'outside' };
-  const url = entries.get('aweb_url'), role = entries.get('role_name');
-  const service = typeof url === 'string' ? seatServiceUrl(url) : undefined;
-  return { service, role: typeof role === 'string' ? role : undefined, record: service ? 'ok' : entries.has('aweb_url') ? 'unusable' : 'missing' };
+  return seatServiceFromRecord(text);
 }
 
 /** OATS_AWEB_URL was the retained seat's service before #241; whether it is still set, to say

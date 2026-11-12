@@ -130,7 +130,7 @@ for (const [name, url] of [
 // Refused as a service (`unusable`: not http(s), userinfo, a query, a fragment, whitespace,
 // control characters, a backslash, no host; the raw string is checked before it is parsed, as
 // WHATWG URL parsing would drop a tab or a newline) or as a record (`outside`: a file outside
-// the form aw writes, from which nothing is taken; lib/aw-record.mjs has the grammar's table).
+// the form aw writes, from which nothing is taken; lib/aw-record.mjs has the grammar, test/aw-record.test.mjs its table).
 // Each names the whole fix, before any effect, and never prints the value.
 const MARK = "secretmark";
 const UNUSABLE = /is not a usable service URL \(http or https and a host, with no userinfo, query, fragment, whitespace or control characters\)/;

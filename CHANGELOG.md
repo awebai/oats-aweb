@@ -11,9 +11,8 @@
   connect`): any http or https URL with a host, a path prefix or an IPv6
   literal included, with no userinfo, query, fragment, whitespace or control
   characters. The file is read in the form aw writes it (a top-level key and
-  its value on one line, nested lines only under a key with no value), and a
-  `workspace.yaml` in any other form is refused whole; the seat's
-  `role_name` is read the same way. The service is never printed: a failed
+  its value on one line, and its `memberships:` list), and a
+  `workspace.yaml` in any other form is refused whole. The service is never printed: a failed
   spawn withholds aw's own output, which may name it. `OATS_AWEB_URL` is no
   longer read. A seat with no such `aweb_url` is refused before anything is
   copied or locked, and the refusal names the fix: run `aw workspace connect

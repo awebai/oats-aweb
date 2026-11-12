@@ -1473,11 +1473,11 @@ an IPv6 literal included, as long as it holds no userinfo, query, fragment,
 whitespace or control characters; it reaches aw as one argument and is never
 printed, so a failed spawn withholds aw's own output, which may name it. The
 file is read in the form aw writes it: a top-level key and its value on one
-line, nested lines only under a key with no value (its `memberships:` list).
-A `workspace.yaml` in any other form (a flow collection, a block or multi-line
-scalar, an escape, an anchor or tag, a quoted key, a document marker, or a
-line break other than `\n`) is refused whole, rather than read for a value
-YAML might give differently; the seat's `role_name` is read the same way.
+line, and its `memberships:` list of flat mappings at aw's indentation, with LF
+or CRLF line ends. A `workspace.yaml` in any other form (a flow collection, a
+block or multi-line scalar, an escape, an anchor or tag, a quoted key, a
+document marker, other indentation, or another line break) is refused whole,
+rather than read for an `aweb_url` YAML might give differently.
 `OATS_AWEB_URL` is not read (#241): a seat without a usable `aweb_url`
 is refused before anything is copied, with that `aw workspace connect` as the
 fix, and the soul's readiness reports the same refusal. When a retire
