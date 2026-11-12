@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
+  (#226).** A retained seat (`identity.source`) was recorded as identity mode
+  `global` with no grant, so no start answered an identity home for it, and
+  the kernel, which drops a provider's earlier env names before it merges a
+  start's answer, started the session without one: `aw` then worked only when
+  run from the home itself. A retained seat holds its identity in the home's
+  `.aw`, so spawn now records it as mode `local`, and every start answers
+  `AWEB_IDENTITY_HOME=<home>/.aw`. A seat recorded before this fix is
+  normalised at its next start: only its recorded mode changes, from `global`
+  to `local`, and only for a retained seat with no grant. Readiness accepts a
+  retained seat with no joined-team file in either mode. A retained seat now
+  takes the local path everywhere: its start runs no grant code, and
+  `oats aweb join` no longer refuses it with `E_TEAM_GLOBAL_MODE` as if it
+  acted through a session grant (retire already leaves a retained seat's
+  joined teams before it releases the seat).
+
 - **Fixed: the roster never prints a controller command it read from a file
   (#230).** `oats aweb roster` printed, for a certificate a retire left
   behind, the `command` stored in `<deployment>/.oats-aweb/retired-certificates.json`,

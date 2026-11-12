@@ -726,6 +726,14 @@ function seatRegistryEnv(resident) {
   const custody = settings.residents && typeof settings.residents === "object" ? settings.residents[resident] : undefined;
   return typeof custody === "string" && isAbsolute(custody) ? residentRegistryEnv(custody).env : {};
 }
+/** A retained seat holds its identity in the home's .aw: a local identity. Providers
+ *  before awebai/oats-aweb#226 recorded it as mode "global" with no grant, which no
+ *  start answered an identity home for. Only that recorded shape changes, and only its
+ *  mode; any other meta is returned as it is. */
+function retainedSeatAsLocal(meta) {
+  if (meta.retained !== true || meta.identity?.mode !== "global" || meta.identity.grant) return meta;
+  return { ...meta, identity: { ...meta.identity, mode: "local" } };
+}
 function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
   const { env: deliveryEnv, launch } = deliveryFor();
   const env = { ...deliveryEnv };
@@ -1151,7 +1159,7 @@ function retainedSeatSpawn(source, takeOver) {
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
     out({
-      meta: startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "global", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }),
+      meta: startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "local", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }),
       env,
       brief: `Comms: you are the retained seat of the existing aweb identity "${alias}" on team ${team} (same did and address as the seat you replace; its contacts, routes and conversations are yours).${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill).`,
       ...(launch ? { launch } : {}),
@@ -1892,7 +1900,7 @@ if (event === "launch") {
   // The delivery path is decided afresh at every start: the runtime may have
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
   // over what the meta recorded.
-  const started = startedMeta(JSON.parse(process.env.OATS_META || "{}"));
+  const started = retainedSeatAsLocal(startedMeta(JSON.parse(process.env.OATS_META || "{}")));
   // Only GLOBAL grants get the new default; ordinary LOCAL launch/join sync
   // must not enter the renewal helper's retained-grant early return.
   const globalLaunch = identityMode === "global" || started.identity?.mode === "global";
