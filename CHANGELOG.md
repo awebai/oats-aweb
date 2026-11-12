@@ -31,6 +31,60 @@
   `takenAt` is now when the seat was taken, kept when the spawn's success adds
   the alias. Nothing a deployment must change.
 
+- **Fixed: a boolean setting left empty reads as its default (follows
+  #232).** An empty YAML value (`e2ee:`) is `null`, which always meant the
+  default but has been refused since #232, at spawn, at readiness and at the
+  next start, where the only fix was a respawn. `null` now reads as unset for
+  `identity.e2ee` (default: E2EE required), `identity.takeOver` (default: no
+  take-over) and `health.publish` (default: off). The empty string `""` is
+  still refused. Nothing a deployment must change.
+
+- **Fixed: a stray captured-execution variable never fails a retire
+  (#242).** The captured-execution path is entered when `OATS_BINDING_FILE`,
+  `OATS_INVOCATION_CONTEXT_FILE` or `OATS_SOURCE_RECEIPT_FILE` is present in
+  the environment, before settings, and any error in it exits 1, so one stray
+  variable made every retire fail. A retire no longer enters it: with any of
+  them set, it runs its normal path, with its usual effects and exit status,
+  and warns naming the variables that were set and ignored (names only, never
+  their values or the files' contents). Spawn, launch and the other events are
+  unchanged. Nothing a deployment must change.
+
+- **Fixed: boolean settings given as strings are read (#232).** `oats spawn
+  --provider oats.aweb key=value` passes every value as a string, and oats.aweb
+  compared its boolean settings with `true` and `false` only, so
+  `identity.e2ee=false` was ignored and the seat still required E2EE. Every
+  boolean setting, `identity.e2ee`, `identity.takeOver` and `health.publish`,
+  now accepts `true`/`false` and the strings `"true"`/`"false"`, through one
+  reader that spawn, start and readiness share. Any other value is refused
+  with text that names the setting, the accepted values and where to set it:
+  `identity.e2ee must be true or false (the strings "true" and "false" are
+  accepted too); set it under settings.oats.aweb.identity in …`. A bad
+  `identity.e2ee` or `identity.takeOver`, which before this release was
+  ignored, is refused by spawn and start before any effect, and by readiness
+  as a `needs-configuration` problem. A bad `health.publish`, which was
+  already refused, is refused where it is read, as before (the health
+  commands and readiness, now as a `needs-configuration` problem); its
+  refusal keeps its first words and adds the accepted strings and where to
+  set it. A
+  retire reads neither `identity` setting, so a bad value never fails a
+  retire. **If a soul or workspace sets `identity.e2ee` or
+  `identity.takeOver` to anything but a boolean or its string,** its next
+  spawn or start refuses: set the value to `true` or `false`.
+
+- **Fixed: a retired mark on an active member reads as a conflict (#235).**
+  The retired-certificates record is writable by any agent running as the
+  deployment's user, so an entry naming a live colleague's certificate made
+  `oats aweb roster` mark that member retired and offer its controller a
+  command to remove it. A marked member whose workspace reads `active` in
+  presence now shows `recorded as retired, but its workspace is active: check
+  before removing` instead of the mark and the command, and the footer does
+  not count it. In `--json`, its `retired.command` is `null`, it carries an
+  additive `retired.conflict: "workspace-active"`, and `problems` names it with
+  source `retired-record`, as a malformed entry is named. The record is
+  untouched. A marked member whose workspace is offline, that has none, or
+  whose presence could not be read is shown as before. Nothing a deployment
+  must change.
+
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode
   `global` with no grant, so no start answered an identity home for it, and

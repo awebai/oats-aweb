@@ -65,6 +65,7 @@ import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, 
 import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatHeldPath, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
+import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
@@ -328,7 +329,16 @@ if ((process.env.OATS_EVENT || process.argv[2]) === "upgrade") upgrade();
 
 // Any selected snapshot enters the captured consumer BEFORE legacy settings,
 // root discovery or identity handling. Invalid-present never falls back.
-try {
+// A retire never enters it (awebai/oats-aweb#242): with any of the variables that
+// select it present, a retire runs its normal path and says they were ignored,
+// naming them only. The names are lib/captured-execution.mjs's markers.
+const CAPTURED_MARKERS = ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"];
+const retireEvent = (process.env.OATS_EVENT || process.argv[2]) === "retire";
+if (retireEvent) {
+  const present = CAPTURED_MARKERS.filter((k) => Object.hasOwn(process.env, k));
+  if (present.length) outNotes.push(`${present.join(", ")} ${present.length === 1 ? "is" : "are"} set in the environment and ignored for retire, which runs its normal path`);
+}
+if (!retireEvent) try {
   const loaded = loadCapturedAwebExecution();
   if (loaded.kind === "captured") {
     const event = process.argv[2] || process.env.OATS_EVENT;
@@ -389,6 +399,14 @@ const identityMode = identitySettings.mode === undefined || identitySettings.mod
  *  the retained route on it (and refuses one that is not an absolute path before the
  *  lock), and retire classifies a home on the very same setting. */
 const retainedSourceSetting = identityMode === "local" && identitySettings.source ? identitySettings.source : undefined;
+/** identity.e2ee and identity.takeOver, read once through the boolean-setting helper.
+ *  Spawn and start refuse a value that is neither a boolean nor its string before any
+ *  effect, on every route, as readiness reports it; retire reads neither. */
+let identityFlags = { e2ee: true, takeOver: false };
+if (["spawn", "launch"].includes(event)) {
+  try { identityFlags = identityBooleans(identitySettings); }
+  catch (error) { out({ warning: `oats-aweb: ${error.message}` }, 1); }
+}
 /** Whether two paths name the same place, by their real paths where both exist. */
 const samePath = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
 if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
@@ -657,7 +675,7 @@ function grantScopes() {
   if (profile === "reviewer") return [...REVIEWER_GRANT_SCOPES];
   fatal(`identity.profile must be one of "normal" or "reviewer" (got ${JSON.stringify(identitySettings.profile)})`);
 }
-const grantE2eeRequired = () => identitySettings.e2ee !== false;
+const grantE2eeRequired = () => identityFlags.e2ee;
 const grantRenewMode = () => identitySettings.renew === undefined || identitySettings.renew === null || identitySettings.renew === "" ? "launch" : String(identitySettings.renew);
 function resolveResidentCustody(name) {
   if (!name) fatal(`identity.mode "global" requires identity.resident; set ${residentKeyHint("<name>")} to the absolute custody directory for that resident identity`);
@@ -1758,12 +1776,17 @@ const retiredLineNotes = new WeakMap();
 /** A recorded certificate as the roster shows it. The command is rebuilt from the entry's
  *  validated team, certificate id and registry, never its stored `command` (any agent on the
  *  host can write the record); an entry it cannot be built from shows none, and says why in
- *  `problems`. */
-function retiredProjection(leftover, alias, problems) {
+ *  `problems`. The record is a claim, not proof: a member whose workspace presence reads
+ *  active is shown as a conflict (`conflict: "workspace-active"`) with no command, so the
+ *  controller checks before removing a live member. Only an active workspace makes the
+ *  conflict: an offline one, none, or presence that could not be read keeps the mark. */
+function retiredProjection(leftover, alias, problems, workspace) {
   const problem = controllerCleanupProblem(leftover);
-  const projection = { at: leftover.retiredAt ?? null, instance: leftover.instance ?? null, command: problem ? null : controllerCleanupCommand(leftover) };
+  const conflict = workspace?.status === "active" ? "workspace-active" : undefined;
+  const projection = { at: leftover.retiredAt ?? null, instance: leftover.instance ?? null, command: problem || conflict ? null : controllerCleanupCommand(leftover), ...(conflict ? { conflict } : {}) };
   if (problem) problems.push({ source: "retired-record", message: `the record entry for ${alias}'s certificate is malformed (${problem}); no command to remove it is shown` });
-  retiredLineNotes.set(projection, problem ? { problem } : { registryRecorded: leftover.registry != null });
+  if (conflict) problems.push({ source: "retired-record", message: `the record entry for ${alias}'s certificate marks it retired, but its workspace is active: check before removing; no command to remove it is shown` });
+  retiredLineNotes.set(projection, conflict ? { conflict } : problem ? { problem } : { registryRecorded: leftover.registry != null });
   return projection;
 }
 function rosterDocument({ team, certificates, presence, problems, root, retired = [] }) {
@@ -1801,7 +1824,7 @@ function rosterDocument({ team, certificates, presence, problems, root, retired 
       status: workspace ? (workspace.status === "active" ? "active" : "offline") : presenceComplete ? "no-workspace-record" : "presence-unknown",
       sources: [certificate ? "certificate" : null, workspace ? "presence" : null].filter(Boolean),
       presence: workspace ? { status: workspace.status || null, hostname: workspace.hostname || null, lastSeen: workspace.last_seen || null } : null,
-      ...(leftover ? { retired: retiredProjection(leftover, alias, problems) } : {}),
+      ...(leftover ? { retired: retiredProjection(leftover, alias, problems, workspace) } : {}),
     };
   });
   members.sort((a, b) => ROSTER_KINDS.indexOf(a.kind) - ROSTER_KINDS.indexOf(b.kind) || a.alias.localeCompare(b.alias));
@@ -1820,11 +1843,15 @@ function rosterLine(m) {
   const status = m.status === "active" ? "active" : m.status === "offline" ? (since ? `seen ${since}` : "offline") : ROSTER_STATUS_TEXT[m.status];
   const kind = ROSTER_KIND_FROM_TEXT[m.kindFrom] ? `${m.kind} (${ROSTER_KIND_FROM_TEXT[m.kindFrom]})` : m.kind;
   const notes = m.retired ? retiredLineNotes.get(m.retired) : undefined;
+  if (notes?.conflict) return `${rosterLineHead(m, status, kind)}; recorded as retired, but its workspace is active: check before removing`;
   const cleanup = !notes ? ""
     : notes.problem ? `; its record entry is malformed (${notes.problem}), so no command to remove it is shown`
       : `; the team controller removes it with: ${m.retired.command}${notes.registryRecorded ? "" : " (the registry was not recorded, so aw uses its default)"}`;
   const retired = m.retired ? `; retired by OATS on this host${typeof m.retired.at === "string" && /^\d{4}-\d{2}-\d{2}/.test(m.retired.at) ? ` ${m.retired.at.slice(0, 10)}` : ""}${cleanup}` : "";
-  return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]${retired}`;
+  return `${rosterLineHead(m, status, kind)}${retired}`;
+}
+function rosterLineHead(m, status, kind) {
+  return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]`;
 }
 /** The root this deployment already holds `team` in, before an invite is redeemed (#56):
  *  roots[team], root and, for the default team, the root its setup uses. Each with a .aw is
@@ -2151,8 +2178,7 @@ if (event === "launch") {
   if (identityMode === "global") checkedGrantTTL(); // a setting that cannot be used refuses before the broker is asked
   requireWakeBroker();
   if (identityMode === "global") globalGrantSpawn();
-  // `--provider oats.aweb identity.takeOver=true` reaches the hook as the string "true".
-  if (retainedSourceSetting !== undefined) retainedSeatSpawn(retainedSourceSetting, identitySettings.takeOver === true || identitySettings.takeOver === "true");
+  if (retainedSourceSetting !== undefined) retainedSeatSpawn(retainedSourceSetting, identityFlags.takeOver);
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
@@ -2532,7 +2558,7 @@ if (event === "launch") {
   for (const m of roster.members) lines.push(`  ${rosterLine(m)}`);
   lines.push("");
   for (const problem of roster.problems) lines.push(`Incomplete: ${problem.source}: ${problem.message}.`);
-  const leftovers = roster.members.filter((m) => m.retired).length;
+  const leftovers = roster.members.filter((m) => m.retired && !m.retired.conflict).length;
   if (leftovers) lines.push(leftovers === 1 ? "1 certificate belongs to an instance OATS retired on this host; only the team's controller can remove it." : `${leftovers} certificates belong to instances OATS retired on this host; only the team's controller can remove them.`);
   lines.push("aw does not mark the team's coordinator (a workspace's role is its own setting): look among the global identities and ask your expert or coordinator which one coordinates.");
   lines.push("Certificates come from `aw id team members`; `aw workspace status` is the presence view.");
