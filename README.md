@@ -1455,7 +1455,10 @@ files beside the lock:
 
 So a retire never removes a lock another seat took over after it looked, and
 of two take-overs of one lock only one wins. The other refuses and names the
-holder.
+holder. A spawn that fails after another seat took the lock over leaves that
+seat's server binding alone: it doesn't connect the legacy home again, and it
+removes only its own copy. If its own connect ran last, its failure names the
+`aw workspace connect` to run from the new holder's home.
 
 On a filesystem where `rename`, `link` or an exclusive create isn't atomic,
 which includes some network and FUSE filesystems, two changes can still

@@ -46,6 +46,8 @@ export const seatHeldPath = (lockPath) => `${lockPath}.held`;
 /** A value a lock or guard names, when it is short and printable; the files are
  *  written by whoever runs as this user. */
 export const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
+/** A path as one POSIX shell word, for a command a person copies. */
+const shellWord = (p) => `'${String(p).replaceAll("'", "'\\''")}'`;
 const errorCode = (e) => /^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error";
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -100,7 +102,7 @@ function releaseGuard(guard, mine) {
 function refuseStrayHeld(lock, held) {
   const stray = readSeatLock(held);
   if (stray.present) {
-    throw new SeatLockRefusal("held-stray", `${held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (${stray.doc ? seatLockHolderText(stray.doc) : "it cannot be read"}); it is never adopted or removed automatically. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: if the seat it names still holds the identity and ${lock} does not exist, move it back (\`mv ${held} ${lock}\`); otherwise remove ${held}; then retry`, held);
+    throw new SeatLockRefusal("held-stray", `${held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (${stray.doc ? seatLockHolderText(stray.doc) : "it cannot be read"}); it is never adopted or removed automatically. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: if the seat it names still holds the identity and ${lock} does not exist, move it back (\`mv -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}; then retry`, held);
   }
 }
 /** Put the moved lock back at its name, never over a lock that is there now.

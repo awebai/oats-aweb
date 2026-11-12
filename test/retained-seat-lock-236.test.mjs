@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
+import { checkSeatLockLeftovers } from "../oats-package/capabilities/oats-aweb/lib/seat-lock.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "t:example.test";
@@ -207,7 +208,7 @@ test("4. a retire killed while it changed the lock: the next spawn refuses, nami
   assert.notEqual(second.status, 0, second.stdout + second.stderr);
   assert.ok(second.doc.warning.includes(`${fx.held} is this retained identity's lock, moved aside`), second.doc.warning);
   assert.ok(second.doc.warning.includes(`home ${a}`), second.doc.warning);
-  assert.ok(second.doc.warning.includes(`\`mv ${fx.held} ${fx.lock}\``), second.doc.warning);
+  assert.ok(second.doc.warning.includes(`\`mv -- '${fx.held}' '${fx.lock}'\``), second.doc.warning);
   assert.ok(second.doc.warning.includes(`otherwise remove ${fx.held}`), second.doc.warning);
   assert.equal(readFileSync(fx.held, "utf8"), heldText, "the moved lock is not adopted or removed");
   assert.equal(existsSync(fx.lock), false, "no lock was taken");
@@ -291,4 +292,41 @@ test("a take-over killed between a spawn's take and its success rewrite: the spa
   assert.ok(r.doc.warning.includes(`remove ${fx.guard} and retry`), r.doc.warning);
   assert.match(r.doc.warning, /the lock .* was left in place/);
   assert.equal(existsSync(join(a, ".aw")), false, "the copy was removed");
+});
+
+test("a take-over that completes while a spawn is seated: the spawn leaves the successor's binding and lock alone", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
+  const pending = startHook(fx, "spawn", a, { preload: pauseBeforeRewritePreload(fx), env: { GUARD: fx.guard, PAUSE_MARK: paused, GO: go } });
+  let won;
+  try {
+    await until(() => existsSync(paused), "the first spawn's pause before its rewrite");
+    won = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+  } finally { writeFileSync(go, "go"); }
+  const lost = await pending;
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.notEqual(lost.status, 0, lost.stdout + lost.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
+  const connects = readFileSync(join(fx.base, "aw.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    .filter((c) => c.argv[0] === "workspace" && c.argv[1] === "connect").map((c) => c.cwd);
+  assert.deepEqual(connects, [a, b], "the binding is not taken back to the legacy home");
+  assert.match(lost.doc.warning, /was not restored to the legacy home/);
+  assert.ok(lost.doc.warning.includes(`aw workspace connect\` from ${b}`), lost.doc.warning);
+  assert.equal(existsSync(join(a, ".aw")), false, "the losing seat's copy was removed");
+});
+
+test("the moved-aside lock's recovery command works for a path with spaces and quotes", (t) => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-236-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const lock = join(base, "seat with 'spaces'", ".aw-retained-seat.json");
+  write(`${lock}.held`, JSON.stringify({ home: "/elsewhere/seat-a", instance: "seat-a" }));
+  let message = "";
+  try { checkSeatLockLeftovers(lock, { who: { op: "spawn", instance: "seat-b", home: "/elsewhere/seat-b" } }); } catch (e) { message = e.message; }
+  const command = message.match(/`(mv [^`]+)`/)?.[1];
+  assert.ok(command, message);
+  const r = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(existsSync(`${lock}.held`), false);
+  assert.equal(JSON.parse(readFileSync(lock, "utf8")).instance, "seat-a");
 });

@@ -14,10 +14,12 @@
     decided on, and otherwise links it back.
 
   A retire that finds another seat's lock says it did not remove it, and of
-  two take-overs one refuses, naming the holder. The two private files are
+  two take-overs one refuses, naming the holder. A spawn whose seat another
+  took over before it finished fails without taking the server binding back to
+  the legacy home, and removes only its own copy. The two private files are
   new on-disk files beside the lock. A change that was killed may leave one
-  behind: the next spawn, take-over or retire refuses with it and its fix, and
-  never adopts or removes it. The lock's name and fields are unchanged; its
+  behind: the next spawn or take-over refuses with it and its fix, and the
+  next retire reports it; none adopts or removes it. The lock's name and fields are unchanged; its
   `takenAt` is now when the seat was taken, kept when the spawn's success adds
   the alias. Nothing a deployment must change.
 

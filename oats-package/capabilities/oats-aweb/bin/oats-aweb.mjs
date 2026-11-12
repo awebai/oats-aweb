@@ -1180,6 +1180,7 @@ function retainedSeatSpawn(source, takeOver) {
   };
   let lockNote = "";
   let connected = false;
+  let successor; // the home of a seat that took the lock over during this spawn
   const rollback = () => {
     // Once `aw workspace connect` has started, the server binding may point at the
     // new home (aw binds on the service before it writes locally, so a connect
@@ -1187,8 +1188,13 @@ function retainedSeatSpawn(source, takeOver) {
     // deleting the copy alone would leave the identity bound to nothing. Put
     // the binding back where it was, from the legacy home, then remove the
     // copy; if the restore fails, KEEP the copy so the seat stays recoverable.
-    let restored = !connected;
-    if (connected) {
+    // A seat that took the lock over meanwhile owns the identity now: its binding
+    // is never taken back to the legacy home, and only this seat's copy goes.
+    let now; try { now = readSeatLock(lockPath); } catch { now = undefined; }
+    const holder = now?.present ? lockField(now.doc?.home) : undefined;
+    if (holder && !samePath(holder, home)) successor = holder;
+    let restored = !connected || !!successor;
+    if (connected && !successor) {
       try { run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], legacyHome, 60000); restored = true; }
       catch { restored = false; }
     }
@@ -1258,7 +1264,10 @@ function retainedSeatSpawn(source, takeOver) {
     });
   } catch (e) {
     const restored = rollback();
-    const text = `retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}${lockNote}`;
+    const binding = successor
+      ? ` (the server binding was not restored to the legacy home, because the seat at ${successor} took the identity over; this seat's copy was removed. If this spawn's connect ran after that seat's, the binding points at this home: run \`aw workspace connect\` from ${successor} to give it back)`
+      : connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : "";
+    const text = `retained identity could not be seated from ${source}: ${e.message || e}${binding}${lockNote}`;
     // A refusal of the lock's guarded step, or a note on the lock, carries its whole
     // fix: it is not cut at fatal's 300 characters.
     if (isSeatLockRefusal(e) || lockNote) out({ warning: `oats-aweb: ${text}` }, 1);
