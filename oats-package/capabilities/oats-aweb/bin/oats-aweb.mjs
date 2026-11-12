@@ -1233,7 +1233,7 @@ function readProviderTeamsState(meta = {}) {
 }
 function writeProviderTeamsState(meta) {
   mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(providerTeamsFile(), JSON.stringify({ joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true, left: leftTeamsOf(meta) }, null, 2) + "\n", { mode: 0o600 });
+  atomicWrite(providerTeamsFile(), JSON.stringify({ joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true, left: leftTeamsOf(meta) }, null, 2) + "\n");
 }
 function withProviderTeams(meta = {}) { const state = readProviderTeamsState(meta); return { ...meta, joinedTeams: state.joinedTeams, wakeJoined: state.wakeJoined, left: state.left }; }
 function identityHomeForLabel(label) { return join(home, `.aweb-identity-${label}`); }
@@ -1301,9 +1301,16 @@ function acceptedTeamMembership(identityHome, expectedTeam) {
 function connectExistingJoinedTeam({ label, identityHome, expectedTeam, root, cwd = home, serviceDocs = [], resumeCommand }) {
   const team = acceptedTeamMembership(identityHome, expectedTeam);
   if (!team) throw new Error(`team root ${dirname(identityHome)} already holds an aweb identity, but aw id team list does not show ${expectedTeam || "exactly one team membership"}; choose a different label or remove the stale root deliberately`);
+  return connectJoinedWorkspace({ label, team, identityHome, root, cwd, serviceDocs, resumeCommand });
+}
+/** The joined record of an identity home that holds `team`'s membership,
+ *  connecting its workspace first when it has none. `root` is the root's path,
+ *  or a function that returns it, called only when the service must come from
+ *  the root. */
+function connectJoinedWorkspace({ label, team, identityHome, root, cwd = home, serviceDocs = [], resumeCommand }) {
   try {
     if (!joinedWorkspacePresent(identityHome)) {
-      const service = serviceForJoinedTeam(root, label, {}, ...serviceDocs);
+      const service = serviceForJoinedTeam(typeof root === "function" ? root() : root, label, {}, ...serviceDocs);
       run(awWithIdentity(identityHome, ["workspace", "connect", flagEq("--service", service), flagEq("--team", team), "--json"]), cwd, 60000, { secretSafe: true });
     }
     if (!joinedWorkspacePresent(identityHome)) throw new Error(`workspace connect did not write ${join(identityHome, "workspace.yaml")}`);
