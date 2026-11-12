@@ -1465,7 +1465,7 @@ holder. A spawn that fails after another seat took the lock over leaves that
 seat's server binding alone: it doesn't connect the legacy home again, and it
 removes only its own copy.
 
-Two limits remain:
+Three limits remain:
 
 - **On a filesystem where `rename`, `link` or an exclusive create isn't
   atomic,** which includes some network and FUSE filesystems, two changes can
@@ -1482,6 +1482,9 @@ Two limits remain:
   needs a take-over of a seat whose runtime is still alive, and the take-over
   already warns about that: there are then two seats with one key, and the old
   one must be stopped.
+- **Each exit names the holder as last read under the guard.** A take-over
+  after that read is not reported. Taking over a live seat is operator error,
+  and the take-over warns about it.
 
 A change that was killed can leave either private file behind. The next spawn
 or take-over refuses with the file and its fix, and the next retire reports it

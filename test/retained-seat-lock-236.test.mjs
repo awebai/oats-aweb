@@ -555,3 +555,70 @@ test("a take-over mid-rewrite while a failing spawn rolls back: the rollback's r
   assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept while ownership is unknown");
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });
+
+/** Pauses twice: before the hook's `aw check` (MARK1/GO1), and before it removes
+ *  PAUSE_REMOVE, its copy, in rollback (MARK2/GO2). */
+function pauseCheckAndRemovePreload(fx) {
+  const file = join(fx.base, "pause-check-remove.mjs");
+  writeFileSync(file, `import fs from "node:fs";
+import cp from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+const wait = (mark, go) => { fs.writeFileSync(mark, "paused"); while (!fs.existsSync(go)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); };
+const exec = cp.execFileSync, rm = fs.rmSync;
+let checked = false, removed = false;
+cp.execFileSync = function (f, args, ...rest) {
+  if (process.env.MARK1 && !checked && f === "aw" && args[0] === "check") { checked = true; wait(process.env.MARK1, process.env.GO1); }
+  return exec.call(this, f, args, ...rest);
+};
+fs.rmSync = function (p, ...args) {
+  if (!removed && String(p) === process.env.PAUSE_REMOVE) { removed = true; wait(process.env.MARK2, process.env.GO2); }
+  return rm.call(this, p, ...args);
+};
+syncBuiltinESMExports();
+`);
+  return file;
+}
+
+test("a second take-over that lands in a rollback's cleanup: the exit names the holder from its last guarded read, not the first successor", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b"), c = fx.homeOf("seat-c");
+  const m1 = join(fx.base, "m1"), g1 = join(fx.base, "g1"), m2 = join(fx.base, "m2"), g2 = join(fx.base, "g2");
+  // A connects and pauses at its check; B takes over. A's check fails, its rollback reads
+  // B and pauses before removing its copy; C takes over from B. A then releases.
+  const pending = startHook(fx, "spawn", a, { preload: pauseCheckAndRemovePreload(fx), env: { FAKE_RETAINED_FAIL: "check", PAUSE_REMOVE: join(a, ".aw"), MARK1: m1, GO1: g1, MARK2: m2, GO2: g2 } });
+  let wonB, wonC;
+  try {
+    await until(() => existsSync(m1), "A's check");
+    wonB = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+    writeFileSync(g1, "go");
+    await until(() => existsSync(m2), "A's cleanup");
+    wonC = runHook(fx, "spawn", c, { identity: { takeOver: true } });
+  } finally { writeFileSync(g1, "go"); writeFileSync(g2, "go"); }
+  const lost = await pending;
+  assert.equal(wonB.status, 0, wonB.stdout + wonB.stderr);
+  assert.equal(wonC.status, 0, wonC.stdout + wonC.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, c);
+  assert.ok(lost.doc.warning.includes(`run ${CONNECT} from ${c}`), lost.doc.warning);
+  assert.doesNotMatch(lost.doc.warning, new RegExp(`from ${b.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}`), "the displaced seat is not named");
+});
+
+test("a take-over that lands after a rollback's reconnect and before its cleanup: the exit names that holder", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const m2 = join(fx.base, "m2"), g2 = join(fx.base, "g2");
+  // A's check fails; its rollback finds its own lock, reconnects the legacy home, and pauses
+  // before removing its copy; B takes over then.
+  const pending = startHook(fx, "spawn", a, { preload: pauseCheckAndRemovePreload(fx), env: { FAKE_RETAINED_FAIL: "check", PAUSE_REMOVE: join(a, ".aw"), MARK2: m2, GO2: g2 } });
+  let won;
+  try {
+    await until(() => existsSync(m2), "A's cleanup");
+    won = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+  } finally { writeFileSync(g2, "go"); }
+  const lost = await pending;
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.deepEqual(connectsIn(fx), [a, dirname(fx.source), b]);
+  assert.ok(lost.doc.warning.includes("but another seat took the identity over while that ran"), lost.doc.warning);
+  assert.ok(lost.doc.warning.includes(`run ${CONNECT} from ${b}`), lost.doc.warning);
+});

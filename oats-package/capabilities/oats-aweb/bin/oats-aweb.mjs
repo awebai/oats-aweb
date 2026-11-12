@@ -1173,12 +1173,17 @@ function retainedSeatSpawn(source, takeOver) {
     if (!seen.present) fatal(`identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied${kept}`);
     out({ warning: `oats-aweb: the retained identity's lock ${lockPath} changed after this spawn read it, so nothing was taken over or copied: it is now held by ${taken.captured.present ? seatLockHolderText(taken.captured.doc) : "no seat"}${kept}. A seat is never taken from a holder this spawn did not see: retire that seat first, or spawn again with identity.takeOver: true once you know its runtime is dead` }, 1);
   }
-  /** Remove this spawn's own lock; any other is left. → a note for the failure, or "". */
+  /** Remove this spawn's own lock; any other is left. What its guarded step saw is the
+   *  rollback's last read of the lock (lastSeen). → a note for the failure, or "". */
   const releaseOwnLock = () => {
     try {
       const r = swapSeatLock(lockPath, { who: seatOp("rollback"), expect: ownLock, next: null });
-      return r.done || !r.captured.present ? "" : `; the lock ${lockPath} names another seat now, so it was left in place`;
-    } catch (e) { return `; the lock ${lockPath} was left in place: ${isSeatLockRefusal(e) ? e.message : `it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`}`; }
+      lastSeen = r.done ? { kind: "none" } : describeHolder(r.captured);
+      return r.done || !r.captured.present ? "" : `; the lock ${lockPath} names another seat now (${lastSeen.text}), so it was left in place`;
+    } catch (e) {
+      lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` };
+      return `; the lock ${lockPath} was left in place: ${isSeatLockRefusal(e) ? e.message : `it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`}`;
+    }
   };
   let lockNote = "";
   let connected = false;
@@ -1191,19 +1196,28 @@ function retainedSeatSpawn(source, takeOver) {
   const connectCommand = plainServiceUrl(service) && validAwebTeamId(team) && (!role || plainRole)
     ? `\`aw workspace connect --service=${service} --team=${team}${plainRole ? ` --role=${plainRole}` : ""}\``
     : `\`aw workspace connect\` with the service, team and role in ${join(source, "workspace.yaml")}`;
-  /** Who holds the lock now, read under its guard: undefined while it is this spawn's
-   *  or absent; `{ text, fix }` for another seat; `{ unknown }` when it can't be read
-   *  under the guard, which is never taken for "no other holder". */
-  const otherHolder = () => {
-    let now;
-    try { now = readSeatLockGuarded(lockPath, { who: seatOp("check") }); }
-    catch (e) { return { unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
-    if (!now.present || ownLock(now)) return undefined;
-    const at = typeof now.doc?.home === "string" && /^\/[A-Za-z0-9_.@+\/-]{0,511}$/.test(now.doc.home) ? now.doc.home : undefined;
-    return { text: now.doc ? seatLockHolderText(now.doc) : "a lock that cannot be read", fix: `run ${connectCommand} from ${at || "the home of the seat that holds it (its lock names none that can be shown)"}` };
+  /** A lock as read under its guard: `{ kind: "none" }` (absent), `{ kind: "ours" }`, or
+   *  `{ kind: "other", text, fix }` naming the seat and the connect to run from its home. */
+  const describeHolder = (c) => {
+    if (!c.present) return { kind: "none" };
+    if (ownLock(c)) return { kind: "ours" };
+    const at = typeof c.doc?.home === "string" && /^\/[A-Za-z0-9_.@+\/-]{0,511}$/.test(c.doc.home) ? c.doc.home : undefined;
+    return { kind: "other", text: c.doc ? seatLockHolderText(c.doc) : "a lock that cannot be read", fix: `run ${connectCommand} from ${at || "the home of the seat that holds it (its lock names none that can be shown)"}` };
   };
-  let successor; // another seat's hold on the lock (or an unknown one), found by the rollback
-  let lateSuccessor; // one that landed while the rollback's reconnect ran
+  // The rollback's last guarded read of the lock: the exit names this holder, and only
+  // this one (a take-over after it is not reported: README, "The retained seat's lock").
+  let lastSeen;
+  /** Who holds the lock now, read under its guard, as describeHolder answers, or
+   *  `{ kind: "unknown", unknown }` when it can't be read under the guard, which is never
+   *  taken for "no other holder". Recorded as lastSeen. */
+  const holderNow = () => {
+    try { return lastSeen = describeHolder(readSeatLockGuarded(lockPath, { who: seatOp("check") })); }
+    catch (e) { return lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
+  };
+  // What the rollback did with the binding: "unknown" (holder unknown at its first read:
+  // nothing done), "successor" (another seat held it: not reconnected), "restored" or
+  // "failed" (the legacy home's reconnect), or undefined (nothing was connected).
+  let rolledBack;
   const unknownFix = `once the lock can be read, run ${connectCommand} from the home of the seat that holds it, or from ${legacyHome} if none does`;
   let wakeRegistering = false, wakeNote = "";
   const rollback = () => {
@@ -1217,15 +1231,17 @@ function retainedSeatSpawn(source, takeOver) {
     // copy; if the restore fails, KEEP the copy so the seat stays recoverable.
     // A seat that took the lock over meanwhile owns the identity now: its binding
     // is never taken back to the legacy home, and only this seat's copy goes.
-    successor = connected ? otherHolder() : undefined;
+    const first = connected ? holderNow() : undefined;
     // Ownership unknown: nothing is reconnected or removed, and the copy stays.
-    if (successor?.unknown) return false;
-    let restored = !connected || !!successor;
-    if (connected && !successor) {
+    if (first?.kind === "unknown") { rolledBack = "unknown"; return false; }
+    let restored = !connected || first.kind === "other";
+    if (connected) rolledBack = "successor";
+    if (connected && first.kind !== "other") {
       try { run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], legacyHome, 60000); restored = true; }
       catch { restored = false; }
+      rolledBack = restored ? "restored" : "failed";
       // Read after every attempt: a reconnect that failed may still have bound the legacy home.
-      lateSuccessor = otherHolder();
+      holderNow();
     }
     if (restored) { try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ } lockNote = releaseOwnLock(); }
     return restored;
@@ -1300,23 +1316,26 @@ function retainedSeatSpawn(source, takeOver) {
     });
   } catch (e) {
     const restored = rollback();
-    const binding = successor?.unknown
-      ? ` (whether another seat took the identity over is unknown: ${successor.unknown}; so the server binding was left as it is and this seat's copy was kept at ${dest}: ${unknownFix})`
-      : lateSuccessor?.unknown && restored
-      ? ` (the server binding was restored to the legacy home and the copy removed, but whether another seat took the identity over while that ran is unknown: ${lateSuccessor.unknown}; if one holds the lock, run ${connectCommand} from its home)`
-      : lateSuccessor?.unknown
-      ? ` (the reconnect of the legacy home failed, and whether another seat took the identity over while it ran is unknown: ${lateSuccessor.unknown}; this seat's copy was kept at ${dest}: ${unknownFix})`
-      : successor
-      ? ` (another seat took the identity over during this spawn (${successor.text}), so the server binding was not restored to the legacy home and this seat's copy was removed; the binding may point at this home, if this spawn's connect ran after that seat's: ${successor.fix})`
-      : lateSuccessor && restored
-      ? ` (the server binding was restored to the legacy home and the copy removed, but another seat took the identity over while that ran (${lateSuccessor.text}), so the binding may point at the legacy home, not at that seat: ${lateSuccessor.fix})`
-      : lateSuccessor
-      ? ` (the reconnect of the legacy home failed, and another seat took the identity over while it ran (${lateSuccessor.text}), so the binding may point at the legacy home or at this home, not at that seat; this seat's copy was kept at ${dest}: ${lateSuccessor.fix})`
-      : connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : "";
+    // Every holder named here is the rollback's last guarded read (lastSeen).
+    const fin = lastSeen || {};
+    const named = fin.kind === "other" ? `; the lock names ${fin.text}` : "";
+    const binding = rolledBack === "unknown"
+      ? ` (whether another seat took the identity over is unknown: ${fin.unknown}; so the server binding was left as it is and this seat's copy was kept at ${dest}: ${unknownFix})`
+      : rolledBack === "successor"
+      ? ` (another seat took the identity over during this spawn, so the server binding was not restored to the legacy home and this seat's copy was removed; the binding may point at this home, if this spawn's connect ran after that seat's: ${fin.kind === "other" ? `${fin.fix}${named}` : fin.kind === "unknown" ? `who holds the lock now is unknown (${fin.unknown}): ${unknownFix}` : `the lock names no seat now, so run ${connectCommand} from ${legacyHome} to give it back to the source`})`
+      : rolledBack === "restored"
+      ? (fin.kind === "other" ? ` (the server binding was restored to the legacy home and the copy removed, but another seat took the identity over while that ran (${fin.text}), so the binding may point at the legacy home, not at that seat: ${fin.fix})`
+        : fin.kind === "unknown" ? ` (the server binding was restored to the legacy home and the copy removed, but whether another seat took the identity over while that ran is unknown: ${fin.unknown}; if one holds the lock, run ${connectCommand} from its home)`
+        : " (the server binding was restored to the legacy home and the copy removed)")
+      : rolledBack === "failed"
+      ? (fin.kind === "other" ? ` (the reconnect of the legacy home failed, and another seat took the identity over while it ran (${fin.text}), so the binding may point at the legacy home or at this home, not at that seat; this seat's copy was kept at ${dest}: ${fin.fix})`
+        : fin.kind === "unknown" ? ` (the reconnect of the legacy home failed, and whether another seat took the identity over while it ran is unknown: ${fin.unknown}; this seat's copy was kept at ${dest}: ${unknownFix})`
+        : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`)
+      : "";
     const text = `retained identity could not be seated from ${source}: ${e.message || e}${binding}${lockNote}${wakeNote}`;
     // A refusal of the lock's guarded step, or a note on the lock, carries its whole
     // fix: it is not cut at fatal's 300 characters.
-    if (isSeatLockRefusal(e) || lockNote || wakeNote || successor || lateSuccessor) out({ warning: `oats-aweb: ${text}` }, 1);
+    if (isSeatLockRefusal(e) || lockNote || wakeNote || fin.kind === "other" || fin.kind === "unknown" || rolledBack === "unknown" || rolledBack === "successor") out({ warning: `oats-aweb: ${text}` }, 1);
     fatal(text);
   }
 }
