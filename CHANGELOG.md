@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Fixed: boolean settings given as strings are read (#232).** `oats spawn
+  --provider oats.aweb key=value` passes every value as a string, and oats.aweb
+  compared its boolean settings with `true` and `false` only, so
+  `identity.e2ee=false` was ignored and the seat still required E2EE. Every
+  boolean setting, `identity.e2ee`, `identity.takeOver` and `health.publish`,
+  now accepts `true`/`false` and the strings `"true"`/`"false"`, through one
+  reader that spawn, start and readiness share. Any other value is refused
+  with text that names the setting, the accepted values and where to set it:
+  `identity.e2ee must be true or false (the strings "true" and "false" are
+  accepted too); set it under settings.oats.aweb.identity in …`. A bad
+  `identity.e2ee` or `identity.takeOver`, which before this release was
+  ignored, is refused by spawn and start before any effect, and by readiness
+  as a `needs-configuration` problem. A bad `health.publish`, which was
+  already refused, is refused where it is read, as before (the health
+  commands and readiness, now as a `needs-configuration` problem); its
+  refusal keeps its first words and adds the accepted strings and where to
+  set it. A
+  retire reads neither `identity` setting, so a bad value never fails a
+  retire. **If a soul or workspace sets `identity.e2ee` or
+  `identity.takeOver` to anything but a boolean or its string,** its next
+  spawn or start refuses: set the value to `true` or `false`.
+
 - **Fixed: a retired mark on an active member reads as a conflict (#235).**
   The retired-certificates record is writable by any agent running as the
   deployment's user, so an entry naming a live colleague's certificate made
