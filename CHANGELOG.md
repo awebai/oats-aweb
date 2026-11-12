@@ -12,7 +12,10 @@
   literal included, with no userinfo, query, fragment, whitespace or control
   characters. The file is read in the form aw writes it (a top-level key and
   its value on one line, and its `memberships:` list), and a
-  `workspace.yaml` in any other form is refused whole. The service is never printed: a failed
+  `workspace.yaml` in any other form is refused whole. The reader decides
+  only that `aweb_url` and is not a YAML validator: a file that isn't valid
+  YAML may still be accepted, and the URL checks still bound what reaches
+  aw. The service is never printed: a failed
   spawn withholds aw's own output, which may name it. `OATS_AWEB_URL` is no
   longer read. A seat with no such `aweb_url` is refused before anything is
   copied or locked, and the refusal names the fix: run `aw workspace connect

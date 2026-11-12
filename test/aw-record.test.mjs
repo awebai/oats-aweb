@@ -35,6 +35,7 @@ const accepted = [
   ["a double-quoted value", "aweb_url: \"https://record.invalid/api\"\n", "https://record.invalid/api"],
   ["a single-quoted value", "aweb_url: 'https://record.invalid/api'\n", "https://record.invalid/api"],
   ["a comment after the value, and comment and blank lines", "# written by aw\n\naweb_url: https://record.invalid/api # the team's server\n  # an indented comment\nrole_name: reviewer\n", "https://record.invalid/api"],
+  ["characters YAML 1.1 allows: NBSP, the private use area, an astral character", "aweb_url: https://record.invalid/api\nother: a\u00a0b\ue000\u{1f600}\n", "https://record.invalid/api"],
   ["Windows line endings", "aweb_url: https://record.invalid/api\r\nrole_name: reviewer\r\n", "https://record.invalid/api"],
   ["other top-level values of any YAML type", "aweb_url: https://record.invalid/api\nrole_name: null\nhostname: 1234\nagent_type: true\n", "https://record.invalid/api"],
   ["a list before and after aweb_url", "memberships:\n    - team_id: t:example.test\n      alias: retained\naweb_url: https://record.invalid/api\nothers:\n    - a: b\n    - c:\n      d: e\n", "https://record.invalid/api"],
@@ -81,6 +82,11 @@ const refused = [
   ["a paragraph separator", "aweb_url: https://record.invalid/a\u2029b\n"],
   ["a next-line character", "aweb_url: https://record.invalid/a\u0085b\n"],
   ["a lone carriage return", "aweb_url: https://record.invalid/a\rrole_name: b\n"],
+  // Characters YAML 1.1 forbids anywhere in a file: a file holding one is no YAML document.
+  ...[["NUL", "\u0000"], ["U+0001", "\u0001"], ["a vertical tab", "\u000b"], ["a form feed", "\u000c"], ["U+001F", "\u001f"], ["DEL", "\u007f"], ["a C1 control (U+0084)", "\u0084"], ["a C1 control (U+0086)", "\u0086"], ["a C1 control (U+009F)", "\u009f"], ["a lone surrogate", "\ud800"], ["U+FFFE", "\ufffe"], ["U+FFFF", "\uffff"]].flatMap(([what, ch]) => [
+    [`${what} in another key's value (round 7)`, `aweb_url: https://record.invalid/api\nother: "${ch}"\n`],
+    [`${what} in a comment`, `aweb_url: https://record.invalid/api # ${ch}\n`],
+  ]),
 ];
 
 for (const [name, text, service] of accepted) {

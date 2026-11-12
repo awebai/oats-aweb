@@ -20,12 +20,20 @@
 // returned, which the caller accepts only as an http(s) URL; such a string is a string to YAML,
 // never a null, bool, number or timestamp. A line ends at `\n` or `\r\n`; a file holding any other
 // break YAML 1.1 parsers (libyaml, and the yaml.v3 aw uses) take as a line end (a lone `\r`, NEL,
-// U+2028, U+2029) is refused, so no line is split differently here than there.
+// U+2028, U+2029) is refused, so no line is split differently here than there, as is a file holding
+// a character outside YAML 1.1's printable set.
+//
+// The limit: this reads one value of a file aw writes, and is not a YAML validator. A file that is
+// not valid YAML may still be accepted; the URL checks (lib/retained-seat-service.mjs) still bound
+// what reaches aw.
 
 const KEY = '[A-Za-z_][A-Za-z0-9_-]*';
 const TOP = new RegExp(`^(${KEY}):(.*)$`, 's');
 const ITEM = new RegExp(`^ {4}- (${KEY}):(.*)$`, 's');
 const ITEM_KEY = new RegExp(`^ {6}(${KEY}):(.*)$`, 's');
+// Outside YAML 1.1's printable set (tab, LF, CR, 0x20-0x7E, 0x85, 0xA0-0xD7FF, 0xE000-0xFFFD,
+// 0x10000 and up): a file holding one is no YAML document, so it is refused before the scan.
+const NOT_PRINTABLE = /[^\t\n\r\x20-\x7E\x85\xA0-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
 const PLAIN_START = /^[^\s\-?:,[\]{}#&*!|>'"%@`]/;
 
 /** The text of one scalar, comment dropped; undefined when it is outside the grammar. */
@@ -51,7 +59,7 @@ function entryValue(rest) {
  *  has no value, undefined when there is no such key. undefined when the file is outside the
  *  grammar, from which nothing is taken. */
 export function readAwebUrl(text) {
-  if (/\r(?!\n)|[\u0085\u2028\u2029]/.test(String(text))) return undefined;
+  if (NOT_PRINTABLE.test(String(text)) || /\r(?!\n)|[\u0085\u2028\u2029]/.test(String(text))) return undefined;
   const keys = new Set();
   let awebUrl;
   let list = 'none'; // 'open': the last top-level key had no value; 'item': inside a list item

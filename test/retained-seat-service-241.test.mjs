@@ -143,7 +143,7 @@ for (const [name, value, why] of [
   ["a fragment", `https://record.invalid/api#${MARK}`, UNUSABLE],
   ["a space", `"https://record.invalid/${MARK} x"`, UNUSABLE],
   ["a tab", `"https://record.invalid/${MARK}\tx"`, UNUSABLE],
-  ["a control character", `"https://record.invalid/${MARK}\u0001"`, UNUSABLE],
+  ["a control character", `"https://record.invalid/${MARK}\u0001"`, OUTSIDE], // outside YAML 1.1's printable set
   ["a backslash", `https://record.invalid\\${MARK}`, UNUSABLE],
   ["another scheme", `ftp://record.invalid/${MARK}`, UNUSABLE],
   ["no host", `https:///${MARK}`, UNUSABLE],
@@ -171,6 +171,13 @@ test("a record whose aweb_url line sits inside a flow mapping is refused, not re
   assertNoEffect(fx, refused);
   assert.match(refused.doc.warning, OUTSIDE);
   assert.ok(!refused.stdout.includes("wrong.invalid"), refused.stdout);
+});
+test("a record holding a character YAML 1.1 forbids, NUL in another key, is refused before any effect", (t) => {
+  const fx = fixture(t, { workspace: `alias: retained\naweb_url: https://record.invalid/api\nother: "\u0000"\n` });
+  const refused = runHook(fx, "spawn");
+  assertNoEffect(fx, refused);
+  assert.ok(refused.doc.warning.includes(fix(fx)), refused.doc.warning);
+  assert.match(refused.doc.warning, OUTSIDE);
 });
 test("a record whose aweb_url line sits inside a multi-line quoted scalar is refused, not read", (t) => {
   const fx = fixture(t, { workspace: `alias: retained\nnote: "first\naweb_url: https://wrong.invalid/${MARK}\n"\n` });

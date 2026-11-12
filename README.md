@@ -1476,8 +1476,13 @@ file is read in the form aw writes it: a top-level key and its value on one
 line, and its `memberships:` list of flat mappings at aw's indentation, with LF
 or CRLF line ends. A `workspace.yaml` in any other form (a flow collection, a
 block or multi-line scalar, an escape, an anchor or tag, a quoted key, a
-document marker, other indentation, or another line break) is refused whole,
-rather than read for an `aweb_url` YAML might give differently.
+document marker, other indentation, another line break, or a character
+outside YAML 1.1's printable set) is refused whole, rather than read for an
+`aweb_url` YAML might give differently. The limit: the reader decides only the
+top-level `aweb_url` of a file aw writes, and isn't a YAML validator. A file
+that isn't valid YAML may still be accepted, and the URL checks (http or
+https, no userinfo, query or fragment, one argument to aw, never printed)
+still bound what reaches aw.
 `OATS_AWEB_URL` is not read (#241): a seat without a usable `aweb_url`
 is refused before anything is copied, with that `aw workspace connect` as the
 fix, and the soul's readiness reports the same refusal. When a retire
