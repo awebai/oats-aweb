@@ -17,6 +17,10 @@
   holder home exists here is refused as before. `identity.takeOver=true` given
   on the command line now takes effect: the kernel passes it as the string
   `"true"`, which the hook used to ignore, for a holder whose home exists too.
+  OATS's `docs/container.md` ("Making a seat") still says that when the
+  holder's home is gone `identity.takeOver` does not apply and the lock is
+  removed by hand: the OATS pin PR that moves to this release changes that
+  paragraph.
 
 ## 1.41.0 — 2026-11-12
 
