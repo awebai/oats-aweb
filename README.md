@@ -1463,6 +1463,10 @@ is this mint's only when its `member_did_key` is the did:key of the home's
 - **The members read fails:** the outcome is unknown. Retire names the read to
   run, keeps the home and the intent, and exits nonzero for a retry.
 
+Where a certificate is found, the intent stays until the kernel removes the
+home. So a retire killed before it records or answers the handoff leaves the
+intent, and the next retire hands the certificate over again.
+
 A later spawn of the same name still meets the alias refusal; when this host's
 record holds a certificate for that alias and team, the refusal names the
 controller's command for it.

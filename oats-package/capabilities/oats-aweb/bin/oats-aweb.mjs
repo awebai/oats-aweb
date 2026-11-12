@@ -2434,7 +2434,9 @@ if (event === "launch") {
     const command = problem ? undefined : controllerCleanupCommand(cleanup);
     const named = problem ? "" : ` (certificate ${cert.certificate_id})`;
     const removal = command ? `the team's controller removes it with: ${command}${registryError ? ` (${registryError})` : ""}` : `the team's controller removes it, but no command is shown: the certificate read for it is unusable (${problem})`;
-    dropPendingMint();
+    // The intent stays: a retire killed before this answer, or before the record below
+    // is written, leaves the home and its intent, and the next retire hands the
+    // certificate over again. The answer exits 0, so the kernel removes the home with it.
     if (ours) {
       // The home's own registration, which only the controller can now remove.
       rememberControllerCleanup({ cleanup: "controller", label: "default", team, alias, certificateId: cert.certificate_id, ...(command ? { command } : {}), registry });

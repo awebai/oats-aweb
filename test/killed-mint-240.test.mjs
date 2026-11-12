@@ -17,6 +17,7 @@ import { createPrivateKey, sign } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
 import { verifySignature } from "../oats-package/capabilities/oats-aweb/lib/status-document.mjs";
@@ -257,6 +258,31 @@ test("a failure after the registration whose text only looks like an alias refus
   const retired = fx.retire(r.doc.meta);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.ok(retired.doc.warning.includes(COMMAND), retired.doc.warning);
+});
+
+test("a retire killed before it recorded or answered the handoff leaves the intent, and its retry hands the certificate over", (t) => {
+  const fx = fixture(t);
+  killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  // SIGKILL as the retire starts to write the retired-certificates record: no record, no answer.
+  const preload = join(fx.fake.base, "kill-at-record.mjs");
+  writeFileSync(preload, `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const open = fs.openSync;
+fs.openSync = function (p, ...args) {
+  if (String(p).endsWith("retired-certificates.json.lock")) process.kill(process.pid, "SIGKILL");
+  return open.call(this, p, ...args);
+};
+syncBuiltinESMExports();
+`);
+  const killed = fx.hook("retire", { OATS_META: "{}", NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` });
+  assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
+  assert.equal(killed.stdout, "", "no answer");
+  assert.equal(existsSync(fx.recordFile), false);
+  assert.equal(existsSync(fx.intentFile), true, "the intent outlives a retire that did not hand the certificate over");
+  const retry = fx.retire({});
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.ok(retry.doc.warning.includes(COMMAND), retry.doc.warning);
+  assert.equal(JSON.parse(readFileSync(fx.recordFile, "utf8")).entries.length, 1);
 });
 
 // --------------------------------------------- spawn's refusals
