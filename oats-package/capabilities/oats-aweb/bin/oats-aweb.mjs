@@ -1088,14 +1088,33 @@ function activeTeamAt(root) {
     return yamlScalar(text, "active_team") || yamlScalar(text, "active");
   } catch { return undefined; }
 }
-/** The service, role and team a retained seat's identity is bound with, from its
- *  source's workspace.yaml and teams.yaml and the default team, as spawn binds it;
- *  a value that cannot be determined is undefined. */
+/** The service, role and team a retained seat's identity is bound with, as spawn binds
+ *  it and as every command that names the seat's server prints it: the service only from
+ *  the seat's own record, its source's workspace.yaml `aweb_url` (aw writes it at
+ *  `aw workspace connect`), and only when that is a plain service URL; never from
+ *  OATS_AWEB_URL (awebai/oats-aweb#241). The team is the default team, else the source's
+ *  active team. A value that cannot be determined is undefined; `serviceRecorded` tells a
+ *  missing `aweb_url` from one that is not a plain service URL. */
 function retainedSeatTarget(source) {
   const read = (name) => { try { return readFileSync(join(source, name), "utf8"); } catch { return ""; } };
   const srcWorkspace = read("workspace.yaml"), srcTeams = read("teams.yaml");
   const team = defaultTeamId() || yamlScalar(srcTeams, "active_team") || yamlScalar(srcTeams, "active");
-  return { service: process.env.OATS_AWEB_URL || yamlScalar(srcWorkspace, "aweb_url"), role: yamlScalar(srcWorkspace, "role_name"), team };
+  const recorded = yamlScalar(srcWorkspace, "aweb_url");
+  return { service: plainServiceUrl(recorded), serviceRecorded: recorded !== undefined, role: yamlScalar(srcWorkspace, "role_name"), team };
+}
+/** OATS_AWEB_URL was the retained seat's service before #241; whether it is still set in
+ *  the environment, to say it is no longer read. Its value is never shown. */
+const awebUrlVariableSet = () => typeof process.env.OATS_AWEB_URL === "string" && process.env.OATS_AWEB_URL !== "";
+/** The refusal for a retained seat whose record names no usable service, before any copy
+ *  or effect. Fixed text and the operator's own paths only; the remedy is named in full,
+ *  so the text is not cut at fatal's 300 characters. */
+function refuseUnknownSeatService(source, serviceRecorded) {
+  const record = join(source, "workspace.yaml");
+  const why = serviceRecorded
+    ? `the aweb_url in ${record} is not a plain service URL (http or https, a host, an optional port, and no path but / or /api)`
+    : `${record} names no aweb_url`;
+  const note = awebUrlVariableSet() ? "; OATS_AWEB_URL is set, but it is no longer read for a retained seat: the service comes only from that workspace.yaml" : "";
+  out({ warning: `oats-aweb: the retained seat's aweb service is unknown, so nothing was copied: ${why}; run \`aw workspace connect --service <the team's aweb server>\` in ${dirname(source)} to record it, then spawn again${note}` }, 1);
 }
 /** A field a retained seat's lock names, when it is short and printable. */
 const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
@@ -1114,6 +1133,8 @@ function refuseUnheldLock(lockPath, held) {
 function retainedSeatSpawn(source, takeOver) {
   if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
+  const { service, serviceRecorded, role, team } = retainedSeatTarget(source);
+  if (!service) refuseUnknownSeatService(source, serviceRecorded);
   const lockPath = seatLockPath(source);
   let takenOver, takeOverNote = "";
   // lstat, not exists: a dangling symlink at the lock path is a lock that cannot be read.
@@ -1139,8 +1160,6 @@ function retainedSeatSpawn(source, takeOver) {
       takeOverNote = holderHome ? " (its home is not on this host)" : "";
     }
   }
-  const { service, role, team } = retainedSeatTarget(source);
-  if (!service) fatal(`cannot determine the aweb service for ${source} (no aweb_url in its workspace.yaml)`);
   if (!team || !team.includes(":")) fatal(`cannot determine the team for the retained identity (${teamConfigRemedy()}, or keep an active team in ${join(source, "teams.yaml")})`);
   const dest = join(home, ".aw");
   const legacyHome = dirname(source);
@@ -1222,6 +1241,7 @@ function retainedSeatSpawn(source, takeOver) {
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver}${takeOverNote} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
+    if (awebUrlVariableSet()) warnings.push(`oats-aweb: OATS_AWEB_URL is set, but it is ignored for a retained seat: the service comes only from ${join(source, "workspace.yaml")}`);
     out({
       meta: startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "local", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }),
       env,
@@ -2286,7 +2306,7 @@ if (event === "launch") {
     if (meta.spawnUnanswered && (heldHere !== false || existsSync(join(home, ".aw", "workspace.yaml")))) {
       const target = retainedSeatTarget(meta.source);
       const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
-      const connect = plainServiceUrl(target.service) && validAwebTeamId(target.team) && (!target.role || plainRole)
+      const connect = target.service && validAwebTeamId(target.team) && (!target.role || plainRole)
         ? `\`aw workspace connect --service=${target.service} --team=${target.team}${plainRole ? ` --role=${plainRole}` : ""}\``
         : "`aw workspace connect` with the service, team and role in its workspace.yaml";
       rebind = `; this seat's spawn did not finish after taking the seat, so the identity's binding may point here (if its \`aw workspace connect\` reached the service): run ${connect} from ${dirname(meta.source)} to bind it back to its source, or spawn the seat again`;

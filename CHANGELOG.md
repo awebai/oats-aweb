@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Changed: a retained seat reads its aweb service only from its own record
+  (#241).** A retained seat's spawn (`identity.source`) took its service from
+  `OATS_AWEB_URL` when that was set, and from the seat's
+  `<source>/workspace.yaml` `aweb_url` only otherwise, so a spawn and the
+  rebind command a retire prints could name different servers. The service
+  now comes only from that `aweb_url` (aw writes it at `aw workspace
+  connect`), and only when it is a plain service URL (http or https, a host,
+  an optional port, and no path but `/` or `/api`); `OATS_AWEB_URL` is no
+  longer read. A seat with no such `aweb_url` is refused before anything is
+  copied or locked, and the refusal names the fix: run `aw workspace connect
+  --service <the team's aweb server>` in the seat's parent directory (the one
+  that holds its `.aw`), then spawn again. While `OATS_AWEB_URL` is set, the
+  refusal says the variable is no longer read, and a spawn that has a record
+  warns that the variable is ignored; neither prints its value. **If you set
+  `OATS_AWEB_URL` for a retained seat:** record the server in the seat with
+  that `aw workspace connect` and unset the variable. A seat whose
+  `workspace.yaml` already names its server is unchanged.
+
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode
   `global` with no grant, so no start answered an identity home for it, and

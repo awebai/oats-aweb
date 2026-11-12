@@ -1435,6 +1435,40 @@ time as the delete. Before that, retire leaves each joined team and releases eac
 unfinished join. While a release that needs the member key fails (anything but
 `team_not_hosted`), retire keeps the key and the record and exits nonzero.
 
+### A retained seat on a server other than aweb Cloud
+
+On an aweb server other than aweb Cloud, an agent's identity is a retained
+seat: an existing member's `.aw` directory that the spawn copies into the
+new home and connects (`identity.source`, its absolute path). The commands
+that make one are in awebai/oats
+[`docs/container.md`, "Making a seat"](https://github.com/awebai/oats/blob/main/docs/container.md#making-a-seat).
+The seat directory must contain:
+
+- `signing.key`, the member's key;
+- `team-certs/`, the member's team certificate;
+- `workspace.yaml` with `aweb_url`, the team's server, which `aw workspace
+  connect --service <the team's aweb server>` writes when run in the seat's
+  parent directory;
+- the team: the deployment's default team, or else the active team in
+  `teams.yaml`.
+
+The spawn reads the server only from that `workspace.yaml`, and only when it
+is a plain service URL (http or https, a host, an optional port, and no path
+but `/` or `/api`). `OATS_AWEB_URL` is not read (#241): a seat without
+`aweb_url` is refused before anything is copied, with that `aw workspace
+connect` as the fix. The command a retire prints to bind the identity back to
+its source names the same server.
+
+These work on aweb Cloud only, because aw treats only a Cloud team as hosted:
+releasing an identity at retire, `oats aweb connect`, `setup --username` and
+the hosted `setup --create`. A retire of a retained seat, on any server,
+releases only the seat's lock and leaves the identity as it is. On another
+server, where a retire releases a workspace (a team the home joined, or an
+identity it minted), it deletes the workspace and leaves the certificate and
+the alias, so a successor cannot reuse the name yet: `oats aweb roster` marks
+that certificate as retired, with the `aw id team remove-member` command the
+team's controller runs to remove it.
+
 ## Isolated hostOnly contract verification
 
 `test/claude-channel-host-only.test.mjs` imports the real generic `resolveSoul`
