@@ -3,8 +3,8 @@
 // This file reads the inject, every file under skills/ (the vendored aweb
 // skills included: a resync from upstream would bring the task text back) and
 // the readiness phrases. The briefs and warnings the hook writes are checked
-// through the fixtures that produce them: spawn in oats-aweb-1-17-4, the grant
-// seat in never-grant, captured-native's brief in captured-native.
+// through the fixtures that produce them: spawn in oats-aweb-1-17-4 and the grant
+// seat in never-grant.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
