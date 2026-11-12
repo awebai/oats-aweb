@@ -97,6 +97,12 @@ function releaseGuard(guard, mine) {
   if (now?.token === mine.token) { try { unlinkSync(guard); } catch { /* left: the next change reports it */ } }
 }
 
+function refuseStrayHeld(lock, held) {
+  const stray = readSeatLock(held);
+  if (stray.present) {
+    throw new SeatLockRefusal("held-stray", `${held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (${stray.doc ? seatLockHolderText(stray.doc) : "it cannot be read"}); it is never adopted or removed automatically. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: if the seat it names still holds the identity and ${lock} does not exist, move it back (\`mv ${held} ${lock}\`); otherwise remove ${held}; then retry`, held);
+  }
+}
 /** Put the moved lock back at its name, never over a lock that is there now.
  *  → `{ restored: true }`, or `{ restored: false, problem }` with the moved lock kept. */
 function restoreHeld(lock, held, captured) {
@@ -125,10 +131,7 @@ export function swapSeatLock(lock, { who, expect, next }) {
   const guard = seatGuardPath(lock), held = seatHeldPath(lock);
   const mine = takeGuard(guard, who);
   try {
-    const stray = readSeatLock(held);
-    if (stray.present) {
-      throw new SeatLockRefusal("held-stray", `${held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (${stray.doc ? seatLockHolderText(stray.doc) : "it cannot be read"}); it is never adopted or removed automatically. Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}: if the seat it names still holds the identity and ${lock} does not exist, move it back (\`mv ${held} ${lock}\`); otherwise remove ${held}; then retry`, held);
-    }
+    refuseStrayHeld(lock, held);
     try { renameSync(lock, held); }
     catch (e) { if (e?.code !== "ENOENT") throw Object.assign(e, { stage: "move" }); }
     const captured = readSeatLock(held);
@@ -147,3 +150,14 @@ export function swapSeatLock(lock, { who, expect, next }) {
   } finally { releaseGuard(guard, mine); }
 }
 export const isSeatLockRefusal = (e) => e instanceof SeatLockRefusal;
+
+/** Refuse, as swapSeatLock does, when a guard or a moved-aside lock left by another
+ *  change is beside the lock; change nothing otherwise. For a change that would act on
+ *  no lock at all (a retire that finds none of its own, a spawn that refuses the
+ *  holder), so a killed change's leftovers are reported by every next change. */
+export function checkSeatLockLeftovers(lock, { who }) {
+  const guard = seatGuardPath(lock), held = seatHeldPath(lock);
+  const mine = takeGuard(guard, who);
+  try { refuseStrayHeld(lock, held); }
+  finally { releaseGuard(guard, mine); }
+}

@@ -94,6 +94,25 @@ syncBuiltinESMExports();
 `);
   return file;
 }
+/** Before the hook's third exclusive open of the guard (a spawn's success rewrite, after
+ *  its leftover check and its take): say so (PAUSE_MARK), then wait for GO. */
+function pauseBeforeRewritePreload(fx) {
+  const file = join(fx.base, "pause-rewrite.mjs");
+  writeFileSync(file, `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const open = fs.openSync;
+let opens = 0;
+fs.openSync = function (p, flags, ...args) {
+  if (String(p) === process.env.GUARD && flags === "wx" && ++opens === 3) {
+    fs.writeFileSync(process.env.PAUSE_MARK, "paused");
+    while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  }
+  return open.call(this, p, flags, ...args);
+};
+syncBuiltinESMExports();
+`);
+  return file;
+}
 /** SIGKILLs the hook right after it moves the lock aside (a change killed mid-way). */
 function killAfterMovePreload(fx) {
   const file = join(fx.base, "kill.mjs");
@@ -130,14 +149,18 @@ test("2. two take-overs of one lock: exactly one wins, and the other refuses nam
   write(fx.lock, JSON.stringify(goneHolder(fx)));
   const first = fx.homeOf("seat-one"), second = fx.homeOf("seat-two");
   const readMark = join(fx.base, "second-read"), go = join(fx.base, "go");
-  t.after(() => { if (!existsSync(go)) writeFileSync(go, "go"); }); // never leave the paused take-over waiting
   // The second reads the lock, then waits while the first takes it over.
   const pending = startHook(fx, "spawn", second, { identity: { takeOver: true }, preload: pausePreload(fx), env: { LOCK: fx.lock, READ_MARK: readMark, GO: go } });
-  await until(() => existsSync(readMark), "the second take-over's read");
-  const won = runHook(fx, "spawn", first, { identity: { takeOver: true } });
-  assert.equal(won.status, 0, won.stdout + won.stderr);
-  writeFileSync(go, "go");
+  let won;
+  try {
+    await until(() => existsSync(readMark), "the second take-over's read");
+    won = runHook(fx, "spawn", first, { identity: { takeOver: true } });
+  } finally {
+    // Release the paused take-over however the first went, and let it end, before the fixture is removed.
+    writeFileSync(go, "go");
+  }
   const lost = await pending;
+  assert.equal(won.status, 0, won.stdout + won.stderr);
   assert.notEqual(lost.status, 0, lost.stdout + lost.stderr);
   assert.match(lost.doc.warning, /changed after this spawn read it/);
   assert.ok(lost.doc.warning.includes(`home ${first}`), lost.doc.warning);
@@ -219,4 +242,53 @@ test("a take-over with no interleaving still takes over, and leaves no private f
   assert.equal(lock.alias, "retained", "the success rewrite went through the guard");
   assert.equal(existsSync(fx.held), false);
   assert.equal(existsSync(fx.guard), false);
+});
+
+test("a retire retried after one killed mid-way reports the guard, then the moved lock, with the lock's name empty", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const spawned = runHook(fx, "spawn", a);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const meta = { OATS_META: JSON.stringify(spawned.doc.meta) };
+  assert.equal(runHook(fx, "retire", a, { preload: killAfterMovePreload(fx), env: meta }).signal, "SIGKILL");
+  assert.equal(existsSync(fx.lock), false);
+  const first = runHook(fx, "retire", a, { env: meta });
+  assert.equal(first.status, 0, first.stdout + first.stderr);
+  assert.ok(first.doc.warning.includes(`left in place: ${fx.guard} exists`), first.doc.warning);
+  assert.ok(first.doc.warning.includes(`remove ${fx.guard} and retry`), first.doc.warning);
+  assert.doesNotMatch(first.doc.warning, /already gone/);
+  rmSync(fx.guard);
+  const second = runHook(fx, "retire", a, { env: meta });
+  assert.equal(second.status, 0, second.stdout + second.stderr);
+  assert.ok(second.doc.warning.includes(`left in place: ${fx.held} is this retained identity's lock, moved aside`), second.doc.warning);
+  assert.doesNotMatch(second.doc.warning, /already gone/);
+  assert.ok(existsSync(fx.held), "the moved lock is not removed");
+});
+
+test("a spawn that would refuse the holder reports a moved-aside lock first", (t) => {
+  const fx = fixture(t);
+  const live = fx.homeOf("seat-a");
+  write(fx.lock, JSON.stringify({ home: live, instance: "seat-a" }));
+  write(fx.held, JSON.stringify(goneHolder(fx)));
+  const r = runHook(fx, "spawn", fx.homeOf("seat-b"));
+  assert.notEqual(r.status, 0);
+  assert.ok(r.doc.warning.includes(`${fx.held} is this retained identity's lock, moved aside`), r.doc.warning);
+});
+
+test("a take-over killed between a spawn's take and its success rewrite: the spawn fails with the guard's whole fix", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
+  const pending = startHook(fx, "spawn", a, { preload: pauseBeforeRewritePreload(fx), env: { GUARD: fx.guard, PAUSE_MARK: paused, GO: go } });
+  let killed;
+  try {
+    await until(() => existsSync(paused), "the first spawn's pause before its rewrite");
+    killed = runHook(fx, "spawn", b, { identity: { takeOver: true }, preload: killAfterMovePreload(fx) });
+  } finally { writeFileSync(go, "go"); }
+  const r = await pending;
+  assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.doc.warning.includes(`remove ${fx.guard} and retry`), r.doc.warning);
+  assert.match(r.doc.warning, /the lock .* was left in place/);
+  assert.equal(existsSync(join(a, ".aw")), false, "the copy was removed");
 });

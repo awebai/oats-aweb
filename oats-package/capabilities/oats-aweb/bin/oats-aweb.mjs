@@ -63,7 +63,7 @@ import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/sess
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
-import { isSeatLockRefusal, lockField, readSeatLock, sameSeatLock, seatHeldPath, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
+import { checkSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLock, sameSeatLock, seatHeldPath, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
@@ -1114,6 +1114,11 @@ function retainedSeatSpawn(source, takeOver) {
   if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
   const lockPath = seatLockPath(source);
+  // A guard or a moved-aside lock that a killed change left is reported before
+  // anything else, whatever the lock says. A check that fails any other way is
+  // reported by the guarded step that takes the lock.
+  try { checkSeatLockLeftovers(lockPath, { who: { op: "spawn", instance, home } }); }
+  catch (e) { if (isSeatLockRefusal(e)) out({ warning: `oats-aweb: identity at ${source} was not seated, and nothing was copied: ${e.message}` }, 1); }
   let takenOver, takeOverNote = "";
   // What this spawn decides on: the lock as it is now (lstat, not exists: a dangling
   // symlink at the lock path is a lock that cannot be read). A lock that cannot even
@@ -1253,7 +1258,11 @@ function retainedSeatSpawn(source, takeOver) {
     });
   } catch (e) {
     const restored = rollback();
-    fatal(`retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}${lockNote}`);
+    const text = `retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}${lockNote}`;
+    // A refusal of the lock's guarded step, or a note on the lock, carries its whole
+    // fix: it is not cut at fatal's 300 characters.
+    if (isSeatLockRefusal(e) || lockNote) out({ warning: `oats-aweb: ${text}` }, 1);
+    fatal(text);
   }
 }
 
@@ -2284,13 +2293,20 @@ if (event === "launch") {
     // heldHere: true when the lock names this home, false when it does not, undefined when unknown.
     let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false;
     if (meta.lock) {
+      // A guard or a moved-aside lock that a killed change left is reported first,
+      // whatever is at the lock's name now (lib/seat-lock.mjs). A check that fails any
+      // other way (a directory that can't be read or written) is reported below.
+      let leftover;
+      try { checkSeatLockLeftovers(meta.lock, { who: { op: "retire", instance, home } }); }
+      catch (e) { if (isSeatLockRefusal(e)) leftover = e.message; }
       // Absent only on ENOENT: a lock that cannot be checked may still be there.
       const unchecked = (() => { try { lstatSync(meta.lock); return undefined; } catch (e) { return e?.code === "ENOENT" ? null : (/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"); } })();
       const present = unchecked === undefined;
       let held; try { held = JSON.parse(readFileSync(meta.lock, "utf8")); } catch { held = undefined; }
       const holder = held && typeof held === "object" && typeof held.home === "string" && held.home ? held.home : undefined;
       const ours = !!holder && samePath(holder, home);
-      if (unchecked) { lockText = `lock ${meta.lock} left in place: it cannot be checked (${unchecked})`; heldHere = undefined; }
+      if (leftover) { lockText = `lock ${meta.lock} left in place: ${leftover}`; heldHere = undefined; }
+      else if (unchecked) { lockText = `lock ${meta.lock} left in place: it cannot be checked (${unchecked})`; heldHere = undefined; }
       else if (!present) lockText = `lock ${meta.lock} already gone`;
       else if (ours) {
         heldHere = true;

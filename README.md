@@ -1461,9 +1461,10 @@ On a filesystem where `rename`, `link` or an exclusive create isn't atomic,
 which includes some network and FUSE filesystems, two changes can still
 interleave, and nothing detects it.
 
-A change that was killed can leave either private file behind. The next spawn,
-take-over or retire refuses with the file and its fix; it never adopts or
-removes one, and judges no age, pid or liveness:
+A change that was killed can leave either private file behind. The next spawn
+or take-over refuses with the file and its fix, and the next retire reports it
+in its warning, whether or not the lock is still there. None of them adopts or
+removes one, or judges age, pid or liveness:
 
 - **A guard:** remove it once no change of that identity is running on any
   host that shares the directory.
