@@ -1460,7 +1460,8 @@ Any other failed mint answers `pendingMint` in its meta.
 Retire acts on an intent, from the home or from that meta, only when the home
 holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
 self-deleted as usual. Otherwise retire reads `aw id team members
---team-id=<team> --registry=<registry> --json` from the recorded root, from the
+--team-id=<team> --registry=<registry> --json` from the recorded root (team ids
+compared as aw spells them: name and domain lowercased), from the
 registry aw itself would use there: the `registry_url` of the team's membership
 in the root's `.aw/teams.yaml`, or else the `registry_url` that the
 membership's `aweb_url` names in its discovery (`<aweb_url>/api/v1/discovery`,
@@ -1483,8 +1484,9 @@ is this mint's only when its `member_did_key` is the did:key of the home's
   registered, and the intent is dropped.
 - **The members read fails:** the outcome is unknown. Retire names the read to
   run, keeps the home and the intent, and exits nonzero for a retry.
-- **The registry can't be established:** the discovery fails or redirects, or
-  the root records or discovers a registry that isn't a plain origin. The
+- **The registry can't be established:** the discovery fails, redirects or
+  answers something other than a JSON object, or the root records or discovers
+  a `registry_url` that is present but isn't a plain origin. The
   outcome is unknown, as for a failed read: retire names the cause, keeps the
   home and the intent, and exits nonzero.
 

@@ -423,3 +423,47 @@ test("a discovery that names no registry: the read and the command use aw's defa
   assert.ok(membersCalls(fx).every((c) => !c.args.some((a) => a.startsWith("--registry"))), JSON.stringify(membersCalls(fx)));
   assert.ok(retired.doc.warning.includes(`--cert-id cert-dev-1 --json (the team's service names no registry in its discovery (${service.url}/api/v1/discovery), so the command omits --registry and aw uses its default)`), retired.doc.warning);
 });
+
+test("a discovery whose registry_url is present but not a string: the outcome is unknown, and nothing is read", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.end(JSON.stringify({ registry_url: 42 })); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.reason, "mint-outcome-unknown");
+  assert.equal(membersCalls(fx).length, 0);
+  assert.equal(existsSync(fx.intentFile), true);
+  assert.equal(existsSync(fx.recordFile), false);
+});
+
+test("a discovery that answers JSON but not an object: the outcome is unknown", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.end(JSON.stringify(["https://registry.example.test"])); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(membersCalls(fx).length, 0);
+});
+
+test("a team id configured in mixed case still finds this mint's certificate, and the root's registry, as aw spells them", (t) => {
+  const fx = fixture(t);
+  const configured = "Default:Example.Test";
+  // aw canonicalizes a team id before it registers or reads (awid/team_id.go): the fake
+  // lowercases the team flags, so the registry and the members output use aw's spelling.
+  const fakeBin = join(fx.fake.base, "bin", "aw");
+  const initLine = `(${joinFromFake})(args);`;
+  writeFileSync(fakeBin, readFileSync(fakeBin, "utf8").replace(initLine, `for (let i = 0; i < args.length; i++) if (args[i].startsWith("--join-team=") || args[i].startsWith("--team-id=")) args[i] = args[i].toLowerCase();\n${initLine}`));
+  const teams = { OATS_DEFAULT_TEAM_ID: configured, OATS_TEAMS: JSON.stringify([{ label: "default", team: configured, default: true, from: "local" }]) };
+  const r = fx.hook("spawn", { ...KILLED, ...teams, FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(fx.members().length, 1);
+  const retired = fx.retire(r.doc.meta, teams);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.doesNotMatch(retired.doc.warning, /nothing was registered/);
+  assert.ok(retired.doc.warning.includes(`--cert-id cert-dev-1 --registry ${REGISTRY} --json`), retired.doc.warning);
+  const entries = JSON.parse(readFileSync(fx.recordFile, "utf8")).entries;
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].registry, REGISTRY);
+});

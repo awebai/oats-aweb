@@ -62,7 +62,7 @@ import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/cap
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { sameAwebTeamId, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { identityBooleans } from "../lib/boolean-setting.mjs";
@@ -1105,7 +1105,7 @@ async function mintRegistryForTeam(root, team) {
   let text;
   try { text = readFileSync(join(root, ".aw", "teams.yaml"), "utf8"); }
   catch { return { registry: null, registryError: "the root's teams.yaml could not be read, so the command omits --registry and aw uses its default" }; }
-  const row = membershipRows(text).find((r) => r.team_id === team);
+  const row = membershipRows(text).find((r) => sameAwebTeamId(r.team_id, team));
   if (!row) return { registry: null, registryError: `the root's teams.yaml has no membership of ${team}, so the command omits --registry and aw uses its default` };
   if (row.registry_url) {
     const registry = registryOrigin(row.registry_url);
@@ -1128,8 +1128,11 @@ async function mintRegistryForTeam(root, team) {
   } catch (e) { return failed(e?.name === "TimeoutError" ? `did not answer within ${Math.round(timeout / 1000)} s` : `failed (${String(e?.cause?.code || e?.code || e?.name || "error").replace(/[^A-Za-z0-9_]/g, "").slice(0, 40)})`); }
   if (body.length > DISCOVERY_MAX_BYTES) return failed("answered more than 1 MiB");
   let doc; try { doc = JSON.parse(body); } catch { return failed("answered no JSON"); }
-  const named = typeof doc?.registry_url === "string" ? doc.registry_url.trim() : "";
-  // aw falls back to its default when the discovery names no registry.
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return failed("answered JSON that is not an object");
+  // aw falls back to its default only when the discovery names no registry: an absent
+  // or empty registry_url. Any other value that can't be used is not that.
+  if (doc.registry_url !== undefined && doc.registry_url !== null && typeof doc.registry_url !== "string") return failed("names a registry_url that is not a string");
+  const named = typeof doc.registry_url === "string" ? doc.registry_url.trim() : "";
   if (!named) return { registry: null, registryError: `the team's service names no registry in its discovery (${url}), so the command omits --registry and aw uses its default` };
   const registry = registryOrigin(named.replace(/\/+$/, ""));
   return registry ? { registry } : failed("names a registry that is not a plain origin, so no command can name it");
@@ -1376,7 +1379,7 @@ const dropPendingMint = () => rmSync(pendingMintFile(), { force: true });
 function hasRetiredCertificateFor(team, alias) {
   let record;
   try { record = readRetiredRecord(selectedDeployment(process.env)); } catch { return false; }
-  return record.entries.some((e) => e.team === team && e.alias === alias);
+  return record.entries.some((e) => sameAwebTeamId(e.team, team) && e.alias === alias);
 }
 function readDefaultRetireMarker() {
   try {
@@ -2477,7 +2480,7 @@ if (event === "launch") {
     // Unknown: the home, its key and the intent stay for the retry.
     if (unestablished) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: ${unestablished}; once it can be (the discovery answers, or the team's membership in that teams.yaml records a plain registry_url), retire again; this home and its record of the mint are kept`) }, 1);
     if (!doc) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: the team's members could not be read (${why}); run ${membersRead(team)}${where} to see whether "${alias}" holds a certificate there, then retire again; this home and its record of the mint are kept`) }, 1);
-    const held = doc.members.filter((m) => m && typeof m === "object" && m.alias === alias && !m.revoked_at && (m.team_id === undefined || m.team_id === team));
+    const held = doc.members.filter((m) => m && typeof m === "object" && m.alias === alias && !m.revoked_at && (m.team_id === undefined || sameAwebTeamId(m.team_id, team)));
     let key; try { key = readFileSync(join(home, ".aw", "signing.key"), "utf8"); } catch { key = undefined; }
     const did = key === undefined ? undefined : didKeyOfSigningKey(key);
     const nothing = (because) => { dropPendingMint(); return finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), warning: said(`nothing was registered by the interrupted mint of alias "${alias}" in team ${team}: ${because}`) }); };
