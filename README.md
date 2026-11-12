@@ -299,7 +299,8 @@ takes a workspace context (oats readiness)` (`CAPTURED_UNSUPPORTED` in
 `lib/binding-wire.mjs`). Any event run with `OATS_BINDING_FILE`,
 `OATS_INVOCATION_CONTEXT_FILE` or `OATS_SOURCE_RECEIPT_FILE` set runs its
 normal path and warns `<NAME> is ignored: ` followed by that reason, once per
-variable, naming the variable only.
+variable, naming the variable only: a hook in its JSON warning, every other
+command on stderr.
 
 #### Claim floors
 

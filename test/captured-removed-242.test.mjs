@@ -108,8 +108,8 @@ function seat(t) {
   const files = Object.fromEntries(MARKERS.map((k) => { const p = join(base, "captured", `${k.toLowerCase()}.json`); write(p, FILE_CONTENT); return [k, p]; }));
   return { base, root, home, source, lock: join(dirname(source), ".aw-retained-seat.json"), bin: fakeAw(base), files };
 }
-function hook(fx, event, env = {}) {
-  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...cleanEnv(), PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained",
+function hook(fx, event, env = {}, args = []) {
+  const r = spawnSync(process.execPath, [HOOK, event, ...args], { encoding: "utf8", env: { ...cleanEnv(), PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained",
     OATS_HOME: fx.home, OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_RUNTIME: "codex", FAKE_RETAINED: "1", ...teamEnv,
     OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", source: fx.source } }), ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
@@ -169,6 +169,23 @@ test("a text command with a variable set warns on stderr and answers as without 
   assert.equal(r.stdout, plain.stdout);
   assert.ok(r.stderr.split("\n").includes(ignored("OATS_INVOCATION_CONTEXT_FILE")), r.stderr);
 });
+
+// The commands dispatched before the hooks load (invite, resident, wake, health) warn too, and a
+// variable that is present but empty is present. Each is run with an argument it refuses, so
+// it has no effect.
+for (const command of ["invite", "resident", "wake", "health"]) {
+  test(`${command} with the variables set, one of them empty, warns on stderr and answers as without them`, (t) => {
+    const fx = seat(t);
+    const plain = hook(fx, command, {}, ["--no-such-flag"]);
+    const r = hook(fx, command, { OATS_BINDING_FILE: "", OATS_SOURCE_RECEIPT_FILE: fx.files.OATS_SOURCE_RECEIPT_FILE }, ["--no-such-flag"]);
+    assert.equal(r.status, plain.status, r.stdout + r.stderr);
+    assert.equal(r.stdout, plain.stdout);
+    const lines = r.stderr.split("\n");
+    for (const name of ["OATS_BINDING_FILE", "OATS_SOURCE_RECEIPT_FILE"]) assert.ok(lines.includes(ignored(name)), r.stderr);
+    assert.equal(r.stderr.replace(/^oats-aweb: OATS_[A-Z_]+ is ignored: .*\n/gm, ""), plain.stderr, "the command's own stderr is unchanged");
+    assert.ok(!r.stderr.includes(fx.files.OATS_SOURCE_RECEIPT_FILE), "a variable's value is never printed");
+  });
+}
 
 // Pinned acceptance: no remaining import of a removed module.
 test("nothing imports a removed module, and the removed files are gone", () => {

@@ -43,6 +43,14 @@
  * kernel feeds it to the retire hook to compensate partial state, and an
  * identity joined moments before the failure must still be deletable.
  */
+// The captured-execution path was removed (awebai/oats-aweb#242): no command reads the
+// variables that selected it. Each one present is named, never its value or its file, and
+// never fails anything: a hook event puts it in its JSON warning (below, once outNotes exists);
+// every other command writes it to stderr here, before the commands dispatched first.
+// CAPTURED_UNSUPPORTED is bound by the import from binding-wire below (imports are hoisted).
+const CAPTURED_PRESENT = ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"].filter((name) => Object.hasOwn(process.env, name));
+const CAPTURED_IN_HOOK = ["spawn", "retire", "launch", "upgrade"].includes(process.env.OATS_EVENT || process.argv[2]);
+if (!CAPTURED_IN_HOOK) for (const name of CAPTURED_PRESENT) process.stderr.write(`oats-aweb: ${name} is ignored: ${CAPTURED_UNSUPPORTED}\n`);
 import { inviteMain } from '../lib/invite.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'invite') process.exit(inviteMain(process.argv.slice(3)));
 import { residentMain } from '../lib/resident.mjs';
@@ -318,17 +326,8 @@ function upgrade() {
   out({ meta: deliveryRuntimeMeta(meta, configuredDelivery(settings), runtime), ...(warnings.length ? { warning: warnings.join(" | ") } : {}) });
 }
 
-// The captured-execution path was removed (awebai/oats-aweb#242): no event reads
-// the variables that selected it. Each one present is named, never its value or its
-// file, and never fails anything: in a hook's JSON warning, else on stderr.
-{
-  const hookEvent = ["spawn", "retire", "launch", "upgrade"].includes(process.env.OATS_EVENT || process.argv[2]);
-  for (const name of ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"]) {
-    if (!Object.hasOwn(process.env, name)) continue;
-    if (hookEvent) outNotes.push(`${name} is ignored: ${CAPTURED_UNSUPPORTED}`);
-    else process.stderr.write(`oats-aweb: ${name} is ignored: ${CAPTURED_UNSUPPORTED}\n`);
-  }
-}
+// A hook event's warning for each captured-execution variable present (see the top of this file).
+if (CAPTURED_IN_HOOK) for (const name of CAPTURED_PRESENT) outNotes.push(`${name} is ignored: ${CAPTURED_UNSUPPORTED}`);
 
 // Upgrade adopts only recorded metadata. It must run before any settings gate or
 // aw availability check.

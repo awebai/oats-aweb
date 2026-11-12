@@ -83,13 +83,12 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
   let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{wireError('invalid-binding');}
   return new StrictJsonParser(text,limits).parse();
 }
-function settings(value,{phase}={}) {
+// The settings a check carries (check is the one phase that reads input).
+function settings(value) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
-  if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join','health']:['delivery','claudeChannelMode','root','roots','join'],[]);
-  if(phase==='check') {try {healthSettings(value);} catch {wireError('needs-configuration');}}
-  if(phase!=='check') {try {selectClaudeChannel(value.claudeChannelMode);} catch {wireError('needs-configuration');}}
+  keys(value,['delivery','claudeChannelMode','root','roots','identity','residents','join','health'],[]);
+  try {healthSettings(value);} catch {wireError('needs-configuration');}
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
   if(value.join!==undefined && typeof value.join!=='string') wireError('needs-configuration');
@@ -103,7 +102,7 @@ function settings(value,{phase}={}) {
 function request(value,phase) {
   keys(value,['schemaVersion','phase','slot','capability','settings','input'],['schemaVersion','phase','slot','capability','settings','input']);
   if(value.schemaVersion!==1 || value.phase!==phase || value.slot!==SLOT || value.capability!==CAPABILITY) wireError('invalid-binding');
-  settings(value.settings,{phase});return value;
+  settings(value.settings);return value;
 }
 function checkProblems(problems) {return problems.length?{status:'needs-configuration',problems}:null;}
 function workspaceReadinessContext(value) {
@@ -242,7 +241,6 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
   if(needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,awVersion:aw.version,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
-async function readinessFromSettings(settings,options) {return (await readinessDetails(settings,options)).result;}
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   // An inherited AWEB_IDENTITY_HOME is the caller's identity, never this check's.
   const env={...process.env,AW_NO_UPDATE_CHECK:'1'};delete env.AWEB_IDENTITY_HOME;for(const name of unsetEnv) delete env[name];
