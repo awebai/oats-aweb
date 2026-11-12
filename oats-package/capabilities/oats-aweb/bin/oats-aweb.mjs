@@ -62,6 +62,7 @@ import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/cap
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
+import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
@@ -419,8 +420,6 @@ function awebRoot() { return resolveAwebRoot(); }
 const teamMemberships = (listed) => listed?.memberships || listed?.teams || [];
 const teamIdsOf = (listed) => teamMemberships(listed).map((m) => m.team_id || m.id || m);
 const AWEB_TEAM_ID_MESSAGE = "aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)";
-function validHostname(value) { const s = String(value || ""); return s.length <= 253 && s.split(".").every((label) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label)); }
-function validAwebTeamId(value) { const m = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(value || "")); return !!m && validHostname(m[2]); }
 function invalidAwebTeamId(env = process.env) {
   const id = defaultTeamId();
   if (id && !validAwebTeamId(id)) return id;
