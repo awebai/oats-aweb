@@ -52,6 +52,7 @@ if (args[0] === "version") {
   record({});
   const mode = process.env.FAKE_VERSION || "";
   if (mode === "nomatch") { console.log("no version here"); process.exit(0); }
+  if (mode === "silent") block(20000); // prints nothing until long after any deadline
   if (mode === "chunked") { fs.writeSync(1, "aw 1.3"); block(150); fs.writeSync(1, "6.30\\n  commit: abc\\n"); block(20000); process.exit(0); }
   fs.writeSync(1, "aw " + (process.env.FAKE_AW_VERSION || (mode === "old" ? "1.36.12" : "1.36.33")) + "\\n  commit: abc\\n");
   if (mode === "slow" || mode === "old") block(20000);
@@ -281,6 +282,32 @@ test("an aw call the hook's deadline leaves no time for is not started", (t) => 
   const r = fx.hook("spawn", { OATS_AWEB_HOOK_BUDGET_MS: "1" });
   assert.notEqual(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(fx.fake.readCalls().filter((c) => c.args[0] === "init"), [], "no mint is started past the deadline");
+});
+
+test("the hook's deadline bounds spawn's aw version read", (t) => {
+  const fx = fixture(t);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_VERSION: "silent", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /aw version could not be read/);
+  assert.ok(Date.now() - started < 8000, `the deadline, not the read's own 10 s, bounds it (${Date.now() - started} ms)`);
+});
+
+test("retire starts no wake deregistration after the hook's deadline", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const before = fx.fake.readCalls().length;
+  fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), OATS_AWEB_HOOK_BUDGET_MS: "1" });
+  assert.deepEqual(fx.fake.readCalls().slice(before).filter((c) => c.args[0] === "wake" || c.args[0] === "workspace").map((c) => c.args.slice(0, 2).join(" ")), [], "no aw call is started past the deadline");
+});
+
+test("the hook's deadline cuts a wake deregistration that would outlast it", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  const started = Date.now();
+  fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
+  assert.ok(Date.now() - started < 10000, `retire ends by the deadline, not the deregistration's own 60 s (${Date.now() - started} ms)`);
 });
 
 test("mint output that is not JSON is withheld and still compensated", (t) => {

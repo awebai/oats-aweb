@@ -200,6 +200,7 @@ const versionToken=(re,text) => {const m=re.exec(text);return m && (parseVersion
 export function readAwVersion({timeout=10000,env=process.env}={}) {
   return new Promise((settle) => {
     const childEnv={...env,AW_NO_UPDATE_CHECK:'1'};delete childEnv.AWEB_IDENTITY_HOME;
+    if(!(timeout>0)){settle(undefined);return;} // no time left to ask: unreadable, nothing started
     let child,text='',answer,decided=false,exited=false,timer;
     // 'exit' can precede the last stdout chunk, so only 'close' judges the
     // output of a child that ended on its own; a decided read waits for 'exit'.
@@ -315,9 +316,9 @@ export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||''
 const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
 /** The aw on PATH against AW_MIN: `{version, message}`, where message says why
  *  it falls short and is undefined when it doesn't. */
-export async function awFloorObservation({env=process.env}={}) {
+export async function awFloorObservation({env=process.env,timeout}={}) {
   if(!onPath('aw',env)) return {message:`aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
-  const version=await readAwVersion({env});
+  const version=await readAwVersion({env,...(timeout===undefined?{}:{timeout})});
   if(!version) return {message:`aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`};
   return {version,message:!versionAtLeast(version,AW_MIN)?`aw ${version} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined};
 }

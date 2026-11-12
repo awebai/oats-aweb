@@ -136,8 +136,12 @@ const HOOK_STARTED_AT = Date.now();
 // OATS_AWEB_HOOK_BUDGET_MS shortens it, for tests; nothing lengthens it past the default.
 const HOOK_BUDGET_MS = Math.min(100000, Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) > 0 ? Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) : 100000);
 const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EVENT || process.argv[2]);
+/** The timeout an aw call of this hook gets: what it asks for, cut to what is
+ *  left before the deadline in a lifecycle hook. At or below 0 the call is not
+ *  started. Every aw child of the hook takes its timeout from here. */
+const hookTimeout = (requested) => boundedByHook ? Math.min(requested, HOOK_STARTED_AT + HOOK_BUDGET_MS - Date.now()) : requested;
 const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
-  const timeout = boundedByHook ? Math.min(requested, HOOK_STARTED_AT + HOOK_BUDGET_MS - Date.now()) : requested;
+  const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
     const childEnv = childEnvFor({ env: extraEnv, unsetEnv });
@@ -496,7 +500,7 @@ if (!onPath("aw") && !setupHandlesAw) {
 // The aw version spawn read for the floor, reused for the tested-range warning.
 let spawnAwVersion;
 if ((isCommand && !setupHandlesAw) || event === "spawn") {
-  const floor = await awFloorObservation();
+  const floor = await awFloorObservation({ timeout: hookTimeout(10000) });
   const floorProblem = floor.message;
   spawnAwVersion = floor.version;
   if (floorProblem) {
@@ -616,10 +620,12 @@ const startedMeta = (meta = {}) => {
  *  overlaps it with the self-delete). Settles to whether it succeeded. */
 function wakeDeregisterStarted(instanceHome) {
   return new Promise((settle) => {
+    const timeout = hookTimeout(60000);
+    if (timeout <= 0) { settle(false); return; } // the hook's deadline has passed: not started
     let child;
     try { child = spawn("aw", ["wake", "deregister", "--home", instanceHome], { cwd: instanceHome, env: childEnvFor(), stdio: "ignore" }); }
     catch { settle(false); return; }
-    const timer = setTimeout(() => child.kill("SIGTERM"), 60000);
+    const timer = setTimeout(() => child.kill("SIGTERM"), timeout);
     child.on("error", () => { clearTimeout(timer); settle(false); });
     child.on("exit", (code) => { clearTimeout(timer); settle(code === 0); });
   });

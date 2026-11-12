@@ -10,7 +10,8 @@
   came first, and the hook's own handling of a call that completed late (a
   mint reported for compensation, a grant to revoke) never ran, while the
   killed hook's `aw` child could finish after the compensating retire had
-  found nothing. Every `aw` call of a lifecycle hook now ends by one
+  found nothing. Every `aw` call of a lifecycle hook (the version read, the
+  retire's background wake deregistration and every other) now ends by one
   deadline, 100 s after the hook started, whatever its own timeout, and a call
   the deadline leaves no time for is not started and fails as "not started:
   the hook's 100 s deadline had passed". `OATS_AWEB_HOOK_BUDGET_MS` shortens
