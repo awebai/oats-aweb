@@ -68,12 +68,15 @@
   hand. Such a retire now goes by the home's captured settings, whose
   `identity.source` is what made the spawn take the retained route: it
   retires the home as a retained seat, with no workspace delete, the lock
-  released, and, when the spawn had bound the identity to this home, the
-  `aw workspace connect` command that binds it back to its source (its values
-  printed only when they pass their own shapes). Nothing in the home's
+  released, and, when the spawn had taken the seat, the `aw workspace connect`
+  command that binds the identity back to its source (its values printed only
+  when they pass their own shapes). That holds even when no local binding
+  survived, since aw binds on the service before it writes the home's
+  `workspace.yaml`. Nothing in the home's
   provider state decides it. A retained seat's retire now releases its lock
   only when the lock names this home: a lock another seat took over, or one
-  that cannot be read, is left in place, and the retire says so. A spawn
+  that cannot be read, is left in place, and the retire says so; so is one it
+  can't remove, with the reason. A spawn
   that never held the lock is retired as releasing nothing. An
   `identity.source` that is not a string (a one-element list, say) is now
   refused at spawn before the lock: spawn read it as a path, while retire

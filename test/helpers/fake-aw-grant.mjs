@@ -29,11 +29,14 @@ if (s.startsWith("wake ")) process.exit(0);
 // workspace connect binds the identity to the directory it runs in, writing
 // <cwd>/.aw/workspace.yaml as aw does. Opt-in failure points:
 //   FAKE_RETAINED_KILL=after-connect  connect writes the binding, then SIGKILLs its parent (the hook)
+//   FAKE_RETAINED_KILL=mid-connect    the server accepts the connect, and the parent is SIGKILLed
+//                                     before the local workspace.yaml is written (aw posts first)
 //   FAKE_RETAINED_FAIL=check          aw check --online fails after the connect
 //   FAKE_RETAINED_RESTORE_FAIL=1      a connect from any directory but OATS_HOME fails
 if (process.env.FAKE_RETAINED === "1") {
   if (a[0] === "workspace" && a[1] === "connect") {
     if (process.env.FAKE_RETAINED_RESTORE_FAIL && process.cwd() !== process.env.OATS_HOME) { console.error("connect refused"); process.exit(1); }
+    if (process.env.FAKE_RETAINED_KILL === "mid-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
     fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true });
     fs.writeFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "aweb_url: " + (val("--service") || "https://fixture.invalid/api") + "\\nmemberships:\\n  - team_id: " + (val("--team") || "t:example.test") + "\\n    alias: retained\\n    workspace_id: 0f1e2d3c-4b5a-4968-8776-655443322110\\n");
     if (process.env.FAKE_RETAINED_KILL === "after-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }

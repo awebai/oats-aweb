@@ -2227,27 +2227,33 @@ if (event === "launch") {
   if (meta.retained) {
     // The lock is released only when it names this home: one another seat has
     // taken over, or that cannot be read, is never removed here.
-    let lockText = `lock ${meta.lock || "?"} removed`;
+    let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false;
     if (meta.lock) {
       const present = (() => { try { lstatSync(meta.lock); return true; } catch { return false; } })();
       let held; try { held = JSON.parse(readFileSync(meta.lock, "utf8")); } catch { held = undefined; }
       const holder = held && typeof held === "object" && typeof held.home === "string" && held.home ? held.home : undefined;
       const ours = !!holder && samePath(holder, home);
       if (!present) lockText = `lock ${meta.lock} already gone`;
-      else if (ours) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
+      else if (ours) {
+        heldHere = true;
+        try { rmSync(meta.lock); }
+        catch (e) { lockText = e?.code === "ENOENT" ? `lock ${meta.lock} already gone` : `lock ${meta.lock} left in place: it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`; }
+      }
       else lockText = `lock ${meta.lock} left in place: ${holder ? "it is held by another seat" : "it cannot be read"}`;
     }
-    // A spawn that bound the identity to this home and did not answer leaves the
-    // binding pointing here: name the way back to the source. The command is
-    // printed for a person, so it holds only values that pass their own shapes.
+    // A spawn that took the seat (this home held the lock) or bound it here, and
+    // did not answer, may have left the binding pointing here: aw binds on the
+    // service before it writes the local workspace.yaml, so a missing file proves
+    // nothing. Name the way back to the source. The command is printed for a
+    // person, so it holds only values that pass their own shapes.
     let rebind = "";
-    if (meta.spawnUnanswered && existsSync(join(home, ".aw", "workspace.yaml"))) {
+    if (meta.spawnUnanswered && (heldHere || existsSync(join(home, ".aw", "workspace.yaml")))) {
       const target = retainedSeatTarget(meta.source);
       const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
       const connect = plainServiceUrl(target.service) && validAwebTeamId(target.team) && (!target.role || plainRole)
         ? `\`aw workspace connect --service=${target.service} --team=${target.team}${plainRole ? ` --role=${plainRole}` : ""}\``
         : "`aw workspace connect` with the service, team and role in its workspace.yaml";
-      rebind = `; this seat's spawn did not finish after binding the identity to this home, so its binding may still point here: run ${connect} from ${dirname(meta.source)} to bind it back to its source, or spawn the seat again`;
+      rebind = `; this seat's spawn did not finish after taking the seat, so the identity's binding may point here (if its \`aw workspace connect\` reached the service): run ${connect} from ${dirname(meta.source)} to bind it back to its source, or spawn the seat again`;
     }
     // A spawn that did not answer and does not hold the lock never took the seat:
     // the lock is taken before anything is copied.

@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
@@ -56,6 +56,18 @@ test("a retained spawn killed after connect: the compensating retire deletes no 
   assert.equal(existsSync(fx.lock), false, "the lock this home took is released");
   assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=https://fixture.invalid/api --team=${TEAM}\` from ${fx.legacyHome}`), `names the restore from the source: ${retired.doc.warning}`);
   assert.equal(readFileSync(join(fx.source, "signing.key"), "utf8"), "fixture-signing-key", "the source is untouched");
+});
+
+test("a retained spawn killed mid-connect, before aw writes the local binding: the retire still names the rebind", (t) => {
+  const fx = fixture(t);
+  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_KILL: "mid-connect" });
+  assert.equal(spawned.signal, "SIGKILL", "the hook was killed");
+  assert.equal(existsSync(join(fx.home, ".aw", "workspace.yaml")), false, "no local binding was written");
+  const retired = compensate(fx);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), []);
+  assert.equal(existsSync(fx.lock), false, "the lock this home took is released");
+  assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=https://fixture.invalid/api --team=${TEAM}\` from ${fx.legacyHome}`), `names the rebind: ${retired.doc.warning}`);
 });
 
 test("a retained spawn that fails after connect and cannot restore: the compensating retire deletes no workspace", (t) => {
@@ -129,6 +141,20 @@ test("a lock that cannot be read is left in place by a retained retire, and the 
     assert.equal(readFileSync(fx.lock, "utf8"), content, `lock ${content} left in place`);
     assert.match(retired.doc.warning, /left in place: it cannot be read/, content);
   }
+});
+
+test("a lock this home holds but cannot remove is reported as left in place", (t) => {
+  const fx = fixture(t);
+  const spawned = runHook(fx, "spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  chmodSync(dirname(fx.lock), 0o500); // readable, but nothing in it can be unlinked
+  let retired;
+  try { retired = runHook(fx, "retire", { OATS_META: JSON.stringify(spawned.doc.meta) }); }
+  finally { chmodSync(dirname(fx.lock), 0o700); }
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, fx.home, "the lock is still there");
+  assert.match(retired.doc.warning, /left in place: it could not be removed \(EACCES\)/);
+  assert.doesNotMatch(retired.doc.warning, /removed\)/);
 });
 
 test("the restore command is printed only from values of their own shapes", (t) => {
