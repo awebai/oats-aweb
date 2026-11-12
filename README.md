@@ -1467,9 +1467,11 @@ Two limits remain:
 - **The guard covers file operations, never an aw call.** A take-over can land
   while a spawn's `aw workspace connect` runs, or while its rollback reconnects
   the legacy home. Then the server binding may end up with the spawn's home or
-  the legacy home rather than with the seat that now holds the lock. Each exit
-  after a connect reads the lock again. If another seat holds it, the spawn
-  fails, says where the binding may point, and names the
+  the legacy home rather than with the seat that now holds the lock. The lock
+  is read again after the spawn's last aw call (its wake registration, where
+  the home has one) and after every reconnect a rollback tries, whether or not
+  it succeeded. If another seat holds it, the spawn fails, removes any wake
+  registration it made, says where the binding may point, and names the
   `aw workspace connect --service=… --team=…` to run from that seat's home. This
   needs a take-over of a seat whose runtime is still alive, and the take-over
   already warns about that: there are then two seats with one key, and the old

@@ -1199,7 +1199,10 @@ function retainedSeatSpawn(source, takeOver) {
   };
   let successor; // another seat's hold on the lock, found by the rollback
   let lateSuccessor; // one that landed while the rollback's reconnect ran
+  let wakeRegistering = false, wakeNote = "";
   const rollback = () => {
+    // A registration with the host wake broker made for this seat goes with it, as at retire.
+    if (wakeRegistering && !wakeDeregister(home)) wakeNote = `; this home could not be removed from the host wake broker: run \`aw wake deregister --home ${home}\``;
     // Once `aw workspace connect` has started, the server binding may point at the
     // new home (aw binds on the service before it writes locally, so a connect
     // that failed may still have bound it);
@@ -1213,7 +1216,8 @@ function retainedSeatSpawn(source, takeOver) {
     if (connected && !successor) {
       try { run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], legacyHome, 60000); restored = true; }
       catch { restored = false; }
-      if (restored) lateSuccessor = otherHolder();
+      // Read after every attempt: a reconnect that failed may still have bound the legacy home.
+      lateSuccessor = otherHolder();
     }
     if (restored) { try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ } lockNote = releaseOwnLock(); }
     return restored;
@@ -1268,7 +1272,11 @@ function retainedSeatSpawn(source, takeOver) {
     if (!seated.done) throw new Error(`the retained identity's lock ${lockPath} was taken by another seat during this spawn (now held by ${seated.captured.present ? seatLockHolderText(seated.captured.doc) : "no seat"}); the seat is not briefed`);
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
-    if (broker) wakeRegister(home, dest);
+    if (broker) { wakeRegistering = true; wakeRegister(home, dest); }
+    // The last aw call is done: a take-over that landed while it ran wins, and this
+    // seat is not briefed.
+    const after = otherHolder();
+    if (after) throw new Error(`the retained identity's lock ${lockPath} was taken by another seat during this spawn; the seat is not briefed`);
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver}${takeOverNote} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
@@ -1283,13 +1291,15 @@ function retainedSeatSpawn(source, takeOver) {
     const restored = rollback();
     const binding = successor
       ? ` (another seat took the identity over during this spawn (${successor.text}), so the server binding was not restored to the legacy home and this seat's copy was removed; the binding may point at this home, if this spawn's connect ran after that seat's: ${successor.fix})`
-      : lateSuccessor
+      : lateSuccessor && restored
       ? ` (the server binding was restored to the legacy home and the copy removed, but another seat took the identity over while that ran (${lateSuccessor.text}), so the binding may point at the legacy home, not at that seat: ${lateSuccessor.fix})`
+      : lateSuccessor
+      ? ` (the reconnect of the legacy home failed, and another seat took the identity over while it ran (${lateSuccessor.text}), so the binding may point at the legacy home or at this home, not at that seat; this seat's copy was kept at ${dest}: ${lateSuccessor.fix})`
       : connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : "";
-    const text = `retained identity could not be seated from ${source}: ${e.message || e}${binding}${lockNote}`;
+    const text = `retained identity could not be seated from ${source}: ${e.message || e}${binding}${lockNote}${wakeNote}`;
     // A refusal of the lock's guarded step, or a note on the lock, carries its whole
     // fix: it is not cut at fatal's 300 characters.
-    if (isSeatLockRefusal(e) || lockNote || successor || lateSuccessor) out({ warning: `oats-aweb: ${text}` }, 1);
+    if (isSeatLockRefusal(e) || lockNote || wakeNote || successor || lateSuccessor) out({ warning: `oats-aweb: ${text}` }, 1);
     fatal(text);
   }
 }

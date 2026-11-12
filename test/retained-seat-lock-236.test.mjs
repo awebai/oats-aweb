@@ -396,3 +396,62 @@ test("a take-over that lands between a spawn's take and its connect: the spawn f
   assert.equal(existsSync(join(a, ".aw")), false);
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });
+
+test("a take-over that lands while a spawn's failed reconnect of the legacy home runs: the spawn names the holder and its fix, uncut", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
+  // A connects, fails its check, reads its own lock in rollback, and its reconnect of the legacy home fails.
+  const pending = startHook(fx, "spawn", a, { preload: pauseAtPreload(fx), env: { LOCK: fx.lock, PAUSE_MARK: paused, GO: go, FAKE_RETAINED_FAIL: "check", FAKE_RETAINED_RESTORE_FAIL: "1" } });
+  let won;
+  try {
+    await until(() => existsSync(paused), "the rollback's read");
+    won = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+  } finally { writeFileSync(go, "go"); }
+  const lost = await pending;
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
+  assert.ok(lost.doc.warning.includes("the reconnect of the legacy home failed, and another seat took the identity over while it ran"), lost.doc.warning);
+  assert.ok(lost.doc.warning.includes(`the binding may point at the legacy home or at this home, not at that seat; this seat's copy was kept at ${join(a, ".aw")}: run ${CONNECT} from ${b}`), lost.doc.warning);
+  assert.doesNotMatch(lost.doc.warning, /binding still points at/);
+  assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept: the restore did not succeed");
+});
+
+test("a take-over that lands while a spawn registers with the host wake broker: the spawn fails, deregisters the home and names the fix", async (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
+  const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
+  const preload = join(fx.base, "pause-wake.mjs");
+  writeFileSync(preload, `import cp from "node:child_process";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const exec = cp.execFileSync;
+let once = false;
+cp.execFileSync = function (file, args, ...rest) {
+  if (!once && file === "aw" && args[0] === "wake" && args[1] === "register") {
+    once = true;
+    fs.writeFileSync(process.env.PAUSE_MARK, "paused");
+    while (!fs.existsSync(process.env.GO)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  }
+  return exec.call(this, file, args, ...rest);
+};
+syncBuiltinESMExports();
+`);
+  const pending = startHook(fx, "spawn", a, { preload, env: { PAUSE_MARK: paused, GO: go } });
+  let won;
+  try {
+    await until(() => existsSync(paused), "the wake registration");
+    won = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+  } finally { writeFileSync(go, "go"); }
+  const lost = await pending;
+  assert.equal(won.status, 0, won.stdout + won.stderr);
+  assert.equal(lost.status, 1, lost.stdout + lost.stderr);
+  assert.equal(lost.doc.brief, undefined, "the losing seat is not briefed");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
+  assert.ok(lost.doc.warning.includes(`the binding may point at this home, if this spawn's connect ran after that seat's: run ${CONNECT} from ${b}`), lost.doc.warning);
+  const awCalls = readFileSync(join(fx.base, "aw.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const deregistered = awCalls.findIndex((c) => c.argv[0] === "wake" && c.argv[1] === "deregister" && c.argv.includes(a));
+  assert.ok(deregistered > awCalls.findIndex((c) => c.argv[0] === "wake" && c.argv[1] === "register" && c.argv.includes(a)), "the new registration is removed");
+  assert.equal(existsSync(join(a, ".aw")), false);
+});
