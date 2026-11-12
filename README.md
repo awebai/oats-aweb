@@ -1400,13 +1400,23 @@ runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` or
 delivery path the hook then runs `aw wake register`. The recorded alias is always
 the requested one: if aw reports another, the hook keeps the instance name and
 adds a warning that quotes nothing from aw's reply. Joined teams still use
-invite + `aw id team accept-invite` under `--identity-home`.
+invite + `aw id team accept-invite` under `--identity-home`. Before the accept, the
+join writes its intent to `.oats-aweb/teams.json` (`pendingJoins`: label, team,
+identity home, alias, time). One atomic write records the joined team and drops
+the intent. A hook killed in between leaves the intent. The next `oats aweb join`
+of that label adopts the membership: it connects the workspace and records it,
+with no second invite. `oats aweb leave` of the label, and every retire, adopt it
+and release it with the same `aw workspace delete` as a recorded joined team. A
+start changes nothing at the service for it, and warns naming both commands
+(awebai/oats-aweb#217).
 
 Retire self-deletes with `aw workspace delete <workspace_id>`, taking the id
 from the membership in `<home>/.aw/workspace.yaml` whose team and alias match
 the recorded ones. It falls back to the alias when no entry matches. For a home
 whose last start was on the broker path, `aw wake deregister` runs at the same
-time as the delete.
+time as the delete. Before that, retire leaves each joined team and releases each
+unfinished join. While a release that needs the member key fails (anything but
+`team_not_hosted`), retire keeps the key and the record and exits nonzero.
 
 ## Isolated hostOnly contract verification
 
