@@ -38,6 +38,26 @@
   command omits `--registry`, and its line says the registry was not
   recorded. Nothing a deployment must change.
 
+- **Fixed: a retained seat's lock whose holder is not on this host can be
+  released, and says how (#227).** A retained seat's lock
+  (`.aw-retained-seat.json` beside its `identity.source`) whose holder home is
+  not on this host, or that could not be read, made every later spawn of that
+  identity fail with "was taken by another spawn a moment ago", and
+  `identity.takeOver: true` did not help. Such a lock is still never released
+  by age or automatically: the holder's home may be on another host or
+  container that shares the source. The spawn now refuses, naming the holder
+  (instance, host, since and home, as the lock records them) and the release:
+  once that seat is confirmed gone, spawn with `identity.takeOver: true`
+  (`--provider oats.aweb identity.takeOver=true`), which clears the lock with a
+  warning, or remove the lock file, which the refusal names. A lock whose
+  holder home exists here is refused as before. `identity.takeOver=true` given
+  on the command line now takes effect: the kernel passes it as the string
+  `"true"`, which the hook used to ignore, for a holder whose home exists too.
+  OATS's `docs/container.md` ("Making a seat") still says that when the
+  holder's home is gone `identity.takeOver` does not apply and the lock is
+  removed by hand: the OATS pin PR that moves to this release changes that
+  paragraph.
+
 ## 1.41.0 — 2026-11-12
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A join killed after aw accepted its invite no longer leaves a membership the home doesn't know about: the next join, leave or retire settles it (#217). `oats aweb roster` marks the certificates a retire on this host left in a people-controlled team, with the controller's command (#207). Readiness names a wake stream aw 1.36.58 reports as `refused` (#214), and CI runs the BYOT create shapes against the real tested aw (#215). Nothing a deployment must change.
