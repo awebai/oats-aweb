@@ -1333,6 +1333,8 @@ function connectJoinedWorkspace({ label, team, identityHome, root, cwd = home, s
   }
   return { label, team, identityHome, receive: "poll", since: new Date().toISOString() };
 }
+/** The file aw keeps beside a hosted accept's signing key until its certificate is stored. */
+const HOSTED_ACCEPT_PENDING_MARKER = "pending-hosted-accept";
 /** Whether aw wrote an identity into this home: any of the files that make one. */
 const holdsIdentity = (identityHome) => IDENTITY_AUTHORITY.some((name) => existsSync(join(identityHome, name)));
 const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to finish it or oats aweb leave --labels ${label} to release it`;
@@ -1340,9 +1342,10 @@ const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to fi
  *  `root` returns the root to take the service from when the intent's own
  *  root is gone. `{ absent: true }` once it is confirmed to hold no membership of the
  *  recorded team (no identity, an empty directory removed; or a team list that
- *  does not show the team, the home removed), else `{ joined }`, adopted for
- *  the recorded team with its workspace connected. Throws, removing nothing,
- *  when aw cannot say (its team list fails) or the connect fails. */
+ *  does not show the team and no interrupted hosted accept, the home removed),
+ *  else `{ joined }`, adopted for the recorded team with its workspace
+ *  connected. Throws, removing nothing, when aw cannot say (its team list
+ *  fails, or a hosted accept was cut short) or the connect fails. */
 function settlePendingJoin(pending, { root, resumeCommand }) {
   const { label, team, identityHome } = pending;
   if (!holdsIdentity(identityHome)) {
@@ -1355,7 +1358,16 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
   catch (e) {
     throw new Error(`the unfinished join of ${label} (${team}) could not be checked: aw id team list failed in ${identityHome} (${String(e.message || e).slice(0, 200)}); kept it and its identity home; rerun ${resumeCommand} once aw answers`);
   }
-  if (!member) { rmSync(identityHome, { recursive: true, force: true }); return { absent: true }; }
+  if (!member) {
+    // aw's hosted accept saves the key and this marker before its server call
+    // and removes the marker only once the certificate is stored (aw
+    // cli/go/cmd/aw/id_team.go, from aw 1.36.33): with it, an empty team list
+    // means the accept was cut short, not that the server holds no membership.
+    // The remedy precedes the path: retire keeps 300 characters of it.
+    if (existsSync(join(identityHome, HOSTED_ACCEPT_PENDING_MARKER))) throw new Error(`hosted accept interrupted for ${label} (${team}): the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
+    rmSync(identityHome, { recursive: true, force: true });
+    return { absent: true };
+  }
   // The root the join minted from comes first: it names the service that join
   // used, and the home's captured settings may never have named it (a root
   // recorded in the live settings after the spawn).

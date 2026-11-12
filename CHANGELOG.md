@@ -64,6 +64,16 @@
     `aw id team list` doesn't list the team, has its intent dropped and the
     home removed. When that list fails, nothing is removed, and the message
     says to rerun.
+  - **An interrupted hosted accept is not "nothing".** aw's hosted accept
+    writes `pending-hosted-accept` beside the signing key before its server
+    call, and removes it only once the certificate is stored (aw 1.36.33 and
+    later). If that marker is in the identity home, an empty team list doesn't
+    mean the server holds no membership. join, leave and retire keep the home,
+    the key, the marker and the intent, and exit nonzero; join mints nothing.
+    The message names the recovery: rerun the same `aw id team accept-invite`
+    with the original invite (the provider doesn't keep the token), or have
+    the team's controller remove the member and delete the marker. Then run
+    `oats aweb leave --labels <label>` (or retry the retire).
   - **The label's team changed.** An intent recorded for another team than
     the one the label maps to now is released for its recorded team, never
     adopted into the new one.

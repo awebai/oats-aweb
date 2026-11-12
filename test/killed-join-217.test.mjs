@@ -13,6 +13,10 @@
 //   FAKE_KILL=empty-home     the same, after creating the empty identity home
 //   FAKE_KILL=after-accept   accept-invite writes the identity, then SIGKILLs its parent
 //   FAKE_KILL=after-connect  workspace connect writes the binding, then SIGKILLs its parent
+//   FAKE_KILL=hosted-accept  aw's hosted accept interrupted after its server call:
+//                            signing.key and the pending-hosted-accept marker are
+//                            written, then SIGKILL, before any certificate
+//                            (aw cli/go/cmd/aw/id_team.go, aw-v1.36.33 and aw-v1.36.58)
 //   FAKE_KILL_FOR=<label>    kill only for .aweb-identity-<label>
 //   FAKE_LIST_FAIL           `id team list` fails as aw does on a server error
 //   FAKE_DELETE_FAIL         `workspace delete` of a joined home fails (503)
@@ -60,13 +64,20 @@ if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
   const team = fs.readFileSync(0, "utf8").trim().replace(/^TOKEN__/, ""), alias = flag("--name");
   if (killHere("before-accept")) killParent();
   if (killHere("empty-home")) { fs.mkdirSync(home(), { recursive: true }); killParent(); }
-  for (const name of ["signing.key", "identity.yaml", "teams.yaml"]) if (fs.existsSync(path.join(home(), name))) { console.error("Error: refusing to overwrite completed local state " + path.join(home(), name)); process.exit(1); }
+  // As aw does: a signing key with the pending-hosted-accept marker beside it is
+  // the same accept in flight, and a rerun reuses that key; any other completed
+  // state is refused.
+  const marker = path.join(home(), "pending-hosted-accept");
+  const retrying = fs.existsSync(marker) && fs.existsSync(path.join(home(), "signing.key"));
+  for (const name of ["identity.yaml", "teams.yaml", ...(retrying ? [] : ["signing.key"])]) if (fs.existsSync(path.join(home(), name))) { console.error("Error: refusing to overwrite completed local state " + path.join(home(), name)); process.exit(1); }
+  if (!retrying) { fs.mkdirSync(home(), { recursive: true }); fs.writeFileSync(path.join(home(), "signing.key"), "fixture-key\\n"); fs.writeFileSync(marker, "pending hosted accept\\n"); }
+  if (killHere("hosted-accept")) killParent();
   const certPath = "team-certs/" + team.replace(/:/g, "__") + ".pem";
   fs.mkdirSync(path.join(home(), "team-certs"), { recursive: true });
-  fs.writeFileSync(path.join(home(), "signing.key"), "fixture-key\\n");
   fs.writeFileSync(path.join(home(), "identity.yaml"), "did: did:key:zJoined" + joinedLabel() + "\\nalias: " + alias + "\\n");
   fs.writeFileSync(path.join(home(), certPath), JSON.stringify({ version: 1, certificate_id: "cert-" + joinedLabel(), team_id: team, alias }));
   fs.writeFileSync(path.join(home(), "teams.yaml"), "active_team: " + team + "\\nmemberships:\\n    - team_id: " + team + "\\n      alias: " + alias + "\\n      cert_path: " + certPath + "\\n");
+  fs.rmSync(marker, { force: true });
   if (killHere("after-accept")) killParent();
   emit({ status: "accepted", team_id: team, alias, aweb_url: "https://service.example.test/api" }); process.exit(0);
 }
@@ -382,5 +393,67 @@ test("a killed join through a root only the live settings name is released by re
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(fx.deletes().some((c) => c.identityHome === fx.identityHome("shared")));
   assert.equal(existsSync(fx.identityHome("shared")), false);
+  assert.equal(fx.state().pendingJoins, undefined);
+});
+
+// aw's hosted accept writes the signing key and pending-hosted-accept before its
+// server call, and removes the marker only once the certificate is stored. A kill
+// in between leaves a key, the marker and no certificate: the team list is
+// empty, yet the server may hold the membership.
+function killedInHostedAccept(fx) {
+  const r = join217(fx, "shared", { FAKE_KILL: "hosted-accept" });
+  assert.equal(r.signal, "SIGKILL", `the fake killed the hook: ${r.status} ${r.stdout}${r.stderr}`);
+  const home = fx.identityHome("shared");
+  assert.ok(existsSync(join(home, "pending-hosted-accept")) && existsSync(join(home, "signing.key")));
+  assert.ok(!existsSync(join(home, "team-certs")), "no certificate was stored");
+  return home;
+}
+const assertHostedAcceptKept = (fx, home, output) => {
+  assert.ok(existsSync(join(home, "signing.key")), "the key is kept");
+  assert.ok(existsSync(join(home, "pending-hosted-accept")), "the marker is kept");
+  assert.deepEqual(fx.state().pendingJoins.map((p) => p.label), ["shared"], "the intent is kept");
+  assert.deepEqual(fx.deletes().filter((c) => c.identityHome === home), [], "nothing was released from it");
+  assert.match(output, /hosted accept interrupted/);
+  assert.match(output, /server may hold/);
+  assert.match(output, /rerun the same aw id team accept-invite with the original invite/);
+  assert.match(output, /team controller remove the member and delete the marker/);
+  assert.match(output, /oats aweb leave --labels shared/);
+};
+for (const kind of ["join", "leave"]) test(`an interrupted hosted accept (marker, no certificate) is not absent: ${kind} keeps everything, exits nonzero and names the recovery`, (t) => {
+  const fx = fixture(t);
+  const home = killedInHostedAccept(fx);
+  const r = fx.hook(kind, { args: ["--labels", "shared", "--json"] });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assertHostedAcceptKept(fx, home, r.stderr);
+  assert.equal(fx.invites().length, 1, "no second invite is minted");
+  assert.equal(fx.accepts().length, 1, "no second accept");
+});
+test("an interrupted hosted accept is not absent: retire keeps everything and exits nonzero, naming the recovery", (t) => {
+  const fx = fixture(t);
+  const home = killedInHostedAccept(fx);
+  const r = retire217(fx);
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  const doc = lastDoc(r);
+  assert.deepEqual(doc.meta.failedLeaves, ["shared"]);
+  assertHostedAcceptKept(fx, home, doc.warning);
+});
+test("after an interrupted hosted accept, rerunning the same accept-invite lets leave release the membership", (t) => {
+  const fx = fixture(t);
+  const home = killedInHostedAccept(fx);
+  const rerun = spawnSync("aw", ["--identity-home", home, "id", "team", "accept-invite", "--token-stdin", "--name=dev-1", "--local", "--json"], { cwd: fx.home, env: { PATH: fx.env.PATH }, input: `TOKEN__${SHARED}\n`, encoding: "utf8" });
+  assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
+  const r = leave217(fx, "shared");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.deletes().map((c) => c.identityHome), [home]);
+  assert.equal(existsSync(home), false);
+  assert.equal(fx.state().pendingJoins, undefined);
+});
+test("after an interrupted hosted accept, once the controller removed the member and the marker is deleted, leave drops it", (t) => {
+  const fx = fixture(t);
+  const home = killedInHostedAccept(fx);
+  rmSync(join(home, "pending-hosted-accept"));
+  const r = leave217(fx, "shared");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(existsSync(home), false);
   assert.equal(fx.state().pendingJoins, undefined);
 });
