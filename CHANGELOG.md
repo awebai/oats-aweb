@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Changed: readiness names a stream aw 1.36.58 reports as `refused`.** From
+  aw 1.36.58 the host wake broker shows a stream the server refused as
+  `refused`, never admitted, with its cause and next attempt, and retries it.
+  Readiness reported that home with only its general message, "broker target
+  reports streams not admitted or malformed admission evidence". It now
+  reports the same problem, `wake-stream-unavailable`, as "broker receive
+  stream for team <team> is refused by the server (cause <cause>); the broker
+  retries it on its own, next at <time>; fix what the server refused, then
+  restart the home to register it again, which retries at once". The cause
+  (an HTTP status, a terminal event's name or `silence`) and the time are
+  named only in aw's shape; the error text never is. A refused stream still
+  never reads as ready. A target not admitted for another reason keeps the
+  general message, and `quarantined` from an aw below 1.36.58 is read as
+  before.
+
 ## 1.40.0 — 2026-11-11
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A spawn or a start of a home the host wake broker delivers to (Codex, `delivery: session`, or a runtime with no aweb channel) is now refused while no broker runs, with `wake-daemon-not-running` and the start for the host: `oats aweb wake install`, or `aw wake run` where there is no service manager. Start the broker before such a home's next start. A Claude or pi home under channel delivery is not affected.
