@@ -17,6 +17,22 @@
   general message, and `quarantined` from an aw below 1.36.58 is read as
   before.
 
+- **`oats aweb roster` marks certificates that retires left behind.** In a
+  team whose controller key is held by people, `aw workspace delete` cannot
+  remove the member (`team_not_hosted`), and retire's warning reached only its
+  caller. Retire now also records each such certificate on this host, in
+  `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
+  alias, instance, time and the controller's `aw id team remove-member`
+  command; mode 0600, the newest 500). Its warning and
+  `pendingControllerCleanup` meta are unchanged; a record that cannot be
+  written adds one warning and changes nothing else. The roster matches the
+  team's listed certificates on team and certificate id: a matched line ends
+  `; retired by OATS on this host <date>; the team controller removes it with:
+  <command>`, the footer counts them, and `--json` adds `retired: {at,
+  instance, command}` to those members. An unreadable record is a
+  `retired-record` problem. The record starts with retires after this upgrade,
+  so earlier leftovers won't show, and only on the host where the retire ran.
+
 ## 1.40.0 — 2026-11-11
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A spawn or a start of a home the host wake broker delivers to (Codex, `delivery: session`, or a runtime with no aweb channel) is now refused while no broker runs, with `wake-daemon-not-running` and the start for the host: `oats aweb wake install`, or `aw wake run` where there is no service manager. Start the broker before such a home's next start. A Claude or pi home under channel delivery is not affected.
