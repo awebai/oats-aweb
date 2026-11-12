@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Changed: readiness names a stream aw 1.36.58 reports as `refused`.** From
+  aw 1.36.58 the host wake broker shows a stream the server refused as
+  `refused`, never admitted, with its cause and next attempt, and retries it.
+  Readiness reported that home with only its general message, "broker target
+  reports streams not admitted or malformed admission evidence". It now
+  reports the same problem, `wake-stream-unavailable`, as "broker receive
+  stream for team <team> is refused by the server (cause <cause>); the broker
+  retries it on its own, next at <time>; fix what the server refused, then
+  restart the home to register it again, which retries at once". The cause
+  (an HTTP status, a terminal event's name or `silence`) and the time are
+  named only in aw's shape; the error text never is. A refused stream still
+  never reads as ready. A target not admitted for another reason keeps the
+  general message, and `quarantined` from an aw below 1.36.58 is read as
+  before.
+
 - **`oats aweb roster` marks certificates that retires left behind.** In a
   team whose controller key is held by people, `aw workspace delete` cannot
   remove the member (`team_not_hosted`), and retire's warning reached only its

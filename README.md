@@ -1006,6 +1006,12 @@ Host-owned settings live under `settings.oats.aweb` (normally in
   automatically. Phase determines the outcome even when `stream_error` is set.
   Worker, binding and all other readiness checks still apply; stopped, unknown
   or missing phases remain problems; an unknown phase is named in the problem.
+  From aw 1.36.58 a stream the server refused reads `refused` (it was
+  `quarantined`), for any home: readiness reports `wake-stream-unavailable`
+  naming the phase, aw's cause (an HTTP status or a terminal event's name) and
+  the next attempt, never the error text. The broker retries it on its own;
+  fix what the server refused, and restarting the home registers it again,
+  which retries at once.
 
 - `claudeChannelMode`: `development` (default) or explicit `approved`, **host-only** in
   `oats-local.yaml` under `settings.oats.aweb`. Committed soul/workspace settings
