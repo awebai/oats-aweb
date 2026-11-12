@@ -13,7 +13,9 @@
   longer read. A seat with no such `aweb_url` is refused before anything is
   copied or locked, and the refusal names the fix: run `aw workspace connect
   --service <the team's aweb server>` in the seat's parent directory (the one
-  that holds its `.aw`), then spawn again. While `OATS_AWEB_URL` is set, the
+  that holds its `.aw`), then spawn again. A soul's readiness reports the same
+  refusal as a `needs-configuration` problem; a seated home's readiness does
+  not read the source again. While `OATS_AWEB_URL` is set, the
   refusal says the variable is no longer read, and a spawn that has a record
   warns that the variable is ignored; neither prints its value. **If you set
   `OATS_AWEB_URL` for a retained seat:** record the server in the seat with

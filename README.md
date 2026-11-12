@@ -1456,7 +1456,7 @@ The spawn reads the server only from that `workspace.yaml`, and only when it
 is a plain service URL (http or https, a host, an optional port, and no path
 but `/` or `/api`). `OATS_AWEB_URL` is not read (#241): a seat without
 `aweb_url` is refused before anything is copied, with that `aw workspace
-connect` as the fix. When a retire compensates a spawn that did not answer,
+connect` as the fix, and the soul's readiness reports the same refusal. When a retire compensates a spawn that did not answer,
 the command it prints to bind the identity back to its source names that same
 server.
 

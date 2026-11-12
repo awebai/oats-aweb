@@ -11,6 +11,7 @@ import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
 import {healthSettings} from './health-settings.mjs';
+import { retainedSeatService, unknownSeatServiceMessage } from './retained-seat-service.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
 import {
@@ -357,6 +358,12 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   // captured runtime/delivery (including Codex on channel settings).
   let primaryBroker = !ctx.home && req.settings.delivery === 'session';
   const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
+  // A retained seat's spawn reads its service from the seat's own record; soul scope predicts
+  // its refusal with the same resolver. A seated home's start does not read the source again.
+  if(!ctx.home && mode==='local' && typeof identity.source==='string' && isAbsolute(identity.source)) {
+    const seat=retainedSeatService(identity.source);
+    if(!seat.service) problems.push({code:'needs-configuration',message:unknownSeatServiceMessage(identity.source,seat.serviceRecorded,env)});
+  }
   if(mode==='global') {
     const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);
     const resident=typeof identity.resident==='string' && identity.resident.trim()?identity.resident.trim():undefined;

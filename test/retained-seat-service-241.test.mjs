@@ -123,3 +123,44 @@ test("the rebind command a retire prints names the server the spawn used, never 
   assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=${RECORD} --team=${TEAM}\` from ${fx.legacyHome}`), retired.doc.warning);
   assert.ok(!retired.doc.warning.includes(VARIABLE), "the variable's value is never printed");
 });
+
+// Readiness predicts the spawn's refusal with the same resolver: at soul scope, a retained
+// seat whose record names no usable service is a needs-configuration problem carrying the
+// spawn's text. A seated home's readiness does not read the source again.
+const BINDING = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
+function readiness(fx, { home, env = {} } = {}) {
+  const base = { ...process.env };
+  delete base.OATS_AWEB_URL;
+  const context = { kind: "workspace", workspace: fx.root, deployment: fx.root, soul: "dev", ...(home ? { instance: "retained", home } : {}) };
+  const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: { delivery: "session", root: fx.root, identity: { mode: "local", source: fx.source } }, input: { action: { kind: "readiness" }, context } };
+  const r = spawnSync(process.execPath, [BINDING, "check"], { input: JSON.stringify(input), encoding: "utf8", env: { ...base, PATH: `${fx.bin}:${process.env.PATH}`,
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]), ...env } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  return JSON.parse(r.stdout).result;
+}
+const serviceProblems = (result) => result.problems.filter((p) => /aweb service is unknown/.test(p.message));
+
+for (const [name, workspace] of [["no aweb_url record, OATS_AWEB_URL set", "alias: retained\n"], ["a record that is not a plain service URL", "alias: retained\naweb_url: https://record.invalid/custom\n"]]) {
+  test(`soul readiness reports the spawn's refusal for a retained seat with ${name}`, (t) => {
+    const fx = fixture(t, { workspace });
+    const spawned = runHook(fx, "spawn", { OATS_AWEB_URL: VARIABLE });
+    assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
+    const result = readiness(fx, { env: { OATS_AWEB_URL: VARIABLE } });
+    assert.equal(result.status, "needs-configuration", JSON.stringify(result));
+    assert.deepEqual(serviceProblems(result).map((p) => [p.code, `oats-aweb: ${p.message}`]), [["needs-configuration", spawned.doc.warning]]);
+    assert.ok(!JSON.stringify(result).includes(VARIABLE), "the variable's value is never printed");
+  });
+}
+
+test("soul readiness reports no service problem for a retained seat whose record names its service", (t) => {
+  const fx = fixture(t);
+  assert.deepEqual(serviceProblems(readiness(fx, { env: { OATS_AWEB_URL: VARIABLE } })), []);
+});
+
+test("a seated home's readiness does not read its source's record again", (t) => {
+  const fx = fixture(t);
+  const spawned = runHook(fx, "spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  writeFileSync(join(fx.source, "workspace.yaml"), "alias: retained\n");
+  assert.deepEqual(serviceProblems(readiness(fx, { home: fx.home })), []);
+});

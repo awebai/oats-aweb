@@ -64,6 +64,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
+import { awebUrlVariableSet, retainedSeatService, unknownSeatServiceMessage } from "../lib/retained-seat-service.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
@@ -1088,33 +1089,21 @@ function activeTeamAt(root) {
     return yamlScalar(text, "active_team") || yamlScalar(text, "active");
   } catch { return undefined; }
 }
-/** The service, role and team a retained seat's identity is bound with, as spawn binds
- *  it and as every command that names the seat's server prints it: the service only from
- *  the seat's own record, its source's workspace.yaml `aweb_url` (aw writes it at
- *  `aw workspace connect`), and only when that is a plain service URL; never from
- *  OATS_AWEB_URL (awebai/oats-aweb#241). The team is the default team, else the source's
- *  active team. A value that cannot be determined is undefined; `serviceRecorded` tells a
- *  missing `aweb_url` from one that is not a plain service URL. */
+/** The service, role and team a retained seat's identity is bound with, as spawn binds it
+ *  and as every command that names the seat's server prints it. The service comes from
+ *  lib/retained-seat-service.mjs, the one resolver (the seat's own record only); the team is
+ *  the default team, else the source's active team. A value that cannot be determined is
+ *  undefined. */
 function retainedSeatTarget(source) {
   const read = (name) => { try { return readFileSync(join(source, name), "utf8"); } catch { return ""; } };
   const srcWorkspace = read("workspace.yaml"), srcTeams = read("teams.yaml");
   const team = defaultTeamId() || yamlScalar(srcTeams, "active_team") || yamlScalar(srcTeams, "active");
-  const recorded = yamlScalar(srcWorkspace, "aweb_url");
-  return { service: plainServiceUrl(recorded), serviceRecorded: recorded !== undefined, role: yamlScalar(srcWorkspace, "role_name"), team };
+  return { ...retainedSeatService(source), role: yamlScalar(srcWorkspace, "role_name"), team };
 }
-/** OATS_AWEB_URL was the retained seat's service before #241; whether it is still set in
- *  the environment, to say it is no longer read. Its value is never shown. */
-const awebUrlVariableSet = () => typeof process.env.OATS_AWEB_URL === "string" && process.env.OATS_AWEB_URL !== "";
-/** The refusal for a retained seat whose record names no usable service, before any copy
- *  or effect. Fixed text and the operator's own paths only; the remedy is named in full,
- *  so the text is not cut at fatal's 300 characters. */
+/** The refusal for a retained seat whose record names no usable service, before any copy or
+ *  effect. The remedy is named in full, so the text is not cut at fatal's 300 characters. */
 function refuseUnknownSeatService(source, serviceRecorded) {
-  const record = join(source, "workspace.yaml");
-  const why = serviceRecorded
-    ? `the aweb_url in ${record} is not a plain service URL (http or https, a host, an optional port, and no path but / or /api)`
-    : `${record} names no aweb_url`;
-  const note = awebUrlVariableSet() ? "; OATS_AWEB_URL is set, but it is no longer read for a retained seat: the service comes only from that workspace.yaml" : "";
-  out({ warning: `oats-aweb: the retained seat's aweb service is unknown, so nothing was copied: ${why}; run \`aw workspace connect --service <the team's aweb server>\` in ${dirname(source)} to record it, then spawn again${note}` }, 1);
+  out({ warning: `oats-aweb: ${unknownSeatServiceMessage(source, serviceRecorded)}` }, 1);
 }
 /** A field a retained seat's lock names, when it is short and printable. */
 const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
