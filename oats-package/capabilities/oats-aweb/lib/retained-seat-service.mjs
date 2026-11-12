@@ -10,20 +10,29 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-const AWEB_URL_LINE = /^aweb_url:[ \t]*(.*)$/m;
-
-/** The `aweb_url` scalar of a workspace.yaml, as written: quotes removed, an unquoted value cut
- *  at a ` #` comment. A quoted value that is not closed, or is followed by anything but a
- *  comment, is returned whole, so it fails the shape below instead of being cut to one. */
+/** The `aweb_url` scalar of a workspace.yaml, as aw writes it: one line, quotes removed, an
+ *  unquoted value cut at a ` #` comment. Lines end only at `\n` (a `\r` before it is dropped),
+ *  so a Unicode line separator stays in the value and fails its shape below. undefined when
+ *  there is no `aweb_url`; null for a record this reader does not take whole (a second
+ *  `aweb_url`, a value continued on an indented line, a quoted value not closed or followed by
+ *  more than a comment), so that it is refused rather than cut to a prefix. */
 function recordedAwebUrl(text) {
-  const line = AWEB_URL_LINE.exec(text);
-  if (!line) return undefined;
-  const value = line[1], quote = value[0];
+  const lines = text.split('\n').map((line) => line.replace(/\r$/, ''));
+  const at = lines.flatMap((line, i) => (line.startsWith('aweb_url:') ? [i] : []));
+  if (at.length === 0) return undefined;
+  if (at.length > 1) return null;
+  const value = lines[at[0]].slice('aweb_url:'.length).replace(/^[ \t]+/, '');
+  if (value && !/^[ \t]/.test(lines[at[0]].slice('aweb_url:'.length))) return null;
+  for (const next of lines.slice(at[0] + 1)) {
+    if (!/^[ \t]/.test(next)) break;
+    if (!/^[ \t]*(#.*)?$/.test(next)) return null;
+  }
+  const quote = value[0];
   if (quote === '"' || quote === "'") {
     const end = value.indexOf(quote, 1), rest = end < 0 ? '' : value.slice(end + 1).trim();
-    return end < 0 || (rest && !rest.startsWith('#')) ? value : value.slice(1, end);
+    return end < 0 || (rest && !rest.startsWith('#')) ? null : value.slice(1, end);
   }
-  return value.replace(/[ \t]+#.*$/, '').replace(/[ \t\r]+$/, '');
+  return value.replace(/[ \t]+#.*$/, '').replace(/[ \t]+$/, '');
 }
 
 /** `value` when it is a service URL a retained seat may be bound on, else undefined: http or
@@ -45,7 +54,7 @@ export function retainedSeatService(source) {
   let text = '';
   try { text = readFileSync(join(source, 'workspace.yaml'), 'utf8'); } catch { /* no record */ }
   const recorded = recordedAwebUrl(text);
-  return { service: seatServiceUrl(recorded), serviceRecorded: recorded !== undefined };
+  return { service: recorded ? seatServiceUrl(recorded) : undefined, serviceRecorded: recorded !== undefined };
 }
 
 /** OATS_AWEB_URL was the retained seat's service before #241; whether it is still set, to say

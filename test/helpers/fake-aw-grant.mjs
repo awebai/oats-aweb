@@ -37,6 +37,14 @@ if (s.startsWith("wake ")) process.exit(0);
 //                                     before the local workspace.yaml is written (aw posts first)
 //   FAKE_RETAINED_RESTORE_FAIL=1      a connect from any directory but OATS_HOME fails
 if (process.env.FAKE_RETAINED === "1") {
+  // FAKE_RETAINED_ECHO=connect|check|heartbeat|status|whoami: that call from OATS_HOME fails with a
+  // network error naming the service, as aw's do (the --service it was given, else the home's record).
+  const echo = process.env.FAKE_RETAINED_ECHO;
+  if (echo && process.cwd() === process.env.OATS_HOME && ({ connect: a[0] === "workspace" && a[1] === "connect", check: a[0] === "check", heartbeat: a[0] === "heartbeat", status: s === "workspace status --json", whoami: s === "whoami --json" })[echo]) {
+    let service = val("--service");
+    if (!service) { try { service = /^aweb_url: (.*)$/m.exec(fs.readFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "utf8"))[1]; } catch { service = "(none)"; } }
+    console.error('Post "' + service + '/v1/workspaces": dial tcp: connection refused'); process.exit(1);
+  }
   if (a[0] === "workspace" && a[1] === "connect") {
     if (process.env.FAKE_RETAINED_RESTORE_FAIL && process.cwd() !== process.env.OATS_HOME) { console.error("connect refused"); process.exit(1); }
     if (process.env.FAKE_RETAINED_KILL === "mid-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }

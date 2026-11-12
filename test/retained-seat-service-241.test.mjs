@@ -143,6 +143,12 @@ for (const [name, value] of [
   ["a backslash", `https://record.invalid\\${MARK}`],
   ["another scheme", `ftp://record.invalid/${MARK}`],
   ["no host", `https:///${MARK}`],
+  // A YAML plain scalar continues on an indented line, folded with a space; only its first line
+  // is not the value. Nor is a value cut at a Unicode line separator, or one of two records.
+  ["a continuation line", `https://record.invalid/path\n  ${MARK}`],
+  ["a line separator and a continuation", `https://record.invalid/path\u2028  ${MARK}`],
+  ["a paragraph separator", `https://record.invalid/path\u2029${MARK}`],
+  ["a second aweb_url", `https://record.invalid/api\naweb_url: https://other.invalid/${MARK}`],
 ]) test(`a seat whose aweb_url has ${name} is refused with the whole fix, before any effect, and never printed`, (t) => {
   const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${value}\n` });
   const refused = runHook(fx, "spawn");
@@ -162,6 +168,33 @@ test("the rebind command a retire prints names the server the spawn used, never 
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=${RECORD} --team=${TEAM}\` from ${fx.legacyHome}`), retired.doc.warning);
   assert.ok(!retired.doc.warning.includes(VARIABLE), "the variable's value is never printed");
+});
+
+test("a record with Windows line endings names its service without the carriage return", (t) => {
+  const fx = fixture(t, { workspace: "alias: retained\r\naweb_url: https://record.invalid/aweb/api\r\n" });
+  const spawned = runHook(fx, "spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  assert.deepEqual(connectServices(fx), ["--service=https://record.invalid/aweb/api"]);
+});
+
+// A service that is not a plain service URL is never printed, so aw's own diagnostics, which
+// may name it, are withheld from a failed spawn's refusal; a plain one's are shown.
+const ECHOED = "https://record.invalid/mark-$(id)/api";
+for (const call of ["connect", "check", "heartbeat", "status", "whoami"]) {
+  test(`a spawn whose ${call} fails never prints a service that is not a plain service URL`, (t) => {
+    const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${ECHOED}\n` });
+    const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: call });
+    assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+    assert.match(refused.doc.warning, /retained identity could not be seated/);
+    assert.match(refused.doc.warning, /output withheld: aw's output may name the seat's service, which is not a plain service URL/);
+    assert.ok(!refused.stdout.includes("mark-$(id)") && !refused.stderr.includes("mark-$(id)"), refused.stdout + refused.stderr);
+  });
+}
+test("a spawn whose connect fails on a plain service shows aw's diagnostic", (t) => {
+  const fx = fixture(t);
+  const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: "connect" });
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  assert.ok(refused.doc.warning.includes(`Post "${RECORD}/v1/workspaces": dial tcp: connection refused`), refused.doc.warning);
 });
 
 // The rebind a retire prints is a command only for a plain service URL; for any other accepted
@@ -194,7 +227,7 @@ function readiness(fx, { home, env = {} } = {}) {
 }
 const serviceProblems = (result) => result.problems.filter((p) => /aweb service is unknown/.test(p.message));
 
-for (const [name, workspace] of [["no aweb_url record, OATS_AWEB_URL set", "alias: retained\n"], ["a record with userinfo", "alias: retained\naweb_url: https://user:pw@record.invalid/api\n"], ["a record with a tab", "alias: retained\naweb_url: \"https://record.invalid/a\tb\"\n"]]) {
+for (const [name, workspace] of [["no aweb_url record, OATS_AWEB_URL set", "alias: retained\n"], ["a record with userinfo", "alias: retained\naweb_url: https://user:pw@record.invalid/api\n"], ["a record with a tab", "alias: retained\naweb_url: \"https://record.invalid/a\tb\"\n"], ["a record with a continuation line", "alias: retained\naweb_url: https://record.invalid/a\n  b\n"]]) {
   test(`soul readiness reports the spawn's refusal for a retained seat with ${name}`, (t) => {
     const fx = fixture(t, { workspace });
     const spawned = runHook(fx, "spawn", { OATS_AWEB_URL: VARIABLE });

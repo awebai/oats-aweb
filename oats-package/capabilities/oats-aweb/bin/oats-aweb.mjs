@@ -147,7 +147,7 @@ const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EV
  *  started. Every aw child of the hook takes its timeout from here. */
 const hookTimeout = (requested) => boundedByHook ? Math.min(requested, Math.floor(HOOK_STARTED_AT + HOOK_BUDGET_MS - performance.now())) : requested;
 const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
-const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
+const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input } = {}) => {
   const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
@@ -171,10 +171,11 @@ const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, f
     // The outcome says how the child ended (a timeout or signal included), which
     // is not its output, so even a secretSafe command reports it.
     const outcome = e.code === "E_HOOK_DEADLINE" ? `not started: the hook's ${Math.round(HOOK_BUDGET_MS / 1000)} s deadline had passed` : childOutcome(e, timeout);
-    const output = secretSafe ? "" : scrub(e.stderr).trim();
+    // withhold: the output may hold a value that is never printed; the string says why.
+    const output = secretSafe || withhold ? "" : scrub(e.stderr).trim();
     // failureDetail: a secretSafe command may still name its sanitized class.
     const cls = secretSafe && failureDetail ? failureClass({ stderr: scrub(e.stderr), stdout: scrub(e.stdout) }) : "";
-    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? ` (output withheld: this command handles credentials${cls ? `; ${cls}` : ""})` : ""}`);
+    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? ` (output withheld: this command handles credentials${cls ? `; ${cls}` : ""})` : withhold ? ` (output withheld: ${withhold})` : ""}`);
     err.outcome = outcome;
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
@@ -1164,6 +1165,9 @@ function retainedSeatSpawn(source, takeOver) {
     fatal(`identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied`);
   }
   let connected = false;
+  // A service that is not a plain service URL is bound but never printed, and aw's
+  // diagnostics may name it (a network error does), so its calls here show none.
+  const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, plainServiceUrl(service) ? {} : { withhold: "aw's output may name the seat's service, which is not a plain service URL" });
   const rollback = () => {
     // Once `aw workspace connect` has started, the server binding may point at the
     // new home (aw binds on the service before it writes locally, so a connect
@@ -1173,7 +1177,7 @@ function retainedSeatSpawn(source, takeOver) {
     // copy; if the restore fails, KEEP the copy so the seat stays recoverable.
     let restored = !connected;
     if (connected) {
-      try { run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], legacyHome, 60000); restored = true; }
+      try { seatRun(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], legacyHome, 60000); restored = true; }
       catch { restored = false; }
     }
     if (restored) { try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ } try { rmSync(lockPath, { force: true }); } catch { /* best effort */ } }
@@ -1195,10 +1199,10 @@ function retainedSeatSpawn(source, takeOver) {
       if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });
     }
     connected = true; // set before the call: a connect that fails may still have bound
-    run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], home, 60000);
-    run(["aw", "check", "--online"], home, 60000);
-    run(["aw", "heartbeat"], home, 60000);
-    const status = run(["aw", "workspace", "status", "--json"], home, 60000);
+    seatRun(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], home, 60000);
+    seatRun(["aw", "check", "--online"], home, 60000);
+    seatRun(["aw", "heartbeat"], home, 60000);
+    const status = seatRun(["aw", "workspace", "status", "--json"], home, 60000);
     // Thrown, not fatal: the catch below rolls the copy and the lock back first.
     // Verified by parsing: the workspace row's path must be this home. The
     // hostname the row records is whatever the binding stored (on hosted
@@ -1214,7 +1218,7 @@ function retainedSeatSpawn(source, takeOver) {
     // The same-identity check the contract is for: `aw whoami --json` from the
     // new home reports the did and address the CLI now acts as (workspace
     // status carries no did); both must equal the copied identity.yaml.
-    let who; try { who = JSON.parse(String(run(["aw", "whoami", "--json"], home, 60000))); } catch (e) { throw new Error(`aw whoami from ${home} answered no JSON (${e.message || e}); the seat is not verified`); }
+    let who; try { who = JSON.parse(String(seatRun(["aw", "whoami", "--json"], home, 60000))); } catch (e) { throw new Error(`aw whoami from ${home} answered no JSON (${e.message || e}); the seat is not verified`); }
     const shownDid = who.did || who.identity?.did;
     const shownAddress = who.address || who.identity?.address;
     if (expectedDid && shownDid !== expectedDid) throw new Error(`aw whoami shows did ${shownDid || "(none)"}, not the retained identity's ${expectedDid}; the seat is not the same identity`);
