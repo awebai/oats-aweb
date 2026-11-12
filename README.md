@@ -1435,6 +1435,42 @@ time as the delete. Before that, retire leaves each joined team and releases eac
 unfinished join. While a release that needs the member key fails (anything but
 `team_not_hosted`), retire keeps the key and the record and exits nonzero.
 
+### The retained seat's lock
+
+A retained seat (`identity.source`) is held through `.aw-retained-seat.json`
+beside the source's `.aw`: a spawn creates it, and a take-over
+(`identity.takeOver: true`) replaces it. A spawn's success rewrites it with
+the alias, and a retire or a failed spawn's rollback removes it. Every one of
+these changes is one guarded step (`lib/seat-lock.mjs`), using two private
+files beside the lock:
+
+- `.aw-retained-seat.json.guard`, created exclusively for the change and
+  removed after it, so one change runs at a time. Another change waits up to
+  3 s for it, then refuses.
+- `.aw-retained-seat.json.held`, the lock moved aside by `rename(2)` while it
+  is checked. The change acts only on the lock it decided on: for a retire, one
+  that still names its home; for a take-over, the very lock it read; for a
+  plain spawn, none. It then removes the lock, or replaces it with an
+  exclusive create. Any other lock is linked back untouched.
+
+So a retire never removes a lock another seat took over after it looked, and
+of two take-overs of one lock only one wins. The other refuses and names the
+holder.
+
+On a filesystem where `rename`, `link` or an exclusive create isn't atomic,
+which includes some network and FUSE filesystems, two changes can still
+interleave, and nothing detects it.
+
+A change that was killed can leave either private file behind. The next spawn,
+take-over or retire refuses with the file and its fix; it never adopts or
+removes one, and judges no age, pid or liveness:
+
+- **A guard:** remove it once no change of that identity is running on any
+  host that shares the directory.
+- **A moved lock:** move it back (`mv .aw-retained-seat.json.held
+  .aw-retained-seat.json`) if the seat it names still holds the identity and
+  no lock exists. Otherwise remove it.
+
 ## Isolated hostOnly contract verification
 
 `test/claude-channel-host-only.test.mjs` imports the real generic `resolveSoul`

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Fixed: spawn, take-over and retire never interleave on a retained seat's
+  lock (#236).** A retire read `.aw-retained-seat.json` and then removed it,
+  so a take-over that landed in between lost its lock, and the next spawn
+  copied the key with no take-over. A take-over removed the lock and created
+  it again, so two concurrent take-overs could both pass. Every change of the
+  lock is now one guarded step:
+  - each change first creates `.aw-retained-seat.json.guard` exclusively;
+  - it moves the lock aside to `.aw-retained-seat.json.held` and checks it;
+  - it removes or replaces the lock only if it is still the one the change
+    decided on, and otherwise links it back.
+
+  A retire that finds another seat's lock says it did not remove it, and of
+  two take-overs one refuses, naming the holder. The two private files are
+  new on-disk files beside the lock. A change that was killed may leave one
+  behind: the next spawn, take-over or retire refuses with it and its fix, and
+  never adopts or removes it. The lock's name and fields are unchanged; its
+  `takenAt` is now when the seat was taken, kept when the spawn's success adds
+  the alias. Nothing a deployment must change.
+
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode
   `global` with no grant, so no start answered an identity home for it, and
