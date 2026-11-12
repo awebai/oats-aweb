@@ -290,8 +290,16 @@ gets the not-joined refusal, with its #60 note, and a soul `team-unverified`.
 Each call is bounded at 10 s.
 
 The manifest declares `binding` with `normalize`, `bind` and `check` because
-the kernel requires all three to name commands; it runs only `check`, and
-normalize and bind answer `provider-not-qualified`.
+the kernel requires all three to name commands. The kernel runs only `check`,
+with a workspace context and the readiness action (`oats readiness`). The
+captured bindings are gone: `normalize` and `bind`, and a `check` whose input
+carries `binding` or `invocation`, answer `provider-not-qualified` with the
+reason `captured bindings are not supported since oats.aweb 1.42.0; readiness
+takes a workspace context (oats readiness)` (`CAPTURED_UNSUPPORTED` in
+`lib/binding-wire.mjs`). Any event run with `OATS_BINDING_FILE`,
+`OATS_INVOCATION_CONTEXT_FILE` or `OATS_SOURCE_RECEIPT_FILE` set runs its
+normal path and warns `<NAME> is ignored: ` followed by that reason, once per
+variable, naming the variable only.
 
 #### Claim floors
 
@@ -364,8 +372,8 @@ The argv checker parses the skill and runs only help against aw 1.36.47.
 Task coordination is taught only here, in oats.aweb-tasks. Nothing oats.aweb
 puts into a home mentions it: its inject, its skills (the vendored aweb skills
 included), its readiness phrases, and the briefs and warnings its hooks write.
-`test/no-task-coordination.test.mjs` reads the files; the spawn, grant-seat
-and captured-native fixtures check what the hooks write, with the patterns in
+`test/no-task-coordination.test.mjs` reads the files; the spawn and
+grant-seat fixtures check what the hooks write, with the patterns in
 `test/helpers/task-coordination-text.mjs`. Teaching that oats.aweb drops moves
 here rather than being lost.
 `test/aweb-tasks-kernel.test.mjs` is an opt-in real-kernel selection check:

@@ -121,8 +121,7 @@ test("session-delivery guidance pins broker presentation and exact recovery rule
   assert.match(identitySkill, /grant inspection runs from the resident custody `\.aw`/);
 
   const hook = readFileSync(HOOK, "utf8");
-  const capturedNative = readFileSync(join(CAPABILITY, "lib", "captured-native.mjs"), "utf8");
-  for (const [name, text] of [["oats-aweb.mjs", hook], ["captured-native.mjs", capturedNative]]) {
+  for (const [name, text] of [["oats-aweb.mjs", hook]]) {
     assert.match(text, /host wake broker presents incoming mail\/chat/, name);
     assert.match(text, /aweb mail event received\./, name);
     assert.match(text, /trust_status/, name);

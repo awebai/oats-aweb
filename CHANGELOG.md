@@ -2,15 +2,30 @@
 
 ## Unreleased
 
-- **Fixed: a stray captured-execution variable never fails a retire
-  (#242).** The captured-execution path is entered when `OATS_BINDING_FILE`,
-  `OATS_INVOCATION_CONTEXT_FILE` or `OATS_SOURCE_RECEIPT_FILE` is present in
-  the environment, before settings, and any error in it exits 1, so one stray
-  variable made every retire fail. A retire no longer enters it: with any of
-  them set, it runs its normal path, with its usual effects and exit status,
-  and warns naming the variables that were set and ignored (names only, never
-  their values or the files' contents). Spawn, launch and the other events are
-  unchanged. Nothing a deployment must change.
+- **Removed: the captured-execution path (#242).** The captured bindings
+  (the `OATS_BINDING_FILE`, `OATS_INVOCATION_CONTEXT_FILE` and
+  `OATS_SOURCE_RECEIPT_FILE` variables, and the `binding` and `invocation`
+  inputs of the binding wire) are removed, with the code that read them
+  (`lib/captured-execution.mjs`, `lib/captured-native.mjs`,
+  `lib/invocation-shape.mjs`, `lib/portable-binding.mjs` and
+  `PORTABLE-PROFILE-STATUS.md`). The kernel never set them: it runs only the
+  wire's `check`, with a workspace context and the readiness action, which
+  answers as before. What a deployment that set them now sees:
+  - an event (spawn, retire, launch, upgrade) with any of the variables set
+    runs its normal path and warns, once per variable, `<NAME> is ignored:
+    captured bindings are not supported since oats.aweb 1.42.0; readiness
+    takes a workspace context (oats readiness)`; a text command (setup,
+    roster and the others) writes the same line to stderr. The variable's
+    value and its file are never read or printed;
+  - the wire's `normalize` and `bind`, and a `check` whose input carries
+    `binding` or `invocation`, answer `provider-not-qualified` with that
+    reason, in the wire's usual refusal envelope;
+  - `binding.reasons` in `oats.json` no longer lists the reasons only the
+    captured path returned, and lists that reason.
+  Before, one stray variable sent every event down the captured path, where
+  any error exited 1: a retire with one set failed. Now none fails on them.
+  Readiness through `oats readiness` is unchanged. To migrate, unset the
+  variables and use `oats readiness`.
 
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode

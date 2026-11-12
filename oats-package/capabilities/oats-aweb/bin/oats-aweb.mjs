@@ -58,8 +58,6 @@ import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
-import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
-import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
@@ -67,13 +65,12 @@ import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
-import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
 import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
-import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
+import { AW_MIN, CAPTURED_UNSUPPORTED, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
 import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
 import { mintedExpiryProblem } from "../lib/grant-expiry.mjs";
@@ -321,42 +318,21 @@ function upgrade() {
   out({ meta: deliveryRuntimeMeta(meta, configuredDelivery(settings), runtime), ...(warnings.length ? { warning: warnings.join(" | ") } : {}) });
 }
 
-// Upgrade adopts only recorded metadata, even when captured execution markers
-// are present. It must run before any settings gate or aw availability check.
-if ((process.env.OATS_EVENT || process.argv[2]) === "upgrade") upgrade();
-
-// Any selected snapshot enters the captured consumer BEFORE legacy settings,
-// root discovery or identity handling. Invalid-present never falls back.
-// A retire never enters it (awebai/oats-aweb#242): with any of the variables that
-// select it present, a retire runs its normal path and says they were ignored,
-// naming them only. The names are lib/captured-execution.mjs's markers.
-const CAPTURED_MARKERS = ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"];
-const retireEvent = (process.env.OATS_EVENT || process.argv[2]) === "retire";
-if (retireEvent) {
-  const present = CAPTURED_MARKERS.filter((k) => Object.hasOwn(process.env, k));
-  if (present.length) outNotes.push(`${present.join(", ")} ${present.length === 1 ? "is" : "are"} set in the environment and ignored for retire, which runs its normal path`);
-}
-if (!retireEvent) try {
-  const loaded = loadCapturedAwebExecution();
-  if (loaded.kind === "captured") {
-    const event = process.argv[2] || process.env.OATS_EVENT;
-    if ((process.env.OATS_EVENT && process.env.OATS_EVENT !== event) || process.argv.slice(3).some(arg => arg !== "--json")) throw new Error("captured entrypoint arguments differ from the selected action");
-    const manifest = JSON.parse(readFileSync(new URL("../oats.json", import.meta.url), "utf8"));
-    const selected = requireCapturedAwebAction(loaded, event, manifest);
-    const settings = parseBindingJson(Buffer.from(process.env.OATS_SETTINGS || "{}"));
-    if (!settings || typeof settings !== "object" || Array.isArray(settings) || Object.keys(settings).some(k => !["delivery", "claudeChannelMode", "root", "roots"].includes(k))) throw new Error("captured settings support delivery/root readiness only; no identity copying or ambient fallback");
-    try { selectClaudeChannel(settings.claudeChannelMode); }
-    catch (error) { out({status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}],warning:`oats-aweb: ${error.message}`},1); }
-    const checked = assessCapturedSessionReadiness({ binding: selected.binding, invocation: selected.context, settings }, {
-      query(args, options) { selected.assertCurrent(); const result = querySelectedKernel(args, options); selected.assertCurrent(); return result; },
-    });
-    if (checked.status !== "ready") out({ ...checked, warning: `oats-aweb: ${checked.problems[0].message}` }, 1);
-    const result = runCapturedNative({ selected, event, settings, run });
-    out(result.output, result.exitCode);
+// The captured-execution path was removed (awebai/oats-aweb#242): no event reads
+// the variables that selected it. Each one present is named, never its value or its
+// file, and never fails anything: in a hook's JSON warning, else on stderr.
+{
+  const hookEvent = ["spawn", "retire", "launch", "upgrade"].includes(process.env.OATS_EVENT || process.argv[2]);
+  for (const name of ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"]) {
+    if (!Object.hasOwn(process.env, name)) continue;
+    if (hookEvent) outNotes.push(`${name} is ignored: ${CAPTURED_UNSUPPORTED}`);
+    else process.stderr.write(`oats-aweb: ${name} is ignored: ${CAPTURED_UNSUPPORTED}\n`);
   }
-} catch (error) {
-  out({ status: "needs-configuration", problems: [{ code: "invalid-binding", message: "invalid or changed captured aweb execution input" }], warning: "oats-aweb: invalid or changed captured aweb execution input; no legacy fallback was used" }, 1);
 }
+
+// Upgrade adopts only recorded metadata. It must run before any settings gate or
+// aw availability check.
+if ((process.env.OATS_EVENT || process.argv[2]) === "upgrade") upgrade();
 
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;

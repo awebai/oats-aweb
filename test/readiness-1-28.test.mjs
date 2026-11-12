@@ -309,8 +309,8 @@ process.exit(r.status ?? 1);
 for (const [phase, health, code] of [
   ['check', {publish: 'true'}, 'needs-configuration'],
   ['check', {extra: true}, 'needs-configuration'],
-  ['normalize', {publish: true}, 'invalid-binding'],
-  ['bind', {publish: true}, 'invalid-binding'],
+  ['normalize', {publish: true}, 'provider-not-qualified'], // captured phases are removed (#242)
+  ['bind', {publish: true}, 'provider-not-qualified'], // captured phases are removed (#242)
 ]) test(`health settings stay validated and check-only (${phase}/${code})`, () => {
   const input = {schemaVersion: 1, phase, slot: 'messaging', capability: 'oats.aweb', settings: {health}, input: {}};
   const r = spawnSync(process.execPath, [BINDING, phase], {input: JSON.stringify(input), encoding: 'utf8'});
