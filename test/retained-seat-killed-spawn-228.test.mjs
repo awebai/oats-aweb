@@ -91,6 +91,21 @@ test("such a connect whose restore fails keeps the seat, and the retire names th
   assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=https://fixture.invalid/api --team=${TEAM}\` from ${fx.legacyHome}`), retired.doc.warning);
 });
 
+// awebai/oats-aweb#229: the hook's deadline can cut a retained spawn after its connect, and then
+// leaves its rollback no time to restore the binding, so the spawn answers no meta.
+test("a retained spawn the hook's deadline cuts after connect: the compensating retire deletes no workspace", (t) => {
+  const fx = fixture(t);
+  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_HANG: "check", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
+  assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
+  assert.equal(spawned.doc.meta, undefined, "the cut spawn answers no meta");
+  assert.match(spawned.doc.warning, /aw check timed out.*KEPT/, "the deadline cut the check and left the rollback no time");
+  const retired = compensate(fx);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), [], "no aw workspace delete with the standing identity's key");
+  assert.equal(retired.doc.meta.retained, true);
+  assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=https://fixture.invalid/api --team=${TEAM}\` from ${fx.legacyHome}`), retired.doc.warning);
+});
+
 test("a retained spawn that fails after connect and cannot restore: the compensating retire deletes no workspace", (t) => {
   const fx = fixture(t);
   const spawned = runHook(fx, "spawn", { FAKE_RETAINED_FAIL: "check", FAKE_RETAINED_RESTORE_FAIL: "1" });
