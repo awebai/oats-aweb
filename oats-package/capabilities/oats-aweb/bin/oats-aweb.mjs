@@ -1129,7 +1129,9 @@ function retainedSeatSpawn(source, takeOver) {
   }
   let connected = false;
   const rollback = () => {
-    // After `aw workspace connect` the server binding points at the new home;
+    // Once `aw workspace connect` has started, the server binding may point at the
+    // new home (aw binds on the service before it writes locally, so a connect
+    // that failed may still have bound it);
     // deleting the copy alone would leave the identity bound to nothing. Put
     // the binding back where it was, from the legacy home, then remove the
     // copy; if the restore fails, KEEP the copy so the seat stays recoverable.
@@ -1156,8 +1158,8 @@ function retainedSeatSpawn(source, takeOver) {
     for (const forbidden of ["workspace.yaml", "context", "interaction-log.jsonl", "channel-delivered-ids.json", "chat-delivered-ids.json"]) {
       if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });
     }
+    connected = true; // set before the call: a connect that fails may still have bound
     run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], home, 60000);
-    connected = true;
     run(["aw", "check", "--online"], home, 60000);
     run(["aw", "heartbeat"], home, 60000);
     const status = run(["aw", "workspace", "status", "--json"], home, 60000);
@@ -2227,13 +2229,17 @@ if (event === "launch") {
   if (meta.retained) {
     // The lock is released only when it names this home: one another seat has
     // taken over, or that cannot be read, is never removed here.
+    // heldHere: true when the lock names this home, false when it does not, undefined when unknown.
     let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false;
     if (meta.lock) {
-      const present = (() => { try { lstatSync(meta.lock); return true; } catch { return false; } })();
+      // Absent only on ENOENT: a lock that cannot be checked may still be there.
+      const unchecked = (() => { try { lstatSync(meta.lock); return undefined; } catch (e) { return e?.code === "ENOENT" ? null : (/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"); } })();
+      const present = unchecked === undefined;
       let held; try { held = JSON.parse(readFileSync(meta.lock, "utf8")); } catch { held = undefined; }
       const holder = held && typeof held === "object" && typeof held.home === "string" && held.home ? held.home : undefined;
       const ours = !!holder && samePath(holder, home);
-      if (!present) lockText = `lock ${meta.lock} already gone`;
+      if (unchecked) { lockText = `lock ${meta.lock} left in place: it cannot be checked (${unchecked})`; heldHere = undefined; }
+      else if (!present) lockText = `lock ${meta.lock} already gone`;
       else if (ours) {
         heldHere = true;
         try { rmSync(meta.lock); }
@@ -2247,7 +2253,7 @@ if (event === "launch") {
     // nothing. Name the way back to the source. The command is printed for a
     // person, so it holds only values that pass their own shapes.
     let rebind = "";
-    if (meta.spawnUnanswered && (heldHere || existsSync(join(home, ".aw", "workspace.yaml")))) {
+    if (meta.spawnUnanswered && (heldHere !== false || existsSync(join(home, ".aw", "workspace.yaml")))) {
       const target = retainedSeatTarget(meta.source);
       const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
       const connect = plainServiceUrl(target.service) && validAwebTeamId(target.team) && (!target.role || plainRole)
@@ -2258,7 +2264,7 @@ if (event === "launch") {
     // A spawn that did not answer and does not hold the lock never took the seat:
     // the lock is taken before anything is copied.
     const released = meta.spawnUnanswered && lockText !== `lock ${meta.lock} removed`
-      ? `released nothing: this home does not hold the retained identity's lock (${lockText})`
+      ? `released nothing: ${heldHere === undefined ? "whether this home holds the retained identity's lock is unknown" : heldHere ? "the retained identity's lock is still in place" : "this home does not hold the retained identity's lock"} (${lockText})`
       : `released the retained identity "${meta.alias || "(alias not recorded)"}" (${lockText})`;
     const retainedWarning = `${released}; the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}${rebind}`;
     await finish({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });

@@ -76,7 +76,9 @@
   provider state decides it. A retained seat's retire now releases its lock
   only when the lock names this home: a lock another seat took over, or one
   that cannot be read, is left in place, and the retire says so; so is one it
-  can't remove, with the reason. A spawn
+  can't remove or can't check, with the reason. A connect that fails is now
+  treated as one that may have bound the identity: the spawn binds it back
+  from the source, and it keeps the copy and the lock if that fails. A spawn
   that never held the lock is retired as releasing nothing. An
   `identity.source` that is not a string (a one-element list, say) is now
   refused at spawn before the lock: spawn read it as a path, while retire
