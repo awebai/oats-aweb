@@ -167,14 +167,14 @@ test("health.publish accepts true/false and their strings, and refuses anything 
   for (const [value, publish] of [[true, true], ["true", true], [false, false], ["false", false], [undefined, false]]) {
     assert.equal(healthSettings({ health: value === undefined ? {} : { publish: value } }).publish, publish, JSON.stringify(value));
   }
-  for (const value of ["yes", 1, "False", null]) {
+  for (const value of ["yes", 1, "False", ""]) {
     assert.throws(() => healthSettings({ health: { publish: value } }), { message: HEALTH_REFUSAL }, JSON.stringify(value));
   }
 });
 
 test("readiness reports the health.publish refusal, and accepts its strings", (t) => {
   const fx = deployment(t);
-  for (const value of ["yes", 1, "False", null]) {
+  for (const value of ["yes", 1, "False", ""]) {
     const result = readiness(fx, { root: fx.root, delivery: "session", health: { publish: value } });
     assert.equal(result.status, "needs-configuration", JSON.stringify(value));
     assert.deepEqual(result.problems.filter((p) => /health\.publish/.test(p.message)), [{ code: "needs-configuration", message: HEALTH_REFUSAL }], JSON.stringify(value));
@@ -184,3 +184,57 @@ test("readiness reports the health.publish refusal, and accepts its strings", (t
     assert.equal(result.problems.some((p) => /health\.publish/.test(p.message)), false, JSON.stringify(result.problems));
   }
 });
+
+// `null` reads as absent for every boolean setting, so its default applies: an empty YAML value
+// (`e2ee:`) is null, and it always meant the default. The empty string is still refused.
+test("identity.e2ee null requires E2EE, the default: spawn refuses a custody without mail_reply_continuation.v1, and readiness agrees", (t) => {
+  const fx = deployment(t);
+  const r = runHook(fx, "spawn", globalSettings(fx, { e2ee: null }), { FAKE_CUSTODY_OPS: OPS_WITHOUT_CONTINUATION.join(",") });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /required custody operations are missing: mail_reply_continuation\.v1/);
+  assert.equal(awCalls(fx).some((a) => a.startsWith("id grant mint")), false, "nothing is minted");
+  const result = readiness(fx, { root: fx.root, ...globalSettings(fx, { e2ee: null }) }, { FAKE_CUSTODY_OPS: OPS_WITHOUT_CONTINUATION.join(",") });
+  assert.equal(result.problems.some((p) => /must be true or false/.test(p.message)), false, JSON.stringify(result.problems));
+  assert.ok(result.problems.some((p) => p.code === "custody" && /mail_reply_continuation\.v1/.test(p.message)), JSON.stringify(result.problems));
+});
+
+test("identity.takeOver null takes nothing over, the default, and readiness reports no refusal for it", (t) => {
+  const base = tempDir(t);
+  const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
+  const home = join(root, "agents", "dev", "instances", "retained"); mkdirSync(home, { recursive: true });
+  const source = join(base, "seats", "retained", ".aw");
+  write(join(source, "signing.key"), "fixture-signing-key");
+  write(join(source, "identity.yaml"), "alias: retained\ndid: did:key:zRetained\naddress: fixture.test/retained\n");
+  write(join(source, "teams.yaml"), `active_team: ${TEAM}\n`);
+  write(join(source, "workspace.yaml"), "alias: retained\naweb_url: https://fixture.invalid/api\n");
+  const lock = join(dirname(source), ".aw-retained-seat.json");
+  const held = JSON.stringify({ home: join(base, "gone-home"), instance: "gone", host: "elsewhere" });
+  write(lock, held);
+  const fx = { base, root, home, bin: fakeAw(base) };
+  const settings = { delivery: "session", identity: { mode: "local", source, takeOver: null } };
+  const refused = runHook(fx, "spawn", settings, { OATS_INSTANCE: "retained", OATS_RUNTIME: "codex", FAKE_RETAINED: "1" });
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  assert.doesNotMatch(refused.doc.warning, /must be true or false/);
+  assert.match(refused.doc.warning, /lock is held by a seat whose home is not on this host/);
+  assert.equal(readFileSync(lock, "utf8"), held, "the lock is not taken over");
+  const result = readiness(fx, { root, ...settings });
+  assert.equal(result.problems.some((p) => /must be true or false/.test(p.message)), false, JSON.stringify(result.problems));
+});
+
+test("health.publish null is off, the default, and readiness reports no refusal for it", (t) => {
+  assert.equal(healthSettings({ health: { publish: null } }).publish, false);
+  const fx = deployment(t);
+  const result = readiness(fx, { root: fx.root, delivery: "session", health: { publish: null } });
+  assert.equal(result.problems.some((p) => /health\.publish/.test(p.message)), false, JSON.stringify(result.problems));
+});
+
+for (const key of ["e2ee", "takeOver"]) {
+  test(`identity.${key} "" is still refused at spawn and in readiness`, (t) => {
+    const fx = deployment(t);
+    const r = runHook(fx, "spawn", globalSettings(fx, { [key]: "" }), { FAKE_CUSTODY_OPS: ALL_OPS.join(",") });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.equal(r.doc.warning, `oats-aweb: ${identityRefusal(`identity.${key}`)}`);
+    const result = readiness(fx, { root: fx.root, ...globalSettings(fx, { [key]: "" }) }, { FAKE_CUSTODY_OPS: ALL_OPS.join(",") });
+    assert.ok(result.problems.some((p) => p.code === "needs-configuration" && `oats-aweb: ${p.message}` === r.doc.warning), JSON.stringify(result.problems));
+  });
+}
