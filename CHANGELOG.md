@@ -22,8 +22,10 @@
   after the spawn's last aw call and after every reconnect a rollback tries.
   If another seat holds it, the spawn fails, removes any wake registration it
   made, says where the binding may point and names the `aw workspace connect`
-  to run from that seat's home. That needs a take-over of a seat that is still
-  running, which the take-over already warns against. On a filesystem whose
+  to run from that seat's home. Each exit names the holder as last read under
+  the guard, and a take-over after that read is not reported. That needs a
+  take-over of a seat that is still running, which is operator error and which
+  the take-over already warns against. On a filesystem whose
   rename, link or exclusive create isn't atomic, changes can still interleave. The two private files are
   new on-disk files beside the lock. A change that was killed may leave one
   behind: the next spawn or take-over refuses with it and its fix, and the
