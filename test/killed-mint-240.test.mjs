@@ -467,3 +467,39 @@ test("a team id configured in mixed case still finds this mint's certificate, an
   assert.equal(entries.length, 1);
   assert.equal(entries[0].registry, REGISTRY);
 });
+
+test("a discovery whose registry_url is null falls back to aw's default, as aw reads it", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.end(JSON.stringify({ registry_url: null })); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.ok(membersCalls(fx).length > 0 && membersCalls(fx).every((c) => !c.args.some((a) => a.startsWith("--registry"))), JSON.stringify(membersCalls(fx)));
+  assert.ok(retired.doc.warning.includes("names no registry in its discovery"), retired.doc.warning);
+});
+
+test("a discovered registry with more than one trailing slash is not the origin aw would use: the outcome is unknown", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.end(JSON.stringify({ registry_url: "https://registry.example.test///" })); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.reason, "mint-outcome-unknown");
+  assert.equal(membersCalls(fx).length, 0);
+  assert.equal(existsSync(fx.recordFile), false);
+  assert.equal(existsSync(fx.intentFile), true);
+});
+
+test("a discovered registry with aw's one trailing slash is read, named and recorded without it, as aw cleans it", async (t) => {
+  const fx = fixture(t);
+  const service = await discoveryService(t, (req, res) => { res.end(JSON.stringify({ registry_url: " https://registry.example.test/ " })); });
+  serviceOnlyRoot(fx, service.url);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = await fx.retireAsync(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.ok(membersCalls(fx).every((c) => c.args.includes(`--registry=${REGISTRY}`)), JSON.stringify(membersCalls(fx)));
+  assert.ok(retired.doc.warning.includes(COMMAND), retired.doc.warning);
+  assert.equal(JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0].registry, REGISTRY);
+});

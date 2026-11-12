@@ -1465,8 +1465,10 @@ compared as aw spells them: name and domain lowercased), from the
 registry aw itself would use there: the `registry_url` of the team's membership
 in the root's `.aw/teams.yaml`, or else the `registry_url` that the
 membership's `aweb_url` names in its discovery (`<aweb_url>/api/v1/discovery`,
-no redirects followed). With neither, aw's default is used and the command says
-so. The read, the controller's command and the record all name that one
+no redirects followed; an absent, empty or null one there means aw's default, as
+aw reads it). With neither, aw's default is used and the command says so. A
+registry is taken as aw cleans it (whitespace and one trailing slash trimmed) and
+must then be a plain origin. The read, the controller's command and the record all name that one
 registry. It never runs `aw workspace
 connect` to finish a half-done mint, and never retries the mint. A certificate
 is this mint's only when its `member_did_key` is the did:key of the home's

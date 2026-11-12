@@ -1129,13 +1129,20 @@ async function mintRegistryForTeam(root, team) {
   if (body.length > DISCOVERY_MAX_BYTES) return failed("answered more than 1 MiB");
   let doc; try { doc = JSON.parse(body); } catch { return failed("answered no JSON"); }
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return failed("answered JSON that is not an object");
-  // aw falls back to its default only when the discovery names no registry: an absent
-  // or empty registry_url. Any other value that can't be used is not that.
+  // The rule: retire uses exactly the registry aw 1.36.58 would resolve from this
+  // answer, and anything it can't decide that way is an unknown outcome.
+  // - aw decodes registry_url into a Go string (awid/discovery.go:14-21, 50-58), so an
+  //   absent field and null both read "", and after TrimSpace (cmd/aw/id_team.go:1651-1652)
+  //   so does whitespace: aw then uses its default registry.
+  // - Any other non-string fails aw's decode, and aw's own discovery would fail: unknown.
+  // - A string is used as aw's cleanBaseURL leaves it (cmd/aw/helpers.go:863-880: trim
+  //   whitespace, then at most one trailing slash). Only a plain origin, with at most
+  //   that one slash, is the same registry in a command; anything else is unknown.
   if (doc.registry_url !== undefined && doc.registry_url !== null && typeof doc.registry_url !== "string") return failed("names a registry_url that is not a string");
   const named = typeof doc.registry_url === "string" ? doc.registry_url.trim() : "";
   if (!named) return { registry: null, registryError: `the team's service names no registry in its discovery (${url}), so the command omits --registry and aw uses its default` };
-  const registry = registryOrigin(named.replace(/\/+$/, ""));
-  return registry ? { registry } : failed("names a registry that is not a plain origin, so no command can name it");
+  const registry = registryOrigin(named);
+  return registry ? { registry: registry.replace(/\/$/, "") } : failed("names a registry that is not a plain origin, so no command can name it");
 }
 /** A join that the CLI reported as failed (or that this hook killed on
  *  timeout) may still have completed server-side: the home then holds a
