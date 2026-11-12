@@ -264,6 +264,25 @@ test("a mint killed at the timeout after the accept reports the identity for com
   assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
 });
 
+// awebai/oats-aweb#229: the kernel kills a lifecycle hook at 120 s, so the hook's
+// own aw calls end by one deadline below that (OATS_AWEB_HOOK_BUDGET_MS here; 100 s
+// by default), whatever their own timeout, and the hook reports what it confirmed.
+test("the hook's deadline bounds a mint whose own timeout is longer, and the identity is still reported", (t) => {
+  const fx = fixture(t);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_HANG: "1", OATS_AWEB_HOOK_BUDGET_MS: "2500" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(Date.now() - started < 15000, "the deadline, not the mint's 120 s, bounds the mint");
+  assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
+});
+
+test("an aw call the hook's deadline leaves no time for is not started", (t) => {
+  const fx = fixture(t);
+  const r = fx.hook("spawn", { OATS_AWEB_HOOK_BUDGET_MS: "1" });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.fake.readCalls().filter((c) => c.args[0] === "init"), [], "no mint is started past the deadline");
+});
+
 test("mint output that is not JSON is withheld and still compensated", (t) => {
   const fx = fixture(t);
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_GARBAGE: "1" });

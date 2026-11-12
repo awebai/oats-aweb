@@ -125,8 +125,21 @@ function failureClass(e) {
   const redacted = detail === undefined ? undefined : detail.replace(TOKEN_SHAPED_RE, "<redacted>").replace(/\s+/g, " ").trim().slice(0, 200);
   return `http ${http[1]}${redacted ? `, detail: ${JSON.stringify(redacted)}` : ""}`;
 }
-const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
+// The kernel kills a lifecycle hook (spawn, launch, retire) at 120 s (oats
+// lib/core.mjs runLifecycleHooks). Every aw call such a hook makes ends by one
+// deadline below that, HOOK_BUDGET_MS after the hook started, whatever its own
+// timeout, so the hook outlives its last call and reports what it confirmed (a
+// mint that completed late, a grant to revoke) instead of being killed with the
+// call still running (awebai/oats-aweb#229). A call the deadline leaves no time
+// for is not started.
+const HOOK_STARTED_AT = Date.now();
+// OATS_AWEB_HOOK_BUDGET_MS shortens it, for tests; nothing lengthens it past the default.
+const HOOK_BUDGET_MS = Math.min(100000, Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) > 0 ? Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) : 100000);
+const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EVENT || process.argv[2]);
+const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
+  const timeout = boundedByHook ? Math.min(requested, HOOK_STARTED_AT + HOOK_BUDGET_MS - Date.now()) : requested;
   try {
+    if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
     const childEnv = childEnvFor({ env: extraEnv, unsetEnv });
     return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, env: childEnv }).trim();
   } catch (e) {
@@ -146,7 +159,7 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, fai
     const where = [argv[0], argv[1], argv[2]].filter((a) => a && !secrets.includes(a) && !a.startsWith("-")).join(" ");
     // The outcome says how the child ended (a timeout or signal included), which
     // is not its output, so even a secretSafe command reports it.
-    const outcome = childOutcome(e, timeout);
+    const outcome = e.code === "E_HOOK_DEADLINE" ? `not started: the hook's ${Math.round(HOOK_BUDGET_MS / 1000)} s deadline had passed` : childOutcome(e, timeout);
     const output = secretSafe ? "" : scrub(e.stderr).trim();
     // failureDetail: a secretSafe command may still name its sanitized class.
     const cls = secretSafe && failureDetail ? failureClass({ stderr: scrub(e.stderr), stdout: scrub(e.stdout) }) : "";

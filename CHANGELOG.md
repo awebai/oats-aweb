@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: the hook's `aw` calls end before the kernel kills the hook
+  (#229).** The kernel kills a spawn, launch or retire hook at 120 s. The
+  hook gave its own calls more than that between them: the mint alone could
+  take 120 s after the version and broker checks, the grant route chains
+  several 60 s calls, and a retained seat up to six. So the kernel's limit
+  came first, and the hook's own handling of a call that completed late (a
+  mint reported for compensation, a grant to revoke) never ran, while the
+  killed hook's `aw` child could finish after the compensating retire had
+  found nothing. Every `aw` call of a lifecycle hook now ends by one
+  deadline, 100 s after the hook started, whatever its own timeout, and a call
+  the deadline leaves no time for is not started and fails as "not started:
+  the hook's 100 s deadline had passed". `OATS_AWEB_HOOK_BUDGET_MS` shortens
+  the deadline for tests; nothing lengthens it.
+
 ## 1.41.0 — 2026-11-12
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A join killed after aw accepted its invite no longer leaves a membership the home doesn't know about: the next join, leave or retire settles it (#217). `oats aweb roster` marks the certificates a retire on this host left in a people-controlled team, with the controller's command (#207). Readiness names a wake stream aw 1.36.58 reports as `refused` (#214), and CI runs the BYOT create shapes against the real tested aw (#215). Nothing a deployment must change.
