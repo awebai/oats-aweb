@@ -146,6 +146,7 @@ for (const [name, value] of [
   // A YAML plain scalar continues on an indented line, folded with a space; only its first line
   // is not the value. Nor is a value cut at a Unicode line separator, or one of two records.
   ["a continuation line", `https://record.invalid/path\n  ${MARK}`],
+  ["a continuation after blank lines", `https://record.invalid/path\n\n  \n  ${MARK}`],
   ["a line separator and a continuation", `https://record.invalid/path\u2028  ${MARK}`],
   ["a paragraph separator", `https://record.invalid/path\u2029${MARK}`],
   ["a second aweb_url", `https://record.invalid/api\naweb_url: https://other.invalid/${MARK}`],
@@ -227,7 +228,7 @@ function readiness(fx, { home, env = {} } = {}) {
 }
 const serviceProblems = (result) => result.problems.filter((p) => /aweb service is unknown/.test(p.message));
 
-for (const [name, workspace] of [["no aweb_url record, OATS_AWEB_URL set", "alias: retained\n"], ["a record with userinfo", "alias: retained\naweb_url: https://user:pw@record.invalid/api\n"], ["a record with a tab", "alias: retained\naweb_url: \"https://record.invalid/a\tb\"\n"], ["a record with a continuation line", "alias: retained\naweb_url: https://record.invalid/a\n  b\n"]]) {
+for (const [name, workspace] of [["no aweb_url record, OATS_AWEB_URL set", "alias: retained\n"], ["a record with userinfo", "alias: retained\naweb_url: https://user:pw@record.invalid/api\n"], ["a record with a tab", "alias: retained\naweb_url: \"https://record.invalid/a\tb\"\n"], ["a record with a continuation line", "alias: retained\naweb_url: https://record.invalid/a\n  b\n"], ["a record with a continuation after a blank line", "alias: retained\naweb_url: https://record.invalid/path\n\n  continued\n"]]) {
   test(`soul readiness reports the spawn's refusal for a retained seat with ${name}`, (t) => {
     const fx = fixture(t, { workspace });
     const spawned = runHook(fx, "spawn", { OATS_AWEB_URL: VARIABLE });

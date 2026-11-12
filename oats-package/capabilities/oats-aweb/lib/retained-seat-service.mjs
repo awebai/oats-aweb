@@ -23,9 +23,12 @@ function recordedAwebUrl(text) {
   if (at.length > 1) return null;
   const value = lines[at[0]].slice('aweb_url:'.length).replace(/^[ \t]+/, '');
   if (value && !/^[ \t]/.test(lines[at[0]].slice('aweb_url:'.length))) return null;
+  // A plain scalar continues on any later indented line, blank lines between included, until
+  // the next line at column 0; any indented content there means the value is not this line.
   for (const next of lines.slice(at[0] + 1)) {
+    if (/^[ \t]*$/.test(next)) continue;
     if (!/^[ \t]/.test(next)) break;
-    if (!/^[ \t]*(#.*)?$/.test(next)) return null;
+    if (!/^[ \t]*#/.test(next)) return null;
   }
   const quote = value[0];
   if (quote === '"' || quote === "'") {
