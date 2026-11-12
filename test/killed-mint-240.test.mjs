@@ -103,7 +103,7 @@ const pendingMintOf = (r) => { const { team, alias } = r.doc.meta.pendingMint; r
 
 // ------------------------------------------------- acceptance (#240 spec, 1-5)
 
-test("1. a mint registered before any local file: the spawn names team and alias, and retire names the controller command but records nothing", (t) => {
+test("1. a mint registered before any local file: the spawn names team and alias, and retire names no command, points to the roster and the members read, and records nothing", (t) => {
   const fx = fixture(t);
   const r = killedSpawn(fx, { FAKE_JOIN_FROM_REGISTER_FIRST: "1" });
   assert.deepEqual(pendingMintOf(r), { team: TEAM, alias: "dev-1" });
@@ -113,9 +113,9 @@ test("1. a mint registered before any local file: the spawn names team and alias
   const retired = fx.retire(r.doc.meta);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.match(retired.doc.warning, /was not released/);
-  assert.match(retired.doc.warning, /ownership could not be established/);
-  assert.match(retired.doc.warning, /may belong to another instance of that name/);
-  assert.ok(retired.doc.warning.includes(COMMAND), retired.doc.warning);
+  assert.match(retired.doc.warning, /most likely another instance's \(aw writes the key before it registers\)/);
+  assert.ok(retired.doc.warning.includes(`check it with \`oats aweb roster\` and ${MEMBERS_READ}`), retired.doc.warning);
+  assert.doesNotMatch(retired.doc.warning, /remove-member/, "no command for a certificate this home can't show is its own");
   assert.equal(existsSync(fx.recordFile), false, "no retired-certificates entry without established ownership");
   assert.equal(retired.doc.meta.pendingControllerCleanup, undefined);
 });
@@ -175,7 +175,7 @@ for (const step of ["register", "cert"]) {
     assert.equal(retired.status, 0, retired.stdout + retired.stderr);
     assert.match(retired.doc.warning, /registered alias "dev-1" in team default:example\.test \(certificate cert-dev-1\) but could not be released/);
     assert.ok(retired.doc.warning.includes(COMMAND), retired.doc.warning);
-    assert.doesNotMatch(retired.doc.warning, /ownership could not be established/);
+    assert.doesNotMatch(retired.doc.warning, /most likely another instance's/);
     const record = JSON.parse(readFileSync(fx.recordFile, "utf8"));
     assert.deepEqual(record.entries.map((e) => ({ team: e.team, certificateId: e.certificateId, alias: e.alias, command: e.command })), [{ team: TEAM, certificateId: "cert-dev-1", alias: "dev-1", command: COMMAND }]);
     assert.deepEqual(retired.doc.meta.pendingControllerCleanup, [{ label: "default", team: TEAM, alias: "dev-1", certificateId: "cert-dev-1", command: COMMAND }]);

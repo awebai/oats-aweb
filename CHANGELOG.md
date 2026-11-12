@@ -17,8 +17,9 @@
   - A certificate whose `member_did_key` is the home key's is recorded with
     the controller's `aw id team remove-member` command, and the warning says
     the identity was registered but could not be released.
-  - A home with no key only gets the command named, with the caveat that the
-    certificate may be another instance's. Nothing is recorded.
+  - A home with no key gets no command, since the certificate is most likely
+    another instance's: retire points to `oats aweb roster` and the members
+    read. Nothing is recorded.
   - No certificate for the alias: retire says nothing was registered.
   - A members read that fails: the outcome is unknown. Retire names the read,
     and exits nonzero with the home kept.

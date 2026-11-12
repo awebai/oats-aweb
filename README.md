@@ -1485,9 +1485,10 @@ is this mint's only when its `member_did_key` is the did:key of the home's
   `--registry` is the registry the read used), and says
   the identity was registered but could not be released. It exits 0, because
   the home's key can't release it.
-- **No key in the home:** ownership can't be established, so the certificate
-  may belong to another instance with that name. Retire names the command and
-  that caveat, and records nothing.
+- **No key in the home:** aw writes the key before it registers, so the
+  certificate is most likely another instance's. Retire shows no command to
+  remove it and records nothing. It points to `oats aweb roster` and the
+  members read at the root instead, to check the member first. It exits 0.
 - **No certificate for the alias, or one held by another key:** nothing was
   registered, and the intent is dropped.
 - **The members read fails:** the outcome is unknown. Retire names the read to

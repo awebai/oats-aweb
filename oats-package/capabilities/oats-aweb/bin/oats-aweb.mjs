@@ -2479,8 +2479,11 @@ if (event === "launch") {
       rememberControllerCleanup({ cleanup: "controller", label: "default", team, alias, certificateId: cert.certificate_id, ...(command ? { command } : {}), registry });
       await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint registered alias "${alias}" in team ${team}${named} but could not be released: this home holds its key and no workspace binding, and retire never finishes a half-done mint; ${removal}`) });
     }
-    // No key to compare: never recorded, since the record marks a member as retired by OATS.
-    await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint may have registered alias "${alias}" in team ${team}, and it was not released: the alias holds a certificate${named}, but this home holds no key it can read, so ownership could not be established and the certificate may belong to another instance of that name; if no other instance has that name, ${removal}`) });
+    // No key to compare. aw writes the key before it registers, so the certificate is most
+    // likely another instance's, and the alias comes from the home's own intent: no
+    // removal command is shown, and nothing is recorded (the record marks a member as
+    // retired by OATS). The person checks the member, as for a later spawn's refusal.
+    await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint may have registered alias "${alias}" in team ${team}, and it was not released: the alias holds a certificate${named}, but this home holds no key it can read, so the certificate is most likely another instance's (aw writes the key before it registers) and no command to remove it is shown; check it with \`oats aweb roster\` and ${membersRead(team)}${where}`) });
   };
   if (!meta.alias) {
     const onDisk = readPendingMint();
