@@ -700,7 +700,7 @@ aweb team aweb:juan.aweb.ai — 9 entries (membership certificates and workspace
   aweb — global identity, active, antares, juan.aweb.ai/aweb [presence]
   juan-reyero — human (from its session context), seen 2d ago [presence]
   oats-expert-juan — instance (from its workspace path), active, antares [certificate, presence]
-  altair-aweb — deployment root (from its workspace path), seen 3h ago, altair [certificate, presence]
+  builder-aweb — deployment root (from its workspace path), seen 3h ago, builder [certificate, presence]
   cli-dev-review-servers — unknown, certificate only: no workspace record [certificate]
 ```
 
