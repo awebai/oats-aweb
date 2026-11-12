@@ -11,6 +11,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 import { launchChannelWarning } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 import { describeTaskCoordination } from "./helpers/task-coordination-text.mjs";
@@ -48,10 +49,13 @@ const block = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 const regs = () => { try { return JSON.parse(fs.readFileSync(${JSON.stringify(registry)}, "utf8")); } catch { return {}; } };
 const saveRegs = (r) => fs.writeFileSync(${JSON.stringify(registry)}, JSON.stringify(r));
+// FAKE_HOLD_TERM: the process catches SIGTERM and keeps running, as a child may.
+if (process.env.FAKE_HOLD_TERM) process.on("SIGTERM", () => {});
 if (args[0] === "version") {
   record({});
   const mode = process.env.FAKE_VERSION || "";
   if (mode === "nomatch") { console.log("no version here"); process.exit(0); }
+  if (mode === "silent") block(20000); // prints nothing until long after any deadline
   if (mode === "chunked") { fs.writeSync(1, "aw 1.3"); block(150); fs.writeSync(1, "6.30\\n  commit: abc\\n"); block(20000); process.exit(0); }
   fs.writeSync(1, "aw " + (process.env.FAKE_AW_VERSION || (mode === "old" ? "1.36.12" : "1.36.33")) + "\\n  commit: abc\\n");
   if (mode === "slow" || mode === "old") block(20000);
@@ -73,9 +77,9 @@ if (args[0] === "workspace" && args[1] === "delete") {
   const own = process.env.FAKE_OWN_WORKSPACE_ID || (text.match(/workspace_id:\\s*(\\S+)/) || [])[1], alias = (identity.match(/alias:\\s*(\\S+)/) || [])[1];
   if (target !== own && target !== alias) { console.error("workspace name " + JSON.stringify(target) + " not found"); process.exit(1); }
   if (process.env.FAKE_RETRY_401_AFTER_DELETE) fs.writeFileSync(path.join(process.cwd(), ".aw", "revoked"), "1\\n");
-  else fs.rmSync(path.join(process.cwd(), ".aw"), { recursive: true, force: true });
+  else if (!process.env.FAKE_DELETE_KEEP_HOME) fs.rmSync(path.join(process.cwd(), ".aw"), { recursive: true, force: true });
   const held = !!process.env.FAKE_DELETE_ALIAS_HELD;
-  console.log(JSON.stringify({ workspace_id: own, alias, deleted_at: "", identity_deleted: true, alias_released: !held, alias_released_reason: held ? "alias_held" : "released" }));
+  console.log(JSON.stringify({ workspace_id: own, alias, deleted_at: "", identity_deleted: true, alias_released: !held, alias_released_reason: process.env.FAKE_DELETE_REASON || (held ? "alias_held" : "released") }));
   process.exit(0);
 }
 // The 1.17.3 sequence, so a regression back to it is visible as a call.
@@ -261,6 +265,139 @@ test("a mint killed at the timeout after the accept reports the identity for com
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_HANG: "1", OATS_AWEB_JOIN_TIMEOUT_MS: "1500" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(Date.now() - started < 15000, "the timeout bounds the mint");
+  assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
+});
+
+// awebai/oats-aweb#229: the kernel kills a lifecycle hook at 120 s, so the hook's
+// own aw calls end by one deadline below that (OATS_AWEB_HOOK_BUDGET_MS here; 100 s
+// by default), whatever their own timeout, and the hook reports what it confirmed.
+test("the hook's deadline bounds a mint whose own timeout is longer, and the identity is still reported", (t) => {
+  const fx = fixture(t);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_HANG: "1", OATS_AWEB_HOOK_BUDGET_MS: "2500" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(Date.now() - started < 15000, "the deadline, not the mint's 120 s, bounds the mint");
+  assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
+});
+
+test("an aw call the hook's deadline leaves no time for is not started", (t) => {
+  const fx = fixture(t);
+  const r = fx.hook("spawn", { OATS_AWEB_HOOK_BUDGET_MS: "1" });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.fake.readCalls().filter((c) => c.args[0] === "init"), [], "no mint is started past the deadline");
+});
+
+test("the hook's deadline bounds spawn's aw version read", (t) => {
+  const fx = fixture(t);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_VERSION: "silent", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /aw version could not be read/);
+  assert.ok(Date.now() - started < 8000, `the deadline, not the read's own 10 s, bounds it (${Date.now() - started} ms)`);
+});
+
+test("retire starts no wake deregistration after the hook's deadline", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const before = fx.fake.readCalls().length;
+  fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), OATS_AWEB_HOOK_BUDGET_MS: "1" });
+  assert.deepEqual(fx.fake.readCalls().slice(before).filter((c) => c.args[0] === "wake" || c.args[0] === "workspace").map((c) => c.args.slice(0, 2).join(" ")), [], "no aw call is started past the deadline");
+});
+
+test("the hook's deadline cuts a wake deregistration that would outlast it", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  const started = Date.now();
+  fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
+  assert.ok(Date.now() - started < 10000, `retire ends by the deadline, not the deregistration's own 60 s (${Date.now() - started} ms)`);
+});
+
+test("the hook's deadline ends a mint that keeps running after SIGTERM", (t) => {
+  const fx = fixture(t);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_HANG: "1", FAKE_HOLD_TERM: "1", OATS_AWEB_HOOK_BUDGET_MS: "2500" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(Date.now() - started < 15000, `the deadline ends the mint, not its own 30 s hang (${Date.now() - started} ms)`);
+  assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
+});
+
+test("the hook's deadline ends a wake deregistration that keeps running after SIGTERM", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  const started = Date.now();
+  fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", FAKE_HOLD_TERM: "1", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
+  assert.ok(Date.now() - started < 10000, `retire ends by the deadline, not the deregistration's 20 s (${Date.now() - started} ms)`);
+});
+
+test("no bookkeeping after the self-delete lets a wake deregistration apply past the hook's deadline", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  assert.ok(fx.fake.registrations()[fx.home], "the spawn registered the wake");
+  // A team_not_hosted self-delete leaves a controller cleanup to record, and a stale
+  // record lock makes recording it wait (up to 5 s) after the deadline has passed.
+  writeFileSync(join(fx.home, ".aw", "team-certs", `${TEAM.replace(/:/g, "__")}.pem`), JSON.stringify({ version: 1, certificate_id: "cert-default-123", team_id: TEAM, alias: "dev-1" }));
+  writeFileSync(join(fx.ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  mkdirSync(join(fx.ws, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(fx.ws, ".oats-aweb", "retired-certificates.json.lock"), "stale\n");
+  const retired = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DELETE_REASON: "team_not_hosted", FAKE_DELETE_ALIAS_HELD: "1", FAKE_DELETE_KEEP_HOME: "1", FAKE_DEREGISTER_MS: "3000", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
+  assert.match(retired.doc.warning, /controller cleanup: aw id team remove-member/, "the path records a controller cleanup");
+  assert.ok(fx.fake.registrations()[fx.home], "the deregistration, due 1 s after the deadline, never applied");
+});
+
+/** Whether the process with this pid is still running. */
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const deregistrationPids = (fx) => fx.fake.readCalls().filter((c) => c.args[0] === "wake" && c.args[1] === "deregister").map((c) => c.pid);
+
+test("retire refused for an unreadable seat record still awaits the deregistration, within the deadline", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), "{ not json");
+  const retired = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta) });
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.reason, "seat-record-unreadable");
+  assert.equal(fx.fake.registrations()[fx.home], undefined, "the deregistration ran to its end before retire answered");
+
+  const cut = fixture(t);
+  const again = cut.hook("spawn");
+  mkdirSync(join(cut.home, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(cut.home, ".oats-aweb", "seat.json"), "{ not json");
+  const late = cut.hook("retire", { OATS_META: JSON.stringify(again.doc.meta), FAKE_DEREGISTER_MS: "4000", OATS_AWEB_HOOK_BUDGET_MS: "800" });
+  assert.equal(late.doc.meta.reason, "seat-record-unreadable");
+  assert.deepEqual(deregistrationPids(cut).filter(alive), [], "no deregistration outlives the hook");
+  assert.ok(cut.fake.registrations()[cut.home], "the deregistration cut at the deadline never applied");
+});
+
+test("no exit of retire leaves a wake deregistration running", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  // A seat record with no resident: retire takes the grant route, which refuses and exits at once.
+  mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), JSON.stringify({ seat: "0123456789abcdef" }));
+  const retired = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.match(retired.doc.warning, /requires identity\.resident/);
+  assert.equal(deregistrationPids(fx).length, 2, "the background deregistration and the grant route's own");
+  assert.deepEqual(deregistrationPids(fx).filter(alive), [], "no deregistration is running when the hook exits");
+});
+
+test("a wall-clock step back does not lengthen the hook's deadline", (t) => {
+  const fx = fixture(t);
+  // Preloaded into the hook: once aw wake status has run (before the mint starts), the
+  // wall clock steps back 5 s, as an NTP correction can.
+  const preload = join(tempDir(t), "clock-step.mjs");
+  writeFileSync(preload, `import { readFileSync } from "node:fs";
+const real = Date.now.bind(Date); let stepped = false;
+Date.now = () => { if (!stepped) { try { stepped = readFileSync(${JSON.stringify(join(fx.fake.base, "calls.jsonl"))}, "utf8").includes('"status"'); } catch {} } return real() - (stepped ? 5000 : 0); };
+`);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_HANG: "1", OATS_AWEB_HOOK_BUDGET_MS: "2500", NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(Date.now() - started < 5000, `elapsed time, not the wall clock, bounds the hook (${Date.now() - started} ms)`);
   assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
 });
 

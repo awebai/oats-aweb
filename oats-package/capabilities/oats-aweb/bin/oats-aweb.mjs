@@ -127,10 +127,31 @@ function failureClass(e) {
   const redacted = detail === undefined ? undefined : detail.replace(TOKEN_SHAPED_RE, "<redacted>").replace(/\s+/g, " ").trim().slice(0, 200);
   return `http ${http[1]}${redacted ? `, detail: ${JSON.stringify(redacted)}` : ""}`;
 }
-const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
+// The kernel kills a lifecycle hook (spawn, launch, retire) at 120 s (oats
+// lib/core.mjs runLifecycleHooks). Every aw call such a hook makes ends by one
+// deadline below that, HOOK_BUDGET_MS after the hook started, whatever its own
+// timeout, so the hook outlives its last call and reports what it confirmed (a
+// mint that completed late, a grant to revoke) instead of being killed with the
+// call still running (awebai/oats-aweb#229). A call the deadline leaves no time
+// for is not started. A call the deadline cuts is ended with SIGKILL, not
+// SIGTERM, which a child may catch and outlive the deadline.
+// Elapsed time on the monotonic clock, as the kernel's timeout and a child's
+// are measured: a wall-clock step would move the deadline.
+const HOOK_STARTED_AT = performance.now();
+// OATS_AWEB_HOOK_BUDGET_MS shortens it, for tests; nothing lengthens it past the default.
+const HOOK_BUDGET_MS = Math.min(100000, Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) > 0 ? Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) : 100000);
+const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EVENT || process.argv[2]);
+/** The timeout an aw call of this hook gets: what it asks for, cut to what is
+ *  left before the deadline in a lifecycle hook. At or below 0 the call is not
+ *  started. Every aw child of the hook takes its timeout from here. */
+const hookTimeout = (requested) => boundedByHook ? Math.min(requested, Math.floor(HOOK_STARTED_AT + HOOK_BUDGET_MS - performance.now())) : requested;
+const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
+const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
+  const timeout = hookTimeout(requested);
   try {
+    if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
     const childEnv = childEnvFor({ env: extraEnv, unsetEnv });
-    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, env: childEnv }).trim();
+    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, killSignal: timeoutSignal, env: childEnv }).trim();
   } catch (e) {
     // execFileSync puts the WHOLE ARGV in e.message ("Command failed: aw team
     // join <token> …"). This hook's failures are reported by the kernel and land
@@ -148,7 +169,7 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, fai
     const where = [argv[0], argv[1], argv[2]].filter((a) => a && !secrets.includes(a) && !a.startsWith("-")).join(" ");
     // The outcome says how the child ended (a timeout or signal included), which
     // is not its output, so even a secretSafe command reports it.
-    const outcome = childOutcome(e, timeout);
+    const outcome = e.code === "E_HOOK_DEADLINE" ? `not started: the hook's ${Math.round(HOOK_BUDGET_MS / 1000)} s deadline had passed` : childOutcome(e, timeout);
     const output = secretSafe ? "" : scrub(e.stderr).trim();
     // failureDetail: a secretSafe command may still name its sanitized class.
     const cls = secretSafe && failureDetail ? failureClass({ stderr: scrub(e.stderr), stdout: scrub(e.stdout) }) : "";
@@ -489,7 +510,7 @@ if (!onPath("aw") && !setupHandlesAw) {
 // The aw version spawn read for the floor, reused for the tested-range warning.
 let spawnAwVersion;
 if ((isCommand && !setupHandlesAw) || event === "spawn") {
-  const floor = await awFloorObservation();
+  const floor = await awFloorObservation({ timeout: hookTimeout(10000) });
   const floorProblem = floor.message;
   spawnAwVersion = floor.version;
   if (floorProblem) {
@@ -609,12 +630,19 @@ const startedMeta = (meta = {}) => {
  *  overlaps it with the self-delete). Settles to whether it succeeded. */
 function wakeDeregisterStarted(instanceHome) {
   return new Promise((settle) => {
+    const timeout = hookTimeout(60000);
+    if (timeout <= 0) { settle(false); return; } // the hook's deadline has passed: not started
     let child;
     try { child = spawn("aw", ["wake", "deregister", "--home", instanceHome], { cwd: instanceHome, env: childEnvFor(), stdio: "ignore" }); }
     catch { settle(false); return; }
-    const timer = setTimeout(() => child.kill("SIGTERM"), 60000);
-    child.on("error", () => { clearTimeout(timer); settle(false); });
-    child.on("exit", (code) => { clearTimeout(timer); settle(code === 0); });
+    const timer = setTimeout(() => child.kill(timeoutSignal), timeout);
+    // A way out of the hook that does not await it (a refusal, a fatal, a
+    // throw) ends it too: no child outlives the hook and its deadline.
+    const endWithHook = () => { try { child.kill("SIGKILL"); } catch { /* already gone */ } };
+    process.once("exit", endWithHook);
+    const done = () => { clearTimeout(timer); process.removeListener("exit", endWithHook); };
+    child.on("error", () => { done(); settle(false); });
+    child.on("exit", (code) => { done(); settle(code === 0); });
   });
 }
 const NORMAL_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
@@ -2188,9 +2216,11 @@ if (event === "launch") {
   // way out of this branch awaits it through finish().
   const deregistration = brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
   const finish = async (o, code) => {
+    // The deregistration is awaited first: its kill at the hook's deadline is a
+    // timer, which the record's synchronous lock wait below would hold off.
+    if (deregistration && !(await deregistration)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n");
     try { recordControllerCleanup(); }
     catch { outNotes.push("could not record the controller cleanup on this host: the record could not be written"); }
-    if (deregistration && !(await deregistration)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n");
     if (failedLeaves.length) {
       const incomplete = o.meta.retired === false && o.meta.reason !== "nothing-to-delete";
       o = { ...o, meta: { ...o.meta, ...(incomplete ? {} : { retired: false, reason: "joined-team-leave-failed" }), failedLeaves } };
@@ -2206,7 +2236,7 @@ if (event === "launch") {
     catch (e) {
       const why = String(e.message || e).slice(0, 200);
       // With no seat in the meta either, nothing names this seat's grants.
-      if (!meta.identity?.seat) out({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${why}); this seat may hold grants that stay valid` }, 1);
+      if (!meta.identity?.seat) await finish({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${why}); this seat may hold grants that stay valid` }, 1);
       outNotes.push(`the seat record is unreadable (${why}); retired from the seat in the meta`);
     }
     if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));

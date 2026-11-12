@@ -32,6 +32,7 @@ if (s.startsWith("wake ")) process.exit(0);
 //   FAKE_RETAINED_KILL=mid-connect    the server accepts the connect, and the parent is SIGKILLed
 //                                     before the local workspace.yaml is written (aw posts first)
 //   FAKE_RETAINED_FAIL=check          aw check --online fails after the connect
+//   FAKE_RETAINED_HANG=check          aw check --online hangs (for a hook deadline to cut)
 //   FAKE_RETAINED_FAIL=connect        the server accepts a connect from OATS_HOME, which then exits 1
 //                                     before the local workspace.yaml is written (aw posts first)
 //   FAKE_RETAINED_RESTORE_FAIL=1      a connect from any directory but OATS_HOME fails
@@ -46,6 +47,7 @@ if (process.env.FAKE_RETAINED === "1") {
     process.exit(0);
   }
   if (a[0] === "check" && process.env.FAKE_RETAINED_FAIL === "check") { console.error("check failed"); process.exit(1); }
+  if (a[0] === "check" && process.env.FAKE_RETAINED_HANG === "check") { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20000); process.exit(0); }
   if (a[0] === "check" || a[0] === "heartbeat") process.exit(0);
   if (s === "workspace status --json") { console.log(j({workspace:{alias:"retained",workspace_path:process.cwd()}})); process.exit(0); }
   if (s === "whoami --json") { console.log(j({did:"did:key:zRetained",address:"fixture.test/retained"})); process.exit(0); }
