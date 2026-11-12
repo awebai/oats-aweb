@@ -1456,8 +1456,18 @@ The spawn reads the server only from that `workspace.yaml`, and only when it
 is a plain service URL (http or https, a host, an optional port, and no path
 but `/` or `/api`). `OATS_AWEB_URL` is not read (#241): a seat without
 `aweb_url` is refused before anything is copied, with that `aw workspace
-connect` as the fix. The command a retire prints to bind the identity back to
-its source names the same server.
+connect` as the fix. When a retire compensates a spawn that did not answer,
+the command it prints to bind the identity back to its source names that same
+server.
+
+Per aw 1.36.58's source (not a live run): on one server, the identity has one
+server workspace, so connecting the seat directory and then spawning the
+retained seat reuses it, and the spawn moves its path to the instance home;
+that second connect does not update the seat directory's own
+`workspace.yaml`. Retiring the instance releases the seat's lock and neither
+deletes nor restores that server workspace: to use the seat directory itself
+again, run `aw workspace connect` from there again; otherwise the next
+retained spawn moves the workspace to its new home.
 
 These work on aweb Cloud only, because aw treats only a Cloud team as hosted:
 releasing an identity at retire, `oats aweb connect`, `setup --username` and
