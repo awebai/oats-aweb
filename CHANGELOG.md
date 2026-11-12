@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+- **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
+  (#226).** A retained seat (`identity.source`) was recorded as identity mode
+  `global` with no grant, so no start answered an identity home for it, and
+  the kernel, which drops a provider's earlier env names before it merges a
+  start's answer, started the session without one: `aw` then worked only when
+  run from the home itself. A retained seat holds its identity in the home's
+  `.aw`, so spawn now records it as mode `local`, and every start answers
+  `AWEB_IDENTITY_HOME=<home>/.aw`. A seat recorded before this fix is
+  normalised at its next start: only its recorded mode changes, from `global`
+  to `local`, and only for a retained seat with no grant. Readiness accepts a
+  retained seat with no joined-team file in either mode. A retained seat now
+  takes the local path everywhere: its start runs no grant code, and
+  `oats aweb join` no longer refuses it with `E_TEAM_GLOBAL_MODE` as if it
+  acted through a session grant (retire already leaves a retained seat's
+  joined teams before it releases the seat).
+
+- **Fixed: the roster never prints a controller command it read from a file
+  (#230).** `oats aweb roster` printed, for a certificate a retire left
+  behind, the `command` stored in `<deployment>/.oats-aweb/retired-certificates.json`,
+  which any agent running as the deployment's user can write, and retire took
+  the command's `--registry` from any value in a home's identity files that
+  started with `http(s)://`. Retire and the roster now build the controller's
+  `aw id team remove-member` command with one builder, from a team that is a
+  valid aweb team id, a certificate id of letters, digits, `_` and `-`, and a
+  registry that is a plain origin (scheme, host and port only). A registry
+  that is not one is reported as "could not be determined", as a missing one
+  is, and the command omits `--registry`. The record now also holds the
+  structured `registry` (or `null`) beside `team` and `certificateId`, and
+  still writes `command`, rebuilt, so an older provider reads it as before.
+  A recorded entry the command can't be built from shows no command: its line
+  says its record entry is malformed and why, `--json` gives
+  `retired.command: null`, and `problems` names it; the rest of the roster is
+  unchanged. An entry recorded before this release has no registry: its
+  command omits `--registry`, and its line says the registry was not
+  recorded. Nothing a deployment must change.
+
+- **Fixed: a retained seat's lock whose holder is not on this host can be
+  released, and says how (#227).** A retained seat's lock
+  (`.aw-retained-seat.json` beside its `identity.source`) whose holder home is
+  not on this host, or that could not be read, made every later spawn of that
+  identity fail with "was taken by another spawn a moment ago", and
+  `identity.takeOver: true` did not help. Such a lock is still never released
+  by age or automatically: the holder's home may be on another host or
+  container that shares the source. The spawn now refuses, naming the holder
+  (instance, host, since and home, as the lock records them) and the release:
+  once that seat is confirmed gone, spawn with `identity.takeOver: true`
+  (`--provider oats.aweb identity.takeOver=true`), which clears the lock with a
+  warning, or remove the lock file, which the refusal names. A lock whose
+  holder home exists here is refused as before. `identity.takeOver=true` given
+  on the command line now takes effect: the kernel passes it as the string
+  `"true"`, which the hook used to ignore, for a holder whose home exists too.
+  OATS's `docs/container.md` ("Making a seat") still says that when the
+  holder's home is gone `identity.takeOver` does not apply and the lock is
+  removed by hand: the OATS pin PR that moves to this release changes that
+  paragraph.
+
 - **Fixed: a retained seat's spawn that fails or is killed never deletes the
   standing identity's workspace (#228).** A retained seat's spawn (`identity.source`)
   that failed after `aw workspace connect` without restoring the binding, or

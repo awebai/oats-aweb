@@ -16,7 +16,7 @@ const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
 const HOOK = join(CAPABILITY, "bin", "oats-aweb.mjs");
 const LIB = join(CAPABILITY, "lib", "retired-certificates.mjs");
-const { RETIRED_RECORD_MAX, recordRetiredCertificates } = await import(pathToFileURL(LIB).href);
+const { RETIRED_RECORD_MAX, controllerCleanupCommand, recordRetiredCertificates } = await import(pathToFileURL(LIB).href);
 const DEFAULT = "default:example.test", SHARED = "shared:example.test";
 const DEFAULT_COMMAND = "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --registry https://api.awid.ai --json";
 const SHARED_COMMAND = "aw id team remove-member --namespace example.test --team shared --cert-id cert-shared-123 --registry https://api.awid.ai --json";
@@ -38,7 +38,7 @@ function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync
 
 /** A fake aw whose team is not hosted: every `workspace delete` answers alias_released false,
  *  team_not_hosted. `id team members` and `workspace status` answer the fixture's files. */
-function fakeAw(t, dir) {
+function fakeAw(t, dir, { registry = true } = {}) {
   const bin = join(dir, "bin");
   write(join(bin, "aw"), `#!${process.execPath}
 const fs = require("node:fs");
@@ -48,7 +48,7 @@ const emit = (o) => console.log(JSON.stringify(o));
 const cmd = args.slice(0, 3).join(" ");
 if (args[0] === "version") { console.log("aw 1.36.33 abcdef"); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "delete") { emit({ alias_released: false, alias_released_reason: "team_not_hosted" }); process.exit(0); }
-if (cmd === "id team list") { emit({ memberships: [{ team_id: String(identityHome || "").includes(".aweb-identity-shared") ? ${JSON.stringify(SHARED)} : ${JSON.stringify(DEFAULT)}, registry_origin: "https://api.awid.ai" }] }); process.exit(0); }
+if (cmd === "id team list") { emit({ memberships: [{ team_id: String(identityHome || "").includes(".aweb-identity-shared") ? ${JSON.stringify(SHARED)} : ${JSON.stringify(DEFAULT)}, ${registry ? 'registry_origin: "https://api.awid.ai"' : ""} }] }); process.exit(0); }
 if (cmd === "id team members") { fs.writeSync(1, fs.readFileSync(${JSON.stringify(join(dir, "members.json"))}, "utf8")); process.exit(0); }
 if (args[0] === "workspace" && args[1] === "status") { emit({ selected_team: ${JSON.stringify(DEFAULT)}, team_has_more: false, team: [] }); process.exit(0); }
 if (args[0] === "wake") { console.log("ok"); process.exit(0); }
@@ -60,7 +60,7 @@ console.error("fake aw: unexpected " + args.join(" ")); process.exit(93);
 
 /** A deployment (oats-local.yaml, a root for the default team) and an instance home whose
  *  default identity and joined team `shared` each hold a certificate in a team not hosted. */
-function fixture(t) {
+function fixture(t, { registry = true } = {}) {
   const ws = tempDir(t), root = join(ws, "root"), home = join(ws, "agents", "dev", "instances", "dev-1");
   write(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   write(join(root, ".aw", "identity.yaml"), "alias: root\n");
@@ -72,7 +72,7 @@ function fixture(t) {
   const meta = { alias: "dev-1", team: DEFAULT, identity: { mode: "local", alias: "dev-1", team: DEFAULT }, joinedTeams: [{ label: "shared", team: SHARED, identityHome: sharedHome, alias: "dev-1", receive: "poll", since: "2026-11-01T00:00:00.000Z" }] };
   const teams = [{ label: "personal", team: DEFAULT, default: true, from: "local" }, { label: "shared", team: SHARED, default: false, from: "shared" }];
   const env = {
-    PATH: fakeAw(t, ws), OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
+    PATH: fakeAw(t, ws, { registry }), OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: DEFAULT, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify(teams), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
     OATS_SETTINGS: JSON.stringify({ roots: { [DEFAULT]: root } }),
@@ -86,7 +86,7 @@ function fixture(t) {
     return JSON.parse(r.stdout);
   };
   const members = (list) => writeFileSync(join(ws, "members.json"), JSON.stringify({ team_id: DEFAULT, members: list }));
-  return { ws, home, retire, hook, members, recordFile: join(ws, ".oats-aweb", "retired-certificates.json") };
+  return { ws, home, sharedHome, retire, hook, members, recordFile: join(ws, ".oats-aweb", "retired-certificates.json") };
 }
 const readRecord = (file) => JSON.parse(readFileSync(file, "utf8"));
 const entry = (certificateId) => ({ team: "t:example.test", certificateId, alias: "a", instance: "a", retiredAt: "2026-11-05T00:00:00.000Z", command: `aw id team remove-member --cert-id ${certificateId}` });
@@ -104,8 +104,8 @@ test("retire records each controller cleanup at the deployment, its warning and 
   const record = readRecord(fx.recordFile);
   assert.equal(record.version, 1);
   assert.deepEqual(record.entries.map(({ retiredAt, ...rest }) => rest), [
-    { team: SHARED, certificateId: "cert-shared-123", alias: "dev-1", instance: "dev-1", command: SHARED_COMMAND },
-    { team: DEFAULT, certificateId: "cert-default-123", alias: "dev-1", instance: "dev-1", command: DEFAULT_COMMAND },
+    { team: SHARED, certificateId: "cert-shared-123", alias: "dev-1", instance: "dev-1", registry: "https://api.awid.ai", command: SHARED_COMMAND },
+    { team: DEFAULT, certificateId: "cert-default-123", alias: "dev-1", instance: "dev-1", registry: "https://api.awid.ai", command: DEFAULT_COMMAND },
   ]);
   for (const e of record.entries) assert.ok(!Number.isNaN(Date.parse(e.retiredAt)), e.retiredAt);
   assert.doesNotMatch(readFileSync(fx.recordFile, "utf8"), /BEGIN|PRIVATE|secret|token/i, "certificate ids and commands only");
@@ -262,7 +262,7 @@ test("roster counts several leftovers in its footer", (t) => {
   fx.members(["x-1", "x-2"].map((alias) => ({ certificate_id: `c-${alias}`, team_id: DEFAULT, alias })));
   const text = fx.hook("roster");
   assert.equal(text.status, 0, text.stdout + text.stderr);
-  assert.match(text.stdout, /x-1 .*; retired by OATS on this host 2026-11-04; the team controller removes it with: aw id team remove-member --cert-id c-x-1\n/);
+  assert.match(text.stdout, /x-1 .*; retired by OATS on this host 2026-11-04; the team controller removes it with: aw id team remove-member --namespace example\.test --team default --cert-id c-x-1 --json \(the registry was not recorded, so aw uses its default\)\n/);
   assert.ok(text.stdout.includes("\n2 certificates belong to instances OATS retired on this host; only the team's controller can remove them.\n"), text.stdout);
 });
 
@@ -302,4 +302,120 @@ test("roster with no record shows nothing more", (t) => {
   assert.deepEqual(doc.problems, []);
   assert.equal("retired" in doc.members[0], false);
   assert.equal(existsSync(fx.recordFile), false, "roster creates no record");
+});
+
+// awebai/oats-aweb#230: the roster never prints a stored controller command. Retire and roster
+// build it with one builder from validated fields: the team, the certificate id and the registry.
+const NO_REGISTRY_NOTE = "(the registry was not recorded, so aw uses its default)";
+const recorded = (fields) => ({ team: DEFAULT, alias: "dev-1", instance: "dev-1", retiredAt: "2026-11-04T10:00:00.000Z", ...fields });
+const rosterOf = (fx) => {
+  const json = fx.hook("roster", ["--json"]);
+  assert.equal(json.status, 0, json.stdout + json.stderr);
+  const text = fx.hook("roster");
+  assert.equal(text.status, 0, text.stdout + text.stderr);
+  return { doc: JSON.parse(json.stdout), json: json.stdout, text: text.stdout, lines: text.stdout.split("\n") };
+};
+
+test("A1: roster shows the rebuilt command, never a stored command with shell text in it", (t) => {
+  const fx = fixture(t);
+  write(fx.recordFile, JSON.stringify({ version: 1, entries: [recorded({ certificateId: "cert-default-123", registry: "https://api.awid.ai", command: "aw id team remove-member ... ; touch /tmp/pwned" })] }));
+  fx.members([{ certificate_id: "cert-default-123", team_id: DEFAULT, alias: "dev-1" }]);
+  const { doc, json, text, lines } = rosterOf(fx);
+  assert.deepEqual(doc.problems, []);
+  assert.deepEqual(doc.members[0].retired, { at: "2026-11-04T10:00:00.000Z", instance: "dev-1", command: DEFAULT_COMMAND });
+  assert.ok(lines.includes(`  dev-1 — unknown, certificate only: no workspace record [certificate]; retired by OATS on this host 2026-11-04; the team controller removes it with: ${DEFAULT_COMMAND}`), text);
+  for (const out of [json, text]) assert.doesNotMatch(out, /touch|pwned/);
+  assert.doesNotMatch(doc.members[0].retired.command, /;/);
+  assert.doesNotMatch(text.split("removes it with: ")[1].split("\n")[0], /;/);
+});
+
+test("A2: an entry with an invalid certificate id or registry shows no command and says why; the others print", (t) => {
+  const fx = fixture(t);
+  write(fx.recordFile, JSON.stringify({ version: 1, entries: [
+    recorded({ alias: "bad-id", instance: "bad-id", certificateId: "cert 1; x", registry: "https://api.awid.ai", command: "aw id team remove-member --cert-id x" }),
+    recorded({ alias: "bad-query", instance: "bad-query", certificateId: "c-query", registry: "https://h/x?y", command: "aw id team remove-member --cert-id c-query" }),
+    recorded({ alias: "bad-user", instance: "bad-user", certificateId: "c-user", registry: "https://user@h", command: "aw id team remove-member --cert-id c-user" }),
+    recorded({ alias: "good", instance: "good", certificateId: "c-good", registry: "https://api.awid.ai", command: "aw id team remove-member --cert-id c-good" }),
+  ] }));
+  fx.members([["bad-id", "cert 1; x"], ["bad-query", "c-query"], ["bad-user", "c-user"], ["good", "c-good"], ["live", "c-live"]].map(([alias, id]) => ({ certificate_id: id, team_id: DEFAULT, alias })));
+  const { doc, text, lines } = rosterOf(fx);
+  const byAlias = Object.fromEntries(doc.members.map((m) => [m.alias, m]));
+  for (const alias of ["bad-id", "bad-query", "bad-user"]) assert.deepEqual(byAlias[alias].retired, { at: "2026-11-04T10:00:00.000Z", instance: alias, command: null }, alias);
+  assert.equal(byAlias.good.retired.command, "aw id team remove-member --namespace example.test --team default --cert-id c-good --registry https://api.awid.ai --json");
+  assert.equal("retired" in byAlias.live, false);
+  assert.deepEqual(doc.problems, [
+    { source: "retired-record", message: "the record entry for bad-id's certificate is malformed (its certificate id is not valid); no command to remove it is shown" },
+    { source: "retired-record", message: "the record entry for bad-query's certificate is malformed (its registry is not a plain registry origin); no command to remove it is shown" },
+    { source: "retired-record", message: "the record entry for bad-user's certificate is malformed (its registry is not a plain registry origin); no command to remove it is shown" },
+  ]);
+  assert.ok(lines.includes("  bad-id — unknown, certificate only: no workspace record [certificate]; retired by OATS on this host 2026-11-04; its record entry is malformed (its certificate id is not valid), so no command to remove it is shown"), text);
+  assert.ok(lines.includes("  bad-query — unknown, certificate only: no workspace record [certificate]; retired by OATS on this host 2026-11-04; its record entry is malformed (its registry is not a plain registry origin), so no command to remove it is shown"), text);
+  assert.ok(lines.includes("  bad-user — unknown, certificate only: no workspace record [certificate]; retired by OATS on this host 2026-11-04; its record entry is malformed (its registry is not a plain registry origin), so no command to remove it is shown"), text);
+  assert.ok(lines.includes("  good — unknown, certificate only: no workspace record [certificate]; retired by OATS on this host 2026-11-04; the team controller removes it with: aw id team remove-member --namespace example.test --team default --cert-id c-good --registry https://api.awid.ai --json"), text);
+  assert.ok(lines.includes("  live — unknown, certificate only: no workspace record [certificate]"), text);
+  assert.doesNotMatch(text, /cert 1; x|https:\/\/h\/x\?y|user@h|--cert-id (x|c-query|c-user)\b/);
+});
+
+test("A2: an entry whose team is not a valid aweb team id shows no command and says why", (t) => {
+  const fx = fixture(t);
+  const team = "x;y:example.test";
+  write(fx.recordFile, JSON.stringify({ version: 1, entries: [recorded({ team, certificateId: "c-team", registry: "https://api.awid.ai", command: "aw id team remove-member --cert-id c-team" })] }));
+  writeFileSync(join(fx.ws, "members.json"), JSON.stringify({ team_id: team, members: [{ certificate_id: "c-team", team_id: team, alias: "bad-team" }, { certificate_id: "c-live", team_id: team, alias: "live" }] }));
+  const { doc, text, lines } = rosterOf(fx);
+  const byAlias = Object.fromEntries(doc.members.map((m) => [m.alias, m]));
+  assert.equal(byAlias["bad-team"].retired.command, null);
+  assert.deepEqual(doc.problems, [{ source: "retired-record", message: "the record entry for bad-team's certificate is malformed (its team is not a valid aweb team id); no command to remove it is shown" }]);
+  assert.ok(lines.includes("  bad-team — unknown, certificate only: no workspace record [certificate]; retired by OATS on this host 2026-11-04; its record entry is malformed (its team is not a valid aweb team id), so no command to remove it is shown"), text);
+  assert.ok(lines.includes("  live — unknown, certificate only: no workspace record [certificate]"), text);
+  assert.doesNotMatch(text, /remove-member/);
+});
+
+test("A3: retire never builds a command from a registry in a home's identity files that is not a plain origin", (t) => {
+  const fx = fixture(t, { registry: false });
+  write(join(fx.sharedHome, "identity.yaml"), `alias: dev-1\nteam_id: ${SHARED}\nawid_registry_url: "https://evil.test/$(id)"\n`);
+  const doc = fx.retire();
+  const shared = "aw id team remove-member --namespace example.test --team shared --cert-id cert-shared-123 --json";
+  const undetermined = "(registry origin could not be determined from the joined identity; command omits --registry and aw will use its default)";
+  assert.ok(doc.warning.includes(`joined team shared cleanup failed: team_not_hosted; controller cleanup: ${shared} ${undetermined}`), doc.warning);
+  assert.equal(doc.meta.pendingControllerCleanup[0].command, shared);
+  const entry = readRecord(fx.recordFile).entries.find((e) => e.team === SHARED);
+  assert.equal(entry.command, shared);
+  assert.equal(entry.registry, null);
+  for (const out of [JSON.stringify(doc), readFileSync(fx.recordFile, "utf8")]) assert.doesNotMatch(out, /evil\.test|\$\(id\)/);
+});
+
+test("A4: an old record entry without a registry still shows, with a command without --registry and a note", (t) => {
+  const fx = fixture(t);
+  write(fx.recordFile, JSON.stringify({ version: 1, entries: [recorded({ certificateId: "cert-default-123", command: DEFAULT_COMMAND })] }));
+  fx.members([{ certificate_id: "cert-default-123", team_id: DEFAULT, alias: "dev-1" }]);
+  const { doc, text, lines } = rosterOf(fx);
+  const command = "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --json";
+  assert.deepEqual(doc.problems, []);
+  assert.deepEqual(doc.members[0].retired, { at: "2026-11-04T10:00:00.000Z", instance: "dev-1", command });
+  assert.ok(lines.includes(`  dev-1 — unknown, certificate only: no workspace record [certificate]; retired by OATS on this host 2026-11-04; the team controller removes it with: ${command} ${NO_REGISTRY_NOTE}`), text);
+});
+
+test("the controller cleanup command is built only from a valid team, certificate id and registry", () => {
+  const base = { team: DEFAULT, certificateId: "cert-default-123" };
+  assert.equal(controllerCleanupCommand({ ...base, registry: "https://api.awid.ai" }), DEFAULT_COMMAND);
+  assert.equal(controllerCleanupCommand({ ...base, registry: "http://127.0.0.1:52519" }), "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --registry http://127.0.0.1:52519 --json");
+  assert.equal(controllerCleanupCommand({ ...base, registry: null }), "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --json");
+  assert.equal(controllerCleanupCommand(base), "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --json");
+  assert.equal(controllerCleanupCommand({ team: "aweb:juan.aweb.ai", certificateId: "0a1b2c3d-4e5f-6789-abcd-ef0123456789" }), "aw id team remove-member --namespace juan.aweb.ai --team aweb --cert-id 0a1b2c3d-4e5f-6789-abcd-ef0123456789 --json");
+  for (const registry of ["https://h/x?y", "https://user@h", "https://user:pw@h", "https://h/path", "https://h#x", " https://h", "https://h\n", "https://h /x", "ftp://h", "https://evil.test/$(id)", "", 42])
+    assert.equal(controllerCleanupCommand({ ...base, registry }), undefined, JSON.stringify(registry));
+  for (const certificateId of ["cert 1; x", "c;x", "c$(id)", "c`id`", "c|x", "c\nx", "-x", "", "c".repeat(129), null, 7])
+    assert.equal(controllerCleanupCommand({ ...base, certificateId }), undefined, JSON.stringify(certificateId));
+  for (const team of ["x;y:example.test", "default", "default:", ":example.test", "default:exa mple.test", "default:a:b", "-d:example.test", "default:example.test;x", null, ["default:example.test"]])
+    assert.equal(controllerCleanupCommand({ ...base, team }), undefined, JSON.stringify(team));
+});
+
+test("retire builds no command from a certificate id that is not valid, and records nothing for it", (t) => {
+  const fx = fixture(t);
+  write(join(fx.sharedHome, "team-certs", "shared__example.test.pem"), JSON.stringify({ version: 1, certificate_id: "cert 1; touch x", team_id: SHARED, alias: "dev-1" }));
+  const doc = fx.retire();
+  assert.ok(doc.warning.startsWith("oats-aweb: joined team shared cleanup failed: team_not_hosted; controller cleanup has no command: the certificate read for it is unusable (its certificate id is not valid) | "), doc.warning);
+  assert.doesNotMatch(doc.warning, /touch/);
+  assert.equal("command" in doc.meta.pendingControllerCleanup[0], false);
+  assert.deepEqual(readRecord(fx.recordFile).entries.map((e) => e.certificateId), ["cert-default-123"]);
 });

@@ -420,6 +420,7 @@ test("retained seat retire leaves joined team identities before releasing the re
   assert.equal(existsSync(join(home, ".aweb-identity-alpha")), false);
   assert.equal(existsSync(lock), false);
   assert.ok(fake.readCalls().some((c) => c.identityHome === join(home, ".aweb-identity-alpha") && c.args[0] === "workspace" && c.args[1] === "delete"));
+  assert.ok(!fake.readCalls().some((c) => c.identityHome !== join(home, ".aweb-identity-alpha") && c.args[0] === "workspace" && c.args[1] === "delete"), "the retained primary, recorded mode local, gets no workspace delete");
 });
 
 test("kernel default label mints without team-unmapped fallback", (t) => {

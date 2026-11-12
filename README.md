@@ -714,10 +714,16 @@ aweb team aweb:juan.aweb.ai — 9 entries (membership certificates and workspace
   `; retired by OATS on this host <YYYY-MM-DD>; the team controller removes it
   with: <command>`, and the footer counts those certificates. Only the team's
   controller can remove them, with the printed command. Retire records them in
-  `<deployment>/.oats-aweb/retired-certificates.json` (certificate ids and
-  commands only), matched on team and certificate id, never on alias. The
-  record lives on the host where the retire ran: a roster read on another host
-  doesn't show those leftovers.
+  `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
+  registry origin and command, never a secret), matched on team and certificate
+  id, never on alias. The roster never prints the stored command: it builds the
+  command from the entry's team, certificate id and registry, each validated,
+  as retire does. An entry it can't be built from shows `; its record entry is
+  malformed (<why>), so no command to remove it is shown` (and `--json` gives
+  `command: null`, with a `retired-record` problem); one recorded with no
+  registry adds `(the registry was not recorded, so aw uses its default)` to
+  its command. The record lives on the host where the retire ran: a roster read
+  on another host doesn't show those leftovers.
 - aw does not mark the team's coordinator; the roster says so and points at
   the global identities.
 - If a source cannot be read, or presence is past its 200-workspace cap, the
