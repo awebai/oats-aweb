@@ -58,6 +58,35 @@
   removed by hand: the OATS pin PR that moves to this release changes that
   paragraph.
 
+- **Fixed: a retained seat's spawn that fails or is killed never deletes the
+  standing identity's workspace (#228).** A retained seat's spawn (`identity.source`)
+  that failed after `aw workspace connect` without restoring the binding, or
+  was killed (for example at the kernel's hook timeout), left the kernel no
+  meta. Its compensating retire then took the alias from the home's
+  `.aw/workspace.yaml` and ran `aw workspace delete` with the standing
+  identity's key, deleting the workspace of a seat the operator admitted by
+  hand. Such a retire now goes by the home's captured settings, whose
+  `identity.source` is what made the spawn take the retained route: it
+  retires the home as a retained seat, with no workspace delete, the lock
+  released, and, when the spawn had taken the seat, the `aw workspace connect`
+  command that binds the identity back to its source (its values printed only
+  when they pass their own shapes). That holds even when no local binding
+  survived, since aw binds on the service before it writes the home's
+  `workspace.yaml`. Nothing in the home's
+  provider state decides it. A retained seat's retire now releases its lock
+  only when the lock names this home: a lock another seat took over, or one
+  that cannot be read, is left in place, and the retire says so; so is one it
+  can't remove or can't check, with the reason. A connect that fails is now
+  treated as one that may have bound the identity: the spawn binds it back
+  from the source, and it keeps the copy and the lock if that fails. A spawn
+  that never held the lock is retired as releasing nothing. An
+  `identity.source` that is not a string (a one-element list, say) is now
+  refused at spawn before the lock: spawn read it as a path, while retire
+  didn't classify it as a retained seat. OATS's `docs/container.md`
+  ("Making a seat") still says not to interrupt a seat's spawn, because a
+  spawn killed after it connected can delete the standing identity's
+  workspace. The OATS pin PR that moves to this release changes that bullet.
+
 - **Fixed: the hook's `aw` calls end before the kernel kills the hook
   (#229).** The kernel kills a spawn, launch or retire hook at 120 s. The
   hook gave its own calls more than that between them: the mint alone could

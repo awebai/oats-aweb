@@ -290,7 +290,7 @@ test("a retained seat whose joined leave needs its key keeps retire nonzero", (t
   const fx = fixture(t);
   const joinedHome = join(fx.home, ".aweb-identity-shared"), lock = join(fx.ws, "seat.lock");
   write(join(joinedHome, "identity.yaml"), "alias: dev-1\nteam_id: shared:example.test\n");
-  write(lock, "{}");
+  write(lock, JSON.stringify({ home: fx.home, instance: "dev-1" })); // as spawn writes it: this home holds the seat
   const meta = { retained: true, alias: "dev-1", lock, source: join(fx.ws, ".aw"), team: "default:example.test", joinedTeams: [{ label: "shared", team: "shared:example.test", identityHome: joinedHome, alias: "dev-1", receive: "poll", since: "2026-10-08T00:00:00.000Z" }] };
   const r = runHook("retire", { cwd: fx.home, env: { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(meta), FAKE_DELETE_REFUSE_FOR: "shared" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);

@@ -63,7 +63,7 @@ import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/sess
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
-import { registryOriginUrl } from "../lib/plain-service.mjs";
+import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
@@ -384,6 +384,12 @@ if (["spawn", "launch"].includes(event)) {
 }
 const identitySettings = settings.identity && typeof settings.identity === "object" && !Array.isArray(settings.identity) ? settings.identity : {};
 const identityMode = identitySettings.mode === undefined || identitySettings.mode === null || identitySettings.mode === "" ? "local" : String(identitySettings.mode);
+/** identity.source, the setting that makes a local home a retained seat: spawn takes
+ *  the retained route on it (and refuses one that is not an absolute path before the
+ *  lock), and retire classifies a home on the very same setting. */
+const retainedSourceSetting = identityMode === "local" && identitySettings.source ? identitySettings.source : undefined;
+/** Whether two paths name the same place, by their real paths where both exist. */
+const samePath = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
 if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
   if (event === "setup") { console.error(CLASSIC_REFUSAL); process.exit(1); }
   fatal(CLASSIC_REFUSAL);
@@ -1082,6 +1088,15 @@ function activeTeamAt(root) {
     return yamlScalar(text, "active_team") || yamlScalar(text, "active");
   } catch { return undefined; }
 }
+/** The service, role and team a retained seat's identity is bound with, from its
+ *  source's workspace.yaml and teams.yaml and the default team, as spawn binds it;
+ *  a value that cannot be determined is undefined. */
+function retainedSeatTarget(source) {
+  const read = (name) => { try { return readFileSync(join(source, name), "utf8"); } catch { return ""; } };
+  const srcWorkspace = read("workspace.yaml"), srcTeams = read("teams.yaml");
+  const team = defaultTeamId() || yamlScalar(srcTeams, "active_team") || yamlScalar(srcTeams, "active");
+  return { service: process.env.OATS_AWEB_URL || yamlScalar(srcWorkspace, "aweb_url"), role: yamlScalar(srcWorkspace, "role_name"), team };
+}
 /** A field a retained seat's lock names, when it is short and printable. */
 const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
 /** The refusal for a retained seat's lock whose holder home is not on this host
@@ -1124,12 +1139,8 @@ function retainedSeatSpawn(source, takeOver) {
       takeOverNote = holderHome ? " (its home is not on this host)" : "";
     }
   }
-  const srcWorkspace = existsSync(join(source, "workspace.yaml")) ? readFileSync(join(source, "workspace.yaml"), "utf8") : "";
-  const service = process.env.OATS_AWEB_URL || yamlScalar(srcWorkspace, "aweb_url");
+  const { service, role, team } = retainedSeatTarget(source);
   if (!service) fatal(`cannot determine the aweb service for ${source} (no aweb_url in its workspace.yaml)`);
-  const role = yamlScalar(srcWorkspace, "role_name");
-  let team = defaultTeamId();
-  if (!team && existsSync(join(source, "teams.yaml"))) team = yamlScalar(readFileSync(join(source, "teams.yaml"), "utf8"), "active_team") || yamlScalar(readFileSync(join(source, "teams.yaml"), "utf8"), "active");
   if (!team || !team.includes(":")) fatal(`cannot determine the team for the retained identity (${teamConfigRemedy()}, or keep an active team in ${join(source, "teams.yaml")})`);
   const dest = join(home, ".aw");
   const legacyHome = dirname(source);
@@ -1146,7 +1157,9 @@ function retainedSeatSpawn(source, takeOver) {
   }
   let connected = false;
   const rollback = () => {
-    // After `aw workspace connect` the server binding points at the new home;
+    // Once `aw workspace connect` has started, the server binding may point at the
+    // new home (aw binds on the service before it writes locally, so a connect
+    // that failed may still have bound it);
     // deleting the copy alone would leave the identity bound to nothing. Put
     // the binding back where it was, from the legacy home, then remove the
     // copy; if the restore fails, KEEP the copy so the seat stays recoverable.
@@ -1173,8 +1186,8 @@ function retainedSeatSpawn(source, takeOver) {
     for (const forbidden of ["workspace.yaml", "context", "interaction-log.jsonl", "channel-delivered-ids.json", "chat-delivered-ids.json"]) {
       if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });
     }
+    connected = true; // set before the call: a connect that fails may still have bound
     run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], home, 60000);
-    connected = true;
     run(["aw", "check", "--online"], home, 60000);
     run(["aw", "heartbeat"], home, 60000);
     const status = run(["aw", "workspace", "status", "--json"], home, 60000);
@@ -1185,8 +1198,7 @@ function retainedSeatSpawn(source, takeOver) {
     let st; try { st = JSON.parse(String(status)); } catch { throw new Error(`aw workspace status from ${home} answered no JSON, so the seat is not connected; nothing is briefed`); }
     const ws = st.workspace && typeof st.workspace === "object" ? st.workspace : st;
     const shownPath = String(ws.workspace_path || ws.path || "");
-    const same = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
-    if (!shownPath || !same(shownPath, home)) throw new Error(`aw workspace status from ${home} shows workspace_path ${JSON.stringify(shownPath)} not this home, so the seat is not connected; nothing is briefed`);
+    if (!shownPath || !samePath(shownPath, home)) throw new Error(`aw workspace status from ${home} shows workspace_path ${JSON.stringify(shownPath)} not this home, so the seat is not connected; nothing is briefed`);
     const hostNote = ws.hostname && ws.hostname !== hostname() && ws.hostname.split(".")[0] !== hostname().split(".")[0] ? ` (workspace row hostname ${ws.hostname}, this host ${hostname()})` : "";
     const identityText = readFileSync(join(dest, "identity.yaml"), "utf8");
     const expectedDid = yamlScalar(identityText, "did");
@@ -2035,7 +2047,7 @@ if (event === "launch") {
   requireWakeBroker();
   if (identityMode === "global") globalGrantSpawn();
   // `--provider oats.aweb identity.takeOver=true` reaches the hook as the string "true".
-  if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true || settings.identity.takeOver === "true");
+  if (retainedSourceSetting !== undefined) retainedSeatSpawn(retainedSourceSetting, identitySettings.takeOver === true || identitySettings.takeOver === "true");
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
@@ -2190,6 +2202,12 @@ if (event === "launch") {
     if (cause) outNotes.push(`could not record the controller cleanup on this host: ${cause}`);
   };
   if (hasStaleTeamSetting) retireWarnings.push(TEAM_SETTING_MESSAGE);
+  // A retained seat's spawn that did not answer (killed, or failed after the
+  // connect) leaves no meta, but the home's captured settings still name its
+  // identity.source: the very setting spawn took the retained route on. Such a
+  // home is retired as a retained seat, never through the self-delete (#228).
+  const retainedSource = retainedSourceSetting === undefined ? undefined : String(retainedSourceSetting);
+  if (!meta.retained && retainedSource) meta = { ...meta, retained: true, source: retainedSource, lock: seatLockPath(retainedSource), alias: meta.alias || workspaceAliasOf(home), spawnUnanswered: true };
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
@@ -2239,8 +2257,46 @@ if (event === "launch") {
   meta = { ...meta, wakeJoined: false };
   writeProviderTeamsState(meta);
   if (meta.retained) {
-    if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
-    const retainedWarning = `released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}`;
+    // The lock is released only when it names this home: one another seat has
+    // taken over, or that cannot be read, is never removed here.
+    // heldHere: true when the lock names this home, false when it does not, undefined when unknown.
+    let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false;
+    if (meta.lock) {
+      // Absent only on ENOENT: a lock that cannot be checked may still be there.
+      const unchecked = (() => { try { lstatSync(meta.lock); return undefined; } catch (e) { return e?.code === "ENOENT" ? null : (/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"); } })();
+      const present = unchecked === undefined;
+      let held; try { held = JSON.parse(readFileSync(meta.lock, "utf8")); } catch { held = undefined; }
+      const holder = held && typeof held === "object" && typeof held.home === "string" && held.home ? held.home : undefined;
+      const ours = !!holder && samePath(holder, home);
+      if (unchecked) { lockText = `lock ${meta.lock} left in place: it cannot be checked (${unchecked})`; heldHere = undefined; }
+      else if (!present) lockText = `lock ${meta.lock} already gone`;
+      else if (ours) {
+        heldHere = true;
+        try { rmSync(meta.lock); }
+        catch (e) { lockText = e?.code === "ENOENT" ? `lock ${meta.lock} already gone` : `lock ${meta.lock} left in place: it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`; }
+      }
+      else lockText = `lock ${meta.lock} left in place: ${holder ? "it is held by another seat" : "it cannot be read"}`;
+    }
+    // A spawn that took the seat (this home held the lock) or bound it here, and
+    // did not answer, may have left the binding pointing here: aw binds on the
+    // service before it writes the local workspace.yaml, so a missing file proves
+    // nothing. Name the way back to the source. The command is printed for a
+    // person, so it holds only values that pass their own shapes.
+    let rebind = "";
+    if (meta.spawnUnanswered && (heldHere !== false || existsSync(join(home, ".aw", "workspace.yaml")))) {
+      const target = retainedSeatTarget(meta.source);
+      const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
+      const connect = plainServiceUrl(target.service) && validAwebTeamId(target.team) && (!target.role || plainRole)
+        ? `\`aw workspace connect --service=${target.service} --team=${target.team}${plainRole ? ` --role=${plainRole}` : ""}\``
+        : "`aw workspace connect` with the service, team and role in its workspace.yaml";
+      rebind = `; this seat's spawn did not finish after taking the seat, so the identity's binding may point here (if its \`aw workspace connect\` reached the service): run ${connect} from ${dirname(meta.source)} to bind it back to its source, or spawn the seat again`;
+    }
+    // A spawn that did not answer and does not hold the lock never took the seat:
+    // the lock is taken before anything is copied.
+    const released = meta.spawnUnanswered && lockText !== `lock ${meta.lock} removed`
+      ? `released nothing: ${heldHere === undefined ? "whether this home holds the retained identity's lock is unknown" : heldHere ? "the retained identity's lock is still in place" : "this home does not hold the retained identity's lock"} (${lockText})`
+      : `released the retained identity "${meta.alias || "(alias not recorded)"}" (${lockText})`;
+    const retainedWarning = `${released}; the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}${rebind}`;
     await finish({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
   }
   // No alias means the spawn hook never reported an identity: nothing exists to
