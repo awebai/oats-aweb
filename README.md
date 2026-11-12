@@ -733,6 +733,14 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   registry adds `(the registry was not recorded, so aw uses its default)` to
   its command. The record lives on the host where the retire ran: a roster read
   on another host doesn't show those leftovers.
+- The record is a claim, not proof, since any agent on the host can write it.
+  A marked member whose workspace reads `active` in presence shows `; recorded
+  as retired, but its workspace is active: check before removing` instead of
+  the mark and the command, and the footer does not count it; `--json` gives
+  `command: null` and `conflict: "workspace-active"`, with a `retired-record`
+  problem. The record is left as it is. A marked member whose workspace is
+  offline, that has none, or whose presence could not be read keeps the mark
+  and the command.
 - aw does not mark the team's coordinator; the roster says so and points at
   the global identities.
 - If a source cannot be read, or presence is past its 200-workspace cap, the
@@ -741,7 +749,7 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   role, status, sources, presence, retired?}], certificatesComplete,
   presenceComplete, problems}`. Status is `active`, `offline`,
   `no-workspace-record` or `presence-unknown`. `retired: {at, instance,
-  command}` is on marked members only. A record that cannot be read is a
+  command, conflict?}` is on marked members only. A record that cannot be read is a
   `problems` entry with source `retired-record`, and nothing from it is shown.
 
 ## 1.19.0 — team model 3
