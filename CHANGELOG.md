@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **CI: the BYOT create shapes run against the real tested aw.**
+  `test/aw-byot-create-shapes.test.mjs`'s three real-aw tests ran only with
+  `OATS_AWEB_TEST_AW` set, which CI never set, so they always skipped. The
+  resident-journey leg at the tested aw (`AW_TESTED`, now 1.36.58) now sets
+  it to that leg's installed aw and fails when any test skips or fewer than
+  the three real-aw tests pass. The floor leg skips the step: those tests
+  need aw 1.36.56 or later.
+
 ## 1.40.0 — 2026-11-11
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A spawn or a start of a home the host wake broker delivers to (Codex, `delivery: session`, or a runtime with no aweb channel) is now refused while no broker runs, with `wake-daemon-not-running` and the start for the host: `oats aweb wake install`, or `aw wake run` where there is no service manager. Start the broker before such a home's next start. A Claude or pi home under channel delivery is not affected.
