@@ -48,6 +48,8 @@ const block = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 const regs = () => { try { return JSON.parse(fs.readFileSync(${JSON.stringify(registry)}, "utf8")); } catch { return {}; } };
 const saveRegs = (r) => fs.writeFileSync(${JSON.stringify(registry)}, JSON.stringify(r));
+// FAKE_HOLD_TERM: the process catches SIGTERM and keeps running, as a child may.
+if (process.env.FAKE_HOLD_TERM) process.on("SIGTERM", () => {});
 if (args[0] === "version") {
   record({});
   const mode = process.env.FAKE_VERSION || "";
@@ -308,6 +310,23 @@ test("the hook's deadline cuts a wake deregistration that would outlast it", (t)
   const started = Date.now();
   fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
   assert.ok(Date.now() - started < 10000, `retire ends by the deadline, not the deregistration's own 60 s (${Date.now() - started} ms)`);
+});
+
+test("the hook's deadline ends a mint that keeps running after SIGTERM", (t) => {
+  const fx = fixture(t);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_HANG: "1", FAKE_HOLD_TERM: "1", OATS_AWEB_HOOK_BUDGET_MS: "2500" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(Date.now() - started < 15000, `the deadline ends the mint, not its own 30 s hang (${Date.now() - started} ms)`);
+  assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
+});
+
+test("the hook's deadline ends a wake deregistration that keeps running after SIGTERM", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  const started = Date.now();
+  fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", FAKE_HOLD_TERM: "1", OATS_AWEB_HOOK_BUDGET_MS: "2000" });
+  assert.ok(Date.now() - started < 10000, `retire ends by the deadline, not the deregistration's 20 s (${Date.now() - started} ms)`);
 });
 
 test("mint output that is not JSON is withheld and still compensated", (t) => {

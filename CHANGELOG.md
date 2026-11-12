@@ -14,7 +14,9 @@
   retire's background wake deregistration and every other) now ends by one
   deadline, 100 s after the hook started, whatever its own timeout, and a call
   the deadline leaves no time for is not started and fails as "not started:
-  the hook's 100 s deadline had passed". `OATS_AWEB_HOOK_BUDGET_MS` shortens
+  the hook's 100 s deadline had passed". A lifecycle hook ends a call its
+  timeout cuts with SIGKILL, which a child can't catch, rather than SIGTERM,
+  so the call can't outlive the deadline. `OATS_AWEB_HOOK_BUDGET_MS` shortens
   the deadline for tests; nothing lengthens it.
 
 ## 1.41.0 — 2026-11-12

@@ -131,7 +131,8 @@ function failureClass(e) {
 // timeout, so the hook outlives its last call and reports what it confirmed (a
 // mint that completed late, a grant to revoke) instead of being killed with the
 // call still running (awebai/oats-aweb#229). A call the deadline leaves no time
-// for is not started.
+// for is not started. A call the deadline cuts is ended with SIGKILL, not
+// SIGTERM, which a child may catch and outlive the deadline.
 const HOOK_STARTED_AT = Date.now();
 // OATS_AWEB_HOOK_BUDGET_MS shortens it, for tests; nothing lengthens it past the default.
 const HOOK_BUDGET_MS = Math.min(100000, Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) > 0 ? Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) : 100000);
@@ -140,12 +141,13 @@ const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EV
  *  left before the deadline in a lifecycle hook. At or below 0 the call is not
  *  started. Every aw child of the hook takes its timeout from here. */
 const hookTimeout = (requested) => boundedByHook ? Math.min(requested, HOOK_STARTED_AT + HOOK_BUDGET_MS - Date.now()) : requested;
+const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
 const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
   const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
     const childEnv = childEnvFor({ env: extraEnv, unsetEnv });
-    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, env: childEnv }).trim();
+    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, killSignal: timeoutSignal, env: childEnv }).trim();
   } catch (e) {
     // execFileSync puts the WHOLE ARGV in e.message ("Command failed: aw team
     // join <token> …"). This hook's failures are reported by the kernel and land
@@ -625,7 +627,7 @@ function wakeDeregisterStarted(instanceHome) {
     let child;
     try { child = spawn("aw", ["wake", "deregister", "--home", instanceHome], { cwd: instanceHome, env: childEnvFor(), stdio: "ignore" }); }
     catch { settle(false); return; }
-    const timer = setTimeout(() => child.kill("SIGTERM"), timeout);
+    const timer = setTimeout(() => child.kill(timeoutSignal), timeout);
     child.on("error", () => { clearTimeout(timer); settle(false); });
     child.on("exit", (code) => { clearTimeout(timer); settle(code === 0); });
   });
