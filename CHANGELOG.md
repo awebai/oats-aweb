@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Fixed: a stray captured-execution variable never fails a retire
+  (#242).** The captured-execution path is entered when `OATS_BINDING_FILE`,
+  `OATS_INVOCATION_CONTEXT_FILE` or `OATS_SOURCE_RECEIPT_FILE` is present in
+  the environment, before settings, and any error in it exits 1, so one stray
+  variable made every retire fail. A retire no longer enters it: with any of
+  them set, it runs its normal path, with its usual effects and exit status,
+  and warns naming the variables that were set and ignored (names only, never
+  their values or the files' contents). Spawn, launch and the other events are
+  unchanged. Nothing a deployment must change.
+
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode
   `global` with no grant, so no start answered an identity home for it, and

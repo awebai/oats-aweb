@@ -327,7 +327,16 @@ if ((process.env.OATS_EVENT || process.argv[2]) === "upgrade") upgrade();
 
 // Any selected snapshot enters the captured consumer BEFORE legacy settings,
 // root discovery or identity handling. Invalid-present never falls back.
-try {
+// A retire never enters it (awebai/oats-aweb#242): with any of the variables that
+// select it present, a retire runs its normal path and says they were ignored,
+// naming them only. The names are lib/captured-execution.mjs's markers.
+const CAPTURED_MARKERS = ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"];
+const retireEvent = (process.env.OATS_EVENT || process.argv[2]) === "retire";
+if (retireEvent) {
+  const present = CAPTURED_MARKERS.filter((k) => Object.hasOwn(process.env, k));
+  if (present.length) outNotes.push(`${present.join(", ")} ${present.length === 1 ? "is" : "are"} set in the environment and ignored for retire, which runs its normal path`);
+}
+if (!retireEvent) try {
   const loaded = loadCapturedAwebExecution();
   if (loaded.kind === "captured") {
     const event = process.argv[2] || process.env.OATS_EVENT;
