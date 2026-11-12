@@ -8,16 +8,21 @@
   `<source>/workspace.yaml` `aweb_url` only otherwise, so a spawn and the
   rebind command a retire prints could name different servers. The service
   now comes only from that `aweb_url` (aw writes it at `aw workspace
-  connect`), and only when it is a plain service URL (http or https, a host,
-  an optional port, and no path but `/` or `/api`); `OATS_AWEB_URL` is no
-  longer read. A seat with no such `aweb_url` is refused before anything is
+  connect`): any http or https URL with a host, a path prefix or an IPv6
+  literal included, with no userinfo, query, fragment, whitespace or control
+  characters. `OATS_AWEB_URL` is no longer read. A seat with no such
+  `aweb_url` is refused before anything is
   copied or locked, and the refusal names the fix: run `aw workspace connect
   --service <the team's aweb server>` in the seat's parent directory (the one
   that holds its `.aw`), then spawn again. A soul's readiness reports the same
   refusal as a `needs-configuration` problem; a seated home's readiness does
   not read the source again. While `OATS_AWEB_URL` is set, the
   refusal says the variable is no longer read, and a spawn that has a record
-  warns that the variable is ignored; neither prints its value. **If you set
+  warns that the variable is ignored; neither prints its value. The rebind
+  a retire prints names the server in a command only when it is a plain
+  service URL (http or https, a host, an optional port, and no path but `/`
+  or `/api`); otherwise it says to run `aw workspace connect` there with the
+  service in its `workspace.yaml`. **If you set
   `OATS_AWEB_URL` for a retained seat:** record the server in the seat with
   that `aw workspace connect` and unset the variable. A seat whose
   `workspace.yaml` already names its server is unchanged.

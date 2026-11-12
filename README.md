@@ -1460,13 +1460,18 @@ The seat directory must contain:
 - the team: the deployment's default team, or else the active team in
   `teams.yaml`.
 
-The spawn reads the server only from that `workspace.yaml`, and only when it
-is a plain service URL (http or https, a host, an optional port, and no path
-but `/` or `/api`). `OATS_AWEB_URL` is not read (#241): a seat without
-`aweb_url` is refused before anything is copied, with that `aw workspace
-connect` as the fix, and the soul's readiness reports the same refusal. When a retire compensates a spawn that did not answer,
-the command it prints to bind the identity back to its source names that same
-server.
+The spawn reads the server only from that `workspace.yaml`. Any http or https
+URL with a host is accepted, a path prefix (a server behind a reverse proxy) or
+an IPv6 literal included, as long as it holds no userinfo, query, fragment,
+whitespace or control characters; it reaches aw as one argument and is never
+printed. `OATS_AWEB_URL` is not read (#241): a seat without a usable `aweb_url`
+is refused before anything is copied, with that `aw workspace connect` as the
+fix, and the soul's readiness reports the same refusal. When a retire
+compensates a spawn that did not answer, it says how to bind the identity back
+to its source on that same server: as a command naming the server when it is a
+plain service URL (http or https, a host, an optional port, and no path but
+`/` or `/api`), and otherwise as `aw workspace connect` run there with the
+service in its `workspace.yaml`.
 
 Per aw 1.36.58's source (not a live run): on one server, the identity has one
 server workspace, so connecting the seat directory and then spawning the

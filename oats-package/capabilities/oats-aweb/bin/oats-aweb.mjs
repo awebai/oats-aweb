@@ -2304,7 +2304,8 @@ if (event === "launch") {
     if (meta.spawnUnanswered && (heldHere !== false || existsSync(join(home, ".aw", "workspace.yaml")))) {
       const target = retainedSeatTarget(meta.source);
       const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
-      const connect = target.service && validAwebTeamId(target.team) && (!target.role || plainRole)
+      // Any accepted service is bound, but only a plain service URL is printed in a command.
+      const connect = plainServiceUrl(target.service) && validAwebTeamId(target.team) && (!target.role || plainRole)
         ? `\`aw workspace connect --service=${target.service} --team=${target.team}${plainRole ? ` --role=${plainRole}` : ""}\``
         : "`aw workspace connect` with the service, team and role in its workspace.yaml";
       rebind = `; this seat's spawn did not finish after taking the seat, so the identity's binding may point here (if its \`aw workspace connect\` reached the service): run ${connect} from ${dirname(meta.source)} to bind it back to its source, or spawn the seat again`;
