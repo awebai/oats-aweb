@@ -808,8 +808,9 @@ Host-owned settings live under `settings.oats.aweb` (normally in
 `oats-local.yaml`). The boolean settings, `identity.e2ee`,
 `identity.takeOver` and `health.publish`, accept `true` and `false` and also
 the strings `"true"` and `"false"`, which is what `oats spawn --provider
-oats.aweb key=value` passes. Any other value (another string, a number,
-`null`) is refused before anything is done: by spawn, start and readiness
+oats.aweb key=value` passes. `null`, which an empty YAML value (`e2ee:`)
+is, reads as unset, so the default applies. Any other value (another string,
+the empty one included, or a number) is refused before anything is done: by spawn, start and readiness
 alike for the `identity` ones (retire reads neither), and wherever
 `health.publish` is read. The refusal names the setting, the accepted values
 and where to set it. The provider settings are:

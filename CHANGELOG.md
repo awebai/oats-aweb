@@ -27,6 +27,14 @@
   Readiness through `oats readiness` is unchanged. To migrate, unset the
   variables and use `oats readiness`.
 
+- **Fixed: a boolean setting left empty reads as its default (follows
+  #232).** An empty YAML value (`e2ee:`) is `null`, which always meant the
+  default but has been refused since #232, at spawn, at readiness and at the
+  next start, where the only fix was a respawn. `null` now reads as unset for
+  `identity.e2ee` (default: E2EE required), `identity.takeOver` (default: no
+  take-over) and `health.publish` (default: off). The empty string `""` is
+  still refused. Nothing a deployment must change.
+
 - **Fixed: boolean settings given as strings are read (#232).** `oats spawn
   --provider oats.aweb key=value` passes every value as a string, and oats.aweb
   compared its boolean settings with `true` and `false` only, so
