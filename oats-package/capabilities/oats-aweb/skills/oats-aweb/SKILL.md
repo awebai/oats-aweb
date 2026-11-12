@@ -82,6 +82,9 @@ command on purpose: the record is a file any agent on the host can write, and
 the roster builds the command only from values that pass its checks. Tell your
 human; don't compose the command yourself. The record lives on the host where
 the retire ran, so a roster read on another host does not show those leftovers.
+A line that says `recorded as retired, but its workspace is active: check
+before removing` is a member the record calls retired while its workspace is
+live: treat it as a live member, show no command, and tell your human.
 
 - A `deployment root` (for example `builder-aweb`) is a machine's minting
   identity, not an agent: don't send work to it.
