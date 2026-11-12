@@ -311,7 +311,7 @@ test("setup --check-only cannot be combined with an onboarding action", async (t
 // ---------------------------------------------------------------------------
 // connect
 
-const SERVER = "altair-aweb";
+const SERVER = "builder-aweb";
 const SERVICE = "https://app.aweb.ai/api";
 const HOSTED_TOKEN = "aw_inv_SECRET-CONNECT-TOKEN-91c2";
 
@@ -334,8 +334,8 @@ if (at < 0 || args[0] !== "aweb") { console.error("fake kernel: unexpected " + a
 const server = args[at + 1];
 const rest = args.filter((_, i) => i !== at && i !== at + 1);
 if (${JSON.stringify(unreachable)} || server !== ${JSON.stringify(SERVER)}) {
-  if (rest.includes("--json")) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "ssh altair: Could not resolve hostname altair" } }));
-  else console.error("oats: ssh altair: Could not resolve hostname altair (E_SSH)");
+  if (rest.includes("--json")) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SSH", message: "ssh builder: Could not resolve hostname builder" } }));
+  else console.error("oats: ssh builder: Could not resolve hostname builder (E_SSH)");
   process.exit(1);
 }
 const env = { ...process.env, ...${JSON.stringify(hostEnv)}, OATS_EVENT: rest[1] };
@@ -463,7 +463,7 @@ for (const [name, env, cause] of [
   const doc = envelope(result.stdout);
   assert.equal(doc.error.code, "E_INVITE_FAILED");
   assert.match(doc.error.message, cause);
-  assert.match(doc.error.message, /nothing was sent to altair-aweb/);
+  assert.match(doc.error.message, /nothing was sent to builder-aweb/);
   assert.ok(doc.error.message.includes(`root ${fx.localDir} (from root)`), doc.error.message);
   assert.deepEqual(doc.error.details.steps.map((s) => [s.step, s.status]), [["aw", "ok"], ["invite", "failed"]]);
   assert.doesNotMatch(result.stdout + result.stderr, /aweb\.example\.invalid|something odd/);
@@ -493,8 +493,8 @@ test("connect to an unreachable host fails at aw with the kernel's code", async 
   const doc = envelope(result.stdout);
   assert.equal(doc.ok, false);
   assert.equal(doc.error.code, "E_SSH");
-  assert.match(doc.error.message, /Could not resolve hostname altair/);
-  assert.deepEqual(doc.error.details.steps, [{ step: "aw", status: "failed", code: "E_SSH", detail: "ssh altair: Could not resolve hostname altair" }]);
+  assert.match(doc.error.message, /Could not resolve hostname builder/);
+  assert.deepEqual(doc.error.details.steps, [{ step: "aw", status: "failed", code: "E_SSH", detail: "ssh builder: Could not resolve hostname builder" }]);
   assert.equal(awCall(fx.fake.readCalls(), ["team", "invite"]).length, 0);
 });
 
@@ -538,22 +538,22 @@ test("connect with aw missing on the host and no --install-aw needs a human", as
 
 test("connect refuses a server id that is not an aweb alias unless --name gives one", async (t) => {
   const fx = connectFixture(t);
-  const refused = await fx.connect(["altair.lan"]);
+  const refused = await fx.connect(["builder.lan"]);
   assert.equal(refused.code, 2);
-  assert.match(refused.stderr, /server id altair\.lan does not fit the aweb alias rule.*pass --name <alias>/);
+  assert.match(refused.stderr, /server id builder\.lan does not fit the aweb alias rule.*pass --name <alias>/);
   assert.equal(fx.kernel.readCalls().length, 0);
-  const named = await fx.connect([SERVER, "--name", "altair-root", "--json"]);
+  const named = await fx.connect([SERVER, "--name", "builder-root", "--json"]);
   assert.equal(named.code, 0, named.stdout + named.stderr);
-  assert.ok(fx.kernel.readCalls()[1].includes("altair-root"));
+  assert.ok(fx.kernel.readCalls()[1].includes("builder-root"));
   const accept = awCall(fx.fake.readCalls(), ["id", "team", "accept-invite"])[0];
-  assert.ok(accept.args.includes("--name=altair-root"));
+  assert.ok(accept.args.includes("--name=builder-root"));
 });
 
 test("connect prints its steps for a human without --json", async (t) => {
   const fx = connectFixture(t, { hostMember: true });
   const result = await fx.connect([SERVER]);
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /^oats aweb connect altair-aweb: team joined \(joined:example\.invalid\)$/m);
+  assert.match(result.stdout, /^oats aweb connect builder-aweb: team joined \(joined:example\.invalid\)$/m);
   assert.match(result.stdout, /^  aw: ok — aw 1\.36\.33$/m);
   assert.match(result.stdout, /^  invite: ok — already a member; no invite minted$/m);
   assert.match(result.stdout, /^ready: yes$/m);
@@ -608,11 +608,11 @@ test("setup --join still refuses a connected per-team root that holds another te
 
 test("connect's retry remedy keeps --name and --soul", async (t) => {
   const fx = connectFixture(t, { hostAw: false });
-  const result = await fx.connect(["altair.lan", "--name", "altair-root", "--soul", "dev", "--json"]);
+  const result = await fx.connect(["builder.lan", "--name", "builder-root", "--soul", "dev", "--json"]);
   assert.equal(result.code, 1, "an unregistered id is unreachable in the fake kernel");
-  const missing = await fx.connect([SERVER, "--name", "altair-root", "--soul", "dev", "--json"]);
+  const missing = await fx.connect([SERVER, "--name", "builder-root", "--soul", "dev", "--json"]);
   assert.equal(missing.code, 0, missing.stdout + missing.stderr);
-  assert.equal(envelope(missing.stdout).result.steps[0].remedy, `\`oats aweb connect ${SERVER} --install-aw --name altair-root --soul dev\``);
+  assert.equal(envelope(missing.stdout).result.steps[0].remedy, `\`oats aweb connect ${SERVER} --install-aw --name builder-root --soul dev\``);
 });
 
 test("connect's unmapped-team and readiness remedies keep their commands in backticks", async (t) => {
@@ -621,7 +621,7 @@ test("connect's unmapped-team and readiness remedies keep their commands in back
   assert.equal(u.code, 0, u.stdout + u.stderr);
   const invite = envelope(u.stdout).result.steps[1];
   assert.equal(invite.code, "E_TEAM_UNMAPPED");
-  assert.match(invite.remedy, /`oats teams --json`.*`oats aweb connect altair-aweb --soul dev`/);
+  assert.match(invite.remedy, /`oats teams --json`.*`oats aweb connect builder-aweb --soul dev`/);
   assertCommandsInBackticks(invite.remedy);
   // The host accepts, but its check after the join still does not see the root as a member.
   const stale = connectFixture(t, { hostEnv: { AW_LIST_TEAMS: JSON.stringify({ memberships: [] }) } });
@@ -629,7 +629,7 @@ test("connect's unmapped-team and readiness remedies keep their commands in back
   assert.equal(r.code, 0, r.stdout + r.stderr);
   const readiness = envelope(r.stdout).result.steps[3];
   assert.equal(readiness.status, "needs-human");
-  assert.equal(readiness.remedy, "on altair-aweb: `oats aweb setup --soul dev`");
+  assert.equal(readiness.remedy, "on builder-aweb: `oats aweb setup --soul dev`");
   assertCommandsInBackticks(readiness.remedy);
 });
 
