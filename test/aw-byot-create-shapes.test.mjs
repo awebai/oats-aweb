@@ -5,6 +5,8 @@
 //
 // With OATS_AWEB_TEST_AW set to a real aw binary (1.36.56 or later), the same
 // offline commands also run against that binary, and setup's create runs on it.
+// CI's resident-journey job sets it on its tested-aw leg and fails when any
+// of the three skips (.github/workflows/ci.yml).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
