@@ -139,3 +139,14 @@ test("6. a joined membership with no registry and no service keeps today's answe
   const doc = fx.retire();
   assert.ok(doc.warning.includes(`${SHARED_NO_REGISTRY} (registry origin could not be determined from the joined identity; command omits --registry and aw will use its default)`), doc.warning);
 });
+
+test("7. a membership with no registry and no service never takes a registry from the joined identity's other files", (t) => {
+  const fx = fixture(t, { registry: false });
+  write(join(fx.sharedHome, "identity.yaml"), `alias: dev-1\nteam_id: ${SHARED}\nregistry_url: https://unrelated.example.test\n`);
+  write(join(fx.sharedHome, "workspace.yaml"), "registry: https://unrelated.example.test\n");
+  write(join(fx.sharedHome, "teams.yaml"), teamsYaml(membership(SHARED, {})));
+  const doc = fx.retire();
+  assert.doesNotMatch(JSON.stringify(doc), /unrelated/);
+  assert.equal(sharedPending(doc).command, SHARED_NO_REGISTRY);
+  assert.equal(sharedEntry(fx).registry, null);
+});

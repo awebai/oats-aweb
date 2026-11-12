@@ -14,8 +14,9 @@
   - with only an `aweb_url`, the command omits `--registry`, the record stores
     none, and the warning says the registry isn't recorded here and aw
     discovers it from that service;
-  - a membership that records neither is unchanged: no `--registry`, and aw
-    uses its default.
+  - a membership that records neither gets aw's default: the registry
+    `AWID_REGISTRY_URL` sets, else no `--registry`. A registry elsewhere in the
+    identity's files is never taken.
 
   A registry aw reports in `aw id team list --json` still comes first.
   Nothing a deployment must change.

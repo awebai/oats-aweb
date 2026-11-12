@@ -1866,21 +1866,12 @@ const registryOrigin = (value) => typeof value === "string" ? registryOriginUrl(
 function registryOriginFromJoinedState(row, match, listed) {
   const fromJson = registryOrigin(match?.registry_origin || match?.registry_url || match?.registry || match?.awid_registry_url || listed?.registry_origin || listed?.registry_url || listed?.registry || listed?.awid_registry_url);
   if (fromJson) return { registry: fromJson };
-  // The membership's own record decides when it names a registry or a service, as it
-  // does for aw (see membershipRegistry); a registry elsewhere in the home would be one
-  // aw does not use for this team.
+  // Then aw's order (see membershipRegistry): the membership's own registry_url, else
+  // discovery from its aweb_url, else aw's default, which AWID_REGISTRY_URL sets. A
+  // registry anywhere else in the home is one aw does not use for this team.
   const membership = membershipRegistry(join(row.identityHome, "teams.yaml"), row.team, "the membership's service");
   if (membership.kind === "registry") return { registry: membership.registry };
   if (membership.kind === "not-plain" || membership.kind === "discovered") return { registry: null, registryError: membership.registryError };
-  for (const file of ["identity.yaml", "workspace.yaml", "registry.yaml", "config.yaml"]) {
-    try {
-      const text = readFileSync(join(row.identityHome, file), "utf8");
-      for (const key of ["awid_registry_url", "registry_origin", "registry_url", "registry"]) {
-        const found = registryOrigin(yamlScalar(text, key));
-        if (found) return { registry: found };
-      }
-    } catch { /* keep looking */ }
-  }
   const fromEnv = registryOrigin(process.env.AWID_REGISTRY_URL);
   if (fromEnv) return { registry: fromEnv };
   return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };
