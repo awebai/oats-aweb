@@ -805,7 +805,14 @@ or `oats aweb join` while live.
 ### Provider settings
 
 Host-owned settings live under `settings.oats.aweb` (normally in
-`oats-local.yaml`). The provider settings are:
+`oats-local.yaml`). The boolean settings, `identity.e2ee`,
+`identity.takeOver` and `health.publish`, accept `true` and `false` and also
+the strings `"true"` and `"false"`, which is what `oats spawn --provider
+oats.aweb key=value` passes. Any other value (another string, a number,
+`null`) is refused before anything is done: by spawn, start and readiness
+alike for the `identity` ones (retire reads neither), and wherever
+`health.publish` is read. The refusal names the setting, the accepted values
+and where to set it. The provider settings are:
 
 - `delivery`: `channel` (default) or `session`. It picks the delivery path per
   runtime:

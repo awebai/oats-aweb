@@ -307,7 +307,9 @@ process.exit(r.status ?? 1);
 });
 
 for (const [phase, health, code] of [
-  ['check', {publish: 'true'}, 'needs-configuration'],
+  // Since #232 the string "true" is accepted, so this request's empty input is what is refused;
+  // a bad health.publish is a readiness problem (test/boolean-settings-232.test.mjs).
+  ['check', {publish: 'true'}, 'invalid-binding'],
   ['check', {extra: true}, 'needs-configuration'],
   ['normalize', {publish: true}, 'provider-not-qualified'], // captured phases are removed (#242)
   ['bind', {publish: true}, 'provider-not-qualified'], // captured phases are removed (#242)
