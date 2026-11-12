@@ -73,7 +73,11 @@
   printed only when they pass their own shapes). Nothing in the home's
   provider state decides it. A retained seat's retire now releases its lock
   only when the lock names this home: a lock another seat took over, or one
-  that cannot be read, is left in place, and the retire says so.
+  that cannot be read, is left in place, and the retire says so. A spawn
+  that never held the lock is retired as releasing nothing. An
+  `identity.source` that is not a string (a one-element list, say) is now
+  refused at spawn before the lock: spawn read it as a path, while retire
+  didn't classify it as a retained seat.
 
 ## 1.41.0 — 2026-11-12
 

@@ -79,6 +79,21 @@ test("a retained spawn refused at the lock: the compensating retire leaves the o
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.deepEqual(deletes(fx), []);
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, other, "a lock held by another home is never removed");
+  assert.doesNotMatch(retired.doc.warning, /released the retained identity/, "this home released nothing");
+  assert.match(retired.doc.warning, /released nothing: this home does not hold the retained identity's lock/);
+});
+
+test("an identity.source that is not a string is refused before the lock, and its retire deletes nothing", (t) => {
+  const fx = fixture(t);
+  const settings = JSON.stringify({ delivery: "session", identity: { mode: "local", source: [fx.source] } });
+  const spawned = runHook(fx, "spawn", { OATS_SETTINGS: settings });
+  assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
+  assert.match(spawned.doc.warning, /identity\.source must be the absolute path/);
+  assert.equal(existsSync(fx.lock), false, "no lock is taken");
+  assert.equal(existsSync(join(fx.home, ".aw")), false, "nothing is copied");
+  const retired = runHook(fx, "retire", { OATS_SETTINGS: settings, OATS_META: "{}" });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), []);
 });
 
 test("a retained seat's retire leaves a lock another seat has taken over, and says so", (t) => {

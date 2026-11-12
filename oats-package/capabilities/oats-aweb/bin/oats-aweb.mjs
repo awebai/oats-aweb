@@ -363,6 +363,10 @@ if (["spawn", "launch"].includes(event)) {
 }
 const identitySettings = settings.identity && typeof settings.identity === "object" && !Array.isArray(settings.identity) ? settings.identity : {};
 const identityMode = identitySettings.mode === undefined || identitySettings.mode === null || identitySettings.mode === "" ? "local" : String(identitySettings.mode);
+/** identity.source, the setting that makes a local home a retained seat: spawn takes
+ *  the retained route on it (and refuses one that is not an absolute path before the
+ *  lock), and retire classifies a home on the very same setting. */
+const retainedSourceSetting = identityMode === "local" && identitySettings.source ? identitySettings.source : undefined;
 /** Whether two paths name the same place, by their real paths where both exist. */
 const samePath = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
 if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
@@ -2013,7 +2017,7 @@ if (event === "launch") {
   requireWakeBroker();
   if (identityMode === "global") globalGrantSpawn();
   // `--provider oats.aweb identity.takeOver=true` reaches the hook as the string "true".
-  if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true || settings.identity.takeOver === "true");
+  if (retainedSourceSetting !== undefined) retainedSeatSpawn(retainedSourceSetting, identitySettings.takeOver === true || identitySettings.takeOver === "true");
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
@@ -2172,7 +2176,7 @@ if (event === "launch") {
   // connect) leaves no meta, but the home's captured settings still name its
   // identity.source: the very setting spawn took the retained route on. Such a
   // home is retired as a retained seat, never through the self-delete (#228).
-  const retainedSource = identityMode === "local" && typeof identitySettings.source === "string" && identitySettings.source ? identitySettings.source : undefined;
+  const retainedSource = retainedSourceSetting === undefined ? undefined : String(retainedSourceSetting);
   if (!meta.retained && retainedSource) meta = { ...meta, retained: true, source: retainedSource, lock: seatLockPath(retainedSource), alias: meta.alias || workspaceAliasOf(home), spawnUnanswered: true };
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
@@ -2245,7 +2249,12 @@ if (event === "launch") {
         : "`aw workspace connect` with the service, team and role in its workspace.yaml";
       rebind = `; this seat's spawn did not finish after binding the identity to this home, so its binding may still point here: run ${connect} from ${dirname(meta.source)} to bind it back to its source, or spawn the seat again`;
     }
-    const retainedWarning = `released the retained identity "${meta.alias || "(alias not recorded)"}" (${lockText}); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}${rebind}`;
+    // A spawn that did not answer and does not hold the lock never took the seat:
+    // the lock is taken before anything is copied.
+    const released = meta.spawnUnanswered && lockText !== `lock ${meta.lock} removed`
+      ? `released nothing: this home does not hold the retained identity's lock (${lockText})`
+      : `released the retained identity "${meta.alias || "(alias not recorded)"}" (${lockText})`;
+    const retainedWarning = `${released}; the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}${rebind}`;
     await finish({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
   }
   // No alias means the spawn hook never reported an identity: nothing exists to
