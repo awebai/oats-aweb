@@ -673,8 +673,8 @@ The join half works on its own when someone else mints the invite:
 
 ```json
 {"aw": {"status": "ok", "version": "1.36.23"},
- "defaultTeam": {"label": "aweb", "team": "aweb:juan.aweb.ai"},
- "member": true, "root": "/Users/juanre/Agents/aweb/.aweb-roots/aweb"}
+ "defaultTeam": {"label": "aweb", "team": "aweb:example.aweb.ai"},
+ "member": true, "root": "/Users/pat/Agents/aweb/.aweb-roots/aweb"}
 ```
 
   `aw.status` is `ok`, `done` (installed now: `detail` says from what),
@@ -696,12 +696,12 @@ has no expiry or single-use flag for invites yet.
 view), one entry per alias, each with its sources, status and kind:
 
 ```text
-aweb team aweb:juan.aweb.ai — 9 entries (membership certificates and workspaces):
-  aweb — global identity, active, antares, juan.aweb.ai/aweb [presence]
-  juan-reyero — human (from its session context), seen 2d ago [presence]
-  oats-expert-juan — instance (from its workspace path), active, antares [certificate, presence]
-  altair-aweb — deployment root (from its workspace path), seen 3h ago, altair [certificate, presence]
-  cli-dev-review-servers — unknown, certificate only: no workspace record [certificate]
+aweb team aweb:example.aweb.ai — 9 entries (membership certificates and workspaces):
+  aweb — global identity, active, harbor, example.aweb.ai/aweb [presence]
+  pat-operator — human (from its session context), seen 2d ago [presence]
+  oats-expert-pat — instance (from its workspace path), active, harbor [certificate, presence]
+  builder-aweb — deployment root (from its workspace path), seen 3h ago, builder [certificate, presence]
+  idle-reviewer — unknown, certificate only: no workspace record [certificate]
 ```
 
 - Kinds: `global identity` (from the identity scope, listed first),

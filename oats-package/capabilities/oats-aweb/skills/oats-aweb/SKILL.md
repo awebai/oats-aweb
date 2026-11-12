@@ -83,7 +83,7 @@ the roster builds the command only from values that pass its checks. Tell your
 human; don't compose the command yourself. The record lives on the host where
 the retire ran, so a roster read on another host does not show those leftovers.
 
-- A `deployment root` (for example `altair-aweb`) is a machine's minting
+- A `deployment root` (for example `builder-aweb`) is a machine's minting
   identity, not an agent: don't send work to it.
 - Instances are addressed by **instance name** (the alias), e.g. `dev-2`.
   Humans and global identities are addressed by their alias the same way.
