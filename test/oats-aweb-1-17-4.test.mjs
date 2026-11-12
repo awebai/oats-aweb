@@ -11,6 +11,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { flagValue, joinFromCalls, joinFromFake } from "./helpers/fake-aw-join-from.mjs";
 import { launchChannelWarning } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 import { describeTaskCoordination } from "./helpers/task-coordination-text.mjs";
@@ -382,6 +383,22 @@ test("no exit of retire leaves a wake deregistration running", (t) => {
   assert.match(retired.doc.warning, /requires identity\.resident/);
   assert.equal(deregistrationPids(fx).length, 2, "the background deregistration and the grant route's own");
   assert.deepEqual(deregistrationPids(fx).filter(alive), [], "no deregistration is running when the hook exits");
+});
+
+test("a wall-clock step back does not lengthen the hook's deadline", (t) => {
+  const fx = fixture(t);
+  // Preloaded into the hook: once aw wake status has run (before the mint starts), the
+  // wall clock steps back 5 s, as an NTP correction can.
+  const preload = join(tempDir(t), "clock-step.mjs");
+  writeFileSync(preload, `import { readFileSync } from "node:fs";
+const real = Date.now.bind(Date); let stepped = false;
+Date.now = () => { if (!stepped) { try { stepped = readFileSync(${JSON.stringify(join(fx.fake.base, "calls.jsonl"))}, "utf8").includes('"status"'); } catch {} } return real() - (stepped ? 5000 : 0); };
+`);
+  const started = Date.now();
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_HANG: "1", OATS_AWEB_HOOK_BUDGET_MS: "2500", NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(Date.now() - started < 5000, `elapsed time, not the wall clock, bounds the hook (${Date.now() - started} ms)`);
+  assert.deepEqual(r.doc.meta, { team: TEAM, alias: "dev-1" });
 });
 
 test("mint output that is not JSON is withheld and still compensated", (t) => {

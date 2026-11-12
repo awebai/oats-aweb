@@ -135,14 +135,16 @@ function failureClass(e) {
 // call still running (awebai/oats-aweb#229). A call the deadline leaves no time
 // for is not started. A call the deadline cuts is ended with SIGKILL, not
 // SIGTERM, which a child may catch and outlive the deadline.
-const HOOK_STARTED_AT = Date.now();
+// Elapsed time on the monotonic clock, as the kernel's timeout and a child's
+// are measured: a wall-clock step would move the deadline.
+const HOOK_STARTED_AT = performance.now();
 // OATS_AWEB_HOOK_BUDGET_MS shortens it, for tests; nothing lengthens it past the default.
 const HOOK_BUDGET_MS = Math.min(100000, Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) > 0 ? Number(process.env.OATS_AWEB_HOOK_BUDGET_MS) : 100000);
 const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EVENT || process.argv[2]);
 /** The timeout an aw call of this hook gets: what it asks for, cut to what is
  *  left before the deadline in a lifecycle hook. At or below 0 the call is not
  *  started. Every aw child of the hook takes its timeout from here. */
-const hookTimeout = (requested) => boundedByHook ? Math.min(requested, HOOK_STARTED_AT + HOOK_BUDGET_MS - Date.now()) : requested;
+const hookTimeout = (requested) => boundedByHook ? Math.min(requested, Math.floor(HOOK_STARTED_AT + HOOK_BUDGET_MS - performance.now())) : requested;
 const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
 const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
   const timeout = hookTimeout(requested);

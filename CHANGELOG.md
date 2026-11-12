@@ -68,7 +68,8 @@
   killed hook's `aw` child could finish after the compensating retire had
   found nothing. Every `aw` call of a lifecycle hook (the version read, the
   retire's background wake deregistration and every other) now ends by one
-  deadline, 100 s after the hook started, whatever its own timeout, and a call
+  deadline, 100 s after the hook started (elapsed time, which a wall-clock
+  correction doesn't move), whatever its own timeout, and a call
   the deadline leaves no time for is not started and fails as "not started:
   the hook's 100 s deadline had passed". A lifecycle hook ends a call its
   timeout cuts with SIGKILL, which a child can't catch, rather than SIGTERM,
