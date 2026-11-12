@@ -100,3 +100,35 @@ test("a lock whose holder home exists still refuses without takeOver", (t) => {
   assert.match(r.doc.warning, /a seat is never taken from a holder whose home exists/);
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, holder);
 });
+
+// The lock is written by whoever runs as this user: what the hook prints from it is
+// bounded and printable, whatever it holds.
+const HOSTILE = { instance: "evil\u001b[2J\ninjected", host: "h".repeat(513), takenAt: 20261101, home: ["not", "a", "string"] };
+// No control character and no over-long value reaches the text (the hook's own text may hold non-ASCII punctuation).
+const printableAndBounded = (text) => !/[\x00-\x1f\x7f]/.test(text) && !text.includes("h".repeat(513)) && !text.includes("x".repeat(600));
+
+test("a lock's fields that are not short printable strings are not printed in the refusal", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify({ ...HOSTILE, home: join(fx.base, "elsewhere", "gone") }));
+  const r = spawnSeat(fx);
+  assert.notEqual(r.status, 0);
+  const warning = r.doc.warning;
+  assert.ok(printableAndBounded(warning), warning);
+  assert.match(warning, /instance \(not recorded\), host \(not recorded\), since \(not recorded\)/);
+  assert.match(warning, /identity\.takeOver: true/);
+  assert.ok(warning.includes(`remove ${fx.lock}`));
+});
+
+test("a lock whose home is not a printable string is refused as unreadable, and takeOver names no home", (t) => {
+  for (const home of [["not", "a", "string"], `/gone/${"x".repeat(600)}`, "/gone/\u0007bell"]) {
+    const fx = fixture(t);
+    write(fx.lock, JSON.stringify({ ...HOSTILE, home }));
+    const refused = spawnSeat(fx);
+    assert.notEqual(refused.status, 0);
+    assert.ok(printableAndBounded(refused.doc.warning), refused.doc.warning);
+    const taken = spawnSeat(fx, { takeOver: true });
+    assert.equal(taken.status, 0, taken.stdout + taken.stderr);
+    assert.ok(printableAndBounded(taken.doc.warning), taken.doc.warning);
+    assert.ok(printableAndBounded(String(taken.doc.meta.tookOverFrom)), String(taken.doc.meta.tookOverFrom));
+  }
+});
