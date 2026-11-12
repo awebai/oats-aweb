@@ -97,14 +97,15 @@ test("runtime comes from launch.harness, with top-level fallback; invalid or unr
   assert.deepEqual(fx.fake.readCalls(), []);
 });
 
-test("upgrade dispatch bypasses captured execution, team settings and channel selection, even without aw", t => {
+test("upgrade dispatch ignores the captured variables, team settings and channel selection, even without aw", t => {
   const fx = fixture(t, { settings: { team: "obsolete", claudeChannelMode: "invalid" } });
   fx.record(local, "codex");
   const emptyPath = join(fx.ws, "empty-bin"); mkdirSync(emptyPath);
   for (const PATH of [emptyPath, undefined]) for (const phase of ["plan", "apply"]) {
     const r = upgrade(fx, phase, local, { ...(PATH ? { PATH } : {}), OATS_BINDING_FILE: "/missing/captured", OATS_INVOCATION_CONTEXT_FILE: "/missing/context" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.deepEqual(r.doc, phase === "plan" ? { adopt: true } : { meta: { ...local, delivery: "channel", runtime: "codex" } });
+    const warning = ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE"].map((name) => `oats-aweb: ${name} is ignored: captured bindings are not supported since oats.aweb 1.42.0; readiness takes a workspace context (oats readiness)`).join(" | ");
+    assert.deepEqual(r.doc, phase === "plan" ? { adopt: true, warning } : { meta: { ...local, delivery: "channel", runtime: "codex" }, warning });
   }
   assert.deepEqual(fx.fake.readCalls(), []);
 });
