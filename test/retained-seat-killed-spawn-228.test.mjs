@@ -1,0 +1,117 @@
+// awebai/oats-aweb#228: a retained seat's spawn that fails or is killed never
+// deletes the standing identity's workspace. Before it takes the lock, the spawn
+// writes a record of the retained seat to the home's .oats-aweb, so a compensating
+// retire that has no meta (a hook killed, or a failure after `aw workspace connect`)
+// still knows the home is a retained seat: it never runs `aw workspace delete`,
+// releases the lock only when the lock names this home, and names the way to point
+// the identity's binding back at its source.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fakeAw } from "./helpers/fake-aw-grant.mjs";
+
+const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
+const TEAM = "t:example.test";
+
+function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
+function fixture(t) {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-228-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
+  const home = join(root, "agents", "dev", "instances", "retained"); mkdirSync(home, { recursive: true });
+  const source = join(base, "seats", "retained", ".aw");
+  write(join(source, "signing.key"), "fixture-signing-key");
+  write(join(source, "identity.yaml"), "alias: retained\ndid: did:key:zRetained\naddress: fixture.test/retained\n");
+  write(join(source, "teams.yaml"), `active_team: ${TEAM}\n`);
+  write(join(source, "workspace.yaml"), "alias: retained\naweb_url: https://fixture.invalid/api\n");
+  return { base, root, home, source, legacyHome: dirname(source), lock: join(dirname(source), ".aw-retained-seat.json"), bin: fakeAw(base) };
+}
+function runHook(fx, event, env = {}) {
+  const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: {
+    ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained", OATS_HOME: fx.home,
+    OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_RUNTIME: "codex", FAKE_RETAINED: "1",
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]),
+    OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", source: fx.source } }), ...env } });
+  let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
+  return { ...r, doc };
+}
+/** The kernel's compensation for a spawn that answered no meta: retire with empty meta. */
+const compensate = (fx) => runHook(fx, "retire", { OATS_META: "{}" });
+const deletes = (fx) => { try { return readFileSync(join(fx.base, "aw.log"), "utf8").trim().split(/\n/).filter(Boolean).map((l) => JSON.parse(l).argv).filter((a) => a[0] === "workspace" && a[1] === "delete"); } catch { return []; } };
+
+test("a retained spawn killed after connect: the compensating retire deletes no workspace and releases its own lock", (t) => {
+  const fx = fixture(t);
+  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_KILL: "after-connect" });
+  assert.equal(spawned.signal, "SIGKILL", "the hook was killed");
+  assert.ok(existsSync(join(fx.home, ".aw", "workspace.yaml")), "the binding was made in the home");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, fx.home);
+  const retired = compensate(fx);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), [], "no aw workspace delete with the standing identity's key");
+  assert.equal(retired.doc.meta.retained, true);
+  assert.equal(existsSync(fx.lock), false, "the lock this home took is released");
+  assert.ok(retired.doc.warning.includes(`run \`aw workspace connect --service=https://fixture.invalid/api --team=${TEAM}\` from ${fx.legacyHome}`), `names the restore from the source: ${retired.doc.warning}`);
+  assert.equal(readFileSync(join(fx.source, "signing.key"), "utf8"), "fixture-signing-key", "the source is untouched");
+});
+
+test("a retained spawn that fails after connect and cannot restore: the compensating retire deletes no workspace", (t) => {
+  const fx = fixture(t);
+  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_FAIL: "check", FAKE_RETAINED_RESTORE_FAIL: "1" });
+  assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
+  assert.match(spawned.doc.warning, /KEPT/);
+  const retired = compensate(fx);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), []);
+  assert.equal(existsSync(fx.lock), false);
+});
+
+test("a retained spawn refused at the lock: the compensating retire leaves the other seat's lock", (t) => {
+  const fx = fixture(t);
+  const other = join(fx.base, "other-home"); mkdirSync(other);
+  write(fx.lock, JSON.stringify({ home: other, instance: "other" }));
+  const spawned = runHook(fx, "spawn");
+  assert.equal(spawned.status, 1);
+  const retired = compensate(fx);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), []);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, other, "a lock held by another home is never removed");
+});
+
+test("a retained seat's retire leaves a lock another seat has taken over, and says so", (t) => {
+  const fx = fixture(t);
+  const spawned = runHook(fx, "spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const other = join(fx.base, "other-home");
+  write(fx.lock, JSON.stringify({ home: other, instance: "other", tookOverFrom: fx.home }));
+  const retired = runHook(fx, "retire", { OATS_META: JSON.stringify(spawned.doc.meta) });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, other);
+  assert.match(retired.doc.warning, /left in place/);
+  assert.deepEqual(deletes(fx), []);
+});
+
+test("an unreadable retained-seat record fails closed: nothing is deleted and the retire is incomplete", (t) => {
+  const fx = fixture(t);
+  write(join(fx.home, ".oats-aweb", "retained-seat.json"), "{ not json");
+  write(join(fx.home, ".aw", "workspace.yaml"), "memberships:\n  - team_id: t:example.test\n    alias: retained\n");
+  const retired = compensate(fx);
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), []);
+  assert.match(retired.doc.warning, /retained-seat record/);
+});
+
+test("the restore command is printed only from values of their own shapes", (t) => {
+  const fx = fixture(t);
+  write(join(fx.source, "workspace.yaml"), "alias: retained\naweb_url: https://fixture.invalid/$(touch pwned)\n");
+  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_KILL: "after-connect" });
+  assert.equal(spawned.signal, "SIGKILL");
+  const retired = compensate(fx);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.deepEqual(deletes(fx), []);
+  assert.doesNotMatch(retired.doc.warning, /touch pwned/);
+  assert.ok(retired.doc.warning.includes(`run \`aw workspace connect\` with the service, team and role in its workspace.yaml from ${fx.legacyHome}`), retired.doc.warning);
+});

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: a retained seat's spawn that fails or is killed never deletes the
+  standing identity's workspace (#228).** A retained seat's spawn (`identity.source`)
+  that failed after `aw workspace connect` without restoring the binding, or
+  was killed (for example at the kernel's hook timeout), left the kernel no
+  meta. Its compensating retire then took the alias from the home's
+  `.aw/workspace.yaml` and ran `aw workspace delete` with the standing
+  identity's key, deleting the workspace of a seat the operator admitted by
+  hand. The spawn now writes a record of the retained seat to
+  `.oats-aweb/retained-seat.json` before it takes the lock, and a retire with
+  no meta that finds it retires the home as a retained seat: no workspace
+  delete, the lock released, and, when the spawn had bound the identity to
+  this home, the `aw workspace connect` command that binds it back to its
+  source (its values printed only when they pass their own shapes). A record
+  that cannot be read makes the retire fail with nothing deleted, naming the
+  file and what to do. A retained seat's retire now releases its lock only
+  when the lock names this home: a lock another seat took over, or one that
+  cannot be read, is left in place, and the retire says so.
+
 ## 1.41.0 — 2026-11-12
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A join killed after aw accepted its invite no longer leaves a membership the home doesn't know about: the next join, leave or retire settles it (#217). `oats aweb roster` marks the certificates a retire on this host left in a people-controlled team, with the controller's command (#207). Readiness names a wake stream aw 1.36.58 reports as `refused` (#214), and CI runs the BYOT create shapes against the real tested aw (#215). Nothing a deployment must change.

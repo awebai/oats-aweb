@@ -62,6 +62,7 @@ import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/cap
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
+import { plainServiceUrl } from "../lib/plain-service.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
 import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
@@ -788,6 +789,25 @@ function recordedSeat() {
   if (!record || typeof record.seat !== "string" || !/^[0-9a-f]{16}$/.test(record.seat)) throw new Error(`${seatRecordFile()} is malformed`);
   return record;
 }
+/** A retained seat's record in the home's provider state: {retained, source, lock,
+ *  team, service, role}, no keys. Written before the seat's lock is taken, so a retire
+ *  whose meta is empty (a spawn killed or failed after it began) still knows the
+ *  home holds a standing identity's copy (awebai/oats-aweb#228). */
+const retainedSeatFile = () => join(providerStateDir(), "retained-seat.json");
+function persistRetainedSeat(record) {
+  mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
+  const tmp = `${retainedSeatFile()}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(record) + "\n", { mode: 0o600 });
+  renameSync(tmp, retainedSeatFile());
+}
+/** The recorded retained seat, undefined when there is none; an unreadable or
+ *  malformed record throws, so a retire fails closed instead of deleting. */
+function recordedRetainedSeat() {
+  if (!existsSync(retainedSeatFile())) return undefined;
+  const record = JSON.parse(readFileSync(retainedSeatFile(), "utf8"));
+  if (!record || record.retained !== true || typeof record.source !== "string" || typeof record.lock !== "string") throw new Error(`${retainedSeatFile()} is malformed`);
+  return record;
+}
 /** The meta with the recorded seat filled in where it carries none. */
 function withRecordedSeat(meta, record) {
   if (!record || meta.identity?.seat) return meta;
@@ -1078,6 +1098,10 @@ function retainedSeatSpawn(source, takeOver) {
   // Exclusive creation (wx): two concurrent spawns cannot both pass the
   // existence check and overwrite each other; the loser fails here having
   // copied nothing. A take-over replaces the stale lock first, deliberately.
+  // The home is a retained seat from here on, whatever happens next: a retire
+  // with no meta (this hook killed, or failing after the connect below) reads
+  // this record and never deletes the standing identity's workspace (#228).
+  persistRetainedSeat({ retained: true, source, lock: lockPath, team, service, ...(role ? { role } : {}) });
   if (takenOver) { try { rmSync(lockPath, { force: true }); } catch { /* replaced below */ } }
   try {
     writeFileSync(lockPath, JSON.stringify({ home, instance, team, takenAt: new Date().toISOString(), host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
@@ -2103,6 +2127,16 @@ if (event === "launch") {
     if (cause) outNotes.push(`could not record the controller cleanup on this host: ${cause}`);
   };
   if (hasStaleTeamSetting) retireWarnings.push(TEAM_SETTING_MESSAGE);
+  // A home whose retained spawn did not answer (killed, or failed after the
+  // connect) has no meta, but its record says it is a retained seat.
+  if (!meta.retained) {
+    let record;
+    try { record = recordedRetainedSeat(); }
+    catch (e) {
+      out({ meta: { retired: false, reason: "retained-seat-record-unreadable" }, warning: `oats-aweb: nothing was deleted: this home may hold a retained seat's identity, and its retained-seat record ${retainedSeatFile()} cannot be read (${String(e.message || e).slice(0, 120)}). If this home was never a retained seat, remove that file and retire again; if it was, release the lock beside its identity.source only if the lock names this home, then remove that file and retire again` }, 1);
+    }
+    if (record) meta = { ...meta, retained: true, source: record.source, lock: record.lock, alias: meta.alias || workspaceAliasOf(home), retainedRecord: record };
+  }
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
@@ -2150,8 +2184,29 @@ if (event === "launch") {
   meta = { ...meta, wakeJoined: false };
   writeProviderTeamsState(meta);
   if (meta.retained) {
-    if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
-    const retainedWarning = `released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}`;
+    // The lock is released only when it names this home: one another seat has
+    // taken over, or that cannot be read, is never removed here.
+    let lockText = `lock ${meta.lock || "?"} removed`;
+    if (meta.lock) {
+      let held; try { held = JSON.parse(readFileSync(meta.lock, "utf8")); } catch (e) { held = e?.code === "ENOENT" ? null : undefined; }
+      const ours = typeof held?.home === "string" && (() => { try { return realpathSync(held.home) === realpathSync(home); } catch { return resolve(held.home) === resolve(home); } })();
+      if (ours) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
+      else if (held === null) lockText = `lock ${meta.lock} already gone`;
+      else lockText = `lock ${meta.lock} left in place: ${held ? "it is held by another seat" : "it cannot be read"}`;
+    }
+    // A spawn that bound the identity to this home and did not finish leaves the
+    // binding pointing here: name the way back to the source.
+    const rec = meta.retainedRecord;
+    // The command is printed for a person, so it holds only values that pass
+    // their own shapes; otherwise it names where they are.
+    const plainRole = typeof rec?.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(rec.role) ? rec.role : undefined;
+    const connect = rec && plainServiceUrl(rec.service) && validAwebTeamId(rec.team) && (!rec.role || plainRole)
+      ? `\`aw workspace connect --service=${rec.service} --team=${rec.team}${plainRole ? ` --role=${plainRole}` : ""}\``
+      : "`aw workspace connect` with the service, team and role in its workspace.yaml";
+    const rebind = rec && existsSync(join(home, ".aw", "workspace.yaml"))
+      ? `; this seat's spawn did not finish after binding the identity to this home, so its binding may still point here: run ${connect} from ${dirname(rec.source)} to bind it back to its source, or spawn the seat again`
+      : "";
+    const retainedWarning = `released the retained identity "${meta.alias || "(alias not recorded)"}" (${lockText}); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}${rebind}`;
     await finish({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
   }
   // No alias means the spawn hook never reported an identity: nothing exists to
