@@ -22,6 +22,20 @@
   that `aw workspace connect` and unset the variable. A seat whose
   `workspace.yaml` already names its server is unchanged.
 
+- **Fixed: a retired mark on an active member reads as a conflict (#235).**
+  The retired-certificates record is writable by any agent running as the
+  deployment's user, so an entry naming a live colleague's certificate made
+  `oats aweb roster` mark that member retired and offer its controller a
+  command to remove it. A marked member whose workspace reads `active` in
+  presence now shows `recorded as retired, but its workspace is active: check
+  before removing` instead of the mark and the command, and the footer does
+  not count it. In `--json`, its `retired.command` is `null`, it carries an
+  additive `retired.conflict: "workspace-active"`, and `problems` names it with
+  source `retired-record`, as a malformed entry is named. The record is
+  untouched. A marked member whose workspace is offline, that has none, or
+  whose presence could not be read is shown as before. Nothing a deployment
+  must change.
+
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode
   `global` with no grant, so no start answered an identity home for it, and
