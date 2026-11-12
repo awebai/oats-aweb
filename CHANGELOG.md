@@ -11,10 +11,12 @@
   by age or automatically: the holder's home may be on another host or
   container that shares the source. The spawn now refuses, naming the holder
   (instance, host, since and home, as the lock records them) and the release:
-  once that seat is confirmed gone, set `identity.takeOver: true` for the
-  spawn, which clears the lock with a warning, or remove the lock file, which
-  the refusal names. A lock whose holder home exists here is refused as
-  before.
+  once that seat is confirmed gone, spawn with `identity.takeOver: true`
+  (`--provider oats.aweb identity.takeOver=true`), which clears the lock with a
+  warning, or remove the lock file, which the refusal names. A lock whose
+  holder home exists here is refused as before. `identity.takeOver=true` given
+  on the command line now takes effect: the kernel passes it as the string
+  `"true"`, which the hook used to ignore, for a holder whose home exists too.
 
 ## 1.41.0 — 2026-11-12
 

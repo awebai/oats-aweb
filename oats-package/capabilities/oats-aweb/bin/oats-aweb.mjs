@@ -1054,7 +1054,7 @@ const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x2
  *  printable only. The remedy comes first; the text is not cut at fatal's 300
  *  characters, so the lock path and the holder are always named in full. */
 function refuseUnheldLock(lockPath, held) {
-  const release = `once that is confirmed, set identity.takeOver: true for this spawn, which clears the lock with a warning, or remove ${lockPath}`;
+  const release = `once that is confirmed, spawn with identity.takeOver: true (\`--provider oats.aweb identity.takeOver=true\`), which clears the lock with a warning, or remove ${lockPath}`;
   const text = held
     ? `the retained identity's lock is held by a seat whose home is not on this host, and a lock is never released by age or automatically: confirm that seat is gone (retired, or its host or container removed); ${release}. Holder: ${["instance " + (lockField(held.instance) || "(not recorded)"), "host " + (lockField(held.host) || "(not recorded)"), "since " + (lockField(held.takenAt) || "(not recorded)"), "home " + (lockField(held.home) || "(not printable)")].join(", ")}`
     : `the retained identity's lock ${lockPath} cannot be read, so its holder is unknown, and a lock is never released by age or automatically: confirm that no seat holds this identity; ${release}`;
@@ -1975,7 +1975,8 @@ if (event === "launch") {
   if (identityMode === "global") checkedGrantTTL(); // a setting that cannot be used refuses before the broker is asked
   requireWakeBroker();
   if (identityMode === "global") globalGrantSpawn();
-  if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true);
+  // `--provider oats.aweb identity.takeOver=true` reaches the hook as the string "true".
+  if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true || settings.identity.takeOver === "true");
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }

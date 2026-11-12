@@ -132,3 +132,19 @@ test("a lock whose home is not a printable string is refused as unreadable, and 
     assert.ok(printableAndBounded(String(taken.doc.meta.tookOverFrom)), String(taken.doc.meta.tookOverFrom));
   }
 });
+
+test("identity.takeOver given on the command line, as the string \"true\", takes over too", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const refused = spawnSeat(fx);
+  assert.ok(refused.doc.warning.includes("`--provider oats.aweb identity.takeOver=true`"), refused.doc.warning);
+  // What `oats spawn --provider oats.aweb identity.takeOver=true` passes: values are strings.
+  const r = spawnSeat(fx, { takeOver: "true" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, fx.home);
+  for (const value of ["false", "yes", 1]) {
+    const other = fixture(t);
+    write(other.lock, JSON.stringify(goneHolder(other)));
+    assert.notEqual(spawnSeat(other, { takeOver: value }).status, 0, `takeOver ${JSON.stringify(value)} takes nothing over`);
+  }
+});
