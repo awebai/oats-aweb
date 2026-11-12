@@ -363,6 +363,8 @@ if (["spawn", "launch"].includes(event)) {
 }
 const identitySettings = settings.identity && typeof settings.identity === "object" && !Array.isArray(settings.identity) ? settings.identity : {};
 const identityMode = identitySettings.mode === undefined || identitySettings.mode === null || identitySettings.mode === "" ? "local" : String(identitySettings.mode);
+/** Whether two paths name the same place, by their real paths where both exist. */
+const samePath = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
 if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
   if (event === "setup") { console.error(CLASSIC_REFUSAL); process.exit(1); }
   fatal(CLASSIC_REFUSAL);
@@ -1162,8 +1164,7 @@ function retainedSeatSpawn(source, takeOver) {
     let st; try { st = JSON.parse(String(status)); } catch { throw new Error(`aw workspace status from ${home} answered no JSON, so the seat is not connected; nothing is briefed`); }
     const ws = st.workspace && typeof st.workspace === "object" ? st.workspace : st;
     const shownPath = String(ws.workspace_path || ws.path || "");
-    const same = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
-    if (!shownPath || !same(shownPath, home)) throw new Error(`aw workspace status from ${home} shows workspace_path ${JSON.stringify(shownPath)} not this home, so the seat is not connected; nothing is briefed`);
+    if (!shownPath || !samePath(shownPath, home)) throw new Error(`aw workspace status from ${home} shows workspace_path ${JSON.stringify(shownPath)} not this home, so the seat is not connected; nothing is briefed`);
     const hostNote = ws.hostname && ws.hostname !== hostname() && ws.hostname.split(".")[0] !== hostname().split(".")[0] ? ` (workspace row hostname ${ws.hostname}, this host ${hostname()})` : "";
     const identityText = readFileSync(join(dest, "identity.yaml"), "utf8");
     const expectedDid = yamlScalar(identityText, "did");
@@ -2227,7 +2228,7 @@ if (event === "launch") {
       const present = (() => { try { lstatSync(meta.lock); return true; } catch { return false; } })();
       let held; try { held = JSON.parse(readFileSync(meta.lock, "utf8")); } catch { held = undefined; }
       const holder = held && typeof held === "object" && typeof held.home === "string" && held.home ? held.home : undefined;
-      const ours = !!holder && (() => { try { return realpathSync(holder) === realpathSync(home); } catch { return resolve(holder) === resolve(home); } })();
+      const ours = !!holder && samePath(holder, home);
       if (!present) lockText = `lock ${meta.lock} already gone`;
       else if (ours) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
       else lockText = `lock ${meta.lock} left in place: ${holder ? "it is held by another seat" : "it cannot be read"}`;
