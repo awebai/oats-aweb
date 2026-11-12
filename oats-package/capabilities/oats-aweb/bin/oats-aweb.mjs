@@ -1328,14 +1328,13 @@ function writePendingMint(intent) {
   return intent;
 }
 const dropPendingMint = () => rmSync(pendingMintFile(), { force: true });
-/** The controller commands for the certificates this host's retires recorded for
- *  `alias` in `team`, each rebuilt from the entry's validated values, never its stored
- *  text. None when the deployment or its record cannot be read: the caller's refusal
- *  stands without them. */
-function recordedControllerCommands(team, alias) {
+/** True when this host's retired-certificates record names a certificate a retire
+ *  left for `alias` in `team`. False when the deployment or its record cannot be read:
+ *  the caller's refusal stands without the pointer. */
+function hasRetiredCertificateFor(team, alias) {
   let record;
-  try { record = readRetiredRecord(selectedDeployment(process.env)); } catch { return []; }
-  return [...new Set(record.entries.filter((e) => e.team === team && e.alias === alias).map((e) => controllerCleanupCommand(e)).filter(Boolean))];
+  try { record = readRetiredRecord(selectedDeployment(process.env)); } catch { return false; }
+  return record.entries.some((e) => e.team === team && e.alias === alias);
 }
 function readDefaultRetireMarker() {
   try {
@@ -2179,11 +2178,12 @@ if (event === "launch") {
       if (e.aliasConflict) {
         const refusal = `alias "${instance}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
         // A certificate a retire on this host recorded for this alias and team
-        // (lib/retired-certificates.mjs): its command, rebuilt from validated values.
-        const recorded = recordedControllerCommands(team, instance);
+        // (lib/retired-certificates.mjs): a pointer to the roster, never a command.
+        // The roster is the one place that decides whether the controller's command
+        // is shown, after it checks the member's presence (a record is a claim).
         // The fixed text first: fatal keeps 300 characters, and a team id can be long.
-        if (!recorded.length) fatal(refusal);
-        out({ warning: `oats-aweb: ${refusal}; the team's controller removes the certificate a retire on this host recorded with: ${recorded.join(" or ")}` }, 1);
+        if (!hasRetiredCertificateFor(team, instance)) fatal(refusal);
+        out({ warning: `oats-aweb: ${refusal}; this host's record names a certificate a retire left for that alias and team: see \`oats aweb roster\`, which shows the team controller's command to remove it only after checking the member's presence` }, 1);
       }
       throw e;
     }

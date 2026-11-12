@@ -307,7 +307,7 @@ test("a home that already holds identity material gets no intent: aw refuses it 
   assert.equal(existsSync(fx.intentFile), false);
 });
 
-test("a later spawn of the name meets the alias refusal, naming the controller command a retire recorded", (t) => {
+test("a later spawn of the name meets the alias refusal, pointing to the roster for the certificate a retire recorded", (t) => {
   const fx = fixture(t);
   const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
   assert.equal(fx.retire(r.doc.meta).status, 0);
@@ -316,7 +316,8 @@ test("a later spawn of the name meets the alias refusal, naming the controller c
   const again = fx.hook("spawn");
   assert.equal(again.status, 1, again.stdout + again.stderr);
   assert.match(again.doc.warning, /^oats-aweb: alias "dev-1" already holds a certificate on this team/);
-  assert.ok(again.doc.warning.includes(`the team's controller removes the certificate a retire on this host recorded with: ${COMMAND}`), again.doc.warning);
+  assert.ok(again.doc.warning.includes("; this host's record names a certificate a retire left for that alias and team: see `oats aweb roster`, which shows the team controller's command to remove it only after checking the member's presence"), again.doc.warning);
+  assert.equal(again.doc.warning.includes("remove-member"), false, again.doc.warning);
 });
 
 test("the alias refusal with no record for that alias and team is unchanged", (t) => {

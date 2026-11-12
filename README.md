@@ -1476,8 +1476,9 @@ home. So a retire killed before it records or answers the handoff leaves the
 intent, and the next retire hands the certificate over again.
 
 A later spawn of the same name still meets the alias refusal; when this host's
-record holds a certificate for that alias and team, the refusal names the
-controller's command for it.
+record holds a certificate for that alias and team, the refusal says so and
+points to `oats aweb roster`. It names no command: the roster decides whether
+the controller's command is shown, after it checks the member's presence.
 
 Retire self-deletes with `aw workspace delete <workspace_id>`, taking the id
 from the membership in `<home>/.aw/workspace.yaml` whose team and alias match

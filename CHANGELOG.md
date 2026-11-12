@@ -23,7 +23,9 @@
   - A members read that fails: the outcome is unknown. Retire names the read,
     and exits nonzero with the home kept.
 
-  A later spawn's alias refusal names the recorded command. A new on-disk
+  A later spawn's alias refusal says when this host's record names a
+  certificate a retire left for that alias and team, and points to
+  `oats aweb roster`, which decides whether to show the controller's command. A new on-disk
   file in the home, `.oats-aweb/pending-mint.json`, and a new meta key,
   `pendingMint`, which a failed spawn answers. Nothing a deployment must
   change.
