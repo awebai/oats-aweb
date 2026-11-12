@@ -1,15 +1,16 @@
 // The one reader of oats.aweb's boolean settings. `oats spawn --provider oats.aweb key=value`
 // delivers every value as a string, so a boolean setting may arrive as true/false or as the
-// strings "true"/"false"; anything else (another string, a number, null) is refused, naming
-// the setting, the accepted values and where it is set. Spawn, start and readiness read
-// through it, so readiness reports the refusal the gate gives.
+// strings "true"/"false". null reads as absent, so the default applies: an empty YAML value
+// (`e2ee:`) is null. Anything else (another string, the empty one included, or a number) is
+// refused, naming the setting, the accepted values and where it is set. Spawn, start and
+// readiness read through it, so readiness reports the refusal the gate gives.
 
 const ACCEPTED = 'must be true or false (the strings "true" and "false" are accepted too)';
 
-/** `value` as a boolean, `fallback` when it is absent; throws the refusal otherwise. `where`
+/** `value` as a boolean, `fallback` when it is absent (undefined or null); throws the refusal otherwise. `where`
  *  names where the setting is set, the whole fix. */
 export function booleanSetting(value, name, fallback, where) {
-  if (value === undefined) return fallback;
+  if (value === undefined || value === null) return fallback;
   if (value === true || value === "true") return true;
   if (value === false || value === "false") return false;
   throw new Error(`${name} ${ACCEPTED}; ${where}; nothing was changed`);

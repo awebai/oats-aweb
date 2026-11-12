@@ -33,6 +33,14 @@
   that `aw workspace connect` and unset the variable. A seat whose
   `workspace.yaml` already names its server is unchanged.
 
+- **Fixed: a boolean setting left empty reads as its default (follows
+  #232).** An empty YAML value (`e2ee:`) is `null`, which always meant the
+  default but has been refused since #232, at spawn, at readiness and at the
+  next start, where the only fix was a respawn. `null` now reads as unset for
+  `identity.e2ee` (default: E2EE required), `identity.takeOver` (default: no
+  take-over) and `health.publish` (default: off). The empty string `""` is
+  still refused. Nothing a deployment must change.
+
 - **Fixed: a stray captured-execution variable never fails a retire
   (#242).** The captured-execution path is entered when `OATS_BINDING_FILE`,
   `OATS_INVOCATION_CONTEXT_FILE` or `OATS_SOURCE_RECEIPT_FILE` is present in
