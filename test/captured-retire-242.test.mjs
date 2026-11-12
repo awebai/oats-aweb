@@ -1,9 +1,7 @@
-// awebai/oats-aweb#242, part 1: the captured-execution block is entered when OATS_BINDING_FILE,
-// OATS_INVOCATION_CONTEXT_FILE or OATS_SOURCE_RECEIPT_FILE is present in the environment, and any
-// error in it exits 1. A retire never enters it: with any of them set it runs the normal retire,
-// with its effects and exit status, and warns naming the variables present (names only, never
-// their values or the files' contents). Spawn, launch and the other events are unchanged
-// (test/captured-execution.test.mjs).
+// awebai/oats-aweb#242, part 1: a variable that selected the captured-execution path
+// (OATS_BINDING_FILE, OATS_INVOCATION_CONTEXT_FILE or OATS_SOURCE_RECEIPT_FILE) never fails a
+// retire: with any of them set it runs the normal retire, with its effects and exit status, and
+// warns naming the variables present (names only, never their values or the files' contents).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -51,7 +49,8 @@ function runHook(fx, event, env = {}) {
 }
 /** The aw calls a fixture ran, with its own directory written as <base> so two fixtures compare. */
 const awEffects = (fx) => { try { return readFileSync(join(fx.base, "aw.log"), "utf8").trim().split(/\n/).filter(Boolean).map((l) => JSON.parse(l).argv.join(" ").split(fx.base).join("<base>")); } catch { return []; } };
-const ignoredWarning = (names) => `oats-aweb: ${names.join(", ")} ${names.length === 1 ? "is" : "are"} set in the environment and ignored for retire, which runs its normal path`;
+// Since part 2 (test/captured-removed-242.test.mjs), one warning per variable, in the shared fixed wording.
+const ignoredWarning = (names) => names.map((k) => `oats-aweb: ${k} is ignored: captured bindings are not supported since oats.aweb 1.42.0; readiness takes a workspace context (oats readiness)`).join(" | ");
 
 /** Text with a fixture's own directory written as <base>, so two fixtures' outputs compare. */
 const own = (fx, text) => String(text).split(fx.base).join("<base>");
