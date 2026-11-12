@@ -171,3 +171,16 @@ test("health.publish accepts true/false and their strings, and refuses anything 
     assert.throws(() => healthSettings({ health: { publish: value } }), { message: HEALTH_REFUSAL }, JSON.stringify(value));
   }
 });
+
+test("readiness reports the health.publish refusal, and accepts its strings", (t) => {
+  const fx = deployment(t);
+  for (const value of ["yes", 1, "False", null]) {
+    const result = readiness(fx, { root: fx.root, delivery: "session", health: { publish: value } });
+    assert.equal(result.status, "needs-configuration", JSON.stringify(value));
+    assert.deepEqual(result.problems.filter((p) => /health\.publish/.test(p.message)), [{ code: "needs-configuration", message: HEALTH_REFUSAL }], JSON.stringify(value));
+  }
+  for (const value of ["true", "false"]) {
+    const result = readiness(fx, { root: fx.root, delivery: "session", health: { publish: value } });
+    assert.equal(result.problems.some((p) => /health\.publish/.test(p.message)), false, JSON.stringify(result.problems));
+  }
+});

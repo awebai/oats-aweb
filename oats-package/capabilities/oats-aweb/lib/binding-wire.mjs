@@ -10,7 +10,7 @@ import { piExtensionSkillsWarning, piSkillsPackageWarning, recordedPiAgentDir } 
 import { grantExpiryAssessment } from './grant-expiry.mjs';
 import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
-import {healthSettings} from './health-settings.mjs';
+import {healthPublish, healthSettings} from './health-settings.mjs';
 import { identityBooleans } from './boolean-setting.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
@@ -97,7 +97,9 @@ function settings(value,{phase}={}) {
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
   if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
   keys(value,phase==='check'?['delivery','claudeChannelMode','root','roots','identity','residents','join','health']:['delivery','claudeChannelMode','root','roots','join'],[]);
-  if(phase==='check') {try {healthSettings(value);} catch {wireError('needs-configuration');}}
+  // health.publish's refusal is carried into the readiness result (readinessDetails), so the
+  // wire checks every other health setting here.
+  if(phase==='check') {try {healthSettings(obj(value.health)?{...value,health:{...value.health,publish:undefined}}:value);} catch {wireError('needs-configuration');}}
   if(phase!=='check') {try {selectClaudeChannel(value.claudeChannelMode);} catch {wireError('needs-configuration');}}
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
@@ -292,8 +294,9 @@ function needsMintingRoot(settings) {
 async function readinessDetails(settings,{deployment,env=process.env}={}) {
   try { selectClaudeChannel(settings.claudeChannelMode); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
-  // The refusal spawn and start give for a boolean setting that is neither a boolean nor its string.
-  try { identityBooleans(obj(settings.identity)?settings.identity:{}); }
+  // The refusal spawn and start, or the health commands, give for a boolean setting that is
+  // neither a boolean nor its string.
+  try { identityBooleans(obj(settings.identity)?settings.identity:{}); healthPublish(settings); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
