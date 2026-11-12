@@ -25,6 +25,7 @@
 //   FAKE_JOIN_FROM_SELF_CUSTODY  the alias belongs to another self-custodial agent (aw 1.36.51, as captured on a VM; step 4)
 //   FAKE_JOIN_FROM_PREVIEW     aw 1.36.53-rc.3 against a server without invite preview: the --json error envelope on stdout (as captured on a VM; step 4)
 //   FAKE_JOIN_FROM_STOP_AFTER  "key", "register" or "cert": the command hangs after that step, as a mint killed there
+//   FAKE_JOIN_FROM_FAIL_AFTER_REGISTER  the certificate cannot be saved after the registration: aw fails with this text
 //   FAKE_JOIN_FROM_LATE        the home is written, then the command fails
 //   FAKE_JOIN_FROM_GARBAGE     exit 0 with output that is not JSON
 //   FAKE_JOIN_FROM_HANG        the home is written, then the command hangs
@@ -79,11 +80,15 @@ export function joinFromFake(args) {
   if (process.env.FAKE_JOIN_FROM_STOP_AFTER === "key") hang();
   // 4. The registration, and its refusals.
   if (process.env.FAKE_JOIN_FROM_PREVIEW) { console.log(JSON.stringify({ error: { code: "unknown_or_invalid", message: "unknown_or_invalid: Invite is unknown or invalid, or this service does not support invite preview. TOKEN-SHOULD-NOT-LEAK" } })); process.exit(1); }
-  if (process.env.FAKE_JOIN_FROM_SELF_CUSTODY) { console.error('accept hosted team invite: registry http 403: {"detail":{"code":"self_custody_reinit_unproven","message":"This alias belongs to an agent that holds its own key, and this request does not prove it holds that key. Use a new alias, or ask the team owner to remove the existing agent if a first init left it half-made. TOKEN-SHOULD-NOT-LEAK"}}'); process.exit(1); }
+  // aw prints a failure on stderr and, under --json, its error envelope on stdout (cmd/aw/root.go reportCLIError).
+  const refuse = (text, error) => { console.error(text); console.log(JSON.stringify({ error: { ...error, message: text } })); process.exit(1); };
+  if (process.env.FAKE_JOIN_FROM_SELF_CUSTODY) refuse('accept hosted team invite: registry http 403: {"detail":{"code":"self_custody_reinit_unproven","message":"This alias belongs to an agent that holds its own key, and this request does not prove it holds that key. Use a new alias, or ask the team owner to remove the existing agent if a first init left it half-made. TOKEN-SHOULD-NOT-LEAK"}}', { code: "http_error", http_status: 403, reason: "self_custody_reinit_unproven" });
   const held = (readRegistry()[team] || []).some((m) => m.alias === alias && !m.revoked_at);
-  if (process.env.FAKE_JOIN_FROM_CONFLICT || held) { console.error("Error: accept invite: 409 conflict: alias " + alias + " already has an active certificate (invite TOKEN-SHOULD-NOT-LEAK)"); process.exit(1); }
+  if (process.env.FAKE_JOIN_FROM_CONFLICT || held) refuse("Error: accept invite: 409 conflict: alias " + alias + " already has an active certificate (invite TOKEN-SHOULD-NOT-LEAK)", { code: "alias_conflict", http_status: 409, reason: "alias_active" });
   register();
   if (process.env.FAKE_JOIN_FROM_STOP_AFTER === "register") hang();
+  // aw saves the certificate after the registration and reports a failure to save it.
+  if (process.env.FAKE_JOIN_FROM_FAIL_AFTER_REGISTER) refuse("Error: save team certificate " + path.join(aw, "team-certs") + ": " + process.env.FAKE_JOIN_FROM_FAIL_AFTER_REGISTER, { code: "error" });
   // 5. The certificate and the identity.
   const workspaceId = crypto.randomUUID(), service = "https://app.aweb.ai/api";
   const certPath = "team-certs/" + team.replace(/:/g, "__") + ".pem";

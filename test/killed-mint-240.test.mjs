@@ -23,7 +23,7 @@ import { verifySignature } from "../oats-package/capabilities/oats-aweb/lib/stat
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "default:example.test";
-const REGISTRY = "https://api.awid.ai";
+const REGISTRY = "https://registry.example.test";
 const COMMAND = `aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --registry ${REGISTRY} --json`;
 const MEMBERS_READ = `\`aw id team members --team-id=${TEAM} --json\``;
 // A mint the hook's own timeout cuts, as a kill at that step.
@@ -34,6 +34,8 @@ function tempDir(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
+
+const rootTeams = (rows) => `active_team: ${TEAM}\nmemberships:\n${rows.map((r) => `    - team_id: ${r.team_id}\n      alias: root\n      cert_path: team-certs/${r.team_id.replace(/:/g, "__")}.pem\n${r.registry_url ? `      registry_url: ${r.registry_url}\n` : ""}`).join("")}`;
 
 function fakeAw(t) {
   const base = tempDir(t), bin = join(base, "bin"), calls = join(base, "calls.jsonl");
@@ -66,7 +68,8 @@ function fixture(t) {
   const fake = fakeAw(t), ws = join(fake.base, "ws"), home = join(ws, "agents", "dev", "instances", "dev-1");
   const registry = join(fake.base, "registry.json");
   mkdirSync(join(ws, ".aw"), { recursive: true });
-  writeFileSync(join(ws, ".aw", "teams.yaml"), `active_team: ${TEAM}\nregistry_url: ${REGISTRY}\n`);
+  // aw's layout (awconfig/team_state.go): each membership records its own registry; a root may hold several teams.
+  writeFileSync(join(ws, ".aw", "teams.yaml"), rootTeams([{ team_id: "other:example.test", registry_url: "https://other-registry.example.test" }, { team_id: TEAM, registry_url: REGISTRY }]));
   writeFileSync(join(ws, "oats-local.yaml"), "settings: {}\n");
   mkdirSync(home, { recursive: true });
   const env = {
@@ -224,6 +227,36 @@ test("an unknown outcome keeps the home, and the retry settles it once the read 
   const retry = fx.retire(first.doc.meta);
   assert.equal(retry.status, 0, retry.stdout + retry.stderr);
   assert.ok(retry.doc.warning.includes(COMMAND), retry.doc.warning);
+});
+
+test("the controller command takes the registry the root records for that team's membership", (t) => {
+  const fx = fixture(t);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = fx.retire(r.doc.meta);
+  assert.ok(retired.doc.warning.includes(`--registry ${REGISTRY} --json`), retired.doc.warning);
+  assert.doesNotMatch(retired.doc.warning, /other-registry|omits --registry/);
+  assert.equal(JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0].registry, REGISTRY);
+});
+
+test("a root that records no registry for the team: the command omits --registry and says so", (t) => {
+  const fx = fixture(t);
+  writeFileSync(join(fx.ws, ".aw", "teams.yaml"), rootTeams([{ team_id: "other:example.test", registry_url: "https://other-registry.example.test" }, { team_id: TEAM }]));
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = fx.retire(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.ok(retired.doc.warning.includes("aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --json (the root records no registry for the team, so the command omits --registry and aw uses its default, as the root does)"), retired.doc.warning);
+});
+
+test("a failure after the registration whose text only looks like an alias refusal keeps the intent for retire", (t) => {
+  const fx = fixture(t);
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_FAIL_AFTER_REGISTER: "write /var/cache/conflict-1/cert: no space left on device" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.deepEqual(pendingMintOf(r), { team: TEAM, alias: "dev-1" });
+  assert.match(r.doc.warning, /did not confirm by its code, so whether an identity was registered is unknown/);
+  assert.equal(existsSync(fx.intentFile), true);
+  const retired = fx.retire(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.ok(retired.doc.warning.includes(COMMAND), retired.doc.warning);
 });
 
 // --------------------------------------------- spawn's refusals

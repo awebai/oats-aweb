@@ -1435,8 +1435,10 @@ member, then writes `team-certs/` and `identity.yaml`, and writes
 `workspace.yaml` last. So a mint killed or failed in between leaves a
 registration that no local file proves (awebai/oats-aweb#240). The intent is
 removed once the minted identity is in the spawn's answer, or once aw confirms
-a refusal: an alias that still holds a certificate, an invite the server
-refuses, or a root that can't create the invite. A home that already holds
+a refusal. Two refusals count, by their code in aw's `--json` error answer: an
+alias another member holds, and an invite the server refuses. So does a root
+that can't create the invite, which aw reports before it writes the key. A
+failure that only reads like an alias refusal keeps the intent. A home that already holds
 identity material gets no intent, since aw refuses it before doing anything.
 Any other failed mint answers `pendingMint` in its meta.
 
@@ -1449,7 +1451,8 @@ is this mint's only when its `member_did_key` is the did:key of the home's
 `signing.key`:
 
 - **This mint's certificate:** retire records it in the retired-certificates
-  record, with the controller's `aw id team remove-member` command, and says
+  record, with the controller's `aw id team remove-member` command (its
+  `--registry` is the one the root's `teams.yaml` records for that team), and says
   the identity was registered but could not be released. It exits 0, because
   the home's key can't release it.
 - **No key in the home:** ownership can't be established, so the certificate

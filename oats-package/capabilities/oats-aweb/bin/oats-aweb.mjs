@@ -67,7 +67,7 @@ import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awAliasRefusal, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
@@ -1058,6 +1058,12 @@ const WORKSPACE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 function workspaceIdOf(homeDir, team, alias) {
   let text;
   try { text = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8"); } catch { return undefined; }
+  const hit = membershipRows(text).find((r) => r.team_id === team && r.alias === alias);
+  return hit && WORKSPACE_ID_RE.test(hit.workspace_id || "") ? hit.workspace_id : undefined;
+}
+/** The flat mappings of a `memberships:` list in a .aw YAML file (workspace.yaml,
+ *  teams.yaml), as aw writes them: only each item's own keys, as strings. */
+function membershipRows(text) {
   const rows = [];
   let inList = false, row, keyIndent;
   for (const line of text.split(/\r?\n/)) {
@@ -1071,8 +1077,20 @@ function workspaceIdOf(homeDir, team, alias) {
     const quoted = /^(["'])(.*?)\1\s*(?:#.*)?$/.exec(m[4].trim());
     row[m[3]] = quoted ? quoted[2] : m[4].replace(/\s+#.*$/, "").trim();
   }
-  const hit = rows.find((r) => r.team_id === team && r.alias === alias);
-  return hit && WORKSPACE_ID_RE.test(hit.workspace_id || "") ? hit.workspace_id : undefined;
+  return rows;
+}
+/** The registry a root uses for `team`: the registry_url of that team's membership in
+ *  the root's .aw/teams.yaml (aw awconfig/team_state.go), as a plain origin.
+ *  `{ registry }`, or `{ registry: null, registryError }` saying why none is known. */
+function rootRegistryForTeam(root, team) {
+  let text;
+  try { text = readFileSync(join(root, ".aw", "teams.yaml"), "utf8"); }
+  catch { return { registry: null, registryError: "the root's teams.yaml could not be read, so the command omits --registry and aw uses its default" }; }
+  const row = membershipRows(text).find((r) => r.team_id === team);
+  if (!row) return { registry: null, registryError: `the root's teams.yaml has no membership of ${team}, so the command omits --registry and aw uses its default` };
+  const registry = registryOrigin(row.registry_url);
+  if (registry) return { registry };
+  return { registry: null, registryError: row.registry_url ? "the registry the root records for the team is not a plain origin, so the command omits --registry and aw uses its default" : "the root records no registry for the team, so the command omits --registry and aw uses its default, as the root does" };
 }
 /** A join that the CLI reported as failed (or that this hook killed on
  *  timeout) may still have completed server-side: the home then holds a
@@ -2134,12 +2152,21 @@ if (event === "launch") {
       // that, and the remedy, instead of relaying a bare join error.
       // aw's --json error envelope names the refusal by a fixed code; only
       // codes on AW_ERROR_CODES are read, and never its message.
-      // A refusal confirmed by aw registered nothing: its intent goes.
-      if (e.awErrorCode === "unknown_or_invalid" || e.aliasConflict || e.inviteNotCreated) dropPendingMint();
+      // A refusal aw confirms registered nothing, and only then does its intent go:
+      // the server's refusal by its code in aw's --json envelope (an unknown invite,
+      // an alias another member holds), or a failure to create the root's invite,
+      // which aw reports before it writes the member's key. The broad aliasConflict
+      // match below chooses the text only: it also matches a path or a disk error.
+      const refused = e.awErrorCode === "unknown_or_invalid" || awAliasRefusal(e.stdout) || (e.inviteNotCreated && !existsSync(join(home, ".aw", "signing.key")));
+      if (refused) dropPendingMint();
       if (e.awErrorCode === "unknown_or_invalid") {
         // The fixed diagnosis first: fatal keeps 300 characters, and a team id can be long.
         fatal(`the invite aw made was refused (unknown_or_invalid), most likely because the host's aw is newer than its server; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`) if no deployment on this host needs a newer one. Team: ${team}`);
       }
+      // An alias refusal aw did not confirm by its code may be another failure whose
+      // text only looks like one, after the registration: say so, and answer the
+      // intent for retire to settle.
+      if (e.aliasConflict && !refused && intent) fatal(`aw init --join-from failed with what may be a refusal of alias "${instance}", which aw did not confirm by its code, so whether an identity was registered is unknown; retire settles the recorded mint. If another instance holds that alias, spawn with a different --name. Team: ${team}`, { pendingMint: intent });
       if (e.aliasConflict) {
         const refusal = `alias "${instance}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
         // A certificate a retire on this host recorded for this alias and team
@@ -2401,12 +2428,12 @@ if (event === "launch") {
     const ours = did ? held.find((m) => m.member_did_key === did) : undefined;
     if (did && !ours) await nothing("the alias's certificate is held by another key, not this home's");
     const cert = ours || held[0];
-    const registry = registryOriginFromJoinedState({ identityHome: join(root, ".aw") }, undefined, doc).registry;
+    const { registry, registryError } = rootRegistryForTeam(root, team);
     const cleanup = { team, certificateId: cert.certificate_id, registry };
     const problem = controllerCleanupProblem(cleanup);
     const command = problem ? undefined : controllerCleanupCommand(cleanup);
     const named = problem ? "" : ` (certificate ${cert.certificate_id})`;
-    const removal = command ? `the team's controller removes it with: ${command}` : `the team's controller removes it, but no command is shown: the certificate read for it is unusable (${problem})`;
+    const removal = command ? `the team's controller removes it with: ${command}${registryError ? ` (${registryError})` : ""}` : `the team's controller removes it, but no command is shown: the certificate read for it is unusable (${problem})`;
     dropPendingMint();
     if (ours) {
       // The home's own registration, which only the controller can now remove.
