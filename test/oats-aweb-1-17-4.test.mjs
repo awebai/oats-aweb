@@ -345,6 +345,45 @@ test("no bookkeeping after the self-delete lets a wake deregistration apply past
   assert.ok(fx.fake.registrations()[fx.home], "the deregistration, due 1 s after the deadline, never applied");
 });
 
+/** Whether the process with this pid is still running. */
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const deregistrationPids = (fx) => fx.fake.readCalls().filter((c) => c.args[0] === "wake" && c.args[1] === "deregister").map((c) => c.pid);
+
+test("retire refused for an unreadable seat record still awaits the deregistration, within the deadline", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), "{ not json");
+  const retired = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta) });
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.reason, "seat-record-unreadable");
+  assert.equal(fx.fake.registrations()[fx.home], undefined, "the deregistration ran to its end before retire answered");
+
+  const cut = fixture(t);
+  const again = cut.hook("spawn");
+  mkdirSync(join(cut.home, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(cut.home, ".oats-aweb", "seat.json"), "{ not json");
+  const late = cut.hook("retire", { OATS_META: JSON.stringify(again.doc.meta), FAKE_DEREGISTER_MS: "4000", OATS_AWEB_HOOK_BUDGET_MS: "800" });
+  assert.equal(late.doc.meta.reason, "seat-record-unreadable");
+  assert.deepEqual(deregistrationPids(cut).filter(alive), [], "no deregistration outlives the hook");
+  assert.ok(cut.fake.registrations()[cut.home], "the deregistration cut at the deadline never applied");
+});
+
+test("no exit of retire leaves a wake deregistration running", (t) => {
+  const fx = fixture(t);
+  const spawned = fx.hook("spawn");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  // A seat record with no resident: retire takes the grant route, which refuses and exits at once.
+  mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), JSON.stringify({ seat: "0123456789abcdef" }));
+  const retired = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
+  assert.equal(retired.status, 1, retired.stdout + retired.stderr);
+  assert.match(retired.doc.warning, /requires identity\.resident/);
+  assert.equal(deregistrationPids(fx).length, 2, "the background deregistration and the grant route's own");
+  assert.deepEqual(deregistrationPids(fx).filter(alive), [], "no deregistration is running when the hook exits");
+});
+
 test("mint output that is not JSON is withheld and still compensated", (t) => {
   const fx = fixture(t);
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_GARBAGE: "1" });

@@ -628,8 +628,13 @@ function wakeDeregisterStarted(instanceHome) {
     try { child = spawn("aw", ["wake", "deregister", "--home", instanceHome], { cwd: instanceHome, env: childEnvFor(), stdio: "ignore" }); }
     catch { settle(false); return; }
     const timer = setTimeout(() => child.kill(timeoutSignal), timeout);
-    child.on("error", () => { clearTimeout(timer); settle(false); });
-    child.on("exit", (code) => { clearTimeout(timer); settle(code === 0); });
+    // A way out of the hook that does not await it (a refusal, a fatal, a
+    // throw) ends it too: no child outlives the hook and its deadline.
+    const endWithHook = () => { try { child.kill("SIGKILL"); } catch { /* already gone */ } };
+    process.once("exit", endWithHook);
+    const done = () => { clearTimeout(timer); process.removeListener("exit", endWithHook); };
+    child.on("error", () => { done(); settle(false); });
+    child.on("exit", (code) => { done(); settle(code === 0); });
   });
 }
 const NORMAL_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
@@ -2186,7 +2191,7 @@ if (event === "launch") {
     catch (e) {
       const why = String(e.message || e).slice(0, 200);
       // With no seat in the meta either, nothing names this seat's grants.
-      if (!meta.identity?.seat) out({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${why}); this seat may hold grants that stay valid` }, 1);
+      if (!meta.identity?.seat) await finish({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${why}); this seat may hold grants that stay valid` }, 1);
       outNotes.push(`the seat record is unreadable (${why}); retired from the seat in the meta`);
     }
     if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
