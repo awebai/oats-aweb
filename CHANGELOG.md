@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **Fixed: a mint killed after the service registered the identity is
+  released or named, no longer orphaned (#240).** A spawn's
+  `aw init --join-from` could register the new identity and then be killed or
+  fail before aw wrote the home's workspace binding. Spawn found no bound
+  identity and answered no meta, so no retire could find the registration, and
+  the alias kept a certificate that no home knew about. Spawn now writes the
+  intended mint (team, alias, root, time) to the home's
+  `.oats-aweb/pending-mint.json` before aw starts. It removes the file once the
+  identity is in its answer, or once aw confirms a refusal. A mint that fails
+  any other way answers `pendingMint` in its meta. Retire acts on the intent
+  when the home holds no binding: it reads the team's members from the root,
+  and never finishes the mint.
+  - A certificate whose `member_did_key` is the home key's is recorded with
+    the controller's `aw id team remove-member` command, and the warning says
+    the identity was registered but could not be released.
+  - A home with no key only gets the command named, with the caveat that the
+    certificate may be another instance's. Nothing is recorded.
+  - No certificate for the alias: retire says nothing was registered.
+  - A members read that fails: the outcome is unknown. Retire names the read,
+    and exits nonzero with the home kept.
+
+  A later spawn's alias refusal names the recorded command. A new on-disk
+  file in the home, `.oats-aweb/pending-mint.json`, and a new meta key,
+  `pendingMint`, which a failed spawn answers. Nothing a deployment must
+  change.
+
 - **Fixed: a retained seat keeps `AWEB_IDENTITY_HOME` at every start
   (#226).** A retained seat (`identity.source`) was recorded as identity mode
   `global` with no grant, so no start answered an identity home for it, and

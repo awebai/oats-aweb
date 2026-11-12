@@ -1427,6 +1427,43 @@ and release it with the same `aw workspace delete` as a recorded joined team. A
 start changes nothing at the service for it, and warns naming both commands
 (awebai/oats-aweb#217).
 
+Before the default-team mint, spawn writes its intent to
+`.oats-aweb/pending-mint.json` in the home (team, alias, the root it mints
+from, time), in one atomic write. aw registers the identity before it writes
+the workspace binding: aw 1.36.58 writes `signing.key` first, registers the
+member, then writes `team-certs/` and `identity.yaml`, and writes
+`workspace.yaml` last. So a mint killed or failed in between leaves a
+registration that no local file proves (awebai/oats-aweb#240). The intent is
+removed once the minted identity is in the spawn's answer, or once aw confirms
+a refusal: an alias that still holds a certificate, an invite the server
+refuses, or a root that can't create the invite. A home that already holds
+identity material gets no intent, since aw refuses it before doing anything.
+Any other failed mint answers `pendingMint` in its meta.
+
+Retire acts on an intent, from the home or from that meta, only when the home
+holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
+self-deleted as usual. Otherwise retire reads `aw id team members
+--team-id=<team> --json` from the recorded root. It never runs `aw workspace
+connect` to finish a half-done mint, and never retries the mint. A certificate
+is this mint's only when its `member_did_key` is the did:key of the home's
+`signing.key`:
+
+- **This mint's certificate:** retire records it in the retired-certificates
+  record, with the controller's `aw id team remove-member` command, and says
+  the identity was registered but could not be released. It exits 0, because
+  the home's key can't release it.
+- **No key in the home:** ownership can't be established, so the certificate
+  may belong to another instance with that name. Retire names the command and
+  that caveat, and records nothing.
+- **No certificate for the alias, or one held by another key:** nothing was
+  registered, and the intent is dropped.
+- **The members read fails:** the outcome is unknown. Retire names the read to
+  run, keeps the home and the intent, and exits nonzero for a retry.
+
+A later spawn of the same name still meets the alias refusal; when this host's
+record holds a certificate for that alias and team, the refusal names the
+controller's command for it.
+
 Retire self-deletes with `aw workspace delete <workspace_id>`, taking the id
 from the membership in `<home>/.aw/workspace.yaml` whose team and alias match
 the recorded ones. It falls back to the alias when no entry matches. For a home

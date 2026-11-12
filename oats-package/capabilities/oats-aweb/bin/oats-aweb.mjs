@@ -63,6 +63,7 @@ import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/sess
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
@@ -183,6 +184,9 @@ const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, f
     // credential-handling command reaching a log.
     // self_custody_reinit_unproven: AWID's refusal when another agent that holds its own key has the alias.
     err.aliasConflict = /already|exists|conflict|422|active certificate|self_custody_reinit_unproven/i.test(String(e.stderr ?? "") + String(e.stdout ?? ""));
+    // `aw init --join-from` adds this to a failure to create the root's invite, before
+    // it writes or registers anything (aw cmd/aw/init.go runInitJoinFrom).
+    err.inviteNotCreated = /; alternatively use --admission-team-id /.test(String(e.stderr ?? ""));
     err.awErrorCode = awErrorCode(e.stdout);
     throw err;
   }
@@ -1283,6 +1287,38 @@ const leftTeamsOf = (meta = {}) => Array.isArray(meta.left) ? meta.left.filter((
 const providerStateDir = () => join(home, ".oats-aweb");
 const providerTeamsFile = () => join(providerStateDir(), "teams.json");
 const defaultRetireMarkerFile = () => join(providerStateDir(), "default-retire.json");
+/** The mint a non-retained spawn is about to run (awebai/oats-aweb#240): written
+ *  before `aw init --join-from`, removed once the minted identity is in the spawn's
+ *  answer or the mint is confirmed refused. One that remains is a mint killed or
+ *  failed after aw may have registered the identity, which retire settles. A file of
+ *  its own: writeProviderTeamsState rewrites teams.json with only its known fields. */
+const pendingMintFile = () => join(providerStateDir(), "pending-mint.json");
+const pendingMintOf = (doc) => doc && typeof doc === "object" && typeof doc.team === "string" && validAwebTeamId(doc.team) && typeof doc.alias === "string" && AWEB_ALIAS_RE.test(doc.alias)
+  ? { team: doc.team, alias: doc.alias, root: typeof doc.root === "string" && isAbsolute(doc.root) ? doc.root : null, at: typeof doc.at === "string" ? doc.at : null }
+  : undefined;
+/** `{ intent }`, `{}` when there is none, or `{ problem }` when the file is there and is not one. */
+function readPendingMint() {
+  let text;
+  try { text = readFileSync(pendingMintFile(), "utf8"); }
+  catch (e) { return e?.code === "ENOENT" ? {} : { problem: `it cannot be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
+  let intent; try { intent = pendingMintOf(JSON.parse(text)); } catch { intent = undefined; }
+  return intent ? { intent } : { problem: "it does not name a valid team and alias" };
+}
+function writePendingMint(intent) {
+  mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
+  atomicWrite(pendingMintFile(), JSON.stringify({ schemaVersion: 1, ...intent }, null, 2) + "\n");
+  return intent;
+}
+const dropPendingMint = () => rmSync(pendingMintFile(), { force: true });
+/** The controller commands for the certificates this host's retires recorded for
+ *  `alias` in `team`, each rebuilt from the entry's validated values, never its stored
+ *  text. None when the deployment or its record cannot be read: the caller's refusal
+ *  stands without them. */
+function recordedControllerCommands(team, alias) {
+  let record;
+  try { record = readRetiredRecord(selectedDeployment(process.env)); } catch { return []; }
+  return [...new Set(record.entries.filter((e) => e.team === team && e.alias === alias).map((e) => controllerCleanupCommand(e)).filter(Boolean))];
+}
 function readDefaultRetireMarker() {
   try {
     const doc = JSON.parse(readFileSync(defaultRetireMarkerFile(), "utf8"));
@@ -2062,6 +2098,15 @@ if (event === "launch") {
     const primary = resolvePrimaryTeam();
     const { team, root } = primary;
     const warnings = [...primary.warnings];
+    // Write-ahead (awebai/oats-aweb#240): aw registers the identity before it
+    // writes the binding, and the hook (or aw) can be killed between the two, so
+    // the intended mint is on disk before aw starts. Retire finds it there when
+    // this hook never answers, and in the failure's meta when it does. A home that
+    // already holds identity material gets none: aw refuses it before it does
+    // anything (cmd/aw/connect.go ensureConnectTargetClean), and what is there is
+    // not this mint's.
+    const preexisting = ["signing.key", "identity.yaml", "team-certs", "workspace.yaml"].some((name) => existsSync(join(home, ".aw", name)));
+    const intent = preexisting ? undefined : writePendingMint({ team, alias: instance, root, at: new Date().toISOString() });
     let raw;
     try {
       // ONE aw process mints the identity: it creates an invite from the root
@@ -2081,6 +2126,7 @@ if (event === "launch") {
       if (joinedLate(home)) {
         const late = workspaceAliasOf(home);
         minted = { team, alias: late };
+        dropPendingMint(); // the identity is in this answer's meta, and its binding in the home
         fatal(`aw init --join-from was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
       }
       // Another agent holds the alias in this team: an instance of that name
@@ -2088,17 +2134,25 @@ if (event === "launch") {
       // that, and the remedy, instead of relaying a bare join error.
       // aw's --json error envelope names the refusal by a fixed code; only
       // codes on AW_ERROR_CODES are read, and never its message.
+      // A refusal confirmed by aw registered nothing: its intent goes.
+      if (e.awErrorCode === "unknown_or_invalid" || e.aliasConflict || e.inviteNotCreated) dropPendingMint();
       if (e.awErrorCode === "unknown_or_invalid") {
         // The fixed diagnosis first: fatal keeps 300 characters, and a team id can be long.
         fatal(`the invite aw made was refused (unknown_or_invalid), most likely because the host's aw is newer than its server; the server's aweb needs upgrading, or the host's aw pinned to ${AW_TESTED} (\`npm i -g @awebai/aw@${AW_TESTED}\`) if no deployment on this host needs a newer one. Team: ${team}`);
       }
       if (e.aliasConflict) {
+        const refusal = `alias "${instance}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
+        // A certificate a retire on this host recorded for this alias and team
+        // (lib/retired-certificates.mjs): its command, rebuilt from validated values.
+        const recorded = recordedControllerCommands(team, instance);
         // The fixed text first: fatal keeps 300 characters, and a team id can be long.
-        fatal(`alias "${instance}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`);
+        if (!recorded.length) fatal(refusal);
+        out({ warning: `oats-aweb: ${refusal}; the team's controller removes the certificate a retire on this host recorded with: ${recorded.join(" or ")}` }, 1);
       }
       throw e;
     }
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) fatal("aw init --join-from returned no usable result, so no identity could be minted", minted);
+    // aw exited 0, so it may have written the binding: the intent stays for retire.
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) fatal("aw init --join-from returned no usable result, so no identity could be minted", intent ? { pendingMint: intent } : undefined);
     // The RESPONSE is not a safe place to take strings from: whatever is copied
     // into meta and the briefing is printed on exit 0 (reviewer-a6aa1c5). Accept
     // a field only if it is a plausible value of its own kind; otherwise fall
@@ -2119,6 +2173,9 @@ if (event === "launch") {
     // External state now exists. Record it immediately so any later failure can
     // still report it for compensation.
     minted = { team: joined.team_id, alias: joined.alias };
+    // Every answer from here carries it in its meta; a hook killed before it answers
+    // leaves the binding aw wrote, which retire finds by itself.
+    dropPendingMint();
     const alias = joined.alias;
     const mismatch = joined.team_id !== team
       ? ` [WARNING: joined ${joined.team_id}, expected ${team}]` : "";
@@ -2154,7 +2211,9 @@ if (event === "launch") {
     // Hand it back as meta so the kernel's compensation can delete it — losing
     // it here would strand a roster entry no one owns.
     const pendingJoins = minted ? readProviderTeamsState().pendingJoins : [];
-    fatal(`identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted);
+    // No identity recorded: the mint's intent, while it stands, is what retire acts on.
+    const pendingMint = minted ? undefined : readPendingMint().intent;
+    fatal(`identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
@@ -2310,6 +2369,61 @@ if (event === "launch") {
   const completedDefaultRetire = readDefaultRetireMarker();
   if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); ${ALIAS_UNRELEASED_REMEDY}` }) });
+  }
+  // A mint killed or failed after aw may have registered the identity, with no bound
+  // identity in the home (awebai/oats-aweb#240). aw writes the member's key before it
+  // registers and the binding last, so such a home holds the key, or nothing, and no
+  // binding: `aw workspace delete` cannot run from it. Retire never runs `aw workspace
+  // connect` to finish a half-done mint (that would re-prepare a pending operation and
+  // add a remote effect): it reads the team's members from the root the spawn minted
+  // from, and a certificate is this mint's only when its member_did_key is the home
+  // key's did:key.
+  const membersRead = (team) => `\`aw id team members --team-id=${team} --json\``;
+  const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
+    const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
+    const root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team);
+    const where = root ? ` in ${lockField(root) || "the team's root"}` : " in a root that is a member of the team";
+    let doc, why;
+    if (!root) why = "no root that holds the team is on this host";
+    else {
+      try {
+        doc = parseAwJson(run(["aw", "id", "team", "members", flagEq("--team-id", team), "--json"], root, 60000), "aw id team members");
+        if (!Array.isArray(doc?.members)) { doc = undefined; why = "aw id team members returned JSON without a members list"; }
+      } catch (e) { why = String(e.message || e).replace(/\s+/g, " ").trim().slice(0, 200); }
+    }
+    // Unknown: the home, its key and the intent stay for the retry.
+    if (!doc) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: the team's members could not be read (${why}); run ${membersRead(team)}${where} to see whether "${alias}" holds a certificate there, then retire again; this home and its record of the mint are kept`) }, 1);
+    const held = doc.members.filter((m) => m && typeof m === "object" && m.alias === alias && !m.revoked_at && (m.team_id === undefined || m.team_id === team));
+    let key; try { key = readFileSync(join(home, ".aw", "signing.key"), "utf8"); } catch { key = undefined; }
+    const did = key === undefined ? undefined : didKeyOfSigningKey(key);
+    const nothing = (because) => { dropPendingMint(); return finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), warning: said(`nothing was registered by the interrupted mint of alias "${alias}" in team ${team}: ${because}`) }); };
+    if (!held.length) await nothing("the team's members show no certificate for that alias");
+    const ours = did ? held.find((m) => m.member_did_key === did) : undefined;
+    if (did && !ours) await nothing("the alias's certificate is held by another key, not this home's");
+    const cert = ours || held[0];
+    const registry = registryOriginFromJoinedState({ identityHome: join(root, ".aw") }, undefined, doc).registry;
+    const cleanup = { team, certificateId: cert.certificate_id, registry };
+    const problem = controllerCleanupProblem(cleanup);
+    const command = problem ? undefined : controllerCleanupCommand(cleanup);
+    const named = problem ? "" : ` (certificate ${cert.certificate_id})`;
+    const removal = command ? `the team's controller removes it with: ${command}` : `the team's controller removes it, but no command is shown: the certificate read for it is unusable (${problem})`;
+    dropPendingMint();
+    if (ours) {
+      // The home's own registration, which only the controller can now remove.
+      rememberControllerCleanup({ cleanup: "controller", label: "default", team, alias, certificateId: cert.certificate_id, ...(command ? { command } : {}), registry });
+      await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint registered alias "${alias}" in team ${team}${named} but could not be released: this home holds its key and no workspace binding, and retire never finishes a half-done mint; ${removal}`) });
+    }
+    // No key to compare: never recorded, since the record marks a member as retired by OATS.
+    await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint may have registered alias "${alias}" in team ${team}, and it was not released: the alias holds a certificate${named}, but this home holds no key it can read, so ownership could not be established and the certificate may belong to another instance of that name; if no other instance has that name, ${removal}`) });
+  };
+  if (!meta.alias) {
+    const onDisk = readPendingMint();
+    const pending = onDisk.intent || pendingMintOf(meta.pendingMint);
+    if (pending) await retirePendingMint(pending);
+    if (onDisk.problem) {
+      const team = defaultTeamId();
+      await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `this home's record of an interrupted mint, ${pendingMintFile()}, is unusable (${onDisk.problem}), so whether alias "${instance}" was registered is unknown: run ${membersRead(team && validAwebTeamId(team) ? team : "<team>")} in the team's root to see whether it holds a certificate there, then remove that file and retire again`].join(" | ")}` }, 1);
+    }
   }
   if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }) });
   if (!existsSync(join(home, ".aw"))) {
