@@ -1,0 +1,111 @@
+// The root's admission at spawn and its refusals (spec v4.3.10 C-3b, C-3c,
+// C-3d), with acceptance test 8 and the spawn half of test 23 (each refusal
+// starts with its code and holds its fix within the 300-character cap).
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+import { ROOT_ID, TEAM, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
+import { POLICY } from "./helpers/fake-aw-protected.mjs";
+
+const admits = (fake) => fake.calls().filter((c) => commandArgs(c.args).join(" ").startsWith("id team admit"));
+const opOf = (call) => call.args[call.args.indexOf("--operation-id") + 1];
+const admission = (fx, name) => JSON.parse(readFileSync(join(fx.homeOf(name), ".oats-aweb", "admission-default.json"), "utf8"));
+/** A spawn refusal's own text: its segment of the warning (the hook joins its other warnings after it with " | "), without the provider's prefix, which the 300-character cap doesn't count. */
+const refusal = (r) => { assert.equal(r.status, 1, JSON.stringify(r.doc)); return r.doc.warning.split(" | ")[0].replace(/^oats-aweb: /, ""); };
+/** The cap holds the whole text, its fix included: nothing was cut. */
+const fits = (text, ending) => { assert.ok(text.length <= 300, `${text.length} characters: ${text}`); assert.ok(text.endsWith(ending), `cut or reworded: ${text}`); };
+
+test("acceptance 8: admission_limit_reached refuses E_ADMISSION_LIMIT with the policy's bounds and OATS's own count, labelled as OATS's, and says retiring frees no slot", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  fx.fake.setService({ admit: { code: "admission_limit_reached" } });
+  const text = refusal(fx.spawn("dev-2"));
+  assert.match(text, /^E_ADMISSION_LIMIT\b/);
+  assert.ok(text.includes(`max_active ${POLICY.bounds.max_active}`) && text.includes(`max_per_window ${POLICY.bounds.max_per_window}`) && text.includes(`${POLICY.bounds.rate_window_seconds} s`), text);
+  assert.ok(text.includes("OATS's count, not the server's: 1 live"), text);
+  fits(text, "retiring an instance frees no slot");
+});
+
+for (const code of ["policy_changed", "admission_policy_missing", "subject_ineligible"]) {
+  test(`acceptance 8: ${code} refuses E_ADMISSION_REFUSED with its code`, (t) => {
+    const fx = attributionFixture(t);
+    fx.fake.setService({ admit: { code } });
+    const text = refusal(fx.spawn("dev-1"));
+    assert.ok(text.startsWith(`E_ADMISSION_REFUSED (code: ${code}): `), text);
+    fits(text, 'README, "Human attribution: admission refusals")');
+  });
+}
+
+test("acceptance 22 (spawn): admission_policy_missing, while the pinned aw can't change the policy, leads with what is true now", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { code: "admission_policy_missing" } });
+  assert.ok(refusal(fx.spawn("dev-1")).startsWith("E_ADMISSION_REFUSED (code: admission_policy_missing): This team is not in the deployment's admission policy, and this aweb release can't add a team to it"));
+});
+
+for (const code of ["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]) {
+  test(`acceptance 8: ${code} refuses E_ADMISSION_REFUSED naming the operator's binding, the root's did:aw and the team`, (t) => {
+    const fx = attributionFixture(t);
+    fx.fake.setService({ admit: { code } });
+    const text = refusal(fx.spawn("dev-1"));
+    assert.ok(text.startsWith(`E_ADMISSION_REFUSED (code: ${code}): `), text);
+    assert.ok(text.includes(`ask the protected service's operator to run bind-root for this root (${ROOT_ID}) and ${TEAM}`), text);
+    fits(text, 'README, "Human attribution: admission refusals")');
+  });
+}
+
+test("acceptance 8: a receipt that stays unknown refuses E_ADMISSION_UNKNOWN with the operation id and team, and records the admission unknown", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { code: "receipt_unavailable" } });
+  const text = refusal(fx.spawn("dev-1"));
+  const record = admission(fx, "dev-1");
+  assert.match(text, /^E_ADMISSION_UNKNOWN\b/);
+  assert.ok(text.includes(`(operation ${record.operationId}, team ${TEAM})`), text);
+  assert.equal(record.state, "unknown");
+  fits(text, 'README, "Human attribution: admission refusals")');
+});
+
+test("acceptance 8: a retry after the execute's answer was lost gives one certificate under the same operation id", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { lostOnce: true } });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  const calls = admits(fx.fake);
+  assert.equal(calls.length, 2);
+  assert.equal(opOf(calls[0]), opOf(calls[1]));
+  assert.equal(opOf(calls[0]), admission(fx, "dev-1").operationId);
+  assert.deepEqual(Object.keys(fx.fake.charges()), [opOf(calls[0])]);
+  assert.equal(admission(fx, "dev-1").state, "committed");
+});
+
+test("C-3b: the operation id is persisted, pending, before the admit runs", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { code: "subject_ineligible" } });
+  refusal(fx.spawn("dev-1"));
+  const record = admission(fx, "dev-1");
+  assert.equal(opOf(admits(fx.fake)[0]), record.operationId);
+  assert.equal(record.state, "refused");
+});
+
+test("C-3d: a refusal after the key exists reports the minted identity, so the kernel rolls the child back", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { code: "subject_ineligible" } });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 1);
+  assert.equal(r.doc.meta.team, TEAM);
+  assert.equal(r.doc.meta.alias, "dev-1");
+});
+
+test("C-3c: an install-cert code outside C-9's table refuses step install, with no retry", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ install: { code: "certificate_from_the_future" } });
+  const text = refusal(fx.spawn("dev-1"));
+  assert.ok(text.startsWith("E_ATTRIBUTION_EXCHANGE (step: install): "), text);
+  assert.equal(fx.fake.calls().filter((c) => commandArgs(c.args).join(" ").startsWith("id team install-cert")).length, 1);
+});
+
+test("C-3c: install-cert's registry_unavailable refuses E_ATTRIBUTION_EVIDENCE, worth a retry", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ install: { code: "registry_unavailable" } });
+  assert.match(refusal(fx.spawn("dev-1")), /^E_ATTRIBUTION_EVIDENCE \(step: install\): /);
+});

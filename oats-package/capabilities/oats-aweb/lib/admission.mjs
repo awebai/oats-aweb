@@ -36,7 +36,7 @@ const firstSentence = (text) => { const i = text.indexOf(". "); return i < 0 ? t
  *  holding a committed admission for the team. */
 export function admitRefusal(e, { team, root, bounds, count, operationId }) {
   const code = e.awCode;
-  if (!code || UNKNOWN_CODES.has(code)) return attributionError("E_ADMISSION_UNKNOWN", `the admission's outcome is unknown (${code || "no answer"}), operation ${operationId}, team ${team}; this home is kept → retire it, or rerun \`oats aweb setup --reconcile-admissions\` (${README_ADMISSION})`, { code: code || null, operationId, team });
+  if (!code || UNKNOWN_CODES.has(code)) return attributionError("E_ADMISSION_UNKNOWN", `the admission's outcome is unknown (operation ${operationId}, team ${team}), so this home is kept → retire it once the service answers (${README_ADMISSION})`, { code: code || null, operationId, team });
   if (code === "admission_limit_reached") {
     let b; try { b = bounds(); } catch { b = null; }
     const limits = b ? `max_active ${b.max_active}, max_per_window ${b.max_per_window} per ${b.rate_window_seconds} s` : "bounds unreadable";
