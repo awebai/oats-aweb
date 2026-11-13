@@ -116,15 +116,17 @@ function takeGuard(guard, who, left) {
       sleep(GUARD_POLL_MS);
       continue;
     }
-    try { writeSync(fd, JSON.stringify(mine) + "\n"); }
-    catch (e) {
-      // An unknown inode: the guard is not removed, and is left with its fix.
-      let ino; try { ino = fstatSync(fd).ino; } catch { ino = undefined; }
-      closeSync(fd);
-      if (ino === undefined || !dropUnrecordedGuard(guard, ino)) left.push(`${guard} is this change's guard, left by a write that failed; ${guardFix(guard)}`);
-      throw Object.assign(e, { stage: "guard" });
+    // Recorded only when the inode is known, the record written and the file closed;
+    // any of those failing leaves a guard this change removes by its inode, or reports.
+    // The descriptor is closed once, never retried (close(2) may report a delayed error).
+    let ino, failure;
+    try { ino = fstatSync(fd).ino; } catch (e) { failure = e; }
+    if (!failure) { try { writeSync(fd, JSON.stringify(mine) + "\n"); } catch (e) { failure = e; } }
+    try { closeSync(fd); } catch (e) { failure = failure || e; }
+    if (failure) {
+      if (ino === undefined || !dropUnrecordedGuard(guard, ino)) left.push(`${guard} is this change's guard, left by a step that failed (${errorCode(failure)}); ${guardFix(guard)}`);
+      throw Object.assign(failure, { stage: "guard" });
     }
-    closeSync(fd);
     return mine;
   }
 }
@@ -155,6 +157,13 @@ function guarded(lock, who, step) {
   catch (e) { if (left.length) throw new SeatLockLeftovers(left, { cause: e }); throw e; }
   let result, cause;
   try { result = step(held, left); } catch (e) { cause = e; }
+  // The moved-aside name exists only inside a step: one still there at its end is a
+  // leftover, reported here when the step did not (one another change left is the
+  // step's refusal, made before it moved anything).
+  if (!(cause instanceof SeatLockRefusal && cause.kind === "held-stray") && !left.some((t) => t.includes(held))) {
+    let stray; try { stray = readSeatLock(held); } catch (e) { stray = { present: true, doc: undefined, code: errorCode(e) }; }
+    if (stray.present) left.push(stray.code ? `${held} could not be checked (${stray.code}); ${strayHeldText(lock, held, stray)}` : strayHeldText(lock, held, stray));
+  }
   releaseGuard(guard, mine, left);
   if (left.length) throw new SeatLockLeftovers(left, { result, cause });
   if (cause) throw cause;
@@ -232,9 +241,16 @@ function undoFailedWrite(lock, held, captured, next, left) {
 export function swapSeatLock(lock, { who, expect, next }) {
   return guarded(lock, who, (held, left) => {
     refuseStrayHeld(lock, held);
-    try { renameSync(lock, held); }
+    let moved = false;
+    try { renameSync(lock, held); moved = true; }
     catch (e) { if (e?.code !== "ENOENT") throw Object.assign(e, { stage: "move" }); }
-    const captured = readSeatLock(held);
+    let captured;
+    try { captured = readSeatLock(held); }
+    catch (e) {
+      // The moved lock could not be inspected: it goes back to its name untouched.
+      if (moved) restoreHeld(lock, held, { text: null }, left);
+      throw Object.assign(e, { stage: "inspect" });
+    }
     if (!expect(captured)) { if (captured.present) restoreHeld(lock, held, captured, left); return { done: false, captured }; }
     if (next !== null) {
       try { writeFileSync(lock, next, { flag: "wx", mode: 0o600 }); }

@@ -727,7 +727,9 @@ test("a take-over whose partial lock write can't be removed names the moved lock
  *  GUARD_WRITE_FAIL=<n> fails the write into the n-th guard this hook creates (ENOSPC);
  *  STUCK_GUARD makes removing the guard fail once that write failed; HELD_UNLINK_FAIL makes removing the moved
  *  lock fail (EIO); STUCK_RENAME makes moving it back to the lock's name fail;
- *  GUARD_UNLINK_FAIL=<n> fails the n-th removal of a guard (EIO). */
+ *  GUARD_UNLINK_FAIL=<n> fails the n-th removal of a guard (EIO); INSPECT_FAIL fails the
+ *  first check of the moved lock after it is moved (EIO); CLOSE_FAIL=<n> makes closing
+ *  the n-th guard report EIO after it closed. */
 function stageFailPreload(fx) {
   const file = join(fx.base, "stage-fail.mjs");
   writeFileSync(file, `import fs from "node:fs";
@@ -742,7 +744,15 @@ fs.openSync = function (path, ...rest) {
   return fd;
 };
 fs.writeSync = function (fd, ...rest) { if (failing.has(fd)) { failed = true; throw fail("ENOSPC"); } return write.call(this, fd, ...rest); };
-let guardUnlinks = 0;
+let guardUnlinks = 0, moved = false, guardFd, guardOpens = 0;
+const lstat = fs.lstatSync, close = fs.closeSync;
+fs.lstatSync = function (path, ...rest) {
+  if (process.env.INSPECT_FAIL && moved && String(path) === held) { moved = false; throw fail("EIO"); }
+  return lstat.call(this, path, ...rest);
+};
+const openGuard = fs.openSync;
+fs.openSync = function (path, ...rest) { const fd = openGuard.call(this, path, ...rest); if (String(path) === guard && ++guardOpens === Number(process.env.CLOSE_FAIL)) guardFd = fd; return fd; };
+fs.closeSync = function (fd, ...rest) { const r = close.call(this, fd, ...rest); if (fd === guardFd) { guardFd = undefined; throw fail("EIO"); } return r; };
 fs.unlinkSync = function (path, ...rest) {
   if (process.env.STUCK_GUARD && failed && String(path) === guard) throw fail("EACCES");
   if (String(path) === guard && ++guardUnlinks === Number(process.env.GUARD_UNLINK_FAIL)) throw fail("EIO");
@@ -751,7 +761,9 @@ fs.unlinkSync = function (path, ...rest) {
 };
 fs.renameSync = function (from, to, ...rest) {
   if (process.env.STUCK_RENAME && String(from) === held) throw fail("EIO");
-  return rename.call(this, from, to, ...rest);
+  const r = rename.call(this, from, to, ...rest);
+  if (String(to) === held) moved = true;
+  return r;
 };
 syncBuiltinESMExports();
 `);
@@ -777,7 +789,7 @@ test("a take-over whose guard can't be recorded removes the guard it created, an
 
 test("a take-over whose unrecorded guard can't be removed names it and its fix", (t) => {
   const { fx, w } = takeOverWith(t, { GUARD_WRITE_FAIL: "2", STUCK_GUARD: "1" });
-  assert.ok(w.includes(`could not be taken (ENOSPC); nothing copied; ${fx.guard} is this change's guard, left by a write that failed`), w);
+  assert.ok(w.includes(`could not be taken (ENOSPC); nothing copied; ${fx.guard} is this change's guard, left by a step that failed (ENOSPC)`), w);
   assert.ok(w.includes(`remove ${fx.guard} and retry`), w);
   assert.equal(existsSync(fx.guard), true);
 });
@@ -837,7 +849,8 @@ test("a spawn whose guard can't be removed after its last guarded read is not br
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.equal(r.doc.brief, undefined, "the seat is not briefed");
   const w = r.doc.warning;
-  assert.ok(w.includes(`is unknown after this spawn's last aw call (${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.ok(w.includes("is unknown after this spawn's last aw call (a lock step of this spawn left files it could not clean, named in this failure)"), w);
+  assert.ok(w.includes(`${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
   assert.ok(w.includes(`remove ${fx.guard} and retry`), w);
   assert.ok(w.includes("the seat is not briefed"), w);
   assert.equal(existsSync(fx.guard), true);
@@ -858,4 +871,41 @@ test("a retire that links another seat's lock back but can't remove the moved na
   assert.ok(w.includes(`that step left files it could not clean: ${fx.held} is a second name of the lock now at ${fx.lock}, left because it could not be removed (EIO)`), w);
   assert.ok(w.includes(`remove ${fx.held}; then retry`), w);
   assert.equal(existsSync(fx.guard), false);
+});
+
+test("a rollback whose read after its reconnect leaves the guard stops there, keeping the copy and the lock, and names the guard", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { GUARD_UNLINK_FAIL: "4", FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = r.doc.warning;
+  assert.ok(w.includes("the server binding was restored to the legacy home, but the lock's read after that left files it could not clean"), w);
+  assert.ok(w.includes(`${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.ok(w.includes(`remove ${fx.guard} and retry`), w);
+  assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, a, "the lock is left in place");
+});
+
+test("a take-over that can't inspect the lock it moved aside puts it back untouched", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const before = readFileSync(fx.lock, "utf8");
+  const b = fx.homeOf("seat-b");
+  const r = runHook(fx, "spawn", b, { identity: { takeOver: true }, preload: stageFailPreload(fx), env: { INSPECT_FAIL: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.doc.warning.includes(`the retained identity's lock ${fx.lock} could not be taken (EIO); nothing copied`), r.doc.warning);
+  assert.equal(readFileSync(fx.lock, "utf8"), before);
+  assert.equal(existsSync(fx.held), false);
+  assert.equal(existsSync(fx.guard), false);
+});
+
+test("a guard whose close reports an error is removed, and the spawn says the guard could not be taken", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { CLOSE_FAIL: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.doc.warning.includes(`the guard ${fx.guard} could not be taken (EIO), so the lock was not read`), r.doc.warning);
+  assert.doesNotMatch(r.doc.warning, /takeOver/);
+  assert.equal(existsSync(fx.guard), false);
+  assert.equal(existsSync(fx.lock), false);
 });
