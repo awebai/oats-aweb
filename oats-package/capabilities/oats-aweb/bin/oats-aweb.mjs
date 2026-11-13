@@ -92,7 +92,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem } from "../lib/attribution.mjs";
+import { KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admitIdentity } from "../lib/admission.mjs";
 import { PROTECTED_AW_MIN } from "../lib/protected-client.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
@@ -2355,6 +2355,12 @@ if (event === "launch") {
   syncPrimaryDelivery(primaryIdentityHomeOf(started), { retained: started.retained === true });
   if (globalLaunch) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
+  // C-4: a home recorded `mode: human` is checked at every start with `aw who`, never the protected server.
+  if (oldMeta.identity?.attribution?.mode === "human") {
+    const verdict = readWho((args) => run(["aw", ...args], home, 60000), primaryIdentityHomeOf(started));
+    const checked = startAttribution(oldMeta.identity.attribution, verdict);
+    if (checked.warning) { oldMeta = { ...oldMeta, identity: { ...oldMeta.identity, attribution: checked.attribution } }; outNotes.push(checked.warning); }
+  }
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
     const eligible = new Set(eligibleTeams().map((t) => t.label));

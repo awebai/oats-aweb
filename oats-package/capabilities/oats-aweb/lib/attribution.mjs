@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, sep } from "node:path";
+import { REQUEST_BINDING_SERVED } from "./protected-client.mjs";
 import { canonicalTeamServerURL } from "./team-server-url.mjs";
 
 /** A refusal of this feature: a code from C-9, a message that names the fix,
@@ -170,13 +171,18 @@ export function readWho(aw, identityHome) {
   try { return whoVerdict(JSON.parse(String(text).trim())); } catch { return { kind: "invalid", reason: "aw who answered no JSON" }; }
 }
 
-/** The revocation path (C-3c): the code, its first step and the README
- *  section within the spawn's 300 characters; the README holds the rest. */
-export const REVOKED_FIX = "remove settings.oats.aweb.attribution, then create and endorse a new root (README, \"Human attribution: revocation\"); a new root needs the protected service's operator to bind it, and that step isn't available yet, so this deployment can't spawn into its protected teams until it is";
+/** The README section that holds the whole revocation path. */
+export const README_REVOCATION = 'README, "Human attribution: revocation"';
+/** The revocation path's start within the spawn's 300 characters (C-3c): its
+ *  first step and, while the binding act isn't served, that no path works
+ *  yet, with no other fix; the README section holds the whole path. */
+export const REVOKED_FIX = REQUEST_BINDING_SERVED
+  ? `remove settings.oats.aweb.attribution, then create a new root with \`oats aweb setup --endorse-root --new-root\`, have the operator bind it, and rerun setup (${README_REVOCATION})`
+  : `remove settings.oats.aweb.attribution; a new root then needs the operator's binding, which isn't available yet, so no working path exists yet (${README_REVOCATION})`;
 
 /** The refusal for an identity whose chain doesn't verify: revoked, unavailable (retry), else the exchange step that read it. */
 export function chainRefusal(verdict, { who, step }) {
-  if (verdict.kind === "revoked") return attributionError("E_ATTRIBUTION_REVOKED", `${who}'s chain is revoked or replaced (${verdict.reason}) → ${REVOKED_FIX}`, { reason: verdict.reason });
+  if (verdict.kind === "revoked") return attributionError("E_ATTRIBUTION_REVOKED", `${who}'s chain is revoked or replaced → ${REVOKED_FIX}`, { reason: verdict.reason });
   if (verdict.kind === "unavailable") return attributionError("E_ATTRIBUTION_EVIDENCE", `registry evidence for ${who}'s chain is unavailable (${verdict.reason}) → retry once the identity registry answers; spawns stop while evidence is unavailable`, { reason: verdict.reason });
   return attributionError("E_ATTRIBUTION_EXCHANGE", `${who}'s chain doesn't verify (${verdict.reason ?? verdict.kind}) → respawn it from a person`, { step, reason: verdict.reason ?? verdict.kind });
 }
@@ -190,7 +196,7 @@ export function chooseIssuer({ setting, spawner, root }) {
     if (root.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the endorsed root's identity can't be read (${root.reason}) → check the root home ${setting.root.home}`, { step: "issuer", reason: root.reason });
     if (root.kind !== "verified") throw chainRefusal(root, { who: "the endorsed root", step: "issuer" });
     if (root.id !== setting.root.id) throw attributionError("E_ATTRIBUTION_SETTING", `settings.oats.aweb.attribution.root names ${setting.root.id}, but its home holds ${root.id} → ${SETTING_FIX}`, { key: "settings.oats.aweb.attribution.root" });
-    if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root no longer verifies to the recorded human (it answers ${root.humanId ?? "no human"}) → ${REVOKED_FIX}`, { reason: "another_human" });
+    if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root no longer verifies to the recorded human → ${REVOKED_FIX}`, { reason: "another_human", humanId: root.humanId ?? null });
     return depthChecked({ identityHome: join(setting.root.home, ".aw"), id: root.id, certificates: root.chain.length });
   }
   const v = spawner.verdict;
@@ -266,3 +272,18 @@ export function issueChain({ aw, issuer, identityHome, instance, setting, dir })
 /** The meta of a child that is chainless by the protocol's own rule (§6). */
 export const CHAINLESS = Object.freeze({ mode: "unknown", human: null, parent: null });
 export const SPAWNER_UNCHAINED = "attribution-spawner-unchained — the spawner has no identity chain (it predates the endorsement), so this child is admitted with none and is attributed to nobody; respawn the spawner to attribute its children";
+
+// ---------------------------------------------------------------------------
+// Start and restart (C-4): a home recorded `mode: human` is checked with
+// `aw who` at each start; start never calls the protected server.
+export const UNATTRIBUTED = Object.freeze({ mode: "unknown", human: null, parent: null });
+/** The attribution a start records for `recorded`, from its identity's `aw
+ *  who` verdict, with the warning when it changes. Unchanged unless recorded
+ *  `mode: human`. */
+export function startAttribution(recorded, verdict) {
+  if (recorded?.mode !== "human") return { attribution: recorded };
+  if (verdict.kind === "verified" && verdict.humanId === recorded.human?.id) return { attribution: recorded };
+  if (verdict.kind === "revoked") return { attribution: { ...UNATTRIBUTED }, warning: `attribution-revoked — this home's chain is revoked or replaced (${verdict.reason}), so it no longer acts for ${recorded.human?.label || "its human"} and is recorded unattributed; respawn it once the deployment has a new root (${README_REVOCATION})` };
+  const why = verdict.kind === "verified" ? `it now verifies to ${verdict.humanId ?? "no human"}` : `${verdict.kind}: ${verdict.reason ?? "no reason"}`;
+  return { attribution: { ...UNATTRIBUTED }, warning: `attribution-unverified — this home's chain couldn't be verified at start (${why}), so it is recorded unattributed; respawn to attribute it` };
+}

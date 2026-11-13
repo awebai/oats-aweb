@@ -18,6 +18,10 @@ export const POLICY_CHANGE_SERVED = false;
 /** Whether the released exchange can run its child side through a resident's
  *  custody. [.5: custody exchange] */
 export const RESIDENT_CUSTODY_SERVED = false;
+/** Whether they serve the operator's request-binding act (A3, A4: bind-root),
+ *  without which a new root can't be bound. [.5: landed at aweb fd9953709,
+ *  not yet in the pinned aw] */
+export const REQUEST_BINDING_SERVED = false;
 
 /** aw's refusal: its envelope's code (or none, for a failure aw didn't code),
  *  and a bounded, single-line form of its message for a person. */

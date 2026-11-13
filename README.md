@@ -38,6 +38,83 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## Human attribution: revocation
+
+When the human revokes the endorsed root, or its chain is revoked or replaced,
+every new spawn refuses `E_ATTRIBUTION_REVOKED`. Each refusal gives this
+section's first step. The whole path is:
+
+1. Remove `settings.oats.aweb.attribution` from this deployment's
+   `oats-local.yaml`.
+2. Create a new root with
+   `oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>`.
+   It stops at `requester-unbound`.
+3. The protected service's operator binds the new root (bind-root).
+4. Then rerun the same setup, which endorses the new root.
+
+Step 3 depends on aweb's request-binding act. The aw this release pins
+doesn't serve it yet: a new root needs the protected service's operator to
+bind it, and that step isn't available yet, so this deployment can't spawn
+into its protected teams until it is. Until then no working path exists, and
+no other fix works.
+
+- Removing the setting alone is no fix: a spawn into a protected team would
+  then take the legacy invite and refuse `E_PROTECTED_ADMISSION_REQUIRED`.
+- Re-endorsing the same root is outside v1.
+- A home already running keeps its identity and its memberships. Its next
+  start runs `aw who`, records it unattributed and warns
+  `attribution-revoked`. Until then its status row still names the human:
+  restart, or respawn, to clear the name.
+
+## Human attribution: admission refusals
+
+At spawn, the endorsed root admits each new identity into its protected
+team, under the operation id persisted in the new home
+(`.oats-aweb/admission-<team-label>.json`). A spawn refusal carries its code,
+its first sentence and this section; the full texts are here.
+
+- `E_ADMISSION_LIMIT` (aw `admission_limit_reached`): the team is at its
+  policy's bounds (`max_active`, `max_per_window` per `rate_window_seconds`).
+  The refusal gives those bounds and OATS's count of live homes holding a
+  committed admission for the team, labelled "OATS's count, not the
+  server's": the server reports no count. Wait for the rate window, or
+  change the policy. The aw this release pins doesn't serve
+  `team.agent.remove`, so retiring an instance frees no slot.
+- `E_ADMISSION_REFUSED`, with aw's code as `details.code`:
+  - `admission_policy_missing`: this team is not in the deployment's
+    admission policy, and this aweb release can't add a team to it: the
+    policy stays as provisioned. Once aweb serves
+    `team.admission-policy.change`, the team's owner approves adding it, and
+    then the operator runs bind-root for this root and the team.
+  - `scope_refused`, `profile_scope_refused`, `profile_scope_ambiguous`: the
+    team is in the policy, but this root most likely isn't bound for that
+    team's controller, for example a team added after the operator bound the
+    root. Ask the protected service's operator to run bind-root for this
+    root (its did:aw is in the refusal) and the team. Rerunning bind-root
+    with an added team leaves the root's other grants unchanged.
+  - `policy_changed`: the team's admission policy changed since the
+    endorsement. Rerun `oats aweb setup --endorse-root` to refresh it, then
+    rerun the spawn, which starts a new attempt.
+  - `subject_ineligible` and every other refused code: the protected
+    service's final refusal, with its code.
+- `E_ADMISSION_UNKNOWN`: the admission's outcome is unknown (aw
+  `receipt_unavailable`, `external_effect_unresolved`,
+  `registration_unconfirmed` or `signed_certificate_invalid`). The refusal
+  names the operation id and the team, and the home is kept. Retire it once
+  the service answers: the retire resumes the admission with the same
+  operation id, which never charges twice. A committed one is then removed
+  with the rest of the home's memberships, a refused one needs nothing, and
+  one still unknown keeps the home again.
+- `E_ATTRIBUTION_EXCHANGE` with `step: install`: the admitted certificate
+  couldn't be installed in the new home, or its id isn't aw's form. Respawn.
+  A code aw doesn't list is never retried.
+- `E_ATTRIBUTION_EVIDENCE`: registry evidence was unavailable (for example
+  install-cert's `registry_unavailable`). Retry the spawn: spawns stop while
+  evidence is unavailable.
+- `E_ATTRIBUTION_EXCHANGE` with `step: connect`: check that the aweb service
+  at the recorded URL is reachable; if the URL itself is wrong, rerun
+  `oats aweb setup --endorse-root --service <the correct url>`.
+
 ## 1.42.1 — the release OATS pins for 1.42
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
