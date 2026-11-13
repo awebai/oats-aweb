@@ -85,7 +85,7 @@ export function attributionSetting(settings = {}) {
  *  the running user (`uid`) or by root, which group and others can't write.
  *  `key` names where the path came from (a flag or the setting's key). */
 export function profileProblem(path, { key, uid = process.getuid() }) {
-  const fail = (why) => attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${path} (${key}) ${why}; it pins every origin and key a protected call trusts → have the service's operator provision it as a regular file, owned by you or by root, that only its owner can write`, { key, problem: "profile-mode", file: path });
+  const fail = (why) => attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${path} ${why} → have the service's operator provision it as a regular file, owned by you or by root, that only its owner can write`, { key, problem: "profile-mode", file: path });
   let s;
   try { s = lstatSync(path); } catch (e) { return fail(`can't be read (${e.code || "error"})`); }
   if (s.isSymbolicLink()) return fail("is a symlink");
