@@ -3,7 +3,7 @@
 // pending answer. The fake models aw built from aweb 44158f1bb.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { appendFileSync, chmodSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
@@ -185,6 +185,17 @@ for (const [code, expected, details] of ENDORSE_ROWS) {
     if (details.state === "unknown") assert.ok(existsSync(operationFile(fx)), "the operation was spent");
   });
 }
+
+test("acceptance 14 (C-2 placement): a fresh root under a symlinked .aweb-endorsed-root into a Git work tree refuses before any key exists", (t) => {
+  const fx = fresh(t);
+  const outside = join(fx.ws, "tracked");
+  mkdirSync(join(outside, ".git"), { recursive: true, mode: 0o700 });
+  symlinkSync(outside, join(fx.ws, ".aweb-endorsed-root"));
+  const e = errorOf(json(fx, endorseArgs(fx)));
+  assert.deepEqual([e.code, e.details.problem], ["E_ATTRIBUTION_ROOT_HOME", "placement"], e.message);
+  assert.ok(!existsSync(join(outside, "acme-root")), "nothing was created behind the link");
+  assert.deepEqual(verbs(fx.fake).filter((v) => v.startsWith("id create")), []);
+});
 
 test("acceptance 4: with neither --new-root nor --root-home, E_SETUP_ARGUMENT lists the candidates and --new-root", (t) => {
   const fx = attributionFixture(t, { attribution: false, root: "registered" });

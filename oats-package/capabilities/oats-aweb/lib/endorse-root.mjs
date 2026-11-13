@@ -5,7 +5,7 @@
 // Setup makes no protected HTTP call itself: every effect is one aw command
 // (protected-client.mjs), and OATS never parses aw's text.
 import { randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { policyMissingText } from "./admission.mjs";
 import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, chainRefusal, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
@@ -124,7 +124,17 @@ export function endorseRoot(o, ctx) {
   if (fresh) {
     // The home doesn't exist yet: the container and placement rules from D, before creating it.
     if (resolve(D) === CONTAINER_DEPLOYMENT || resolve(D).startsWith(`${CONTAINER_DEPLOYMENT}/`)) throw rootHomeProblem(rootHome, { deployment: D });
-    for (let dir = resolve(D); ; dir = resolve(dir, "..")) {
+    // The anchor the home is made under, if it exists, is a plain directory of D's own: a link
+    // could put the key anywhere, a Git work tree included.
+    const anchor = join(D, ROOT_DIR);
+    let anchorStat = null;
+    try { anchorStat = lstatSync(anchor); } catch { anchorStat = null; }
+    if (anchorStat && (anchorStat.isSymbolicLink() || !anchorStat.isDirectory())) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `${anchor} is ${anchorStat.isSymbolicLink() ? "a symbolic link" : "not a directory"}, so the root home ${rootHome} wouldn't be the deployment's own → make it a plain directory of the deployment`, { problem: "placement", home: rootHome });
+    if (anchorStat && (existsSync(join(anchor, ".git")) || existsSync(join(anchor, "instance.json")))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `${anchor} is a Git work tree or an instance home, where the root's key could be committed or taken → make it a plain directory of the deployment`, { problem: "placement", home: rootHome });
+    // D's real path: a deployment reached through a link is placed where the link points.
+    let real = resolve(D);
+    try { real = realpathSync(D); } catch { real = resolve(D); }
+    for (let dir = real; ; dir = resolve(dir, "..")) {
       if (existsSync(join(dir, ".git"))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home ${rootHome} would be inside a Git work tree (${dir}), where its key could be committed → move the deployment out of any work tree`, { problem: "placement", home: rootHome });
       if (existsSync(join(dir, "instance.json"))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home ${rootHome} would be under an instance home (${dir}) → run setup in the deployment itself`, { problem: "placement", home: rootHome });
       if (resolve(dir, "..") === dir) break;
