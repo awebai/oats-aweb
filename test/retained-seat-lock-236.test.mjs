@@ -729,7 +729,9 @@ test("a take-over whose partial lock write can't be removed names the moved lock
  *  lock fail (EIO); STUCK_RENAME makes moving it back to the lock's name fail;
  *  GUARD_UNLINK_FAIL=<n> fails the n-th removal of a guard (EIO); INSPECT_FAIL fails the
  *  first check of the moved lock after it is moved (EIO); CLOSE_FAIL=<n> makes closing
- *  the n-th guard report EIO after it closed. */
+ *  the n-th guard report EIO after it closed; READ_LOCK_FAIL fails every read of the
+ *  lock's bytes at its name (EIO); LOCK_AFTER_READ is a lock written once the first
+ *  guard is removed. */
 function stageFailPreload(fx) {
   const file = join(fx.base, "stage-fail.mjs");
   writeFileSync(file, `import fs from "node:fs";
@@ -745,7 +747,8 @@ fs.openSync = function (path, ...rest) {
 };
 fs.writeSync = function (fd, ...rest) { if (failing.has(fd)) { failed = true; throw fail("ENOSPC"); } return write.call(this, fd, ...rest); };
 let guardUnlinks = 0, moved = false, guardFd, guardOpens = 0;
-const lstat = fs.lstatSync, close = fs.closeSync;
+const lstat = fs.lstatSync, close = fs.closeSync, readFile = fs.readFileSync;
+fs.readFileSync = function (path, ...rest) { if (process.env.READ_LOCK_FAIL && String(path) === lock) throw fail("EIO"); return readFile.call(this, path, ...rest); };
 fs.lstatSync = function (path, ...rest) {
   if (process.env.INSPECT_FAIL && moved && String(path) === held) { moved = false; throw fail("EIO"); }
   return lstat.call(this, path, ...rest);
@@ -757,7 +760,10 @@ fs.unlinkSync = function (path, ...rest) {
   if (process.env.STUCK_GUARD && failed && String(path) === guard) throw fail("EACCES");
   if (String(path) === guard && ++guardUnlinks === Number(process.env.GUARD_UNLINK_FAIL)) throw fail("EIO");
   if (process.env.HELD_UNLINK_FAIL && String(path) === held) throw fail("EIO");
-  return unlink.call(this, path, ...rest);
+  const r = unlink.call(this, path, ...rest);
+  // Another seat's lock, created once the first guarded read has released its guard.
+  if (process.env.LOCK_AFTER_READ && String(path) === guard && guardUnlinks === 1) fs.writeFileSync(lock, process.env.LOCK_AFTER_READ);
+  return r;
 };
 fs.renameSync = function (from, to, ...rest) {
   if (process.env.STUCK_RENAME && String(from) === held) throw fail("EIO");
@@ -908,4 +914,31 @@ test("a guard whose close reports an error is removed, and the spawn says the gu
   assert.doesNotMatch(r.doc.warning, /takeOver/);
   assert.equal(existsSync(fx.guard), false);
   assert.equal(existsSync(fx.lock), false);
+});
+
+test("a rollback that can't read the lock's bytes treats its holder as unknown: no reconnect, and the copy is kept", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { READ_LOCK_FAIL: "1", FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = r.doc.warning;
+  assert.ok(w.includes(`whether another seat took the identity over is unknown: ${fx.lock} could not be read (EIO)`), w);
+  assert.doesNotMatch(w, /another seat took the identity over during this spawn/);
+  assert.deepEqual(connectsIn(fx), [a], "the legacy home is not reconnected");
+  assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept");
+  assert.equal(existsSync(fx.lock), true);
+});
+
+test("a plain spawn that loses to another's lock and can't clean the moved name gives the whole fix, uncut", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const other = { home: join(fx.base, "elsewhere", "seat-b"), instance: "seat-b", team: TEAM, takenAt: "2026-11-13T00:00:00.000Z", host: "container-b" };
+  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { LOCK_AFTER_READ: JSON.stringify(other), HELD_UNLINK_FAIL: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = r.doc.warning;
+  assert.ok(w.includes(`was taken by another spawn a moment ago (${fx.lock} exists); nothing copied`), w);
+  assert.ok(w.includes(`${fx.held} is a second name of the lock now at ${fx.lock}, left because it could not be removed (EIO)`), w);
+  assert.ok(w.endsWith(`remove ${fx.held}; then retry`), w);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, other.home, "the other seat's lock is in place");
+  assert.equal(existsSync(join(a, ".aw")), false, "nothing copied");
 });

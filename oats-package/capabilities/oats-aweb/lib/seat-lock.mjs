@@ -57,16 +57,18 @@ const errorCode = (e) => /^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error";
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 /** What is at `path`: `{ present: false }`, or `{ present: true, ino, text, doc }`
- *  (`text` null when it cannot be read, `doc` the parsed object or undefined).
+ *  (`text` null when it cannot be read, with `readError` its code; `doc` the parsed
+ *  object or undefined). A lock whose bytes can't be read names no holder: its holder
+ *  is unknown, never "another seat".
  *  Throws an error with `code` when `path` cannot be checked. */
 export function readSeatLock(path) {
   let st;
   try { st = lstatSync(path); }
   catch (e) { if (e?.code === "ENOENT") return { present: false }; throw e; }
-  let text = null;
-  try { text = readFileSync(path, "utf8"); } catch { text = null; }
+  let text = null, readError;
+  try { text = readFileSync(path, "utf8"); } catch (e) { readError = errorCode(e); }
   let doc; try { doc = text === null ? undefined : JSON.parse(text); } catch { doc = undefined; }
-  return { present: true, ino: st.ino, text, doc: doc && typeof doc === "object" && !Array.isArray(doc) ? doc : undefined };
+  return { present: true, ino: st.ino, text, doc: doc && typeof doc === "object" && !Array.isArray(doc) ? doc : undefined, ...(text === null ? { readError } : {}) };
 }
 /** True when `now` is the very lock `then` was: the same file and the same bytes. */
 export const sameSeatLock = (now, then) => !!now?.present && !!then?.present && now.ino === then.ino && now.text === then.text;
