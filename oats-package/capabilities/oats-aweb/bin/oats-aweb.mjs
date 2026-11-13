@@ -68,7 +68,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { canonicalAwebTeamId, sameAwebTeamId, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
@@ -2059,8 +2059,9 @@ function registryOriginFromJoinedState(row, match, listed) {
   return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };
 }
 function certificateIdFromJoinedCertificateFile(row) {
-  // aw names the file by the team id as it spells it.
-  const certFile = join(row.identityHome, "team-certs", `${String(canonicalAwebTeamId(row.team) || row.team || "").replace(/:/g, "__")}.pem`);
+  const relative = teamCertificateRelativePath(row.team);
+  if (!relative) return { found: false };
+  const certFile = join(row.identityHome, relative);
   if (!existsSync(certFile)) return { found: false };
   try {
     const cert = JSON.parse(readFileSync(certFile, "utf8"));

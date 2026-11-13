@@ -19,6 +19,15 @@ export function canonicalAwebTeamId(value) {
   const domain = value.slice(at + 1).trim().toLowerCase().replace(/\.$/, "");
   return name && domain ? `${name}:${domain}` : undefined;
 }
+/** The path, under an identity home, of the file aw holds `team`'s certificate in:
+ *  team-certs/<id>.pem, from the canonical id, the one aw names the team by when it writes the
+ *  file (cli/go/cmd/aw/id_team.go:1906, :2837 and :3983-3988 at the tested version), encoded
+ *  as aw's EncodeTeamIDForCertificatePath encodes it (awconfig/team_certs.go:23-32): each "__"
+ *  written as "____", then each ":" as "__". Undefined when `team` is not a team id. */
+export function teamCertificateRelativePath(team) {
+  const id = canonicalAwebTeamId(team);
+  return id === undefined ? undefined : `team-certs/${id.replaceAll("__", "____").replaceAll(":", "__")}.pem`;
+}
 /** True when aw reads `a` and `b` as one team. */
 export const sameAwebTeamId = (a, b) => { const x = canonicalAwebTeamId(a); return x !== undefined && x === canonicalAwebTeamId(b); };
 /** The key of `map` (a team-keyed setting such as `roots`) that names `team`: `team`

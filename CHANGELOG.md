@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Fixed: a joined team whose name holds "__" has its certificate found at
+  retire and leave (#262).** aw writes each "__" in a team id's certificate
+  file name as "____" before it writes each ":" as "__". The hook wrote only
+  the second, so it missed the file. When `aw id team list` then gave no
+  certificate id, a `team_not_hosted` retire or leave recorded no
+  controller-cleanup command. The name now follows aw's encoding of the
+  canonical id, in one helper, `teamCertificateRelativePath`. Every other team's
+  file name is unchanged.
+
 - **Fixed: a joined team's controller command names the registry aw uses
   (#250).** A joined-team release that answered `team_not_hosted` took any
   registry it found in the joined identity's files, or said "aw will use its

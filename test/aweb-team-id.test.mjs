@@ -4,9 +4,9 @@
 //     first ":"; the name is trimmed and lowercased; neither part may be empty;
 //   - awid/registry_dns.go:162-164, canonicalizeDomain: the domain is trimmed, lowercased,
 //     then loses one trailing "." (strings.TrimSuffix removes a single suffix);
-//   - awconfig/team_certs.go:23-27, EncodeTeamIDForCertificatePath: aw names a team's
-//     certificate file team-certs/<id>.pem from the id it holds, the canonical one, with
-//     ":" written as "__".
+//   - awconfig/team_certs.go:23-32, EncodeTeamIDForCertificatePath: aw names a team's
+//     certificate file team-certs/<id>.pem from the canonical id, with each "__" written as
+//     "____", then each ":" as "__" (test/joined-certificate-file-262.test.mjs covers "__").
 // The expected values are written out by hand from that rule, never computed by the code.
 // membershipTeamMatch has its own tests (test/aw-record-memberships-256.test.mjs).
 import assert from "node:assert/strict";
