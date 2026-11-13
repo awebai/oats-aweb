@@ -597,12 +597,18 @@ function wakeDeregister(instanceHome) {
  *  are idempotent, so this needs no record of the previous start. Either one
  *  failing refuses the start: a home on two paths gets every wake twice, a
  *  home on none hears nothing. Joined teams are registered after it
- *  (syncWakeReceive), replacing this one-identity registration. */
-function syncPrimaryDelivery(identityHome) {
+ *  (syncWakeReceive), replacing this one-identity registration. A retained seat's
+ *  registration withholds aw's output (seatRun), since it may name the seat's service, and
+ *  its refusal is not cut at fatal's 300 characters, so the remedy stays whole. Joined teams'
+ *  identity homes are their own, and hold no seat service. */
+function syncPrimaryDelivery(identityHome, { retained = false } = {}) {
   try {
-    if (deliveryFor().broker) wakeRegister(home, identityHome);
+    if (deliveryFor().broker) wakeRegister(home, identityHome, retained ? seatRun : run);
     else if (!wakeDeregister(home) || wakeStillRegistered(home)) throw new Error(`could not remove this home from the host wake broker, so it would deliver beside the ${process.env.OATS_RUNTIME} channel; run \`aw wake deregister --home ${home}\`, check \`aw wake status\` no longer lists it, and start again`);
-  } catch (e) { fatal(e.message || e); }
+  } catch (e) {
+    if (retained) out({ warning: `oats-aweb: ${e.message || e}` }, 1);
+    fatal(e.message || e);
+  }
 }
 /** Whether `aw wake status` still lists the home. Deregister exits 0 when it
  *  falls back to deleting the state files (a daemon that did not answer in
@@ -2075,7 +2081,7 @@ if (event === "launch") {
   // changes nothing remote for it and names both (awebai/oats-aweb#217).
   for (const p of pendingJoinsOf(withProviderTeams(started))) outNotes.push(`unfinished join of team ${p.label} (${p.team}) since ${p.at || "an earlier run"}: its membership may exist in ${p.identityHome} but this home has not recorded it; ${unfinishedJoinFix(p.label)}`);
   requireWakeBroker();
-  syncPrimaryDelivery(primaryIdentityHomeOf(started));
+  syncPrimaryDelivery(primaryIdentityHomeOf(started), { retained: started.retained === true });
   if (globalLaunch) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
   const joined = joinedTeamsOf(oldMeta);
