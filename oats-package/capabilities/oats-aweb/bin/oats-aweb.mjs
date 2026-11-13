@@ -575,6 +575,9 @@ const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ del
 // Throws, never exits: both callers run it inside a try whose catch performs
 // the rollback (the seat path restores the binding; the mint path hands the
 // minted identity to compensation).
+/** run for a retained seat's aw calls: the seat's service is never printed, and aw's
+ *  diagnostics may name it (a network error does), so they show none of aw's output. */
+const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, { withhold: "aw's output may name the seat's service, which is never printed" });
 /** Registers `instanceHome` with the host wake broker. `runner` runs the aw call: run, or a
  *  retained seat's seatRun, which withholds aw's output because it may name the seat's service. */
 function wakeRegister(instanceHome, identityHome, runner = run) {
@@ -1192,9 +1195,6 @@ function retainedSeatSpawn(source, takeOver) {
     fatal(`identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied`);
   }
   let connected = false;
-  // The seat's service is never printed, and aw's diagnostics may name it (a network
-  // error does), so its calls here show none.
-  const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, { withhold: "aw's output may name the seat's service, which is never printed" });
   const rollback = () => {
     // Once `aw workspace connect` has started, the server binding may point at the
     // new home (aw binds on the service before it writes locally, so a connect
