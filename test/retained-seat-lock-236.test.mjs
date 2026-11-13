@@ -683,15 +683,22 @@ syncBuiltinESMExports();
 
 /** The take-over's exclusive create of the lock writes 20 bytes, then fails with ENOSPC
  *  (a full disk); with FULL_WRITE set it writes every byte, then fails with EIO (a
- *  delayed I/O error); with STUCK_UNLINK set, removing what it wrote fails too. */
+ *  delayed I/O error); with STUCK_UNLINK set, removing what it wrote fails too; with
+ *  CLEANUP_READ_FAIL set, reading the lock's name fails (EIO) once that write failed. */
 function partialWritePreload(fx) {
   const file = join(fx.base, "partial-write.mjs");
   writeFileSync(file, `import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-const write = fs.writeFileSync, unlink = fs.unlinkSync;
+const write = fs.writeFileSync, unlink = fs.unlinkSync, readFile = fs.readFileSync;
 const lock = ${JSON.stringify(fx.lock)};
+let wrote = false;
+fs.readFileSync = function (path, ...rest) {
+  if (process.env.CLEANUP_READ_FAIL && wrote && String(path) === lock) throw Object.assign(new Error("EIO: i/o error, read"), { code: "EIO" });
+  return readFile.call(this, path, ...rest);
+};
 fs.writeFileSync = function (path, data, options, ...rest) {
   if (String(path) === lock && options?.flag === "wx") {
+    wrote = true;
     if (process.env.FULL_WRITE) { write.call(this, path, data, options); throw Object.assign(new Error("EIO: i/o error, write"), { code: "EIO" }); }
     write.call(this, path, String(data).slice(0, 20), options);
     throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
@@ -780,6 +787,40 @@ test("a take-over whose lock write lands whole, then fails, and can't be removed
   assert.ok(w.includes(`move it back over ${fx.lock}, which holds what the change that failed wrote`), w);
   assert.ok(w.includes(`\`mv -f -- '${fx.held}' '${fx.lock}'\``), w);
   assert.equal(w.includes(`otherwise remove ${fx.held}`), false, `the holder's lock is never to be removed: ${w}`);
+});
+
+// protocol: take/write-failed (the cleanup can't read what the write left)
+test("a plain spawn whose whole lock write fails and then can't be read keeps it and names how to remove it", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const r = runHook(fx, "spawn", a, { preload: partialWritePreload(fx), env: { FULL_WRITE: "1", CLEANUP_READ_FAIL: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, a, "the failed write is kept: a whole lock naming this spawn");
+  assert.equal(existsSync(join(a, ".aw")), false, "nothing copied");
+  const w = r.doc.warning;
+  assert.ok(w.includes(`${fx.lock} could not be read (EIO) to check whether it is this change's write, so it was left`), w);
+  assert.equal(w.includes("it is not this change's write"), false, w);
+  assert.ok(w.includes(`remove ${fx.lock} if it still names home ${a}`), w);
+  assert.ok(w.endsWith("then retry"), w);
+  // Following that fix, the spawn goes through.
+  unlinkSync(fx.lock);
+  assert.equal(runHook(fx, "spawn", a).status, 0);
+});
+
+// protocol: take/write-failed (a take-over's cleanup can't read what its write left)
+test("a take-over whose whole lock write fails and then can't be read keeps the holder's lock aside and names how to put it back", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const before = readFileSync(fx.lock, "utf8");
+  const b = fx.homeOf("seat-b");
+  const r = runHook(fx, "spawn", b, { identity: { takeOver: true }, preload: partialWritePreload(fx), env: { FULL_WRITE: "1", CLEANUP_READ_FAIL: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(readFileSync(fx.held, "utf8"), before, "the holder's lock is kept at the private name");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
+  const w = r.doc.warning;
+  assert.ok(w.includes(`${fx.lock} could not be read (EIO) to check whether it is this change's write, so it was left`), w);
+  assert.ok(w.includes(`if ${fx.lock} still names home ${b}`), w);
+  assert.ok(w.includes(`which is what the change that failed wrote, move it back over that (\`mv -f -- '${fx.held}' '${fx.lock}'\`)`), w);
 });
 
 /** Failures at the guard's record and at the moved lock's removal, by env:
@@ -1266,6 +1307,21 @@ test("a retire whose lock is removed between its read and its removal says the l
   assert.ok(w.includes(`released the retained identity "retained" (lock ${fx.lock} already gone)`), w);
   assert.equal(existsSync(fx.lock), false);
   assert.equal(existsSync(fx.held), false);
+});
+
+// protocol: retire-remove/absent (the compensating retire of a spawn that did not answer)
+test("a compensating retire whose lock is gone at its removal says it holds no lock, and still names the rebind", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const spawned = runHook(fx, "spawn", a, { env: { FAKE_RETAINED_KILL: "mid-connect" } });
+  assert.equal(spawned.signal, "SIGKILL", "the hook was killed");
+  const retired = runHook(fx, "retire", a, { preload: stageFailPreload(fx), env: { OATS_META: "{}", AT_GUARD: "2", AT_GUARD_DO: "remove" } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const w = retired.doc.warning;
+  assert.ok(w.includes(`released nothing: this home does not hold the retained identity's lock (lock ${fx.lock} already gone)`), w);
+  assert.doesNotMatch(w, /still in place/);
+  assert.ok(w.includes(`run ${CONNECT} from ${dirname(fx.source)}`), "the binding may still point here");
+  assert.equal(existsSync(fx.lock), false);
 });
 
 const STRAY_TEXT = (fx) => `${fx.held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (instance seat-x`;

@@ -2532,7 +2532,9 @@ if (event === "launch") {
     // The lock is released only when it names this home: one another seat has
     // taken over, or that cannot be read, is never removed here.
     // heldHere: true when the lock names this home, false when it does not, undefined when unknown.
-    let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false, lockLeft = "";
+    // goneAfterRead: the lock named this home at retire's read and was gone at its removal,
+    // so this home held the seat until a moment ago (the rebind below still applies).
+    let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false, lockLeft = "", goneAfterRead = false;
     if (meta.lock) {
       // A guard or a moved-aside lock that a killed change left is reported first,
       // whatever is at the lock's name now (lib/seat-lock.mjs). A check that fails any
@@ -2580,7 +2582,7 @@ if (event === "launch") {
             if (!checked) heldHere = undefined;
           }
         }
-        if (r && !r.done && !r.captured.present) lockText = `lock ${meta.lock} already gone`;
+        if (r && !r.done && !r.captured.present) { lockText = `lock ${meta.lock} already gone`; heldHere = false; goneAfterRead = true; }
         else if (r && !r.done && r.captured.text === null) { heldHere = undefined; lockText = `lock ${meta.lock} left in place: it could not be read (${r.captured.readError || "error"}) when retire went to remove it, so whether this home holds it is unknown`; }
         else if (r && !r.done) {
           heldHere = false;
@@ -2596,7 +2598,7 @@ if (event === "launch") {
     // nothing. Name the way back to the source. The command is printed for a
     // person, so it holds only values that pass their own shapes.
     let rebind = "";
-    if (meta.spawnUnanswered && (heldHere !== false || existsSync(join(home, ".aw", "workspace.yaml")))) {
+    if (meta.spawnUnanswered && (heldHere !== false || goneAfterRead || existsSync(join(home, ".aw", "workspace.yaml")))) {
       const target = retainedSeatTarget(meta.source);
       const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
       // Any accepted service is bound, but only a plain service URL is printed in a command.

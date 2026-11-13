@@ -41,7 +41,8 @@
 //   expected: taken; the copy and the aw calls follow [take/expected]
 //   another: names it [take/another]; absent (a take-over): spawn again [take/absent]
 //   unknown: put back untouched [take/unknown]
-//   its write fails: its own bytes removed, the lock put back [take/write-failed]
+//   its write fails: its own bytes removed, the lock put back; bytes it can't remove or
+//     read are kept, named as this change's write with their fix [take/write-failed]
 //   refused [take/refused]; no guard [take/no-guard]; leftovers, taken or not
 //     [take/leftovers]
 // Success rewrite (a change: this spawn's lock to one with the alias):
@@ -255,9 +256,11 @@ function guarded(lock, who, step) {
  *  by what is at the lock's name: nothing, a lock, or bytes that are not a lock (a
  *  write that did not finish), which the moved lock may replace. `failed`: the lock at
  *  the name is the one a change that failed just wrote, which the moved lock replaces. */
-function strayHeldText(lock, held, stray, { failed = false } = {}) {
+function strayHeldText(lock, held, stray, { failed = false, failedIf } = {}) {
   let at; try { at = readSeatLock(lock); } catch { at = { present: true, doc: undefined }; }
-  const fix = failed && at.present
+  const fix = failedIf && at.present
+    ? `if ${failedIf}, which is what the change that failed wrote, move it back over that (\`mv -f -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}`
+    : failed && at.present
     ? `move it back over ${lock}, which holds what the change that failed wrote (\`mv -f -- ${shellWord(held)} ${shellWord(lock)}\`)`
     : at.present && !at.doc
     ? `if the seat it names still holds the identity, move it back over ${lock}, which is not a lock that can be read (\`mv -f -- ${shellWord(held)} ${shellWord(lock)}\`); otherwise remove ${held}`
@@ -299,21 +302,31 @@ function undoFailedRemove(lock, held, next, left) {
  *  name), and the moved lock is put back; what can't be is left in `left`, with the
  *  fix for this change's own write, whole or not, which names no seat. */
 function undoFailedWrite(lock, held, captured, next, left) {
-  let at; try { at = readSeatLock(lock); } catch (e) { at = { present: true, text: null, code: errorCode(e) }; }
+  let at; try { at = readSeatLock(lock); } catch (e) { at = { present: true, text: null, readError: errorCode(e) }; }
   let stuck;
   if (at.present && at.text !== null && next.startsWith(at.text)) {
     try { unlinkSync(lock); at = { present: false }; } catch (e) { stuck = errorCode(e); }
   }
   if (!at.present) { if (captured.present) restoreHeld(lock, held, captured, left); return; }
-  if (captured.present) { left.push(strayHeldText(lock, held, heldNow(held), { failed: stuck !== undefined })); return; }
+  // Under the guard only this change writes the lock's name, so bytes there that can't
+  // be read are this change's write as far as can be told: kept, with the fix for it.
+  const unread = at.text === null ? at.readError || "error" : undefined;
+  let mine; try { mine = JSON.parse(next); } catch { mine = undefined; }
+  const named = lockField(mine?.home) ? `names home ${mine.home}${lockField(mine.takenAt) ? ` since ${mine.takenAt}` : ""} or ` : "";
   const until = `Once no spawn, take-over or retire of this identity runs on any host that shares ${dirname(lock)}`;
-  if (stuck) {
-    let mine; try { mine = JSON.parse(next); } catch { mine = undefined; }
-    const named = lockField(mine?.home) ? `names home ${mine.home}${lockField(mine.takenAt) ? ` since ${mine.takenAt}` : ""} or ` : "";
-    left.push(`${lock} holds this change's write, which could not be removed (${stuck}); this change failed, so that lock names no seat that holds the identity. ${until}: remove ${lock} if it still ${named}is not a lock that can be read; then retry`);
+  if (stuck === undefined && unread === undefined) {
+    if (captured.present) left.push(strayHeldText(lock, held, heldNow(held)));
+    else left.push(`${lock} was left, and it is not this change's write. ${until}: if it is not a lock that can be read, remove it; then retry`);
     return;
   }
-  left.push(`${lock} ${at.code ? `could not be checked (${at.code})` : "was left, and it is not this change's write"}. ${until}: if it is not a lock that can be read, remove it; then retry`);
+  const why = stuck !== undefined
+    ? `${lock} holds this change's write, which could not be removed (${stuck})`
+    : `${lock} could not be read (${unread}) to check whether it is this change's write, so it was left`;
+  if (captured.present) {
+    left.push(`${why}; ${strayHeldText(lock, held, heldNow(held), stuck !== undefined ? { failed: true } : { failedIf: `${lock} still ${named}is not a lock that can be read` })}`);
+    return;
+  }
+  left.push(`${why}; this change failed, so a lock it wrote names no seat that holds the identity. ${until}: remove ${lock} if it still ${named}is not a lock that can be read; then retry`);
 }
 
 /** Inspect the lock and change it in one guarded step. `expect(captured)` says
