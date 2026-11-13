@@ -55,14 +55,16 @@ function entryValue(rest) {
   return scalar(value);
 }
 
-/** Walks a record in aw's grammar, calling `visit` with each entry's scope (`'top'`, or the
- *  top-level key whose list holds it), key and value (null for none, else the scalar's text).
- *  false when the file is outside the grammar: the caller then takes nothing from it. */
+/** Walks a record in aw's grammar, calling `visit` with each entry's list (undefined for a
+ *  top-level entry, else the top-level key whose list holds it), key, value (null for none, else the scalar's text) and,
+ *  for a list item's first key, `true`. false when the file is outside the grammar, a list item
+ *  included that repeats a key (yaml.v3 refuses a mapping with a repeated key): the caller then
+ *  takes nothing from it. */
 function walk(text, visit) {
   if (NOT_PRINTABLE.test(String(text)) || /\r(?!\n)|[\u0085\u2028\u2029]/.test(String(text))) return false;
   const keys = new Set();
   let list = 'none'; // 'open': the last top-level key had no value; 'item': inside a list item
-  let listKey;
+  let listKey, itemKeys;
   for (const line of String(text).split('\n').map((l) => l.replace(/\r$/, ''))) {
     if (/^[ \t]*$/.test(line) || /^[ \t]*#/.test(line)) continue;
     const top = TOP.exec(line);
@@ -70,16 +72,16 @@ function walk(text, visit) {
       const value = entryValue(top[2]);
       if (value === undefined || keys.has(top[1])) return false;
       keys.add(top[1]);
-      visit('top', top[1], value);
+      visit(undefined, top[1], value);
       list = value === null ? 'open' : 'none';
       listKey = top[1];
       continue;
     }
     const item = ITEM.exec(line), itemKey = ITEM_KEY.exec(line);
     const itemValue = item && list !== 'none' ? entryValue(item[2]) : undefined;
-    if (itemValue !== undefined) { list = 'item'; visit(listKey, item[1], itemValue); continue; }
+    if (itemValue !== undefined) { list = 'item'; itemKeys = new Set([item[1]]); visit(listKey, item[1], itemValue, true); continue; }
     const keyValue = itemKey && list === 'item' ? entryValue(itemKey[2]) : undefined;
-    if (keyValue !== undefined) { visit(listKey, itemKey[1], keyValue); continue; }
+    if (keyValue !== undefined && !itemKeys.has(itemKey[1])) { itemKeys.add(itemKey[1]); visit(listKey, itemKey[1], keyValue); continue; }
     return false;
   }
   return true;
@@ -90,6 +92,24 @@ function walk(text, visit) {
  *  grammar, from which nothing is taken. */
 export function readAwebUrl(text) {
   let awebUrl;
-  if (!walk(text, (scope, key, value) => { if (scope === 'top' && key === 'aweb_url') awebUrl = value; })) return undefined;
+  if (!walk(text, (list, key, value) => { if (list === undefined && key === 'aweb_url') awebUrl = value; })) return undefined;
   return { awebUrl };
+}
+
+/** The team_id of each item of the top-level `memberships` list of a teams.yaml in aw's grammar
+ *  (aw reads it into TeamMembership.TeamID, cli/go/awconfig/team_state.go:14-21): the scalar's
+ *  text, or '' for a team_id with no value or none. A plain `null` or `~`, which aw reads as '',
+ *  comes back as its text; neither is a team id, which holds a ':'. Only team_id is
+ *  returned; the items' other keys are checked against the grammar and not read. [] when
+ *  `memberships` has no value (YAML's null: no memberships). null when there is no memberships
+ *  list: no such key, or a scalar value. undefined when the file is outside the grammar. */
+export function readMembershipTeamIds(text) {
+  let ids = null;
+  const read = walk(text, (list, key, value, start) => {
+    if (list === undefined) { if (key === 'memberships') ids = value === null ? [] : null; return; }
+    if (list !== 'memberships' || !ids) return;
+    if (start) ids.push('');
+    if (key === 'team_id') ids[ids.length - 1] = value ?? '';
+  });
+  return read ? ids : undefined;
 }

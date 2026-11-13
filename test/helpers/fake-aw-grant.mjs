@@ -36,6 +36,12 @@ if (s.startsWith("wake ")) process.exit(0);
 //   FAKE_RETAINED_FAIL=connect        the server accepts a connect from OATS_HOME, which then exits 1
 //                                     before the local workspace.yaml is written (aw posts first)
 //   FAKE_RETAINED_RESTORE_FAIL=1      a connect from any directory but OATS_HOME fails
+//   FAKE_RETAINED_MEMBERSHIP=1        a connect from OATS_HOME with --team T needs <cwd>/.aw/teams.yaml
+//                                     and a membership of T in it, as aw 1.36.58 does (cmd/aw/service.go
+//                                     activateExistingTeamMembershipAt; awconfig/team_state.go:100-113:
+//                                     both ids trimmed and case-folded), and refuses before it posts.
+//                                     Opt-in: older fixtures write a teams.yaml with no memberships,
+//                                     which aw itself would refuse there.
 if (process.env.FAKE_RETAINED === "1") {
   // FAKE_RETAINED_ECHO=connect|check|heartbeat|status|whoami: that call from OATS_HOME fails with a
   // network error naming the service, as aw's do (the --service it was given, else the home's record).
@@ -47,6 +53,11 @@ if (process.env.FAKE_RETAINED === "1") {
   }
   if (a[0] === "workspace" && a[1] === "connect") {
     if (process.env.FAKE_RETAINED_RESTORE_FAIL && process.cwd() !== process.env.OATS_HOME) { console.error("connect refused"); process.exit(1); }
+    if (process.env.FAKE_RETAINED_MEMBERSHIP === "1" && process.cwd() === process.env.OATS_HOME && val("--team")) {
+      let teams; try { teams = fs.readFileSync(path.join(process.cwd(), ".aw", "teams.yaml"), "utf8"); } catch { console.error("current identity is missing .aw/teams.yaml; join a team first"); process.exit(1); }
+      const ids = [...teams.matchAll(/^ *(?:- )?team_id: *["']?([^"'\\n]*?)["']? *$/gm)].map((m) => m[1].trim().toLowerCase());
+      if (!ids.includes(val("--team").trim().toLowerCase())) { console.error("team certificate for " + val("--team") + " is not installed in this workspace; run \`aw id team fetch-cert\` first"); process.exit(1); }
+    }
     if (process.env.FAKE_RETAINED_KILL === "mid-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
     if (process.env.FAKE_RETAINED_FAIL === "connect" && process.cwd() === process.env.OATS_HOME) { console.error("write workspace.yaml: input/output error"); process.exit(1); }
     fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true });

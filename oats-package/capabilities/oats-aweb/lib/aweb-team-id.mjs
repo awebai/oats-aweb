@@ -30,3 +30,18 @@ export function teamKeyIn(map, team) {
   const keys = Object.keys(map).filter((key) => sameAwebTeamId(key, team));
   return keys.length === 1 ? keys[0] : undefined;
 }
+
+/** Whether aw's TeamState.Membership takes the membership team id `stored` for `wanted`, the
+ *  rule `aw workspace connect --team` finds a seat's membership by (cli/go/awconfig/
+ *  team_state.go:100-113 at the tested version): both trimmed as Go's strings.TrimSpace trims,
+ *  then strings.EqualFold; an empty `wanted` finds nothing. true or false for ASCII ids;
+ *  undefined when either holds a non-ASCII character, whose Unicode case folding is not
+ *  reproduced here. This is not sameAwebTeamId, which compares BuildTeamID's canonical form and
+ *  so also drops a domain's trailing dot. */
+export function membershipTeamMatch(stored, wanted) {
+  if (typeof stored !== "string" || typeof wanted !== "string") return false;
+  if (/[^\x00-\x7f]/.test(stored) || /[^\x00-\x7f]/.test(wanted)) return undefined;
+  const trim = (s) => s.replace(/^[\t\n\v\f\r ]+|[\t\n\v\f\r ]+$/g, "");
+  const want = trim(wanted);
+  return want !== "" && trim(stored).toLowerCase() === want.toLowerCase();
+}

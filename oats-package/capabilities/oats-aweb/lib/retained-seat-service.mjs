@@ -10,7 +10,8 @@
 // (lib/plain-service.mjs).
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { readAwebUrl } from './aw-record.mjs';
+import { readAwebUrl, readMembershipTeamIds } from './aw-record.mjs';
+import { membershipTeamMatch, validAwebTeamId } from './aweb-team-id.mjs';
 // binding-wire imports this module too; these are read only when a function runs, as
 // resident-registry.mjs reads yamlScalar.
 import { NO_TEAMS_MESSAGE, unmappedDefaultMessage, yamlScalar } from './binding-wire.mjs';
@@ -75,9 +76,40 @@ export function retainedSeatTeam(source, env = process.env) {
   return team && team.includes(':') ? team : undefined;
 }
 
+/** Whether `<source>/teams.yaml` records a membership of `team`, decided only where it is exact,
+ *  as aw 1.36.58's `aw workspace connect --team` finds one: activateExistingTeamMembershipAt
+ *  (cli/go/cmd/aw/service.go:60-64, 90-102) needs teams.yaml (cmd/aw/id_team.go:3990-4005) and a
+ *  membership of the team (TeamState.Membership, awconfig/team_state.go:100-113). The spawn's
+ *  copy holds no workspace.yaml, so aw's legacy migration of a missing teams.yaml
+ *  (team_state.go:257-264) finds nothing. 'absent' when teams.yaml does not exist; 'none' when
+ *  its memberships list has no membership of the team; undefined, no decision, otherwise: a
+ *  membership found, or teams.yaml unreadable, outside aw's grammar, with no memberships list, a
+ *  team that is not a team id, or an id that is not ASCII. The membership's certificate
+ *  (cert_path) is not checked: aw checks it at connect. */
+export function retainedSeatMembership(source, team) {
+  let text;
+  try { text = readFileSync(join(source, 'teams.yaml'), 'utf8'); } catch (error) { return error?.code === 'ENOENT' ? 'absent' : undefined; }
+  const ids = validAwebTeamId(team) ? readMembershipTeamIds(text) : undefined;
+  if (!Array.isArray(ids)) return undefined;
+  const found = ids.map((id) => membershipTeamMatch(id, team));
+  return found.includes(true) || found.includes(undefined) ? undefined : 'none';
+}
+
+/** The refusal for a seat whose source records no membership of `team` (retainedSeatMembership):
+ *  the team and the source, and the two fixes. */
+function noMembershipMessage(source, team, state) {
+  const teamsFile = join(source, 'teams.yaml');
+  let active;
+  try { const text = readFileSync(teamsFile, 'utf8'); active = yamlScalar(text, 'active_team') || yamlScalar(text, 'active'); } catch { /* none */ }
+  const why = state === 'absent' ? `${teamsFile} does not exist` : `${teamsFile} records no membership of it`;
+  const activeNote = validAwebTeamId(active) && membershipTeamMatch(active, team) === false ? `; the seat's active team is ${active}` : '';
+  return `the retained seat's source holds no membership of ${validAwebTeamId(team) ? `the team ${team}` : 'the team it chose'}, so its spawn refuses before copying anything: ${why}; in ${dirname(source)}, accept the team's invite (\`aw id team accept-invite\`) or fetch its approved certificate (\`aw id team fetch-cert\`), then spawn again; or make the seat's team the deployment's default team (\`oats teams default <label>\`)${activeNote}`;
+}
+
 /** The seat at `source`, as its spawn checks it before any effect: `refusal`, the text of the
  *  first refusal in the order the spawn makes them (the source is not an absolute path; it holds
- *  no signing.key; it records no usable aweb_url; no team can be determined), or undefined; and
+ *  no signing.key; it records no usable aweb_url; no team can be determined; its teams.yaml
+ *  records no membership of that team), or undefined; and
  *  the `service`, `record` and `team` it would be bound with, read whatever the refusal, so a
  *  retire still names them. A lock another seat holds is not checked here: it is live state at
  *  spawn time, not configuration, so readiness does not report it and the spawn checks it after
@@ -86,12 +118,14 @@ export function retainedSeatCheck(source, env = process.env) {
   if (typeof source !== 'string' || !source.startsWith('/')) return { refusal: 'identity.source must be the absolute path of the legacy .aw directory to retain' };
   const { service, record } = retainedSeatService(source);
   const team = retainedSeatTeam(source, env);
+  const membership = team ? retainedSeatMembership(source, team) : undefined;
   const label = envText(env, 'OATS_DEFAULT_TEAM');
   const teamRemedy = label && !envText(env, 'OATS_DEFAULT_TEAM_ID') ? unmappedDefaultMessage(label) : NO_TEAMS_MESSAGE;
   const refusal = !existsSync(join(source, 'signing.key'))
     ? `identity.source ${source} holds no signing.key, so there is no identity to retain; set identity.source to the member's .aw directory, the one that holds its signing.key`
     : !service ? unknownSeatServiceMessage(source, record, env)
       : !team ? `cannot determine the team for the retained identity (${teamRemedy}, or keep an active team in ${join(source, 'teams.yaml')})`
-        : undefined;
+        : membership ? noMembershipMessage(source, team, membership)
+          : undefined;
   return { refusal, service, record, team };
 }
