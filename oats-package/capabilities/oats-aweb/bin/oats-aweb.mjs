@@ -1656,7 +1656,7 @@ function leaveJoinedTeam(label, meta) {
 }
 function awebRootForTeam(team) {
   const declared = declaredRootCandidate(team);
-  if (team && team !== defaultTeamId()) return joinedTeamRootProblem(team, declared) ? undefined : resolve(declared.root);
+  if (team && !sameAwebTeamId(team, defaultTeamId())) return joinedTeamRootProblem(team, declared) ? undefined : resolve(declared.root);
   if (declared && isAbsolute(declared.root) && existsSync(join(resolve(declared.root), ".aw"))) return resolve(declared.root);
   if (declared?.declared) return undefined;
   const candidate = rootSettingCandidate(team);

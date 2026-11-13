@@ -432,3 +432,15 @@ test("roster of a team configured in mixed case matches the record and the prese
   assert.match(doc.members.find((m) => m.alias === "dev-1")?.retired?.command || "", /--cert-id cert-default-123 /, r.stdout);
   assert.equal((doc.problems || []).some((p) => p.source === "presence"), false, JSON.stringify(doc.problems));
 });
+
+test("roster of a default team configured in mixed case, with no root set, falls back to the workspace's root", (t) => {
+  const fx = fixture(t), configured = "Default:Example.Test";
+  write(join(fx.ws, ".aw", "identity.yaml"), "alias: root\n");
+  fx.members([{ certificate_id: "cert-default-123", team_id: DEFAULT, alias: "dev-1" }]);
+  // The meta a spawn records: the team as aw spelled it at the mint.
+  const meta = { alias: "dev-1", team: DEFAULT, defaultTeam: { label: "personal", team: DEFAULT }, identity: { mode: "local", alias: "dev-1", team: DEFAULT } };
+  const env = { OATS_DEFAULT_TEAM_ID: configured, OATS_TEAMS: JSON.stringify([{ label: "personal", team: configured, default: true, from: "local" }]), OATS_SETTINGS: "{}", OATS_META: JSON.stringify(meta) };
+  const r = fx.hook("roster", ["--json"], env);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(JSON.parse(r.stdout).members.some((m) => m.alias === "dev-1"), r.stdout);
+});
