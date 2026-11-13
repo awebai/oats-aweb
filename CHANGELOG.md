@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.42.0 — 2026-11-13
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. This release is mostly about retained seats. A seat's lock now has an atomic ownership protocol, and a lock held on another host refuses with its release (#227, #236). A killed or failed spawn never deletes the standing identity's workspace, and a killed mint is released or named (#228, #240). A seat with no membership of its team is refused before any effect (#256), and a seat keeps `AWEB_IDENTITY_HOME` at every start (#226). A seat reads its service only from its own `workspace.yaml`, so `OATS_AWEB_URL` is no longer read for it (#241). The captured-execution path is removed: its variables are ignored, with one warning each (#242). Boolean settings accept `"true"`/`"false"`, refuse anything else, and read an empty value as unset (#232). Team ids are compared as aw spells them (#252), and certificate file names are built the same way (#262). The always-loaded inject is shorter. **What a deployment must change:** a retained seat that relied on `OATS_AWEB_URL` records its server with `aw workspace connect` and unsets the variable. A soul or workspace that sets `identity.e2ee` or `identity.takeOver` to anything but a boolean sets it to `true` or `false`.
 
 - **Changed: the always-loaded inject is about a quarter shorter (635 words to
   465).** Each instance's `Comms:` line already names its receive path, so the
@@ -233,14 +235,6 @@
   `takenAt` is now when the seat was taken, kept when the spawn's success adds
   the alias. Nothing a deployment must change.
 
-- **Fixed: a boolean setting left empty reads as its default (follows
-  #232).** An empty YAML value (`e2ee:`) is `null`, which always meant the
-  default but has been refused since #232, at spawn, at readiness and at the
-  next start, where the only fix was a respawn. `null` now reads as unset for
-  `identity.e2ee` (default: E2EE required), `identity.takeOver` (default: no
-  take-over) and `health.publish` (default: off). The empty string `""` is
-  still refused. Nothing a deployment must change.
-
 - **Fixed: boolean settings given as strings are read (#232).** `oats spawn
   --provider oats.aweb key=value` passes every value as a string, and oats.aweb
   compared its boolean settings with `true` and `false` only, so
@@ -259,7 +253,9 @@
   refusal keeps its first words and adds the accepted strings and where to
   set it. A
   retire reads neither `identity` setting, so a bad value never fails a
-  retire. **If a soul or workspace sets `identity.e2ee` or
+  retire. An empty YAML value (`e2ee:`, which is `null`) reads as unset, so
+  the setting keeps its default (E2EE required, no take-over, publishing
+  off); the empty string `""` is refused (#251). **If a soul or workspace sets `identity.e2ee` or
   `identity.takeOver` to anything but a boolean or its string,** its next
   spawn or start refuses: set the value to `true` or `false`.
 

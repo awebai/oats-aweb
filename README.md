@@ -38,6 +38,16 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## 1.42.0 — retained seats are safer, and captured execution is removed
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
+1.36.58. A retained seat's lock is taken atomically, and a lock held on
+another host refuses with its release. A killed or failed spawn never deletes
+the standing identity's workspace. A seat reads its aweb service only from
+its own `workspace.yaml` `aweb_url`: `OATS_AWEB_URL` is no longer read for
+it. The captured-execution variables are ignored, with one warning each.
+Boolean settings accept `"true"`/`"false"` and refuse anything else.
+
 ## 1.41.0 — an interrupted join is settled, and roster marks retired certificates
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
