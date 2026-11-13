@@ -752,6 +752,8 @@ test("a retained seat's spawn warns as its readiness does", (t) => {
   writeFileSync(join(source, "signing.key"), "synthetic");
   writeFileSync(join(source, "identity.yaml"), "alias: dev-1\n");
   writeFileSync(join(source, "workspace.yaml"), `aweb_url: ${SELF_HOSTED}\n`);
+  // A seat aw connects holds a membership of its team in teams.yaml (oats-aweb#256).
+  writeFileSync(join(source, "teams.yaml"), `active_team: ${TEAM}\nmemberships:\n    - team_id: ${TEAM}\n      cert_path: team-certs/${TEAM.replace(/:/g, "__")}.pem\n`);
   const aw = join(fx.fake.base, "bin", "aw");
   writeFileSync(aw, readFileSync(aw, "utf8").replace('console.error("unexpected fake aw "', `if (args[0] === "workspace" && args[1] === "status") { console.log(JSON.stringify({ workspace_path: process.cwd(), alias: "dev-1" })); process.exit(0); }
 if (args[0] === "whoami" || (args[0] === "workspace" && args[1] === "connect") || ["check", "heartbeat"].includes(args[0])) { console.log("{}"); process.exit(0); }
