@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Fixed: a retained seat's failed `aw wake register` no longer prints aw's
+  output (#259).** The seat's broker registration, at its spawn and at every
+  start of its home, ran outside the withholding #241 gave the seat's other
+  calls, so a failure printed aw's stderr, which may name the seat's service.
+  It is now withheld like the others. The spawn and the start refuse as
+  before, and the start's refusal is no longer cut short. A joined team's
+  registration is unchanged: its identity home holds no seat service.
+
+- **Fixed: a retained seat with no membership of its team is refused before
+  any effect (#256).** A retained seat's spawn (`identity.source`) binds the
+  seat on the deployment's default team, else the source's active team. When
+  the source's `teams.yaml` had no membership of that team, the spawn copied
+  the seat and failed only at `aw workspace connect`. Now the spawn refuses
+  first, after the team check and before the lock, and a soul's readiness
+  reports the same text: the team, the source, and the fixes (accept the
+  team's invite with `aw id team accept-invite` or fetch its certificate with
+  `aw id team fetch-cert` in the seat's parent directory, or make the seat's
+  team the deployment's default, naming the seat's active team when it
+  differs). The membership is matched as aw matches it (trimmed, ASCII case
+  ignored). A source with no `teams.yaml` is refused too, as aw refuses it. A
+  `teams.yaml` outside the form aw writes, or with no `memberships` list, and
+  the membership's certificate file are still left to aw at connect.
+
 - **Fixed: a soul's readiness reports every retained-seat refusal it can
   decide (#247).** A retained seat's spawn (`identity.source`) refuses before
   any effect when the source is not an absolute path, holds no `signing.key`,

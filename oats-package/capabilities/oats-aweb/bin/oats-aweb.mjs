@@ -576,10 +576,15 @@ const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ del
 // Throws, never exits: both callers run it inside a try whose catch performs
 // the rollback (the seat path restores the binding; the mint path hands the
 // minted identity to compensation).
-function wakeRegister(instanceHome, identityHome) {
+/** run for a retained seat's aw calls: the seat's service is never printed, and aw's
+ *  diagnostics may name it (a network error does), so they show none of aw's output. */
+const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, { withhold: "aw's output may name the seat's service, which is never printed" });
+/** Registers `instanceHome` with the host wake broker. `runner` runs the aw call: run, or a
+ *  retained seat's seatRun, which withholds aw's output because it may name the seat's service. */
+function wakeRegister(instanceHome, identityHome, runner = run) {
   const backend = process.env.OATS_BACKEND;
   try {
-    run(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
+    runner(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
     throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
   }
@@ -593,12 +598,18 @@ function wakeDeregister(instanceHome) {
  *  are idempotent, so this needs no record of the previous start. Either one
  *  failing refuses the start: a home on two paths gets every wake twice, a
  *  home on none hears nothing. Joined teams are registered after it
- *  (syncWakeReceive), replacing this one-identity registration. */
-function syncPrimaryDelivery(identityHome) {
+ *  (syncWakeReceive), replacing this one-identity registration. A retained seat's
+ *  registration withholds aw's output (seatRun), since it may name the seat's service, and
+ *  its refusal is not cut at fatal's 300 characters, so the remedy stays whole. Joined teams'
+ *  identity homes are their own, and hold no seat service. */
+function syncPrimaryDelivery(identityHome, { retained = false } = {}) {
   try {
-    if (deliveryFor().broker) wakeRegister(home, identityHome);
+    if (deliveryFor().broker) wakeRegister(home, identityHome, retained ? seatRun : run);
     else if (!wakeDeregister(home) || wakeStillRegistered(home)) throw new Error(`could not remove this home from the host wake broker, so it would deliver beside the ${process.env.OATS_RUNTIME} channel; run \`aw wake deregister --home ${home}\`, check \`aw wake status\` no longer lists it, and start again`);
-  } catch (e) { fatal(e.message || e); }
+  } catch (e) {
+    if (retained) out({ warning: `oats-aweb: ${e.message || e}` }, 1);
+    fatal(e.message || e);
+  }
 }
 /** Whether `aw wake status` still lists the home. Deregister exits 0 when it
  *  falls back to deleting the state files (a daemon that did not answer in
@@ -1288,9 +1299,6 @@ function retainedSeatSpawn(source, takeOver) {
   let rolledBack;
   const unknownFix = `once the lock can be read, run ${connectCommand} from the home of the seat that holds it, or from ${legacyHome} if none does`;
   let wakeRegistering = false, wakeNote = "";
-  // The seat's service is never printed, and aw's diagnostics may name it (a network
-  // error does), so its calls here show none.
-  const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, { withhold: "aw's output may name the seat's service, which is never printed" });
   const rollback = () => {
     // A registration with the host wake broker made for this seat goes with it, as at retire.
     // Not after a lock step that left anything: no aw call runs then.
@@ -1380,7 +1388,7 @@ function retainedSeatSpawn(source, takeOver) {
     if (!seated.done) throw new Error(`the retained identity's lock ${lockPath} ${!seated.captured.present ? "was removed" : seated.captured.text === null ? `could not be read (${seated.captured.readError || "error"})` : "was taken by another seat"} during this spawn; the seat is not briefed`);
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
-    if (broker) { wakeRegistering = true; wakeRegister(home, dest); }
+    if (broker) { wakeRegistering = true; wakeRegister(home, dest, seatRun); }
     // The last aw call is done: a take-over that landed while it ran wins, and this
     // seat is not briefed.
     // Read under the guard; the seat is briefed only while the lock is still its own.
@@ -2230,7 +2238,7 @@ if (event === "launch") {
   // changes nothing remote for it and names both (awebai/oats-aweb#217).
   for (const p of pendingJoinsOf(withProviderTeams(started))) outNotes.push(`unfinished join of team ${p.label} (${p.team}) since ${p.at || "an earlier run"}: its membership may exist in ${p.identityHome} but this home has not recorded it; ${unfinishedJoinFix(p.label)}`);
   requireWakeBroker();
-  syncPrimaryDelivery(primaryIdentityHomeOf(started));
+  syncPrimaryDelivery(primaryIdentityHomeOf(started), { retained: started.retained === true });
   if (globalLaunch) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
   const joined = joinedTeamsOf(oldMeta);

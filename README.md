@@ -1537,7 +1537,9 @@ that make one are in awebai/oats
 The seat directory must contain:
 
 - `signing.key`, the member's key;
-- `team-certs/`, the member's team certificate;
+- `team-certs/`, the member's team certificate, and `teams.yaml` with a
+  membership of the team (`aw id team accept-invite` or `aw id team
+  fetch-cert` writes both);
 - `workspace.yaml` with `aweb_url`, the team's server, which `aw workspace
   connect --service <the team's aweb server>` writes when run in the seat's
   parent directory;
@@ -1546,13 +1548,25 @@ The seat directory must contain:
 
 The spawn checks these before it takes the seat's lock or copies anything, in
 this order: `identity.source` is an absolute path, it holds `signing.key`, its
-`workspace.yaml` records a usable `aweb_url`, and a team can be determined.
-Each refusal names its fix. A soul's readiness (`oats readiness`) reports the
+`workspace.yaml` records a usable `aweb_url`, a team can be determined, and its
+`teams.yaml` records a membership of that team. Each refusal names its fix. A soul's readiness (`oats readiness`) reports the
 first one with the spawn's own text. A retained seat mints nothing and takes
 its team as above, so readiness asks it for neither a messaging root nor a
 default team. A lock another seat holds is not a readiness problem: the spawn
 checks it when it runs, after these. A seated home's readiness does not read
 the source again.
+
+The membership is read as `aw workspace connect --team` looks for it: the
+team id of each item of `teams.yaml`'s `memberships` list, compared trimmed
+and without regard to ASCII case. A `teams.yaml` that does not exist is
+refused, as aw refuses it. The limit: the check decides only that. A
+`teams.yaml` outside the form aw writes, with no `memberships` list, or with a
+team id that is not ASCII is not decided here, and neither is the
+membership's certificate file (`cert_path`): aw decides those at its connect,
+after the copy. When that connect fails, the spawn binds the seat back from
+its source and removes the copy; if aw refuses that too, as it does for the
+same `teams.yaml`, the spawn keeps the copy and the lock and says how to
+restore them.
 
 The spawn reads the server only from that `workspace.yaml`. Any http or https
 URL with a host is accepted, a path prefix (a server behind a reverse proxy) or

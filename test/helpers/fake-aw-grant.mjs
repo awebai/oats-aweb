@@ -23,6 +23,12 @@ fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHom
 if (a[0] === "id" && a[1] === "grant" && process.env.AWEB_IDENTITY_HOME) { console.error("grant command refuses external identity home"); process.exit(2); }
 if (s === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || "1.36.33")); process.exit(0); }
 if (s.startsWith("wake status")) { console.log(process.env.FAKE_WAKE_STATUS || j({ daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.33", instances: [] })); process.exit(0); }
+// FAKE_RETAINED_ECHO=register (with FAKE_RETAINED=1): aw wake register from OATS_HOME fails with an
+// error naming the home's recorded service, as the retained calls below do for the others.
+if (process.env.FAKE_RETAINED === "1" && process.env.FAKE_RETAINED_ECHO === "register" && a[0] === "wake" && a[1] === "register" && process.cwd() === process.env.OATS_HOME) {
+  let service; try { service = /^aweb_url: (.*)$/m.exec(fs.readFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "utf8"))[1]; } catch { service = "(none)"; }
+  console.error('register home with the broker for "' + service + '": dial tcp: connection refused'); process.exit(1);
+}
 if (a[0] === "wake" && a[1] === "register" && (process.env.FAKE_WAKE_REGISTER_FAIL || (process.env.FAKE_WAKE_REGISTER_FAIL_UNLESS && val("--identity-home") !== process.env.FAKE_WAKE_REGISTER_FAIL_UNLESS))) { console.error("broker socket refused"); process.exit(1); }
 if (s.startsWith("wake ")) process.exit(0);
 // Retained-seat responses are opt-in and stay inside the temporary fixture.
@@ -36,8 +42,15 @@ if (s.startsWith("wake ")) process.exit(0);
 //   FAKE_RETAINED_FAIL=connect        the server accepts a connect from OATS_HOME, which then exits 1
 //                                     before the local workspace.yaml is written (aw posts first)
 //   FAKE_RETAINED_RESTORE_FAIL=1      a connect from any directory but OATS_HOME fails
+//   FAKE_RETAINED_MEMBERSHIP=1        a connect with --team T, from any directory, needs <cwd>/.aw/teams.yaml,
+//                                     a membership of T in it and the file at that membership's cert_path,
+//                                     as aw 1.36.58 does (cmd/aw/service.go activateExistingTeamMembershipAt;
+//                                     awconfig/team_state.go:100-113: both ids trimmed and case-folded;
+//                                     cmd/aw/init_connect.go:224-240), and refuses before it posts.
+//                                     Opt-in: older fixtures write a teams.yaml with no memberships,
+//                                     which aw itself would refuse there.
 if (process.env.FAKE_RETAINED === "1") {
-  // FAKE_RETAINED_ECHO=connect|check|heartbeat|status|whoami: that call from OATS_HOME fails with a
+  // FAKE_RETAINED_ECHO=connect|check|heartbeat|status|whoami (register: above): that call from OATS_HOME fails with a
   // network error naming the service, as aw's do (the --service it was given, else the home's record).
   const echo = process.env.FAKE_RETAINED_ECHO;
   if (echo && process.cwd() === process.env.OATS_HOME && ({ connect: a[0] === "workspace" && a[1] === "connect", check: a[0] === "check", heartbeat: a[0] === "heartbeat", status: s === "workspace status --json", whoami: s === "whoami --json" })[echo]) {
@@ -47,6 +60,15 @@ if (process.env.FAKE_RETAINED === "1") {
   }
   if (a[0] === "workspace" && a[1] === "connect") {
     if (process.env.FAKE_RETAINED_RESTORE_FAIL && process.cwd() !== process.env.OATS_HOME) { console.error("connect refused"); process.exit(1); }
+    if (process.env.FAKE_RETAINED_MEMBERSHIP === "1" && val("--team")) {
+      const awDir = path.join(process.cwd(), ".aw");
+      let teams; try { teams = fs.readFileSync(path.join(awDir, "teams.yaml"), "utf8"); } catch { console.error("current identity is missing .aw/teams.yaml; join a team first"); process.exit(1); }
+      const field = (item, key) => { for (const line of item.split(/\\n/)) { const t = line.replace(/^ *(- )?/, ""); if (t.startsWith(key + ":")) return t.slice(key.length + 1).trim().replace(/^['"]|['"]$/g, ""); } return ""; };
+      const item = teams.split(/\\n(?= {4}- )/).slice(1).find((it) => field(it, "team_id").toLowerCase() === val("--team").trim().toLowerCase());
+      if (!item) { console.error("team certificate for " + val("--team") + " is not installed in this workspace; run \`aw id team fetch-cert\` first"); process.exit(1); }
+      const cert = path.join(awDir, field(item, "cert_path").replace(/^[.]aw[/]/, ""));
+      if (!fs.existsSync(cert)) { console.error("load team certificate: open " + cert + ": no such file or directory\\n(run \`aw id team fetch-cert\` after controller approval to install a certificate under " + path.join(awDir, "team-certs") + ")"); process.exit(1); }
+    }
     if (process.env.FAKE_RETAINED_KILL === "mid-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
     if (process.env.FAKE_RETAINED_FAIL === "connect" && process.cwd() === process.env.OATS_HOME) { console.error("write workspace.yaml: input/output error"); process.exit(1); }
     fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true });
