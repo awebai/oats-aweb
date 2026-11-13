@@ -1173,6 +1173,13 @@ that root only when `aw team list --json` run in it lists `T`; the cwd,
 they refuse, naming the team, the root tried and the remedy (`oats aweb setup
 --join <label> --invite-stdin` in the deployment, then a respawn).
 
+Wherever the provider matches a team id it was given (a setting, a record, the
+kernel's environment) against one aw reports, it compares them as aw spells
+them: the name and the domain lowercased and trimmed, without a trailing dot
+(`lib/aweb-team-id.mjs`). A mixed-case `roots` key or default team therefore
+finds its root, its certificate and its workspace. What the provider writes or
+prints keeps the spelling it was given.
+
 The general OATS >=0.42.0 compatibility floor applies to the remaining provider
 behavior; explicit wider-team LOCAL join additionally requires the selected same
 kernel to support `inspect --home` for recorded soul provenance, then
@@ -1520,6 +1527,77 @@ time as the delete. Before that, retire leaves each joined team and releases eac
 unfinished join. While a release that needs the member key fails (anything but
 `team_not_hosted`), retire keeps the key and the record and exits nonzero.
 
+### A retained seat on a server other than aweb Cloud
+
+On an aweb server other than aweb Cloud, an agent's identity is a retained
+seat: an existing member's `.aw` directory that the spawn copies into the
+new home and connects (`identity.source`, its absolute path). The commands
+that make one are in awebai/oats
+[`docs/container.md`, "Making a seat"](https://github.com/awebai/oats/blob/main/docs/container.md#making-a-seat).
+The seat directory must contain:
+
+- `signing.key`, the member's key;
+- `team-certs/`, the member's team certificate;
+- `workspace.yaml` with `aweb_url`, the team's server, which `aw workspace
+  connect --service <the team's aweb server>` writes when run in the seat's
+  parent directory;
+- the team: the deployment's default team, or else the active team in
+  `teams.yaml`.
+
+The spawn checks these before it takes the seat's lock or copies anything, in
+this order: `identity.source` is an absolute path, it holds `signing.key`, its
+`workspace.yaml` records a usable `aweb_url`, and a team can be determined.
+Each refusal names its fix. A soul's readiness (`oats readiness`) reports the
+first one with the spawn's own text. A retained seat mints nothing and takes
+its team as above, so readiness asks it for neither a messaging root nor a
+default team. A lock another seat holds is not a readiness problem: the spawn
+checks it when it runs, after these. A seated home's readiness does not read
+the source again.
+
+The spawn reads the server only from that `workspace.yaml`. Any http or https
+URL with a host is accepted, a path prefix (a server behind a reverse proxy) or
+an IPv6 literal included, as long as it holds no userinfo, query, fragment,
+whitespace or control characters; it reaches aw as one argument and is never
+printed, so a failed spawn withholds aw's own output, which may name it. The
+file is read in the form aw writes it: a top-level key and its value on one
+line, and its `memberships:` list of flat mappings at aw's indentation, with LF
+or CRLF line ends. A `workspace.yaml` in any other form (a flow collection, a
+block or multi-line scalar, an escape, an anchor or tag, a quoted key, a
+document marker, other indentation, another line break, or a character
+outside YAML 1.1's printable set) is refused whole, rather than read for an
+`aweb_url` YAML might give differently. The limit: the reader decides only the
+top-level `aweb_url` of a file aw writes, and isn't a YAML validator. A file
+that isn't valid YAML may still be accepted, and the URL checks (http or
+https, no userinfo, query or fragment, one argument to aw, never printed)
+still bound what reaches aw.
+`OATS_AWEB_URL` is not read (#241): a seat without a usable `aweb_url`
+is refused before anything is copied, with that `aw workspace connect` as the
+fix, and the soul's readiness reports the same refusal. When a retire
+compensates a spawn that did not answer, it says how to bind the identity back
+to its source on that same server: as a command naming the server when it is a
+plain service URL (http or https, a host, an optional port, and no path but
+`/` or `/api`), and otherwise as `aw workspace connect` run there with the
+service in its `workspace.yaml`.
+
+Per aw 1.36.58's source (not a live run): on one server, the identity has one
+server workspace, so connecting the seat directory and then spawning the
+retained seat reuses it, and the spawn moves its path to the instance home;
+that second connect does not update the seat directory's own
+`workspace.yaml`. Retiring the instance releases the seat's lock and neither
+deletes nor restores that server workspace: to use the seat directory itself
+again, run `aw workspace connect` from there again; otherwise the next
+retained spawn moves the workspace to its new home.
+
+These work on aweb Cloud only, because aw treats only a Cloud team as hosted:
+releasing an identity at retire, `oats aweb connect`, `setup --username` and
+the hosted `setup --create`. A retire of a retained seat, on any server,
+releases only the seat's lock and leaves the identity as it is. On another
+server, where a retire releases a workspace (a team the home joined, or an
+identity it minted), it deletes the workspace and leaves the certificate and
+the alias, so a successor cannot reuse the name yet: `oats aweb roster` marks
+that certificate as retired, with the `aw id team remove-member` command the
+team's controller runs to remove it.
+
 ### The retained seat's lock
 
 A retained seat (`identity.source`) is held through `.aw-retained-seat.json`
@@ -1565,7 +1643,10 @@ Three limits remain:
   the home has one) and after every reconnect a rollback tries, whether or not
   it succeeded. If another seat holds it, the spawn fails, removes any wake
   registration it made, says where the binding may point, and names the
-  `aw workspace connect --service=… --team=…` to run from that seat's home. This
+  `aw workspace connect --service=… --team=…` to run from that seat's home.
+  The command names the server only when it is a plain service URL, as the
+  rebind a retire prints does; otherwise it says to run `aw workspace connect`
+  with the service, team and role in the source's `workspace.yaml`. This
   needs a take-over of a seat whose runtime is still alive, and the take-over
   already warns about that: there are then two seats with one key, and the old
   one must be stopped.

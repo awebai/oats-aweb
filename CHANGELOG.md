@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+- **Fixed: a soul's readiness reports every retained-seat refusal it can
+  decide (#247).** A retained seat's spawn (`identity.source`) refuses before
+  any effect when the source is not an absolute path, holds no `signing.key`,
+  records no usable `aweb_url`, or no team can be determined (no default team
+  id and no active team in `<source>/teams.yaml`). Readiness reported only the
+  `aweb_url` one. It now reports each, with the spawn's own text, from the one
+  check the spawn makes. For such a seat at soul scope, readiness no longer
+  reports "no messaging root" or "no teams configured", which the retained
+  spawn never refused on: it mints nothing, and takes its team from the
+  source when the deployment has no default team. The spawn's team refusal
+  now comes before its lock check and is printed in full, and a source with
+  no `signing.key` now names the fix: point `identity.source` at the member's
+  `.aw` directory. A lock another seat holds is still checked only at spawn.
+  A seated home's readiness is unchanged.
+
+- **Changed: a retained seat reads its aweb service only from its own record
+  (#241).** A retained seat's spawn (`identity.source`) took its service from
+  `OATS_AWEB_URL` when that was set, and from the seat's
+  `<source>/workspace.yaml` `aweb_url` only otherwise, so a spawn and the
+  rebind command a retire prints could name different servers. The service
+  now comes only from that `aweb_url` (aw writes it at `aw workspace
+  connect`): any http or https URL with a host, a path prefix or an IPv6
+  literal included, with no userinfo, query, fragment, whitespace or control
+  characters. The file is read in the form aw writes it (a top-level key and
+  its value on one line, and its `memberships:` list), and a
+  `workspace.yaml` in any other form is refused whole. The reader decides
+  only that `aweb_url` and is not a YAML validator: a file that isn't valid
+  YAML may still be accepted, and the URL checks still bound what reaches
+  aw. The service is never printed: a failed
+  spawn withholds aw's own output, which may name it. `OATS_AWEB_URL` is no
+  longer read. A seat with no such `aweb_url` is refused before anything is
+  copied or locked, and the refusal names the fix: run `aw workspace connect
+  --service <the team's aweb server>` in the seat's parent directory (the one
+  that holds its `.aw`), then spawn again. A soul's readiness reports the same
+  refusal as a `needs-configuration` problem; a seated home's readiness does
+  not read the source again. While `OATS_AWEB_URL` is set, the
+  refusal says the variable is no longer read, and a spawn that has a record
+  warns that the variable is ignored; neither prints its value. The rebind
+  a retire prints names the server in a command only when it is a plain
+  service URL (http or https, a host, an optional port, and no path but `/`
+  or `/api`); otherwise it says to run `aw workspace connect` there with the
+  service in its `workspace.yaml`. **If you set
+  `OATS_AWEB_URL` for a retained seat:** record the server in the seat with
+  that `aw workspace connect` and unset the variable. A seat whose
+  `workspace.yaml` already names its server is unchanged.
+
+- **Fixed: team ids are compared as aw spells them (#252).** aw lowercases a
+  team id's name and domain, and drops a trailing dot from the domain. A
+  deployment can configure the id in another case (`Default:Example.Test`),
+  and each comparison of the configured id with one aw reports was exact. So:
+  - a spawn warned "team mismatch" on every mint;
+  - a join failed with "joined team differs", or found no root;
+  - a grant renewal kept the previous grant;
+  - retire's self-delete missed the workspace id;
+  - the roster missed the record and the presence, and setup took its own
+    mapping for another team;
+  - setup refused an invite to a mapped team (`E_SETUP_JOIN_MISMATCH`,
+    `E_SETUP_LABEL_COLLISION`), or redeemed one for a team a root was
+    already in;
+  - a joined team that became the default was left at launch;
+  - the probe refused the target as `contradictory-team`;
+  - a `roots` entry, which setup records under aw's spelling, was missed, so
+    the hook minted and read from `root` instead.
+
+  Every such comparison, in the hook and its libs, now goes through one canonical
+  comparison (`lib/aweb-team-id.mjs`), and every `roots` lookup takes the entry
+  aw reads as the same team when no key matches exactly. Two entries that both
+  do (and no exact one) count as none, as before. Setup records a team's root
+  under the key that already names it, in its own spelling, never a second one. The joined certificate's file
+  is found by the name aw gives it. Values the hook writes or prints keep the spelling
+  the kernel or aw gave. Nothing a deployment must change.
+
 - **Removed: the captured-execution path (#242).** The captured bindings
   (the `OATS_BINDING_FILE`, `OATS_INVOCATION_CONTEXT_FILE` and
   `OATS_SOURCE_RECEIPT_FILE` variables, and the `binding` and `invocation`

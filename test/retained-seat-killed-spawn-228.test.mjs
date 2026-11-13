@@ -209,9 +209,11 @@ test("a lock that cannot be checked is not reported as gone", (t) => {
 
 test("the restore command is printed only from values of their own shapes", (t) => {
   const fx = fixture(t);
-  write(join(fx.source, "workspace.yaml"), "alias: retained\naweb_url: https://fixture.invalid/$(touch pwned)\n");
+  // A spawn refuses such a record before it takes the seat (#241), so the record is
+  // changed after the spawn took the seat: the retire reads the source again.
   const spawned = runHook(fx, "spawn", { FAKE_RETAINED_KILL: "after-connect" });
   assert.equal(spawned.signal, "SIGKILL");
+  write(join(fx.source, "workspace.yaml"), "alias: retained\naweb_url: https://fixture.invalid/$(touch pwned)\n");
   const retired = compensate(fx);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.deepEqual(deletes(fx), []);
