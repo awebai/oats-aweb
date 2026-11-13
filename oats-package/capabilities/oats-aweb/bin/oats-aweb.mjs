@@ -94,7 +94,7 @@ import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
-import { admitIdentity } from "../lib/admission.mjs";
+import { admitIdentity, committedAdmissions } from "../lib/admission.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
 import { scanProtectedKeys } from "../lib/key-scan.mjs";
 import { PROTECTED_AW_MIN } from "../lib/protected-client.mjs";
@@ -2284,15 +2284,7 @@ function hasAdmissionRecords() {
 function committedAdmissionCount(team) {
   let rows;
   try { rows = querySelectedKernel(["status", "--json"])?.agents?.flatMap((a) => a.instances || []) || []; } catch { return "unknown"; }
-  let n = 0;
-  for (const row of rows) {
-    if (typeof row?.home !== "string") continue;
-    const dir = join(row.home, ".oats-aweb");
-    let names = [];
-    try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)); } catch { continue; }
-    for (const f of names) { try { const doc = JSON.parse(readFileSync(join(dir, f), "utf8")); if (doc.team === team && doc.state === "committed") n++; } catch { /* not an admission record */ } }
-  }
-  return n;
+  return committedAdmissions(rows, team);
 }
 /** The attributed spawn (C-3): the primary, then each joined team, each with
  *  its own identity home; no legacy mint, no invite. Answers and exits. */

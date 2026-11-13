@@ -3,7 +3,7 @@
 // the install and the connect, and the refusals of each (C-3c, C-9). One call
 // makes one identity: the primary, or a joined team's.
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { CHAINLESS, UUID, attributionError, issueChain } from "./attribution.mjs";
 import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, awJson, createLocalArgv, installCertArgv, serviceInitArgv } from "./protected-client.mjs";
@@ -67,6 +67,15 @@ export function writePrivate(file, text) {
   writeFileSync(tmp, text, { mode: 0o600 });
   renameSync(tmp, file);
 }
+/** The admission records a home holds, each as written. */
+export function admissionRecords(home) {
+  const dir = join(home, ".oats-aweb");
+  let names = [];
+  try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { return []; }
+  return names.flatMap((f) => { try { return [JSON.parse(readFileSync(join(dir, f), "utf8"))]; } catch { return []; } });
+}
+/** OATS's own count of `rows` (kernel status rows, {home}) holding a committed admission for `team` (R4). */
+export const committedAdmissions = (rows, team) => rows.filter((row) => typeof row?.home === "string").reduce((n, row) => n + admissionRecords(row.home).filter((doc) => doc.team === team && doc.state === "committed").length, 0);
 export function readAdmission(providerDir, label) {
   try { return JSON.parse(readFileSync(admissionFile(providerDir, label), "utf8")); } catch { return null; }
 }
