@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { HUMAN, ROOT_ID, attributionFixture, verbs } from "./helpers/attribution-fixture.mjs";
+import { HUMAN, ROOT_ID, attributionFixture, capabilityWith, verbs } from "./helpers/attribution-fixture.mjs";
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 const HUMAN_ATTRIBUTION = { mode: "human", human: { id: HUMAN, label: "Juan Pérez" }, parent: { id: ROOT_ID } };
@@ -70,8 +70,9 @@ test("acceptance 10: captured mode unknown, a start is unchanged: no aw who", (t
   assert.deepEqual(r.doc.meta.identity.attribution, UNKNOWN);
 });
 
-test("acceptance 16: after the root is revoked, a new spawn refuses E_ATTRIBUTION_REVOKED, with its first step, no working path and the README, within 300 characters", (t) => {
-  const fx = attributionFixture(t);
+/** The revocation refusal of a spawn after the root is revoked, from `capability`, checked against the cap. */
+function revokedText(t, capability) {
+  const fx = attributionFixture(t, capability ? { capability } : {});
   fx.fake.revoke(ROOT_ID);
   const r = fx.spawn("dev-1");
   assert.equal(r.status, 1);
@@ -79,20 +80,32 @@ test("acceptance 16: after the root is revoked, a new spawn refuses E_ATTRIBUTIO
   assert.match(text, /^E_ATTRIBUTION_REVOKED: /);
   assert.ok(text.length <= 300, `${text.length}: ${text}`);
   assert.ok(text.includes("remove settings.oats.aweb.attribution"), text);
-  assert.ok(text.includes("no working path exists yet"), text);
   assert.ok(text.endsWith('(README, "Human attribution: revocation")'), text);
-  assert.ok(!/--new-root|bind-root/.test(text.split("no working path")[1] || ""), "names no other fix after saying none works");
   assert.ok(!verbs(fx.fake).includes("id create"), "before any effect");
+  return text;
+}
+
+test("acceptance 16: after the root is revoked, a new spawn refuses E_ATTRIBUTION_REVOKED, naming the whole path and that re-endorsing the same root is outside v1, within 300 characters", (t) => {
+  const text = revokedText(t);
+  const at = (part) => { const i = text.indexOf(part); assert.ok(i >= 0, `${part}: ${text}`); return i; };
+  assert.ok(at("remove settings.oats.aweb.attribution") < at("--endorse-root --new-root") && at("--endorse-root --new-root") < at("bind-root") && at("bind-root") < at("rerun setup"), "in the path's order");
+  assert.ok(text.includes("re-endorsing this root is outside v1"), text);
 });
 
-test("acceptance 16: the README's revocation section names the whole path, says no working path exists while binding isn't served, and that re-endorsing the same root is outside v1", () => {
+test("acceptance 16: while the binding act isn't served, the refusal says no working path exists yet and names no other fix", (t) => {
+  const text = revokedText(t, capabilityWith(t, { REQUEST_BINDING_SERVED: false }));
+  assert.ok(text.includes("no working path exists yet"), text);
+  assert.ok(!/--new-root|bind-root|rerun/.test(text), `names no fix that can't work: ${text}`);
+});
+
+test("acceptance 16: the README's revocation section names the whole path, says what holds while an aw doesn't serve the binding, and that re-endorsing the same root is outside v1", () => {
   const text = readFileSync(README, "utf8");
   const start = text.indexOf("## Human attribution: revocation");
   assert.ok(start >= 0, "the section exists");
   const end = text.indexOf("\n## ", start + 1);
   const section = text.slice(start, end < 0 ? undefined : end).replace(/\s+/g, " "); // as read, not as wrapped
   for (const step of ["settings.oats.aweb.attribution", "oats aweb setup --endorse-root --new-root", "bind", "rerun"]) assert.ok(section.includes(step), step);
-  assert.ok(section.includes("a new root needs the protected service's operator to bind it, and that step isn't available yet, so this deployment can't spawn into its protected teams until it is"));
+  assert.ok(section.includes("a new root needs the protected service's operator to bind it, and that step isn't available yet, so this deployment can't spawn into its protected teams until it is"), "the text for an aw that doesn't serve the binding");
   assert.ok(/re-endors\w+ the same root[^.]*outside v1/i.test(section));
   assert.ok(section.includes("restart, or respawn, to clear the name"));
 });

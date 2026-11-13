@@ -1,27 +1,28 @@
-// The protected service's aw commands (aweb-acxy.5 at aweb 859e07567), one aw
+// The protected service's aw commands (aweb-acxy.5 at aweb 44158f1bb), one aw
 // call per act (spec v4.3.7 P3, P4): OATS makes no protected HTTP call itself
 // and never parses aw's text, only its --json answer and its error envelope
 // {"error": {code, message}} (cli/go/cmd/aw/errors.go). Every argv here is the
 // one the spec's C items name; test/protected-aw-argv.test.mjs pins each one
 // against the built binary's --help.
 
-/** The protected-client floor: aw built from aweb 859e07567, which rc.2 gates.
+/** The protected-client floor: aw built from aweb 44158f1bb, which rc.2 gates (v4.3.15).
  *  [.5] The [.5] pin raises it to the published release, and moves the three
  *  constants below with it. */
 export const PROTECTED_AW_MIN = "1.36.59-rc.2";
 /** Whether the pinned aw and service serve `team.agent.remove` (A2). Decided
- *  from the pinned aw, never probed at run time. [.5: A2 served] */
-export const REMOVE_SERVED = false;
+ *  from the pinned aw, never probed at run time: served at aweb 44158f1bb
+ *  (v4.3.17). The branch for false stays built and tested. */
+export const REMOVE_SERVED = true;
 /** Whether they serve the owner's live `team.admission-policy.change`. In v1
  *  the policy is fixed at provisioning (signer-embedding ad384aa8). */
 export const POLICY_CHANGE_SERVED = false;
 /** Whether the released exchange can run its child side through a resident's
  *  custody. [.5: custody exchange] */
 export const RESIDENT_CUSTODY_SERVED = false;
-/** Whether they serve the operator's request-binding act (A3, A4: bind-root),
- *  without which a new root can't be bound. [.5: landed at aweb fd9953709,
- *  not yet in the pinned aw] */
-export const REQUEST_BINDING_SERVED = false;
+/** Whether they serve the operator's request-binding act (A3, A4: bind-root,
+ *  with --replace-root), without which a new root can't be bound: served at
+ *  aweb 44158f1bb (v4.3.17). The branch for false stays built and tested. */
+export const REQUEST_BINDING_SERVED = true;
 
 /** aw's refusal: its envelope's code (or none, for a failure aw didn't code),
  *  and a bounded, single-line form of its message for a person. */

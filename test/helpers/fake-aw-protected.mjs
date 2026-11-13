@@ -1,15 +1,12 @@
-// A fake aw for human attribution: the protected commands as aw built from
-// aweb 859e07567 answers them (cli/go/cmd/aw id_create_unaddressed.go,
+// A fake aw for human attribution: the commands as aw built from aweb
+// 44158f1bb answers them (cli/go/cmd/aw id_create_unaddressed.go,
 // id_endorse.go, id_team_admission_policy.go, id_team_admit.go,
-// id_team_install_cert.go, id_team_remove_agent.go, service.go, errors.go), and the identity chain as released aw 1.36.58 runs
-// it (who.go, id_child.go, id_parent.go). Their answers, field names, codes and
-// refusals are aw's, not what is convenient.
-//
-// The one named deviation from 859e07567 (agreed with the lead, mail
-// 34626247): a committed `aw id endorse` installs the root's chain (the
-// human's certificate, then the root's) in the root's identity home, as aweb is
-// asked to make it do. At 859e07567 it registers the chain and installs none,
-// so the root couldn't issue.
+// id_team_install_cert.go, id_team_remove_agent.go, service.go, errors.go,
+// who.go, id_child.go, id_parent.go). Their answers, field names, codes and
+// refusals are aw's, not what is convenient. A committed `aw id endorse`
+// installs the root's chain (the human's certificate, then the root's) as
+// id-chain.json in the root's identity home and says `chain_installed: true`
+// (aweb-aczz, fixed in 4cedabdef).
 //
 // An identity is the `.aw` of the working directory, or `--identity-home`.
 // Its id is `<home>/did` when present (a registered did:aw), else
@@ -21,7 +18,7 @@
 // Under --json a refusal prints aw's envelope {"error": {code, message}} on
 // stdout and exits 1. The protected service is <base>/service.json:
 //   policy: {version, digest, bounds}; teams: {<team>: "protected"|"legacy"|"missing"}
-//   endorse: [answers, one per call]: "pending" | "committed" | {code}
+//   endorse: [answers, one per call]: "pending" | "committed" | "committed-without-chain" | {code}
 //   admit: {code} | {lostOnce: true} (the first execute's answer is lost)
 //   install: {code}; remove: "served" | "unserved" | {code}
 //   policyRead: {code}; createKill: true (create --no-address dies after its key)
@@ -32,7 +29,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const PROTECTED_AW_VERSION = "1.36.59-rc.2+859e075";
+export const PROTECTED_AW_VERSION = "1.36.59-rc.2+44158f1";
 /** A protected team's policy as aw reports it (handoff/admission_policy.go
  *  decodeAdmissionPolicy: exactly these members; `teams` in code-point order). */
 export const POLICY = Object.freeze({ version: 3, digest: `sha256:${"c".repeat(64)}`, teams: Object.freeze(["backend:acme.example", "ops:acme.example"]), root_selector: Object.freeze({ kind: "service_endorsed_root", service_id: "svc-acme" }), subject_kinds: Object.freeze(["agent"]), member_role: "member", bounds: Object.freeze({ max_active: 50, max_per_window: 10, rate_window_seconds: 3600 }) });
@@ -122,13 +119,14 @@ if (cmd.startsWith("id endorse")) {
   const answer = s.endorse.length > 1 ? s.endorse.shift() : s.endorse[0]; saveSvc(s);
   if (answer && typeof answer === "object") fail(answer.code, "operation " + op + " is " + (answer.state || "refused") + ": " + answer.code);
   if (answer === "pending") emit({ operation_id: op, state: "pending", reason: "awaiting_human", page: "https://human.example/approve/" + op, digest: "sha256:" + "d".repeat(64), fingerprint: "dddddddddddddddd", expires_at: "2026-11-13T19:00:00Z" });
-  // committed: registered and read back; the deviation: the chain is installed.
+  // committed: registered, read back and, unless the answer says otherwise, the chain installed.
   const certificate_id = crypto.createHash("sha256").update(op).digest("hex").slice(0, 32);
+  if (answer === "committed-without-chain") emit({ operation_id: op, state: "committed", certificate_id, registered: true });
   const human_cert = { certificate: { v: 1, type: "aweb.id-certificate", id: human, domain: "acme.example", parent: { kind: "namespace", id: "acme.example" }, kind: "human" }, signature: "s" };
   const root_cert = { certificate: { v: 1, type: "aweb.id-certificate", id: root, domain: "acme.example", parent: { kind: "identity", id: human }, kind: "agent" }, signature: "s" };
   fs.writeFileSync(path.join(h, "id-chain.json"), JSON.stringify({ v: 1, type: "aweb.id-chain", certificates: [human_cert, root_cert] }), { mode: 0o600 });
   delete known[op]; fs.writeFileSync(ops, JSON.stringify(known));
-  emit({ operation_id: op, state: "committed", certificate_id, registered: true });
+  emit({ operation_id: op, state: "committed", certificate_id, registered: true, chain_installed: true });
 }
 
 // ---- id team admission-policy (id_team_admission_policy.go), as the root
@@ -276,6 +274,8 @@ console.error("fake aw (protected): unexpected aw " + process.argv.slice(2).join
     issued: () => lines("issued.jsonl"),
     removed: () => lines("removed.jsonl"),
     charges: () => JSON.parse(readFileSync(join(base, "charges.json"), "utf8")),
+    /** Endorse operations prepared and not yet committed, by id: {intent, prepared}. */
+    endorseOps: () => { try { return JSON.parse(readFileSync(join(base, "endorse-ops.json"), "utf8")); } catch { return {}; } },
     service: readService,
     setService: (change) => writeFileSync(serviceFile, JSON.stringify({ ...readService(), ...change })),
     revoke: (id) => { const s = JSON.parse(readFileSync(join(base, "registry.json"), "utf8")); s.revoked.push(id); writeFileSync(join(base, "registry.json"), JSON.stringify(s)); },

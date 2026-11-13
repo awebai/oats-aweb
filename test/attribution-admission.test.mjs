@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { ROOT_ID, TEAM, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
+import { ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs } from "./helpers/attribution-fixture.mjs";
 import { POLICY } from "./helpers/fake-aw-protected.mjs";
 
 const admits = (fake) => fake.calls().filter((c) => commandArgs(c.args).join(" ").startsWith("id team admit"));
@@ -16,15 +16,24 @@ const refusal = (r) => { assert.equal(r.status, 1, JSON.stringify(r.doc)); retur
 /** The cap holds the whole text, its fix included: nothing was cut. */
 const fits = (text, ending) => { assert.ok(text.length <= 300, `${text.length} characters: ${text}`); assert.ok(text.endsWith(ending), `cut or reworded: ${text}`); };
 
-test("acceptance 8: admission_limit_reached refuses E_ADMISSION_LIMIT with the policy's bounds and OATS's own count, labelled as OATS's, and says retiring frees no slot", (t) => {
-  const fx = attributionFixture(t);
+/** A limit refusal after one committed admission, from `capability`. */
+function limitText(t, capability) {
+  const fx = attributionFixture(t, capability ? { capability } : {});
   assert.equal(fx.spawn("dev-1").status, 0);
   fx.fake.setService({ admit: { code: "admission_limit_reached" } });
   const text = refusal(fx.spawn("dev-2"));
   assert.match(text, /^E_ADMISSION_LIMIT\b/);
   assert.ok(text.includes(`max_active ${POLICY.bounds.max_active}`) && text.includes(`max_per_window ${POLICY.bounds.max_per_window}`) && text.includes(`${POLICY.bounds.rate_window_seconds} s`), text);
   assert.ok(text.includes("OATS's count, not the server's: 1 live"), text);
-  fits(text, "retiring an instance frees no slot");
+  return text;
+}
+
+test("acceptance 8: admission_limit_reached refuses E_ADMISSION_LIMIT with the policy's bounds and OATS's own count, labelled as OATS's; with remove served, retiring idle instances is a fix", (t) => {
+  fits(limitText(t), "wait for the rate window, retire idle instances, or change the policy");
+});
+
+test("acceptance 8: while remove is unavailable, E_ADMISSION_LIMIT adds that retiring an instance frees no slot", (t) => {
+  fits(limitText(t, capabilityWith(t, { REMOVE_SERVED: false })), "wait for the rate window, or change the policy; retiring an instance frees no slot");
 });
 
 for (const code of ["policy_changed", "admission_policy_missing", "subject_ineligible"]) {

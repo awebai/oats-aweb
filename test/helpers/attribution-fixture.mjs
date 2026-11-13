@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,8 +25,10 @@ export const ENDORSEMENT_OP = "3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b";
 export const PROFILE_TEXT = `${JSON.stringify({ v: 1, service_id: "svc-acme", request_origin: "https://protected.acme.example", human_origin: "https://human.acme.example", rp_id: "human.acme.example", registry_origin: REGISTRY, namespace_authorities: [{ domain: "acme.example", controller_did: "did:key:zcontroller" }], bindings: [] })}\n`;
 
 /** `capability`: the capability directory to run (a test copy, for a flipped
- *  constant). `teams`: the setting's protected teams. */
-export function attributionFixture(t, { attribution = true, features = ["spawn-attribution"], label = "Juan Pérez", delivery = "channel", runtime = "claude", settings: extraSettings = {}, teams = [TEAM, OPS], service = {}, capability = CAPABILITY } = {}) {
+ *  constant). `teams`: the setting's protected teams. `root`: the root home
+ *  setup finds, "endorsed" (with its chain), "registered" (a did:aw with no
+ *  chain yet), "local" (a did:key) or "none". */
+export function attributionFixture(t, { attribution = true, features = ["spawn-attribution"], label = "Juan Pérez", delivery = "channel", runtime = "claude", settings: extraSettings = {}, teams = [TEAM, OPS], service = {}, capability = CAPABILITY, root = "endorsed" } = {}) {
   const hookPath = join(capability, "bin", "oats-aweb.mjs"), binding = join(capability, "bin", "oats-aweb-binding.mjs");
   const ws = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-attr-")));
   t.after(() => rmSync(ws, { recursive: true, force: true }));
@@ -36,8 +38,13 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
   const profile = join(ws, "protected-profile.json");
   writeFileSync(profile, PROFILE_TEXT, { mode: 0o600 });
   const rootHome = join(ws, ".aweb-endorsed-root", "acme-root");
-  mkdirSync(rootHome, { recursive: true, mode: 0o700 });
-  writeIdentity(join(rootHome, ".aw"), { did: ROOT_ID, chain: [{ id: HUMAN, kind: "human", parent: { kind: "namespace", id: "acme.example" } }, { id: ROOT_ID, kind: "agent", parent: { kind: "identity", id: HUMAN } }] });
+  if (root !== "none") {
+    mkdirSync(join(ws, ".aweb-endorsed-root"), { mode: 0o700 });
+    mkdirSync(rootHome, { mode: 0o700 });
+    if (root === "endorsed") writeIdentity(join(rootHome, ".aw"), { did: ROOT_ID, chain: [{ id: HUMAN, kind: "human", parent: { kind: "namespace", id: "acme.example" } }, { id: ROOT_ID, kind: "agent", parent: { kind: "identity", id: HUMAN } }] });
+    else if (root === "registered") writeIdentity(join(rootHome, ".aw"), { did: ROOT_ID });
+    else writeIdentity(join(rootHome, ".aw"));
+  }
   const setting = {
     root: { id: ROOT_ID, home: rootHome }, human: { id: HUMAN, label },
     service: { id: "svc-acme", profile, profileDigest: `sha256:${createHash("sha256").update(PROFILE_TEXT).digest("hex")}`, url: SERVICE_URL },
@@ -101,3 +108,27 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
 export const commandArgs = (args) => { const words = args.filter((a) => a !== "--json"); return words[0] === "--identity-home" ? words.slice(2) : words; };
 /** Each aw call of a fake as its command words: its argv up to the first flag or positional argument (a path, an id), global flags aside. */
 export const verbs = (fake) => fake.calls().map((c) => { const words = commandArgs(c.args); const end = words.findIndex((a) => !/^[a-z][a-z-]*$/.test(a)); return (end < 0 ? words : words.slice(0, end)).join(" "); });
+
+/** settings.oats.aweb.attribution as setup wrote it into D's oats-local.yaml (one JSON flow line), or undefined. */
+export function writtenAttribution(ws) {
+  const line = readFileSync(join(ws, "oats-local.yaml"), "utf8").split("\n").find((l) => /^ {4}attribution: /.test(l));
+  return line ? JSON.parse(line.replace(/^ {4}attribution: /, "")) : undefined;
+}
+
+/** A test copy of the capability with the served-feature constants beside the
+ *  floor (lib/protected-client.mjs) set as given, for the branch the pinned aw
+ *  doesn't take, e.g. {REMOVE_SERVED: false}. Pass it as `capability`. */
+export function capabilityWith(t, constants) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-capability-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(CAPABILITY, dir, { recursive: true });
+  const file = join(dir, "lib", "protected-client.mjs");
+  let text = readFileSync(file, "utf8");
+  for (const [name, value] of Object.entries(constants)) {
+    const pattern = new RegExp(`^export const ${name} = (true|false);$`, "m");
+    assert.ok(pattern.test(text), `${name} is not a served-feature constant`);
+    text = text.replace(pattern, `export const ${name} = ${JSON.stringify(value)};`);
+  }
+  writeFileSync(file, text);
+  return dir;
+}

@@ -173,11 +173,11 @@ export function readWho(aw, identityHome) {
 
 /** The README section that holds the whole revocation path. */
 export const README_REVOCATION = 'README, "Human attribution: revocation"';
-/** The revocation path's start within the spawn's 300 characters (C-3c): its
- *  first step and, while the binding act isn't served, that no path works
- *  yet, with no other fix; the README section holds the whole path. */
+/** The revocation path within the spawn's 300 characters (C-3c): with the
+ *  binding act served, the whole path; while it isn't, the first step and
+ *  that no path works yet, with no other fix. The README section holds it all. */
 export const REVOKED_FIX = REQUEST_BINDING_SERVED
-  ? `remove settings.oats.aweb.attribution, then create a new root with \`oats aweb setup --endorse-root --new-root\`, have the operator bind it, and rerun setup (${README_REVOCATION})`
+  ? `remove settings.oats.aweb.attribution, run \`oats aweb setup --endorse-root --new-root\`, have the operator bind-root it, then rerun setup; re-endorsing this root is outside v1 (${README_REVOCATION})`
   : `remove settings.oats.aweb.attribution; a new root then needs the operator's binding, which isn't available yet, so no working path exists yet (${README_REVOCATION})`;
 
 /** The refusal for an identity whose chain doesn't verify: revoked, unavailable (retry), else the exchange step that read it. */

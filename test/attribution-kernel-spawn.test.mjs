@@ -70,6 +70,6 @@ test("acceptance 23: through a real kernel, oats spawn --json carries E_ADMISSIO
   assert.equal(doc.ok, false, r.stdout);
   assert.ok(doc.error.message.includes("E_ADMISSION_LIMIT"), doc.error.message);
   assert.ok(doc.error.message.includes("OATS's count, not the server's"), doc.error.message);
-  assert.ok(doc.error.message.includes("wait for the rate window, or change the policy; retiring an instance frees no slot"), doc.error.message);
+  assert.ok(doc.error.message.includes("wait for the rate window, retire idle instances, or change the policy"), doc.error.message);
   assert.ok(fake.calls().some((c) => c.args.includes("admit")), "the root's admit ran");
 });

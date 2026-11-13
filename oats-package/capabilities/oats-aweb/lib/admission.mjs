@@ -40,7 +40,7 @@ export function admitRefusal(e, { team, root, bounds, count, operationId }) {
   if (code === "admission_limit_reached") {
     let b; try { b = bounds(); } catch { b = null; }
     const limits = b ? `max_active ${b.max_active}, max_per_window ${b.max_per_window} per ${b.rate_window_seconds} s` : "bounds unreadable";
-    return attributionError("E_ADMISSION_LIMIT", `${team} is at its admission bounds (${limits}; OATS's count, not the server's: ${count} live) → wait for the rate window, or change the policy; ${REMOVE_SERVED ? "or retire idle instances" : "retiring an instance frees no slot"}`, { code, team, bounds: b, oatsCount: count });
+    return attributionError("E_ADMISSION_LIMIT", `${team} is at its admission bounds (${limits}; OATS's count, not the server's: ${count} live) → ${REMOVE_SERVED ? "wait for the rate window, retire idle instances, or change the policy" : "wait for the rate window, or change the policy; retiring an instance frees no slot"}`, { code, team, bounds: b, oatsCount: count });
   }
   const refused = (text) => attributionError("E_ADMISSION_REFUSED", text, { code, team });
   if (code === "admission_policy_missing") return refused(`${firstSentence(policyMissingText(team, root))} (${team}; ${README_ADMISSION})`);

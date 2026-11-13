@@ -78,23 +78,23 @@ jobs:
           OATS_PREVIEW_KERNEL_ROOT: ${{ runner.temp }}/oats-preview-kernel
         run: node --test test/unread-attention-native.test.mjs
       # Human attribution (spec human-ids-acxy7): the protected aw commands are
-      # checked against aw built from aweb 859e07567, the commit the spec pins
+      # checked against aw built from aweb 44158f1bb, the commit the spec pins
       # until a published aw carries them, and a spawn refusal is checked
       # through a real kernel that lists spawn-attribution (OATS v0.69.19).
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.11'
           cache: false
-      - name: Build aw from aweb 859e07567 (the protected client)
+      - name: Build aw from aweb 44158f1bb (the protected client)
         shell: bash
         env:
-          AWEB_PROTECTED_COMMIT: 859e0756781a1c1c30ede1942c2addee1fc8bbe7
+          AWEB_PROTECTED_COMMIT: 44158f1bb95f887e86dd039757f64f9b50a428bf
         run: |
           git clone --no-checkout https://github.com/awebai/aweb.git "$RUNNER_TEMP/aweb-protected"
           git -C "$RUNNER_TEMP/aweb-protected" checkout --detach "$AWEB_PROTECTED_COMMIT"
           test "$(git -C "$RUNNER_TEMP/aweb-protected" rev-parse HEAD)" = "$AWEB_PROTECTED_COMMIT"
           cd "$RUNNER_TEMP/aweb-protected/cli/go"
-          go build -ldflags "-X main.version=1.36.59-rc.2+859e075" -o "$RUNNER_TEMP/aw-protected/aw" ./cmd/aw
+          go build -ldflags "-X main.version=1.36.59-rc.2+44158f1" -o "$RUNNER_TEMP/aw-protected/aw" ./cmd/aw
           "$RUNNER_TEMP/aw-protected/aw" version
       - name: Provision the spawn-attribution kernel
         shell: bash

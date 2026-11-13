@@ -52,11 +52,12 @@ section's first step. The whole path is:
 3. The protected service's operator binds the new root (bind-root).
 4. Then rerun the same setup, which endorses the new root.
 
-Step 3 depends on aweb's request-binding act. The aw this release pins
-doesn't serve it yet: a new root needs the protected service's operator to
+Step 3 is aweb's request-binding act (`bind-root`, with `--replace-root <old
+root>` for a replacement), which the aw this release pins serves. With an aw
+that doesn't serve it, a new root needs the protected service's operator to
 bind it, and that step isn't available yet, so this deployment can't spawn
-into its protected teams until it is. Until then no working path exists, and
-no other fix works.
+into its protected teams until it is: no working path exists, and the
+refusal names no other fix.
 
 - Removing the setting alone is no fix: a spawn into a protected team would
   then take the legacy invite and refuse `E_PROTECTED_ADMISSION_REQUIRED`.
@@ -77,9 +78,10 @@ its first sentence and this section; the full texts are here.
   policy's bounds (`max_active`, `max_per_window` per `rate_window_seconds`).
   The refusal gives those bounds and OATS's count of live homes holding a
   committed admission for the team, labelled "OATS's count, not the
-  server's": the server reports no count. Wait for the rate window, or
-  change the policy. The aw this release pins doesn't serve
-  `team.agent.remove`, so retiring an instance frees no slot.
+  server's": the server reports no count. Wait for the rate window, retire
+  idle instances (a retire removes its memberships through the root), or
+  change the policy. With an aw that doesn't serve `team.agent.remove`,
+  retiring an instance frees no slot, and the refusal says so.
 - `E_ADMISSION_REFUSED`, with aw's code as `details.code`:
   - `admission_policy_missing`: this team is not in the deployment's
     admission policy, and this aweb release can't add a team to it: the
