@@ -70,7 +70,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
-import { isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatHeldPath, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
+import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
@@ -1149,7 +1149,8 @@ function retainedSeatSpawn(source, takeOver) {
   let seen;
   try { seen = readSeatLockGuarded(lockPath, { who: { op: "spawn", instance, home } }); }
   catch (e) {
-    if (isSeatLockRefusal(e)) out({ warning: `oats-aweb: identity at ${source} was not seated, and nothing was copied: ${e.message}` }, 1);
+    // A read that left anything stops the spawn: nothing runs after it.
+    if (isSeatLockRefusal(e) || isSeatLockLeftovers(e)) out({ warning: `oats-aweb: identity at ${source} was not seated, and nothing was copied: ${isSeatLockLeftovers(e) && e.code ? `its lock could not be read (${e.code}); ` : ""}${e.message}` }, 1);
     seen = { present: true, ino: undefined, text: null, doc: undefined };
   }
   if (seen.present) {
@@ -1187,30 +1188,41 @@ function retainedSeatSpawn(source, takeOver) {
   const lockDoc = (extra = {}) => JSON.stringify({ home, instance, ...extra, team, takenAt, host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n";
   const ownLock = (c) => !!c.present && typeof c.doc?.home === "string" && samePath(c.doc.home, home) && c.doc.takenAt === takenAt;
   const seatOp = (op) => ({ op, instance, home });
-  // The whole fix for what a failed lock step could not undo (lib/seat-lock.mjs).
-  const lockRecovery = (e) => typeof e?.recovery === "string" && e.recovery ? `; ${e.recovery}` : "";
-  let taken;
+  // What a lock step left, each file with its whole fix (lib/seat-lock.mjs).
+  const lockRecovery = (e) => isSeatLockLeftovers(e) ? `; ${e.recovery}` : "";
+  /** A lock step's failure: a refusal's or leftovers' whole text, else its code. */
+  const lockFailure = (e) => isSeatLockRefusal(e) ? e.message : isSeatLockLeftovers(e) ? `${e.code ? `${e.code}; ` : ""}${e.recovery}` : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`;
+  // Set once a lock step left anything: from then on this spawn makes no lock step and
+  // no aw call, and briefs no seat (lib/seat-lock.mjs, the protocol's last clause).
+  let stuck;
+  const STUCK = "a lock step of this spawn left files it could not clean, named in this failure";
+  // Every exit below is uncut: a lock step's text is its whole fix.
+  let taken, takeLeft = "";
   try { taken = swapSeatLock(lockPath, { who: seatOp(takenOver ? "take-over" : "spawn"), expect: (c) => seen.present ? sameSeatLock(c, seen) : !c.present, next: lockDoc() }); }
   catch (e) {
     if (isSeatLockRefusal(e)) out({ warning: `oats-aweb: identity at ${source} was not seated, and nothing was copied: ${e.message}` }, 1);
-    // Uncut: a failed write's recovery is its whole fix (lib/seat-lock.mjs).
-    out({ warning: `oats-aweb: the retained identity's lock ${lockPath} could not be taken (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}); nothing copied${e?.recovery ? `; ${e.recovery}` : ""}` }, 1);
+    if (!isSeatLockLeftovers(e) || !e.result) out({ warning: `oats-aweb: the retained identity's lock ${lockPath} could not be taken${e?.code ? ` (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` : ""}; nothing copied${lockRecovery(e)}` }, 1);
+    taken = e.result; takeLeft = `; ${e.recovery}`;
   }
+  if (taken.done && takeLeft) out({ warning: `oats-aweb: the retained identity's lock ${lockPath} was taken for this spawn, but that step left files it could not clean, so nothing was copied${takeLeft}; then remove ${lockPath} if it still names ${home}` }, 1);
   if (!taken.done) {
-    const kept = taken.restore?.restored === false ? `; ${taken.restore.problem}, and the lock this spawn inspected is kept at ${seatHeldPath(lockPath)}, which the next spawn, take-over or retire reports` : "";
+    const kept = takeLeft;
     if (!seen.present) fatal(`identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied${kept}`);
     out({ warning: `oats-aweb: the retained identity's lock ${lockPath} changed after this spawn read it, so nothing was taken over or copied: it is now held by ${taken.captured.present ? seatLockHolderText(taken.captured.doc) : "no seat"}${kept}. A seat is never taken from a holder this spawn did not see: retire that seat first, or spawn again with identity.takeOver: true once you know its runtime is dead` }, 1);
   }
   /** Remove this spawn's own lock; any other is left. What its guarded step saw is the
    *  rollback's last read of the lock (lastSeen). → a note for the failure, or "". */
   const releaseOwnLock = () => {
+    if (stuck) { lastSeen = { kind: "unknown", unknown: STUCK }; return ""; }
     try {
       const r = swapSeatLock(lockPath, { who: seatOp("rollback"), expect: ownLock, next: null });
       lastSeen = r.done ? { kind: "none" } : describeHolder(r.captured);
       return r.done || !r.captured.present ? "" : `; the lock ${lockPath} names another seat now (${lastSeen.text}), so it was left in place`;
     } catch (e) {
-      lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}` };
-      return `; the lock ${lockPath} was left in place: ${isSeatLockRefusal(e) ? e.message : `it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}`}`;
+      if (isSeatLockLeftovers(e)) stuck = STUCK;
+      if (isSeatLockLeftovers(e) && e.result?.done) { lastSeen = { kind: "none" }; return `; the lock ${lockPath} was removed, but that step left files it could not clean${lockRecovery(e)}`; }
+      lastSeen = { kind: "unknown", unknown: lockFailure(e) };
+      return `; the lock ${lockPath} was left in place: ${isSeatLockRefusal(e) || isSeatLockLeftovers(e) ? lockFailure(e) : `it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})`}`;
     }
   };
   let lockNote = "";
@@ -1239,8 +1251,9 @@ function retainedSeatSpawn(source, takeOver) {
    *  `{ kind: "unknown", unknown }` when it can't be read under the guard, which is never
    *  taken for "no other holder". Recorded as lastSeen. */
   const holderNow = () => {
+    if (stuck) return lastSeen = { kind: "unknown", unknown: STUCK };
     try { return lastSeen = describeHolder(readSeatLockGuarded(lockPath, { who: seatOp("check") })); }
-    catch (e) { return lastSeen = { kind: "unknown", unknown: isSeatLockRefusal(e) ? e.message : `${lockPath} could not be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}` }; }
+    catch (e) { if (isSeatLockLeftovers(e)) stuck = STUCK; return lastSeen = { kind: "unknown", unknown: lockFailure(e) }; }
   };
   // What the rollback did with the binding: "unknown" (holder unknown at its first read:
   // nothing done), "successor" (another seat held it: not reconnected), "restored" or
@@ -1250,7 +1263,9 @@ function retainedSeatSpawn(source, takeOver) {
   let wakeRegistering = false, wakeNote = "";
   const rollback = () => {
     // A registration with the host wake broker made for this seat goes with it, as at retire.
-    if (wakeRegistering && !wakeDeregister(home)) wakeNote = `; this home could not be removed from the host wake broker: run \`aw wake deregister --home ${home}\``;
+    // Not after a lock step that left anything: no aw call runs then.
+    if (wakeRegistering && stuck) wakeNote = `; this home's registration with the host wake broker was left, since no aw call runs after that: once those files are cleaned, run \`aw wake deregister --home ${home}\``;
+    else if (wakeRegistering && !wakeDeregister(home)) wakeNote = `; this home could not be removed from the host wake broker: run \`aw wake deregister --home ${home}\``;
     // Once `aw workspace connect` has started, the server binding may point at the
     // new home (aw binds on the service before it writes locally, so a connect
     // that failed may still have bound it);
@@ -1322,7 +1337,11 @@ function retainedSeatSpawn(source, takeOver) {
     // a take-over that replaced it meanwhile wins, and this seat is not briefed.
     let seated;
     try { seated = swapSeatLock(lockPath, { who: seatOp("spawn"), expect: ownLock, next: lockDoc({ alias }) }); }
-    catch (e) { if (isSeatLockRefusal(e)) throw e; throw new Error(`the retained identity's lock ${lockPath} could not be rewritten with the alias (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${lockRecovery(e)}; the seat is not briefed`); }
+    catch (e) {
+      if (isSeatLockRefusal(e)) throw e;
+      if (isSeatLockLeftovers(e)) { stuck = STUCK; throw new Error(`the step that rewrote the retained identity's lock ${lockPath} with the alias left files it could not clean${e.code ? ` (${e.code})` : ""}${lockRecovery(e)}; the seat is not briefed`); }
+      throw new Error(`the retained identity's lock ${lockPath} could not be rewritten with the alias (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}); the seat is not briefed`);
+    }
     // Holder-neutral: the exit names only the holder of the rollback's last guarded read.
     if (!seated.done) throw new Error(`the retained identity's lock ${lockPath} ${seated.captured.present ? "was taken by another seat" : "was removed"} during this spawn; the seat is not briefed`);
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
@@ -1333,7 +1352,10 @@ function retainedSeatSpawn(source, takeOver) {
     // Read under the guard; the seat is briefed only while the lock is still its own.
     let after;
     try { after = readSeatLockGuarded(lockPath, { who: seatOp("check") }); }
-    catch (e) { throw new Error(`who holds the retained identity's lock ${lockPath} is unknown after this spawn's last aw call (${isSeatLockRefusal(e) ? e.message : `${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}${lockRecovery(e)}`}); the seat is not briefed`); }
+    catch (e) {
+      if (isSeatLockLeftovers(e)) stuck = STUCK;
+      throw new Error(`who holds the retained identity's lock ${lockPath} is unknown after this spawn's last aw call (${isSeatLockRefusal(e) || isSeatLockLeftovers(e) ? lockFailure(e) : /^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"}); the seat is not briefed`);
+    }
     if (!ownLock(after)) throw new Error(`the retained identity's lock ${lockPath} ${after.present ? "was taken by another seat" : "was removed"} during this spawn; the seat is not briefed`);
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver}${takeOverNote} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
@@ -1366,7 +1388,7 @@ function retainedSeatSpawn(source, takeOver) {
     const text = `retained identity could not be seated from ${source}: ${e.message || e}${binding}${lockNote}${wakeNote}`;
     // A refusal of the lock's guarded step, or a note on the lock, carries its whole
     // fix: it is not cut at fatal's 300 characters.
-    if (isSeatLockRefusal(e) || lockNote || wakeNote || fin.kind === "other" || fin.kind === "unknown" || rolledBack === "unknown" || rolledBack === "successor") out({ warning: `oats-aweb: ${text}` }, 1);
+    if (isSeatLockRefusal(e) || stuck || lockNote || wakeNote || fin.kind === "other" || fin.kind === "unknown" || rolledBack === "unknown" || rolledBack === "successor") out({ warning: `oats-aweb: ${text}` }, 1);
     fatal(text);
   }
 }
@@ -2468,7 +2490,7 @@ if (event === "launch") {
     // The lock is released only when it names this home: one another seat has
     // taken over, or that cannot be read, is never removed here.
     // heldHere: true when the lock names this home, false when it does not, undefined when unknown.
-    let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false;
+    let lockText = `lock ${meta.lock || "?"} removed`, heldHere = false, lockLeft = "";
     if (meta.lock) {
       // A guard or a moved-aside lock that a killed change left is reported first,
       // whatever is at the lock's name now (lib/seat-lock.mjs). A check that fails any
@@ -2480,7 +2502,10 @@ if (event === "launch") {
       catch (e) {
         const code = /^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error";
         // The guard can't be created: no change of the lock can be made from here.
-        if (isSeatLockRefusal(e)) leftover = e.message; else if (e?.stage === "guard") leftover = `it could not be removed (${code})${typeof e?.recovery === "string" && e.recovery ? `; ${e.recovery}` : ""}`; else unchecked = code;
+        // A read that left anything: nothing more is done with the lock.
+        if (isSeatLockRefusal(e)) leftover = e.message;
+        else if (isSeatLockLeftovers(e)) leftover = `${e.code ? `it could not be checked (${e.code}); ` : ""}${e.recovery}`;
+        else if (e?.stage === "guard") leftover = `it could not be removed (${code})`; else unchecked = code;
       }
       const present = !!now?.present;
       const holder = typeof now?.doc?.home === "string" && now.doc.home ? now.doc.home : undefined;
@@ -2493,18 +2518,23 @@ if (event === "launch") {
         // Removed only if it still names this home at the moment it is removed: one
         // guarded step moves it aside, checks it and removes it, or puts back a lock
         // another seat took over meanwhile (lib/seat-lock.mjs).
-        try {
-          const r = swapSeatLock(meta.lock, { who: { op: "retire", instance, home }, expect: (c) => c.present && typeof c.doc?.home === "string" && samePath(c.doc.home, home), next: null });
-          if (!r.done && !r.captured.present) lockText = `lock ${meta.lock} already gone`;
-          else if (!r.done) {
-            heldHere = false;
-            const kept = r.restore?.restored === false ? `; ${r.restore.problem}, and the lock this retire inspected is kept at ${seatHeldPath(meta.lock)}, which the next spawn, take-over or retire reports` : "";
-            lockText = `lock ${meta.lock} left in place: this seat no longer owns it (${typeof r.captured.doc?.home === "string" ? "another seat took it over" : "it cannot be read now"}), so retire did not remove it${kept}`;
+        // A step that left anything answers its result and the leftovers: the exit
+        // status is the result's, and the warning adds them.
+        let r, left = "";
+        try { r = swapSeatLock(meta.lock, { who: { op: "retire", instance, home }, expect: (c) => c.present && typeof c.doc?.home === "string" && samePath(c.doc.home, home), next: null }); }
+        catch (e) {
+          if (isSeatLockLeftovers(e) && e.result) { r = e.result; left = `; that step left files it could not clean: ${e.recovery}`; }
+          else {
+            lockText = isSeatLockRefusal(e) ? `lock ${meta.lock} left in place: ${e.message}` : `lock ${meta.lock} left in place: it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${isSeatLockLeftovers(e) ? `; ${e.recovery}` : ""}`;
+            if (isSeatLockRefusal(e) || isSeatLockLeftovers(e)) heldHere = undefined;
           }
-        } catch (e) {
-          lockText = isSeatLockRefusal(e) ? `lock ${meta.lock} left in place: ${e.message}` : `lock ${meta.lock} left in place: it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${typeof e?.recovery === "string" && e.recovery ? `; ${e.recovery}` : ""}`;
-          if (isSeatLockRefusal(e)) heldHere = undefined;
         }
+        if (r && !r.done && !r.captured.present) lockText = `lock ${meta.lock} already gone`;
+        else if (r && !r.done) {
+          heldHere = false;
+          lockText = `lock ${meta.lock} left in place: this seat no longer owns it (${typeof r.captured.doc?.home === "string" ? "another seat took it over" : "it cannot be read now"}), so retire did not remove it`;
+        }
+        lockLeft = left;
       }
       else lockText = `lock ${meta.lock} left in place: ${holder ? "it is held by another seat" : "it cannot be read"}`;
     }
@@ -2525,8 +2555,8 @@ if (event === "launch") {
     // A spawn that did not answer and does not hold the lock never took the seat:
     // the lock is taken before anything is copied.
     const released = meta.spawnUnanswered && lockText !== `lock ${meta.lock} removed`
-      ? `released nothing: ${heldHere === undefined ? "whether this home holds the retained identity's lock is unknown" : heldHere ? "the retained identity's lock is still in place" : "this home does not hold the retained identity's lock"} (${lockText})`
-      : `released the retained identity "${meta.alias || "(alias not recorded)"}" (${lockText})`;
+      ? `released nothing: ${heldHere === undefined ? "whether this home holds the retained identity's lock is unknown" : heldHere ? "the retained identity's lock is still in place" : "this home does not hold the retained identity's lock"} (${lockText}${lockLeft})`
+      : `released the retained identity "${meta.alias || "(alias not recorded)"}" (${lockText}${lockLeft})`;
     const retainedWarning = `${released}; the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}${rebind}`;
     await finish({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
   }

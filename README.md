@@ -1540,7 +1540,9 @@ files beside the lock:
 
 The protocol in one statement: every read, replace and remove of the lock
 happens under the guard; no guard spans an aw call; every exit after an aw call
-states the lock's holder as read under the guard, or says it is unknown. A read
+states the lock's holder as read under the guard, or says it is unknown; every
+guarded step reports what it could not clean, and nothing runs after a step
+that left anything. A read
 that can't be made (a guard or moved lock left by a killed change) is never
 taken for "no other holder": a spawn then reconnects nothing and keeps its copy.
 
@@ -1590,8 +1592,11 @@ before it releases the guard:
 - a moved lock it could not remove goes back to the lock's name, over the
   lock it wrote.
 
-Only what it can't undo is left, and that change's failure names it with its
-fix.
+Whatever a step can't clean, its own guard or a moved lock included, the step
+reports with its fix, and the change stops there. A spawn makes no further aw
+call, briefs no seat and doesn't touch the lock again. Its failure names each
+leftover. A retire adds the leftovers to its warning; its exit status is what
+it would be with the lock untouched.
 
 ## Isolated hostOnly contract verification
 

@@ -94,7 +94,10 @@
   behind: the next spawn or take-over refuses with it and its fix, and the
   next retire reports it; none adopts or removes it. A step that fails (the
   guard's record, the lock's write, the moved lock's removal) undoes its own
-  effect under the guard; what it can't undo, its failure names with its fix. The lock's name and fields are unchanged; its
+  effect under the guard. Every guarded step reports what it could not clean,
+  its own guard included, with its fix, and nothing runs after a step that left
+  anything: a spawn makes no further aw call and briefs no seat, and a retire
+  adds the leftovers to its warning with its exit status unchanged. The lock's name and fields are unchanged; its
   `takenAt` is now when the seat was taken, kept when the spawn's success adds
   the alias. Nothing a deployment must change.
 

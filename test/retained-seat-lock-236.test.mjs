@@ -726,7 +726,8 @@ test("a take-over whose partial lock write can't be removed names the moved lock
 /** Failures at the guard's record and at the moved lock's removal, by env:
  *  GUARD_WRITE_FAIL=<n> fails the write into the n-th guard this hook creates (ENOSPC);
  *  STUCK_GUARD makes removing the guard fail once that write failed; HELD_UNLINK_FAIL makes removing the moved
- *  lock fail (EIO); STUCK_RENAME makes moving it back to the lock's name fail. */
+ *  lock fail (EIO); STUCK_RENAME makes moving it back to the lock's name fail;
+ *  GUARD_UNLINK_FAIL=<n> fails the n-th removal of a guard (EIO). */
 function stageFailPreload(fx) {
   const file = join(fx.base, "stage-fail.mjs");
   writeFileSync(file, `import fs from "node:fs";
@@ -741,8 +742,10 @@ fs.openSync = function (path, ...rest) {
   return fd;
 };
 fs.writeSync = function (fd, ...rest) { if (failing.has(fd)) { failed = true; throw fail("ENOSPC"); } return write.call(this, fd, ...rest); };
+let guardUnlinks = 0;
 fs.unlinkSync = function (path, ...rest) {
   if (process.env.STUCK_GUARD && failed && String(path) === guard) throw fail("EACCES");
+  if (String(path) === guard && ++guardUnlinks === Number(process.env.GUARD_UNLINK_FAIL)) throw fail("EIO");
   if (process.env.HELD_UNLINK_FAIL && String(path) === held) throw fail("EIO");
   return unlink.call(this, path, ...rest);
 };
@@ -807,5 +810,52 @@ test("a retire that can't remove its moved lock puts it back and says it is left
   assert.ok(r.doc.warning.includes(`lock ${fx.lock} left in place: it could not be removed (EIO)`), r.doc.warning);
   assert.equal(readFileSync(fx.lock, "utf8"), before, "the lock is back at its name");
   assert.equal(existsSync(fx.held), false);
+  assert.equal(existsSync(fx.guard), false);
+});
+
+const awCalls = (fx) => existsSync(join(fx.base, "aw.log")) ? readFileSync(join(fx.base, "aw.log"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+
+test("a take-over whose guard can't be removed after it took the lock stops before any aw call, naming the guard and the lock", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const b = fx.homeOf("seat-b");
+  const r = runHook(fx, "spawn", b, { identity: { takeOver: true }, preload: stageFailPreload(fx), env: { GUARD_UNLINK_FAIL: "2" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = r.doc.warning;
+  assert.ok(w.includes(`the retained identity's lock ${fx.lock} was taken for this spawn, but that step left files it could not clean, so nothing was copied`), w);
+  assert.ok(w.includes(`${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.ok(w.includes(`remove ${fx.guard} and retry; then remove ${fx.lock} if it still names ${b}`), w);
+  assert.equal(awCalls(fx).some((c) => c.argv[0] === "workspace"), false, "no aw call after the step");
+  assert.equal(existsSync(join(b, ".aw")), false, "nothing copied");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
+});
+
+test("a spawn whose guard can't be removed after its last guarded read is not briefed, and names the guard", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { GUARD_UNLINK_FAIL: "4" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.brief, undefined, "the seat is not briefed");
+  const w = r.doc.warning;
+  assert.ok(w.includes(`is unknown after this spawn's last aw call (${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.ok(w.includes(`remove ${fx.guard} and retry`), w);
+  assert.ok(w.includes("the seat is not briefed"), w);
+  assert.equal(existsSync(fx.guard), true);
+});
+
+test("a retire that links another seat's lock back but can't remove the moved name names it and its fix, exit unchanged", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), other = join(fx.base, "seat-b-home");
+  const spawned = runHook(fx, "spawn", a);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const both = join(fx.base, "takeover-and-stuck-held.mjs");
+  writeFileSync(both, `import ${JSON.stringify(pathToFileURL(takeoverPreload(fx)).href)};\nimport ${JSON.stringify(pathToFileURL(stageFailPreload(fx)).href)};\n`);
+  const retired = runHook(fx, "retire", a, { preload: both, env: { OATS_META: JSON.stringify(spawned.doc.meta), LOCK: fx.lock, OTHER_HOME: other, HELD_UNLINK_FAIL: "1" } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, other, "B's lock is in place");
+  const w = retired.doc.warning;
+  assert.match(w, /left in place: this seat no longer owns it/);
+  assert.ok(w.includes(`that step left files it could not clean: ${fx.held} is a second name of the lock now at ${fx.lock}, left because it could not be removed (EIO)`), w);
+  assert.ok(w.includes(`remove ${fx.held}; then retry`), w);
   assert.equal(existsSync(fx.guard), false);
 });
