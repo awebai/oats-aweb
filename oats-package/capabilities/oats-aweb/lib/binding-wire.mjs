@@ -12,7 +12,7 @@ import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
 import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
 import {healthPublish, healthSettings} from './health-settings.mjs';
 import { identityBooleans } from './boolean-setting.mjs';
-import { retainedSeatService, unknownSeatServiceMessage } from './retained-seat-service.mjs';
+import { retainedSeatCheck } from './retained-seat-service.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
 
@@ -229,7 +229,10 @@ function needsMintingRoot(settings) {
   const identity=obj(settings.identity)?settings.identity:{};
   return !(identity.mode==='global' && typeof identity.resident==='string' && identity.resident.trim());
 }
-async function readinessDetails(settings,{deployment,env=process.env}={}) {
+/** retainedSeat: a soul-scope retained seat (identity.source), whose spawn mints nothing and
+ *  takes its team from the seat's own predicate (retainedSeatCheck), so neither the messaging
+ *  root nor the generic no-team problem applies; the caller reports the seat's own refusal. */
+async function readinessDetails(settings,{deployment,env=process.env,retainedSeat=false}={}) {
   try { selectClaudeChannel(settings.claudeChannelMode); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   // The refusal spawn and start, or the health commands, give for a boolean setting that is
@@ -242,11 +245,11 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
   const aw=await awFloorObservation();if(aw.message) problems.push({code:'needs-configuration',message:aw.message});
   const tested=aw.message?undefined:awTestedWarning(settings,aw.version,{deployment,env});
   if(tested) warnings.push({code:'aw-newer-than-tested',message:tested});
-  if(!team) {
+  if(!team && !retainedSeat) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
     problems.push({code:'needs-configuration',message:label?unmappedDefaultMessage(label):NO_TEAMS_MESSAGE});
   }
-  if(needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
+  if(!retainedSeat && needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,awVersion:aw.version,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
@@ -295,17 +298,19 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
   const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
-  const details=await readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[...details.warnings];
+  const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
+  // A retained seat's spawn (identity.source, a local identity) refuses before any effect on
+  // what the settings and the source decide; soul scope reports the same refusal from the same
+  // predicate. A seated home's start does not read the source again, so home scope does not.
+  const retainedSoul=!ctx.home && mode==='local' && !!identity.source;
+  const details=await readinessDetails(req.settings,{deployment:ctx.deployment,retainedSeat:retainedSoul}),problems=[...details.result.problems],warnings=[...details.warnings];
   // Soul scope has no captured harness: only explicit session delivery proves
   // that its primary will use the broker. Home scope uses expectedReceive's
   // captured runtime/delivery (including Codex on channel settings).
   let primaryBroker = !ctx.home && req.settings.delivery === 'session';
-  const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
-  // A retained seat's spawn reads its service from the seat's own record; soul scope predicts
-  // its refusal with the same resolver. A seated home's start does not read the source again.
-  if(!ctx.home && mode==='local' && typeof identity.source==='string' && isAbsolute(identity.source)) {
-    const seat=retainedSeatService(identity.source);
-    if(!seat.service) problems.push({code:'needs-configuration',message:unknownSeatServiceMessage(identity.source,seat.record,env)});
+  if(retainedSoul) {
+    const seat=retainedSeatCheck(identity.source,env);
+    if(seat.refusal) problems.push({code:'needs-configuration',message:seat.refusal});
   }
   if(mode==='global') {
     const grantProblem=grantAttachmentProblem(ctx.home);if(grantProblem) problems.push(grantProblem);
