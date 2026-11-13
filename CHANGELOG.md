@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: no package file names the kernel's private module.** A comment in
+  `bin/oats-aweb.mjs` named that file (from #239), and OATS refuses any file of
+  a mirrored package that names it, so its pin of 1.42.0 failed. The comment
+  now names the kernel's lifecycle-hook runner instead, and
+  `test/kernel-module-boundary.test.mjs` applies OATS's three patterns to every
+  executable here. Nothing a deployment must change.
+
 ## 1.42.0 — 2026-11-13
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. This release is mostly about retained seats. A seat's lock now has an atomic ownership protocol, and a lock held on another host refuses with its release (#227, #236). A killed or failed spawn never deletes the standing identity's workspace, and a killed mint is released or named (#228, #240). A seat with no membership of its team is refused before any effect (#256), and a seat keeps `AWEB_IDENTITY_HOME` at every start (#226). A seat reads its service only from its own `workspace.yaml`, so `OATS_AWEB_URL` is no longer read for it (#241). The captured-execution path is removed: its variables are ignored, with one warning each (#242). Boolean settings accept `"true"`/`"false"`, refuse anything else, and read an empty value as unset (#232). Team ids are compared as aw spells them (#252), and certificate file names are built the same way (#262). The always-loaded inject is shorter. **What a deployment must change:** a retained seat that relied on `OATS_AWEB_URL` records its server with `aw workspace connect` and unsets the variable. A soul or workspace that sets `identity.e2ee` or `identity.takeOver` to anything but a boolean sets it to `true` or `false`.
