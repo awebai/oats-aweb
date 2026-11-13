@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fixed: a retained seat's failed `aw wake register` no longer prints aw's
+  output (#259).** The retained spawn's last aw call, its broker registration,
+  ran outside the withholding #241 gave the seat's other calls, so a failure
+  printed aw's stderr, which may name the seat's service. It is now withheld
+  like the others, and the spawn refuses as before.
+
 - **Fixed: a retained seat with no membership of its team is refused before
   any effect (#256).** A retained seat's spawn (`identity.source`) binds the
   seat on the deployment's default team, else the source's active team. When

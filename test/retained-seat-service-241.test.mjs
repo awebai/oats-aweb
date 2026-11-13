@@ -196,7 +196,7 @@ test("a record with Windows line endings names its service without the carriage 
 // The seat's service is never printed, and aw's diagnostics may name it, so a failed spawn's
 // aw calls show none of their output, whatever the service's shape.
 for (const [shape, url] of [["a plain service URL", RECORD], ["a service with a path prefix and shell text", "https://record.invalid/mark-$(id)/api"]]) {
-  for (const call of ["connect", "check", "heartbeat", "status", "whoami"]) {
+  for (const call of ["connect", "check", "heartbeat", "status", "whoami", "register"]) {
     test(`a spawn whose ${call} fails never prints its service, ${shape}`, (t) => {
       const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${url}\n` });
       const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: call });

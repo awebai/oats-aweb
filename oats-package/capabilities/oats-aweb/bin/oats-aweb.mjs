@@ -575,10 +575,12 @@ const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ del
 // Throws, never exits: both callers run it inside a try whose catch performs
 // the rollback (the seat path restores the binding; the mint path hands the
 // minted identity to compensation).
-function wakeRegister(instanceHome, identityHome) {
+/** Registers `instanceHome` with the host wake broker. `runner` runs the aw call: run, or a
+ *  retained seat's seatRun, which withholds aw's output because it may name the seat's service. */
+function wakeRegister(instanceHome, identityHome, runner = run) {
   const backend = process.env.OATS_BACKEND;
   try {
-    run(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
+    runner(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
     throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
   }
@@ -1257,7 +1259,7 @@ function retainedSeatSpawn(source, takeOver) {
     writeFileSync(lockPath, JSON.stringify({ home, instance, alias, team, takenAt: new Date().toISOString(), host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n", { mode: 0o600 });
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
     const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
-    if (broker) wakeRegister(home, dest);
+    if (broker) wakeRegister(home, dest, seatRun);
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver}${takeOverNote} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
