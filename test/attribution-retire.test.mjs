@@ -316,3 +316,69 @@ test("acceptance 12: a refused admission needs nothing at retire", (t) => {
   assert.equal(verbs(fx.fake).filter((v) => v === "id team admit").length, 1, "the spawn's admit only: nothing is resumed");
   assert.deepEqual(removeCalls(fx), []);
 });
+
+/** A spawn hook killed during its admit: the record pending, no --certificate-out file, and
+ *  nothing prepared at the service. Its rollback meta is empty: the hook never answered. */
+function killedDuringAdmit(fx) {
+  fx.fake.setService({ admit: { code: "receipt_unavailable" } });
+  fx.hook("spawn", "dev-1");
+  fx.fake.setService({ admit: undefined });
+  const file = join(fx.homeOf("dev-1"), ".oats-aweb", "admission-default.json");
+  const record = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify({ ...record, state: "pending" }));
+  return record;
+}
+
+test("acceptance 12 (v4.3.19): a hook killed during admit, never prepared: the rollback retire resumes it, the resume admits it now, and retire removes it at once", (t) => {
+  const fx = attributionFixture(t);
+  const { operationId } = killedDuringAdmit(fx);
+  const r = fx.retire("dev-1", { fromMeta: {} });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual(Object.keys(fx.fake.charges()), [operationId]);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [fx.fake.charges()[operationId].certificate_id]);
+});
+
+test("acceptance 12 (v4.3.19): a hook killed during admit, resumed as refused: nothing more, and the home goes", (t) => {
+  const fx = attributionFixture(t);
+  killedDuringAdmit(fx);
+  fx.fake.setService({ admit: { code: "subject_ineligible" } });
+  const r = fx.retire("dev-1", { fromMeta: {} });
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  assert.equal(admission(fx, "dev-1").state, "refused");
+  assert.deepEqual(removeCalls(fx), []);
+});
+
+test("acceptance 12 (v4.3.19): a hook killed during admit, still unknown at the resume: the home is kept", (t) => {
+  const fx = attributionFixture(t);
+  const { operationId } = killedDuringAdmit(fx);
+  fx.fake.setService({ admit: { code: "receipt_unavailable" } });
+  const r = fx.retire("dev-1", { fromMeta: {} });
+  assert.notEqual(r.status, 0);
+  assert.ok(warningOf(r).includes(`the admission's outcome is unknown (operation ${operationId}, team ${TEAM}), ${STILL_UNKNOWN}`), warningOf(r));
+});
+
+test("acceptance 12 (v4.3.20): a resume refused admission_limit_reached counts as refused: no membership exists, and the home is removed", (t) => {
+  const fx = attributionFixture(t);
+  const meta = unknownAdmission(fx);
+  fx.fake.setService({ admit: { code: "admission_limit_reached" } });
+  const r = fx.retire("dev-1", { fromMeta: meta });
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  assert.equal(admission(fx, "dev-1").state, "refused");
+  assert.deepEqual(removeCalls(fx), []);
+});
+
+test("C-3d (v4.3.19): a pending record whose --certificate-out names another member key isn't read as committed", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  const file = join(fx.homeOf("dev-1"), ".oats-aweb", "admission-default.json");
+  const { certificateId, ...record } = JSON.parse(readFileSync(file, "utf8"));
+  rmSync(rootCopy(fx, certificateId));
+  const cert = JSON.parse(readFileSync(record.certificateOut, "utf8"));
+  writeFileSync(record.certificateOut, JSON.stringify({ ...cert, member_did_key: "did:key:zsomeone-else" }));
+  writeFileSync(file, JSON.stringify({ ...record, state: "pending" }));
+  const r = fx.retire("dev-1", { fromMeta: {} });
+  // Resumed as unknown: the service holds the operation's certificate, and aw won't write it over the foreign file.
+  assert.notEqual(r.status, 0, "kept");
+  assert.ok(warningOf(r).includes("holds another file") && warningOf(r).includes("retire again"), warningOf(r));
+  assert.ok(!existsSync(rootCopy(fx, certificateId)), "no copy from a certificate for another key");
+});

@@ -106,7 +106,15 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     const { team, label } = record;
     const save = (fields) => { record = { ...record, ...fields }; recordAdmission(providerDir, label, record); };
     let resumed = false;
-    if (record.state === "unknown") {
+    // A pending record is a spawn killed at its admit (v4.3.19). With a --certificate-out file
+    // that verifies (aw's id form, this record's team and member key) the admission committed;
+    // with none, its outcome is unknown, and it is resumed as an unknown one is.
+    if (record.state === "pending") {
+      let cert = null;
+      try { cert = typeof record.certificateOut === "string" && existsSync(record.certificateOut) ? admittedCertificate(record.certificateOut, setting.root.home) : null; } catch { cert = null; }
+      if (cert && cert.team === team && cert.memberKey === record.memberKey) save({ state: "committed", certificateId: cert.id });
+    }
+    if (record.state === "unknown" || record.state === "pending") {
       // C-3d: the same admit, its persisted operation id and inputs, from the root's home.
       const blocked = cannot();
       if (blocked && FIXABLE.has(blocked.reason)) return { warnings, keep: { reason: "admission-unknown", text: `${blocked.why} (${blocked.reason}), and the admission's outcome is unknown (operation ${record.operationId}, team ${team}), so this home is kept → fix the root, then retire again, which resumes the admission` } };
@@ -115,6 +123,8 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       catch (e) {
         if (e.code) throw e;
         if (!e.awCode || UNKNOWN_CODES.has(e.awCode)) return { warnings, keep: { reason: "admission-unknown", text: stillUnknownText({ team, operationId: record.operationId }) } };
+        // The service holds this operation's certificate, and aw won't write it over another file.
+        if (e.awCode === "certificate_out_exists") return { warnings, keep: { reason: "admission-unknown", text: `the admission (operation ${record.operationId}, team ${team}) committed, but ${record.certificateOut} holds another file, so its certificate can't be read → move that file aside, then retire again, which resumes the admission` } };
         save({ state: "refused", code: e.awCode });
         continue;
       }
@@ -122,13 +132,6 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       keepRootCopy(cert);
       save({ state: "committed", certificateId: cert.id });
       resumed = true;
-    }
-    // A spawn killed between its admit and the root's copy left the record pending, but
-    // --certificate-out holds the certificate aw verified: the admission committed.
-    if (record.state === "pending" && typeof record.certificateOut === "string" && existsSync(record.certificateOut)) {
-      let cert = null;
-      try { cert = admittedCertificate(record.certificateOut, setting.root.home); } catch { cert = null; }
-      if (cert && cert.team === team) save({ state: "committed", certificateId: cert.id });
     }
     if (record.state !== "committed") continue;
     // The root's copy missing: written again from this home's certificate when it is the

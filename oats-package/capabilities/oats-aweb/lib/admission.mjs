@@ -93,7 +93,7 @@ export function admittedCertificate(file, rootHome) {
   const dir = join(rootHome, "admissions"), copy = resolve(dir, `${id}.cert`);
   const rel = relative(dir, copy);
   if (!rel || rel.startsWith("..") || rel.includes(sep)) throw bad("would be copied outside the root's admissions/");
-  return { id, copy, text: readFileSync(file, "utf8"), team: cert.team_id, alias: cert.alias };
+  return { id, copy, text: readFileSync(file, "utf8"), team: cert.team_id, alias: cert.alias, memberKey: cert.member_did_key };
 }
 
 /** Writes the root's copy (0600) unless it is already there, byte for byte. */
