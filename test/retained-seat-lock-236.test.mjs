@@ -1298,3 +1298,37 @@ test("a retire that finds a moved-aside lock another change left at its removal 
   assert.equal(lockHome(fx), a);
   assert.equal(existsSync(fx.held), true);
 });
+
+// protocol: rollback-read/leftovers (another seat's lock seen by the read that left files)
+test("a rollback whose read after the reconnect sees another seat's lock and leaves its guard names that seat and its connect, keeping the copy", (t) => {
+  const { fx, a, r, w, calls } = spawnWith(t, { at: 4, change: "another", env: { GUARD_UNLINK_FAIL: "4", FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const x = anotherSeat(fx);
+  assert.ok(w.includes(`that read found another seat holding the lock (instance seat-x, home ${x.home}, host container-b, since ${x.takenAt}), so the binding may point at the legacy home, not at that seat: once those files are cleaned, run ${CONNECT} from ${x.home}, and remove ${join(a, ".aw")}`), w);
+  assert.ok(w.includes(`${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.equal(calls.filter((c) => c === "workspace connect").length, 2, "nothing after the read that left the guard");
+  assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept");
+  assert.equal(lockHome(fx), x.home, "that seat's lock is untouched");
+});
+
+// protocol: retire-remove/unknown (the removal fails before it checks the lock)
+for (const [what, env] of [
+  ["the moved lock can't be inspected", { INSPECT_FAIL: "1" }],
+  ["the removal's guard can't be recorded", { GUARD_WRITE_FAIL: "2" }],
+]) {
+  test(`a retire whose removal fails before it checks the lock (${what}) says whether this home holds it is unknown`, (t) => {
+    const fx = fixture(t);
+    const a = fx.homeOf("seat-a");
+    const spawned = runHook(fx, "spawn", a, { env: { FAKE_RETAINED_KILL: "mid-connect" } });
+    assert.equal(spawned.signal, "SIGKILL", "the hook was killed");
+    const retired = runHook(fx, "retire", a, { preload: stageFailPreload(fx), env: { OATS_META: "{}", ...env } });
+    assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+    const w = retired.doc.warning;
+    assert.ok(w.includes(`lock ${fx.lock} left in place: it could not be checked when retire went to remove it (`), w);
+    assert.ok(w.includes("released nothing: whether this home holds the retained identity's lock is unknown"), w);
+    assert.ok(w.includes(`run ${CONNECT} from ${dirname(fx.source)}`), w);
+    assert.equal(lockHome(fx), a, "the lock is left");
+    assert.equal(existsSync(fx.held), false);
+    assert.equal(existsSync(fx.guard), false);
+  });
+}

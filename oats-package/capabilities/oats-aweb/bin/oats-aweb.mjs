@@ -1259,6 +1259,9 @@ function retainedSeatSpawn(source, takeOver) {
   // The rollback's last guarded read of the lock: the exit names this holder, and only
   // this one (a take-over after it is not reported: README, "The retained seat's lock").
   let lastSeen;
+  // What a read that left files did see under its guard (describeHolder), for the exit
+  // only: nothing is decided on it, since nothing runs after that step.
+  let stuckSeen;
   /** Who holds the lock now, read under its guard, as describeHolder answers, or
    *  `{ kind: "unknown", unknown }` when it can't be read under the guard, which is never
    *  taken for "no other holder". Recorded as lastSeen. */
@@ -1266,7 +1269,7 @@ function retainedSeatSpawn(source, takeOver) {
     if (stuck) return lastSeen = { kind: "unknown", unknown: STUCK };
     try { return lastSeen = describeHolder(readSeatLockGuarded(lockPath, { who: seatOp("check") })); }
     catch (e) {
-      if (isSeatLockLeftovers(e)) { stuck = stuck || lockFailure(e); return lastSeen = { kind: "unknown", unknown: STUCK }; }
+      if (isSeatLockLeftovers(e)) { stuck = stuck || lockFailure(e); if (e.result) stuckSeen = describeHolder(e.result); return lastSeen = { kind: "unknown", unknown: STUCK }; }
       return lastSeen = { kind: "unknown", unknown: lockFailure(e) };
     }
   };
@@ -1398,7 +1401,11 @@ function retainedSeatSpawn(source, takeOver) {
         : fin.kind === "unknown" ? ` (the server binding was restored to the legacy home and the copy removed, but whether another seat took the identity over while that ran is unknown: ${fin.unknown}; if one holds the lock, run ${connectCommand} from its home)`
         : " (the server binding was restored to the legacy home and the copy removed)")
       : rolledBack === "restored-kept"
-      ? ` (the server binding was restored to the legacy home, but the lock's read after that left files it could not clean, so this seat's copy was kept at ${dest} and the lock was left in place: once those files are cleaned, remove ${dest}, and ${lockPath} if it still names ${home})`
+      ? ` (the server binding was restored to the legacy home, but the lock's read after that left files it could not clean, so this seat's copy was kept at ${dest} and the lock was left in place${stuckSeen?.kind === "other"
+        ? `; that read found another seat holding the lock (${stuckSeen.text}), so the binding may point at the legacy home, not at that seat: once those files are cleaned, ${stuckSeen.fix}, and remove ${dest}`
+        : stuckSeen?.kind === "ours" || stuckSeen?.kind === "none"
+        ? `: once those files are cleaned, remove ${dest}, and ${lockPath} if it still names ${home}`
+        : `; whether another seat took the identity over while that ran is unknown${stuckSeen?.unknown ? ` (${stuckSeen.unknown})` : ""}: once those files are cleaned, run ${connectCommand} from the home of the seat that holds the lock, if one does, then remove ${dest}, and ${lockPath} if it still names ${home}`})`
       : rolledBack === "failed"
       ? (fin.kind === "other" ? ` (the reconnect of the legacy home failed, and another seat took the identity over while it ran (${fin.text}), so the binding may point at the legacy home or at this home, not at that seat; this seat's copy was kept at ${dest}: ${fin.fix})`
         : fin.kind === "unknown" ? ` (the reconnect of the legacy home failed, and whether another seat took the identity over while it ran is unknown: ${fin.unknown}; this seat's copy was kept at ${dest}: ${unknownFix})`
@@ -2546,8 +2553,15 @@ if (event === "launch") {
         catch (e) {
           if (isSeatLockLeftovers(e) && e.result) { r = e.result; left = `; that step left files it could not clean: ${e.recovery}`; }
           else {
-            lockText = isSeatLockRefusal(e) ? `lock ${meta.lock} left in place: ${e.message}` : `lock ${meta.lock} left in place: it could not be removed (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})${isSeatLockLeftovers(e) ? `; ${e.recovery}` : ""}`;
-            if (isSeatLockRefusal(e) || isSeatLockLeftovers(e)) heldHere = undefined;
+            const code = /^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error";
+            // Only a removal that failed after the step saw this home's lock (stage
+            // "remove") leaves this home holding it; any other failure came before the
+            // step checked the lock, so whether this home holds it is unknown.
+            const checked = !isSeatLockRefusal(e) && !isSeatLockLeftovers(e) && e?.stage === "remove";
+            lockText = isSeatLockRefusal(e) ? `lock ${meta.lock} left in place: ${e.message}`
+              : checked ? `lock ${meta.lock} left in place: it could not be removed (${code})`
+              : `lock ${meta.lock} left in place: it could not be checked when retire went to remove it (${code}), so whether this home holds it is unknown${isSeatLockLeftovers(e) ? `; ${e.recovery}` : ""}`;
+            if (!checked) heldHere = undefined;
           }
         }
         if (r && !r.done && !r.captured.present) lockText = `lock ${meta.lock} already gone`;

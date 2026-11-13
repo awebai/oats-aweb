@@ -63,7 +63,8 @@
 //     names that seat's connect [rollback-read/another]
 //   unknown, refused: before: nothing reconnected, the copy kept; after: the exit says
 //     the holder is unknown [rollback-read/unknown, rollback-read/refused]
-//   leftovers: the copy and the lock kept [rollback-read/leftovers]
+//   leftovers: the copy and the lock kept; the exit names the holder that read saw,
+//     with its connect, or says it is unknown [rollback-read/leftovers]
 // The rollback's release (a change: this spawn's lock removed):
 //   ours: removed [228: a connect the server accepted but that failed …]
 //   another: left, named [release/another]; absent: nothing to do [release/absent]
@@ -81,7 +82,8 @@
 //   ours: removed [retire-remove/ours]
 //   another: put back; "this seat no longer owns it" [retire-remove/another]
 //   absent: "already gone" [retire-remove/absent]
-//   unknown: put back, whether this home holds it unknown [retire-remove/unknown]
+//   unknown, or the step failed before it checked the lock (its guard, the move, the
+//     inspection): put back, whether this home holds it unknown [retire-remove/unknown]
 //   refused: left in place [retire-remove/refused]
 //   the removal fails: put back, left in place [retire-remove/failed; 228: a lock this
 //     home holds but cannot remove …]
