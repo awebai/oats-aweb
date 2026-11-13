@@ -264,7 +264,10 @@ leave removes the membership through the root, then deletes the joined
 identity, its workspace record left to go stale as at retire: an unknown admission or
 an unconfirmed removal keeps it for the rerun, and a root that can't act
 keeps the membership with `admission-removal-blocked`, its record kept for
-the home's retire and `--reconcile-admissions`. A joined team admitted
+the home's retire and `--reconcile-admissions`. A joined team the root
+admitted that is no longer eligible stays joined at the next start, with a
+warning: a start makes no protected call, so retire (or a leave once the team
+is eligible again) removes it through the root. A joined team admitted
 before the opt-in leaves as before.
 
 `oats aweb setup --check-only --json` reports, with the setting, an

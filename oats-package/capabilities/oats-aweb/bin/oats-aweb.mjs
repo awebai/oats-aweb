@@ -2461,6 +2461,14 @@ if (event === "launch") {
         warnings.push(`kept joined team ${row.label}: it is now the default team, and this home's primary identity is still in ${defaultTeamObject(oldMeta)?.label || "its spawn team"}; respawn to move it`);
         continue;
       }
+      // A membership the endorsed root admitted is the root's to remove (C-6), and a start makes
+      // no protected call (C-4): aw's own delete would be a second removal act (hosted
+      // self-retirement) or refused. It stays joined until retire, or a leave, removes it.
+      const admission = readAdmission(providerStateDir(), row.label);
+      if (admission && admission.state !== "removed") {
+        warnings.push(`kept joined team ${row.label}: it is no longer eligible, but the endorsed root admitted it and only the root removes that membership → retire this instance, which removes it through the root, or make ${row.label} eligible again and run \`oats aweb leave --labels ${row.label}\``);
+        continue;
+      }
       try {
         oldMeta = leaveJoinedTeam(row.label, oldMeta).meta;
         const left = { label: row.label, team: row.team, at: new Date().toISOString(), reason: "no-longer-eligible" };

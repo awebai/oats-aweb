@@ -231,3 +231,34 @@ test("acceptance 13 (v4.3.25): an explicit leave of an admitted team in aweb's h
   assert.ok(JSON.stringify(r.doc.warnings).includes(`the workspace on ${ids.ops} stays at the service until it goes stale`), JSON.stringify(r.doc));
   assert.ok(!existsSync(joinedHome(fx)));
 });
+
+/** dev-1 spawned with ops joined, then started with ops gone from its eligible teams. */
+function startedWithoutOps(fx, ids) {
+  spawned(fx);
+  const before = fx.fake.calls().length;
+  const live = JSON.stringify([{ label: "default", team: ids.default, default: true, from: "local" }]);
+  const r = fx.launch("dev-1", { extra: { OATS_TEAMS: live, OATS_TEAMS_SOURCE: "live" } });
+  return { r, calls: fx.fake.calls().slice(before).map((c) => commandArgs(c.args).join(" ")) };
+}
+
+test("C-4, C-6: a start never drops an admitted joined team that is no longer eligible: on a team in aweb's hosted zone it sends no workspace delete, so nothing self-retires the membership", (t) => {
+  const ids = { default: "backend:review.aweb.ai", ops: "ops:review.aweb.ai" };
+  const fx = attributionFixture(t, { teamIds: ids, teams: [ids.default, ids.ops], service: { policy: { ...POLICY, teams: [ids.default, ids.ops] } }, settings: { join: "ops" } });
+  const { r, calls } = startedWithoutOps(fx, ids);
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.ok(!calls.some((c) => c.startsWith("workspace delete")), calls.join(", "));
+  assert.deepEqual(fx.fake.selfRetired(), []);
+  assert.deepEqual(fx.fake.removed(), []);
+  assert.equal(record(fx, "dev-1", "ops").state, "committed");
+  assert.ok(existsSync(joinedHome(fx)));
+  assert.deepEqual(r.doc.meta.joinedTeams.map((j) => j.label), ["ops"]);
+});
+
+test("C-4, C-6: a start keeps an admitted joined team that is no longer eligible, and says only the root removes it, at retire", (t) => {
+  const fx = attributionFixture(t, { settings: { join: "ops" } });
+  const { r, calls } = startedWithoutOps(fx, { default: TEAM });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.ok(!calls.some((c) => c.startsWith("workspace delete")), calls.join(", "));
+  assert.equal(record(fx, "dev-1", "ops").state, "committed");
+  assert.ok(String(r.doc.warning).includes("kept joined team ops") && String(r.doc.warning).includes("retire"), String(r.doc.warning));
+});
