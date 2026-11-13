@@ -166,6 +166,7 @@ syncBuiltinESMExports();
   return file;
 }
 
+// protocol: retire-remove/another
 test("1. a take-over that lands between a retire's read and its removal keeps its lock, and the retire says it did not remove it", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), other = join(fx.base, "seat-b-home");
@@ -181,6 +182,7 @@ test("1. a take-over that lands between a retire's read and its removal keeps it
   assert.equal(existsSync(fx.guard), false);
 });
 
+// protocol: take/another
 test("2. two take-overs of one lock: exactly one wins, and the other refuses naming the holder", async (t) => {
   const fx = fixture(t);
   write(fx.lock, JSON.stringify(goneHolder(fx)));
@@ -208,6 +210,7 @@ test("2. two take-overs of one lock: exactly one wins, and the other refuses nam
   assert.equal(existsSync(fx.guard), false);
 });
 
+// protocol: spawn-read/absent, take/expected, rewrite/ours, last-read/ours, retire-read/ours, retire-remove/ours
 test("3. the holder's retire, with no interleaving, removes its lock", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -222,6 +225,7 @@ test("3. the holder's retire, with no interleaving, removes its lock", (t) => {
   assert.equal(existsSync(fx.guard), false);
 });
 
+// protocol: spawn-read/refused
 test("4. a retire killed while it changed the lock: the next spawn refuses, naming the guard, then the moved lock, and the fix for each", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -251,6 +255,7 @@ test("4. a retire killed while it changed the lock: the next spawn refuses, nami
   assert.equal(existsSync(join(b, ".aw")), false, "nothing copied");
 });
 
+// protocol: retire-read/refused
 test("a moved-aside lock is reported by a take-over and by a retire too", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -268,6 +273,7 @@ test("a moved-aside lock is reported by a take-over and by a retire too", (t) =>
   assert.ok(existsSync(fx.held));
 });
 
+// protocol: take/expected
 test("a take-over with no interleaving still takes over, and leaves no private file", (t) => {
   const fx = fixture(t);
   write(fx.lock, JSON.stringify(goneHolder(fx)));
@@ -281,6 +287,7 @@ test("a take-over with no interleaving still takes over, and leaves no private f
   assert.equal(existsSync(fx.guard), false);
 });
 
+// protocol: retire-read/refused
 test("a retire retried after one killed mid-way reports the guard, then the moved lock, with the lock's name empty", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -302,6 +309,7 @@ test("a retire retried after one killed mid-way reports the guard, then the move
   assert.ok(existsSync(fx.held), "the moved lock is not removed");
 });
 
+// protocol: spawn-read/refused
 test("a spawn that would refuse the holder reports a moved-aside lock first", (t) => {
   const fx = fixture(t);
   const live = fx.homeOf("seat-a");
@@ -312,6 +320,7 @@ test("a spawn that would refuse the holder reports a moved-aside lock first", (t
   assert.ok(r.doc.warning.includes(`${fx.held} is this retained identity's lock, moved aside`), r.doc.warning);
 });
 
+// protocol: rewrite/refused
 test("a take-over killed between a spawn's take and its success rewrite: the spawn fails with the guard's whole fix", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -371,6 +380,7 @@ test("the moved-aside lock's recovery command works for a path with spaces and q
 const connectsIn = (fx) => readFileSync(join(fx.base, "aw.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
   .filter((c) => c.argv[0] === "workspace" && c.argv[1] === "connect").map((c) => c.cwd);
 
+// protocol: rollback-read/another
 test("a take-over that lands while a spawn's rollback reconnects the legacy home: the spawn says the binding may be the legacy home's, and names the fix", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -391,6 +401,7 @@ test("a take-over that lands while a spawn's rollback reconnects the legacy home
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b, "the successor's lock is left alone");
 });
 
+// protocol: rollback-read/another
 test("a take-over that lands between a spawn's take and its connect: the spawn fails, saying the binding may be this home's, and names the fix", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -410,6 +421,7 @@ test("a take-over that lands between a spawn's take and its connect: the spawn f
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });
 
+// protocol: rollback-read/another
 test("a take-over that lands while a spawn's failed reconnect of the legacy home runs: the spawn names the holder and its fix, uncut", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -431,6 +443,7 @@ test("a take-over that lands while a spawn's failed reconnect of the legacy home
   assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept: the restore did not succeed");
 });
 
+// protocol: last-read/another
 test("a take-over that lands while a spawn registers with the host wake broker: the spawn fails, deregisters the home and names the fix", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -529,6 +542,7 @@ async function midRewriteRace(fx, step, envA = {}) {
   return { a, b, lost, won };
 }
 
+// protocol: last-read/refused
 test("a take-over mid-rewrite while a spawn registers with the wake broker: the spawn's read waits for the guard, and the spawn fails saying the holder is unknown", async (t) => {
   const fx = fixture(t);
   const { a, b, lost, won } = await midRewriteRace(fx, "wake register");
@@ -544,6 +558,7 @@ test("a take-over mid-rewrite while a spawn registers with the wake broker: the 
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });
 
+// protocol: rollback-read/refused
 test("a take-over mid-rewrite while a failing spawn rolls back: the rollback's read waits for the guard, and nothing is reconnected while the holder is unknown", async (t) => {
   const fx = fixture(t);
   const { a, b, lost, won } = await midRewriteRace(fx, "check", { FAKE_RETAINED_FAIL: "check" });
@@ -579,6 +594,7 @@ syncBuiltinESMExports();
   return file;
 }
 
+// protocol: release/another
 test("a second take-over that lands in a rollback's cleanup: the exit names the holder from its last guarded read, not the first successor", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b"), c = fx.homeOf("seat-c");
@@ -603,6 +619,7 @@ test("a second take-over that lands in a rollback's cleanup: the exit names the 
   assert.doesNotMatch(lost.doc.warning, new RegExp(`from ${b.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}`), "the displaced seat is not named");
 });
 
+// protocol: rollback-read/another
 test("a take-over that lands after a rollback's reconnect and before its cleanup: the exit names that holder", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
@@ -623,6 +640,7 @@ test("a take-over that lands after a rollback's reconnect and before its cleanup
   assert.ok(lost.doc.warning.includes(`run ${CONNECT} from ${b}`), lost.doc.warning);
 });
 
+// protocol: rewrite/another
 test("a take-over during a spawn's success rewrite, then another during its cleanup: only the holder of the last guarded read is named anywhere", async (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b"), c = fx.homeOf("seat-c");
@@ -689,6 +707,7 @@ syncBuiltinESMExports();
   return file;
 }
 
+// protocol: take/write-failed
 test("a take-over whose lock write fails part-way removes its own partial write and puts the holder's lock back", (t) => {
   const fx = fixture(t);
   write(fx.lock, JSON.stringify(goneHolder(fx)));
@@ -703,6 +722,7 @@ test("a take-over whose lock write fails part-way removes its own partial write 
   assert.equal(existsSync(join(b, ".aw")), false, "nothing copied");
 });
 
+// protocol: take/write-failed
 test("a take-over whose partial lock write can't be removed names the moved lock and the whole fix, uncut", (t) => {
   const fx = fixture(t);
   write(fx.lock, JSON.stringify(goneHolder(fx)));
@@ -725,6 +745,7 @@ test("a take-over whose partial lock write can't be removed names the moved lock
   assert.ok(next.doc.warning.includes(`\`mv -f -- '${fx.held}' '${fx.lock}'\``), next.doc.warning);
 });
 
+// protocol: take/write-failed
 test("a plain spawn whose lock write lands whole, then fails, and can't be removed names its own lock and how to remove it", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -744,6 +765,7 @@ test("a plain spawn whose lock write lands whole, then fails, and can't be remov
   assert.equal(again.status, 0, again.stdout + again.stderr);
 });
 
+// protocol: take/write-failed
 test("a take-over whose lock write lands whole, then fails, and can't be removed says to move the holder's lock back over it", (t) => {
   const fx = fixture(t);
   write(fx.lock, JSON.stringify(goneHolder(fx)));
@@ -768,7 +790,11 @@ test("a take-over whose lock write lands whole, then fails, and can't be removed
  *  first check of the moved lock after it is moved (EIO); CLOSE_FAIL=<n> makes closing
  *  the n-th guard report EIO after it closed; READ_LOCK_FAIL fails every read of the
  *  lock's bytes at its name (EIO), READ_HELD_FAIL of the moved lock's; LOCK_AFTER_READ is a lock written once the first
- *  guard is removed. */
+ *  guard is removed. AT_GUARD=<n> changes the lock just before the n-th guard is
+ *  created, as AT_GUARD_DO says: "remove" removes it, "unreadable" makes its bytes
+ *  unreadable from then on (EIO, at its name or moved aside), "stray:<text>" writes
+ *  <text> as a moved-aside lock another change left, anything else is written as the
+ *  lock. */
 function stageFailPreload(fx) {
   const file = join(fx.base, "stage-fail.mjs");
   writeFileSync(file, `import fs from "node:fs";
@@ -785,7 +811,20 @@ fs.openSync = function (path, ...rest) {
 fs.writeSync = function (fd, ...rest) { if (failing.has(fd)) { failed = true; throw fail("ENOSPC"); } return write.call(this, fd, ...rest); };
 let guardUnlinks = 0, moved = false, guardFd, guardOpens = 0;
 const lstat = fs.lstatSync, close = fs.closeSync, readFile = fs.readFileSync;
+let atGuard = 0, unreadable = false;
+const openAt = fs.openSync;
+fs.openSync = function (path, ...rest) {
+  if (String(path) === guard && ++atGuard === Number(process.env.AT_GUARD)) {
+    const what = process.env.AT_GUARD_DO;
+    if (what === "remove") { try { unlink.call(fs, lock); } catch { /* already absent */ } }
+    else if (what === "unreadable") unreadable = true;
+    else if (what.startsWith("stray:")) fs.writeFileSync(held, what.slice(6));
+    else fs.writeFileSync(lock, what);
+  }
+  return openAt.call(this, path, ...rest);
+};
 fs.readFileSync = function (path, ...rest) {
+  if (unreadable && (String(path) === lock || String(path) === held)) throw fail("EIO");
   if (process.env.READ_LOCK_FAIL && String(path) === lock) throw fail("EIO");
   if (process.env.READ_HELD_FAIL && String(path) === held) throw fail("EIO");
   return readFile.call(this, path, ...rest);
@@ -827,6 +866,7 @@ function takeOverWith(t, env) {
   return { fx, before, b, r, w: r.doc.warning };
 }
 
+// protocol: take/no-guard
 test("a take-over whose guard can't be recorded removes the guard it created, and the lock is as it was", (t) => {
   const { fx, before, w } = takeOverWith(t, { GUARD_WRITE_FAIL: "2" });
   assert.ok(w.includes(`the retained identity's lock ${fx.lock} could not be taken (ENOSPC); nothing copied`), w);
@@ -834,6 +874,7 @@ test("a take-over whose guard can't be recorded removes the guard it created, an
   assert.equal(readFileSync(fx.lock, "utf8"), before);
 });
 
+// protocol: take/leftovers
 test("a take-over whose unrecorded guard can't be removed names it and its fix", (t) => {
   const { fx, w } = takeOverWith(t, { GUARD_WRITE_FAIL: "2", STUCK_GUARD: "1" });
   assert.ok(w.includes(`could not be taken (ENOSPC); nothing copied; ${fx.guard} is this change's guard, left by a step that failed (ENOSPC)`), w);
@@ -841,6 +882,7 @@ test("a take-over whose unrecorded guard can't be removed names it and its fix",
   assert.equal(existsSync(fx.guard), true);
 });
 
+// protocol: take/write-failed
 test("a take-over that can't remove the moved lock after writing its own puts the moved lock back", (t) => {
   const { fx, before, w } = takeOverWith(t, { HELD_UNLINK_FAIL: "1" });
   assert.ok(w.includes(`the retained identity's lock ${fx.lock} could not be taken (EIO); nothing copied`), w);
@@ -849,6 +891,7 @@ test("a take-over that can't remove the moved lock after writing its own puts th
   assert.equal(existsSync(fx.guard), false);
 });
 
+// protocol: take/leftovers
 test("a take-over that can neither remove nor put back the moved lock names both files and the fix", (t) => {
   const { fx, before, b, w } = takeOverWith(t, { HELD_UNLINK_FAIL: "1", STUCK_RENAME: "1" });
   assert.equal(readFileSync(fx.held, "utf8"), before);
@@ -859,6 +902,7 @@ test("a take-over that can neither remove nor put back the moved lock names both
   assert.ok(w.endsWith("then retry"), w);
 });
 
+// protocol: retire-remove/failed
 test("a retire that can't remove its moved lock puts it back and says it is left in place", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -874,6 +918,7 @@ test("a retire that can't remove its moved lock puts it back and says it is left
 
 const awCalls = (fx) => existsSync(join(fx.base, "aw.log")) ? readFileSync(join(fx.base, "aw.log"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 
+// protocol: take/leftovers
 test("a take-over whose guard can't be removed after it took the lock stops before any aw call, naming the guard and the lock", (t) => {
   const fx = fixture(t);
   write(fx.lock, JSON.stringify(goneHolder(fx)));
@@ -889,6 +934,7 @@ test("a take-over whose guard can't be removed after it took the lock stops befo
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });
 
+// protocol: last-read/leftovers
 test("a spawn whose guard can't be removed after its last guarded read is not briefed, and names the guard", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -903,6 +949,7 @@ test("a spawn whose guard can't be removed after its last guarded read is not br
   assert.equal(existsSync(fx.guard), true);
 });
 
+// protocol: retire-remove/leftovers
 test("a retire that links another seat's lock back but can't remove the moved name names it and its fix, exit unchanged", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), other = join(fx.base, "seat-b-home");
@@ -920,6 +967,7 @@ test("a retire that links another seat's lock back but can't remove the moved na
   assert.equal(existsSync(fx.guard), false);
 });
 
+// protocol: rollback-read/leftovers
 test("a rollback whose read after its reconnect leaves the guard stops there, keeping the copy and the lock, and names the guard", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -933,6 +981,7 @@ test("a rollback whose read after its reconnect leaves the guard stops there, ke
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, a, "the lock is left in place");
 });
 
+// protocol: take/unknown
 test("a take-over that can't inspect the lock it moved aside puts it back untouched", (t) => {
   const fx = fixture(t);
   write(fx.lock, JSON.stringify(goneHolder(fx)));
@@ -946,6 +995,7 @@ test("a take-over that can't inspect the lock it moved aside puts it back untouc
   assert.equal(existsSync(fx.guard), false);
 });
 
+// protocol: spawn-read/no-guard
 test("a guard whose close reports an error is removed, and the spawn says the guard could not be taken", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -957,6 +1007,7 @@ test("a guard whose close reports an error is removed, and the spawn says the gu
   assert.equal(existsSync(fx.lock), false);
 });
 
+// protocol: rollback-read/unknown
 test("a rollback that can't read the lock's bytes treats its holder as unknown: no reconnect, and the copy is kept", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -970,6 +1021,7 @@ test("a rollback that can't read the lock's bytes treats its holder as unknown: 
   assert.equal(existsSync(fx.lock), true);
 });
 
+// protocol: take/leftovers
 test("a plain spawn that loses to another's lock and can't clean the moved name gives the whole fix, uncut", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
@@ -984,6 +1036,7 @@ test("a plain spawn that loses to another's lock and can't clean the moved name 
   assert.equal(existsSync(join(a, ".aw")), false, "nothing copied");
 });
 
+// protocol: retire-read/unknown ("at its name"), retire-remove/unknown ("once moved aside")
 for (const [where, env, says] of [
   ["at its name", { READ_LOCK_FAIL: "1" }, "it could not be read (EIO), so whether this home holds it is unknown"],
   ["once moved aside", { READ_HELD_FAIL: "1" }, "it could not be read (EIO) when retire went to remove it, so whether this home holds it is unknown"],
@@ -1003,3 +1056,245 @@ for (const [where, env, says] of [
     assert.equal(existsSync(fx.held), false);
   });
 }
+
+// The protocol table's cells (lib/seat-lock.mjs, the header) that no test above pins.
+// Each test is marked with the cell it pins: `protocol: <operation>/<outcome>`. A spawn
+// makes its guarded steps in this order: its read (1), its take (2), the success
+// rewrite (3) and the read after its last aw call (4); one that fails after its take
+// makes the rollback's reads (3, 4) and its release (5) instead.
+const anotherSeat = (fx) => ({ home: join(fx.root, "agents", "dev", "instances", "seat-x"), instance: "seat-x", team: TEAM, takenAt: "2026-11-02T10:00:00.000Z", host: "container-b" });
+/** A spawn of seat-a with the lock changed just before its n-th guarded step. */
+function spawnWith(t, { takeOver = false, at, change, env = {} }) {
+  const fx = fixture(t);
+  if (takeOver) write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const before = existsSync(fx.lock) ? readFileSync(fx.lock, "utf8") : undefined;
+  const a = fx.homeOf("seat-a");
+  const doIt = change === "another" ? JSON.stringify(anotherSeat(fx)) : change === "STRAY" ? `stray:${JSON.stringify(anotherSeat(fx))}` : change;
+  const r = runHook(fx, "spawn", a, { identity: takeOver ? { takeOver: true } : {}, preload: stageFailPreload(fx), env: { ...env, ...(at ? { AT_GUARD: String(at), AT_GUARD_DO: doIt } : {}) } });
+  return { fx, a, r, w: r.doc?.warning || "", before, calls: awCalls(fx).map((c) => c.argv.slice(0, 2).join(" ")) };
+}
+const lockHome = (fx) => JSON.parse(readFileSync(fx.lock, "utf8")).home;
+
+// protocol: spawn-read/leftovers
+test("a spawn whose read of the lock leaves its guard stops there: nothing copied, the guard and its fix named", (t) => {
+  const { fx, a, r, w, calls } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.startsWith(`oats-aweb: identity at ${fx.source} was not seated, and nothing was copied: ${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.ok(w.endsWith(`remove ${fx.guard} and retry`), w);
+  assert.equal(existsSync(fx.lock), false, "no lock taken");
+  assert.equal(existsSync(join(a, ".aw")), false);
+  assert.equal(calls.includes("workspace connect"), false);
+});
+
+// protocol: take/another
+test("a plain spawn whose take finds another seat's lock, written after its read, copies nothing and names the lock", (t) => {
+  const { fx, a, r, w } = spawnWith(t, { at: 2, change: "another" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(w, `oats-aweb: identity at ${fx.source} was taken by another spawn a moment ago (${fx.lock} exists); nothing copied`);
+  assert.equal(lockHome(fx), anotherSeat(fx).home, "that lock is untouched");
+  assert.equal(existsSync(join(a, ".aw")), false);
+});
+
+// protocol: take/absent
+test("a take-over whose lock is removed between its read and its take takes nothing and says to spawn again", (t) => {
+  const { fx, a, r, w } = spawnWith(t, { takeOver: true, at: 2, change: "remove" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(w, `oats-aweb: the retained identity's lock ${fx.lock} was removed after this spawn read it, so nothing was taken over or copied; spawn again: with no lock, the spawn takes the seat`);
+  assert.equal(existsSync(fx.lock), false, "no lock is created");
+  assert.equal(existsSync(join(a, ".aw")), false);
+});
+
+// protocol: take/unknown
+test("a take-over whose lock can't be read at its take puts it back untouched and says it could not be read", (t) => {
+  const { fx, a, r, w, before } = spawnWith(t, { takeOver: true, at: 2, change: "unreadable" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.includes(`${fx.lock} changed after this spawn read it, so nothing was taken over or copied: it is now held by a lock that could not be read (EIO)`), w);
+  assert.equal(readFileSync(fx.lock, "utf8"), before, "the lock is back at its name, unchanged");
+  assert.equal(existsSync(fx.held), false);
+  assert.equal(existsSync(join(a, ".aw")), false);
+});
+
+// protocol: rewrite/absent, rollback-read/absent
+test("a spawn whose lock is removed before its success rewrite is not briefed, and its rollback restores the legacy home", (t) => {
+  const { fx, a, r, calls } = spawnWith(t, { at: 3, change: "remove" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc?.brief, undefined);
+  const text = r.doc?.warning || r.stderr;
+  assert.ok(text.includes(`the retained identity's lock ${fx.lock} was removed during this spawn; the seat is not briefed`), text);
+  assert.equal(calls.filter((c) => c === "workspace connect").length, 2, "the legacy home is reconnected");
+  assert.equal(existsSync(join(a, ".aw")), false, "the copy is removed");
+  assert.equal(existsSync(fx.lock), false);
+});
+
+// protocol: rewrite/unknown
+test("a spawn whose lock can't be read at its success rewrite is not briefed, and its rollback reconnects nothing and keeps the copy", (t) => {
+  const { fx, a, r, w, calls } = spawnWith(t, { at: 3, change: "unreadable" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.brief, undefined);
+  assert.ok(w.includes(`${fx.lock} could not be read (EIO) during this spawn; the seat is not briefed`), w);
+  assert.ok(w.includes(`this seat's copy was kept at ${join(a, ".aw")}: once the lock can be read, run ${CONNECT}`), w);
+  assert.equal(calls.filter((c) => c === "workspace connect").length, 1, "no reconnect");
+  assert.equal(lockHome(fx), a, "the lock is left as it was");
+});
+
+// protocol: rewrite/leftovers
+test("a spawn whose success rewrite leaves its guard makes no further aw call, keeps the copy and names the guard", (t) => {
+  const { fx, a, r, w, calls } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "3" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.brief, undefined);
+  assert.ok(w.includes(`the step that rewrote the retained identity's lock ${fx.lock} with the alias left files it could not clean; the seat is not briefed`), w);
+  assert.ok(w.includes(`${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.equal(calls.at(-1), "whoami --json", "no aw call after the step that left the guard");
+  assert.equal(existsSync(join(a, ".aw")), true, "the copy is kept");
+  assert.equal(existsSync(fx.guard), true);
+});
+
+// protocol: last-read/absent
+test("a spawn whose lock is removed before its read after the last aw call is not briefed, and its rollback restores the legacy home", (t) => {
+  const { fx, a, r, calls } = spawnWith(t, { at: 4, change: "remove" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc?.brief, undefined);
+  const text = r.doc?.warning || r.stderr;
+  assert.ok(text.includes(`the retained identity's lock ${fx.lock} was removed during this spawn; the seat is not briefed`), text);
+  assert.ok(calls.includes("wake deregister"), "the wake registration goes with the seat");
+  assert.equal(calls.filter((c) => c === "workspace connect").length, 2, "the legacy home is reconnected");
+  assert.equal(existsSync(join(a, ".aw")), false);
+});
+
+// protocol: last-read/unknown
+test("a spawn whose lock can't be read after its last aw call is not briefed, and its rollback reconnects nothing and keeps the copy", (t) => {
+  const { fx, a, r, w, calls } = spawnWith(t, { at: 4, change: "unreadable" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.brief, undefined);
+  assert.ok(w.includes(`${fx.lock} could not be read (EIO) during this spawn; the seat is not briefed`), w);
+  assert.ok(w.includes(`this seat's copy was kept at ${join(a, ".aw")}`), w);
+  assert.equal(calls.filter((c) => c === "workspace connect").length, 1, "no reconnect");
+  assert.equal(lockHome(fx), a);
+});
+
+// protocol: rollback-read/leftovers (the read before the reconnect)
+test("a rollback whose first read leaves its guard reconnects nothing, keeps the copy and the lock, and names the guard", (t) => {
+  const { fx, a, r, w, calls } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "3", FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.includes(`whether another seat took the identity over is unknown: a lock step of this spawn left files it could not clean, named in this failure`), w);
+  assert.ok(w.includes(`${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.equal(calls.at(-1), "check --online", "no aw call after the read that left the guard");
+  assert.equal(existsSync(join(a, ".aw")), true);
+  assert.equal(lockHome(fx), a);
+});
+
+// protocol: rollback-read/unknown (the read after the reconnect)
+test("a rollback whose read after the reconnect can't read the lock says whether another seat holds it is unknown, and leaves the lock", (t) => {
+  const { fx, a, r, w } = spawnWith(t, { at: 4, change: "unreadable", env: { FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.includes(`the server binding was restored to the legacy home and the copy removed, but whether another seat took the identity over while that ran is unknown: ${fx.lock} could not be read (EIO); if one holds the lock, run ${CONNECT} from its home`), w);
+  assert.ok(w.endsWith(`the lock ${fx.lock} was left in place: ${fx.lock} could not be read (EIO)`), w);
+  assert.equal(existsSync(join(a, ".aw")), false);
+  assert.equal(lockHome(fx), a);
+});
+
+// protocol: release/another
+test("a rollback's release that finds another seat's lock leaves it and names that seat", (t) => {
+  const { fx, r, w } = spawnWith(t, { at: 5, change: "another", env: { FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const x = anotherSeat(fx);
+  assert.ok(w.includes(`another seat took the identity over while that ran (instance seat-x, home ${x.home}, host container-b, since ${x.takenAt}), so the binding may point at the legacy home, not at that seat: run ${CONNECT} from ${x.home}`), w);
+  assert.ok(w.endsWith(`the lock ${fx.lock} names another seat now (instance seat-x, home ${x.home}, host container-b, since ${x.takenAt}), so it was left in place`), w);
+  assert.equal(lockHome(fx), x.home);
+});
+
+// protocol: release/absent
+test("a rollback's release that finds no lock has nothing to remove and adds nothing", (t) => {
+  const { fx, a, r } = spawnWith(t, { at: 5, change: "remove", env: { FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const text = r.doc?.warning || r.stderr;
+  assert.ok(text.includes("(the server binding was restored to the legacy home and the copy removed)"), text);
+  assert.equal(text.includes("left in place"), false, text);
+  assert.equal(existsSync(fx.lock), false);
+  assert.equal(existsSync(join(a, ".aw")), false);
+});
+
+// protocol: release/unknown
+test("a rollback's release that can't read the lock leaves it and says it could not be read", (t) => {
+  const { fx, a, r, w } = spawnWith(t, { at: 5, change: "unreadable", env: { FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.includes(`whether another seat took the identity over while that ran is unknown: ${fx.lock} could not be read (EIO)`), w);
+  assert.ok(w.endsWith(`the lock ${fx.lock} was left in place: ${fx.lock} could not be read (EIO)`), w);
+  assert.equal(lockHome(fx), a);
+});
+
+// protocol: release/leftovers
+test("a rollback's release that removes its lock but leaves its guard says both, with the guard's fix", (t) => {
+  const { fx, r, w } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "5", FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.includes(`the lock ${fx.lock} was removed, but that step left files it could not clean; ${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.ok(w.endsWith(`remove ${fx.guard} and retry`), w);
+  assert.equal(existsSync(fx.lock), false);
+  assert.equal(existsSync(fx.guard), true);
+});
+
+/** The retire of a seated seat-a, with the stage-failure preload and `env`. */
+function retireWith(t, env) {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const spawned = runHook(fx, "spawn", a);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const r = runHook(fx, "retire", a, { preload: stageFailPreload(fx), env: { OATS_META: JSON.stringify(spawned.doc.meta), ...env } });
+  return { fx, a, r, w: r.doc?.warning || "" };
+}
+
+// protocol: retire-read/leftovers
+test("a retire whose read of the lock leaves its guard removes nothing, names the guard, and exits as for an untouched lock", (t) => {
+  const { fx, a, r, w } = retireWith(t, { GUARD_UNLINK_FAIL: "1" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(w.includes(`(lock ${fx.lock} left in place: ${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
+  assert.equal(lockHome(fx), a, "the lock is not removed after a step that left the guard");
+});
+
+// protocol: retire-read/absent
+test("a retire that finds no lock says it is already gone", (t) => {
+  const { fx, r, w } = retireWith(t, { AT_GUARD: "1", AT_GUARD_DO: "remove" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(w.includes(`released the retained identity "retained" (lock ${fx.lock} already gone)`), w);
+  assert.equal(existsSync(fx.guard), false);
+});
+
+// protocol: retire-remove/absent
+test("a retire whose lock is removed between its read and its removal says the lock is already gone", (t) => {
+  const { fx, r, w } = retireWith(t, { AT_GUARD: "2", AT_GUARD_DO: "remove" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(w.includes(`released the retained identity "retained" (lock ${fx.lock} already gone)`), w);
+  assert.equal(existsSync(fx.lock), false);
+  assert.equal(existsSync(fx.held), false);
+});
+
+const STRAY_TEXT = (fx) => `${fx.held} is this retained identity's lock, moved aside by a spawn, take-over or retire that did not finish (instance seat-x`;
+
+// protocol: take/refused
+test("a take-over that finds a moved-aside lock another change left at its take takes nothing and names that file's fix", (t) => {
+  const { fx, a, r, w, before } = spawnWith(t, { takeOver: true, at: 2, change: "STRAY" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.startsWith(`oats-aweb: identity at ${fx.source} was not seated, and nothing was copied: ${STRAY_TEXT(fx)}`), w);
+  assert.ok(w.endsWith("then retry"), w);
+  assert.equal(readFileSync(fx.lock, "utf8"), before, "the lock is untouched");
+  assert.equal(existsSync(join(a, ".aw")), false);
+});
+
+// protocol: release/refused
+test("a rollback's release that finds a moved-aside lock another change left leaves its lock and names that file's fix", (t) => {
+  const { fx, a, r, w } = spawnWith(t, { at: 5, change: "STRAY", env: { FAKE_RETAINED_FAIL: "check" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(w.includes(`whether another seat took the identity over while that ran is unknown: ${STRAY_TEXT(fx)}`), w);
+  assert.ok(w.includes(`the lock ${fx.lock} was left in place: ${STRAY_TEXT(fx)}`), w);
+  assert.equal(lockHome(fx), a);
+  assert.equal(existsSync(fx.held), true, "never adopted or removed");
+});
+
+// protocol: retire-remove/refused
+test("a retire that finds a moved-aside lock another change left at its removal leaves the lock and names that file's fix", (t) => {
+  const { fx, a, r, w } = retireWith(t, { AT_GUARD: "2", AT_GUARD_DO: "stray:" + JSON.stringify({ home: "/elsewhere/seat-x", instance: "seat-x" }) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(w.includes(`(lock ${fx.lock} left in place: ${STRAY_TEXT(fx)}`), w);
+  assert.equal(lockHome(fx), a);
+  assert.equal(existsSync(fx.held), true);
+});

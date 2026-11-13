@@ -10,6 +10,83 @@
 // lock's holder as read under the guard, or says it is unknown; every guarded step
 // reports what it could not clean, and nothing runs after a step that left anything.
 //
+// The protocol as a table: one row per operation that touches the lock or its private
+// names (all in bin/oats-aweb.mjs). Each makes one guarded step: a read
+// (readSeatLockGuarded) or a change (swapSeatLock). What it does for each outcome of
+// that step's read of the lock:
+// - ours: the lock names this home (in a spawn, with this spawn's takenAt);
+// - another: it names another seat; absent: there is none;
+// - unknown: its bytes can't be read, or it can't be checked;
+// - refused: a guard or a moved-aside lock of another change is beside it, refused
+//   with its fix before anything is read (SeatLockRefusal);
+// - leftovers: the step left files it could not clean (SeatLockLeftovers): nothing runs
+//   after it, and the exit names each file with its fix.
+// [tag] is the test that pins the cell: the one marked `protocol: <tag>` in
+// test/retained-seat-lock-236.test.mjs; [227: …] and [228: …] are tests of
+// test/retained-seat-lock-227.test.mjs and test/retained-seat-killed-spawn-228.test.mjs.
+//
+// Spawn's read (a read; decides a plain spawn or a take-over). Exit 1, nothing copied,
+// on every outcome but "absent" and a take-over:
+//   ours, another (home here): refused, unless identity.takeOver
+//     [227: a lock whose holder home exists still refuses without takeOver]
+//   another (home not here): refused naming it, unless identity.takeOver
+//     [227: a lock whose holder home is not on this host refuses, …]
+//   absent: the plain take [spawn-read/absent]
+//   unknown: refused as a lock that can't be read, unless identity.takeOver
+//     [227: a lock that cannot be read refuses the same way; a dangling symlink …];
+//     no guard can be made: says to check the directory [spawn-read/no-guard]
+//   refused [spawn-read/refused]; leftovers [spawn-read/leftovers]
+// Take, or take-over (a change: absent, or the very lock read, to this spawn's lock).
+// Exit 1, nothing copied, on every outcome but the expected one:
+//   expected: taken; the copy and the aw calls follow [take/expected]
+//   another: names it [take/another]; absent (a take-over): spawn again [take/absent]
+//   unknown: put back untouched [take/unknown]
+//   its write fails: its own bytes removed, the lock put back [take/write-failed]
+//   refused [take/refused]; no guard [take/no-guard]; leftovers, taken or not
+//     [take/leftovers]
+// Success rewrite (a change: this spawn's lock to one with the alias):
+//   ours: rewritten [rewrite/ours]
+//   another, absent, unknown, refused: not briefed; the rollback runs [rewrite/another,
+//     rewrite/absent, rewrite/unknown, rewrite/refused]
+//   leftovers: not briefed; the rollback makes no aw call and no lock step
+//     [rewrite/leftovers]
+// Read after the spawn's last aw call (a read):
+//   ours: briefed, exit 0 [last-read/ours]
+//   another, absent, unknown, refused: not briefed; the rollback runs [last-read/another,
+//     last-read/absent, last-read/unknown, last-read/refused]
+//   leftovers: as for the rewrite [last-read/leftovers]
+// The rollback's reads (a read before the legacy home's reconnect, and one after it).
+// The spawn's exit, 1, names the holder of the rollback's last guarded read:
+//   ours, absent: reconnected, then the release [rollback-read/absent;
+//     228: a connect the server accepted but that failed …]
+//   another: before: no reconnect, the copy removed; after: the copy removed; the exit
+//     names that seat's connect [rollback-read/another]
+//   unknown, refused: before: nothing reconnected, the copy kept; after: the exit says
+//     the holder is unknown [rollback-read/unknown, rollback-read/refused]
+//   leftovers: the copy and the lock kept [rollback-read/leftovers]
+// The rollback's release (a change: this spawn's lock removed):
+//   ours: removed [228: a connect the server accepted but that failed …]
+//   another: left, named [release/another]; absent: nothing to do [release/absent]
+//   unknown, refused: left, the holder unknown [release/unknown, release/refused]
+//   leftovers: says whether it was removed [release/leftovers]
+// Retire's read (a read). The lock never changes retire's exit status:
+//   ours: the removal [retire-read/ours]
+//   another: left in place [228: a retained seat's retire leaves a lock another seat
+//     has taken over, and says so]
+//   absent: "already gone" [retire-read/absent]
+//   unknown: left, whether this home holds it unknown [retire-read/unknown; 228: a lock
+//     that cannot be read is left in place …; a lock that cannot be checked …]
+//   refused [retire-read/refused]; leftovers: left in place [retire-read/leftovers]
+// Retire's removal (a change: a lock naming this home removed):
+//   ours: removed [retire-remove/ours]
+//   another: put back; "this seat no longer owns it" [retire-remove/another]
+//   absent: "already gone" [retire-remove/absent]
+//   unknown: put back, whether this home holds it unknown [retire-remove/unknown]
+//   refused: left in place [retire-remove/refused]
+//   the removal fails: put back, left in place [retire-remove/failed; 228: a lock this
+//     home holds but cannot remove …]
+//   leftovers: what the step did, with each file's fix [retire-remove/leftovers]
+//
 // Two private names beside the lock, both written only inside swapSeatLock:
 // - `<lock>.guard`: created exclusively (O_CREAT|O_EXCL) for the change and removed
 //   after it. One change runs at a time; another waits GUARD_WAIT_MS for it, then

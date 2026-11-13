@@ -1213,7 +1213,8 @@ function retainedSeatSpawn(source, takeOver) {
     const kept = takeLeft;
     // Uncut: what the step left carries its whole fix.
     if (!seen.present) out({ warning: `oats-aweb: identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied${kept}` }, 1);
-    out({ warning: `oats-aweb: the retained identity's lock ${lockPath} changed after this spawn read it, so nothing was taken over or copied: it is now held by ${!taken.captured.present ? "no seat" : taken.captured.text === null ? `a lock that could not be read (${taken.captured.readError || "error"})` : seatLockHolderText(taken.captured.doc)}${kept}. A seat is never taken from a holder this spawn did not see: retire that seat first, or spawn again with identity.takeOver: true once you know its runtime is dead` }, 1);
+    if (!taken.captured.present) out({ warning: `oats-aweb: the retained identity's lock ${lockPath} was removed after this spawn read it, so nothing was taken over or copied${kept}; spawn again: with no lock, the spawn takes the seat` }, 1);
+    out({ warning: `oats-aweb: the retained identity's lock ${lockPath} changed after this spawn read it, so nothing was taken over or copied: it is now held by ${taken.captured.text === null ? `a lock that could not be read (${taken.captured.readError || "error"})` : seatLockHolderText(taken.captured.doc)}${kept}. A seat is never taken from a holder this spawn did not see: retire that seat first, or spawn again with identity.takeOver: true once you know its runtime is dead` }, 1);
   }
   /** Remove this spawn's own lock; any other is left. What its guarded step saw is the
    *  rollback's last read of the lock (lastSeen). → a note for the failure, or "". */
