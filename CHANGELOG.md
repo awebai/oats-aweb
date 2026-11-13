@@ -48,6 +48,32 @@
   that `aw workspace connect` and unset the variable. A seat whose
   `workspace.yaml` already names its server is unchanged.
 
+- **Fixed: team ids are compared as aw spells them (#252).** aw lowercases a
+  team id's name and domain, and drops a trailing dot from the domain. A
+  deployment can configure the id in another case (`Default:Example.Test`),
+  and each comparison of the configured id with one aw reports was exact. So:
+  - a spawn warned "team mismatch" on every mint;
+  - a join failed with "joined team differs", or found no root;
+  - a grant renewal kept the previous grant;
+  - retire's self-delete missed the workspace id;
+  - the roster missed the record and the presence, and setup took its own
+    mapping for another team;
+  - setup refused an invite to a mapped team (`E_SETUP_JOIN_MISMATCH`,
+    `E_SETUP_LABEL_COLLISION`), or redeemed one for a team a root was
+    already in;
+  - a joined team that became the default was left at launch;
+  - the probe refused the target as `contradictory-team`;
+  - a `roots` entry, which setup records under aw's spelling, was missed, so
+    the hook minted and read from `root` instead.
+
+  Every such comparison, in the hook and its libs, now goes through one canonical
+  comparison (`lib/aweb-team-id.mjs`), and every `roots` lookup takes the entry
+  aw reads as the same team when no key matches exactly. Two entries that both
+  do (and no exact one) count as none, as before. Setup records a team's root
+  under the key that already names it, in its own spelling, never a second one. The joined certificate's file
+  is found by the name aw gives it. Values the hook writes or prints keep the spelling
+  the kernel or aw gave. Nothing a deployment must change.
+
 - **Removed: the captured-execution path (#242).** The captured bindings
   (the `OATS_BINDING_FILE`, `OATS_INVOCATION_CONTEXT_FILE` and
   `OATS_SOURCE_RECEIPT_FILE` variables, and the `binding` and `invocation`

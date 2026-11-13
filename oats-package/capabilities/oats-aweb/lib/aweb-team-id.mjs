@@ -21,3 +21,12 @@ export function canonicalAwebTeamId(value) {
 }
 /** True when aw reads `a` and `b` as one team. */
 export const sameAwebTeamId = (a, b) => { const x = canonicalAwebTeamId(a); return x !== undefined && x === canonicalAwebTeamId(b); };
+/** The key of `map` (a team-keyed setting such as `roots`) that names `team`: `team`
+ *  itself when it is a key, else the one key aw reads as the same team. Undefined when
+ *  there is none, or more than one. The key keeps the spelling it was written with. */
+export function teamKeyIn(map, team) {
+  if (!map || typeof map !== "object" || Array.isArray(map) || typeof team !== "string") return undefined;
+  if (Object.hasOwn(map, team)) return team;
+  const keys = Object.keys(map).filter((key) => sameAwebTeamId(key, team));
+  return keys.length === 1 ? keys[0] : undefined;
+}

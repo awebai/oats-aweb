@@ -419,3 +419,28 @@ test("retire builds no command from a certificate id that is not valid, and reco
   assert.equal("command" in doc.meta.pendingControllerCleanup[0], false);
   assert.deepEqual(readRecord(fx.recordFile).entries.map((e) => e.certificateId), ["cert-default-123"]);
 });
+
+// awebai/oats-aweb#252: aw spells a team id canonically; a deployment may not.
+test("roster of a team configured in mixed case matches the record and the presence aw spells canonically", (t) => {
+  const fx = fixture(t), configured = "Default:Example.Test";
+  write(fx.recordFile, JSON.stringify({ version: 1, entries: [recorded({ certificateId: "cert-default-123", registry: "https://api.awid.ai", command: "aw id team remove-member --cert-id cert-default-123" })] }));
+  fx.members([{ certificate_id: "cert-default-123", team_id: DEFAULT, alias: "dev-1" }]);
+  const env = { OATS_DEFAULT_TEAM_ID: configured, OATS_TEAMS: JSON.stringify([{ label: "personal", team: configured, default: true, from: "local" }]), OATS_SETTINGS: JSON.stringify({ roots: { [configured]: join(fx.ws, "root") } }) };
+  const r = fx.hook("roster", ["--json"], env);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const doc = JSON.parse(r.stdout);
+  assert.match(doc.members.find((m) => m.alias === "dev-1")?.retired?.command || "", /--cert-id cert-default-123 /, r.stdout);
+  assert.equal((doc.problems || []).some((p) => p.source === "presence"), false, JSON.stringify(doc.problems));
+});
+
+test("roster of a default team configured in mixed case, with no root set, falls back to the workspace's root", (t) => {
+  const fx = fixture(t), configured = "Default:Example.Test";
+  write(join(fx.ws, ".aw", "identity.yaml"), "alias: root\n");
+  fx.members([{ certificate_id: "cert-default-123", team_id: DEFAULT, alias: "dev-1" }]);
+  // The meta a spawn records: the team as aw spelled it at the mint.
+  const meta = { alias: "dev-1", team: DEFAULT, defaultTeam: { label: "personal", team: DEFAULT }, identity: { mode: "local", alias: "dev-1", team: DEFAULT } };
+  const env = { OATS_DEFAULT_TEAM_ID: configured, OATS_TEAMS: JSON.stringify([{ label: "personal", team: configured, default: true, from: "local" }]), OATS_SETTINGS: "{}", OATS_META: JSON.stringify(meta) };
+  const r = fx.hook("roster", ["--json"], env);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(JSON.parse(r.stdout).members.some((m) => m.alias === "dev-1"), r.stdout);
+});

@@ -451,3 +451,60 @@ test('the released form\'s optional inspect waits 10s, the invite form\'s requir
   inspectInvite(TOKEN, '/', { run, validTeam, timeout: OPTIONAL_INSPECT_TIMEOUT_MS });
   assert.deepEqual(timeouts, [45000, 10000]);
 });
+
+// --- team ids as aw spells them (#252) ----------------------------------------
+// The kernel's mapping spells the team in mixed case; aw's invite inspection and
+// membership list spell it canonically (TEAM). aw reads both as one team.
+const MIXED = 'Ops_Team:Example.Invalid';
+
+test('--join <label> mapped to the invite\'s team in another case joins under that label (#252)', t => {
+  const f = fixture(t, { teams: [{ label: 'mine', team: MIXED, from: 'local' }] });
+  const r = f.run(['--join', 'mine', '--invite-stdin', '--name', 'host', '--service', SERVICE, '--json']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).result.teamRoot, join(f.dep, '.aweb-roots', 'mine'));
+  assert.equal(f.accepts().length, 1);
+});
+
+test('a derived label mapped to the invite\'s team in another case is reused, not a collision (#252)', t => {
+  const f = fixture(t, { teams: [{ label: LABEL, team: MIXED, from: 'shared' }] });
+  const r = f.run(['--invite-stdin', '--name', 'host', '--json']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).result.label, LABEL);
+  assert.equal(f.accepts().length, 1);
+});
+
+test('a team mapped under another label in another case joins under that label (#252)', t => {
+  const f = fixture(t, { teams: [{ label: 'ops', team: MIXED, from: 'shared' }], defaultTeam: { label: 'ops', team: MIXED, from: 'workspace' }, localTeams: false });
+  const r = f.run(['--invite-stdin', '--name', 'host', '--json']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const result = JSON.parse(r.stdout).result;
+  assert.equal(result.label, 'ops');
+  assert.equal(result.labelFrom, 'mapping');
+  assert.deepEqual(f.kernel.read().teams.map(row => row.label), ['ops'], 'no new label');
+});
+
+test('a member root recorded under the team in another case refuses before redeeming (#252)', t => {
+  const f = fixture(t);
+  const member = join(f.dir, 'member-root');
+  mkdirSync(join(member, '.aw'), { recursive: true });
+  writeFileSync(join(member, '.aw', 'teams.json'), JSON.stringify({ memberships: [{ team_id: TEAM }] }));
+  const r = f.run(['--invite-stdin', '--name', 'host', '--json'], { OATS_SETTINGS: JSON.stringify({ roots: { [MIXED]: member } }) });
+  const error = refused(f, r, 'E_SETUP_ALREADY_MEMBER');
+  assert.ok(error.message.startsWith(`already a member of ${TEAM} at ${member}; nothing redeemed`), error.message);
+});
+
+test('a join records its root under the roots key that already names the team in another case, never a second key (#252)', t => {
+  // Three spellings of one team: the kernel's mapping, the recorded roots key, and aw's (TEAM).
+  const f = fixture(t, { teams: [{ label: 'ops', team: MIXED, from: 'local' }], defaultTeam: { label: 'ops', team: MIXED, from: 'deployment' } });
+  const KEY = 'OPS_TEAM:EXAMPLE.INVALID', teamRoot = join(f.dir, 'team-root');
+  mkdirSync(teamRoot);
+  const local = join(f.dep, 'oats-local.yaml');
+  writeFileSync(local, `schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      "${KEY}": "${teamRoot}"\n`);
+  const r = f.run(['--join', 'ops', '--invite-stdin', '--name', 'host', '--service', SERVICE, '--json'], { OATS_SETTINGS: JSON.stringify({ roots: { [KEY]: teamRoot } }) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).result.teamRoot, teamRoot);
+  const text = readFileSync(local, 'utf8');
+  assert.equal((text.match(/^ {6}"[^"]+":/gm) || []).length, 1, text);
+  assert.match(text, new RegExp(`"${KEY}": "${teamRoot.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}"`), text);
+  assert.doesNotMatch(text, new RegExp(`"${TEAM.replace(/\./g, '\\.')}"`), 'no key in aw\'s spelling beside it');
+});

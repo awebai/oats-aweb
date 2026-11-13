@@ -125,3 +125,9 @@ test('closed workspace: an unmapped label still refuses before acceptance even w
  const f=fixture(t,{localTeams:false,teams:[{...d,from:'shared'}],defaultTeam:d}),err=error(f.run(['--invite-stdin']));
  assert.equal(err.code,'E_SETUP_POLICY');assert.deepEqual(f.aw.readCalls(),[]);assert.deepEqual(f.mutations(),[]);
 });
+
+// awebai/oats-aweb#252: aw spells a team id canonically; a deployment may not.
+test('a shared mapping of the team in mixed case is the same team: reused, and only the default is set',t=>{
+ const f=fixture(t,{teams:[{label:'joined',team:'Joined:Example.Invalid',from:'shared'}]});answer(f.run(['--invite-stdin']));
+ assert.deepEqual(f.mutations().map(c=>c.args[1]),['default']);
+});

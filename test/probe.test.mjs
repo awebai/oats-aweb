@@ -82,3 +82,17 @@ test('accepted attempted-send failures expose uncertainty without recovery IDs o
     assert(!Object.hasOwn(json, 'stderr'));
   }
 });
+test('a kernel default team in mixed case probes the identity aw minted in its canonical spelling (#252)', async t => {
+  const mixed = {label: 'aweb', team: 'Aweb:Test.Example', from: 'workspace'};
+  const f = fixture(t, {onCall: ({cmd, args, doc}) => {
+    if (cmd !== process.execPath || args[1] !== 'inspect') return undefined;
+    const home = doc.workspace.deployment + '/agents/worker/instances/worker-1';
+    return {schemaVersion: 1, ok: true, result: {operationsApi: 2, subject: {kind: 'instance', home}, instance: {home, harness: 'codex'}, layers: {messaging: {id: 'oats.aweb'}}, teamsSource: 'live', defaultTeam: mixed, recordedDefaultTeam: mixed, identity: {...doc.capabilityMeta['oats.aweb'].identity, provider: 'oats.aweb'}}};
+  }});
+  Object.assign(f.doc, {defaultTeam: mixed, teams: [{...mixed, default: true}]});
+  f.doc.capabilityMeta['oats.aweb'].defaultTeam = mixed;
+  f.save();
+  const r = await runProbe(f.args, f.deps);
+  assert.equal(r.outcome, 'PASS', r.reason);
+  assert.equal(sends(f).length, 1);
+});

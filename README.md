@@ -1173,6 +1173,13 @@ that root only when `aw team list --json` run in it lists `T`; the cwd,
 they refuse, naming the team, the root tried and the remedy (`oats aweb setup
 --join <label> --invite-stdin` in the deployment, then a respawn).
 
+Wherever the provider matches a team id it was given (a setting, a record, the
+kernel's environment) against one aw reports, it compares them as aw spells
+them: the name and the domain lowercased and trimmed, without a trailing dot
+(`lib/aweb-team-id.mjs`). A mixed-case `roots` key or default team therefore
+finds its root, its certificate and its workspace. What the provider writes or
+prints keeps the spelling it was given.
+
 The general OATS >=0.42.0 compatibility floor applies to the remaining provider
 behavior; explicit wider-team LOCAL join additionally requires the selected same
 kernel to support `inspect --home` for recorded soul provenance, then

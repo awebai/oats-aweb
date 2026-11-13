@@ -473,6 +473,24 @@ test("a joined team that becomes the live default stays joined until the home is
   assert.ok(existsSync(join(fx.home, ".aweb-identity-shared")), "the joined identity home is kept");
 });
 
+test("a joined team that becomes the live default under another spelling of its id stays joined (#252)", (t) => {
+  const fake = fakeAw117(t);
+  const fx = fixture(t, { settings: { join: "shared" } });
+  const doc = spawnDoc(runHook("spawn", { cwd: fx.home, env: { ...fx.env, PATH: fake.path } }));
+  assert.equal(doc.meta.joinedTeams[0].team, "shared:example.test", "recorded as aw spells it");
+  const spawnCalls = fake.calls().length;
+  const envAfterMove = { ...fx.env, PATH: fake.path, OATS_META: JSON.stringify(doc.meta), OATS_DEFAULT_TEAM: "shared", OATS_DEFAULT_TEAM_ID: "Shared:Example.Test", OATS_DEFAULT_TEAM_FROM: "workspace",
+    OATS_TEAMS: JSON.stringify([{ label: "shared", team: "Shared:Example.Test", default: true, from: "shared" }, { label: "personal", team: "default:example.test", default: false, from: "local" }]) };
+  const launch = runHook("launch", { cwd: fx.home, env: envAfterMove });
+  assert.equal(launch.status, 0, launch.stdout + launch.stderr);
+  const launched = JSON.parse(launch.stdout);
+  assert.doesNotMatch(launched.warning || "", /left joined team/);
+  assert.match(launched.warning, /kept joined team shared: it is now the default team/);
+  assert.deepEqual(launched.meta.joinedTeams.map((j) => j.label), ["shared"]);
+  assert.equal(fake.calls().slice(spawnCalls).some((c) => c.args[0] === "workspace" && c.args[1] === "delete"), false, "no aw call leaves the team");
+  assert.ok(existsSync(join(fx.home, ".aweb-identity-shared")), "the joined identity home is kept");
+});
+
 test("failed lost-team leave appends a durable event and keeps the team joined", (t) => {
   const fake = fakeAw117(t);
   const fx = fixture(t, { settings: { join: "shared" } });
