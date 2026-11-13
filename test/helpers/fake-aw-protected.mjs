@@ -20,7 +20,7 @@
 //   policy: {version, digest, bounds}; teams: {<team>: "protected"|"legacy"|"missing"}
 //   endorse: [answers, one per call]: "pending" | "committed" | "committed-without-chain" | {code}
 //   admit: {code} | {lostOnce: true} (the first execute's answer is lost)
-//   install: {code}; remove: "served" | "unserved" | {code}
+//   install: {code}; remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
 //   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
 //   createKill: true (create --no-address dies after its key)
 //   wake: "running" (the host wake broker runs; otherwise it doesn't)
@@ -42,7 +42,7 @@ export function fakeAwProtected(t, { service = {} } = {}) {
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const bin = join(base, "bin"), serviceFile = join(base, "service.json");
   writeFileSync(join(base, "registry.json"), JSON.stringify({ revoked: [], unavailable: false }));
-  writeFileSync(serviceFile, JSON.stringify({ policy: POLICY, teams: {}, endorse: ["pending", "committed"], remove: "unserved", ...service }));
+  writeFileSync(serviceFile, JSON.stringify({ policy: POLICY, teams: {}, endorse: ["pending", "committed"], remove: "served", ...service }));
   writeFileSync(join(base, "charges.json"), "{}");
   write(join(bin, "aw"), `#!${process.execPath}
 const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto");
@@ -188,8 +188,13 @@ if (cmd === "id team remove-agent") {
   const op = opId(); profile(); registered(homeDir());
   let cert; try { cert = readJson(cf); } catch { fail("certificate_invalid", cf + " is not a team certificate"); }
   const s = svc();
-  if (s.remove === "unserved") fail("receipt_unavailable", "the protected service does not answer team.agent.remove");
-  if (s.remove && typeof s.remove === "object") fail(s.remove.code, "operation " + op + ": " + s.remove.code);
+  // A list of answers is taken one per call, the last one kept.
+  const answer = Array.isArray(s.remove) ? (s.remove.length > 1 ? s.remove.shift() : s.remove[0]) : s.remove;
+  if (Array.isArray(s.remove)) saveSvc(s);
+  // A server that doesn't serve the act: aw's handoff client names the HTTP status (handoff/client.go refusal()).
+  if (answer === "unserved") fail("handoff_http_404", "team.agent.remove: the server answered 404");
+  if (answer && typeof answer === "object") fail(answer.code, "operation " + op + ": " + answer.code);
+  if (answer === "pending") emit({ operation_id: op, state: "pending", certificate_id: cert.certificate_id });
   fs.appendFileSync(path.join(base, "removed.jsonl"), JSON.stringify({ certificate_id: cert.certificate_id, operation_id: op }) + "\\n");
   emit({ operation_id: op, state: "committed", certificate_id: cert.certificate_id });
 }
@@ -202,8 +207,9 @@ if (args[0] === "service" && args[1] === "init") {
   console.log("Connected"); process.exit(0);
 }
 
-// ---- workspace delete, team list, id team members
-if (args[0] === "workspace" && args[1] === "delete") { const h = homeDir(); if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("", "no workspace in " + h); fs.rmSync(path.join(h, "workspace.yaml")); emit({ alias: args[2], alias_released: false, alias_released_reason: "protected_team" }); }
+// ---- workspace delete (workspace.go: a team outside aweb's hosted zone is a plain
+// delete, alias_released false, team_not_hosted), team list, id team members
+if (args[0] === "workspace" && args[1] === "delete") { const h = homeDir(); if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("", "no workspace in " + h); fs.rmSync(path.join(h, "workspace.yaml")); emit({ alias: args[2], identity_deleted: true, alias_released: false, alias_released_reason: "team_not_hosted" }); }
 if (args[0] === "team" && args[1] === "list") emit({ memberships: [] });
 
 // ---- the identity chain, as aw 1.36.58 runs it

@@ -12,7 +12,7 @@ import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, aw
 export const README_ADMISSION = 'README, "Human attribution: admission refusals"';
 
 // aw's admit codes (C-9's admit column).
-const UNKNOWN_CODES = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "signed_certificate_invalid"]);
+export const UNKNOWN_CODES = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "signed_certificate_invalid"]);
 const SCOPE_CODES = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
 // install-cert's listed codes (C-9); any other refuses the same way, never retried.
 const INSTALL_EVIDENCE = "registry_unavailable";
@@ -61,7 +61,7 @@ export function installRefusal(e) {
 
 export const admissionFile = (providerDir, label) => join(providerDir, `admission-${label}.json`);
 export const certificateOutFile = (providerDir, label) => join(providerDir, `admission-${label}.cert`);
-function writePrivate(file, text) {
+export function writePrivate(file, text) {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, text, { mode: 0o600 });
@@ -70,7 +70,7 @@ function writePrivate(file, text) {
 export function readAdmission(providerDir, label) {
   try { return JSON.parse(readFileSync(admissionFile(providerDir, label), "utf8")); } catch { return null; }
 }
-const recordAdmission = (providerDir, label, doc) => writePrivate(admissionFile(providerDir, label), `${JSON.stringify(doc, null, 2)}\n`);
+export const recordAdmission = (providerDir, label, doc) => writePrivate(admissionFile(providerDir, label), `${JSON.stringify(doc, null, 2)}\n`);
 
 /** The certificate id aw wrote in the --certificate-out file it verified,
  *  checked before it becomes a filename (v4.3.4): a lowercase UUID, and its
@@ -121,10 +121,11 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
     // 3. The admission (C-3b): its operation id persisted before prepare; a retry reuses it.
     let record = readAdmission(providerDir, label);
     if (!record || record.team !== team || record.state === "refused") {
-      record = { team, label, alias, operationId: randomUUID(), state: "pending", identityHome, certificateOut: certificateOutFile(providerDir, label), at: new Date().toISOString() };
+      // The admit's inputs too, so a retire can resume an unknown outcome with C-3b's exact retry (C-3d).
+      record = { team, label, alias, operationId: randomUUID(), state: "pending", identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
       recordAdmission(providerDir, label, record);
     }
-    const argv = admitArgv({ team, memberKey: key.did_key, alias, policy: setting.endorsement.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile });
+    const argv = admitArgv({ team, memberKey: key.did_key, alias, policy: record.policy ?? setting.endorsement.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile });
     const bounds = () => awJson(run, "id team admission-policy", admissionPolicyArgv({ team, profile: setting.service.profile }), setting.root.home, 30000).policy.bounds;
     let admitted;
     for (let attempt = 1; ; attempt++) {

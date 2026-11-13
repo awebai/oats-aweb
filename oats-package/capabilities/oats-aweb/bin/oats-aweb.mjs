@@ -67,6 +67,7 @@ import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, 
 import { homedir, hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { retireAdmissions } from "../lib/removal.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
@@ -2275,6 +2276,10 @@ function attributionPreflight({ teams }) {
   try { plan = chooseIssuer({ setting, spawner, root: rootVerdict }); } catch (e) { attributionFatal(e); }
   return { setting, plan, registry };
 }
+/** True when this home recorded an admission (an attributed spawn reached C-3 step 3). */
+function hasAdmissionRecords() {
+  try { return readdirSync(providerStateDir()).some((f) => /^admission-.+\.json$/.test(f)); } catch { return false; }
+}
 /** OATS's own count of live homes holding a committed admission for `team` (R4): not the server's. */
 function committedAdmissionCount(team) {
   let rows;
@@ -2651,9 +2656,27 @@ if (event === "launch") {
     }
     if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
   }
+  // An opted-in home's memberships go first, removed by the root (C-6, C-3d):
+  // an outcome OATS can still learn keeps the home, before any workspace delete.
+  let retireSetting = null;
+  // team → whether the root removed its membership (C-6). On these teams the workspace
+  // delete is a plain delete (team_not_hosted): the membership is the root's, not a controller cleanup.
+  const admittedTeams = new Map();
+  const admittedTeam = (team) => [...admittedTeams.keys()].find((t) => sameAwebTeamId(t, team));
+  try { retireSetting = attributionSetting(settings); } catch (e) { retireWarnings.push(`admission removal skipped: ${String(e.message || e).slice(0, 200)}`); }
+  if (retireSetting) {
+    let deployment = null;
+    try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+    let removal;
+    try { removal = retireAdmissions({ aw: run, setting: retireSetting, providerDir: providerStateDir(), deployment }); }
+    catch (e) { removal = { warnings: [], keep: { reason: "admission-unknown", text: `${String(e.message || e).slice(0, 240)}; this home is kept, with its admission records → retire it again` } }; }
+    retireWarnings.push(...removal.warnings);
+    for (const m of removal.memberships || []) admittedTeams.set(m.team, m.removed);
+    if (removal.keep) await finish({ meta: { retired: false, reason: removal.keep.reason }, warning: `oats-aweb: ${[...retireWarnings, removal.keep.text].join(" | ")}` }, 1);
+  }
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
-    catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
+    catch (e) { const failed = failedLeaveDisposition(joined, e); if (failed.data.cleanup === "controller" && admittedTeam(joined.team)) continue; retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
   }
   // A join killed or failed after its accept is released the same way
   // (adopted, then left), with the same rule for keeping the key.
@@ -2827,6 +2850,9 @@ if (event === "launch") {
     }
   }
   if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }) });
+  // An attributed spawn rolled back before its connect has no workspace to delete:
+  // its one remote effect, the membership, was settled above.
+  if (retireSetting && hasAdmissionRecords() && !existsSync(join(home, ".aw", "workspace.yaml"))) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : {}) });
   if (!existsSync(join(home, ".aw"))) {
     await finish({ meta: retiredMeta({ retired: false, reason: "no-local-identity-key" }), warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
   }
@@ -2839,9 +2865,10 @@ if (event === "launch") {
     const workspaceId = workspaceIdOf(home, meta.team || meta.defaultTeam?.team || meta.identity?.team, meta.alias);
     const raw = run(["aw", "workspace", "delete", workspaceId || meta.alias, "--json"], home);
     let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
-    const released = doc?.alias_released === true;
-    const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
-    if (!released && reason === "team_not_hosted") {
+    const viaRoot = admittedTeam(meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId());
+    const released = viaRoot ? admittedTeams.get(viaRoot) === true : doc?.alias_released === true;
+    const reason = viaRoot ? (released ? "admission-removed" : "admission-kept") : typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
+    if (!viaRoot && !released && reason === "team_not_hosted") {
       const failed = failedLeaveDisposition({ label: "default", team: meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId(), alias: meta.alias, identityHome: join(home, ".aw") }, reason);
       retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
       rememberControllerCleanup({ ...failed.data, label: "default" });
