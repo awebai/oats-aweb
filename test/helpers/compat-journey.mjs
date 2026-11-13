@@ -24,8 +24,11 @@ export const COMPAT_JOURNEYS = [
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
-export function compatTranscript(t, { delivery, runtime, settings, spawner }) {
+/** `plant(fx)`, when given, changes the deployment before the journey starts
+ *  (acceptance test 11 plants what the new refusals look for). */
+export function compatTranscript(t, { delivery, runtime, settings, spawner }, { plant } = {}) {
   const fx = fixture(t, { delivery, runtime, settings });
+  plant?.(fx);
   const extra = spawner ? { OATS_SPAWNER_HOME: join(fx.ws, "agents", "lead", "instances", "lead-1") } : {};
   const result = (r) => ({ status: r.status, doc: r.doc ?? null, stderr: r.stderr });
   const spawned = fx.hook("spawn", extra);
