@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { HUMAN, ROOT_ID, attributionFixture, capabilityWith, verbs } from "./helpers/attribution-fixture.mjs";
+import { writeIdentity } from "./helpers/fake-aw-protected.mjs";
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 const HUMAN_ATTRIBUTION = { mode: "human", human: { id: HUMAN, label: "Juan Pérez" }, parent: { id: ROOT_ID } };
@@ -90,6 +91,16 @@ test("acceptance 16: after the root is revoked, a new spawn refuses E_ATTRIBUTIO
   const at = (part) => { const i = text.indexOf(part); assert.ok(i >= 0, `${part}: ${text}`); return i; };
   assert.ok(at("remove settings.oats.aweb.attribution") < at("--endorse-root --new-root") && at("--endorse-root --new-root") < at("bind-root") && at("bind-root") < at("rerun setup"), "in the path's order");
   assert.ok(text.includes("re-endorsing this root is outside v1"), text);
+});
+
+test("acceptance 16: a spawn from a genuinely chainless spawner, after the root is revoked, refuses E_ATTRIBUTION_REVOKED too, not the service's refusal", (t) => {
+  const fx = attributionFixture(t);
+  writeIdentity(join(fx.homeOf("old-1"), ".aw"));
+  fx.fake.revoke(ROOT_ID);
+  const r = fx.spawn("dev-4", { spawner: "old-1" });
+  assert.equal(r.status, 1);
+  assert.ok(r.doc.warning.startsWith("oats-aweb: E_ATTRIBUTION_REVOKED"), r.doc.warning);
+  assert.ok(!verbs(fx.fake).includes("id create"), "before any key");
 });
 
 test("acceptance 16: while the binding act isn't served, the refusal says no working path exists yet and names no other fix", (t) => {

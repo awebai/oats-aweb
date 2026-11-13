@@ -189,16 +189,16 @@ export function chainRefusal(verdict, { who, step }) {
 
 /** Who issues the child (C-3a). `spawner` is null for a person's spawn, else
  *  {home, identityHome, grant, verdict, recordedChain}; `root` is the root's
- *  verdict. Returns {action: "issue", issuer: {identityHome, id, certificates}}
+ *  verdict, read for every spawn: a root that no longer verifies to the
+ *  recorded human stops every spawn here, a chainless one's too, before any
+ *  key. Returns {action: "issue", issuer: {identityHome, id, certificates}}
  *  or {action: "chainless"}, or throws. */
 export function chooseIssuer({ setting, spawner, root }) {
-  if (!spawner) {
-    if (root.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the endorsed root's identity can't be read (${root.reason}) → check the root home ${setting.root.home}`, { step: "issuer", reason: root.reason });
-    if (root.kind !== "verified") throw chainRefusal(root, { who: "the endorsed root", step: "issuer" });
-    if (root.id !== setting.root.id) throw attributionError("E_ATTRIBUTION_SETTING", `settings.oats.aweb.attribution.root names ${setting.root.id}, but its home holds ${root.id} → ${SETTING_FIX}`, { key: "settings.oats.aweb.attribution.root" });
-    if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root no longer verifies to the recorded human → ${REVOKED_FIX}`, { reason: "another_human", humanId: root.humanId ?? null });
-    return depthChecked({ identityHome: join(setting.root.home, ".aw"), id: root.id, certificates: root.chain.length });
-  }
+  if (root.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the endorsed root's identity can't be read (${root.reason}) → check the root home ${setting.root.home}`, { step: "issuer", reason: root.reason });
+  if (root.kind !== "verified") throw chainRefusal(root, { who: "the endorsed root", step: "issuer" });
+  if (root.id !== setting.root.id) throw attributionError("E_ATTRIBUTION_SETTING", `settings.oats.aweb.attribution.root names ${setting.root.id}, but its home holds ${root.id} → ${SETTING_FIX}`, { key: "settings.oats.aweb.attribution.root" });
+  if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root no longer verifies to the recorded human → ${REVOKED_FIX}`, { reason: "another_human", humanId: root.humanId ?? null });
+  if (!spawner) return depthChecked({ identityHome: join(setting.root.home, ".aw"), id: root.id, certificates: root.chain.length });
   const v = spawner.verdict;
   if (spawner.grant) {
     if (v.kind === "chainless") return { action: "chainless" };

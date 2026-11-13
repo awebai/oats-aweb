@@ -2341,7 +2341,8 @@ function attributionPreflight({ teams, spawnerHome = process.env.OATS_SPAWNER_HO
   const rootProblem = rootHomeProblem(setting.root.home, { deployment });
   if (rootProblem) fail(rootProblem);
   const chainAw = (args) => run(["aw", ...args], home, 60000);
-  let spawner = null, rootVerdict;
+  let spawner = null;
+  const rootVerdict = readWho(chainAw, join(setting.root.home, ".aw"));
   if (spawnerHome) {
     if (!isAbsolute(spawnerHome)) fail(attributionError("E_ATTRIBUTION_EXCHANGE", `OATS_SPAWNER_HOME is not an absolute path → spawn again from a person or an instance`, { step: "issuer" }));
     let spawnerMeta = {};
@@ -2349,7 +2350,7 @@ function attributionPreflight({ teams, spawnerHome = process.env.OATS_SPAWNER_HO
     const grant = spawnerMeta.identity?.mode === "global" && spawnerMeta.identity?.grant && typeof spawnerMeta.identity.grant.home === "string" ? spawnerMeta.identity.grant : null;
     const identityHome = grant ? grant.home : join(spawnerHome, ".aw");
     spawner = { home: spawnerHome, identityHome, grant: !!grant, verdict: readWho(chainAw, identityHome), recordedChain: spawnerMeta.identity?.attribution?.mode === "human" };
-  } else rootVerdict = readWho(chainAw, join(setting.root.home, ".aw"));
+  }
   let plan;
   try { plan = chooseIssuer({ setting, spawner, root: rootVerdict }); } catch (e) { fail(e); }
   return { setting, plan, registry };
