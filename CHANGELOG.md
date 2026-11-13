@@ -160,6 +160,42 @@
   `pendingMint`, which a failed spawn answers. Nothing a deployment must
   change.
 
+- **Fixed: spawn, take-over and retire never interleave on a retained seat's
+  lock (#236).** A retire read `.aw-retained-seat.json` and then removed it,
+  so a take-over that landed in between lost its lock, and the next spawn
+  copied the key with no take-over. A take-over removed the lock and created
+  it again, so two concurrent take-overs could both pass. Every change of the
+  lock, and every read of it that decides who holds it, is now one guarded step:
+  - each change first creates `.aw-retained-seat.json.guard` exclusively;
+  - it moves the lock aside to `.aw-retained-seat.json.held` and checks it;
+  - it removes or replaces the lock only if it is still the one the change
+    decided on, and otherwise links it back.
+
+  A retire that finds another seat's lock says it did not remove it, and of
+  two take-overs one refuses, naming the holder. A spawn whose seat another
+  took over before it finished fails without taking the server binding back to
+  the legacy home, and removes only its own copy. The guard covers file
+  operations, never an aw call, so a take-over can still land while a spawn
+  connects or its rollback reconnects the legacy home. The lock is read again
+  after the spawn's last aw call and after every reconnect a rollback tries.
+  If another seat holds it, the spawn fails, removes any wake registration it
+  made, says where the binding may point and names the `aw workspace connect`
+  to run from that seat's home. Each exit names the holder as last read under
+  the guard, and a take-over after that read is not reported. That needs a
+  take-over of a seat that is still running, which is operator error and which
+  the take-over already warns against. On a filesystem whose
+  rename, link or exclusive create isn't atomic, changes can still interleave. The two private files are
+  new on-disk files beside the lock. A change that was killed may leave one
+  behind: the next spawn or take-over refuses with it and its fix, and the
+  next retire reports it; none adopts or removes it. A step that fails (the
+  guard's record, the lock's write, the moved lock's removal) undoes its own
+  effect under the guard. Every guarded step reports what it could not clean,
+  its own guard included, with its fix, and nothing runs after a step that left
+  anything: a spawn makes no further aw call and briefs no seat, and a retire
+  adds the leftovers to its warning with its exit status unchanged. The lock's name and fields are unchanged; its
+  `takenAt` is now when the seat was taken, kept when the spawn's success adds
+  the alias. Nothing a deployment must change.
+
 - **Fixed: a boolean setting left empty reads as its default (follows
   #232).** An empty YAML value (`e2ee:`) is `null`, which always meant the
   default but has been refused since #232, at spawn, at readiness and at the

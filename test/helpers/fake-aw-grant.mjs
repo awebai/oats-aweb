@@ -72,7 +72,7 @@ if (process.env.FAKE_RETAINED === "1") {
     if (process.env.FAKE_RETAINED_KILL === "mid-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
     if (process.env.FAKE_RETAINED_FAIL === "connect" && process.cwd() === process.env.OATS_HOME) { console.error("write workspace.yaml: input/output error"); process.exit(1); }
     fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true });
-    fs.writeFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "aweb_url: " + (val("--service") || "https://fixture.invalid/api") + "\\nmemberships:\\n  - team_id: " + (val("--team") || "t:example.test") + "\\n    alias: retained\\n    workspace_id: 0f1e2d3c-4b5a-4968-8776-655443322110\\n");
+    fs.writeFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "aweb_url: " + (val("--service") || "https://fixture.invalid/api") + "\\nmemberships:\\n    - team_id: " + (val("--team") || "t:example.test") + "\\n      alias: retained\\n      workspace_id: 0f1e2d3c-4b5a-4968-8776-655443322110\\n");
     if (process.env.FAKE_RETAINED_KILL === "after-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
     process.exit(0);
   }

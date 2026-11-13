@@ -1612,6 +1612,93 @@ the alias, so a successor cannot reuse the name yet: `oats aweb roster` marks
 that certificate as retired, with the `aw id team remove-member` command the
 team's controller runs to remove it.
 
+### The retained seat's lock
+
+A retained seat (`identity.source`) is held through `.aw-retained-seat.json`
+beside the source's `.aw`: a spawn creates it, and a take-over
+(`identity.takeOver: true`) replaces it. A spawn's success rewrites it with
+the alias, and a retire or a failed spawn's rollback removes it. Every one of
+these changes is one guarded step (`lib/seat-lock.mjs`), using two private
+files beside the lock:
+
+- `.aw-retained-seat.json.guard`, created exclusively for the change and
+  removed after it, so one change runs at a time. Another change waits up to
+  3 s for it, then refuses.
+- `.aw-retained-seat.json.held`, the lock moved aside by `rename(2)` while it
+  is checked. The change acts only on the lock it decided on: for a retire, one
+  that still names its home; for a take-over, the very lock it read; for a
+  plain spawn, none. It then removes the lock, or replaces it with an
+  exclusive create. Any other lock is linked back untouched.
+
+The protocol in one statement: every read, replace and remove of the lock
+happens under the guard; no guard spans an aw call; every exit after an aw call
+states the lock's holder as read under the guard, or says it is unknown; every
+guarded step reports what it could not clean, and nothing runs after a step
+that left anything. A read
+that can't be made (a guard or moved lock left by a killed change) is never
+taken for "no other holder": a spawn then reconnects nothing and keeps its copy.
+
+So a retire never removes a lock another seat took over after it looked, and
+of two take-overs of one lock only one wins. The other refuses and names the
+holder. A spawn that fails after another seat took the lock over leaves that
+seat's server binding alone: it doesn't connect the legacy home again, and it
+removes only its own copy.
+
+Three limits remain:
+
+- **On a filesystem where `rename`, `link` or an exclusive create isn't
+  atomic,** which includes some network and FUSE filesystems, two changes can
+  still interleave, and nothing detects it.
+- **The guard covers file operations, never an aw call.** A take-over can land
+  while a spawn's `aw workspace connect` runs, or while its rollback reconnects
+  the legacy home. Then the server binding may end up with the spawn's home or
+  the legacy home rather than with the seat that now holds the lock. The lock
+  is read again after the spawn's last aw call (its wake registration, where
+  the home has one) and after every reconnect a rollback tries, whether or not
+  it succeeded. If another seat holds it, the spawn fails, removes any wake
+  registration it made, says where the binding may point, and names the
+  `aw workspace connect --service=… --team=…` to run from that seat's home.
+  The command names the server only when it is a plain service URL, as the
+  rebind a retire prints does; otherwise it says to run `aw workspace connect`
+  with the service, team and role in the source's `workspace.yaml`. This
+  needs a take-over of a seat whose runtime is still alive, and the take-over
+  already warns about that: there are then two seats with one key, and the old
+  one must be stopped.
+- **Each exit names the holder as last read under the guard.** A take-over
+  after that read is not reported. Taking over a live seat is operator error,
+  and the take-over warns about it.
+
+A directory at the lock's name is never taken for a lock: a change refuses it
+before moving anything, and says to remove or move it.
+
+A change that was killed can leave either private file behind. The next spawn
+or take-over refuses with the file and its fix, and the next retire reports it
+in its warning, whether or not the lock is still there. None of them adopts or
+removes one, or judges age, pid or liveness:
+
+- **A guard:** remove it once no change of that identity is running on any
+  host that shares the directory.
+- **A moved lock:** move it back (`mv .aw-retained-seat.json.held
+  .aw-retained-seat.json`) if the seat it names still holds the identity and
+  no lock exists. If the lock's name holds bytes that are not a lock (a write
+  that did not finish), move it back over them (`mv -f`). Otherwise remove it.
+
+A change whose step fails (a full disk, an I/O error) undoes its own effect
+before it releases the guard:
+- a guard it could not record itself in is removed;
+- the bytes a failed lock write left are removed, all of them or a prefix (a
+  write can fail after its last byte). If they can't be removed, the failure
+  says so: they name no seat, so the fix is to remove them, or, for a
+  take-over, to move the holder's lock back over them (`mv -f`);
+- a moved lock it could not remove goes back to the lock's name, over the
+  lock it wrote.
+
+Whatever a step can't clean, its own guard or a moved lock included, the step
+reports with its fix, and the change stops there. A spawn makes no further aw
+call, briefs no seat and doesn't touch the lock again. Its failure names each
+leftover. A retire adds the leftovers to its warning; its exit status is what
+it would be with the lock untouched.
+
 ## Isolated hostOnly contract verification
 
 `test/claude-channel-host-only.test.mjs` imports the real generic `resolveSoul`
