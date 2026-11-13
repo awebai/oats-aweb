@@ -55,29 +55,41 @@ function entryValue(rest) {
   return scalar(value);
 }
 
-/** `{ awebUrl }` for a record in aw's grammar: the top-level aweb_url's text, null when the key
- *  has no value, undefined when there is no such key. undefined when the file is outside the
- *  grammar, from which nothing is taken. */
-export function readAwebUrl(text) {
-  if (NOT_PRINTABLE.test(String(text)) || /\r(?!\n)|[\u0085\u2028\u2029]/.test(String(text))) return undefined;
+/** Walks a record in aw's grammar, calling `visit` with each entry's scope (`'top'`, or the
+ *  top-level key whose list holds it), key and value (null for none, else the scalar's text).
+ *  false when the file is outside the grammar: the caller then takes nothing from it. */
+function walk(text, visit) {
+  if (NOT_PRINTABLE.test(String(text)) || /\r(?!\n)|[\u0085\u2028\u2029]/.test(String(text))) return false;
   const keys = new Set();
-  let awebUrl;
   let list = 'none'; // 'open': the last top-level key had no value; 'item': inside a list item
+  let listKey;
   for (const line of String(text).split('\n').map((l) => l.replace(/\r$/, ''))) {
     if (/^[ \t]*$/.test(line) || /^[ \t]*#/.test(line)) continue;
     const top = TOP.exec(line);
     if (top) {
       const value = entryValue(top[2]);
-      if (value === undefined || keys.has(top[1])) return undefined;
+      if (value === undefined || keys.has(top[1])) return false;
       keys.add(top[1]);
-      if (top[1] === 'aweb_url') awebUrl = value;
+      visit('top', top[1], value);
       list = value === null ? 'open' : 'none';
+      listKey = top[1];
       continue;
     }
     const item = ITEM.exec(line), itemKey = ITEM_KEY.exec(line);
-    if (item && list !== 'none' && entryValue(item[2]) !== undefined) { list = 'item'; continue; }
-    if (itemKey && list === 'item' && entryValue(itemKey[2]) !== undefined) continue;
-    return undefined;
+    const itemValue = item && list !== 'none' ? entryValue(item[2]) : undefined;
+    if (itemValue !== undefined) { list = 'item'; visit(listKey, item[1], itemValue); continue; }
+    const keyValue = itemKey && list === 'item' ? entryValue(itemKey[2]) : undefined;
+    if (keyValue !== undefined) { visit(listKey, itemKey[1], keyValue); continue; }
+    return false;
   }
+  return true;
+}
+
+/** `{ awebUrl }` for a record in aw's grammar: the top-level aweb_url's text, null when the key
+ *  has no value, undefined when there is no such key. undefined when the file is outside the
+ *  grammar, from which nothing is taken. */
+export function readAwebUrl(text) {
+  let awebUrl;
+  if (!walk(text, (scope, key, value) => { if (scope === 'top' && key === 'aweb_url') awebUrl = value; })) return undefined;
   return { awebUrl };
 }
