@@ -1654,6 +1654,9 @@ Three limits remain:
   after that read is not reported. Taking over a live seat is operator error,
   and the take-over warns about it.
 
+A directory at the lock's name is never taken for a lock: a change refuses it
+before moving anything, and says to remove or move it.
+
 A change that was killed can leave either private file behind. The next spawn
 or take-over refuses with the file and its fix, and the next retire reports it
 in its warning, whether or not the lock is still there. None of them adopts or

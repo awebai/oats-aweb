@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -1388,3 +1388,23 @@ for (const [what, env] of [
     assert.equal(existsSync(fx.guard), false);
   });
 }
+
+// protocol: take/refused (a directory at the lock's name is never a lock)
+test("a take-over that finds a directory at the lock's name refuses before changing anything, and its printed fix clears it", (t) => {
+  const fx = fixture(t);
+  mkdirSync(fx.lock);
+  const b = fx.homeOf("seat-b");
+  const r = runHook(fx, "spawn", b, { identity: { takeOver: true } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = r.doc.warning;
+  assert.ok(w.includes(`${fx.lock} is a directory, not this retained identity's lock`), w);
+  assert.ok(lstatSync(fx.lock).isDirectory(), "the directory is left as it was");
+  assert.equal(existsSync(fx.held), false);
+  assert.equal(existsSync(fx.guard), false);
+  assert.equal(existsSync(join(b, ".aw")), false, "nothing copied");
+  // The fix it prints, run as printed, clears the name; the take-over then goes through.
+  const fix = /`(rmdir -- [^`]+)`/.exec(w)?.[1];
+  assert.ok(fix, w);
+  assert.equal(spawnSync("sh", ["-c", fix]).status, 0, fix);
+  assert.equal(runHook(fx, "spawn", b, { identity: { takeOver: true } }).status, 0);
+});

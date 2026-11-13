@@ -156,7 +156,8 @@ export const sameSeatLock = (now, then) => !!now?.present && !!then?.present && 
 /** Who a lock (or a guard) names, each field bounded and printable. */
 export const seatLockHolderText = (doc) => ["instance " + (lockField(doc?.instance) || "(not recorded)"), "home " + (lockField(doc?.home) || "(not printable)"), "host " + (lockField(doc?.host) || "(not recorded)"), "since " + (lockField(doc?.takenAt) || lockField(doc?.at) || "(not recorded)")].join(", ");
 
-/** A refusal whose message is its whole fix. `kind`: "guard-held" or "held-stray". */
+/** A refusal whose message is its whole fix. `kind`: "guard-held", "held-stray" or
+ *  "not-a-lock". */
 class SeatLockRefusal extends Error {
   constructor(kind, message, path) { super(message); this.kind = kind; this.path = path; }
 }
@@ -272,6 +273,13 @@ function refuseStrayHeld(lock, held) {
   const stray = readSeatLock(held);
   if (stray.present) throw new SeatLockRefusal("held-stray", strayHeldText(lock, held, stray), held);
 }
+/** A directory at the lock's name is never a lock: a change that moved it aside could
+ *  neither replace it with a file nor put it back over one, so it is refused before
+ *  anything moves. A name that can't be checked is left to the step's own move. */
+function refuseDirectory(lock) {
+  let st; try { st = lstatSync(lock); } catch { return; }
+  if (st.isDirectory()) throw new SeatLockRefusal("not-a-lock", `${lock} is a directory, not this retained identity's lock, and is never replaced or removed automatically. Once you know nothing in it is needed, remove it (\`rmdir -- ${shellWord(lock)}\` when it is empty) or move it elsewhere; then retry`, lock);
+}
 /** Put the moved lock back at its name, never over a lock that is there now. What it
  *  can't put back or clean is left in `left`. → true when the lock is at its name. */
 function restoreHeld(lock, held, captured, left) {
@@ -343,6 +351,7 @@ function undoFailedWrite(lock, held, captured, next, left) {
 export function swapSeatLock(lock, { who, expect, next }) {
   return guarded(lock, who, (held, left) => {
     refuseStrayHeld(lock, held);
+    refuseDirectory(lock);
     let moved = false;
     try { renameSync(lock, held); moved = true; }
     catch (e) { if (e?.code !== "ENOENT") throw Object.assign(e, { stage: "move" }); }
