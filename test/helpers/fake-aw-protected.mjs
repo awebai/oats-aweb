@@ -13,7 +13,8 @@
 //
 // An identity is the `.aw` of the working directory, or `--identity-home`.
 // Its id is `<home>/did` when present (a registered did:aw), else
-// `did:key:z<name of the directory holding .aw>`. An installed chain is
+// `did:key:z<name of the directory holding .aw>` (`-<label>` added for a
+// joined team's `.aweb-identity-<label>`). An installed chain is
 // `<home>/id-chain.json`; an installed team certificate is
 // `<home>/team-certs/<team>.json`; a connected workspace `<home>/workspace.yaml`.
 //
@@ -66,8 +67,8 @@ const flag = (n) => args.includes(n) ? args[args.indexOf(n) + 1] : undefined;
 const flags = (n) => args.flatMap((a, i) => a === n ? [args[i + 1]] : []);
 const cmd = args.slice(0, 3).join(" ");
 const homeDir = () => identityHome || path.join(process.cwd(), ".aw");
-const idOf = (h) => fs.existsSync(path.join(h, "did")) ? fs.readFileSync(path.join(h, "did"), "utf8").trim() : "did:key:z" + path.basename(path.dirname(h));
-const keyOf = (h) => "did:key:z" + path.basename(path.dirname(h));
+const keyOf = (h) => { const label = /^\.aweb-identity-(.+)$/.exec(path.basename(h)); return "did:key:z" + path.basename(path.dirname(h)) + (label ? "-" + label[1] : ""); };
+const idOf = (h) => fs.existsSync(path.join(h, "did")) ? fs.readFileSync(path.join(h, "did"), "utf8").trim() : keyOf(h);
 const chainOf = (h) => fs.existsSync(path.join(h, "id-chain.json")) ? readJson(path.join(h, "id-chain.json")) : null;
 const state = () => readJson(path.join(base, "registry.json"));
 const store = (h, name) => { const d = path.join(h, name); fs.mkdirSync(d, { recursive: true, mode: 0o700 }); return d; };
@@ -287,7 +288,7 @@ export function writeIdentity(identityHome, { did, chain } = {}) {
   mkdirSync(identityHome, { recursive: true, mode: 0o700 });
   chmodSync(identityHome, 0o700);
   write(join(identityHome, "signing.key"), "k\n", 0o600);
-  write(join(identityHome, "identity.yaml"), `did: did:key:z${identityHome.split("/").at(-2)}\n`, 0o600);
+  write(join(identityHome, "identity.yaml"), `did: did:key:z${identityHome.split("/").at(-2)}${/^\.aweb-identity-/.test(identityHome.split("/").at(-1)) ? `-${identityHome.split("/").at(-1).slice(".aweb-identity-".length)}` : ""}\n`, 0o600);
   if (did) write(join(identityHome, "did"), did, 0o600);
   if (chain) write(join(identityHome, "id-chain.json"), JSON.stringify({ v: 1, type: "aweb.id-chain", certificates: chain.map((c) => ({ certificate: { v: 1, type: "aweb.id-certificate", domain: "acme.example", ...c }, signature: "s" })) }), 0o600);
 }

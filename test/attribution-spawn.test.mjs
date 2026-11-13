@@ -1,10 +1,10 @@
 // Spawn on an opted-in deployment (spec v4.3.7 C-3): the key, the chain, the
-// admission, the install and the connect, with acceptance tests 5, 6 and 7.
+// admission, the install and the connect, with acceptance tests 5, 6, 7 and 18.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { HUMAN, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
+import { HUMAN, OPS, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
 import { POLICY } from "./helpers/fake-aw-protected.mjs";
 
 const call = (fake, words) => fake.calls().filter((c) => commandArgs(c.args).join(" ").startsWith(words));
@@ -83,4 +83,35 @@ test("a genuinely chainless spawner: no exchange; the child is chainless, still 
   assert.match(r.doc.warning, /attribution-spawner-unchained/);
   assert.ok(!verbs(fx.fake).includes("id child invite"));
   assert.equal(call(fx.fake, "id team admit")[0].cwd, fx.rootHome);
+});
+
+test("acceptance 18: a joined team's identity is issued and admitted like the primary, in its own identity home", (t) => {
+  const fx = attributionFixture(t, { settings: { join: "ops" } });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  const home = fx.homeOf("dev-1"), joinedHome = join(home, ".aweb-identity-ops");
+  assert.deepEqual(r.doc.meta.joinedTeams.map(({ since, ...j }) => j), [{ label: "ops", team: OPS, identityHome: joinedHome, receive: "poll", expectedPoll: true }]);
+  // Issued by the root, like the primary, each identity its own key.
+  assert.deepEqual(fx.fake.issued(), [{ issuer: ROOT_ID, child: "did:key:zdev-1" }, { issuer: ROOT_ID, child: "did:key:zdev-1-ops" }]);
+  // Admitted by the root, from its home, with the joined team's own operation id and certificate path.
+  const admit = call(fx.fake, "id team admit").find((c) => c.args.includes(OPS));
+  const record = JSON.parse(readFileSync(join(home, ".oats-aweb", "admission-ops.json"), "utf8"));
+  assert.equal(admit.cwd, fx.rootHome);
+  assert.deepEqual(admit.args.slice(admit.args.indexOf("--member-key"), admit.args.indexOf("--member-key") + 4), ["--member-key", "did:key:zdev-1-ops", "--alias", "dev-1"]);
+  assert.equal(admit.args[admit.args.indexOf("--operation-id") + 1], record.operationId);
+  assert.equal(admit.args[admit.args.indexOf("--certificate-out") + 1], join(home, ".oats-aweb", "admission-ops.cert"));
+  assert.equal(record.state, "committed");
+  // Installed and connected in the joined home.
+  assert.deepEqual(call(fx.fake, "id team install-cert").map((c) => c.args[c.args.indexOf("--identity-home") + 1]), [join(home, ".aw"), joinedHome]);
+  assert.deepEqual(call(fx.fake, "service init").map((c) => c.args), [["service", "init", "--identity-home", join(home, ".aw"), "--service", SERVICE_URL, "--team", TEAM], ["service", "init", "--identity-home", joinedHome, "--service", SERVICE_URL, "--team", OPS]]);
+});
+
+test("acceptance 18: a joined team that isn't in attribution.teams refuses at join, before any effect, naming the rerun of --endorse-root", (t) => {
+  const fx = attributionFixture(t, { teams: [TEAM], settings: { join: "ops" } });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 1);
+  const text = r.doc.warning.split(" | ")[0];
+  assert.ok(text.startsWith("oats-aweb: E_ENDORSE_POLICY (problem: unlisted): "), text);
+  assert.ok(text.includes(OPS) && text.includes("rerun `oats aweb setup --endorse-root`"), text);
+  assert.ok(!verbs(fx.fake).includes("id create"), "no key is created");
 });
