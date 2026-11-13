@@ -48,6 +48,22 @@
   that `aw workspace connect` and unset the variable. A seat whose
   `workspace.yaml` already names its server is unchanged.
 
+- **Fixed: team ids are compared as aw spells them (#252).** aw lowercases a
+  team id's name and domain, and drops a trailing dot from the domain. A
+  deployment can configure the id in another case (`Default:Example.Test`),
+  and each comparison of the configured id with one aw reports was exact. So:
+  - a spawn warned "team mismatch" on every mint;
+  - a join failed with "joined team differs", or found no root;
+  - a grant renewal kept the previous grant;
+  - retire's self-delete missed the workspace id;
+  - the roster missed the record and the presence, and setup took its own
+    mapping for another team.
+
+  Every such comparison, in the hook and its libs, now goes through one canonical
+  comparison (`lib/aweb-team-id.mjs`). The joined certificate's file is found
+  by the name aw gives it. Values the hook writes or prints keep the spelling
+  the kernel or aw gave. Nothing a deployment must change.
+
 - **Removed: the captured-execution path (#242).** The captured bindings
   (the `OATS_BINDING_FILE`, `OATS_INVOCATION_CONTEXT_FILE` and
   `OATS_SOURCE_RECEIPT_FILE` variables, and the `binding` and `invocation`

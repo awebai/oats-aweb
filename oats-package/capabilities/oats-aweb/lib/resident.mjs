@@ -280,7 +280,7 @@ function recordTeam(deployment, env, opts, team, { root, custody, localYaml }) {
   const kernel = teamKernel(deployment, env, "record");
   let doc = kernel.read();
   const row = doc.teams.find((r) => r.label === label);
-  if (row && row.team !== team) {
+  if (row && !sameAwebTeamId(row.team, team)) {
     if (derived) throw refuse(`the team label ${label}, derived from the name of team ${team}, already maps to ${row.team ?? "no team"}`);
     throw failure("E_RESIDENT_TEAM_LABEL", "record", `team label ${label} already maps to ${row.team ?? "no team"}, not ${team}; choose another --team-label`);
   }
@@ -294,7 +294,7 @@ function recordTeam(deployment, env, opts, team, { root, custody, localYaml }) {
   if (!row) {
     kernel.addMapping(label, team);
     doc = kernel.read();
-    if (doc.teams.find((r) => r.label === label)?.team !== team) throw failure("E_RESIDENT_TEAM_LABEL", "record", `oats teams add ${label} did not read back as ${team}`);
+    if (!sameAwebTeamId(doc.teams.find((r) => r.label === label)?.team, team)) throw failure("E_RESIDENT_TEAM_LABEL", "record", `oats teams add ${label} did not read back as ${team}`);
   }
   if (doc.defaultTeam?.label === label) return { teamLabel: { ...result, default: "already" } };
   if (!doc.defaultTeam) {
