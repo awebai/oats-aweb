@@ -72,7 +72,10 @@ binding the root.
    admit it with the protected service. Each start checks the chain with
    `aw who`; status rows show the human's label as `attributedHuman`.
 
-`--label` is the human's display name in status rows; without it, rows show
+`--protected-profile` takes the profile's absolute path as written, with no
+`.` or `..` segment and no repeated or trailing `/`; any other form refuses
+`E_ATTRIBUTION_SETTING` (`problem: profile-path`) before any effect, and setup
+never rewrites it. `--label` is the human's display name in status rows; without it, rows show
 the human's did:aw. A rerun of the same command after success refreshes the
 recorded policy and adds newly mapped teams the policy lists, all or nothing.
 A deployment that never opts in is unchanged.
@@ -113,7 +116,8 @@ label.
 ## Human attribution: revocation
 
 When the human revokes the endorsed root, or its chain is revoked or replaced,
-every new spawn refuses `E_ATTRIBUTION_REVOKED`. Each refusal gives this
+every new spawn refuses `E_ATTRIBUTION_REVOKED`, before any key: each spawn
+reads the root's own verdict, whoever spawns it, a chainless spawner included. Each refusal gives this
 section's first step. The whole path is:
 
 1. Remove `settings.oats.aweb.attribution` from this deployment's
@@ -216,6 +220,16 @@ operation id is kept in the home (`.oats-aweb/removal-<team-label>.json`), so
 a retry never sends a second one, and a confirmed removal deletes the root's
 copy. A retire kept by an unconfirmed removal never sends the workspace
 delete again: the rerun only removes.
+
+On an admitted team in aweb's hosted zone (`aweb.ai` and its subdomains), aw's
+workspace delete is hosted self-retirement: the service would revoke the
+membership itself, a second removal beside the root's. So there retire, the
+rollback of a failed spawn and `oats aweb leave` send no workspace delete, for
+the primary identity or a joined one: the root's removal is the only act, and
+the workspace record stays until it goes stale. Retire answers
+`aliasReusable: false`, `aliasReason: hosted-workspace-kept`, whether or not
+the removal was confirmed, and says the workspace was left to go stale; a
+rerun only removes.
 
 What a retire says when it can't remove a membership:
 
