@@ -185,6 +185,72 @@ its first sentence and this section; the full texts are here.
   at the recorded URL is reachable; if the URL itself is wrong, rerun
   `oats aweb setup --endorse-root --service <the correct url>`.
 
+## Human attribution: retire and reconciliation
+
+A retire removes each membership an opted-in home holds, before it deletes
+the workspace. The root removes it through the protected service
+(`aw id team remove-agent`, from the root's home, with the root's copy of the
+certificate under `D/.aweb-endorsed-root/<alias>/admissions/`). The removal's
+operation id is kept in the home (`.oats-aweb/removal-<team-label>.json`), so
+a retry never sends a second one, and a confirmed removal deletes the root's
+copy. An admission whose outcome is unknown is resumed first, with its own
+operation id.
+
+What a retire says when it can't remove a membership:
+
+- An unconfirmed removal (an unknown receipt, HTTP 429 or 5xx) keeps the home:
+  retire it again once the service answers.
+- `admission-removal-unavailable`: the service's server answered 404, 405 or
+  501 to `team.agent.remove`, so it may not serve removal yet. Its operator
+  upgrades the server; then run `oats aweb setup --reconcile-admissions`. With
+  an aw that doesn't serve the act, retiring an instance frees no admission
+  slot.
+- `admission-removal-blocked`, with a `reason`: the root can't act. The
+  membership and the root's copy are kept, and the home goes.
+  - `root-home-missing`, `root-home-unsafe`, `profile-changed` or
+    `service-refused`: fix the root, then run
+    `oats aweb setup --reconcile-admissions`.
+  - `root-revoked`: no OATS path removes this membership in v1. It counts
+    only in the revoked root's bucket, never in the new root's.
+  - `root-copy-missing`: no certificate for this membership is left, so OATS
+    can't remove it. A missing copy is first written again from the home's own
+    certificate when that is the one admitted.
+- While an unknown admission's resume can't run for a reason that can be
+  fixed (`root-home-unsafe`, `profile-changed`, `service-refused`), the home is
+  kept: fix the root, then retire again, which resumes the admission.
+
+`oats aweb setup --check-only --json` reports, with the setting, an
+`attribution` block: the root, human, service and teams; whether the root
+verifies (`verified`); spawners with no chain; each team's bounds and OATS's
+own count of admitted live homes; `leakedMemberships` (active local
+certificates whose alias has no live or kept home here); the key scan's
+findings; and `limits`, what the pinned aw doesn't serve yet. A team no home
+here can read is listed under `unreadableTeams`, never as having no leaks.
+
+`oats aweb setup --reconcile-admissions [--plan]` removes the leaked
+memberships the root holds a copy for, each removal's operation id kept
+under the root's `removals/`. `--plan` lists them first and removes nothing. A
+leaked membership with no copy (admitted before the root kept copies) is
+reported and never removed.
+
+Home readiness, with the setting, warns `attribution-revoked`,
+`attribution-unverified`, `attribution-spawner-unchained`, `admission-leaked`
+(the home holds an admission whose outcome is unknown),
+`admission-removal-unavailable` and `protected-key-reachable`.
+
+## Human attribution: a deployment that never opted in
+
+Once aweb's operator has protected a team, a deployment that never opted in
+can no longer mint into it with the member invite: the service answers HTTP
+403 `protected_admission_required`, and the spawn refuses
+`E_PROTECTED_ADMISSION_REQUIRED`. The invite is never retried and nothing is
+reminted; readiness reports nothing for it.
+
+The fix is to opt in, as "Human attribution" above describes:
+`oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw>`.
+An operator who has no human ID yet gets one first, by enrolling a passkey at
+the protected service. Any other 403 is reported as before.
+
 ## 1.42.1 — the release OATS pins for 1.42
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
