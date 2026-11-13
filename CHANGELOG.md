@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Changed: the always-loaded inject is about a quarter shorter (635 words to
+  465).** Each instance's `Comms:` line already names its receive path, so the
+  inject now says that in one sentence. A grant seat's session-start and
+  inspection rules are already in its own `Comms:` line, so the inject keeps
+  only a pointer to that line and the `grant_*` stop rule. The messaging loop,
+  untrusted sender content, never polling, `--body-file` and mail recovery
+  (the Pi workaround included) stay in the inject. Nothing a deployment must
+  change: new spawns get the shorter text.
+
 - **Fixed: a joined team whose name holds "__" has its certificate found at
   retire and leave (#262).** aw writes each "__" in a team id's certificate
   file name as "____" before it writes each ":" as "__". The hook wrote only
