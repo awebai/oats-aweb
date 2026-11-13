@@ -11,9 +11,17 @@ import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, aw
 /** The README section each spawn refusal names for what doesn't fit its 300 characters. */
 export const README_ADMISSION = 'README, "Human attribution: admission refusals"';
 
-// aw's admit codes (C-9's admit column).
-export const UNKNOWN_CODES = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "signed_certificate_invalid"]);
+// aw's admit codes (C-9's admit column). Only the codes listed here refuse: any other
+// code, or none, leaves the outcome unknown (v4.3.24), so a code aw adds later keeps the
+// home and its operation id rather than leaking a membership no record names.
+/** The operation's own final codes: a resume answered with one of these establishes the
+ *  operation was refused (C-3d). */
+export const FINAL_CODES = new Set(["admission_policy_missing", "policy_changed", "admission_limit_reached", "subject_ineligible", "operation_expired", "approval_expired"]);
 const SCOPE_CODES = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
+/** What refuses a first attempt at spawn: the final codes, the scope codes and operation_conflict. */
+const REFUSED_CODES = new Set([...FINAL_CODES, ...SCOPE_CODES, "operation_conflict"]);
+/** Whether an admit refusal code leaves the admission's outcome unknown. */
+export const admitUnknown = (code) => !code || !REFUSED_CODES.has(code);
 // install-cert's listed codes (C-9); any other refuses the same way, never retried.
 const INSTALL_EVIDENCE = "registry_unavailable";
 
@@ -36,7 +44,7 @@ const firstSentence = (text) => { const i = text.indexOf(". "); return i < 0 ? t
  *  holding a committed admission for the team. */
 export function admitRefusal(e, { team, root, bounds, count, operationId }) {
   const code = e.awCode;
-  if (!code || UNKNOWN_CODES.has(code)) return attributionError("E_ADMISSION_UNKNOWN", `the admission's outcome is unknown (operation ${operationId}, team ${team}), so this home is kept → retire it once the service answers (${README_ADMISSION})`, { code: code || null, operationId, team });
+  if (admitUnknown(code)) return attributionError("E_ADMISSION_UNKNOWN", `the admission's outcome is unknown (operation ${operationId}, team ${team}), so this home is kept → retire it once the service answers (${README_ADMISSION})`, { code: code || null, operationId, team });
   if (code === "admission_limit_reached") {
     let b; try { b = bounds(); } catch { b = null; }
     const limits = b ? `max_active ${b.max_active}, max_per_window ${b.max_per_window} per ${b.rate_window_seconds} s` : "bounds unreadable";
@@ -46,6 +54,7 @@ export function admitRefusal(e, { team, root, bounds, count, operationId }) {
   if (code === "admission_policy_missing") return refused(`${firstSentence(policyMissingText(team, root))} (${team}; ${README_ADMISSION})`);
   if (SCOPE_CODES.has(code)) return refused(`this root likely isn't bound for ${team}'s controller → ${bindRootText(team, root)} (${README_ADMISSION})`);
   if (code === "policy_changed") return refused(`${team}'s admission policy changed since the endorsement → rerun \`oats aweb setup --endorse-root\` to refresh it, then rerun the spawn (${README_ADMISSION})`);
+  if (code === "operation_conflict") return refused(`aw sent this admission's operation id with other inputs, so it was never sent again → rerun the spawn, which starts a new operation (${README_ADMISSION})`);
   return refused(`the protected service refused the admission to ${team} with ${code}, a final refusal among the contract's receipt codes (${README_ADMISSION})`);
 }
 
@@ -142,7 +151,7 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
       catch (e) {
         if (e.code) throw e;
         // An exact retry of an unknown outcome returns the original certificate, with no second charge.
-        if (attempt < 2 && (!e.awCode || UNKNOWN_CODES.has(e.awCode))) continue;
+        if (attempt < 2 && admitUnknown(e.awCode)) continue;
         const refusal = admitRefusal(e, { team, root: setting.root.id, bounds, count: count(), operationId: record.operationId });
         recordAdmission(providerDir, label, { ...record, state: refusal.code === "E_ADMISSION_UNKNOWN" ? "unknown" : "refused", code: e.awCode || null });
         throw refusal;

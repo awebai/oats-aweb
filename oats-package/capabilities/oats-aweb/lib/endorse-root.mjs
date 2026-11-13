@@ -69,12 +69,12 @@ export const OPT_IN = Object.freeze([
 /** The deployment label aw shows the human on the approval page (v4.3.13): derived, never a flag. */
 export const deploymentLabel = (host, deployment) => { const short = String(host || "").split(".")[0]; return short ? `${short}:${basename(deployment)}` : basename(deployment); };
 
-// C-9's endorse column: aw's code → OATS's refusal.
-const UNKNOWN = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "prepare_unconfirmed"]);
+// C-9's endorse column: aw's code → OATS's refusal. Only the codes listed here refuse or
+// fail: any other code, or none, leaves the outcome unknown and the operation kept, so the
+// rerun resumes it (v4.3.24).
 const SCOPE = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
 const REGISTER = new Set(["registration_conflict", "human_chain_unverified", "signed_certificate_invalid"]);
-const FAILED = new Set(["operation_conflict", "profile_invalid", "requester_invalid", "request_invalid", "intent_invalid", "receipt_invalid", "handoff_result_invalid"]);
-const RERUN = new Set(["operation_expired", "approval_expired", "handoff_expired"]);
+const REFUSED = new Set(["subject_ineligible", "human_refused", "operation_expired", "approval_expired"]);
 
 /** The operator's binding step, as setup prints it (step 2b). */
 export function bindingStep({ root, human, teams }) {
@@ -273,7 +273,7 @@ function refresh(o, ctx) {
       if (!(e instanceof AwRefusal)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${oneLine(e.message)}); nothing was changed → retry setup`, { team });
       if (e.awCode === "admission_policy_missing") return { problem: "unlisted" };
       if (SCOPE.has(e.awCode)) return { problem: "requester-unbound" };
-      if (!e.awCode || UNKNOWN.has(e.awCode) || /_unavailable$/.test(e.awCode)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${e.awCode || "no answer"}); nothing was changed → retry setup once the protected service answers`, { team, code: e.awCode ?? null });
+      if (!e.awCode || /_unavailable$|_unresolved$|_unconfirmed$/.test(e.awCode)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${e.awCode || "no answer"}); nothing was changed → retry setup once the protected service answers`, { team, code: e.awCode ?? null });
       throw attributionError("E_ENDORSE_FAILED", `${team}'s admission policy read was refused (${e.awCode}); nothing was changed → rerun setup`, { step: "prepare", team, code: e.awCode });
     }
     return doc?.mode === "protected" && doc.policy ? { policy: doc.policy } : { problem: "unlisted" };
@@ -337,10 +337,10 @@ function legacyTeams(run, teams, profile) {
 
 /** C-9's endorse column. `spend()` clears the persisted operation where the outcome is final. */
 export function endorseRefusal(e, { binding, operationId, spend, legacy }) {
-  if (!(e instanceof AwRefusal)) return attributionError("E_ENDORSE_FAILED", `aw id endorse failed (${oneLine(e.message)}) → rerun the same setup`, { step: "prepare", code: null });
-  const code = e.awCode;
-  const details = { code: code ?? null, operationId };
-  if (!code) return attributionError("E_ENDORSE_FAILED", `aw id endorse answered no code (${oneLine(e.awMessage || e.message)}) → rerun the same setup`, { ...details, step: "prepare" });
+  const code = e instanceof AwRefusal ? e.awCode || null : null;
+  const details = { code, operationId };
+  const unknown = () => attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement's outcome is unknown (${code || oneLine(e.awMessage || e.message)}), operation ${operationId} → rerun the same setup, which reads the same receipt and never prepares again`, { ...details, state: "unknown" });
+  if (!code) return unknown();
   if (code === "admission_policy_missing") {
     spend();
     const legacyOnes = legacy();
@@ -350,12 +350,11 @@ export function endorseRefusal(e, { binding, operationId, spend, legacy }) {
   }
   if (code === "policy_changed") { spend(); return attributionError("E_ENDORSE_POLICY", `the teams' admission policy changed before the link was shown, so none was → rerun setup, which starts a new operation with a new link`, { ...details, problem: "changed" }); }
   if (SCOPE.has(code)) return attributionError("E_ENDORSE_FAILED", `the protected service hasn't bound the root ${binding.root} as a requester for the human ${binding.human} and the teams ${binding.teams.join(", ")} (${code}); nothing was recorded → ${bindingStep(binding)}; then rerun this setup`, { ...details, step: "prepare", problem: "requester-unbound", bind: binding });
-  if (UNKNOWN.has(code)) return attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement's outcome is unknown (${code}), operation ${operationId} → rerun the same setup, which reads the same receipt and never prepares again`, { ...details, state: "unknown" });
   if (REGISTER.has(code)) return attributionError("E_ENDORSE_FAILED", `the endorsement couldn't be registered (${code}), operation ${operationId} → rerun the same setup`, { ...details, step: "register" });
-  if (FAILED.has(code)) return attributionError("E_ENDORSE_FAILED", `aw refused the endorsement request (${code}), operation ${operationId}; it is never sent again by itself → rerun the same setup`, { ...details, step: "prepare" });
-  if (/_unavailable$/.test(code)) return attributionError("E_ATTRIBUTION_EVIDENCE", `the protected service's evidence is unavailable (${code}) → retry setup once it answers`, details);
+  if (code === "operation_conflict") return attributionError("E_ENDORSE_FAILED", `aw refused the endorsement request (${code}), operation ${operationId}; it is never sent again by itself → rerun the same setup`, { ...details, step: "prepare" });
+  if (!REFUSED.has(code)) return unknown();
   spend();
-  return attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement was refused (${code})${RERUN.has(code) ? " → rerun setup, which starts a new operation with a new link" : "; rerunning setup starts a new operation with a new link"}`, { ...details, state: "refused" });
+  return attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement was refused (${code}) → rerun setup, which starts a new operation with a new link`, { ...details, state: "refused" });
 }
 
 /** The terminal's link block (C-2 step 6): the page, the full digest and fingerprint, the teams and bounds, and the responsibility statement. */

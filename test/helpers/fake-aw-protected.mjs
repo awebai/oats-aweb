@@ -19,7 +19,8 @@
 // stdout and exits 1. The protected service is <base>/service.json:
 //   policy: {version, digest, bounds}; teams: {<team>: "protected"|"legacy"|"missing"}
 //   endorse: [answers, one per call]: "pending" | "committed" | "committed-without-chain" | {code}
-//   admit: {code} | {lostOnce: true} (the first execute's answer is lost)
+//   admit: {code} | {code, charge: true} (it commits, then every answer is code: aw's prepare_unconfirmed)
+//          | {lostOnce: true} (the first execute's answer is lost)
 //   install: {code}; remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
 //   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
 //   createKill: true (create --no-address dies after its key)
@@ -153,12 +154,14 @@ if (cmd === "id team admit") {
   const body = JSON.stringify({ team, key: flag("--member-key"), id: flag("--member-id") || "", alias: flag("--alias"), v: flag("--policy-version"), d: flag("--policy-digest"), root });
   if (charges[op] && charges[op].body !== body) fail("operation_conflict", "operation " + op + " was requested with other inputs or at another service; changed inputs need a new operation id");
   if (!charges[op]) {
-    if (s.admit && s.admit.code) fail(s.admit.code, "operation " + op + ": " + s.admit.code);
+    if (s.admit && s.admit.code && !s.admit.charge) fail(s.admit.code, "operation " + op + ": " + s.admit.code);
     if (flag("--policy-digest") !== s.policy.digest || Number(flag("--policy-version")) !== s.policy.version) fail("policy_changed", "operation " + op + " is refused: policy_changed");
     charges[op] = { body, certificate_id: crypto.randomUUID(), team, alias: flag("--alias"), member_did_key: flag("--member-key"), member_did_aw: flag("--member-id") || "" };
     fs.writeFileSync(path.join(base, "charges.json"), JSON.stringify(charges));
     if (s.admit && s.admit.lostOnce) { delete s.admit; saveSvc(s); fail("receipt_unavailable", "operation " + op + "'s execute answer was lost and it is still pending; resume it with the same operation id"); }
   }
+  // charge: the operation commits, and every answer comes back as this code (aw's prepare_unconfirmed).
+  if (s.admit && s.admit.code && s.admit.charge) fail(s.admit.code, "operation " + op + " committed but its answer was lost: " + s.admit.code);
   const c = charges[op];
   const cert = { version: 1, certificate_id: c.certificate_id, team_id: team, team_did_key: "did:key:zteam", member_did_key: c.member_did_key, ...(c.member_did_aw ? { member_did_aw: c.member_did_aw } : {}), alias: c.alias, identity_scope: c.member_did_aw ? "global" : "local", issued_at: "2026-11-13T00:00:00Z", signature: "sig" };
   const out = flag("--certificate-out"), text = JSON.stringify(cert, null, 2) + "\\n";

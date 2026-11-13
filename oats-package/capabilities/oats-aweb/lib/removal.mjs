@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { README_ADMISSION, REMOVAL_UNAVAILABLE, UNKNOWN_CODES, admittedCertificate, keepRootCopy, recordAdmission, writePrivate } from "./admission.mjs";
+import { FINAL_CODES, README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, recordAdmission, writePrivate } from "./admission.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { REMOVE_SERVED, admitArgv, awJson, removeAgentArgv } from "./protected-client.mjs";
 
@@ -19,7 +19,10 @@ export const RECONCILE = "oats aweb setup --reconcile-admissions";
 // `handoff_http_<status>` (cli/go/internal/handoff/client.go refusal()), so a
 // server that doesn't serve the act is told apart by its HTTP status alone.
 const NOT_SERVED = new Set(["handoff_http_404", "handoff_http_405", "handoff_http_501"]);
-const UNCONFIRMED = new Set(["receipt_unavailable", "external_effect_unresolved", "prepare_unconfirmed", "execute_answer_lost", "effect_in_progress", "evidence_unavailable", "handoff_http_429"]);
+const UNCONFIRMED = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "prepare_unconfirmed", "prepare_answer_lost", "execute_answer_lost", "receipt_invalid", "handoff_result_invalid", "effect_in_progress", "evidence_unavailable", "handoff_http_429"]);
+// A resume's refusals that are about the requester, not the operation (v4.3.23): they say
+// nothing of the earlier operation's outcome, so the root is fixed and the retire rerun.
+const REQUESTER_CODES = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous", "signed_request_invalid", "authority_changed", "operation_conflict", "operation_mismatch"]);
 
 /** What a remove-agent refusal code means: "unavailable" (the server doesn't
  *  serve the act), "unconfirmed" (the outcome may still change), or
@@ -122,11 +125,12 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       try { awJson(aw, "id team admit", admitArgv({ team, memberKey: record.memberKey, alias: record.alias, policy: record.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile }), setting.root.home, 60000); }
       catch (e) {
         if (e.code) throw e;
-        if (!e.awCode || UNKNOWN_CODES.has(e.awCode)) return { warnings, keep: { reason: "admission-unknown", text: stillUnknownText({ team, operationId: record.operationId }) } };
+        // Only the operation's own final codes establish a refusal (v4.3.23, v4.3.24).
+        if (FINAL_CODES.has(e.awCode)) { save({ state: "refused", code: e.awCode }); continue; }
+        if (REQUESTER_CODES.has(e.awCode)) return { warnings, keep: { reason: "admission-unknown", text: `the protected service refused the root's resume (${e.awCode}) (service-refused), and the admission's outcome is unknown (operation ${record.operationId}, team ${team}), so this home is kept → fix the root, then retire again, which resumes the admission` } };
         // The service holds this operation's certificate, and aw won't write it over another file.
         if (e.awCode === "certificate_out_exists") return { warnings, keep: { reason: "admission-unknown", text: `the admission (operation ${record.operationId}, team ${team}) committed, but ${record.certificateOut} holds another file, so its certificate can't be read → move that file aside, then retire again, which resumes the admission` } };
-        save({ state: "refused", code: e.awCode });
-        continue;
+        return { warnings, keep: { reason: "admission-unknown", text: stillUnknownText({ team, operationId: record.operationId }) } };
       }
       const cert = admittedCertificate(record.certificateOut, setting.root.home);
       keepRootCopy(cert);

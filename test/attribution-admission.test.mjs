@@ -74,6 +74,31 @@ test("acceptance 8: a receipt that stays unknown refuses E_ADMISSION_UNKNOWN wit
   fits(text, 'README, "Human attribution: admission refusals")');
 });
 
+// C-9 (v4.3.23, v4.3.24): aw's unconfirmed row, and any code in no row, never establish a refusal.
+for (const code of ["prepare_unconfirmed", "prepare_answer_lost", "execute_answer_lost", "receipt_invalid", "handoff_result_invalid", "effect_in_progress", "evidence_unavailable", "service_unavailable", "handoff_http_429", "handoff_http_503", "signed_certificate_invalid", "signed_request_invalid", "a_code_aw_adds_later"]) {
+  test(`acceptance 8, 12: ${code} at admit is E_ADMISSION_UNKNOWN, retried once under the same operation id, and the admission is recorded unknown`, (t) => {
+    const fx = attributionFixture(t);
+    fx.fake.setService({ admit: { code } });
+    const text = refusal(fx.spawn("dev-1"));
+    const record = admission(fx, "dev-1");
+    assert.ok(text.startsWith(`E_ADMISSION_UNKNOWN (code: ${code}): `), text);
+    assert.equal(record.state, "unknown");
+    assert.deepEqual(admits(fx.fake).map(opOf), [record.operationId, record.operationId]);
+  });
+}
+
+for (const code of ["operation_expired", "approval_expired", "operation_conflict"]) {
+  test(`acceptance 8: ${code} refuses E_ADMISSION_REFUSED, never retried, and the admission is recorded refused`, (t) => {
+    const fx = attributionFixture(t);
+    fx.fake.setService({ admit: { code } });
+    const text = refusal(fx.spawn("dev-1"));
+    assert.ok(text.startsWith(`E_ADMISSION_REFUSED (code: ${code}): `), text);
+    assert.equal(admission(fx, "dev-1").state, "refused");
+    assert.equal(admits(fx.fake).length, 1);
+    fits(text, 'README, "Human attribution: admission refusals")');
+  });
+}
+
 test("acceptance 8: a retry after the execute's answer was lost gives one certificate under the same operation id", (t) => {
   const fx = attributionFixture(t);
   fx.fake.setService({ admit: { lostOnce: true } });

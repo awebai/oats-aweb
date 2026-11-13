@@ -53,7 +53,7 @@ test("acceptance 13: the removal's operation id is persisted in the home before 
   assert.deepEqual(ops, [persisted.operationId, persisted.operationId]);
 });
 
-for (const code of ["receipt_unavailable", "external_effect_unresolved", "prepare_unconfirmed", "execute_answer_lost", "effect_in_progress", "evidence_unavailable", "registry_unavailable", "handoff_http_429", "handoff_http_503"]) {
+for (const code of ["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "prepare_unconfirmed", "prepare_answer_lost", "execute_answer_lost", "receipt_invalid", "handoff_result_invalid", "effect_in_progress", "evidence_unavailable", "registry_unavailable", "handoff_http_429", "handoff_http_503"]) {
   test(`acceptance 13: an unconfirmed removal (${code}) exits nonzero, keeps the home and the root's copy, and names --reconcile-admissions`, (t) => {
     const fx = attributionFixture(t);
     const id = spawned(fx);
@@ -316,6 +316,63 @@ test("acceptance 12: a refused admission needs nothing at retire", (t) => {
   assert.equal(verbs(fx.fake).filter((v) => v === "id team admit").length, 1, "the spawn's admit only: nothing is resumed");
   assert.deepEqual(removeCalls(fx), []);
 });
+
+test("acceptance 12 (v4.3.23): an admission aw committed but answered prepare_unconfirmed is unknown at spawn; the rollback retire resumes it as committed and removes it", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { code: "prepare_unconfirmed", charge: true } });
+  const r0 = fx.hook("spawn", "dev-1");
+  assert.ok(warningOf(r0).startsWith("oats-aweb: E_ADMISSION_UNKNOWN"), warningOf(r0));
+  const { operationId, state } = admission(fx, "dev-1");
+  assert.equal(state, "unknown");
+  fx.fake.setService({ admit: undefined });
+  const r = fx.retire("dev-1", { fromMeta: r0.doc.meta });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual(Object.keys(fx.fake.charges()), [operationId]);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [fx.fake.charges()[operationId].certificate_id]);
+});
+
+test("acceptance 12 (v4.3.24): an admit answered with a code in no row keeps the admission unknown, and the rollback retire resumes it", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { code: "a_code_aw_adds_later" } });
+  const r0 = fx.hook("spawn", "dev-1");
+  assert.ok(warningOf(r0).startsWith("oats-aweb: E_ADMISSION_UNKNOWN (code: a_code_aw_adds_later)"), warningOf(r0));
+  const { operationId } = admission(fx, "dev-1");
+  const kept = fx.retire("dev-1", { fromMeta: r0.doc.meta });
+  assert.notEqual(kept.status, 0, "still unknown: the home is kept");
+  assert.ok(warningOf(kept).includes(`the admission's outcome is unknown (operation ${operationId}, team ${TEAM}), ${STILL_UNKNOWN}`), warningOf(kept));
+  fx.fake.setService({ admit: undefined });
+  const r = fx.retire("dev-1", { fromMeta: r0.doc.meta });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [fx.fake.charges()[operationId].certificate_id]);
+});
+
+// v4.3.23: a requester-side refusal at the resume says nothing of the earlier operation's outcome.
+for (const code of ["scope_refused", "profile_scope_refused", "profile_scope_ambiguous", "signed_request_invalid", "authority_changed", "operation_conflict", "operation_mismatch"]) {
+  test(`acceptance 12 (v4.3.23): an unknown admission whose resume is refused ${code} keeps the home: fix the root, then retire again`, (t) => {
+    const fx = attributionFixture(t);
+    const meta = unknownAdmission(fx);
+    const { operationId } = admission(fx, "dev-1");
+    fx.fake.setService({ admit: { code } });
+    const r = fx.retire("dev-1", { fromMeta: meta });
+    assert.notEqual(r.status, 0, "the home is kept");
+    const w = warningOf(r);
+    assert.ok(w.includes(code) && w.includes(operationId) && w.includes("service-refused") && w.includes("fix the root, then retire again, which resumes the admission"), w);
+    assert.equal(admission(fx, "dev-1").state, "unknown");
+    assert.ok(!verbs(fx.fake).includes("workspace delete"));
+  });
+}
+
+for (const code of ["admission_policy_missing", "policy_changed", "operation_expired", "approval_expired"]) {
+  test(`acceptance 12 (v4.3.23): an unknown admission resumed as ${code}, the operation's own final code, records refused and the home goes`, (t) => {
+    const fx = attributionFixture(t);
+    const meta = unknownAdmission(fx);
+    fx.fake.setService({ admit: { code } });
+    const r = fx.retire("dev-1", { fromMeta: meta });
+    assert.equal(r.status, 0, JSON.stringify(r.doc));
+    assert.equal(admission(fx, "dev-1").state, "refused");
+    assert.deepEqual(removeCalls(fx), []);
+  });
+}
 
 /** A spawn hook killed during its admit: the record pending, no --certificate-out file, and
  *  nothing prepared at the service. Its rollback meta is empty: the hook never answered. */

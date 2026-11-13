@@ -61,7 +61,11 @@ binding the root.
    binding prints the approval link, its digest and fingerprint, the teams
    and their bounds. Under `--json` it answers `E_ENDORSE_NOT_APPROVED`,
    `state: pending`, with the link at once, and a rerun resumes the same
-   operation. Once the human approves, setup records
+   operation. Only the human's or the service's final no (`human_refused`,
+   `subject_ineligible`, `operation_expired`, `approval_expired`) is
+   `state: refused`, and the rerun starts a new operation; any other answer
+   aw doesn't map, or none, is `state: unknown`, and the rerun resumes the
+   same one. Once the human approves, setup records
    `settings.oats.aweb.attribution` in `oats-local.yaml`, last.
 3. From then on, each spawn into those teams creates a key-only identity,
    has the root (or a chained spawner) issue its chain, and has the root
@@ -165,16 +169,27 @@ its first sentence and this section; the full texts are here.
   - `policy_changed`: the team's admission policy changed since the
     endorsement. Rerun `oats aweb setup --endorse-root` to refresh it, then
     rerun the spawn, which starts a new attempt.
-  - `subject_ineligible` and every other refused code: the protected
-    service's final refusal, with its code.
-- `E_ADMISSION_UNKNOWN`: the admission's outcome is unknown (aw
-  `receipt_unavailable`, `external_effect_unresolved`,
-  `registration_unconfirmed` or `signed_certificate_invalid`). The refusal
-  names the operation id and the team, and the home is kept. Retire it once
-  the service answers: the retire resumes the admission with the same
-  operation id, which never charges twice. A committed one is then removed
-  with the rest of the home's memberships, a refused one needs nothing, and
-  one still unknown keeps the home again.
+  - `subject_ineligible`, `operation_expired` and `approval_expired`: the
+    protected service's final refusal, with its code.
+  - `operation_conflict`: aw sent this operation id with other inputs, and
+    never sends it again. Rerun the spawn, which starts a new operation.
+- `E_ADMISSION_UNKNOWN`: the admission's outcome is unknown. Only the codes
+  above refuse: every other code aw answers (for example
+  `receipt_unavailable`, `prepare_unconfirmed`, which aw gives even for a
+  committed receipt, `execute_answer_lost`, an HTTP 429 or 5xx, or a code aw
+  adds later), or no code at all, leaves it unknown. The spawn retries once
+  with the same operation id; the refusal then names the operation id and the
+  team, and the home is kept. Retire it once the service answers: the retire
+  resumes the admission with the same operation id, which never charges
+  twice. A committed one is then removed with the rest of the home's
+  memberships, and one still unknown keeps the home again. Only the
+  operation's own final codes (`admission_policy_missing`, `policy_changed`,
+  `admission_limit_reached`, `subject_ineligible`, `operation_expired`,
+  `approval_expired`) record it refused, which needs nothing more. A refusal
+  of the root's request itself (a scope code, `signed_request_invalid`,
+  `authority_changed`, `operation_conflict` or `operation_mismatch`) says
+  nothing of the operation, so the home is kept: fix the root, then retire
+  again.
 - `E_ATTRIBUTION_EXCHANGE` with `step: install`: the admitted certificate
   couldn't be installed in the new home, or its id isn't aw's form. Respawn.
   A code aw doesn't list is never retried.
@@ -198,8 +213,8 @@ operation id.
 
 What a retire says when it can't remove a membership:
 
-- An unconfirmed removal (an unknown receipt, HTTP 429 or 5xx) keeps the home:
-  retire it again once the service answers.
+- An unconfirmed removal (an unknown or lost receipt, HTTP 429 or 5xx, or no
+  code) keeps the home: retire it again once the service answers.
 - `admission-removal-unavailable`: the service's server answered 404, 405 or
   501 to `team.agent.remove`, so it may not serve removal yet. Its operator
   upgrades the server; then run `oats aweb setup --reconcile-admissions`. With

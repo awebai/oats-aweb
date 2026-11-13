@@ -134,9 +134,11 @@ test("acceptance 3: a mapped team left out of the intended teams refuses unliste
   assert.deepEqual(verbs(fx.fake).filter((v) => v.startsWith("id ")), [], "before any effect");
 });
 
-test("acceptance 3: an unavailable read refuses E_ATTRIBUTION_EVIDENCE", (t) => {
-  const fx = fresh(t, { service: { endorse: [{ code: "service_unavailable" }] } });
+test("acceptance 3: an unavailable read refuses E_ATTRIBUTION_EVIDENCE: setup's own policy read, never treated as absence", (t) => {
+  const fx = fresh(t, { service: { endorse: ["committed"], policyRead: { code: "service_unavailable" } } });
+  const before = local(fx);
   assert.equal(errorOf(json(fx, endorseArgs(fx))).code, "E_ATTRIBUTION_EVIDENCE");
+  assert.equal(local(fx), before);
 });
 
 // C-9's endorse column, row by row.
@@ -157,7 +159,19 @@ const ENDORSE_ROWS = [
   ["human_chain_unverified", "E_ENDORSE_FAILED", {}],
   ["signed_certificate_invalid", "E_ENDORSE_FAILED", {}],
   ["operation_conflict", "E_ENDORSE_FAILED", {}],
+  // The unconfirmed row (v4.3.23), and a code in no row (v4.3.24): unknown, and a rerun resumes.
+  ...["prepare_unconfirmed", "prepare_answer_lost", "execute_answer_lost", "receipt_invalid", "handoff_result_invalid", "effect_in_progress", "evidence_unavailable", "service_unavailable", "handoff_http_429", "handoff_http_503", "handoff_expired", "a_code_aw_adds_later"].map((code) => [code, "E_ENDORSE_NOT_APPROVED", { state: "unknown" }]),
 ];
+test("acceptance 3, C-9's endorse column: an answer with no code at all is E_ENDORSE_NOT_APPROVED unknown, and the operation is kept for the rerun", (t) => {
+  const fx = fresh(t, { service: { endorse: [{ code: "" }] } });
+  const before = local(fx);
+  const e = errorOf(json(fx, endorseArgs(fx)));
+  assert.equal(e.code, "E_ENDORSE_NOT_APPROVED", e.message);
+  assert.equal(e.details.state, "unknown");
+  assert.equal(local(fx), before);
+  assert.ok(existsSync(operationFile(fx)), "the operation was spent");
+});
+
 for (const [code, expected, details] of ENDORSE_ROWS) {
   test(`acceptance 3, C-9's endorse column: aw's ${code} is ${expected}${Object.keys(details).length ? ` ${Object.values(details)[0]}` : ""}, carrying aw's code`, (t) => {
     const fx = fresh(t, { service: { endorse: [{ code }] } });
@@ -167,6 +181,8 @@ for (const [code, expected, details] of ENDORSE_ROWS) {
     for (const [k, v] of Object.entries(details)) assert.equal(e.details[k], v);
     assert.equal(e.details.code, code);
     assert.equal(local(fx), before);
+    // An unknown outcome keeps the operation, so the rerun resumes it rather than preparing again.
+    if (details.state === "unknown") assert.ok(existsSync(operationFile(fx)), "the operation was spent");
   });
 }
 
