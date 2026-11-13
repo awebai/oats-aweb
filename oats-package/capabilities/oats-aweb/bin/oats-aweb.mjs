@@ -64,7 +64,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await
 
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
@@ -80,7 +80,7 @@ import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, aw
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
-import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
+import { assertAwebSettingRecordable, atomicWrite, recordAttributionSetting, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
 import { AW_MIN, CAPTURED_UNSUPPORTED, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
@@ -94,6 +94,8 @@ import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admitIdentity } from "../lib/admission.mjs";
+import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
+import { scanProtectedKeys } from "../lib/key-scan.mjs";
 import { PROTECTED_AW_MIN } from "../lib/protected-client.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
 
@@ -3072,6 +3074,36 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
+  // Human attribution (spec human-ids-acxy7 C-2): a setup form of its own.
+  if (args.includes("--endorse-root")) {
+    const answer = (status, doc, text) => {
+      if (json) console.log(JSON.stringify(doc));
+      else if (text) (status ? console.error : console.log)(text);
+      process.exit(status);
+    };
+    try {
+      const options = parseEndorseArgs(args);
+      let deployment;
+      try { deployment = selectedDeployment(process.env); }
+      catch (e) { throw attributionError("E_SETUP_ARGUMENT", `${e.message}`, { stage: "arguments" }); }
+      const live = attributionSetting(settings) ?? undefined;
+      const result = endorseRoot(options, {
+        aw: run, deployment, live, versionAtLeast, awVersion: await readAwVersion(),
+        kernel: () => { try { return querySelectedKernel(["--version", "--json"]); } catch { return undefined; } },
+        teams: { default: defaultTeamId() ? { label: defaultTeamLabel() || defaultTeamId(), team: defaultTeamId() } : null, mapped: eligibleTeams().map(({ label, team }) => ({ label, team })) },
+        scan: ({ service }) => scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service, consumer: "oats.aweb" }),
+        record: (setting) => recordAttributionSetting(setting, { start: deployment }),
+        writePrivate: (file, text) => atomicWrite(file, text, 0o600),
+        host: hostname(), optIn: OPT_IN,
+        print: json ? undefined : (text) => console.log(text),
+      });
+      answer(0, { schemaVersion: 1, ok: true, result }, `✓ the root ${result.root.id} is endorsed by ${result.human.id} for ${result.teams.join(", ")}; settings.oats.aweb.attribution is recorded. Spawns into these teams are now attributed.`);
+    } catch (e) {
+      const code = typeof e.code === "string" && e.code.startsWith("E_") ? e.code : "E_ENDORSE_FAILED";
+      const { stage, ...details } = e.details || {};
+      answer(stage === "arguments" ? 2 : 1, { schemaVersion: 1, ok: false, error: { code, message: e.message, details } }, `oats aweb setup: ${code}: ${e.message}`);
+    }
+  }
   const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] [--name <alias>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
   let setupDir, setupLabel, setupPlan = false;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;

@@ -1,0 +1,297 @@
+// `oats aweb setup --endorse-root` (spec human-ids-acxy7 v4.3.14 C-2): the
+// deployment's root, its endorsement by the human through one approved link,
+// and settings.oats.aweb.attribution, written last. The person's only act is
+// approving the link; the service operator's is binding the root (step 2b).
+// Setup makes no protected HTTP call itself: every effect is one aw command
+// (protected-client.mjs), and OATS never parses aw's text.
+import { randomUUID } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { basename, isAbsolute, join, resolve } from "node:path";
+import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
+import { PROTECTED_AW_MIN, REQUEST_BINDING_SERVED, AwRefusal, admissionPolicyArgv, awJson, createNoAddressArgv, endorseArgv } from "./protected-client.mjs";
+import { canonicalTeamServerURL } from "./team-server-url.mjs";
+
+export const ENDORSE_USAGE = "usage: oats aweb setup --endorse-root (--new-root --name <alias> | --root-home <abs>) --human <did:aw> --protected-profile <abs> --service <url> [--label \"<name>\"] [--teams <label,…>] [--json]";
+const ALIAS = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+const DID_AW = /^did:aw:\S+$/;
+const OPERATION_FILE = "endorse-operation.json";
+/** aw waits for the receipt at most 600 s; setup gives it a minute more. */
+const WAIT_MS = 660000;
+
+const argumentError = (message) => attributionError("E_SETUP_ARGUMENT", `${message}\n${ENDORSE_USAGE}`, { stage: "arguments" });
+
+/** The command line, checked before any effect. Throws E_SETUP_ARGUMENT. */
+export function parseEndorseArgs(argv) {
+  const o = { newRoot: false, teams: undefined };
+  const value = (flag, i) => { if (i + 1 >= argv.length || argv[i + 1].startsWith("--")) throw argumentError(`${flag} needs a value`); return argv[i + 1]; };
+  const FLAGS = { "--name": "name", "--root-home": "rootHome", "--human": "human", "--protected-profile": "profile", "--service": "service", "--label": "label", "--teams": "teams" };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--endorse-root" || arg === "--json") continue;
+    if (arg === "--new-root") { o.newRoot = true; continue; }
+    const eq = arg.indexOf("=");
+    const flag = eq > 0 ? arg.slice(0, eq) : arg;
+    if (!FLAGS[flag]) throw argumentError(`--endorse-root doesn't take ${arg}`);
+    if (o[FLAGS[flag]] !== undefined) throw argumentError(`${flag} is given twice`);
+    if (eq > 0) o[FLAGS[flag]] = arg.slice(eq + 1);
+    else { o[FLAGS[flag]] = value(flag, i); i++; }
+  }
+  if (o.newRoot && o.rootHome !== undefined) throw argumentError("--new-root and --root-home name two roots; a deployment has one");
+  if (o.newRoot && !ALIAS.test(o.name ?? "")) throw argumentError(`--new-root needs --name <alias>: 1-64 letters, digits, '-' or '_', starting with a letter or digit`);
+  if (!o.newRoot && o.name !== undefined) throw argumentError("--name goes with --new-root");
+  if (o.rootHome !== undefined && !isAbsolute(o.rootHome)) throw argumentError("--root-home must be an absolute path");
+  if (!DID_AW.test(o.human ?? "")) throw argumentError("--human must be the human's did:aw");
+  if (!o.profile || !isAbsolute(o.profile)) throw argumentError("--protected-profile must be the absolute path of the service's protected profile");
+  const service = canonicalTeamServerURL(o.service);
+  if (!service.url) throw argumentError(`--service <url>, the aweb service the protected teams use, ${service.reason}`);
+  o.service = service.url;
+  if (o.label !== undefined && !validLabel(o.label)) throw argumentError("--label must be one line of 1-200 characters with no control, line-break or bidi character");
+  if (o.teams !== undefined) {
+    o.teams = o.teams.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!o.teams.length) throw argumentError("--teams needs at least one team label");
+  }
+  return o;
+}
+
+/** What opting in means, in the endorse output and the README (test 21). */
+export const OPT_IN = Object.freeze([
+  "Custody: the root's agent key is readable by every instance of this deployment (the same OS user), within its bounds: it can admit agents only within this root's own admission bounds.",
+  "Outages: spawns into the protected teams stop while the protected service's or the identity registry's evidence is unavailable.",
+  "Existing instances keep their identities, unattributed: respawn to attribute them.",
+  "One approval: the human approves this root once, at its link; later spawns need no approval.",
+  "Revocation: if the human revokes this root, new spawns refuse E_ATTRIBUTION_REVOKED; the path out is in the README, \"Human attribution: revocation\".",
+  "BYOT: a deployment whose user can reach team or controller keys (~/.awid/team-keys, ~/.awid/controllers), which today is every existing BYOT deployment, can't opt in until aweb's package 8 migrates those keys; that's a known precondition, not a bug.",
+  "Residents: opting in means no new residents until aweb's custody update lands (aweb-acxy.18): resident create and resident certify refuse here; existing residents are unchanged.",
+  "Membership doesn't imply attribution: a genuinely chainless spawner's child is still admitted by the root, but carries no chain.",
+]);
+
+/** The deployment label aw shows the human on the approval page (v4.3.13): derived, never a flag. */
+export const deploymentLabel = (host, deployment) => { const short = String(host || "").split(".")[0]; return short ? `${short}:${basename(deployment)}` : basename(deployment); };
+
+// C-9's endorse column: aw's code → OATS's refusal.
+const UNKNOWN = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "prepare_unconfirmed"]);
+const SCOPE = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
+const REGISTER = new Set(["registration_conflict", "human_chain_unverified", "signed_certificate_invalid"]);
+const FAILED = new Set(["operation_conflict", "profile_invalid", "requester_invalid", "request_invalid", "intent_invalid", "receipt_invalid", "handoff_result_invalid"]);
+const RERUN = new Set(["operation_expired", "approval_expired", "handoff_expired"]);
+
+/** The operator's binding step, as setup prints it (step 2b). */
+export function bindingStep({ root, human, teams }) {
+  const bind = `python -m aweb.protected_signing.operator bind-root --human ${human} --root ${root}${teams.map((t) => ` --team ${t}`).join("")}`;
+  return REQUEST_BINDING_SERVED
+    ? `the protected service's operator binds this root as a requester: ${bind}`
+    : `the protected service's operator binds this root as a requester: the first root on a service is named in its \`operator bootstrap --requester ${root}\`, once per binding (the human's, for endorse, and each team's controller); a later root needs bind-root, which the pinned aw and service don't serve yet`;
+}
+
+/** The root's operation record (step 3): {operationId, deploymentLabel, at}, or null. */
+const operationPath = (rootHome) => join(rootHome, OPERATION_FILE);
+function readOperation(rootHome) {
+  try {
+    const doc = JSON.parse(readFileSync(operationPath(rootHome), "utf8"));
+    return typeof doc?.operationId === "string" && typeof doc.deploymentLabel === "string" ? doc : null;
+  } catch { return null; }
+}
+
+/**
+ * Runs `setup --endorse-root`. `ctx`:
+ * - `aw(argv, cwd, timeoutMs)`: runs aw, returns stdout or throws aw's failure;
+ * - `kernel()`: the kernel's `--version --json` document, or undefined;
+ * - `awVersion`: the selected aw's version;
+ * - `deployment`: D, or throws its error;
+ * - `teams`: {default: {label, team} | null, mapped: [{label, team}]}, every team D maps;
+ * - `live`: settings.oats.aweb.attribution as the deployment has it now, or undefined;
+ * - `scan()`: the A5 scan, {findings, unknown};
+ * - `record(setting)`: writes the setting into D's oats-local.yaml;
+ * - `host`: this host's name; `print(text)`: terminal output, absent under --json;
+ * - `optIn`: the lines the endorse output carries (test 21).
+ * Returns the result, or throws an attributionError.
+ */
+export function endorseRoot(o, ctx) {
+  const D = ctx.deployment;
+  // A deployment has one root, and a rerun after success is the refresh.
+  if (ctx.live) {
+    const recorded = ctx.live.root?.home;
+    const asked = o.newRoot ? join(D, ROOT_DIR, o.name) : o.rootHome && resolve(o.rootHome);
+    if (asked && recorded && resolve(asked) !== resolve(recorded)) throw attributionError("E_ENDORSE_ONE_ROOT", `this deployment already records the root ${ctx.live.root.id} at ${recorded}; a deployment has one root → rerun with --root-home ${recorded}, or follow the README's "Human attribution: revocation" to replace it`, { root: ctx.live.root.id, home: recorded });
+    throw attributionError("E_ENDORSE_ONE_ROOT", `this deployment already records the root ${ctx.live.root?.id} → the rerun that refreshes its policy and teams isn't in this build yet`, { root: ctx.live.root?.id, home: recorded });
+  }
+  // 1. Preflight, before any effect.
+  const version = ctx.kernel();
+  if (!Array.isArray(version?.features) || !version.features.includes(SPAWN_ATTRIBUTION_FEATURE)) throw attributionError("E_SETUP_KERNEL", `attribution needs an OATS kernel that lists ${SPAWN_ATTRIBUTION_FEATURE} (OATS ${KERNEL_FLOOR} or later); this one doesn't → upgrade OATS`);
+  if (!ctx.versionAtLeast(ctx.awVersion, PROTECTED_AW_MIN)) throw attributionError("E_SETUP_AW_VERSION", `attribution needs aw ${PROTECTED_AW_MIN} or later, the protected-client floor; this host has ${ctx.awVersion || "an unreadable aw"} → upgrade aw`);
+  if (!o.newRoot && o.rootHome === undefined) {
+    const dir = join(D, ROOT_DIR);
+    let candidates = [];
+    try { candidates = readdirSync(dir).map((n) => join(dir, n)).filter((h) => existsSync(join(h, ".aw", "signing.key"))); } catch { candidates = []; }
+    throw argumentError(`choose the root: ${candidates.length ? `${candidates.map((h) => `--root-home ${h}`).join(", ")}, or ` : ""}--new-root --name <alias> for a new one; setup never picks one`);
+  }
+  const rootHome = o.newRoot ? join(D, ROOT_DIR, o.name) : resolve(o.rootHome);
+  const fresh = o.newRoot && !existsSync(rootHome);
+  if (fresh) {
+    // The home doesn't exist yet: the container and placement rules from D, before creating it.
+    if (resolve(D) === CONTAINER_DEPLOYMENT || resolve(D).startsWith(`${CONTAINER_DEPLOYMENT}/`)) throw rootHomeProblem(rootHome, { deployment: D });
+    for (let dir = resolve(D); ; dir = resolve(dir, "..")) {
+      if (existsSync(join(dir, ".git"))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home ${rootHome} would be inside a Git work tree (${dir}), where its key could be committed → move the deployment out of any work tree`, { problem: "placement", home: rootHome });
+      if (existsSync(join(dir, "instance.json"))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home ${rootHome} would be under an instance home (${dir}) → run setup in the deployment itself`, { problem: "placement", home: rootHome });
+      if (resolve(dir, "..") === dir) break;
+    }
+  } else {
+    const problem = rootHomeProblem(rootHome, { deployment: D });
+    if (problem) throw problem;
+  }
+  const profileKey = "--protected-profile";
+  const bad = profileProblem(o.profile, { key: profileKey });
+  if (bad) throw bad;
+  const digest = profileDigest(o.profile);
+  let profile;
+  try { profile = JSON.parse(readFileSync(o.profile, "utf8")); } catch { profile = null; }
+  if (typeof profile?.registry_origin !== "string" || typeof profile?.service_id !== "string") throw attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${o.profile} names no service id or registry origin → have the service's operator provision it again`, { key: profileKey, problem: "profile-mode", file: o.profile });
+  const scan = ctx.scan({ service: profile.service_id });
+  if (scan.findings.length) throw attributionError("E_PROTECTED_KEY_REACHABLE", `this host's user can reach ${scan.findings.length} protected key location${scan.findings.length > 1 ? "s" : ""} (${scan.findings.slice(0, 3).map((f) => f.reference).join(", ")}${scan.findings.length > 3 ? ", …" : ""}), which an opted-in deployment must not → migrate them with aweb's package 8 (aweb-acxy.8), then rerun setup; nothing was changed`, { findings: scan.findings, unknown: scan.unknown });
+  const mapped = [...(ctx.teams.default ? [ctx.teams.default] : []), ...ctx.teams.mapped.filter((t) => t.team !== ctx.teams.default?.team)];
+  let teams;
+  if (o.teams) {
+    teams = o.teams.map((label) => {
+      const row = mapped.find((t) => t.label === label);
+      if (!row) throw argumentError(`--teams names ${label}, which this deployment doesn't map (it maps ${mapped.map((t) => t.label).join(", ") || "no team"})`);
+      return row.team;
+    });
+  } else teams = ctx.teams.default ? [ctx.teams.default.team] : [];
+  if (!teams.length) throw argumentError("this deployment maps no default team, so --teams must name the protected teams");
+  const unlisted = mapped.filter((t) => !teams.includes(t.team));
+  if (unlisted.length) throw attributionError("E_ENDORSE_POLICY", `this deployment maps ${unlisted.map((t) => `${t.label} (${t.team})`).join(", ")}, which the endorsement wouldn't cover; an opted-in deployment admits only through its protected teams → add ${unlisted.length > 1 ? "them" : "it"} to --teams, or remove the mapping`, { problem: "unlisted", teams: unlisted.map((t) => t.team) });
+  teams = [...new Set(teams)];
+
+  // 2. The root.
+  const identityHome = join(rootHome, ".aw");
+  const run = (argv, timeout = 60000) => awJson(ctx.aw, argv.filter((a) => a !== "--json").slice(0, 3).join(" "), argv, rootHome, timeout);
+  let rootId, created = "existing";
+  if (o.newRoot) {
+    mkdirSync(join(D, ROOT_DIR), { recursive: true, mode: 0o700 });
+    mkdirSync(rootHome, { recursive: true, mode: 0o700 });
+    chmodSync(rootHome, 0o700);
+    try {
+      const made = run(createNoAddressArgv({ identityHome, registry: profile.registry_origin }));
+      rootId = made.did_aw; created = made.status;
+    } catch (e) {
+      if (!(e instanceof AwRefusal) || e.awCode !== "identity_exists") throw attributionError("E_ENDORSE_FAILED", `the root's identity couldn't be created (${e.awCode || oneLine(e.message)}) → rerun the same setup, which resumes the same key`, { step: "create", code: e.awCode ?? null });
+      rootId = registeredId(identityHome);
+      if (!rootId) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `${identityHome} already holds an identity that isn't a registered root → choose another --name, or use --root-home for a registered agent`, { problem: "placement", home: rootHome });
+    }
+    const problem = rootHomeProblem(rootHome, { deployment: D });
+    if (problem) throw problem;
+  } else {
+    const verdict = readWho((args) => ctx.aw(["aw", ...args], rootHome, 60000), identityHome);
+    rootId = registeredId(identityHome);
+    if (!rootId || !DID_AW.test(verdict.id || rootId) || verdict.kind === "revoked" || verdict.kind === "invalid" || verdict.kind === "error") throw attributionError("E_ENDORSE_ROOT_INELIGIBLE", `the identity at ${identityHome} can't be this deployment's root (${rootId ? verdict.reason || verdict.kind : "it is a local did:key, not a registered agent"}) → use --new-root --name <alias> for a new registered root`, { home: rootHome, reason: rootId ? verdict.reason || verdict.kind : "local" });
+  }
+  if (!DID_AW.test(rootId || "")) throw attributionError("E_ENDORSE_FAILED", `aw answered no did:aw for the root at ${identityHome} → rerun the same setup`, { step: "register" });
+  const binding = { root: rootId, human: o.human, teams };
+
+  // 3. The operation id and the deployment label, recorded before prepare.
+  let operation = readOperation(rootHome);
+  if (!operation) {
+    operation = { operationId: randomUUID(), deploymentLabel: deploymentLabel(ctx.host, D), at: new Date().toISOString() };
+    ctx.writePrivate(operationPath(rootHome), `${JSON.stringify(operation, null, 2)}\n`);
+  }
+  const spend = () => rmSync(operationPath(rootHome), { force: true });
+
+  // 4-6. Prepare, check and approve, in one aw call; the link.
+  const endorse = (wait) => {
+    try { return run(endorseArgv({ human: o.human, teams, label: operation.deploymentLabel, operationId: operation.operationId, profile: o.profile, wait }), wait ? WAIT_MS : 120000); }
+    catch (e) { throw endorseRefusal(e, { binding, operationId: operation.operationId, spend, legacy: () => legacyTeams(run, teams, o.profile) }); }
+  };
+  let answer = endorse(false);
+  if (answer?.state === "pending") {
+    const bounds = Object.fromEntries(teams.map((team) => [team, policyOf(run, team, o.profile)?.bounds ?? null]));
+    const pending = { state: "pending", operationId: operation.operationId, url: answer.page, digest: answer.digest, fingerprint: answer.fingerprint, expiresAt: answer.expires_at, teams, bounds };
+    if (!ctx.print) throw attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement waits for ${o.human}'s approval → open ${answer.page} as the human, then rerun the same setup`, pending);
+    ctx.print(linkText({ pending, human: o.human, root: rootId, optIn: ctx.optIn }));
+    answer = endorse(true);
+    if (answer?.state === "pending") throw attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement is still waiting for approval, until ${answer.expires_at || pending.expiresAt} → approve at ${pending.url}, then rerun the same setup, which resumes it`, { ...pending, expiresAt: answer.expires_at || pending.expiresAt });
+  }
+  if (answer?.state !== "committed" || answer.registered !== true) throw attributionError("E_ENDORSE_NOT_APPROVED", `aw answered the endorsement ${answer?.state ?? "with nothing"} (operation ${operation.operationId}) → rerun the same setup, which reads the same receipt`, { state: "unknown", operationId: operation.operationId });
+
+  // 7. Committed: the chain aw installed (v4.3.15), the policy, then the setting, last.
+  if (answer.chain_installed !== true) throw attributionError("E_ENDORSE_FAILED", `the root's endorsement committed (certificate ${answer.certificate_id ?? "unnamed"}), but aw didn't install its chain in ${identityHome}, so the root can't issue → rerun setup, which installs it`, { step: "install", operationId: operation.operationId });
+  const who = readWho((args) => ctx.aw(["aw", ...args], rootHome, 60000), identityHome);
+  if (who.kind !== "verified" || who.humanId !== o.human) throw attributionError("E_ENDORSE_FAILED", `the root's endorsement committed, but aw who doesn't show ${o.human} as its nearest human (${who.humanId ?? who.reason ?? who.kind}) → rerun the same setup`, { step: "install", reason: who.reason ?? who.kind });
+  const policies = teams.map((team) => policyOf(run, team, o.profile, { required: true }));
+  const policy = { version: policies[0].version, digest: policies[0].digest };
+  if (policies.some((p) => p.version !== policy.version || p.digest !== policy.digest)) throw attributionError("E_ENDORSE_POLICY", `the teams' admission policies differ (${teams.join(", ")}), so one endorsement can't record them → have the service's operator check the deployment's admission policy`, { problem: "changed" });
+  const setting = {
+    root: { id: rootId, home: rootHome }, human: { id: o.human, label: o.label ?? o.human },
+    service: { id: profile.service_id, profile: o.profile, profileDigest: digest, url: o.service },
+    teams, endorsement: { operationId: operation.operationId, policy },
+  };
+  try { ctx.record(setting); }
+  catch (e) { throw attributionError("E_ENDORSE_FAILED", `the root is endorsed, but the setting couldn't be written: ${oneLine(e.message)} → rerun the same setup, which records it`, { step: "record" }); }
+  spend();
+  return { state: "committed", root: { id: rootId, home: rootHome, created }, human: setting.human, teams, certificateId: answer.certificate_id, endorsement: setting.endorsement };
+}
+
+const oneLine = (text) => String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+
+/** The registered did:aw in `identityHome`, or null (a local did:key, or none). */
+function registeredId(identityHome) {
+  try { const did = readFileSync(join(identityHome, "did"), "utf8").trim(); if (DID_AW.test(did)) return did; } catch { /* no recorded did */ }
+  try { const m = /^stable_id:\s*(did:aw:\S+)\s*$/m.exec(readFileSync(join(identityHome, "identity.yaml"), "utf8")); if (m) return m[1]; } catch { /* no identity */ }
+  return null;
+}
+
+/** A team's admission policy read as the root, or null where `required` is false and it can't be read. */
+function policyOf(run, team, profile, { required = false } = {}) {
+  try {
+    const doc = run(admissionPolicyArgv({ team, profile }));
+    if (doc?.mode === "protected" && doc.policy) return doc.policy;
+    if (!required) return null;
+    throw attributionError("E_ENDORSE_POLICY", `${team} has no protected admission policy (${doc?.mode ?? "no answer"}) → have the service's operator provision it`, { problem: doc?.mode === "legacy" ? "legacy" : "missing", team });
+  } catch (e) {
+    if (!required || e.code?.startsWith?.("E_")) { if (required) throw e; return null; }
+    if (e instanceof AwRefusal && /_unavailable$/.test(e.awCode || "")) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${e.awCode}) → retry setup once the protected service answers`, { code: e.awCode, team });
+    throw attributionError("E_ENDORSE_POLICY", `${team}'s admission policy couldn't be read (${e.awCode || oneLine(e.message)}) → rerun setup`, { problem: "missing", team, code: e.awCode ?? null });
+  }
+}
+
+/** The teams the service holds as legacy, read as the root (best effort): an admission_policy_missing names them. */
+function legacyTeams(run, teams, profile) {
+  return teams.filter((team) => { try { return run(admissionPolicyArgv({ team, profile }))?.mode === "legacy"; } catch { return false; } });
+}
+
+/** C-9's endorse column. `spend()` clears the persisted operation where the outcome is final. */
+export function endorseRefusal(e, { binding, operationId, spend, legacy }) {
+  if (!(e instanceof AwRefusal)) return attributionError("E_ENDORSE_FAILED", `aw id endorse failed (${oneLine(e.message)}) → rerun the same setup`, { step: "prepare", code: null });
+  const code = e.awCode;
+  const details = { code: code ?? null, operationId };
+  if (!code) return attributionError("E_ENDORSE_FAILED", `aw id endorse answered no code (${oneLine(e.awMessage || e.message)}) → rerun the same setup`, { ...details, step: "prepare" });
+  if (code === "admission_policy_missing") {
+    spend();
+    const legacyOnes = legacy();
+    return attributionError("E_ENDORSE_POLICY", legacyOnes.length
+      ? `${legacyOnes.join(", ")} ${legacyOnes.length > 1 ? "are legacy teams" : "is a legacy team"} at this service, with no protected admission policy; no link was made → have the service's operator provision ${legacyOnes.length > 1 ? "them" : "it"} as protected (setup never provisions), or remove ${legacyOnes.length > 1 ? "their" : "its"} mapping`
+      : `a team among ${binding.teams.join(", ")} has no protected admission policy at this service; no link was made → have the service's operator provision the deployment's admission policy for it (setup never provisions)`, { ...details, problem: legacyOnes.length ? "legacy" : "missing", teams: legacyOnes.length ? legacyOnes : binding.teams });
+  }
+  if (code === "policy_changed") { spend(); return attributionError("E_ENDORSE_POLICY", `the teams' admission policy changed before the link was shown, so none was → rerun setup, which starts a new operation with a new link`, { ...details, problem: "changed" }); }
+  if (SCOPE.has(code)) return attributionError("E_ENDORSE_FAILED", `the protected service hasn't bound the root ${binding.root} as a requester for the human ${binding.human} and the teams ${binding.teams.join(", ")} (${code}); nothing was recorded → ${bindingStep(binding)}; then rerun this setup`, { ...details, step: "prepare", problem: "requester-unbound", bind: binding });
+  if (UNKNOWN.has(code)) return attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement's outcome is unknown (${code}), operation ${operationId} → rerun the same setup, which reads the same receipt and never prepares again`, { ...details, state: "unknown" });
+  if (REGISTER.has(code)) return attributionError("E_ENDORSE_FAILED", `the endorsement couldn't be registered (${code}), operation ${operationId} → rerun the same setup`, { ...details, step: "register" });
+  if (FAILED.has(code)) return attributionError("E_ENDORSE_FAILED", `aw refused the endorsement request (${code}), operation ${operationId}; it is never sent again by itself → rerun the same setup`, { ...details, step: "prepare" });
+  if (/_unavailable$/.test(code)) return attributionError("E_ATTRIBUTION_EVIDENCE", `the protected service's evidence is unavailable (${code}) → retry setup once it answers`, details);
+  spend();
+  return attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement was refused (${code})${RERUN.has(code) ? " → rerun setup, which starts a new operation with a new link" : "; rerunning setup starts a new operation with a new link"}`, { ...details, state: "refused" });
+}
+
+/** The terminal's link block (C-2 step 6): the page, the full digest and fingerprint, the teams and bounds, and the responsibility statement. */
+function linkText({ pending, human, root, optIn = [] }) {
+  const bounds = (b) => b ? `max_active ${b.max_active}, max_per_window ${b.max_per_window} per ${b.rate_window_seconds} s` : "bounds unreadable";
+  return [
+    `The human ${human} approves this deployment's root ${root} at:`,
+    `  ${pending.url}`,
+    `Check that the page shows digest ${pending.digest} (fingerprint ${pending.fingerprint}), before ${pending.expiresAt}.`,
+    "Teams:",
+    ...pending.teams.map((t) => `  ${t}: ${bounds(pending.bounds[t])}`),
+    `Approving makes ${human} responsible for this root: everything it spawns counts as yours (ancestry, not permissions).`,
+    ...optIn,
+    "Waiting for the approval (setup reruns the same operation; up to 600 s)…",
+  ].join("\n");
+}
