@@ -154,6 +154,8 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
       : (key.status !== "created" && installedChain({ aw: chainAw, issuer: plan.issuer, identityHome, setting })) || issueChain({ aw: chainAw, issuer: plan.issuer, identityHome, instance, setting, dir: exchangeDir });
     // 3. The admission (C-3b): its operation id persisted before prepare; a retry reuses it.
     // A key with no admission yet, or a refused one, starts a new operation.
+    // A pending or unknown operation resumed here may have reached the service already.
+    let maybeSent = record.state === "pending" || record.state === "unknown";
     if (record.state === "keyed" || record.state === "refused") {
       // The admit's inputs too, so a retire can resume an unknown outcome with C-3b's exact retry (C-3d).
       record = { team, label, alias, operationId: randomUUID(), state: "pending", identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
@@ -167,9 +169,13 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
       catch (e) {
         if (e.code) throw e;
         // An exact retry of an unknown outcome returns the original certificate, with no second charge.
-        if (attempt < 2 && admitUnknown(e.awCode)) continue;
+        if (attempt < 2 && admitUnknown(e.awCode)) { maybeSent = true; continue; }
         const refusal = admitRefusal(e, { team, root: setting.root.id, bounds, count: count(), operationId: record.operationId });
-        recordAdmission(providerDir, label, { ...record, state: refusal.code === "E_ADMISSION_UNKNOWN" ? "unknown" : "refused", code: e.awCode || null });
+        // Once this operation may have been sent, only its own final codes establish a refusal
+        // (C-3d): a requester-side one (scope, conflict) refuses as C-9 says, and the record stays
+        // unknown, so retire resumes it once the root is fixed.
+        const refused = refusal.code !== "E_ADMISSION_UNKNOWN" && (!maybeSent || FINAL_CODES.has(e.awCode));
+        recordAdmission(providerDir, label, { ...record, state: refused ? "refused" : "unknown", code: e.awCode || null });
         throw refusal;
       }
     }

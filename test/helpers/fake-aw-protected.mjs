@@ -21,7 +21,8 @@
 //   endorse: [answers, one per call]: "pending" | "committed" | "committed-without-chain" | {code}
 //   workspaceDelete: {code}: the next plain workspace deletes fail with that code
 //   admit: {code} | {code, charge: true} (it commits, then every answer is code: aw's prepare_unconfirmed)
-//          | {lostOnce: true} (the first execute's answer is lost)
+//          | {lostOnce: true, then?: code} (the first execute's answer is lost; with `then`, every
+//            later answer for the committed operation is that code)
 //   install: {code}; remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
 //   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
 //   createKill: true (create --no-address dies after its key)
@@ -164,7 +165,7 @@ if (cmd === "id team admit") {
     if (flag("--policy-digest") !== s.policy.digest || Number(flag("--policy-version")) !== s.policy.version) fail("policy_changed", "operation " + op + " is refused: policy_changed");
     charges[op] = { body, certificate_id: crypto.randomUUID(), team, alias: flag("--alias"), member_did_key: flag("--member-key"), member_did_aw: flag("--member-id") || "" };
     fs.writeFileSync(path.join(base, "charges.json"), JSON.stringify(charges));
-    if (s.admit && s.admit.lostOnce) { delete s.admit; saveSvc(s); fail("receipt_unavailable", "operation " + op + "'s execute answer was lost and it is still pending; resume it with the same operation id"); }
+    if (s.admit && s.admit.lostOnce) { s.admit = s.admit.then ? { code: s.admit.then, charge: true } : undefined; if (!s.admit) delete s.admit; saveSvc(s); fail("receipt_unavailable", "operation " + op + "'s execute answer was lost and it is still pending; resume it with the same operation id"); }
   }
   // charge: the operation commits, and every answer comes back as this code (aw's prepare_unconfirmed).
   if (s.admit && s.admit.code && s.admit.charge) fail(s.admit.code, "operation " + op + " committed but its answer was lost: " + s.admit.code);

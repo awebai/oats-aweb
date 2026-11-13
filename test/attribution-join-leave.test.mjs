@@ -203,3 +203,16 @@ test("C-3b: a home whose record holds an operation for a key it no longer has re
   assert.ok(r.stderr.startsWith("E_ATTRIBUTION_EXCHANGE: ") && r.stderr.includes(operationId), r.stderr);
   assert.equal(record(fx, "dev-1", "ops").operationId, operationId);
 });
+
+test("C-3d: an explicit join resuming an unknown operation keeps it unknown when the resume is refused by a requester-side code", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  fx.fake.setService({ admit: { code: "receipt_unavailable", charge: true } });
+  assert.equal(fx.command("dev-1", "join", ["--labels", "ops"]).status, 1);
+  const { operationId } = record(fx, "dev-1", "ops");
+  fx.fake.setService({ admit: { code: "scope_refused", charge: true } });
+  const r = fx.command("dev-1", "join", ["--labels", "ops"]);
+  assert.equal(r.status, 1);
+  assert.ok(r.stderr.startsWith("E_ADMISSION_REFUSED: "), r.stderr);
+  assert.deepEqual([record(fx, "dev-1", "ops").state, record(fx, "dev-1", "ops").operationId], ["unknown", operationId]);
+});

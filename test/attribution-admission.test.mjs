@@ -143,3 +143,22 @@ test("C-3c: install-cert's registry_unavailable refuses E_ATTRIBUTION_EVIDENCE, 
   fx.fake.setService({ install: { code: "registry_unavailable" } });
   assert.match(refusal(fx.spawn("dev-1")), /^E_ATTRIBUTION_EVIDENCE \(step: install\): /);
 });
+
+test("C-3d: an admission whose answer was lost, then refused by a requester-side code on the retry, refuses as C-9 says but stays unknown, and the rollback retire removes it", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { lostOnce: true, then: "scope_refused" } });
+  const r = fx.hook("spawn", "dev-1");
+  assert.ok(r.doc.warning.startsWith("oats-aweb: E_ADMISSION_REFUSED (code: scope_refused): "), r.doc.warning);
+  assert.equal(admission(fx, "dev-1").state, "unknown", "the retry's refusal says nothing of the first send's outcome");
+  fx.fake.setService({ admit: undefined });
+  const retired = fx.retire("dev-1", { fromMeta: r.doc.meta });
+  assert.equal(retired.status, 0, JSON.stringify(retired.doc) + retired.stderr);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), Object.values(fx.fake.charges()).map((c) => c.certificate_id));
+});
+
+test("C-3d: a lost answer then the operation's own final code on the retry still records refused", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { lostOnce: true, then: "subject_ineligible" } });
+  fx.hook("spawn", "dev-1");
+  assert.equal(admission(fx, "dev-1").state, "refused");
+});
