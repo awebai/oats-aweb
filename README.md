@@ -38,6 +38,74 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## Human attribution
+
+A deployment can opt in to human attribution: every instance a person
+spawns into the deployment's protected teams then carries a chain to that
+human, and the protected service admits it. It takes one endorsed root per
+deployment, one approval by the human, and the protected service's operator
+binding the root.
+
+1. The service's operator provides the protected profile (a public file that
+   pins the service's origins, registry and keys) and binds the root.
+2. The setup expert runs, in the deployment:
+
+   ```sh
+   oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> \
+     --protected-profile <abs> --service <url> [--label "<the human's name>"] [--teams <label,…>]
+   ```
+
+   Setup creates the root (a registered agent identity, under
+   `D/.aweb-endorsed-root/<alias>`, owner-only), then stops at
+   `requester-unbound` until the operator binds it. The rerun after the
+   binding prints the approval link, its digest and fingerprint, the teams
+   and their bounds. Under `--json` it answers `E_ENDORSE_NOT_APPROVED`,
+   `state: pending`, with the link at once, and a rerun resumes the same
+   operation. Once the human approves, setup records
+   `settings.oats.aweb.attribution` in `oats-local.yaml`, last.
+3. From then on, each spawn into those teams creates a key-only identity,
+   has the root (or a chained spawner) issue its chain, and has the root
+   admit it with the protected service. Each start checks the chain with
+   `aw who`; status rows show the human's label as `attributedHuman`.
+
+`--label` is the human's display name in status rows; without it, rows show
+the human's did:aw. A rerun of the same command after success refreshes the
+recorded policy and adds newly mapped teams the policy lists, all or nothing.
+A deployment that never opts in is unchanged.
+
+## Human attribution: opting in
+
+What opting in means, as the endorse output says it:
+
+- Custody: the root's agent key is readable by every instance of this
+  deployment (the same OS user), within its bounds: it can admit agents only
+  within this root's own admission bounds.
+- Outages: spawns into the protected teams stop while the protected service's
+  or the identity registry's evidence is unavailable.
+- Existing instances keep their identities, unattributed: respawn to attribute
+  them.
+- One approval: the human approves this root once, at its link; later spawns
+  need no approval.
+- Revocation: if the human revokes this root, new spawns refuse
+  E_ATTRIBUTION_REVOKED; the path out is in the README, "Human attribution:
+  revocation".
+- BYOT: a deployment whose user can reach team or controller keys
+  (~/.awid/team-keys, ~/.awid/controllers), which today is every existing BYOT
+  deployment, can't opt in until aweb's package 8 migrates those keys; that's
+  a known precondition, not a bug.
+- Residents: opting in means no new residents until aweb's custody update
+  lands (aweb-acxy.18): resident create and resident certify refuse here;
+  existing residents are unchanged.
+- Membership doesn't imply attribution: a genuinely chainless spawner's child
+  is still admitted by the root, but carries no chain.
+
+The deployment label aw requires is derived, never a flag:
+`<short host name>:<basename of D>` (the basename alone with no host name).
+It is sent to the protected service and shown on the approval page, so the
+host and directory names reach the service's operator. It is recorded with
+the endorsement's operation, so a rerun of that operation sends the same
+label.
+
 ## Human attribution: revocation
 
 When the human revokes the endorsed root, or its chain is revoked or replaced,
