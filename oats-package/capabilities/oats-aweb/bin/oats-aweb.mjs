@@ -97,7 +97,7 @@ import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsP
 import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admissionFile, admitIdentity, committedAdmissions, readAdmission, writePrivate } from "../lib/admission.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
-import { scanProtectedKeys } from "../lib/key-scan.mjs";
+import { legacyRootInventory, scanProtectedKeys } from "../lib/key-scan.mjs";
 import { PROTECTED_AW_MIN } from "../lib/protected-client.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
 
@@ -3479,7 +3479,7 @@ ${JSON.stringify(problem.details || {})}`);
         if (setting) {
           let deployment = null;
           try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
-          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), registry: profileRegistry(setting), scan: () => scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }) });
+          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), registry: profileRegistry(setting), scan: () => ({ ...scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }), inventory: legacyRootInventory({ deployment, root: settings.root, roots: settings.roots, defaultTeam: defaultTeamId() ?? null, service: setting.service.id, consumer: "oats.aweb" }) }) });
         }
       } catch (e) { attribution = { problem: { code: typeof e.code === "string" ? e.code : "E_ATTRIBUTION_SETTING", message: String(e.message || e).slice(0, 300) } }; }
       console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));

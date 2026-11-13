@@ -5,8 +5,8 @@
 // "clean", an unreadable place is `unknown`, and the human keychain, which aw
 // can't inventory at the pinned commit, is always `unknown`. It reads names,
 // never contents, and deletes, moves or rotates nothing.
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 
 /** aw's own stores (aweb cli/go/awconfig): the current one under ~/.awid and
  *  the legacy one under ~/.config/aw. A legacy minting root runs as this
@@ -38,4 +38,41 @@ export function scanProtectedKeys({ home, deployment, service, consumer }) {
   }
   unknown.push({ ...base, custody: "human-keychain", reference: "the OS keychain", readiness: "protected-key-inventory-unknown", reason: "aw has no keychain inventory read at the pinned aw" });
   return { findings, unknown };
+}
+
+const ROOT_ACTION = "left untouched: on an opted-in deployment it mints nothing; package 8 (aweb-acxy.8) inventories and migrates the team keys it references";
+
+/** The deployment's legacy minting roots (contract §7), as package 8 inventory: the configured
+ *  `root` (the default team's) and `roots[team]`, the deployment directory's own `.aw` and each
+ *  `.aweb-roots/<label>/.aw`. Each is an agent identity, so it is listed, never refused: by its
+ *  public id (identity.yaml's did), never its key. A configured root that can't be read is
+ *  `unknown`, never absent. `root` and `roots` are settings.oats.aweb's values. */
+export function legacyRootInventory({ deployment, root, roots, defaultTeam, service, consumer }) {
+  const base = { deployment, service: service ?? null, consumer, custody: "legacy-minting-root" };
+  const candidates = [];
+  if (typeof root === "string" && root.trim()) candidates.push({ dir: root.trim(), selectedBy: "settings.oats.aweb.root", team: defaultTeam ?? null, configured: true });
+  if (roots && typeof roots === "object" && !Array.isArray(roots)) for (const [team, dir] of Object.entries(roots)) if (typeof dir === "string" && dir.trim()) candidates.push({ dir: dir.trim(), selectedBy: `settings.oats.aweb.roots[${JSON.stringify(team)}]`, team, configured: true });
+  if (typeof deployment === "string" && isAbsolute(deployment)) {
+    candidates.push({ dir: deployment, selectedBy: "the deployment directory", team: null });
+    let labels = [];
+    try { labels = readdirSync(join(deployment, ".aweb-roots")).sort(); } catch { labels = []; }
+    for (const label of labels) candidates.push({ dir: join(deployment, ".aweb-roots", label), selectedBy: `.aweb-roots/${label}`, team: null, label });
+  }
+  const entries = [], seen = new Map();
+  for (const c of candidates) {
+    if (!isAbsolute(c.dir)) { entries.push({ ...base, reference: c.dir, team: c.team, selectedBy: c.selectedBy, readiness: "protected-key-inventory-unknown", reason: "not an absolute path" }); continue; }
+    const reference = join(resolve(c.dir), ".aw");
+    const known = seen.get(reference);
+    if (known) { if (!known.team && c.team) known.team = c.team; continue; }
+    let id;
+    try { id = readFileSync(join(reference, "identity.yaml"), "utf8").match(/^did:\s*(\S+)/m)?.[1] ?? null; }
+    catch (e) {
+      if (e.code === "ENOENT" && !c.configured) continue;
+      const entry = { ...base, reference, team: c.team, selectedBy: c.selectedBy, readiness: "protected-key-inventory-unknown", reason: e.code || "unreadable" };
+      seen.set(reference, entry); entries.push(entry); continue;
+    }
+    const entry = { ...base, reference, id, team: c.team, ...(c.label ? { label: c.label } : {}), selectedBy: c.selectedBy, readiness: "legacy-minting-root", action: ROOT_ACTION };
+    seen.set(reference, entry); entries.push(entry);
+  }
+  return entries;
 }

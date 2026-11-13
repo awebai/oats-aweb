@@ -2,7 +2,8 @@
 // [--plan]` (spec v4.3.18 C-5), with the halves of acceptance tests 12 and 13
 // that reconcile after a retire couldn't remove a membership.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { HUMAN, OPS, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, capabilityWith, commandArgs } from "./helpers/attribution-fixture.mjs";
@@ -293,4 +294,27 @@ test("C-5, C-6: after the last member of a private team retires with its removal
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [id]);
   assert.ok(!existsSync(join(fx.rootHome, "admissions", `${id}.cert`)), "a confirmed removal deletes the root's copy");
+});
+
+test("C-5, A9: check-only lists the deployment's legacy minting roots as package 8 inventory: the configured root, a configured root for another team and each .aweb-roots root, by public id, never as reachable keys", (t) => {
+  const other = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-ops-root-")));
+  t.after(() => rmSync(other, { recursive: true, force: true }));
+  const fx = attributionFixture(t, { settings: { roots: { [OPS]: other } } });
+  writeIdentity(join(other, ".aw"));
+  writeIdentity(join(fx.ws, ".aweb-roots", "lab", ".aw"));
+  const doc = checkOnly(fx);
+  const roots = doc.attribution.findings.filter((f) => f.custody === "legacy-minting-root");
+  const did = (dir) => readFileSync(join(dir, ".aw", "identity.yaml"), "utf8").match(/^did: (\S+)/m)[1];
+  assert.deepEqual(roots.map((f) => [f.reference, f.id, f.team ?? null]).sort(), [
+    [join(fx.ws, ".aw"), did(fx.ws), TEAM],
+    [join(fx.ws, ".aweb-roots", "lab", ".aw"), did(join(fx.ws, ".aweb-roots", "lab")), null],
+    [join(other, ".aw"), did(other), OPS],
+  ].sort());
+  for (const f of roots) {
+    assert.equal(f.readiness, "legacy-minting-root");
+    assert.equal(f.consumer, "oats.aweb");
+    assert.equal(f.service, "svc-acme");
+    assert.ok(/package 8/.test(f.action), f.action);
+  }
+  assert.ok(!JSON.stringify(doc).includes("signing.key"), "no key file is named or read");
 });

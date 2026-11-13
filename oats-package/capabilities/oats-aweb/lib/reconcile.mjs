@@ -87,7 +87,8 @@ function rootVerified(aw, setting) {
   return { verified: "unavailable", verifiedReason: verdict.kind === "verified" ? `verifies to ${verdict.humanId ?? "no human"}` : `${verdict.kind}: ${verdict.reason ?? "no reason"}` };
 }
 
-/** check-only's `attribution` block. `scan()` is the A5 scan's {findings, unknown}. */
+/** check-only's `attribution` block. `scan()` is the A5 scan's {findings, unknown}, with the
+ *  legacy roots' `inventory` (listed with the findings, never refused on). */
 export function attributionStatus({ aw, setting, homes, homesUnavailable, registry, scan, removeServed = REMOVE_SERVED }) {
   const bounds = {};
   for (const team of setting.teams) {
@@ -105,7 +106,7 @@ export function attributionStatus({ aw, setting, homes, homesUnavailable, regist
     bounds,
     admittedLive: { countedBy: "oats", teams: Object.fromEntries(setting.teams.map((team) => [team, unknownHomes ? "unknown" : committedAdmissions(homes, team)])) },
     ...(leaks ? { leakedMemberships: leaks.leaked, ...(leaks.unreadable.length ? { unreadableTeams: leaks.unreadable } : {}) } : {}),
-    findings: [...found.findings, ...found.unknown],
+    findings: [...found.findings, ...found.unknown, ...(found.inventory || [])],
     limits: limitsOf({ removeServed }),
   };
 }

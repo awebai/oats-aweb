@@ -277,7 +277,11 @@ before the opt-in leaves as before.
 verifies (`verified`); spawners with no chain; each team's bounds and OATS's
 own count of admitted live homes; `leakedMemberships` (active local
 certificates whose alias has no live or kept home here); the key scan's
-findings; and `limits`, what the pinned aw doesn't serve yet. Leaks come from
+findings, with the legacy minting roots (the configured `root` and
+`roots`, the deployment's own `.aw` and each `.aweb-roots/<label>/.aw`)
+listed as package 8 inventory by their public id (`legacy-minting-root`:
+left untouched, never refused on); and `limits`, what the pinned aw doesn't
+serve yet. Leaks come from
 the team's member list, read through a home that holds a membership (aw signs
 that read with a member's key), and from the root's own copies under
 `admissions/`, which need no reader: a membership the root admitted counts
