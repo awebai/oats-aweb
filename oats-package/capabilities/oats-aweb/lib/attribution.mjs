@@ -7,7 +7,7 @@
 // holds key material.
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { dirname, isAbsolute, join, normalize, sep } from "node:path";
+import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { REQUEST_BINDING_SERVED } from "./protected-client.mjs";
 import { canonicalTeamServerURL } from "./team-server-url.mjs";
 
@@ -131,7 +131,9 @@ export function rootHomeProblem(rootHome, { deployment }) {
     if (s.isDirectory()) for (const name of readdirSync(p)) walk(join(p, name));
   };
   walk(real);
-  if (wide.length) return fail("mode", `the root home ${rootHome} is open to other users (${wide.slice(0, 2).join(", ")}${wide.length > 2 ? ", …" : ""}) → \`chmod -R go-rwx ${rootHome}\`, then try again`);
+  // Each open path relative to the root, so the fix, which names the root, fits the cap.
+  const named = wide.slice(0, 2).map((p) => relative(real, p) || ".");
+  if (wide.length) return fail("mode", `the root home ${rootHome} is open to other users (${named.join(", ")}${wide.length > 2 ? ", …" : ""}) → \`chmod -R go-rwx ${rootHome}\`, then try again`);
   return null;
 }
 

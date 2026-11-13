@@ -2305,11 +2305,18 @@ function syncWakeReceive(meta) {
 // Human attribution (spec human-ids-acxy7 v4.3.10): only with
 // settings.oats.aweb.attribution, which a deployment that never opted in
 // doesn't have, so its spawn is the legacy one above, unchanged.
-/** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9). */
+/** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9).
+ *  Over the cap, the problem is shortened, never the fix after its " → " (test 23). */
+const REFUSAL_ROOM = 300 - "oats-aweb: ".length;
 const refusalText = (e) => {
   const d = e.details || {};
   const detail = d.problem ? `problem: ${d.problem}` : d.step ? `step: ${d.step}` : d.code ? `code: ${d.code}` : "";
-  return `${e.code}${detail ? ` (${detail})` : ""}: ${e.message}`;
+  const head = `${e.code}${detail ? ` (${detail})` : ""}: `;
+  const at = e.message.indexOf(" → ");
+  if (head.length + e.message.length <= REFUSAL_ROOM || at < 0) return head + e.message;
+  const fix = e.message.slice(at);
+  const room = REFUSAL_ROOM - head.length - fix.length - 1;
+  return room > 0 ? `${head}${e.message.slice(0, Math.min(at, room))}…${fix}` : head + e.message;
 };
 const attributionFatal = (e, meta) => fatal(refusalText(e), meta);
 /** A team outside attribution.teams (acceptance 18): its fix is the refresh that adds it. */

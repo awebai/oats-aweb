@@ -49,6 +49,20 @@ test("acceptance 14: a root home open to others refuses E_ATTRIBUTION_ROOT_HOME 
   assert.deepEqual(calls, []);
 });
 
+test("acceptance 23: a root home open to others under a longer alias still carries its whole fix within the cap", (t) => {
+  const fx = attributionFixture(t);
+  const rootHome = join(fx.ws, ".aweb-endorsed-root", "an-endorsed-root-with-a-moderately-long-name");
+  renameSync(fx.rootHome, rootHome);
+  mkdirSync(join(rootHome, "admissions", "a-subdirectory-with-a-long-name"), { recursive: true });
+  chmodSync(join(rootHome, "admissions", "a-subdirectory-with-a-long-name"), 0o755);
+  chmodSync(rootHome, 0o755);
+  const settings = { ...fx.settings, attribution: { ...fx.setting, root: { ...fx.setting.root, home: rootHome } } };
+  const { text, calls } = refused(fx, fx.hook("spawn", "dev-1", { OATS_SETTINGS: JSON.stringify(settings) }));
+  assert.ok(text.startsWith("E_ATTRIBUTION_ROOT_HOME (problem: mode): "), text);
+  assert.ok(text.endsWith(`→ \`chmod -R go-rwx ${rootHome}\`, then try again`), text);
+  assert.deepEqual(calls, []);
+});
+
 test("acceptance 14: a root home outside D/.aweb-endorsed-root refuses placement before any effect", (t) => {
   const elsewhere = (fx) => { const home = join(fx.ws, "roots", "acme-root"); mkdirSync(join(fx.ws, "roots"), { mode: 0o700 }); renameSync(fx.rootHome, home); return home; };
   const probe = attributionFixture(t);
