@@ -15,6 +15,9 @@ import { identityBooleans } from './boolean-setting.mjs';
 import { retainedSeatCheck } from './retained-seat-service.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { attributionSetting } from './attribution.mjs';
+import { attributionReadiness } from './attribution-readiness.mjs';
+import { scanProtectedKeys } from './key-scan.mjs';
+import { homedir } from 'node:os';
 import { residentRegistryEnv } from './resident-registry.mjs';
 import { teamKeyIn } from './aweb-team-id.mjs';
 
@@ -385,6 +388,12 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
         if(targetProblems.length) for(const joined of expected.joined) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
       }
     }
+  }
+  // Human attribution (C-5): only with the home's captured setting.
+  if(ctx.home) {
+    let setting=null;
+    try {setting=attributionSetting(req.settings);} catch {setting=null;}
+    if(setting) warnings.push(...attributionReadiness({aw:(args)=>localAw(['aw',...args],ctx.home),home:ctx.home,meta:recordedStart(ctx.home).meta,scan:()=>scanProtectedKeys({home:env.HOME||homedir(),deployment:ctx.deployment,service:setting.service.id,consumer:'oats.aweb'})}));
   }
   // A pi home's pi folder loads no aweb skills: the extension below 0.5.0
   // filters out its bundled ones, and @awebai/claude-skills is not listed
