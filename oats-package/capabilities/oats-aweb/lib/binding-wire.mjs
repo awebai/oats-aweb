@@ -14,6 +14,7 @@ import {healthPublish, healthSettings} from './health-settings.mjs';
 import { identityBooleans } from './boolean-setting.mjs';
 import { retainedSeatCheck } from './retained-seat-service.mjs';
 import { childOutcome } from './child-outcome.mjs';
+import { attributionSetting } from './attribution.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
 import { teamKeyIn } from './aweb-team-id.mjs';
 
@@ -90,7 +91,7 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
 function settings(value) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
-  keys(value,['delivery','claudeChannelMode','root','roots','identity','residents','join','health'],[]);
+  keys(value,['delivery','claudeChannelMode','root','roots','identity','residents','join','health','attribution'],[]);
   // health.publish's refusal is carried into the readiness result (readinessDetails), so the
   // wire checks every other health setting here.
   try {healthSettings(obj(value.health)?{...value,health:{...value.health,publish:undefined}}:value);} catch {wireError('needs-configuration');}
@@ -239,7 +240,8 @@ async function readinessDetails(settings,{deployment,env=process.env,retainedSea
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   // The refusal spawn and start, or the health commands, give for a boolean setting that is
   // neither a boolean nor its string.
-  try { identityBooleans(obj(settings.identity)?settings.identity:{}); healthPublish(settings); }
+  // and the refusal a spawn gives for a malformed settings.oats.aweb.attribution, naming its key.
+  try { identityBooleans(obj(settings.identity)?settings.identity:{}); healthPublish(settings); attributionSetting(settings); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};

@@ -152,6 +152,10 @@
     "health": {
       "hostOnly": true,
       "description": "Host-owned agent status publisher (aweb-acah.3), only in oats-local.yaml settings.oats.aweb.health: publish (true to publish every agent's status to aweb from the host timer once a minute; absent or false publishes nothing), language (BCP 47 tag for the status texts; en when absent or unknown), operator (the role named when a person must fix something, one line of at most 120 bytes; default \"Its operator\"). Set with `oats aweb health enable|disable`. Publishing needs aw >= 1.36.38; proving a channel home receives needs Claude channel 1.7.17 or pi extension 0.3.15. The same opt-in tick observes unread mail with active or persistent broker errors (grant-backed seats excluded) and emits oats.aweb attention claims when the runtime kernel advertises waiting-on-you and aw supports mail inbox --count-only; without the tick no such claim appears."
+    },
+    "attribution": {
+      "hostOnly": true,
+      "description": "Host-owned human attribution (opt-in), only in this deployment's oats-local.yaml settings.oats.aweb.attribution, written last by `oats aweb setup --endorse-root`, never by hand: root {id: the endorsed root's did:aw, home: its absolute directory under <deployment>/.aweb-endorsed-root/}, human {id: the endorsing human's did:aw, label: their name, one line of 1-200 characters}, service {id: the protected service's id, profile: the operator's absolute protected-profile path, profileDigest: its sha256}, teams [the protected teams, name:namespace, this deployment admits into], endorsement {operationId, policy {version, digest}}. With it, every spawn on this deployment carries an aw identity chain to that human and is admitted to its protected teams by the root, with no prompt. Absent (the default), spawns are as before. Needs an OATS kernel listing spawn-attribution and aw 1.36.59-rc.2 or later."
     }
   },
   "retirement": {
