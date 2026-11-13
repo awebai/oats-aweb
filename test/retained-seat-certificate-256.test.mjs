@@ -26,7 +26,9 @@ const NO_DEFAULT_TEAM = { OATS_DEFAULT_TEAM: "", OATS_DEFAULT_TEAM_ID: "", OATS_
 const teamsYaml = (active, ...ids) => `${active ? `active_team: ${active}\n` : ""}memberships:\n${ids.map((id) => `    - team_id: ${id}\n      alias: retained\n      cert_path: team-certs/${id.replace(/:/g, "__")}.pem\n`).join("")}`;
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
-function fixture(t, { teams = teamsYaml(TEAM, TEAM), signingKey = true } = {}) {
+/** A seat whose teams.yaml is `teams`; each membership's certificate file is there unless
+ *  `certs` is false. */
+function fixture(t, { teams = teamsYaml(TEAM, TEAM), signingKey = true, certs = true } = {}) {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-256-"));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
@@ -36,6 +38,7 @@ function fixture(t, { teams = teamsYaml(TEAM, TEAM), signingKey = true } = {}) {
   write(join(source, "workspace.yaml"), `aweb_url: ${RECORD}\n`);
   if (signingKey) write(join(source, "signing.key"), "fixture-signing-key");
   if (teams !== null) write(join(source, "teams.yaml"), teams);
+  if (teams !== null && certs) for (const [, cert] of teams.matchAll(/cert_path: (\S+)/g)) write(join(source, cert), "{}");
   return { base, root, home, source, lock: join(dirname(source), ".aw-retained-seat.json"), bin: fakeAw(base) };
 }
 function cleanEnv() { const env = { ...process.env }; delete env.OATS_AWEB_URL; return env; }
@@ -73,6 +76,8 @@ const refusals = [
   ["no teams.yaml, with a default team", { teams: null }, DEFAULT_TEAM, /teams\.yaml does not exist/],
   ["memberships with no value: no membership at all", { teams: `active_team: ${SEAT_TEAM}\nmemberships:\n` }, DEFAULT_TEAM, new RegExp(`no membership of the team ${TEAM}`)],
   ["a membership whose domain has a trailing dot, which aw does not take for the team", { teams: teamsYaml(null, `${TEAM}.`) }, DEFAULT_TEAM, new RegExp(`no membership of the team ${TEAM}`)],
+  ["an active team with a trailing dot, chosen with no default team, and a membership without it", { teams: teamsYaml(`${TEAM}.`, TEAM) }, NO_DEFAULT_TEAM, new RegExp(`no membership of the team ${TEAM}\\.,`)],
+  ["the default team, and a seat whose active team and only membership have a trailing dot", { teams: teamsYaml(`${TEAM}.`, `${TEAM}.`) }, DEFAULT_TEAM, new RegExp(`no membership of the team ${TEAM},.*the seat's active team is ${TEAM}\\.$`)],
 ];
 for (const [name, shape, env, text] of refusals) {
   test(`${name}: the spawn refuses before any effect, and soul readiness reports the same text`, (t) => {
@@ -124,10 +129,14 @@ for (const [name, teams] of [
   });
 }
 
-test("a membership's certificate is not checked here: aw checks it at connect", (t) => {
-  const fx = fixture(t);
+test("a membership's certificate is not checked here: aw refuses its missing file at connect", (t) => {
+  const fx = fixture(t, { certs: false });
   assert.equal(existsSync(join(fx.source, "team-certs")), false, "the fixture holds no certificate file");
   assert.deepEqual(readiness(fx), { status: "ready", problems: [], warnings: [] });
+  const spawned = spawnHook(fx);
+  assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
+  assert.equal(connects(fx).length >= 1, true, "the spawn reached aw's connect");
+  assert.doesNotMatch(spawned.doc.warning, /no membership of the team/);
 });
 
 // Pinned acceptance 4: the earlier refusals win.

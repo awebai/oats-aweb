@@ -1562,8 +1562,11 @@ and without regard to ASCII case. A `teams.yaml` that does not exist is
 refused, as aw refuses it. The limit: the check decides only that. A
 `teams.yaml` outside the form aw writes, with no `memberships` list, or with a
 team id that is not ASCII is not decided here, and neither is the
-membership's certificate file (`cert_path`): aw refuses those at connect,
-after the copy, and the spawn rolls the copy back.
+membership's certificate file (`cert_path`): aw decides those at its connect,
+after the copy. When that connect fails, the spawn binds the seat back from
+its source and removes the copy; if aw refuses that too, as it does for the
+same `teams.yaml`, the spawn keeps the copy and the lock and says how to
+restore them.
 
 The spawn reads the server only from that `workspace.yaml`. Any http or https
 URL with a host is accepted, a path prefix (a server behind a reverse proxy) or

@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readAwebUrl, readMembershipTeamIds } from './aw-record.mjs';
-import { membershipTeamMatch, validAwebTeamId } from './aweb-team-id.mjs';
+import { membershipTeamMatch } from './aweb-team-id.mjs';
 // binding-wire imports this module too; these are read only when a function runs, as
 // resident-registry.mjs reads yamlScalar.
 import { NO_TEAMS_MESSAGE, unmappedDefaultMessage, yamlScalar } from './binding-wire.mjs';
@@ -83,17 +83,21 @@ export function retainedSeatTeam(source, env = process.env) {
  *  copy holds no workspace.yaml, so aw's legacy migration of a missing teams.yaml
  *  (team_state.go:257-264) finds nothing. 'absent' when teams.yaml does not exist; 'none' when
  *  its memberships list has no membership of the team; undefined, no decision, otherwise: a
- *  membership found, or teams.yaml unreadable, outside aw's grammar, with no memberships list, a
- *  team that is not a team id, or an id that is not ASCII. The membership's certificate
- *  (cert_path) is not checked: aw checks it at connect. */
+ *  membership found, or teams.yaml unreadable, outside aw's grammar, with no memberships list,
+ *  or an id that is not ASCII. yaml.v3 reads a scalar into a string as its text, a null as ''
+ *  (never the team, which holds a ':'), so the text the grammar returns is the id aw compares.
+ *  The membership's certificate (cert_path) is not checked: aw checks it at connect. */
 export function retainedSeatMembership(source, team) {
   let text;
   try { text = readFileSync(join(source, 'teams.yaml'), 'utf8'); } catch (error) { return error?.code === 'ENOENT' ? 'absent' : undefined; }
-  const ids = validAwebTeamId(team) ? readMembershipTeamIds(text) : undefined;
+  const ids = readMembershipTeamIds(text);
   if (!Array.isArray(ids)) return undefined;
   const found = ids.map((id) => membershipTeamMatch(id, team));
   return found.includes(true) || found.includes(undefined) ? undefined : 'none';
 }
+
+/** A team id short and printable enough to name in a refusal. */
+const printableTeam = (value) => typeof value === 'string' && /^[\x21-\x7e]{1,256}$/.test(value) ? value : undefined;
 
 /** The refusal for a seat whose source records no membership of `team` (retainedSeatMembership):
  *  the team and the source, and the two fixes. */
@@ -102,8 +106,8 @@ function noMembershipMessage(source, team, state) {
   let active;
   try { const text = readFileSync(teamsFile, 'utf8'); active = yamlScalar(text, 'active_team') || yamlScalar(text, 'active'); } catch { /* none */ }
   const why = state === 'absent' ? `${teamsFile} does not exist` : `${teamsFile} records no membership of it`;
-  const activeNote = validAwebTeamId(active) && membershipTeamMatch(active, team) === false ? `; the seat's active team is ${active}` : '';
-  return `the retained seat's source holds no membership of ${validAwebTeamId(team) ? `the team ${team}` : 'the team it chose'}, so its spawn refuses before copying anything: ${why}; in ${dirname(source)}, accept the team's invite (\`aw id team accept-invite\`) or fetch its approved certificate (\`aw id team fetch-cert\`), then spawn again; or make the seat's team the deployment's default team (\`oats teams default <label>\`)${activeNote}`;
+  const activeNote = printableTeam(active) && membershipTeamMatch(active, team) === false ? `; the seat's active team is ${active}` : '';
+  return `the retained seat's source holds no membership of ${printableTeam(team) ? `the team ${team}` : 'the team it chose'}, so its spawn refuses before copying anything: ${why}; in ${dirname(source)}, accept the team's invite (\`aw id team accept-invite\`) or fetch its approved certificate (\`aw id team fetch-cert\`), then spawn again; or make the seat's team the deployment's default team (\`oats teams default <label>\`)${activeNote}`;
 }
 
 /** The seat at `source`, as its spawn checks it before any effect: `refusal`, the text of the
