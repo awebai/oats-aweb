@@ -9,6 +9,7 @@
 //
 // Stages, each with its own error codes: arguments, deployment, aw, preflight
 // (no remote effect), key, init (one run, no retry), verify, custody, record.
+import { RESIDENT_CUSTODY_SERVED } from "./protected-client.mjs";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
@@ -539,16 +540,25 @@ function renderText(r) {
 /** The command's entrypoint: one JSON-v1 envelope with --json, else text.
  *  Exit 2 for a usage error, 1 for any other failure. Everything printed is
  *  scrubbed of AWEB_API_KEY's value as a last line of defence. */
+/** True when the deployment's settings hold settings.oats.aweb.attribution (C-1). */
+function optedIn(env) {
+  let settings;
+  try { settings = JSON.parse(env.OATS_SETTINGS || "{}"); } catch { return false; }
+  return object(settings) && settings.attribution !== undefined && settings.attribution !== null;
+}
 export async function residentMain(argv, { env = process.env, stdin = process.stdin, stderr = process.stderr, platform = process.platform } = {}) {
   const json = argv.includes("--json");
   const scrub = scrubber([env.AWEB_API_KEY, String(env.AWEB_API_KEY ?? "").trim()]);
   const print = (fd, text) => writeSync(fd, scrub(text));
   try {
+    // An opted-in deployment takes no new resident until aweb serves certifying one
+    // through its custody (spec acxy.7 C-7): decided from the pinned aw, before any effect.
+    if ((argv[0] === "create" || argv[0] === "certify") && !RESIDENT_CUSTODY_SERVED && optedIn(env)) throw failure("E_SETUP_AW_VERSION", "preflight", "the pinned aw doesn't support certifying a resident through its custody yet (aweb-acxy.18), so this opted-in deployment takes no new resident and certifies no existing one → create residents again once an aw that serves it is pinned; existing residents and their seats are unchanged");
     const result = await createResident(parseResidentArgs(argv), { env, stdin, stderr, platform });
     print(1, json ? JSON.stringify({ schemaVersion: 1, ok: true, result }) + "\n" : renderText(result));
     return 0;
   } catch (e) {
-    const known = typeof e.code === "string" && e.code.startsWith("E_RESIDENT_");
+    const known = typeof e.code === "string" && (e.code.startsWith("E_RESIDENT_") || e.code === "E_SETUP_AW_VERSION");
     const code = known ? e.code : "E_RESIDENT_FAILED", stage = e.stage || "unknown";
     const message = known ? e.message : `resident create failed: ${e.message || e}`;
     if (json) print(1, JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message, details: { stage, ...(e.details || {}) } } }) + "\n");
