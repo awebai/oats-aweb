@@ -92,6 +92,10 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
+import { KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem } from "../lib/attribution.mjs";
+import { admitIdentity } from "../lib/admission.mjs";
+import { PROTECTED_AW_MIN } from "../lib/protected-client.mjs";
+import { querySelectedKernel } from "../lib/session-readiness.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -2219,6 +2223,105 @@ function syncWakeReceive(meta) {
   return { meta: next, warnings };
 }
 
+// ---------------------------------------------------------------------------
+// Human attribution (spec human-ids-acxy7 v4.3.10): only with
+// settings.oats.aweb.attribution, which a deployment that never opted in
+// doesn't have, so its spawn is the legacy one above, unchanged.
+/** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9). */
+const refusalText = (e) => {
+  const d = e.details || {};
+  const detail = d.problem ? `problem: ${d.problem}` : d.step ? `step: ${d.step}` : d.code ? `code: ${d.code}` : "";
+  return `${e.code}${detail ? ` (${detail})` : ""}: ${e.message}`;
+};
+const attributionFatal = (e, meta) => fatal(refusalText(e), meta);
+/** Before any effect (C-1, C-3): the setting, the kernel, the aw floor, the
+ *  profile, the teams, the root home and who issues. Null without the setting. */
+function attributionPreflight({ teams }) {
+  let setting;
+  try { setting = attributionSetting(settings); } catch (e) { attributionFatal(e); }
+  if (!setting) return null;
+  let version;
+  try { version = querySelectedKernel(["--version", "--json"]); } catch { version = undefined; }
+  if (!Array.isArray(version?.features) || !version.features.includes(SPAWN_ATTRIBUTION_FEATURE)) attributionFatal(attributionError("E_SETUP_KERNEL", `attribution needs an OATS kernel that lists ${SPAWN_ATTRIBUTION_FEATURE} (OATS ${KERNEL_FLOOR} or later); this one (${typeof version?.version === "string" ? version.version : "unknown"}) doesn't → upgrade OATS`));
+  if (!versionAtLeast(spawnAwVersion, PROTECTED_AW_MIN)) attributionFatal(attributionError("E_SETUP_AW_VERSION", `attribution needs aw ${PROTECTED_AW_MIN} or later, the protected-client floor; this host has ${spawnAwVersion || "an unreadable aw"} → upgrade aw`));
+  const key = "settings.oats.aweb.attribution.service.profile";
+  const problem = profileProblem(setting.service.profile, { key });
+  if (problem) attributionFatal(problem);
+  if (profileDigest(setting.service.profile) !== setting.service.profileDigest) attributionFatal(attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} changed since setup recorded it → rerun setup if the operator changed the profile`, { key, problem: "profile-changed" }));
+  let registry;
+  try { registry = JSON.parse(readFileSync(setting.service.profile, "utf8")).registry_origin; }
+  catch { attributionFatal(attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} can't be read as JSON → have the service's operator provision it again`, { key, problem: "profile-mode" })); }
+  if (typeof registry !== "string" || !/^https?:\/\//.test(registry)) attributionFatal(attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} names no registry origin → have the service's operator provision it again`, { key, problem: "profile-mode" }));
+  for (const { team, label } of teams) if (!setting.teams.includes(team)) attributionFatal(attributionError("E_ENDORSE_POLICY", `team ${label} (${team}) isn't among the teams this deployment's root admits into → rerun \`oats aweb setup --endorse-root\` to add it`, { problem: "unlisted", team }));
+  let deployment;
+  try { deployment = selectedDeployment(process.env); }
+  catch (e) { attributionFatal(attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home's deployment can't be confirmed: ${e.message}`, { problem: "placement", home: setting.root.home })); }
+  const rootProblem = rootHomeProblem(setting.root.home, { deployment });
+  if (rootProblem) attributionFatal(rootProblem);
+  const chainAw = (args) => run(["aw", ...args], home, 60000);
+  const spawnerHome = process.env.OATS_SPAWNER_HOME;
+  let spawner = null, rootVerdict;
+  if (spawnerHome) {
+    if (!isAbsolute(spawnerHome)) attributionFatal(attributionError("E_ATTRIBUTION_EXCHANGE", `OATS_SPAWNER_HOME is not an absolute path → spawn again from a person or an instance`, { step: "issuer" }));
+    let spawnerMeta = {};
+    try { spawnerMeta = JSON.parse(readFileSync(join(spawnerHome, "instance.json"), "utf8")).capabilityMeta?.["oats.aweb"] || {}; } catch { spawnerMeta = {}; }
+    const grant = spawnerMeta.identity?.mode === "global" && spawnerMeta.identity?.grant && typeof spawnerMeta.identity.grant.home === "string" ? spawnerMeta.identity.grant : null;
+    const identityHome = grant ? grant.home : join(spawnerHome, ".aw");
+    spawner = { home: spawnerHome, identityHome, grant: !!grant, verdict: readWho(chainAw, identityHome), recordedChain: spawnerMeta.identity?.attribution?.mode === "human" };
+  } else rootVerdict = readWho(chainAw, join(setting.root.home, ".aw"));
+  let plan;
+  try { plan = chooseIssuer({ setting, spawner, root: rootVerdict }); } catch (e) { attributionFatal(e); }
+  return { setting, plan, registry };
+}
+/** OATS's own count of live homes holding a committed admission for `team` (R4): not the server's. */
+function committedAdmissionCount(team) {
+  let rows;
+  try { rows = querySelectedKernel(["status", "--json"])?.agents?.flatMap((a) => a.instances || []) || []; } catch { return "unknown"; }
+  let n = 0;
+  for (const row of rows) {
+    if (typeof row?.home !== "string") continue;
+    const dir = join(row.home, ".oats-aweb");
+    let names = [];
+    try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)); } catch { continue; }
+    for (const f of names) { try { const doc = JSON.parse(readFileSync(join(dir, f), "utf8")); if (doc.team === team && doc.state === "committed") n++; } catch { /* not an admission record */ } }
+  }
+  return n;
+}
+/** The attributed spawn (C-3): the primary, then each joined team, each with
+ *  its own identity home; no legacy mint, no invite. Answers and exits. */
+function attributedSpawn(pre, { team, label, from, joinRows }) {
+  const warnings = [];
+  if (pre.plan.action === "chainless") warnings.push(`oats-aweb: ${SPAWNER_UNCHAINED}`);
+  let minted;
+  const one = (row, identityHome) => admitIdentity({ aw: run, setting: pre.setting, team: row.team, label: row.label, alias: instance, identityHome, providerDir: providerStateDir(), plan: pre.plan, registry: pre.registry, count: () => committedAdmissionCount(row.team), instance, exchangeDir: join(providerStateDir(), "attribution") });
+  let primary;
+  try { primary = one({ team, label: label || "default" }, localIdentityHome()); }
+  catch (e) { attributionFatal(e, e.minted ? { team, alias: instance, attributionFailed: true } : undefined); }
+  minted = { team, alias: instance };
+  const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
+  const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
+  if (broker) wakeRegister(home, localIdentityHome());
+  let meta = startedMeta({ team, alias: instance, delivery: deliveryMode, defaultTeam: { label, team, from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: { ...identityMeta({ mode: "local", alias: instance, team }), attribution: primary.attribution } });
+  for (const row of joinRows) {
+    const identityHome = identityHomeForLabel(row.label);
+    try { one(row, identityHome); }
+    catch (e) { attributionFatal(e, { ...minted, ...(joinedTeamsOf(meta).length ? { joinedTeams: joinedTeamsOf(meta) } : {}), attributionFailed: true }); }
+    meta = { ...meta, joinedTeams: [...joinedTeamsOf(meta), { label: row.label, team: row.team, identityHome, receive: "poll", since: new Date().toISOString() }] };
+    writeProviderTeamsState(meta);
+  }
+  if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
+  writeProviderTeamsState(meta);
+  const defaultTeamBrief = { soul: "the default team configured for this soul", workspace: "the workspace's default team" }[from] || "this deployment's default team";
+  const joinedNow = joinedTeamsOf(meta);
+  const joinedBrief = joinedNow.length ? ` Joined teams: ${joinedNow.map((j) => `${j.label} (${j.team}, receive ${j.receive}, send with \`aw --identity-home ${j.identityHome} mail|chat ...\`)`).join("; ")}.` : "";
+  out({
+    meta, env,
+    brief: `Comms: you have an aweb identity — alias "${instance}" on team ${team}, ${defaultTeamBrief}.${deliveryBrief}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` the team's members and workspaces, each labelled.`,
+    ...(launch ? { launch } : {}),
+    ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
+  });
+}
+
 if (event === "launch") {
   // The delivery path is decided afresh at every start: the runtime may have
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
@@ -2309,6 +2412,14 @@ if (event === "launch") {
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
+  // An opted-in deployment admits through its protected teams only, never the legacy mint.
+  if (Object.hasOwn(settings, "attribution")) {
+    const team = defaultTeamId();
+    if (!team) fatal(teamConfigRemedy());
+    const label = defaultTeamLabel();
+    const pre = attributionPreflight({ teams: [{ team, label: label || team }, ...joinRows] });
+    if (pre) attributedSpawn(pre, { team, label, from: defaultTeamFromEnv(), joinRows });
+  }
   let minted;                 // external identity, once the mint succeeds
   let spawnMeta;              // with joined teams, once any is accepted
   try {

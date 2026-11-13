@@ -85,9 +85,3 @@ export const installCertArgv = ({ identityHome, certificate, registry }) => ["--
 export const serviceInitArgv = ({ identityHome, service, team }) => ["service", "init", "--identity-home", identityHome, "--service", service, "--team", team];
 /** C-5 and C-6: root-mode removal, run from the root's identity home. */
 export const removeAgentArgv = ({ certificate, operationId, profile }) => ["--json", "id", "team", "remove-agent", "--certificate", certificate, "--operation-id", operationId, "--protected-profile", profile];
-/** The team's published coordination server (aweb.team-server/1), verified
- *  against the team's current key, at the profile's registry. */
-export const showServerArgv = ({ team, registry }) => {
-  const [name, namespace] = team.split(":");
-  return ["--json", "id", "team", "show-server", "--team", name, "--namespace", namespace, "--registry", registry];
-};

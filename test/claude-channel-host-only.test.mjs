@@ -46,7 +46,7 @@ for(const value of ['approved','development']) test(`real hostOnly accepts host-
 });
 // Human attribution is a per-deployment opt-in (spec C-1): a committed value
 // or a spawn flag would opt every deployment of the workspace in.
-const ATTRIBUTION={root:{id:'did:aw:root1',home:'/srv/deploy/.aweb-endorsed-root/acme-root'},human:{id:'did:aw:human1',label:'Juan'},service:{id:'svc-acme',profile:'/srv/deploy/profile.json',profileDigest:`sha256:${'b'.repeat(64)}`},teams:['backend:acme.example'],endorsement:{operationId:'3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b',policy:{version:3,digest:`sha256:${'a'.repeat(64)}`}}};
+const ATTRIBUTION={root:{id:'did:aw:root1',home:'/srv/deploy/.aweb-endorsed-root/acme-root'},human:{id:'did:aw:human1',label:'Juan'},service:{id:'svc-acme',profile:'/srv/deploy/profile.json',profileDigest:`sha256:${'b'.repeat(64)}`,url:'https://aweb.acme.example/api'},teams:['backend:acme.example'],endorsement:{operationId:'3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b',policy:{version:3,digest:`sha256:${'a'.repeat(64)}`}}};
 for(const layer of ['soul','workspace','spawn']) test(`real hostOnly rejects attribution from ${layer}`,{skip:!root},async()=>{
   const {soul,discovery,options}=fixture();
   if(layer==='soul') soul.definition.messaging={attribution:ATTRIBUTION};

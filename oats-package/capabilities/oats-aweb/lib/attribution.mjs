@@ -6,8 +6,9 @@
 // certificate; this module holds the provider's decisions about them and never
 // holds key material.
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
-import { isAbsolute, normalize } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { dirname, isAbsolute, join, normalize, sep } from "node:path";
+import { canonicalTeamServerURL } from "./team-server-url.mjs";
 
 /** A refusal of this feature: a code from C-9, a message that names the fix,
  *  and its details (key, problem, step, code, …). */
@@ -34,7 +35,7 @@ export const SETTING_KEY = "settings.oats.aweb.attribution";
 const SETTING_FIX = "rerun `oats aweb setup --endorse-root`, which writes it, or remove settings.oats.aweb.attribution from this deployment's oats-local.yaml";
 
 /** settings.oats.aweb.attribution, host-only (C-1):
- *    root: {id, home}, human: {id, label}, service: {id, profile, profileDigest},
+ *    root: {id, home}, human: {id, label}, service: {id, profile, profileDigest, url},
  *    teams: [team ids], endorsement: {operationId, policy: {version, digest}}.
  *  null when absent, which is today's behaviour; anything malformed refuses
  *  E_ATTRIBUTION_SETTING, naming the key. */
@@ -50,7 +51,7 @@ export function attributionSetting(settings = {}) {
   exactly(a, "attribution", ["root", "human", "service", "teams", "endorsement"]);
   exactly(a.root, "attribution.root", ["id", "home"]);
   exactly(a.human, "attribution.human", ["id", "label"]);
-  exactly(a.service, "attribution.service", ["id", "profile", "profileDigest"]);
+  exactly(a.service, "attribution.service", ["id", "profile", "profileDigest", "url"]);
   exactly(a.endorsement, "attribution.endorsement", ["operationId", "policy"]);
   exactly(a.endorsement.policy, "attribution.endorsement.policy", ["version", "digest"]);
   if (typeof a.root.id !== "string" || !DID_AW.test(a.root.id)) bad("attribution.root.id", "must be the root's did:aw");
@@ -60,6 +61,7 @@ export function attributionSetting(settings = {}) {
   if (typeof a.service.id !== "string" || !a.service.id.trim() || REFUSED_TEXT.test(a.service.id)) bad("attribution.service.id", "must be the protected service's id");
   if (!absolutePath(a.service.profile)) bad("attribution.service.profile", "must be the protected profile's absolute, normalized path");
   if (typeof a.service.profileDigest !== "string" || !SHA256_DIGEST.test(a.service.profileDigest)) bad("attribution.service.profileDigest", "must be sha256: and 64 lowercase hex digits");
+  if (typeof a.service.url !== "string" || canonicalTeamServerURL(a.service.url).url !== a.service.url) bad("attribution.service.url", "must be the aweb coordination server's canonical URL (https outside loopback, no query, fragment or trailing slash)");
   if (!Array.isArray(a.teams) || !a.teams.length || !a.teams.every((t) => typeof t === "string" && TEAM_ID.test(t)) || new Set(a.teams).size !== a.teams.length) bad("attribution.teams", "must list each protected team (name:namespace) once, at least one");
   if (typeof a.endorsement.operationId !== "string" || !UUID.test(a.endorsement.operationId)) bad("attribution.endorsement.operationId", "must be the endorsement's lowercase UUID");
   if (!Number.isSafeInteger(a.endorsement.policy.version) || a.endorsement.policy.version < 1) bad("attribution.endorsement.policy.version", "must be a positive integer");
@@ -67,7 +69,7 @@ export function attributionSetting(settings = {}) {
   return {
     root: { id: a.root.id, home: a.root.home },
     human: { id: a.human.id, label: a.human.label },
-    service: { id: a.service.id, profile: a.service.profile, profileDigest: a.service.profileDigest },
+    service: { id: a.service.id, profile: a.service.profile, profileDigest: a.service.profileDigest, url: a.service.url },
     teams: [...a.teams],
     endorsement: { operationId: a.endorsement.operationId, policy: { version: a.endorsement.policy.version, digest: a.endorsement.policy.digest } },
   };
@@ -94,3 +96,173 @@ export function profileProblem(path, { key, uid = process.getuid() }) {
 
 /** sha256:<hex> of the profile file's bytes, as setup records it. */
 export const profileDigest = (path) => `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+
+// ---------------------------------------------------------------------------
+// The root's home (v3.3's rules, carried over): owner-only, directly in D's
+// .aweb-endorsed-root, never in a Git work tree, an instance home or a team
+// container's /state/deploy.
+
+export const ROOT_DIR = ".aweb-endorsed-root";
+export const CONTAINER_DEPLOYMENT = "/state/deploy";
+const inside = (dir, base) => dir === base || dir.startsWith(base.endsWith(sep) ? base : base + sep);
+
+/** The root home's problem, or null: container, placement and mode, checked
+ *  in that order, before any effect. `deployment` is D. */
+export function rootHomeProblem(rootHome, { deployment }) {
+  const fail = (problem, message) => attributionError("E_ATTRIBUTION_ROOT_HOME", message, { problem, home: rootHome });
+  let realD = deployment;
+  try { realD = realpathSync(deployment); } catch { /* the checks below use the path as given */ }
+  if (inside(realD, CONTAINER_DEPLOYMENT) || inside(rootHome, CONTAINER_DEPLOYMENT)) return fail("container", `this deployment is a team container's (${CONTAINER_DEPLOYMENT}); attribution isn't supported in a team container in v1 → don't opt in on this deployment`);
+  const expected = join(realD, ROOT_DIR);
+  let real;
+  try { real = realpathSync(rootHome); } catch { return fail("placement", `the root home ${rootHome} doesn't exist → rerun setup with the root under ${expected}/`); }
+  if (dirname(real) !== expected) return fail("placement", `the root home ${rootHome} is not directly under ${expected}/ → rerun setup with the root there`);
+  for (let dir = real; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, ".git"))) return fail("placement", `the root home ${rootHome} is inside a Git work tree (${dir}), where its key could be committed → move the deployment's root out of any work tree`);
+    if (existsSync(join(dir, "instance.json"))) return fail("placement", `the root home ${rootHome} is under an instance home (${dir}) → rerun setup with the root under ${expected}/`);
+    if (dirname(dir) === dir) break;
+  }
+  const wide = [];
+  const walk = (p) => {
+    const s = lstatSync(p);
+    if (s.isSymbolicLink()) { wide.push(p); return; }
+    if (s.mode & 0o077) wide.push(p);
+    if (s.isDirectory()) for (const name of readdirSync(p)) walk(join(p, name));
+  };
+  walk(real);
+  if (wide.length) return fail("mode", `the root home ${rootHome} is open to other users (${wide.slice(0, 2).join(", ")}${wide.length > 2 ? ", …" : ""}) → \`chmod -R go-rwx ${rootHome}\`, then try again`);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// What aw says about an identity (aw who --json, aw 1.36.58 who.go).
+
+/** The kernel feature that makes an absent OATS_SPAWNER_HOME mean a person's spawn. */
+export const SPAWN_ATTRIBUTION_FEATURE = "spawn-attribution";
+export const KERNEL_FLOOR = "0.69.8";
+/** aw's chain limits (id-certificates §5): certificates counting humans and agents. */
+export const CHAIN_MAX_CERTIFICATES = 8;
+const REVOKED_REASONS = new Set(["revoked", "parent_revoked", "root_replaced", "superseded_certificate"]);
+
+/** One `aw who --json` answer as: verified {id, humanId, chain: [ids, root
+ *  side first]}, chainless (a did:key aw never enrolled, or a did:aw the
+ *  registry says is not enrolled), revoked, unavailable, or invalid. */
+export function whoVerdict(who) {
+  if (!object(who)) return { kind: "invalid", reason: "no answer" };
+  const id = typeof who.id === "string" ? who.id : "";
+  const reason = typeof who.reason === "string" && who.reason ? who.reason : "no reason";
+  if (who.identity_valid === true && (who.outcome === "nearest_human" || who.outcome === "no_human")) {
+    const chain = Array.isArray(who.chain) ? who.chain.map((c) => c?.id).filter((c) => typeof c === "string") : [];
+    return { kind: "verified", id, humanId: who.outcome === "nearest_human" && typeof who.human_id === "string" ? who.human_id : null, chain };
+  }
+  if (who.outcome === "unavailable") return { kind: "unavailable", id, reason };
+  if (who.identity_valid === null && ((id.startsWith("did:key:") && reason === "legacy_no_chain") || (id.startsWith("did:aw:") && reason === "unregistered_identity"))) return { kind: "chainless", id };
+  if (REVOKED_REASONS.has(reason)) return { kind: "revoked", id, reason };
+  return { kind: "invalid", id, reason };
+}
+
+/** `aw who --json` as `identityHome`, as a verdict; `aw(argv)` returns stdout or throws. */
+export function readWho(aw, identityHome) {
+  if (!existsSync(join(identityHome, "signing.key")) && !existsSync(join(identityHome, "grant.yaml"))) return { kind: "error", reason: `${identityHome} holds no aw identity` };
+  let text;
+  try { text = aw(["--identity-home", identityHome, "who", "--json"]); }
+  catch (e) { return { kind: "error", reason: String(e.message || e).replace(/\s+/g, " ").slice(0, 200) }; }
+  try { return whoVerdict(JSON.parse(String(text).trim())); } catch { return { kind: "invalid", reason: "aw who answered no JSON" }; }
+}
+
+/** The revocation path (C-3c): the code, its first step and the README
+ *  section within the spawn's 300 characters; the README holds the rest. */
+export const REVOKED_FIX = "remove settings.oats.aweb.attribution, then create and endorse a new root (README, \"Human attribution: revocation\"); a new root needs the protected service's operator to bind it, and that step isn't available yet, so this deployment can't spawn into its protected teams until it is";
+
+/** The refusal for an identity whose chain doesn't verify: revoked, unavailable (retry), else the exchange step that read it. */
+export function chainRefusal(verdict, { who, step }) {
+  if (verdict.kind === "revoked") return attributionError("E_ATTRIBUTION_REVOKED", `${who}'s chain is revoked or replaced (${verdict.reason}) → ${REVOKED_FIX}`, { reason: verdict.reason });
+  if (verdict.kind === "unavailable") return attributionError("E_ATTRIBUTION_EVIDENCE", `registry evidence for ${who}'s chain is unavailable (${verdict.reason}) → retry once the identity registry answers; spawns stop while evidence is unavailable`, { reason: verdict.reason });
+  return attributionError("E_ATTRIBUTION_EXCHANGE", `${who}'s chain doesn't verify (${verdict.reason ?? verdict.kind}) → respawn it from a person`, { step, reason: verdict.reason ?? verdict.kind });
+}
+
+/** Who issues the child (C-3a). `spawner` is null for a person's spawn, else
+ *  {home, identityHome, grant, verdict, recordedChain}; `root` is the root's
+ *  verdict. Returns {action: "issue", issuer: {identityHome, id, certificates}}
+ *  or {action: "chainless"}, or throws. */
+export function chooseIssuer({ setting, spawner, root }) {
+  if (!spawner) {
+    if (root.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the endorsed root's identity can't be read (${root.reason}) → check the root home ${setting.root.home}`, { step: "issuer", reason: root.reason });
+    if (root.kind !== "verified") throw chainRefusal(root, { who: "the endorsed root", step: "issuer" });
+    if (root.id !== setting.root.id) throw attributionError("E_ATTRIBUTION_SETTING", `settings.oats.aweb.attribution.root names ${setting.root.id}, but its home holds ${root.id} → ${SETTING_FIX}`, { key: "settings.oats.aweb.attribution.root" });
+    if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root no longer verifies to the recorded human (it answers ${root.humanId ?? "no human"}) → ${REVOKED_FIX}`, { reason: "another_human" });
+    return depthChecked({ identityHome: join(setting.root.home, ".aw"), id: root.id, certificates: root.chain.length });
+  }
+  const v = spawner.verdict;
+  if (spawner.grant) {
+    if (v.kind === "chainless") return { action: "chainless" };
+    if (v.kind === "unavailable" || v.kind === "error") throw attributionError("E_ATTRIBUTION_EVIDENCE", `the registry can't establish that the grant-seat spawner has no chain (${v.reason}) → retry once the identity registry answers`, { reason: v.reason });
+    throw attributionError("E_ATTRIBUTION_ISSUER_OUTSIDE_ROOT", "the spawner is a grant seat: a grant seat doesn't issue → spawn it from a person or from a chained local instance", { spawner: spawner.home });
+  }
+  if (v.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the spawner's identity can't be read (${v.reason}) → spawn from a person or from another instance`, { step: "issuer", reason: v.reason });
+  if (v.kind === "chainless") {
+    // Missing files never make a chained instance chainless.
+    if (spawner.recordedChain) throw attributionError("E_ATTRIBUTION_EXCHANGE", "the spawner's meta records a chain, but aw finds none in its home → respawn the spawner; a chained instance never becomes chainless", { step: "issuer", reason: "chain_missing" });
+    return { action: "chainless" };
+  }
+  if (v.kind !== "verified") throw chainRefusal(v, { who: "the spawner", step: "issuer" });
+  if (!v.chain.includes(setting.root.id) || v.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_ISSUER_OUTSIDE_ROOT", `the spawner's chain doesn't run through this deployment's endorsed root ${setting.root.id} (its human: ${v.humanId ?? "none"}) → respawn the spawner from a person, or spawn from a shell`, { spawner: spawner.home });
+  return depthChecked({ identityHome: spawner.identityHome, id: v.id, certificates: v.chain.length });
+}
+function depthChecked(issuer) {
+  if (issuer.certificates + 1 > CHAIN_MAX_CERTIFICATES) throw attributionError("E_ATTRIBUTION_DEPTH", `the child's chain would hold ${issuer.certificates + 1} certificates, over aw's limit of ${CHAIN_MAX_CERTIFICATES} → spawn from an instance nearer the human, or from a shell`, { certificates: issuer.certificates + 1 });
+  return { action: "issue", issuer };
+}
+
+/** aw 1.36.58's agent-child exchange (id-certificates §6) between the
+ *  issuer's identity home and the new one, then the verify (C-3 steps 2, 4).
+ *  It is local, with no server call. Transient failures of invite, request,
+ *  receive and import are retried once; approve, which signs, never is. A
+ *  failure after the issuer received the request refuses it, best effort.
+ *  `dir` holds the request and the response (owner-only, removed after).
+ *  Returns the meta's identity.attribution. */
+export function issueChain({ aw, issuer, identityHome, instance, setting, dir }) {
+  const fail = (step, why) => attributionError("E_ATTRIBUTION_EXCHANGE", `the chain exchange failed at ${step}: ${String(why).replace(/\s+/g, " ").slice(0, 160)} → retry the spawn`, { step });
+  const attempt = (step, f, tries) => {
+    for (let i = 1; ; i++) {
+      try { return f(); }
+      catch (e) { if (e.code || i >= tries) throw e.code ? e : fail(step, e.message || e); }
+    }
+  };
+  const json = (text, what) => { try { return JSON.parse(String(text).trim()); } catch { throw new Error(`${what} answered no JSON`); } };
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const requestFile = join(dir, "request.json"), responseFile = join(dir, "response.json");
+  const clear = () => { for (const f of [requestFile, responseFile]) rmSync(f, { force: true }); };
+  const asIssuer = (args) => aw(["--identity-home", issuer.identityHome, ...args]);
+  const asChild = (args) => aw(["--identity-home", identityHome, ...args]);
+  clear();
+  let received;
+  try {
+    const invite = attempt("invite", () => json(asIssuer(["id", "child", "invite", "--kind", "agent", "--recipient", instance, "--expires", "10m", "--json"]), "aw id child invite"), 2);
+    if (typeof invite?.invitation_id !== "string" || invite?.parent?.id !== issuer.id || typeof invite?.domain !== "string") throw fail("invite", "aw id child invite answered no invitation from the issuer");
+    attempt("request", () => { rmSync(requestFile, { force: true }); asChild(["id", "parent", "request", "--invitation-id", invite.invitation_id, "--parent", invite.parent.id, "--domain", invite.domain, "--out", requestFile]); }, 2);
+    received = attempt("receive", () => json(asIssuer(["id", "child", "receive", requestFile, "--json"]), "aw id child receive"), 2);
+    if (typeof received?.request_id !== "string") { received = undefined; throw fail("receive", "aw id child receive answered no request id"); }
+    attempt("approve", () => asIssuer(["id", "child", "approve", received.request_id, "--out", responseFile]), 1);
+    let response;
+    try { response = JSON.parse(readFileSync(responseFile, "utf8")); } catch { throw fail("approve", "the issuer's response is not readable JSON"); }
+    const certificates = response?.chain?.certificates;
+    if (!Array.isArray(certificates)) throw fail("approve", "the issuer's response carries no chain");
+    depthChecked({ certificates: certificates.length - 1 });
+    // A chainless requester names its domain again: aw resolves it anew at import.
+    attempt("import", () => asChild(["id", "parent", "import", responseFile, "--domain", invite.domain, "--json"]), 2);
+  } catch (e) {
+    if (received) { try { asIssuer(["id", "child", "refuse", received.request_id, "--json"]); } catch { /* best effort: the invitation expires at 10 minutes */ } }
+    throw e;
+  } finally { clear(); }
+  const v = readWho(aw, identityHome);
+  if (v.kind === "verified" && v.humanId === setting.human.id && v.chain.includes(setting.root.id) && v.chain.at(-2) === issuer.id && v.chain.at(-1) === v.id) {
+    return { mode: "human", human: { id: setting.human.id, label: setting.human.label }, parent: { id: issuer.id } };
+  }
+  if (v.kind === "revoked" || v.kind === "unavailable") throw chainRefusal(v, { who: "the new identity", step: "verify" });
+  throw fail("verify", `the new identity doesn't verify to the recorded human through the root with ${issuer.id} as its parent (aw who: ${v.kind}${v.reason ? `, ${v.reason}` : ""})`);
+}
+
+/** The meta of a child that is chainless by the protocol's own rule (§6). */
+export const CHAINLESS = Object.freeze({ mode: "unknown", human: null, parent: null });
+export const SPAWNER_UNCHAINED = "attribution-spawner-unchained — the spawner has no identity chain (it predates the endorsement), so this child is admitted with none and is attributed to nobody; respawn the spawner to attribute its children";

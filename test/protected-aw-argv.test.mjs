@@ -10,7 +10,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { admissionPolicyArgv, admitArgv, createLocalArgv, createNoAddressArgv, endorseArgv, installCertArgv, removeAgentArgv, serviceInitArgv, showServerArgv } from "../oats-package/capabilities/oats-aweb/lib/protected-client.mjs";
+import { admissionPolicyArgv, admitArgv, createLocalArgv, createNoAddressArgv, endorseArgv, installCertArgv, removeAgentArgv, serviceInitArgv } from "../oats-package/capabilities/oats-aweb/lib/protected-client.mjs";
 
 const AW = process.env.OATS_AWEB_PROTECTED_AW;
 if (process.env.OATS_AWEB_PROTECTED_AW_REQUIRED === "1" && !AW) throw new Error("OATS_AWEB_PROTECTED_AW_REQUIRED=1 needs OATS_AWEB_PROTECTED_AW, the aw built from aweb 859e07567");
@@ -51,7 +51,6 @@ const LINES = {
   "C-3 step 3, id team admit (registered child)": admitArgv({ team: "backend:acme.example", memberKey: "did:key:z6Mk", memberId: "did:aw:res", alias: "res", policy: { version: 3, digest: `sha256:${"a".repeat(64)}` }, operationId: "3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b", certificateOut: "/h/c.cert", profile: P }),
   "C-3 step 3, id team install-cert": installCertArgv({ identityHome: "/h/.aw", certificate: "/h/.oats-aweb/admission-default.cert", registry: "https://registry.example" }),
   "C-3 step 3, service init": serviceInitArgv({ identityHome: "/h/.aw", service: "https://aweb.example/api", team: "backend:acme.example" }),
-  "C-3 step 3, the team's server record": showServerArgv({ team: "backend:acme.example", registry: "https://registry.example" }),
   "C-5 and C-6, id team remove-agent": removeAgentArgv({ certificate: `${ROOT}/admissions/3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b.cert`, operationId: "3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b", profile: P }),
 };
 
