@@ -730,7 +730,7 @@ test("a take-over whose partial lock write can't be removed names the moved lock
  *  GUARD_UNLINK_FAIL=<n> fails the n-th removal of a guard (EIO); INSPECT_FAIL fails the
  *  first check of the moved lock after it is moved (EIO); CLOSE_FAIL=<n> makes closing
  *  the n-th guard report EIO after it closed; READ_LOCK_FAIL fails every read of the
- *  lock's bytes at its name (EIO); LOCK_AFTER_READ is a lock written once the first
+ *  lock's bytes at its name (EIO), READ_HELD_FAIL of the moved lock's; LOCK_AFTER_READ is a lock written once the first
  *  guard is removed. */
 function stageFailPreload(fx) {
   const file = join(fx.base, "stage-fail.mjs");
@@ -748,7 +748,11 @@ fs.openSync = function (path, ...rest) {
 fs.writeSync = function (fd, ...rest) { if (failing.has(fd)) { failed = true; throw fail("ENOSPC"); } return write.call(this, fd, ...rest); };
 let guardUnlinks = 0, moved = false, guardFd, guardOpens = 0;
 const lstat = fs.lstatSync, close = fs.closeSync, readFile = fs.readFileSync;
-fs.readFileSync = function (path, ...rest) { if (process.env.READ_LOCK_FAIL && String(path) === lock) throw fail("EIO"); return readFile.call(this, path, ...rest); };
+fs.readFileSync = function (path, ...rest) {
+  if (process.env.READ_LOCK_FAIL && String(path) === lock) throw fail("EIO");
+  if (process.env.READ_HELD_FAIL && String(path) === held) throw fail("EIO");
+  return readFile.call(this, path, ...rest);
+};
 fs.lstatSync = function (path, ...rest) {
   if (process.env.INSPECT_FAIL && moved && String(path) === held) { moved = false; throw fail("EIO"); }
   return lstat.call(this, path, ...rest);
@@ -942,3 +946,23 @@ test("a plain spawn that loses to another's lock and can't clean the moved name 
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, other.home, "the other seat's lock is in place");
   assert.equal(existsSync(join(a, ".aw")), false, "nothing copied");
 });
+
+for (const [where, env, says] of [
+  ["at its name", { READ_LOCK_FAIL: "1" }, "it could not be read (EIO), so whether this home holds it is unknown"],
+  ["once moved aside", { READ_HELD_FAIL: "1" }, "it could not be read (EIO) when retire went to remove it, so whether this home holds it is unknown"],
+]) {
+  test(`the retire of a spawn killed mid-connect that can't read the lock's bytes ${where} leaves it, says ownership is unknown, and names the rebind`, (t) => {
+    const fx = fixture(t);
+    const a = fx.homeOf("seat-a");
+    const spawned = runHook(fx, "spawn", a, { env: { FAKE_RETAINED_KILL: "mid-connect" } });
+    assert.equal(spawned.signal, "SIGKILL", "the hook was killed");
+    const retired = runHook(fx, "retire", a, { preload: stageFailPreload(fx), env: { OATS_META: "{}", ...env } });
+    assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+    const w = retired.doc.warning;
+    assert.ok(w.includes(says), w);
+    assert.ok(w.includes("released nothing: whether this home holds the retained identity's lock is unknown"), w);
+    assert.ok(w.includes(`run ${CONNECT} from ${dirname(fx.source)}`), w);
+    assert.equal(existsSync(fx.lock), true, "the lock is left");
+    assert.equal(existsSync(fx.held), false);
+  });
+}

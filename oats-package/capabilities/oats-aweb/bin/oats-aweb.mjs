@@ -1213,7 +1213,7 @@ function retainedSeatSpawn(source, takeOver) {
     const kept = takeLeft;
     // Uncut: what the step left carries its whole fix.
     if (!seen.present) out({ warning: `oats-aweb: identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied${kept}` }, 1);
-    out({ warning: `oats-aweb: the retained identity's lock ${lockPath} changed after this spawn read it, so nothing was taken over or copied: it is now held by ${taken.captured.present ? seatLockHolderText(taken.captured.doc) : "no seat"}${kept}. A seat is never taken from a holder this spawn did not see: retire that seat first, or spawn again with identity.takeOver: true once you know its runtime is dead` }, 1);
+    out({ warning: `oats-aweb: the retained identity's lock ${lockPath} changed after this spawn read it, so nothing was taken over or copied: it is now held by ${!taken.captured.present ? "no seat" : taken.captured.text === null ? `a lock that could not be read (${taken.captured.readError || "error"})` : seatLockHolderText(taken.captured.doc)}${kept}. A seat is never taken from a holder this spawn did not see: retire that seat first, or spawn again with identity.takeOver: true once you know its runtime is dead` }, 1);
   }
   /** Remove this spawn's own lock; any other is left. What its guarded step saw is the
    *  rollback's last read of the lock (lastSeen). → a note for the failure, or "". */
@@ -2531,6 +2531,8 @@ if (event === "launch") {
       if (leftover) { lockText = `lock ${meta.lock} left in place: ${leftover}`; heldHere = undefined; }
       else if (unchecked) { lockText = `lock ${meta.lock} left in place: it cannot be checked (${unchecked})`; heldHere = undefined; }
       else if (!present) lockText = `lock ${meta.lock} already gone`;
+      // Bytes that can't be read name no holder: whether this home holds it is unknown.
+      else if (now.text === null) { lockText = `lock ${meta.lock} left in place: it could not be read (${now.readError || "error"}), so whether this home holds it is unknown`; heldHere = undefined; }
       else if (ours) {
         heldHere = true;
         // Removed only if it still names this home at the moment it is removed: one
@@ -2548,6 +2550,7 @@ if (event === "launch") {
           }
         }
         if (r && !r.done && !r.captured.present) lockText = `lock ${meta.lock} already gone`;
+        else if (r && !r.done && r.captured.text === null) { heldHere = undefined; lockText = `lock ${meta.lock} left in place: it could not be read (${r.captured.readError || "error"}) when retire went to remove it, so whether this home holds it is unknown`; }
         else if (r && !r.done) {
           heldHere = false;
           lockText = `lock ${meta.lock} left in place: this seat no longer owns it (${typeof r.captured.doc?.home === "string" ? "another seat took it over" : "it cannot be read now"}), so retire did not remove it`;
