@@ -101,8 +101,11 @@ export function removeMembership({ aw, setting, certificateId, team, file }) {
 /** Retire's part for every admission recorded in `providerDir`. `aw(argv,
  *  cwd, timeout)` runs aw and returns its stdout. Returns {warnings, keep,
  *  memberships}: `keep` is {reason, text} when the home must stay for a
- *  retry; `memberships` [{team, label, removed}] once it needn't. */
-export function retireAdmissions({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, labels }) {
+ *  retry; `memberships` [{team, label, removed}] once it needn't.
+ *  `phase` "settle" only resumes unknown admissions and restores missing root copies, with no
+ *  removal; "remove" then removes. A retire runs them around its workspace delete, which the
+ *  member's certificate authenticates and the removal revokes (C-6). Without `phase`, both. */
+export function retireAdmissions({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, labels, phase }) {
   const warnings = [];
   let names = [];
   try { names = readdirSync(providerDir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { names = []; }
@@ -115,7 +118,6 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     if (!record || typeof record.label !== "string") continue;
     const { team, label } = record;
     const save = (fields) => { record = { ...record, ...fields }; writePrivate(join(providerDir, name), `${JSON.stringify(record, null, 2)}\n`); };
-    let resumed = false;
     // A pending record is a spawn killed at its admit (v4.3.19). With a --certificate-out file
     // that verifies (aw's id form, this record's team and member key) the admission committed;
     // with none, its outcome is unknown, and it is resumed as an unknown one is.
@@ -141,10 +143,11 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       }
       const cert = admittedCertificate(record.certificateOut, setting.root.home);
       keepRootCopy(cert);
-      save({ state: "committed", certificateId: cert.id });
-      resumed = true;
+      // Kept on the record, so the remove phase still knows this retire made the membership.
+      save({ state: "committed", certificateId: cert.id, resumedAtRetire: true });
     }
     if (record.state !== "committed") continue;
+    const resumed = record.resumedAtRetire === true;
     // The root's copy missing: written again from this home's certificate when it is the
     // one admitted, whenever the root home is there, so a removal blocked below stays
     // reconcilable. The home holds it twice: admit's --certificate-out file, and the copy
@@ -162,6 +165,7 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       if (cert) { try { keepRootCopy(cert); } catch { copyMissing = true; } }
       else copyMissing = true;
     }
+    if (phase === "settle") continue;
     if (!removeServed) { warnings.push(`${REMOVAL_UNAVAILABLE} (team ${team})`); continue; }
     const blocked = cannot();
     const block = ({ reason, why }) => {

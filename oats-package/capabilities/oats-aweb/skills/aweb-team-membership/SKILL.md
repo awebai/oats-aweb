@@ -52,8 +52,10 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
   `attribution.teams` refuses `E_ENDORSE_POLICY` (`unlisted`): rerun
   `oats aweb setup --endorse-root` to add it. A join that fails after its key
   exists keeps the joined identity; rerun the join to resume it. A leave
-  removes the membership through the root, as retire does (README, "Human
-  attribution: retire and reconciliation").
+  removes the membership through the root, as retire does, and deletes the
+  joined identity; aw can't delete its workspace on a team outside aweb's
+  hosted zone, so that record goes stale (README, "Human attribution: retire
+  and reconciliation").
 - Since oats.aweb 1.15 a joined team receives **live** (`receive: native`) when
   the host wake broker holds its identity: always on session-delivery homes,
   and on Claude/Pi channel homes through aw's mixed mode (the channel keeps the

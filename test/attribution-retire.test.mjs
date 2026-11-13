@@ -64,9 +64,38 @@ for (const code of ["receipt_unavailable", "external_effect_unresolved", "regist
     assert.equal(r.doc.meta.retired, false);
     assert.ok(warningOf(r).includes(RECONCILE) && warningOf(r).includes(code), warningOf(r));
     assert.ok(existsSync(rootCopy(fx, id)));
-    assert.ok(!verbs(fx.fake).includes("workspace delete"), "before the workspace is deleted");
+    // The workspace delete comes first, while the membership's certificate still authenticates it.
+    const v = verbs(fx.fake);
+    assert.ok(v.indexOf("workspace delete") >= 0 && v.indexOf("workspace delete") < v.indexOf("id team remove-agent"), v.join(", "));
   });
 }
+
+test("C-6: a retire kept by an unconfirmed removal, after its workspace delete, finishes on the rerun: one delete, the membership removed", (t) => {
+  const fx = attributionFixture(t);
+  const id = spawned(fx);
+  fx.fake.setService({ remove: { code: "receipt_unavailable" } });
+  assert.notEqual(fx.retire("dev-1").status, 0);
+  fx.fake.setService({ remove: "served" });
+  const r = fx.retire("dev-1");
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.deepEqual([r.doc.meta.retired, r.doc.meta.aliasReusable, r.doc.meta.aliasReason], [true, true, "admission-removed"]);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [id]);
+  assert.equal(verbs(fx.fake).filter((v) => v === "workspace delete").length, 1, "the delete is never sent again");
+});
+
+test("C-6: a workspace delete that fails keeps the home and the membership, so its certificate still authenticates the retire's rerun", (t) => {
+  const fx = attributionFixture(t);
+  const id = spawned(fx);
+  fx.fake.setService({ workspaceDelete: { code: "service_unavailable" } });
+  const r = fx.retire("dev-1");
+  assert.notEqual(r.status, 0);
+  assert.equal(r.doc.meta.reason, "self-delete-failed");
+  assert.deepEqual(removeCalls(fx), [], "nothing is removed before the delete");
+  fx.fake.setService({ workspaceDelete: undefined });
+  const again = fx.retire("dev-1");
+  assert.equal(again.status, 0, JSON.stringify(again.doc) + again.stderr);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [id]);
+});
 
 test("acceptance 13: an answer that isn't committed is unconfirmed too", (t) => {
   const fx = attributionFixture(t);
@@ -216,6 +245,7 @@ test("C-6: once the root removed the memberships, retire gives no controller-cle
   const r = fx.retire("dev-1");
   assert.equal(r.status, 0, JSON.stringify(r.doc));
   assert.ok(!warningOf(r).includes("controller cleanup") && !warningOf(r).includes("team_not_hosted"), warningOf(r));
+  assert.ok(warningOf(r).includes("the joined identity's workspace on ops:acme.example stays at the service until it goes stale"), warningOf(r));
   assert.deepEqual([r.doc.meta.retired, r.doc.meta.aliasReusable, r.doc.meta.aliasReason], [true, true, "admission-removed"]);
   assert.equal(r.doc.meta.pendingControllerCleanup, undefined);
 });

@@ -1624,15 +1624,16 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home, { admitted = fa
     receipt = parseAwJson(run(awWithIdentity(entry.identityHome, ["workspace", "delete", alias, "--json"]), cwd, 60000), "aw workspace delete");
     released = releaseReceiptStatus(receipt);
   } catch (e) {
+    // On a team the root admitted into (C-6), aw deletes no workspace through an external
+    // identity home outside aweb's hosted zone, and says so before any request. The membership
+    // is the root's to remove; the workspace record stays at the service until it goes stale.
+    if (admitted && teamNotHostedRefusal(e, entry.identityHome)) {
+      try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+      return { released: undefined, receipt: undefined, note: `the joined identity's workspace on ${entry.team} stays at the service until it goes stale: aw deletes no joined identity's workspace on a team outside aweb's hosted zone` };
+    }
     const error = new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
     if (teamNotHostedRefusal(e, entry.identityHome)) error.nativeReason = "team_not_hosted";
     throw error;
-  }
-  // On a team the root admitted into, aw's delete is a plain one (team_not_hosted): the
-  // membership is the root's to remove, not a self-release (C-6).
-  if (!released && admitted && receipt?.identity_deleted === true && receipt?.alias_released_reason === "team_not_hosted") {
-    try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
-    return { released, receipt };
   }
   if (!released) {
     const error = new Error(`failed to leave team ${entry.label}; workspace delete did not report alias_released: true; kept ${entry.identityHome} so cleanup can be retried: ${JSON.stringify(receipt)}`);
@@ -1890,7 +1891,7 @@ function attributedLeave(setting, label, meta) {
   if (removal.keep) throw new Error(`${removal.keep.text}; the joined identity is kept → rerun \`oats aweb leave --labels ${label}\``);
   const after = readAdmission(providerDir, label);
   const entry = joinedTeamsOf(meta).find((j) => j.label === label) || { label, team: record.team, identityHome: record.identityHome };
-  const { released, receipt } = existsSync(entry.identityHome) ? cleanupJoinedIdentity(entry, meta.alias || instance, home, { admitted: true }) : {};
+  const { released, receipt, note } = existsSync(entry.identityHome) ? cleanupJoinedIdentity(entry, meta.alias || instance, home, { admitted: true }) : {};
   if (after?.state === "removed") rmSync(after.certificateOut, { force: true });
   else if (after?.state === "committed") {
     // Aside, with its --certificate-out file, so a later join of this label starts its own admission.
@@ -1900,7 +1901,7 @@ function attributedLeave(setting, label, meta) {
     writePrivate(left, `${JSON.stringify({ ...after, certificateOut }, null, 2)}\n`);
     rmSync(admissionFile(providerDir, label), { force: true });
   }
-  return { meta: { ...withoutPendingJoin(meta, label), joinedTeams: joinedTeamsOf(meta).filter((j) => j.label !== label) }, changed: true, released, receipt, ...(removal.warnings.length ? { warning: removal.warnings.join(" | ") } : {}) };
+  return { meta: { ...withoutPendingJoin(meta, label), joinedTeams: joinedTeamsOf(meta).filter((j) => j.label !== label) }, changed: true, released, receipt, ...(removal.warnings.length || note ? { warning: [...removal.warnings, ...(note ? [note] : [])].join(" | ") } : {}) };
 }
 function awebRootForTeam(team) {
   const declared = declaredRootCandidate(team);
@@ -2728,8 +2729,11 @@ if (event === "launch") {
     }
     if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
   }
-  // An opted-in home's memberships go first, removed by the root (C-6, C-3d):
-  // an outcome OATS can still learn keeps the home, before any workspace delete.
+  // An opted-in home's memberships (C-6, C-3d), in two steps around the workspace delete:
+  // first an unknown admission is resumed and a missing root copy restored, and an outcome
+  // OATS can still learn keeps the home before any delete; the root removes them only after
+  // the home's own workspace delete, which their certificate authenticates and the removal
+  // revokes. Every way out with nothing left to delete removes them too.
   let retireSetting = null;
   // team → whether the root removed its membership (C-6). On these teams the workspace
   // delete is a plain delete (team_not_hosted): the membership is the root's, not a controller cleanup.
@@ -2738,18 +2742,31 @@ if (event === "launch") {
   const admissionNotes = [];
   const admittedTeam = (team) => [...admittedTeams.keys()].find((t) => sameAwebTeamId(t, team));
   try { retireSetting = attributionSetting(settings); } catch (e) { retireWarnings.push(`admission removal skipped: ${String(e.message || e).slice(0, 200)}`); }
-  if (retireSetting) {
-    let deployment = null;
-    try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+  let retireDeployment = null;
+  const admissions = async (phase) => {
     let removal;
-    try { removal = retireAdmissions({ aw: run, setting: retireSetting, providerDir: providerStateDir(), deployment }); }
+    try { removal = retireAdmissions({ aw: run, setting: retireSetting, providerDir: providerStateDir(), deployment: retireDeployment, phase }); }
     catch (e) { removal = { warnings: [], keep: { reason: "admission-unknown", text: `${String(e.message || e).slice(0, 240)}; this home is kept, with its admission records → retire it again` } }; }
     retireWarnings.push(...removal.warnings);
     admissionNotes.push(...removal.warnings);
     for (const m of removal.memberships || []) admittedTeams.set(m.team, m.removed);
     if (removal.keep) await finish({ meta: { retired: false, reason: removal.keep.reason }, warning: `oats-aweb: ${[...retireWarnings, removal.keep.text].join(" | ")}` }, 1);
+  };
+  let removalsDone = false;
+  /** The root's removals, once: after the workspace delete, or where there is none to make. */
+  const removeAdmissions = async () => { if (!retireSetting || removalsDone) return; removalsDone = true; await admissions("remove"); };
+  if (retireSetting) {
+    try { retireDeployment = selectedDeployment(process.env); } catch { retireDeployment = null; }
+    await admissions("settle");
   }
   for (const joined of joinedTeamsOf(meta)) {
+    if (admittedTeam(joined.team)) {
+      // The root removes this membership below; aw can't delete its workspace (cleanupJoinedIdentity).
+      try { const { note } = cleanupJoinedIdentity(joined, meta.alias || instance, home, { admitted: true }); if (note) retireWarnings.push(note); }
+      catch (e) { retireWarnings.push(String(e.message || e).slice(0, 300)); }
+      meta = { ...meta, joinedTeams: joinedTeamsOf(meta).filter((j) => j.label !== joined.label) };
+      continue;
+    }
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
     catch (e) { const failed = failedLeaveDisposition(joined, e); if (failed.data.cleanup === "controller" && admittedTeam(joined.team)) continue; retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
   }
@@ -2861,6 +2878,13 @@ if (event === "launch") {
   if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
   const completedDefaultRetire = readDefaultRetireMarker();
   if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
+    // A retire kept after its workspace delete (an unconfirmed removal) removes now.
+    await removeAdmissions();
+    const viaRoot = admittedTeam(completedDefaultRetire.team || meta.team || defaultTeamId());
+    if (viaRoot) {
+      const removed = admittedTeams.get(viaRoot) === true;
+      await finish({ meta: retiredMeta({ retired: true, aliasReusable: removed, aliasReason: removed ? "admission-removed" : "admission-kept", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : {}) });
+    }
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); ${ALIAS_UNRELEASED_REMEDY}` }) });
   }
   // A mint killed or failed after aw may have registered the identity, with no bound
@@ -2924,11 +2948,13 @@ if (event === "launch") {
       await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `this home's record of an interrupted mint, ${pendingMintFile()}, is unusable (${onDisk.problem}), so whether alias "${instance}" was registered is unknown: run ${membersRead(team && validAwebTeamId(team) ? team : "<team>")} in the team's root to see whether it holds a certificate there, then remove that file and retire again`].join(" | ")}` }, 1);
     }
   }
+  if (!meta.alias) await removeAdmissions();
   if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(admissionNotes.length ? { warning: `oats-aweb: ${admissionNotes.join(" | ")}` } : {}) });
   // An attributed spawn rolled back before its connect has no workspace to delete:
   // its one remote effect, the membership, was settled above.
-  if (retireSetting && hasAdmissionRecords() && !existsSync(join(home, ".aw", "workspace.yaml"))) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : {}) });
+  if (retireSetting && hasAdmissionRecords() && !existsSync(join(home, ".aw", "workspace.yaml"))) { await removeAdmissions(); await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : {}) }); }
   if (!existsSync(join(home, ".aw"))) {
+    await removeAdmissions();
     await finish({ meta: retiredMeta({ retired: false, reason: "no-local-identity-key" }), warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
   }
   try {
@@ -2941,6 +2967,12 @@ if (event === "launch") {
     const raw = run(["aw", "workspace", "delete", workspaceId || meta.alias, "--json"], home);
     let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
     const viaRoot = admittedTeam(meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId());
+    if (viaRoot) {
+      // The delete is done: recorded first, so a retire kept by an unconfirmed removal
+      // doesn't send it again, then the root removes.
+      writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: false, aliasReason: "admission-kept", receipt: doc });
+      await removeAdmissions();
+    }
     const released = viaRoot ? admittedTeams.get(viaRoot) === true : doc?.alias_released === true;
     const reason = viaRoot ? (released ? "admission-removed" : "admission-kept") : typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
     if (!viaRoot && !released && reason === "team_not_hosted") {

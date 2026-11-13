@@ -95,6 +95,9 @@ test("acceptance 13: an explicit leave of an admitted joined team removes the me
   assert.equal(remove[0].cwd, fx.rootHome);
   assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
   assert.ok(!existsSync(joinedHome(fx)), "the joined identity is deleted");
+  // aw refuses a joined (external) home's workspace delete outside aweb's hosted zone: said, never claimed done.
+  assert.ok(JSON.stringify(r.doc.warnings).includes("workspace on ops:acme.example stays at the service until it goes stale"), JSON.stringify(r.doc));
+  assert.ok(!JSON.stringify(r.doc.actions).includes('"released"'), JSON.stringify(r.doc.actions));
   assert.deepEqual(joinedLabels(fx), []);
   const back = fx.command("dev-1", "join", ["--labels", "ops"]);
   assert.equal(back.status, 0, back.stdout + back.stderr);

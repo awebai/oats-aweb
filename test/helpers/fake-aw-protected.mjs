@@ -19,6 +19,7 @@
 // stdout and exits 1. The protected service is <base>/service.json:
 //   policy: {version, digest, bounds}; teams: {<team>: "protected"|"legacy"|"missing"}
 //   endorse: [answers, one per call]: "pending" | "committed" | "committed-without-chain" | {code}
+//   workspaceDelete: {code}: the next plain workspace deletes fail with that code
 //   admit: {code} | {code, charge: true} (it commits, then every answer is code: aw's prepare_unconfirmed)
 //          | {lostOnce: true} (the first execute's answer is lost)
 //   install: {code}; remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
@@ -216,9 +217,24 @@ if (args[0] === "service" && args[1] === "init") {
   console.log("Connected"); process.exit(0);
 }
 
-// ---- workspace delete (workspace.go: a team outside aweb's hosted zone is a plain
-// delete, alias_released false, team_not_hosted), team list, id team members
-if (args[0] === "workspace" && args[1] === "delete") { const h = homeDir(); if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("", "no workspace in " + h); fs.rmSync(path.join(h, "workspace.yaml")); emit({ alias: args[2], identity_deleted: true, alias_released: false, alias_released_reason: "team_not_hosted" }); }
+// ---- workspace delete (workspace.go). Every team here is outside aweb's hosted zone:
+// - through --identity-home (an external home), aw refuses before any request (exit 2);
+// - from the home's own .aw, a plain delete: alias_released false, team_not_hosted;
+// - the server authenticates the delete with the member's certificate, and refuses one the
+//   root revoked (team_auth_deps.py): aw's http_error envelope, 401.
+if (args[0] === "workspace" && args[1] === "delete") {
+  const h = homeDir();
+  if (identityHome) { const principal = (/^did:\\s*(\\S+)/m.exec(fs.existsSync(path.join(h, "identity.yaml")) ? fs.readFileSync(path.join(h, "identity.yaml"), "utf8") : "") || [])[1] || h; console.error("refusing aw workspace delete through external identity home for principal " + principal + "; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)"); process.exit(2); }
+  if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("", "no workspace in " + h);
+  const wsTeam = (/^team_id:\\s*(\\S+)/m.exec(fs.readFileSync(path.join(h, "workspace.yaml"), "utf8")) || [])[1];
+  const certPath = wsTeam ? path.join(h, "team-certs", certFile(wsTeam)) : null;
+  const certId = certPath && fs.existsSync(certPath) ? readJson(certPath).certificate_id : null;
+  const revoked = fs.existsSync(path.join(base, "removed.jsonl")) && fs.readFileSync(path.join(base, "removed.jsonl"), "utf8").includes(String(certId));
+  if (certId && revoked) { console.error("Error: certificate revoked"); if (json) console.log(JSON.stringify({ error: { code: "http_error", http_status: 401, detail: "certificate_invalid:revoked", message: "certificate revoked" } })); process.exit(1); }
+  if (svc().workspaceDelete && svc().workspaceDelete.code) fail(svc().workspaceDelete.code, "workspace delete: " + svc().workspaceDelete.code);
+  fs.rmSync(path.join(h, "workspace.yaml"));
+  emit({ alias: args[2], identity_deleted: true, alias_released: false, alias_released_reason: "team_not_hosted" });
+}
 if (args[0] === "team" && args[1] === "list") emit({ memberships: [] });
 // id team members (id_team.go runTeamMembers): active certificates, read with the
 // caller's own key; a private team (the default here) answers only a member of it.

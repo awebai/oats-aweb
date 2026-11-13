@@ -202,14 +202,20 @@ its first sentence and this section; the full texts are here.
 
 ## Human attribution: retire and reconciliation
 
-A retire removes each membership an opted-in home holds, before it deletes
-the workspace. The root removes it through the protected service
+A retire removes each membership an opted-in home holds, right after it
+deletes the home's workspace: the server authenticates that delete with the
+membership's certificate, which the removal revokes. Before either, it resumes
+an admission whose outcome is unknown, so an outcome OATS can still learn
+keeps the home with nothing deleted. A joined identity's workspace can't be
+deleted through aw on a team outside aweb's hosted zone: retire says so, and
+that record stays at the service until it goes stale. The root removes a
+membership through the protected service
 (`aw id team remove-agent`, from the root's home, with the root's copy of the
 certificate under `D/.aweb-endorsed-root/<alias>/admissions/`). The removal's
 operation id is kept in the home (`.oats-aweb/removal-<team-label>.json`), so
 a retry never sends a second one, and a confirmed removal deletes the root's
-copy. An admission whose outcome is unknown is resumed first, with its own
-operation id.
+copy. A retire kept by an unconfirmed removal never sends the workspace
+delete again: the rerun only removes.
 
 What a retire says when it can't remove a membership:
 
@@ -239,8 +245,9 @@ A home's own `oats aweb join` and `leave` follow the same rules. A join
 issues the joined identity's chain from this home and has the root admit it,
 never through a member invite; a team outside `attribution.teams` refuses
 `E_ENDORSE_POLICY` (`unlisted`), and a join that fails after its key exists
-keeps the joined identity for the rerun. A leave removes the membership
-through the root, then deletes the joined identity: an unknown admission or
+keeps the joined identity for the rerun, which reuses its key and chain. A
+leave removes the membership through the root, then deletes the joined
+identity, its workspace record left to go stale as at retire: an unknown admission or
 an unconfirmed removal keeps it for the rerun, and a root that can't act
 keeps the membership with `admission-removal-blocked`, its record kept for
 the home's retire and `--reconcile-admissions`. A joined team admitted
