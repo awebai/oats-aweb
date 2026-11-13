@@ -21,7 +21,8 @@
 //   endorse: [answers, one per call]: "pending" | "committed" | "committed-without-chain" | {code}
 //   admit: {code} | {lostOnce: true} (the first execute's answer is lost)
 //   install: {code}; remove: "served" | "unserved" | {code}
-//   policyRead: {code}; createKill: true (create --no-address dies after its key)
+//   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
+//   createKill: true (create --no-address dies after its key)
 //   wake: "running" (the host wake broker runs; otherwise it doesn't)
 // Every call is logged to <base>/calls.jsonl; every admission charge, keyed by
 // operation id, to <base>/charges.json; every issued child to issued.jsonl.
@@ -134,7 +135,7 @@ if (cmd === "id team admission-policy") {
   const team = flag("--team"); if (!team) usage("--team is required");
   profile(); registered(homeDir());
   const s = svc();
-  if (s.policyRead) fail(s.policyRead.code, "team " + team + ": " + s.policyRead.code);
+  if (s.policyRead && (!s.policyRead.teams || s.policyRead.teams.includes(team))) fail(s.policyRead.code, "team " + team + ": " + s.policyRead.code);
   // A protected team the policy doesn't list has no policy for it: admission_policy_missing (RequireAdmissionPolicy).
   const mode = s.teams[team] || (s.policy.teams.includes(team) ? "protected" : "missing");
   if (mode === "missing") fail("admission_policy_missing", "team " + team + ": team " + team + " has no protected admission policy at this service");

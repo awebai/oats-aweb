@@ -3097,7 +3097,9 @@ if (event === "launch") {
         host: hostname(), optIn: OPT_IN,
         print: json ? undefined : (text) => console.log(text),
       });
-      answer(0, { schemaVersion: 1, ok: true, result }, `✓ the root ${result.root.id} is endorsed by ${result.human.id} for ${result.teams.join(", ")}; settings.oats.aweb.attribution is recorded. Spawns into these teams are now attributed.`);
+      answer(0, { schemaVersion: 1, ok: true, result }, result.state === "already-endorsed"
+        ? `✓ already endorsed: the root ${result.root.id}, by ${result.human.id}, for ${result.teams.join(", ")}${Object.values(result.refreshed).some((v) => v === true || v.length) ? `; refreshed ${JSON.stringify(result.refreshed)}` : "; nothing changed"}.`
+        : `✓ the root ${result.root.id} is endorsed by ${result.human.id} for ${result.teams.join(", ")}; settings.oats.aweb.attribution is recorded. Spawns into these teams are now attributed.`);
     } catch (e) {
       const code = typeof e.code === "string" && e.code.startsWith("E_") ? e.code : "E_ENDORSE_FAILED";
       const { stage, ...details } = e.details || {};

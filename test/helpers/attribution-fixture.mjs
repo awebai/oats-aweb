@@ -27,8 +27,9 @@ export const PROFILE_TEXT = `${JSON.stringify({ v: 1, service_id: "svc-acme", re
 /** `capability`: the capability directory to run (a test copy, for a flipped
  *  constant). `teams`: the setting's protected teams. `root`: the root home
  *  setup finds, "endorsed" (with its chain), "registered" (a did:aw with no
- *  chain yet), "local" (a did:key) or "none". */
-export function attributionFixture(t, { attribution = true, features = ["spawn-attribution"], label = "Juan Pérez", delivery = "channel", runtime = "claude", settings: extraSettings = {}, teams = [TEAM, OPS], service = {}, capability = CAPABILITY, root = "endorsed" } = {}) {
+ *  chain yet), "local" (a did:key) or "none". `extraTeams`: more teams the
+ *  deployment maps, [{label, team}], beyond default and ops. */
+export function attributionFixture(t, { attribution = true, features = ["spawn-attribution"], label = "Juan Pérez", delivery = "channel", runtime = "claude", settings: extraSettings = {}, teams = [TEAM, OPS], service = {}, capability = CAPABILITY, root = "endorsed", extraTeams = [] } = {}) {
   const hookPath = join(capability, "bin", "oats-aweb.mjs"), binding = join(capability, "bin", "oats-aweb-binding.mjs");
   const ws = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-attr-")));
   t.after(() => rmSync(ws, { recursive: true, force: true }));
@@ -59,7 +60,7 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
   const env = {
     PATH: fake.path, HOME: ws, OATS_CLI_BIN: kernel.cli, OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: "github.com/acme/agents", OATS_WORKSPACE_NAME: "acme",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
-    OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }, { label: "ops", team: OPS, default: false, from: "shared" }]), OATS_TEAMS_SOURCE: "live",
+    OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }, { label: "ops", team: OPS, default: false, from: "shared" }, ...extraTeams.map(({ label, team }) => ({ label, team, default: false, from: "shared" }))]), OATS_TEAMS_SOURCE: "live",
     OATS_RUNTIME: runtime, OATS_SETTINGS: JSON.stringify(settings),
   };
   const hook = (event, name, extra = {}) => {

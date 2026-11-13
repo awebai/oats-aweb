@@ -7,7 +7,8 @@
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
+import { policyMissingText } from "./admission.mjs";
+import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, chainRefusal, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
 import { PROTECTED_AW_MIN, REQUEST_BINDING_SERVED, AwRefusal, admissionPolicyArgv, awJson, createNoAddressArgv, endorseArgv } from "./protected-client.mjs";
 import { canonicalTeamServerURL } from "./team-server-url.mjs";
 
@@ -109,16 +110,9 @@ function readOperation(rootHome) {
 export function endorseRoot(o, ctx) {
   const D = ctx.deployment;
   // A deployment has one root, and a rerun after success is the refresh.
-  if (ctx.live) {
-    const recorded = ctx.live.root?.home;
-    const asked = o.newRoot ? join(D, ROOT_DIR, o.name) : o.rootHome && resolve(o.rootHome);
-    if (asked && recorded && resolve(asked) !== resolve(recorded)) throw attributionError("E_ENDORSE_ONE_ROOT", `this deployment already records the root ${ctx.live.root.id} at ${recorded}; a deployment has one root → rerun with --root-home ${recorded}, or follow the README's "Human attribution: revocation" to replace it`, { root: ctx.live.root.id, home: recorded });
-    throw attributionError("E_ENDORSE_ONE_ROOT", `this deployment already records the root ${ctx.live.root?.id} → the rerun that refreshes its policy and teams isn't in this build yet`, { root: ctx.live.root?.id, home: recorded });
-  }
+  if (ctx.live) return refresh(o, ctx);
   // 1. Preflight, before any effect.
-  const version = ctx.kernel();
-  if (!Array.isArray(version?.features) || !version.features.includes(SPAWN_ATTRIBUTION_FEATURE)) throw attributionError("E_SETUP_KERNEL", `attribution needs an OATS kernel that lists ${SPAWN_ATTRIBUTION_FEATURE} (OATS ${KERNEL_FLOOR} or later); this one doesn't → upgrade OATS`);
-  if (!ctx.versionAtLeast(ctx.awVersion, PROTECTED_AW_MIN)) throw attributionError("E_SETUP_AW_VERSION", `attribution needs aw ${PROTECTED_AW_MIN} or later, the protected-client floor; this host has ${ctx.awVersion || "an unreadable aw"} → upgrade aw`);
+  clientPreflight(ctx);
   if (!o.newRoot && o.rootHome === undefined) {
     const dir = join(D, ROOT_DIR);
     let candidates = [];
@@ -146,8 +140,7 @@ export function endorseRoot(o, ctx) {
   let profile;
   try { profile = JSON.parse(readFileSync(o.profile, "utf8")); } catch { profile = null; }
   if (typeof profile?.registry_origin !== "string" || typeof profile?.service_id !== "string") throw attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${o.profile} names no service id or registry origin → have the service's operator provision it again`, { key: profileKey, problem: "profile-mode", file: o.profile });
-  const scan = ctx.scan({ service: profile.service_id });
-  if (scan.findings.length) throw attributionError("E_PROTECTED_KEY_REACHABLE", `this host's user can reach ${scan.findings.length} protected key location${scan.findings.length > 1 ? "s" : ""} (${scan.findings.slice(0, 3).map((f) => f.reference).join(", ")}${scan.findings.length > 3 ? ", …" : ""}), which an opted-in deployment must not → migrate them with aweb's package 8 (aweb-acxy.8), then rerun setup; nothing was changed`, { findings: scan.findings, unknown: scan.unknown });
+  keyPreflight(ctx, profile.service_id);
   const mapped = [...(ctx.teams.default ? [ctx.teams.default] : []), ...ctx.teams.mapped.filter((t) => t.team !== ctx.teams.default?.team)];
   let teams;
   if (o.teams) {
@@ -228,6 +221,90 @@ export function endorseRoot(o, ctx) {
   catch (e) { throw attributionError("E_ENDORSE_FAILED", `the root is endorsed, but the setting couldn't be written: ${oneLine(e.message)} → rerun the same setup, which records it`, { step: "record" }); }
   spend();
   return { state: "committed", root: { id: rootId, home: rootHome, created }, human: setting.human, teams, certificateId: answer.certificate_id, endorsement: setting.endorsement };
+}
+
+/** The kernel's feature and the protected-client floor (step 1). */
+function clientPreflight(ctx) {
+  const version = ctx.kernel();
+  if (!Array.isArray(version?.features) || !version.features.includes(SPAWN_ATTRIBUTION_FEATURE)) throw attributionError("E_SETUP_KERNEL", `attribution needs an OATS kernel that lists ${SPAWN_ATTRIBUTION_FEATURE} (OATS ${KERNEL_FLOOR} or later); this one doesn't → upgrade OATS`);
+  if (!ctx.versionAtLeast(ctx.awVersion, PROTECTED_AW_MIN)) throw attributionError("E_SETUP_AW_VERSION", `attribution needs aw ${PROTECTED_AW_MIN} or later, the protected-client floor; this host has ${ctx.awVersion || "an unreadable aw"} → upgrade aw`);
+}
+
+/** The A5 scan (C-5): a finding refuses, and nothing is changed. */
+function keyPreflight(ctx, service) {
+  const scan = ctx.scan({ service });
+  if (scan.findings.length) throw attributionError("E_PROTECTED_KEY_REACHABLE", `this host's user can reach ${scan.findings.length} protected key location${scan.findings.length > 1 ? "s" : ""} (${scan.findings.slice(0, 3).map((f) => f.reference).join(", ")}${scan.findings.length > 3 ? ", …" : ""}), which an opted-in deployment must not → migrate them with aweb's package 8 (aweb-acxy.8), then rerun setup; nothing was changed`, { findings: scan.findings, unknown: scan.unknown });
+}
+
+/** Every team D maps, its default first. */
+const mappedTeams = (ctx) => [...(ctx.teams.default ? [ctx.teams.default] : []), ...ctx.teams.mapped.filter((t) => t.team !== ctx.teams.default?.team)];
+
+/**
+ * The rerun with a root recorded (step 8, Edge cases): it prepares nothing.
+ * It checks the root is still endorsed, reads each recorded and each newly
+ * mapped team's policy as the root, and then, all or nothing, rewrites the
+ * policy, adds the newly mapped teams the policy lists, and takes a new
+ * --service URL or a re-provisioned profile's digest, in one write.
+ */
+function refresh(o, ctx) {
+  const live = ctx.live, D = ctx.deployment;
+  const rootHome = live.root.home;
+  const asked = o.newRoot ? join(D, ROOT_DIR, o.name) : o.rootHome && resolve(o.rootHome);
+  if (asked && resolve(asked) !== resolve(rootHome)) throw attributionError("E_ENDORSE_ONE_ROOT", `this deployment already records the root ${live.root.id} at ${rootHome}; a deployment has one root → rerun with --root-home ${rootHome}, or follow the README's "Human attribution: revocation" to replace it`, { root: live.root.id, home: rootHome });
+  if (o.human !== live.human.id) throw argumentError(`this deployment's root is endorsed by ${live.human.id}, not ${o.human}; a rerun names the same human`);
+  if (resolve(o.profile) !== resolve(live.service.profile)) throw argumentError(`this deployment records the protected profile ${live.service.profile}; a rerun names the same file`);
+  clientPreflight(ctx);
+  const homeProblem = rootHomeProblem(rootHome, { deployment: D });
+  if (homeProblem) throw homeProblem;
+  const bad = profileProblem(o.profile, { key: "--protected-profile" });
+  if (bad) throw bad;
+  const digest = profileDigest(o.profile);
+  keyPreflight(ctx, live.service.id);
+  const who = readWho((args) => ctx.aw(["aw", ...args], rootHome, 60000), join(rootHome, ".aw"));
+  if (who.kind !== "verified") throw chainRefusal(who, { who: "the endorsed root", step: "issuer" });
+  if (who.humanId !== live.human.id) throw chainRefusal({ kind: "revoked", reason: "another_human" }, { who: "the endorsed root", step: "issuer" });
+
+  const run = (argv) => awJson(ctx.aw, "id team admission-policy", argv, rootHome, 60000);
+  /** One team's policy as the root: {policy}, or {problem}; an unavailable read throws, so nothing changes. */
+  const read = (team) => {
+    let doc;
+    try { doc = run(admissionPolicyArgv({ team, profile: o.profile })); }
+    catch (e) {
+      if (!(e instanceof AwRefusal)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${oneLine(e.message)}); nothing was changed → retry setup`, { team });
+      if (e.awCode === "admission_policy_missing") return { problem: "unlisted" };
+      if (SCOPE.has(e.awCode)) return { problem: "requester-unbound" };
+      if (!e.awCode || UNKNOWN.has(e.awCode) || /_unavailable$/.test(e.awCode)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${e.awCode || "no answer"}); nothing was changed → retry setup once the protected service answers`, { team, code: e.awCode ?? null });
+      throw attributionError("E_ENDORSE_FAILED", `${team}'s admission policy read was refused (${e.awCode}); nothing was changed → rerun setup`, { step: "prepare", team, code: e.awCode });
+    }
+    return doc?.mode === "protected" && doc.policy ? { policy: doc.policy } : { problem: "unlisted" };
+  };
+  const recorded = live.teams.map((team) => ({ team, ...read(team) }));
+  const added = mappedTeams(ctx).map((t) => t.team).filter((team) => !live.teams.includes(team)).map((team) => ({ team, ...read(team) }));
+  const current = recorded.find((r) => r.policy)?.policy ?? added.find((r) => r.policy)?.policy;
+  const policyChanged = !!current && (current.version !== live.endorsement.policy.version || current.digest !== live.endorsement.policy.digest);
+  const failures = [...recorded, ...added].filter((r) => r.problem).map(({ team, problem }) => ({ team, problem }));
+  if (failures.length) {
+    const unbound = failures.filter((f) => f.problem === "requester-unbound");
+    const why = failures.map((f) => f.problem === "unlisted"
+      ? `${f.team}: ${policyMissingText(f.team, live.root.id)}`
+      : `${f.team}: this root isn't bound for its controller → ${bindingStep({ root: live.root.id, human: live.human.id, teams: [f.team] })}`).join(" ");
+    const skipped = policyChanged ? ` The policy rewrite was skipped too, so spawns into the recorded teams keep refusing policy_changed until this is fixed.` : "";
+    const message = `${why} Nothing was written, the listed teams included.${skipped} The ways out: 1. bind the team (for requester-unbound), or remove its mapping (\`oats teams …\`; for unlisted, the only way in v1); 2. then rerun \`oats aweb setup --endorse-root\`.`;
+    if (unbound.length) throw attributionError("E_ENDORSE_FAILED", message, { step: "prepare", problem: "requester-unbound", teams: failures, bind: { root: live.root.id, human: live.human.id, teams: unbound.map((f) => f.team) } });
+    throw attributionError("E_ENDORSE_POLICY", message, { problem: "unlisted", teams: failures });
+  }
+  const next = {
+    ...live,
+    service: { ...live.service, url: o.service, profileDigest: digest },
+    teams: [...live.teams, ...added.map((a) => a.team)],
+    endorsement: { ...live.endorsement, policy: policyChanged ? { version: current.version, digest: current.digest } : live.endorsement.policy },
+  };
+  const refreshed = { policy: policyChanged, teams: added.map((a) => a.team), serviceUrl: o.service !== live.service.url, profileDigest: digest !== live.service.profileDigest };
+  if (refreshed.policy || refreshed.teams.length || refreshed.serviceUrl || refreshed.profileDigest) {
+    try { ctx.record(next); }
+    catch (e) { throw attributionError("E_ENDORSE_FAILED", `the refresh couldn't be written: ${oneLine(e.message)} → rerun the same setup`, { step: "record" }); }
+  }
+  return { state: "already-endorsed", root: { id: live.root.id, home: rootHome }, human: live.human, teams: next.teams, endorsement: next.endorsement, refreshed };
 }
 
 const oneLine = (text) => String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
