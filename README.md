@@ -1178,6 +1178,13 @@ that root only when `aw team list --json` run in it lists `T`; the cwd,
 they refuse, naming the team, the root tried and the remedy (`oats aweb setup
 --join <label> --invite-stdin` in the deployment, then a respawn).
 
+Wherever the provider matches a team id it was given (a setting, a record, the
+kernel's environment) against one aw reports, it compares them as aw spells
+them: the name and the domain lowercased and trimmed, without a trailing dot
+(`lib/aweb-team-id.mjs`). A mixed-case `roots` key or default team therefore
+finds its root, its certificate and its workspace. What the provider writes or
+prints keeps the spelling it was given.
+
 The general OATS >=0.42.0 compatibility floor applies to the remaining provider
 behavior; explicit wider-team LOCAL join additionally requires the selected same
 kernel to support `inspect --home` for recorded soul provenance, then
@@ -1524,6 +1531,178 @@ whose last start was on the broker path, `aw wake deregister` runs at the same
 time as the delete. Before that, retire leaves each joined team and releases each
 unfinished join. While a release that needs the member key fails (anything but
 `team_not_hosted`), retire keeps the key and the record and exits nonzero.
+
+### A retained seat on a server other than aweb Cloud
+
+On an aweb server other than aweb Cloud, an agent's identity is a retained
+seat: an existing member's `.aw` directory that the spawn copies into the
+new home and connects (`identity.source`, its absolute path). The commands
+that make one are in awebai/oats
+[`docs/container.md`, "Making a seat"](https://github.com/awebai/oats/blob/main/docs/container.md#making-a-seat).
+The seat directory must contain:
+
+- `signing.key`, the member's key;
+- `team-certs/`, the member's team certificate, and `teams.yaml` with a
+  membership of the team (`aw id team accept-invite` or `aw id team
+  fetch-cert` writes both);
+- `workspace.yaml` with `aweb_url`, the team's server, which `aw workspace
+  connect --service <the team's aweb server>` writes when run in the seat's
+  parent directory;
+- the team: the deployment's default team, or else the active team in
+  `teams.yaml`.
+
+The spawn checks these before it takes the seat's lock or copies anything, in
+this order: `identity.source` is an absolute path, it holds `signing.key`, its
+`workspace.yaml` records a usable `aweb_url`, a team can be determined, and its
+`teams.yaml` records a membership of that team. Each refusal names its fix. A soul's readiness (`oats readiness`) reports the
+first one with the spawn's own text. A retained seat mints nothing and takes
+its team as above, so readiness asks it for neither a messaging root nor a
+default team. A lock another seat holds is not a readiness problem: the spawn
+checks it when it runs, after these. A seated home's readiness does not read
+the source again.
+
+The membership is read as `aw workspace connect --team` looks for it: the
+team id of each item of `teams.yaml`'s `memberships` list, compared trimmed
+and without regard to ASCII case. A `teams.yaml` that does not exist is
+refused, as aw refuses it. The limit: the check decides only that. A
+`teams.yaml` outside the form aw writes, with no `memberships` list, or with a
+team id that is not ASCII is not decided here, and neither is the
+membership's certificate file (`cert_path`): aw decides those at its connect,
+after the copy. When that connect fails, the spawn binds the seat back from
+its source and removes the copy; if aw refuses that too, as it does for the
+same `teams.yaml`, the spawn keeps the copy and the lock and says how to
+restore them.
+
+The spawn reads the server only from that `workspace.yaml`. Any http or https
+URL with a host is accepted, a path prefix (a server behind a reverse proxy) or
+an IPv6 literal included, as long as it holds no userinfo, query, fragment,
+whitespace or control characters; it reaches aw as one argument and is never
+printed, so a failed spawn withholds aw's own output, which may name it. The
+file is read in the form aw writes it: a top-level key and its value on one
+line, and its `memberships:` list of flat mappings at aw's indentation, with LF
+or CRLF line ends. A `workspace.yaml` in any other form (a flow collection, a
+block or multi-line scalar, an escape, an anchor or tag, a quoted key, a
+document marker, other indentation, another line break, or a character
+outside YAML 1.1's printable set) is refused whole, rather than read for an
+`aweb_url` YAML might give differently. The limit: the reader decides only the
+top-level `aweb_url` of a file aw writes, and isn't a YAML validator. A file
+that isn't valid YAML may still be accepted, and the URL checks (http or
+https, no userinfo, query or fragment, one argument to aw, never printed)
+still bound what reaches aw.
+`OATS_AWEB_URL` is not read (#241): a seat without a usable `aweb_url`
+is refused before anything is copied, with that `aw workspace connect` as the
+fix, and the soul's readiness reports the same refusal. When a retire
+compensates a spawn that did not answer, it says how to bind the identity back
+to its source on that same server: as a command naming the server when it is a
+plain service URL (http or https, a host, an optional port, and no path but
+`/` or `/api`), and otherwise as `aw workspace connect` run there with the
+service in its `workspace.yaml`.
+
+Per aw 1.36.58's source (not a live run): on one server, the identity has one
+server workspace, so connecting the seat directory and then spawning the
+retained seat reuses it, and the spawn moves its path to the instance home;
+that second connect does not update the seat directory's own
+`workspace.yaml`. Retiring the instance releases the seat's lock and neither
+deletes nor restores that server workspace: to use the seat directory itself
+again, run `aw workspace connect` from there again; otherwise the next
+retained spawn moves the workspace to its new home.
+
+These work on aweb Cloud only, because aw treats only a Cloud team as hosted:
+releasing an identity at retire, `oats aweb connect`, `setup --username` and
+the hosted `setup --create`. A retire of a retained seat, on any server,
+releases only the seat's lock and leaves the identity as it is. On another
+server, where a retire releases a workspace (a team the home joined, or an
+identity it minted), it deletes the workspace and leaves the certificate and
+the alias, so a successor cannot reuse the name yet: `oats aweb roster` marks
+that certificate as retired, with the `aw id team remove-member` command the
+team's controller runs to remove it.
+
+### The retained seat's lock
+
+A retained seat (`identity.source`) is held through `.aw-retained-seat.json`
+beside the source's `.aw`: a spawn creates it, and a take-over
+(`identity.takeOver: true`) replaces it. A spawn's success rewrites it with
+the alias, and a retire or a failed spawn's rollback removes it. Every one of
+these changes is one guarded step (`lib/seat-lock.mjs`), using two private
+files beside the lock:
+
+- `.aw-retained-seat.json.guard`, created exclusively for the change and
+  removed after it, so one change runs at a time. Another change waits up to
+  3 s for it, then refuses.
+- `.aw-retained-seat.json.held`, the lock moved aside by `rename(2)` while it
+  is checked. The change acts only on the lock it decided on: for a retire, one
+  that still names its home; for a take-over, the very lock it read; for a
+  plain spawn, none. It then removes the lock, or replaces it with an
+  exclusive create. Any other lock is linked back untouched.
+
+The protocol in one statement: every read, replace and remove of the lock
+happens under the guard; no guard spans an aw call; every exit after an aw call
+states the lock's holder as read under the guard, or says it is unknown; every
+guarded step reports what it could not clean, and nothing runs after a step
+that left anything. A read
+that can't be made (a guard or moved lock left by a killed change) is never
+taken for "no other holder": a spawn then reconnects nothing and keeps its copy.
+
+So a retire never removes a lock another seat took over after it looked, and
+of two take-overs of one lock only one wins. The other refuses and names the
+holder. A spawn that fails after another seat took the lock over leaves that
+seat's server binding alone: it doesn't connect the legacy home again, and it
+removes only its own copy.
+
+Three limits remain:
+
+- **On a filesystem where `rename`, `link` or an exclusive create isn't
+  atomic,** which includes some network and FUSE filesystems, two changes can
+  still interleave, and nothing detects it.
+- **The guard covers file operations, never an aw call.** A take-over can land
+  while a spawn's `aw workspace connect` runs, or while its rollback reconnects
+  the legacy home. Then the server binding may end up with the spawn's home or
+  the legacy home rather than with the seat that now holds the lock. The lock
+  is read again after the spawn's last aw call (its wake registration, where
+  the home has one) and after every reconnect a rollback tries, whether or not
+  it succeeded. If another seat holds it, the spawn fails, removes any wake
+  registration it made, says where the binding may point, and names the
+  `aw workspace connect --service=… --team=…` to run from that seat's home.
+  The command names the server only when it is a plain service URL, as the
+  rebind a retire prints does; otherwise it says to run `aw workspace connect`
+  with the service, team and role in the source's `workspace.yaml`. This
+  needs a take-over of a seat whose runtime is still alive, and the take-over
+  already warns about that: there are then two seats with one key, and the old
+  one must be stopped.
+- **Each exit names the holder as last read under the guard.** A take-over
+  after that read is not reported. Taking over a live seat is operator error,
+  and the take-over warns about it.
+
+A directory at the lock's name is never taken for a lock: a change refuses it
+before moving anything, and says to remove or move it.
+
+A change that was killed can leave either private file behind. The next spawn
+or take-over refuses with the file and its fix, and the next retire reports it
+in its warning, whether or not the lock is still there. None of them adopts or
+removes one, or judges age, pid or liveness:
+
+- **A guard:** remove it once no change of that identity is running on any
+  host that shares the directory.
+- **A moved lock:** move it back (`mv .aw-retained-seat.json.held
+  .aw-retained-seat.json`) if the seat it names still holds the identity and
+  no lock exists. If the lock's name holds bytes that are not a lock (a write
+  that did not finish), move it back over them (`mv -f`). Otherwise remove it.
+
+A change whose step fails (a full disk, an I/O error) undoes its own effect
+before it releases the guard:
+- a guard it could not record itself in is removed;
+- the bytes a failed lock write left are removed, all of them or a prefix (a
+  write can fail after its last byte). If they can't be removed, the failure
+  says so: they name no seat, so the fix is to remove them, or, for a
+  take-over, to move the holder's lock back over them (`mv -f`);
+- a moved lock it could not remove goes back to the lock's name, over the
+  lock it wrote.
+
+Whatever a step can't clean, its own guard or a moved lock included, the step
+reports with its fix, and the change stops there. A spawn makes no further aw
+call, briefs no seat and doesn't touch the lock again. Its failure names each
+leftover. A retire adds the leftovers to its warning; its exit status is what
+it would be with the lock untouched.
 
 ## Isolated hostOnly contract verification
 

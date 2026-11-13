@@ -21,6 +21,101 @@
   A registry aw reports in `aw id team list --json` still comes first.
   Nothing a deployment must change.
 
+- **Fixed: a retained seat's failed `aw wake register` no longer prints aw's
+  output (#259).** The seat's broker registration, at its spawn and at every
+  start of its home, ran outside the withholding #241 gave the seat's other
+  calls, so a failure printed aw's stderr, which may name the seat's service.
+  It is now withheld like the others. The spawn and the start refuse as
+  before, and the start's refusal is no longer cut short. A joined team's
+  registration is unchanged: its identity home holds no seat service.
+
+- **Fixed: a retained seat with no membership of its team is refused before
+  any effect (#256).** A retained seat's spawn (`identity.source`) binds the
+  seat on the deployment's default team, else the source's active team. When
+  the source's `teams.yaml` had no membership of that team, the spawn copied
+  the seat and failed only at `aw workspace connect`. Now the spawn refuses
+  first, after the team check and before the lock, and a soul's readiness
+  reports the same text: the team, the source, and the fixes (accept the
+  team's invite with `aw id team accept-invite` or fetch its certificate with
+  `aw id team fetch-cert` in the seat's parent directory, or make the seat's
+  team the deployment's default, naming the seat's active team when it
+  differs). The membership is matched as aw matches it (trimmed, ASCII case
+  ignored). A source with no `teams.yaml` is refused too, as aw refuses it. A
+  `teams.yaml` outside the form aw writes, or with no `memberships` list, and
+  the membership's certificate file are still left to aw at connect.
+
+- **Fixed: a soul's readiness reports every retained-seat refusal it can
+  decide (#247).** A retained seat's spawn (`identity.source`) refuses before
+  any effect when the source is not an absolute path, holds no `signing.key`,
+  records no usable `aweb_url`, or no team can be determined (no default team
+  id and no active team in `<source>/teams.yaml`). Readiness reported only the
+  `aweb_url` one. It now reports each, with the spawn's own text, from the one
+  check the spawn makes. For such a seat at soul scope, readiness no longer
+  reports "no messaging root" or "no teams configured", which the retained
+  spawn never refused on: it mints nothing, and takes its team from the
+  source when the deployment has no default team. The spawn's team refusal
+  now comes before its lock check and is printed in full, and a source with
+  no `signing.key` now names the fix: point `identity.source` at the member's
+  `.aw` directory. A lock another seat holds is still checked only at spawn.
+  A seated home's readiness is unchanged.
+
+- **Changed: a retained seat reads its aweb service only from its own record
+  (#241).** A retained seat's spawn (`identity.source`) took its service from
+  `OATS_AWEB_URL` when that was set, and from the seat's
+  `<source>/workspace.yaml` `aweb_url` only otherwise, so a spawn and the
+  rebind command a retire prints could name different servers. The service
+  now comes only from that `aweb_url` (aw writes it at `aw workspace
+  connect`): any http or https URL with a host, a path prefix or an IPv6
+  literal included, with no userinfo, query, fragment, whitespace or control
+  characters. The file is read in the form aw writes it (a top-level key and
+  its value on one line, and its `memberships:` list), and a
+  `workspace.yaml` in any other form is refused whole. The reader decides
+  only that `aweb_url` and is not a YAML validator: a file that isn't valid
+  YAML may still be accepted, and the URL checks still bound what reaches
+  aw. The service is never printed: a failed
+  spawn withholds aw's own output, which may name it. `OATS_AWEB_URL` is no
+  longer read. A seat with no such `aweb_url` is refused before anything is
+  copied or locked, and the refusal names the fix: run `aw workspace connect
+  --service <the team's aweb server>` in the seat's parent directory (the one
+  that holds its `.aw`), then spawn again. A soul's readiness reports the same
+  refusal as a `needs-configuration` problem; a seated home's readiness does
+  not read the source again. While `OATS_AWEB_URL` is set, the
+  refusal says the variable is no longer read, and a spawn that has a record
+  warns that the variable is ignored; neither prints its value. The rebind
+  a retire prints names the server in a command only when it is a plain
+  service URL (http or https, a host, an optional port, and no path but `/`
+  or `/api`); otherwise it says to run `aw workspace connect` there with the
+  service in its `workspace.yaml`. **If you set
+  `OATS_AWEB_URL` for a retained seat:** record the server in the seat with
+  that `aw workspace connect` and unset the variable. A seat whose
+  `workspace.yaml` already names its server is unchanged.
+
+- **Fixed: team ids are compared as aw spells them (#252).** aw lowercases a
+  team id's name and domain, and drops a trailing dot from the domain. A
+  deployment can configure the id in another case (`Default:Example.Test`),
+  and each comparison of the configured id with one aw reports was exact. So:
+  - a spawn warned "team mismatch" on every mint;
+  - a join failed with "joined team differs", or found no root;
+  - a grant renewal kept the previous grant;
+  - retire's self-delete missed the workspace id;
+  - the roster missed the record and the presence, and setup took its own
+    mapping for another team;
+  - setup refused an invite to a mapped team (`E_SETUP_JOIN_MISMATCH`,
+    `E_SETUP_LABEL_COLLISION`), or redeemed one for a team a root was
+    already in;
+  - a joined team that became the default was left at launch;
+  - the probe refused the target as `contradictory-team`;
+  - a `roots` entry, which setup records under aw's spelling, was missed, so
+    the hook minted and read from `root` instead.
+
+  Every such comparison, in the hook and its libs, now goes through one canonical
+  comparison (`lib/aweb-team-id.mjs`), and every `roots` lookup takes the entry
+  aw reads as the same team when no key matches exactly. Two entries that both
+  do (and no exact one) count as none, as before. Setup records a team's root
+  under the key that already names it, in its own spelling, never a second one. The joined certificate's file
+  is found by the name aw gives it. Values the hook writes or prints keep the spelling
+  the kernel or aw gave. Nothing a deployment must change.
+
 - **Removed: the captured-execution path (#242).** The captured bindings
   (the `OATS_BINDING_FILE`, `OATS_INVOCATION_CONTEXT_FILE` and
   `OATS_SOURCE_RECEIPT_FILE` variables, and the `binding` and `invocation`
@@ -83,6 +178,42 @@
   file in the home, `.oats-aweb/pending-mint.json`, and a new meta key,
   `pendingMint`, which a failed spawn answers. Nothing a deployment must
   change.
+
+- **Fixed: spawn, take-over and retire never interleave on a retained seat's
+  lock (#236).** A retire read `.aw-retained-seat.json` and then removed it,
+  so a take-over that landed in between lost its lock, and the next spawn
+  copied the key with no take-over. A take-over removed the lock and created
+  it again, so two concurrent take-overs could both pass. Every change of the
+  lock, and every read of it that decides who holds it, is now one guarded step:
+  - each change first creates `.aw-retained-seat.json.guard` exclusively;
+  - it moves the lock aside to `.aw-retained-seat.json.held` and checks it;
+  - it removes or replaces the lock only if it is still the one the change
+    decided on, and otherwise links it back.
+
+  A retire that finds another seat's lock says it did not remove it, and of
+  two take-overs one refuses, naming the holder. A spawn whose seat another
+  took over before it finished fails without taking the server binding back to
+  the legacy home, and removes only its own copy. The guard covers file
+  operations, never an aw call, so a take-over can still land while a spawn
+  connects or its rollback reconnects the legacy home. The lock is read again
+  after the spawn's last aw call and after every reconnect a rollback tries.
+  If another seat holds it, the spawn fails, removes any wake registration it
+  made, says where the binding may point and names the `aw workspace connect`
+  to run from that seat's home. Each exit names the holder as last read under
+  the guard, and a take-over after that read is not reported. That needs a
+  take-over of a seat that is still running, which is operator error and which
+  the take-over already warns against. On a filesystem whose
+  rename, link or exclusive create isn't atomic, changes can still interleave. The two private files are
+  new on-disk files beside the lock. A change that was killed may leave one
+  behind: the next spawn or take-over refuses with it and its fix, and the
+  next retire reports it; none adopts or removes it. A step that fails (the
+  guard's record, the lock's write, the moved lock's removal) undoes its own
+  effect under the guard. Every guarded step reports what it could not clean,
+  its own guard included, with its fix, and nothing runs after a step that left
+  anything: a spawn makes no further aw call and briefs no seat, and a retire
+  adds the leftovers to its warning with its exit status unchanged. The lock's name and fields are unchanged; its
+  `takenAt` is now when the seat was taken, kept when the spawn's success adds
+  the alias. Nothing a deployment must change.
 
 - **Fixed: a boolean setting left empty reads as its default (follows
   #232).** An empty YAML value (`e2ee:`) is `null`, which always meant the
