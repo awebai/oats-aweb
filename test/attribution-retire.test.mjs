@@ -4,11 +4,11 @@
 // "after the root is fixed" halves, which run --reconcile-admissions, are with
 // reconciliation (attribution-reconcile.test.mjs).
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { inAwebHostedZone, teamCertificateRelativePath } from "../oats-package/capabilities/oats-aweb/lib/aweb-team-id.mjs";
-import { POLICY } from "./helpers/fake-aw-protected.mjs";
+import { POLICY, writeIdentity } from "./helpers/fake-aw-protected.mjs";
 import { ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
 
 const RECONCILE = "oats aweb setup --reconcile-admissions";
@@ -570,4 +570,46 @@ for (const domain of ["evil-aweb.ai", "aweb.ai.example.com"]) {
 test("C-6 (v4.3.25): aw's hosted zone, as isAwebHostedNamespace reads a team id's domain", () => {
   const rows = [["a:aweb.ai", true], ["a:review.aweb.ai", true], ["a: Review.AWEB.ai. ", true], ["a:evil-aweb.ai", false], ["a:aweb.ai.example.com", false], ["a:.aweb.ai", false], ["a:x..aweb.ai", false], ["a:acme.example", false], ["not-a-team", false], ["a:", false]];
   for (const [team, inZone] of rows) assert.equal(inAwebHostedZone(team), inZone, team);
+});
+
+/** A recorded retained local seat, seat-1, on the deployment's own identity, that joined ops
+ *  through the root. Returns the settings it runs under and its lock's path. */
+function retainedSeatJoined(fx) {
+  const source = join(fx.ws, ".aw"), home = fx.homeOf("seat-1");
+  mkdirSync(home, { recursive: true });
+  const settings = { ...fx.settings, identity: { mode: "local", source } };
+  writeIdentity(join(home, ".aw"));
+  for (const identityHome of [source, join(home, ".aw")]) writeFileSync(join(identityHome, "workspace.yaml"), `alias: legacy-agent\nteam_id: ${TEAM}\naweb_url: https://aweb.acme.example/api\n`);
+  const lock = join(fx.ws, ".aweb-seat.lock");
+  writeFileSync(lock, JSON.stringify({ home, instance: "seat-1", team: TEAM, takenAt: new Date().toISOString() }));
+  fx.record("seat-1", { team: TEAM, alias: "legacy-agent", delivery: "channel", retained: true, source, lock, defaultTeam: { label: "default", team: TEAM, from: "deployment" }, identity: { mode: "local", alias: "legacy-agent", team: TEAM } });
+  const joined = fx.command("seat-1", "join", ["--labels", "ops", "--json"], { live: settings });
+  assert.equal(joined.status, 0, joined.stdout + joined.stderr);
+  return { settings, lock, source };
+}
+
+test("C-6: retiring a retained seat removes the membership it joined through the root, and leaves its source identity untouched", (t) => {
+  const fx = attributionFixture(t);
+  const { settings, source } = retainedSeatJoined(fx);
+  const { certificateId } = admission(fx, "seat-1", "ops");
+  const r = fx.retire("seat-1", { captured: settings });
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  assert.equal(r.doc.meta.retained, true);
+  assert.deepEqual(removeCalls(fx).length, 1);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
+  assert.ok(!existsSync(rootCopy(fx, certificateId)));
+  assert.ok(existsSync(join(source, "signing.key")));
+});
+
+test("C-6: a retained seat's retire kept by an unconfirmed removal keeps the seat and its lock, for the rerun", (t) => {
+  const fx = attributionFixture(t);
+  const { settings, lock } = retainedSeatJoined(fx);
+  const { certificateId } = admission(fx, "seat-1", "ops");
+  fx.fake.setService({ remove: { code: "receipt_unavailable" } });
+  const r = fx.retire("seat-1", { captured: settings });
+  assert.equal(r.status, 1, JSON.stringify(r.doc));
+  assert.equal(r.doc.meta.retired, false);
+  assert.ok(existsSync(lock), "the seat's lock is kept");
+  assert.ok(existsSync(rootCopy(fx, certificateId)));
+  assert.ok(warningOf(r).includes(RECONCILE) || warningOf(r).includes("retire"), warningOf(r));
 });

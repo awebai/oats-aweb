@@ -219,7 +219,9 @@ certificate under `D/.aweb-endorsed-root/<alias>/admissions/`). The removal's
 operation id is kept in the home (`.oats-aweb/removal-<team-label>.json`), so
 a retry never sends a second one, and a confirmed removal deletes the root's
 copy. A retire kept by an unconfirmed removal never sends the workspace
-delete again: the rerun only removes.
+delete again: the rerun only removes. A retained seat deletes no workspace of
+its own: its retire removes the memberships it joined before it releases the
+seat, and an unconfirmed removal keeps the seat and its lock.
 
 On an admitted team in aweb's hosted zone (`aweb.ai` and its subdomains), aw's
 workspace delete is hosted self-retirement: the service would revoke the

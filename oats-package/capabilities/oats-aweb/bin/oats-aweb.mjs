@@ -2808,6 +2808,9 @@ if (event === "launch") {
   meta = { ...meta, wakeJoined: false };
   writeProviderTeamsState(meta);
   if (meta.retained) {
+    // The seat deletes no workspace of its own, so the root removes what it admitted (a team the
+    // seat joined) now, before the lock goes: an outcome OATS can still learn keeps the seat.
+    await removeAdmissions();
     // The lock is released only when it names this home: one another seat has
     // taken over, or that cannot be read, is never removed here.
     // heldHere: true when the lock names this home, false when it does not, undefined when unknown.
