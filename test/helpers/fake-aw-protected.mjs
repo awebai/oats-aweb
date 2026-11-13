@@ -91,8 +91,11 @@ if (cmd === "id create --local" || cmd === "id create --no-address") {
   if (!local && !registry) usage("--no-address requires --registry: the registry origin its did:aw is registered at");
   const pending = path.join(h, ".unaddressed-create.json");
   const has = (n) => fs.existsSync(path.join(h, n));
-  if (local && has("signing.key") && has("identity.yaml") && !has("workspace.yaml") && !has("team-certs") && !has("did")) emit({ status: "already_exists", did_key: keyOf(h), identity_home: h });
-  if ((has("identity.yaml") || has("workspace.yaml") || has("team-certs")) || (has("signing.key") && !fs.existsSync(pending))) fail("identity_exists", h + " already holds an identity");
+  // aw's keyOnlyIdentity: a home holding exactly its identity file, its key and the creation lock;
+  // anything more (the exchange's id-chain.json or id-requests, a certificate) is another identity.
+  const keyOnly = () => fs.readdirSync(h).every((n) => ["identity.yaml", "signing.key", ".unaddressed-create.json.lock"].includes(n));
+  if (local && has("signing.key") && has("identity.yaml") && keyOnly()) emit({ status: "already_exists", did_key: keyOf(h), identity_home: h });
+  if ((has("identity.yaml") || has("workspace.yaml") || has("team-certs") || has("id-chain.json") || has("id-requests")) || (has("signing.key") && !fs.existsSync(pending))) fail("identity_exists", h + " already holds an identity");
   if (fs.existsSync(pending) && readJson(pending).registry !== (registry || null)) fail("identity_exists", h + " holds a creation for another registry");
   const resumed = fs.existsSync(pending);
   fs.mkdirSync(h, { recursive: true, mode: 0o700 });

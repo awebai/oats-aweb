@@ -39,6 +39,11 @@ export const REMOVAL_UNAVAILABLE = "admission-removal-unavailable — the pinned
 /** The first sentence of a longer text: what a 300-character spawn refusal carries. */
 const firstSentence = (text) => { const i = text.indexOf(". "); return i < 0 ? text : text.slice(0, i + 1); };
 
+/** The did:key an identity home's identity.yaml names, or undefined. */
+function identityKeyOf(identityHome) {
+  try { return /^did:\s*(did:key:\S+)\s*$/m.exec(readFileSync(join(identityHome, "identity.yaml"), "utf8"))?.[1]; } catch { return undefined; }
+}
+
 /** The refusal for aw's admit refusal `e` (an AwRefusal). `bounds()` reads the
  *  policy's bounds (or throws); `count` is OATS's own count of live homes
  *  holding a committed admission for the team. */
@@ -125,23 +130,31 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
   const run = (argv, cwd, timeout) => aw(argv, cwd, timeout);
   const chainAw = (args) => aw(["aw", ...args], dirname(identityHome), 60000);
   const minted = (e) => Object.assign(e, { minted: true });
-  // 1. The key (A5(b)): a rerun on the same key-only home answers already_exists.
+  // 1. The key (A5(b)). aw creates one only in an empty or key-only home, and the exchange
+  // adds its files, so a rerun (a join resumed) reuses the key this label's record names when
+  // the home holds that very key; any other identity there still refuses below.
+  let record = readAdmission(providerDir, label);
+  const ours = record && record.team === team && record.state !== "removed" && typeof record.memberKey === "string" && identityKeyOf(identityHome) === record.memberKey;
+  // An operation recorded for another key is never overwritten: its outcome is retire's to settle.
+  if (!ours && record && ["pending", "unknown", "committed"].includes(record.state)) throw attributionError("E_ATTRIBUTION_EXCHANGE", `this home records an admission to ${record.team} (operation ${record.operationId}) for a key ${identityHome} no longer holds → retire this instance, which settles that admission (${README_ADMISSION})`, { step: "key" });
   let key;
-  try { key = awJson(run, "id create --local", createLocalArgv({ identityHome }), dirname(identityHome), 60000); }
+  if (ours) key = { status: "resumed", did_key: record.memberKey };
+  else try { key = awJson(run, "id create --local", createLocalArgv({ identityHome }), dirname(identityHome), 60000); }
   catch (e) {
     if (e.code) throw e;
     throw attributionError("E_ATTRIBUTION_EXCHANGE", `the new identity's key couldn't be created in ${identityHome} (${e.awCode || e.message}) → respawn into an empty home`, { step: "key", code: e.awCode || null });
   }
   if (!["created", "resumed", "already_exists"].includes(key.status) || typeof key.did_key !== "string" || !key.did_key.startsWith("did:key:")) throw attributionError("E_ATTRIBUTION_EXCHANGE", "aw id create --local answered no key → respawn", { step: "key" });
   try {
+    // The key is recorded before the exchange: from here on this home's identity is this label's.
+    if (!ours) { record = { team, label, alias, state: "keyed", identityHome, memberKey: key.did_key, at: new Date().toISOString() }; recordAdmission(providerDir, label, record); }
     // 2. The chain (C-3a): aw 1.36.58's exchange, local, between the issuer's home and this one.
     // A key that already existed (a join's rerun) may already carry this issuer's chain.
     const attribution = plan.action !== "issue" ? CHAINLESS
       : (key.status !== "created" && installedChain({ aw: chainAw, issuer: plan.issuer, identityHome, setting })) || issueChain({ aw: chainAw, issuer: plan.issuer, identityHome, instance, setting, dir: exchangeDir });
     // 3. The admission (C-3b): its operation id persisted before prepare; a retry reuses it.
-    let record = readAdmission(providerDir, label);
-    // A refused admission, or one the root removed (a leave), starts a new operation.
-    if (!record || record.team !== team || record.state === "refused" || record.state === "removed") {
+    // A key with no admission yet, or a refused one, starts a new operation.
+    if (record.state === "keyed" || record.state === "refused") {
       // The admit's inputs too, so a retire can resume an unknown outcome with C-3b's exact retry (C-3d).
       record = { team, label, alias, operationId: randomUUID(), state: "pending", identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
       recordAdmission(providerDir, label, record);

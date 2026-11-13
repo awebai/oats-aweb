@@ -4,7 +4,7 @@
 // attribution.teams refuses at join; a leave removes the membership through
 // the root, as retire does.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { OPS, ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
@@ -152,4 +152,51 @@ test("C-6: a membership a leave couldn't remove is kept on record beside a later
   const retired = fx.retire("dev-1");
   assert.equal(retired.status, 0, JSON.stringify(retired.doc) + retired.stderr);
   assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id).filter((id) => [certificateId, again].includes(id)).sort(), [certificateId, again].sort());
+});
+
+test("C-3b (native create): a join refused after its chain exchange reruns with the same key and chain, under a new operation", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  fx.fake.setService({ admit: { code: "subject_ineligible" } });
+  assert.equal(fx.command("dev-1", "join", ["--labels", "ops"]).status, 1);
+  const refused = record(fx, "dev-1", "ops");
+  assert.equal(refused.state, "refused");
+  assert.ok(existsSync(join(joinedHome(fx), "id-chain.json")), "the exchange ran: aw's key-only create would refuse this home");
+  fx.fake.setService({ admit: undefined });
+  const again = fx.command("dev-1", "join", ["--labels", "ops"]);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  const now = record(fx, "dev-1", "ops");
+  assert.notEqual(now.operationId, refused.operationId);
+  assert.equal(now.memberKey, refused.memberKey);
+  assert.equal(fx.fake.issued().filter((x) => x.child === refused.memberKey).length, 1, "one chain, never a second request");
+});
+
+test("C-3b (native create): a join killed between its chain exchange and its admit resumes from the recorded key", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  fx.fake.setService({ admit: { code: "subject_ineligible" } });
+  fx.command("dev-1", "join", ["--labels", "ops"]);
+  fx.fake.setService({ admit: undefined });
+  // As the hook leaves it when killed after the exchange: the key recorded, no operation yet.
+  const file = join(fx.homeOf("dev-1"), ".oats-aweb", "admission-ops.json");
+  const { team, label, alias, identityHome, memberKey } = record(fx, "dev-1", "ops");
+  writeFileSync(file, JSON.stringify({ team, label, alias, identityHome, memberKey, state: "keyed" }));
+  const before = Object.keys(fx.fake.charges()).length;
+  const again = fx.command("dev-1", "join", ["--labels", "ops"]);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.equal(record(fx, "dev-1", "ops").state, "committed");
+  assert.equal(Object.keys(fx.fake.charges()).length, before + 1);
+});
+
+test("C-3b: a home whose record holds an operation for a key it no longer has refuses at key, and the operation is kept for retire", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  fx.fake.setService({ admit: { code: "receipt_unavailable" } });
+  fx.command("dev-1", "join", ["--labels", "ops"]);
+  const { operationId } = record(fx, "dev-1", "ops");
+  rmSync(joinedHome(fx), { recursive: true, force: true });
+  const r = fx.command("dev-1", "join", ["--labels", "ops"]);
+  assert.equal(r.status, 1);
+  assert.ok(r.stderr.startsWith("E_ATTRIBUTION_EXCHANGE: ") && r.stderr.includes(operationId), r.stderr);
+  assert.equal(record(fx, "dev-1", "ops").operationId, operationId);
 });
