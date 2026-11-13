@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Fixed: a soul's readiness reports every retained-seat refusal it can
+  decide (#247).** A retained seat's spawn (`identity.source`) refuses before
+  any effect when the source is not an absolute path, holds no `signing.key`,
+  records no usable `aweb_url`, or no team can be determined (no default team
+  id and no active team in `<source>/teams.yaml`). Readiness reported only the
+  `aweb_url` one. It now reports each, with the spawn's own text, from the one
+  check the spawn makes. For such a seat at soul scope, readiness no longer
+  reports "no messaging root" or "no teams configured", which the retained
+  spawn never refused on: it mints nothing, and takes its team from the
+  source when the deployment has no default team. The spawn's team refusal
+  now comes before its lock check and is printed in full, and a source with
+  no `signing.key` now names the fix: point `identity.source` at the member's
+  `.aw` directory. A lock another seat holds is still checked only at spawn.
+  A seated home's readiness is unchanged.
+
 - **Changed: a retained seat reads its aweb service only from its own record
   (#241).** A retained seat's spawn (`identity.source`) took its service from
   `OATS_AWEB_URL` when that was set, and from the seat's
