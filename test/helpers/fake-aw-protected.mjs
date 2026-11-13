@@ -25,6 +25,7 @@
 //   admit: {code} | {lostOnce: true} (the first execute's answer is lost)
 //   install: {code}; remove: "served" | "unserved" | {code}
 //   policyRead: {code}; createKill: true (create --no-address dies after its key)
+//   wake: "running" (the host wake broker runs; otherwise it doesn't)
 // Every call is logged to <base>/calls.jsonl; every admission charge, keyed by
 // operation id, to <base>/charges.json; every issued child to issued.jsonl.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -77,7 +78,7 @@ const opId = () => { const u = flag("--operation-id"); if (!/^[0-9a-f]{8}-[0-9a-
 const registered = (h) => { if (!fs.existsSync(path.join(h, "signing.key"))) fail("", "no identity in " + h); const id = idOf(h); if (!id.startsWith("did:aw:")) usage("only a registered root (with a did:aw) can request an admission"); return id; };
 if (args[0] === "version") { console.log("aw " + (process.env.FAKE_AW_VERSION || ${JSON.stringify(PROTECTED_AW_VERSION)})); console.log("  commit: fake"); process.exit(0); }
 if (args[0] === "init") { fs.appendFileSync(path.join(base, "forbidden.jsonl"), JSON.stringify({ args }) + "\\n"); fail("", "the legacy --join-from mint must not run on an opted-in deployment", 97); }
-if (args[0] === "wake" && args[1] === "status") emit({ daemon_running: false, daemon_version_state: "not_running", instances: [] });
+if (args[0] === "wake" && args[1] === "status") emit(svc().wake === "running" ? { daemon_running: true, daemon_version_state: "reported", daemon_version: ${JSON.stringify(PROTECTED_AW_VERSION.replace(/^aw /, "").split("+")[0])}, instances: [] } : { daemon_running: false, daemon_version_state: "not_running", instances: [] });
 if (args[0] === "wake") { console.log("ok"); process.exit(0); }
 
 // ---- id create --local | --no-address (id_create_unaddressed.go)

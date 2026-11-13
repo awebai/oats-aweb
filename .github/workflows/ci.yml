@@ -77,6 +77,42 @@ jobs:
           OATS_AWEB_HEALTH_NATIVE: '1'
           OATS_PREVIEW_KERNEL_ROOT: ${{ runner.temp }}/oats-preview-kernel
         run: node --test test/unread-attention-native.test.mjs
+      # Human attribution (spec human-ids-acxy7): the protected aw commands are
+      # checked against aw built from aweb 859e07567, the commit the spec pins
+      # until a published aw carries them, and a spawn refusal is checked
+      # through a real kernel that lists spawn-attribution (OATS v0.69.19).
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.11'
+          cache: false
+      - name: Build aw from aweb 859e07567 (the protected client)
+        shell: bash
+        env:
+          AWEB_PROTECTED_COMMIT: 859e0756781a1c1c30ede1942c2addee1fc8bbe7
+        run: |
+          git clone --no-checkout https://github.com/awebai/aweb.git "$RUNNER_TEMP/aweb-protected"
+          git -C "$RUNNER_TEMP/aweb-protected" checkout --detach "$AWEB_PROTECTED_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/aweb-protected" rev-parse HEAD)" = "$AWEB_PROTECTED_COMMIT"
+          cd "$RUNNER_TEMP/aweb-protected/cli/go"
+          go build -ldflags "-X main.version=1.36.59-rc.2+859e075" -o "$RUNNER_TEMP/aw-protected/aw" ./cmd/aw
+          "$RUNNER_TEMP/aw-protected/aw" version
+      - name: Provision the spawn-attribution kernel
+        shell: bash
+        env:
+          OATS_ATTRIBUTION_KERNEL_COMMIT: 09657344d48893c532aa408a36b12ffc0a72dcc8
+        run: |
+          git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-attribution-kernel"
+          git -C "$RUNNER_TEMP/oats-attribution-kernel" checkout --detach "$OATS_ATTRIBUTION_KERNEL_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/oats-attribution-kernel" rev-parse HEAD)" = "$OATS_ATTRIBUTION_KERNEL_COMMIT"
+          cd "$RUNNER_TEMP/oats-attribution-kernel"
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Require the protected aw's --help check and the real-kernel attribution spawn
+        env:
+          OATS_AWEB_PROTECTED_AW_REQUIRED: '1'
+          OATS_AWEB_PROTECTED_AW: ${{ runner.temp }}/aw-protected/aw
+          OATS_ATTRIBUTION_KERNEL_REQUIRED: '1'
+          OATS_ATTRIBUTION_KERNEL_ROOT: ${{ runner.temp }}/oats-attribution-kernel
+        run: node --test test/protected-aw-argv.test.mjs test/attribution-kernel-spawn.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"
 
