@@ -254,3 +254,26 @@ test("acceptance 12: a hook killed between admit and the root's copy, its remova
   assert.equal(reconcile(fx).status, 0);
   assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [id]);
 });
+
+// The kernel's list of homes is what says a membership has no home: an
+// unavailable or malformed list is never read as "no homes".
+for (const status of ["fail", "malformed"]) {
+  test(`C-5: with the kernel's instance list ${status === "fail" ? "unavailable" : "malformed"}, reconcile refuses before any removal, even on a team the root can read`, (t) => {
+    const fx = attributionFixture(t, { service: { publicTeams: [TEAM, OPS] } });
+    assert.equal(fx.spawn("dev-1").status, 0);
+    const r = fx.setup(["--reconcile-admissions", "--json"], { extra: { FAKE_KERNEL_STATUS: status } });
+    assert.equal(r.doc?.ok, false, r.stdout);
+    assert.equal(r.doc.error.code, "E_ATTRIBUTION_EVIDENCE");
+    assert.deepEqual(removeCalls(fx), []);
+  });
+
+  test(`C-5: with the kernel's instance list ${status === "fail" ? "unavailable" : "malformed"}, check-only reports every team unread, never leaked`, (t) => {
+    const fx = attributionFixture(t, { service: { publicTeams: [TEAM, OPS] } });
+    assert.equal(fx.spawn("dev-1").status, 0);
+    const r = fx.setup(["--check-only", "--json"], { extra: { FAKE_KERNEL_STATUS: status } });
+    const a = r.doc.attribution;
+    assert.deepEqual(a.leakedMemberships, []);
+    assert.deepEqual(a.unreadableTeams.map((u) => u.team), [TEAM, OPS]);
+    assert.ok(a.unreadableTeams.every((u) => u.reason.includes("instance list")), JSON.stringify(a.unreadableTeams));
+  });
+}

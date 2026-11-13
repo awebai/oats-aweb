@@ -2277,9 +2277,11 @@ function attributionPreflight({ teams }) {
   try { plan = chooseIssuer({ setting, spawner, root: rootVerdict }); } catch (e) { attributionFatal(e); }
   return { setting, plan, registry };
 }
-/** Each live or kept home the kernel lists, with this provider's meta; [] when the kernel can't be asked. */
+/** Each live or kept home the kernel lists, with this provider's meta: {homes}, or
+ *  {homesUnavailable: why} when the kernel can't be asked or answers no list. */
 function kernelHomes() {
-  try { return homesOf(querySelectedKernel(["status", "--json"])); } catch { return []; }
+  try { return { homes: homesOf(querySelectedKernel(["status", "--json"])) }; }
+  catch (e) { return { homes: [], homesUnavailable: String(e.message || e).replace(/\s+/g, " ").slice(0, 200) }; }
 }
 /** The protected profile's registry origin, or undefined. */
 function profileRegistry(setting) {
@@ -3122,7 +3124,7 @@ if (event === "launch") {
       if (!setting) throw attributionError("E_SETUP_ARGUMENT", "--reconcile-admissions needs settings.oats.aweb.attribution: this deployment hasn't opted in", { stage: "arguments" });
       let deployment = null;
       try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
-      const { ok, result } = reconcileAdmissions({ aw: run, setting, homes: kernelHomes(), registry: profileRegistry(setting), deployment, plan: args.includes("--plan") });
+      const { ok, result } = reconcileAdmissions({ aw: run, setting, ...kernelHomes(), registry: profileRegistry(setting), deployment, plan: args.includes("--plan") });
       const line = (r) => `${r.alias} in ${r.team} (certificate ${r.certificateId})`;
       const text = [
         `${result.plan ? "would remove" : "removals"}: ${result.removals.length ? result.removals.map(line).join("; ") : "none"}`,
@@ -3338,7 +3340,7 @@ ${JSON.stringify(problem.details || {})}`);
         if (setting) {
           let deployment = null;
           try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
-          attribution = attributionStatus({ aw: run, setting, homes: kernelHomes(), registry: profileRegistry(setting), scan: () => scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }) });
+          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), registry: profileRegistry(setting), scan: () => scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }) });
         }
       } catch (e) { attribution = { problem: { code: typeof e.code === "string" ? e.code : "E_ATTRIBUTION_SETTING", message: String(e.message || e).slice(0, 300) } }; }
       console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));

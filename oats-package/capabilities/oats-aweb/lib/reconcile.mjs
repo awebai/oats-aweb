@@ -14,9 +14,12 @@ import { attributionError, readWho } from "./attribution.mjs";
 import { BLOCKED_FIX, notServedText, removeMembership, rootCannotAct } from "./removal.mjs";
 import { REMOVE_SERVED, RESIDENT_CUSTODY_SERVED, admissionPolicyArgv, awJson, teamMembersArgv } from "./protected-client.mjs";
 
-/** Each live or kept home the kernel lists: {instance, home, meta} (meta: this provider's, from instance.json). */
+/** Each live or kept home the kernel lists: {instance, home, meta} (meta: this provider's, from
+ *  instance.json). A document with no agents list throws: it says nothing about which homes exist,
+ *  and an empty inventory read from it would make every membership look leaked. */
 export function homesOf(statusDoc) {
-  const rows = Array.isArray(statusDoc?.agents) ? statusDoc.agents.flatMap((a) => (Array.isArray(a?.instances) ? a.instances : [])) : [];
+  if (!Array.isArray(statusDoc?.agents) || statusDoc.agents.some((a) => !Array.isArray(a?.instances))) throw new Error("the kernel's instance list has no agents and instances");
+  const rows = statusDoc.agents.flatMap((a) => a.instances);
   return rows.filter((r) => typeof r?.home === "string" && typeof r?.instance === "string").map((r) => {
     let meta = {};
     try { meta = JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8")).capabilityMeta?.["oats.aweb"] || {}; } catch { meta = {}; }
@@ -61,20 +64,22 @@ function rootVerified(aw, setting) {
 }
 
 /** check-only's `attribution` block. `scan()` is the A5 scan's {findings, unknown}. */
-export function attributionStatus({ aw, setting, homes, registry, scan, removeServed = REMOVE_SERVED }) {
+export function attributionStatus({ aw, setting, homes, homesUnavailable, registry, scan, removeServed = REMOVE_SERVED }) {
   const bounds = {};
   for (const team of setting.teams) {
     try { bounds[team] = awJson(aw, "id team admission-policy", admissionPolicyArgv({ team, profile: setting.service.profile }), setting.root.home, 30000).policy?.bounds ?? null; }
     catch (e) { if (e.code) throw e; bounds[team] = null; }
   }
-  const leaks = removeServed ? leakedMemberships({ aw, setting, homes, registry }) : null;
+  // Without the kernel's instance list, nothing here says which homes exist.
+  const unknownHomes = homesUnavailable ? `the kernel's instance list is unavailable (${String(homesUnavailable).slice(0, 160)})` : null;
+  const leaks = !removeServed ? null : unknownHomes ? { leaked: [], unreadable: setting.teams.map((team) => ({ team, reason: unknownHomes })) } : leakedMemberships({ aw, setting, homes, registry });
   const found = scan();
   return {
     root: setting.root, human: setting.human, service: { id: setting.service.id, url: setting.service.url }, teams: setting.teams,
     ...rootVerified(aw, setting),
-    chainlessSpawners: homes.filter((h) => h.meta?.identity && h.meta.identity.attribution?.mode !== "human").map((h) => h.instance),
+    chainlessSpawners: unknownHomes ? null : homes.filter((h) => h.meta?.identity && h.meta.identity.attribution?.mode !== "human").map((h) => h.instance),
     bounds,
-    admittedLive: { countedBy: "oats", teams: Object.fromEntries(setting.teams.map((team) => [team, committedAdmissions(homes, team)])) },
+    admittedLive: { countedBy: "oats", teams: Object.fromEntries(setting.teams.map((team) => [team, unknownHomes ? "unknown" : committedAdmissions(homes, team)])) },
     ...(leaks ? { leakedMemberships: leaks.leaked, ...(leaks.unreadable.length ? { unreadableTeams: leaks.unreadable } : {}) } : {}),
     findings: [...found.findings, ...found.unknown],
     limits: limitsOf({ removeServed }),
@@ -92,7 +97,8 @@ function rootRefusal({ reason, why }) {
  *  apply removes each from the root's copy, its UUID persisted under the root
  *  home before prepare. Returns {result, ok}: ok is false when a removal
  *  didn't go through. Throws a refusal before any effect. */
-export function reconcileAdmissions({ aw, setting, homes, registry, deployment, plan = false, removeServed = REMOVE_SERVED }) {
+export function reconcileAdmissions({ aw, setting, homes, homesUnavailable, registry, deployment, plan = false, removeServed = REMOVE_SERVED }) {
+  if (homesUnavailable) throw attributionError("E_ATTRIBUTION_EVIDENCE", `the kernel's instance list is unavailable (${String(homesUnavailable).slice(0, 160)}), so which memberships have no home can't be told → retry once \`oats status --json\` answers`);
   if (!removeServed) throw attributionError("E_SETUP_AW_VERSION", "the pinned aw doesn't serve team.agent.remove yet (aweb A2), so no membership can be removed → reconcile once an aw that serves it is pinned");
   const blocked = rootCannotAct({ aw, setting, deployment });
   if (blocked) throw rootRefusal(blocked);
