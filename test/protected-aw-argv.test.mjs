@@ -10,7 +10,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { admissionPolicyArgv, admitArgv, createLocalArgv, createNoAddressArgv, endorseArgv, installCertArgv, removeAgentArgv, serviceInitArgv } from "../oats-package/capabilities/oats-aweb/lib/protected-client.mjs";
+import { admissionPolicyArgv, admitArgv, createLocalArgv, createNoAddressArgv, endorseArgv, installCertArgv, removeAgentArgv, teamMembersArgv, serviceInitArgv } from "../oats-package/capabilities/oats-aweb/lib/protected-client.mjs";
 
 const AW = process.env.OATS_AWEB_PROTECTED_AW;
 if (process.env.OATS_AWEB_PROTECTED_AW_REQUIRED === "1" && !AW) throw new Error("OATS_AWEB_PROTECTED_AW_REQUIRED=1 needs OATS_AWEB_PROTECTED_AW, the aw built from aweb 44158f1bb");
@@ -62,6 +62,7 @@ const LINES = {
   "C-3 step 2, id parent import": ["--identity-home", "/h/.aw", "id", "parent", "import", "/h/.oats-aweb/attribution/response.json", "--domain", "acme.example", "--json"],
   "C-3 step 2, id child refuse": ["--identity-home", `${ROOT}/.aw`, "id", "child", "refuse", "req-1", "--json"],
   "C-3 step 4, who": ["--identity-home", "/h/.aw", "who", "--json"],
+  "C-5, id team members (leakedMemberships)": ["--identity-home", "/h/.aw", ...teamMembersArgv({ team: "backend:acme.example", registry: "https://registry.example" })],
   "C-5 and C-6, id team remove-agent": removeAgentArgv({ certificate: `${ROOT}/admissions/3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b.cert`, operationId: "3f2b8c1e-9d4a-4b6e-8f0a-1c2d3e4f5a6b", profile: P }),
 };
 

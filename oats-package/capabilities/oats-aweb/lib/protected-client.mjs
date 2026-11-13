@@ -89,4 +89,6 @@ export const installCertArgv = ({ identityHome, certificate, registry }) => ["--
 /** C-3 step 3: the workspace connects, unchanged. */
 export const serviceInitArgv = ({ identityHome, service, team }) => ["service", "init", "--identity-home", identityHome, "--service", service, "--team", team];
 /** C-5 and C-6: root-mode removal, run from the root's identity home. */
+/** C-5: a team's active membership certificates, read with the caller's own key (leakedMemberships). */
+export const teamMembersArgv = ({ team, registry }) => ["--json", "id", "team", "members", "--team-id", team, ...(registry ? ["--registry", registry] : [])];
 export const removeAgentArgv = ({ certificate, operationId, profile }) => ["--json", "id", "team", "remove-agent", "--certificate", certificate, "--operation-id", operationId, "--protected-profile", profile];

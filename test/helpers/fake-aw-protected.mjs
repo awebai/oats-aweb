@@ -24,6 +24,7 @@
 //   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
 //   createKill: true (create --no-address dies after its key)
 //   wake: "running" (the host wake broker runs; otherwise it doesn't)
+//   members: {<team>: [extra member rows]}; publicTeams: [teams any key may read]; membersRead: {code}
 // Every call is logged to <base>/calls.jsonl; every admission charge, keyed by
 // operation id, to <base>/charges.json; every issued child to issued.jsonl.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -211,6 +212,20 @@ if (args[0] === "service" && args[1] === "init") {
 // delete, alias_released false, team_not_hosted), team list, id team members
 if (args[0] === "workspace" && args[1] === "delete") { const h = homeDir(); if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("", "no workspace in " + h); fs.rmSync(path.join(h, "workspace.yaml")); emit({ alias: args[2], identity_deleted: true, alias_released: false, alias_released_reason: "team_not_hosted" }); }
 if (args[0] === "team" && args[1] === "list") emit({ memberships: [] });
+// id team members (id_team.go runTeamMembers): active certificates, read with the
+// caller's own key; a private team (the default here) answers only a member of it.
+if (cmd === "id team members") {
+  const team = flag("--team-id"); if (!team) usage("--team-id is required here");
+  const s = svc(), h = homeDir();
+  if (s.membersRead) fail(s.membersRead.code || "", "list team members for " + team + ": " + (s.membersRead.code || "unavailable"));
+  const holds = fs.existsSync(path.join(h, "team-certs", team.replace(":", "__") + ".json"));
+  if (!(s.publicTeams || []).includes(team) && !holds) fail("", "team " + team + " is private, and no signing key available here is authorized to read it");
+  const removed = new Set(fs.existsSync(path.join(base, "removed.jsonl")) ? fs.readFileSync(path.join(base, "removed.jsonl"), "utf8").trim().split("\\n").filter(Boolean).map((l) => JSON.parse(l).certificate_id) : []);
+  const charges = readJson(path.join(base, "charges.json"));
+  const admitted = Object.values(charges).filter((c) => c.team === team).map((c) => ({ certificate_id: c.certificate_id, team_id: team, alias: c.alias, member_did_key: c.member_did_key, identity_scope: c.member_did_aw ? "global" : "local", issued_at: "2026-11-13T00:00:00Z", ...(removed.has(c.certificate_id) ? { revoked_at: "2026-11-13T01:00:00Z" } : {}) }));
+  const members = [...admitted, ...((s.members || {})[team] || [])].filter((m) => args.includes("--include-revoked") || !m.revoked_at);
+  emit({ team_id: team, members });
+}
 
 // ---- the identity chain, as aw 1.36.58 runs it
 const aw = homeDir();

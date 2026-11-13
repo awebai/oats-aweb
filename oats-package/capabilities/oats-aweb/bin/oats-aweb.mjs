@@ -68,6 +68,7 @@ import { homedir, hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { retireAdmissions } from "../lib/removal.mjs";
+import { attributionStatus, homesOf, reconcileAdmissions } from "../lib/reconcile.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
@@ -2276,6 +2277,14 @@ function attributionPreflight({ teams }) {
   try { plan = chooseIssuer({ setting, spawner, root: rootVerdict }); } catch (e) { attributionFatal(e); }
   return { setting, plan, registry };
 }
+/** Each live or kept home the kernel lists, with this provider's meta; [] when the kernel can't be asked. */
+function kernelHomes() {
+  try { return homesOf(querySelectedKernel(["status", "--json"])); } catch { return []; }
+}
+/** The protected profile's registry origin, or undefined. */
+function profileRegistry(setting) {
+  try { const origin = JSON.parse(readFileSync(setting.service.profile, "utf8")).registry_origin; return typeof origin === "string" ? origin : undefined; } catch { return undefined; }
+}
 /** True when this home recorded an admission (an attributed spawn reached C-3 step 3). */
 function hasAdmissionRecords() {
   try { return readdirSync(providerStateDir()).some((f) => /^admission-.+\.json$/.test(f)); } catch { return false; }
@@ -2654,6 +2663,8 @@ if (event === "launch") {
   // team → whether the root removed its membership (C-6). On these teams the workspace
   // delete is a plain delete (team_not_hosted): the membership is the root's, not a controller cleanup.
   const admittedTeams = new Map();
+  // What C-6 says is said on every way out, a home with nothing to delete included.
+  const admissionNotes = [];
   const admittedTeam = (team) => [...admittedTeams.keys()].find((t) => sameAwebTeamId(t, team));
   try { retireSetting = attributionSetting(settings); } catch (e) { retireWarnings.push(`admission removal skipped: ${String(e.message || e).slice(0, 200)}`); }
   if (retireSetting) {
@@ -2663,6 +2674,7 @@ if (event === "launch") {
     try { removal = retireAdmissions({ aw: run, setting: retireSetting, providerDir: providerStateDir(), deployment }); }
     catch (e) { removal = { warnings: [], keep: { reason: "admission-unknown", text: `${String(e.message || e).slice(0, 240)}; this home is kept, with its admission records → retire it again` } }; }
     retireWarnings.push(...removal.warnings);
+    admissionNotes.push(...removal.warnings);
     for (const m of removal.memberships || []) admittedTeams.set(m.team, m.removed);
     if (removal.keep) await finish({ meta: { retired: false, reason: removal.keep.reason }, warning: `oats-aweb: ${[...retireWarnings, removal.keep.text].join(" | ")}` }, 1);
   }
@@ -2841,7 +2853,7 @@ if (event === "launch") {
       await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `this home's record of an interrupted mint, ${pendingMintFile()}, is unusable (${onDisk.problem}), so whether alias "${instance}" was registered is unknown: run ${membersRead(team && validAwebTeamId(team) ? team : "<team>")} in the team's root to see whether it holds a certificate there, then remove that file and retire again`].join(" | ")}` }, 1);
     }
   }
-  if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }) });
+  if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(admissionNotes.length ? { warning: `oats-aweb: ${admissionNotes.join(" | ")}` } : {}) });
   // An attributed spawn rolled back before its connect has no workspace to delete:
   // its one remote effect, the membership, was settled above.
   if (retireSetting && hasAdmissionRecords() && !existsSync(join(home, ".aw", "workspace.yaml"))) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : {}) });
@@ -3093,6 +3105,35 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
+  // Human attribution (C-5): the reconciliation of memberships no home holds.
+  if (args.includes("--reconcile-admissions")) {
+    const answer = (status, doc, text) => {
+      if (json) console.log(JSON.stringify(doc));
+      else if (text) (status ? console.error : console.log)(text);
+      process.exit(status);
+    };
+    try {
+      const extra = args.filter((a) => a !== "--reconcile-admissions" && a !== "--plan");
+      if (extra.length) throw attributionError("E_SETUP_ARGUMENT", `--reconcile-admissions takes only --plan and --json, not ${extra[0]}`, { stage: "arguments" });
+      const setting = attributionSetting(settings);
+      if (!setting) throw attributionError("E_SETUP_ARGUMENT", "--reconcile-admissions needs settings.oats.aweb.attribution: this deployment hasn't opted in", { stage: "arguments" });
+      let deployment = null;
+      try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+      const { ok, result } = reconcileAdmissions({ aw: run, setting, homes: kernelHomes(), registry: profileRegistry(setting), deployment, plan: args.includes("--plan") });
+      const line = (r) => `${r.alias} in ${r.team} (certificate ${r.certificateId})`;
+      const text = [
+        `${result.plan ? "would remove" : "removals"}: ${result.removals.length ? result.removals.map(line).join("; ") : "none"}`,
+        ...(result.notRemovable.length ? [`not removable, no copy under the root's admissions/ (admitted before v4.3.3): ${result.notRemovable.map(line).join("; ")}`] : []),
+        ...(result.unreadableTeams ? [`unread, so not reconciled: ${result.unreadableTeams.map((u) => `${u.team} (${u.reason})`).join("; ")}`] : []),
+        ...(result.failed || []).map((f) => `${line(f)}: ${f.text}`),
+      ].join("\n");
+      answer(ok ? 0 : 1, { schemaVersion: 1, ok, result }, text);
+    } catch (e) {
+      const code = typeof e.code === "string" && e.code.startsWith("E_") ? e.code : "E_SETUP_ARGUMENT";
+      const { stage, ...details } = e.details || {};
+      answer(stage === "arguments" ? 2 : 1, { schemaVersion: 1, ok: false, error: { code, message: e.message, details } }, `oats aweb setup: ${code}: ${e.message}`);
+    }
+  }
   // Human attribution (spec human-ids-acxy7 C-2): a setup form of its own.
   if (args.includes("--endorse-root")) {
     const answer = (status, doc, text) => {
@@ -3287,7 +3328,17 @@ ${JSON.stringify(problem.details || {})}`);
       const awUsable = aw.status === "ok" || aw.status === "done";
       const teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
       const member = awUsable ? !!teamRoot && teamIdsOf(readTeamsAt(teamRoot)).map(String).some((id) => sameAwebTeamId(id, team)) : null;
-      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot }));
+      // Human attribution (C-5): only when the live setting exists.
+      let attribution;
+      try {
+        const setting = attributionSetting(settings);
+        if (setting) {
+          let deployment = null;
+          try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+          attribution = attributionStatus({ aw: run, setting, homes: kernelHomes(), registry: profileRegistry(setting), scan: () => scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }) });
+        }
+      } catch (e) { attribution = { problem: { code: typeof e.code === "string" ? e.code : "E_ATTRIBUTION_SETTING", message: String(e.message || e).slice(0, 300) } }; }
+      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));
       process.exit(aw.status === "failed" ? 1 : 0);
     }
     if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }

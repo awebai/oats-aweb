@@ -123,7 +123,25 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       save({ state: "committed", certificateId: cert.id });
       resumed = true;
     }
+    // A spawn killed between its admit and the root's copy left the record pending, but
+    // --certificate-out holds the certificate aw verified: the admission committed.
+    if (record.state === "pending" && typeof record.certificateOut === "string" && existsSync(record.certificateOut)) {
+      let cert = null;
+      try { cert = admittedCertificate(record.certificateOut, setting.root.home); } catch { cert = null; }
+      if (cert && cert.team === team) save({ state: "committed", certificateId: cert.id });
+    }
     if (record.state !== "committed") continue;
+    // The root's copy missing: written again from this home's certificate when it is the
+    // one admitted, whenever the root home is there, so a removal blocked below stays
+    // reconcilable. With neither, nothing left can remove the membership.
+    const copy = join(setting.root.home, "admissions", `${record.certificateId}.cert`);
+    let copyMissing = false;
+    if (!existsSync(copy) && existsSync(join(setting.root.home, ".aw"))) {
+      let cert = null;
+      try { cert = admittedCertificate(record.certificateOut, setting.root.home); } catch { cert = null; }
+      if (cert && cert.id === record.certificateId) { try { keepRootCopy(cert); } catch { copyMissing = true; } }
+      else copyMissing = true;
+    }
     if (!removeServed) { warnings.push(`${REMOVAL_UNAVAILABLE} (team ${team})`); continue; }
     const blocked = cannot();
     const block = ({ reason, why }) => {
@@ -132,14 +150,7 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       return null;
     };
     if (blocked) { const keep = block(blocked); if (keep) return { warnings, keep }; continue; }
-    // The root's copy missing: restored from this home's certificate when it is the one admitted.
-    const copy = join(setting.root.home, "admissions", `${record.certificateId}.cert`);
-    if (!existsSync(copy)) {
-      let cert = null;
-      try { cert = admittedCertificate(record.certificateOut, setting.root.home); } catch { cert = null; }
-      if (!cert || cert.id !== record.certificateId) { warnings.push(blockedText({ reason: "root-copy-missing", why: `the root's copy ${copy} is gone, and this home's certificate doesn't carry ${record.certificateId}`, team })); continue; }
-      keepRootCopy(cert);
-    }
+    if (copyMissing) { warnings.push(blockedText({ reason: "root-copy-missing", why: `the root's copy ${copy} is gone, and this home's certificate doesn't carry ${record.certificateId}`, team })); continue; }
     const done = removeMembership({ aw, setting, certificateId: record.certificateId, team, file: removalFile(providerDir, label) });
     if (done.outcome === "removed") { save({ state: "removed" }); continue; }
     if (done.outcome === "unavailable") { warnings.push(notServedText({ code: done.code, team })); continue; }
