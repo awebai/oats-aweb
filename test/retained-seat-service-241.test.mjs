@@ -196,7 +196,7 @@ test("a record with Windows line endings names its service without the carriage 
 // The seat's service is never printed, and aw's diagnostics may name it, so a failed spawn's
 // aw calls show none of their output, whatever the service's shape.
 for (const [shape, url] of [["a plain service URL", RECORD], ["a service with a path prefix and shell text", "https://record.invalid/mark-$(id)/api"]]) {
-  for (const call of ["connect", "check", "heartbeat", "status", "whoami"]) {
+  for (const call of ["connect", "check", "heartbeat", "status", "whoami", "register"]) {
     test(`a spawn whose ${call} fails never prints its service, ${shape}`, (t) => {
       const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${url}\n` });
       const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: call });
@@ -206,6 +206,22 @@ for (const [shape, url] of [["a plain service URL", RECORD], ["a service with a 
       assert.ok(!refused.stdout.includes(url) && !refused.stderr.includes(url), refused.stdout + refused.stderr);
     });
   }
+}
+
+// A seated home's start registers the seat with the host wake broker again: that aw call
+// withholds its output too, and the refusal keeps its whole remedy (#259).
+for (const [shape, url] of [["a plain service URL", RECORD], ["a service with a path prefix and shell text", "https://record.invalid/mark-$(id)/api"]]) {
+  test(`a seated home's start whose wake register fails never prints its service, ${shape}`, (t) => {
+    const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${url}\n` });
+    const spawned = runHook(fx, "spawn");
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const started = runHook(fx, "launch", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_RETAINED_ECHO: "register" });
+    assert.equal(started.status, 1, started.stdout + started.stderr);
+    assert.match(started.doc.warning, /needs an aw with the wake broker CLI/);
+    assert.match(started.doc.warning, /output withheld: aw's output may name the seat's service, which is never printed/);
+    assert.match(started.doc.warning, /install the aweb release that ships aw wake$/, "the remedy is not cut");
+    assert.ok(!started.stdout.includes(url) && !started.stderr.includes(url) && !started.stdout.includes("record.invalid"), started.stdout + started.stderr);
+  });
 }
 
 // The rebind a retire prints is a command only for a plain service URL; for any other accepted
