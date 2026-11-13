@@ -9,7 +9,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { OPT_IN } from "../oats-package/capabilities/oats-aweb/lib/endorse-root.mjs";
 import { scanProtectedKeys } from "../oats-package/capabilities/oats-aweb/lib/key-scan.mjs";
-import { HUMAN, SERVICE_URL, attributionFixture, verbs } from "./helpers/attribution-fixture.mjs";
+import { HUMAN, OPS, SERVICE_URL, attributionFixture, verbs } from "./helpers/attribution-fixture.mjs";
+import { writeIdentity } from "./helpers/fake-aw-protected.mjs";
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 const KEY_TEXT = "-----BEGIN PRIVATE KEY-----\nnot-a-real-key-but-key-shaped\n-----END PRIVATE KEY-----\n";
@@ -46,6 +47,17 @@ for (const [custody, dir, entry] of [
     assert.ok(!existsSync(join(fx.ws, ".aweb-endorsed-root")));
   });
 }
+
+test("acceptance 15, C-5: legacy minting roots are inventory, never a reachable key: with a configured root for another team and an .aweb-roots root, setup goes past the scan", (t) => {
+  const other = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-ops-root-")));
+  t.after(() => rmSync(other, { recursive: true, force: true }));
+  const fx = attributionFixture(t, { attribution: false, root: "none", settings: { roots: { [OPS]: other } } });
+  writeIdentity(join(other, ".aw"));
+  writeIdentity(join(fx.ws, ".aweb-roots", "lab", ".aw"));
+  const r = fx.setup([...endorseArgs(fx), "--json"]);
+  assert.notEqual(r.doc?.error?.code, "E_PROTECTED_KEY_REACHABLE", r.stdout);
+  assert.ok(verbs(fx.fake).some((v) => v.startsWith("id create")), `setup went on to create the root: ${verbs(fx.fake).join(", ")}`);
+});
 
 test("acceptance 15: an unreadable location reports unknown, the keychain is always unknown, and the scan never says clean", (t) => {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-scan-")));
