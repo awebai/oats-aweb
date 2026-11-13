@@ -458,8 +458,12 @@ const flagEq = (name, value) => `${name}=${String(value)}`;
 function assertNotFlag(value, what) {
   if (String(value || "").startsWith("-")) throw new Error(`${what} must not start with '-'`);
 }
-const assertAwebRootSettingRecordable = (team, rootDir, options) => assertAwebSettingRecordable("roots", team, rootDir, options);
-const recordAwebRootSetting = (team, rootDir, options) => recordAwebSetting("roots", team, rootDir, options);
+// A team's root is recorded under the roots key aw already reads as that team, in the
+// spelling it was written with; only a team with no such key gets a new one. A second
+// key for one team would make every roots lookup (teamKeyIn) find none.
+const rootsKeyFor = (team) => teamKeyIn(settings.roots, team) ?? team;
+const assertAwebRootSettingRecordable = (team, rootDir, options) => assertAwebSettingRecordable("roots", rootsKeyFor(team), rootDir, options);
+const recordAwebRootSetting = (team, rootDir, options) => recordAwebSetting("roots", rootsKeyFor(team), rootDir, options);
 function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label)); }
 
 /** What `npm install -g @awebai/aw@<spec>` may be given: an exact version, or a ^/~ range. */

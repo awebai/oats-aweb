@@ -69,7 +69,8 @@
   Every such comparison, in the hook and its libs, now goes through one canonical
   comparison (`lib/aweb-team-id.mjs`), and every `roots` lookup takes the entry
   aw reads as the same team when no key matches exactly. Two entries that both
-  do (and no exact one) count as none, as before. The joined certificate's file
+  do (and no exact one) count as none, as before. Setup records a team's root
+  under the key that already names it, in its own spelling, never a second one. The joined certificate's file
   is found by the name aw gives it. Values the hook writes or prints keep the spelling
   the kernel or aw gave. Nothing a deployment must change.
 

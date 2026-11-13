@@ -492,3 +492,19 @@ test('a member root recorded under the team in another case refuses before redee
   const error = refused(f, r, 'E_SETUP_ALREADY_MEMBER');
   assert.ok(error.message.startsWith(`already a member of ${TEAM} at ${member}; nothing redeemed`), error.message);
 });
+
+test('a join records its root under the roots key that already names the team in another case, never a second key (#252)', t => {
+  // Three spellings of one team: the kernel's mapping, the recorded roots key, and aw's (TEAM).
+  const f = fixture(t, { teams: [{ label: 'ops', team: MIXED, from: 'local' }], defaultTeam: { label: 'ops', team: MIXED, from: 'deployment' } });
+  const KEY = 'OPS_TEAM:EXAMPLE.INVALID', teamRoot = join(f.dir, 'team-root');
+  mkdirSync(teamRoot);
+  const local = join(f.dep, 'oats-local.yaml');
+  writeFileSync(local, `schemaVersion: 2\nworkspace: fixture\nsettings:\n  oats.aweb:\n    roots:\n      "${KEY}": "${teamRoot}"\n`);
+  const r = f.run(['--join', 'ops', '--invite-stdin', '--name', 'host', '--service', SERVICE, '--json'], { OATS_SETTINGS: JSON.stringify({ roots: { [KEY]: teamRoot } }) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).result.teamRoot, teamRoot);
+  const text = readFileSync(local, 'utf8');
+  assert.equal((text.match(/^ {6}"[^"]+":/gm) || []).length, 1, text);
+  assert.match(text, new RegExp(`"${KEY}": "${teamRoot.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}"`), text);
+  assert.doesNotMatch(text, new RegExp(`"${TEAM.replace(/\./g, '\\.')}"`), 'no key in aw\'s spelling beside it');
+});
