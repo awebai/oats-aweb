@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admitIdentity, committedAdmissions } from "../lib/admission.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
 import { scanProtectedKeys } from "../lib/key-scan.mjs";
@@ -2476,6 +2476,9 @@ if (event === "launch") {
         dropPendingMint(); // the identity is in this answer's meta, and its binding in the home
         fatal(`aw init --join-from was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
       }
+      // A team aweb has protected admits agents only through an endorsed root (C-8): the
+      // server refused the invite, so nothing registered; never retried, never reminted.
+      if (protectedAdmissionRequired(e.stdout)) { dropPendingMint(); attributionFatal(PROTECTED_ADMISSION_REQUIRED); }
       // Another agent holds the alias in this team: an instance of that name
       // on another machine, or a retired one whose certificate stays. Say
       // that, and the remedy, instead of relaying a bare join error.

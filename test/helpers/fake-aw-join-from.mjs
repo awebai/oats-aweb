@@ -33,6 +33,8 @@
 //                              before any local file is written, then the command
 //                              hangs. It models an aw that registers first, which is
 //                              what retire's branch for a home with no key covers.
+//   FAKE_JOIN_FROM_PROTECTED   a 403 at step 4: "reason" or "detail" carries protected_admission_required
+//                              (a team aweb has protected), "other" another code, "none" no code
 // FAKE_JOIN_FROM_REPLY (a JSON object) overrides fields of the success reply.
 // A root with no .aw is refused like a non-member root.
 export function joinFromFake(args) {
@@ -83,6 +85,14 @@ export function joinFromFake(args) {
   // aw prints a failure on stderr and, under --json, its error envelope on stdout (cmd/aw/root.go reportCLIError).
   const refuse = (text, error) => { console.error(text); console.log(JSON.stringify({ error: { ...error, message: text } })); process.exit(1); };
   if (process.env.FAKE_JOIN_FROM_SELF_CUSTODY) refuse('accept hosted team invite: registry http 403: {"detail":{"code":"self_custody_reinit_unproven","message":"This alias belongs to an agent that holds its own key, and this request does not prove it holds that key. Use a new alias, or ask the team owner to remove the existing agent if a first init left it half-made. TOKEN-SHOULD-NOT-LEAK"}}', { code: "http_error", http_status: 403, reason: "self_custody_reinit_unproven" });
+  // A team aweb has protected refuses the member invite (spec acxy.7 C-8), as aw at
+  // 44158f1bb reports a server refusal (awid error_detail.go DescribeError): code
+  // http_error, the status, and the server's code as `reason` (a coded detail) or `detail` (a plain one).
+  const protectedAs = process.env.FAKE_JOIN_FROM_PROTECTED;
+  if (protectedAs === "reason") refuse('Error: accept invite: registry http 403: {"detail":{"code":"protected_admission_required","message":"This team admits agents only through an endorsed root."}}', { code: "http_error", http_status: 403, detail: "This team admits agents only through an endorsed root.", reason: "protected_admission_required" });
+  if (protectedAs === "detail") refuse('Error: accept invite: registry http 403: {"detail":"protected_admission_required"}', { code: "http_error", http_status: 403, detail: "protected_admission_required" });
+  if (protectedAs === "other") refuse('Error: accept invite: registry http 403: {"detail":{"code":"team_closed","message":"This team is closed."}}', { code: "http_error", http_status: 403, detail: "This team is closed.", reason: "team_closed" });
+  if (protectedAs === "none") refuse("Error: accept invite: registry http 403: forbidden", { code: "http_error", http_status: 403 });
   const held = (readRegistry()[team] || []).some((m) => m.alias === alias && !m.revoked_at);
   if (process.env.FAKE_JOIN_FROM_CONFLICT || held) refuse("Error: accept invite: 409 conflict: alias " + alias + " already has an active certificate (invite TOKEN-SHOULD-NOT-LEAK)", { code: "alias_conflict", http_status: 409, reason: "alias_active" });
   register();

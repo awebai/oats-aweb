@@ -5,7 +5,8 @@
 // and OATS_ATTRIBUTION_KERNEL_REQUIRED=1 turns a skip into a failure. Only
 // fakes and a private HOME: no aw state, identity or tmux server of the host's
 // is touched, and the spawn never launches.
-// E_PROTECTED_ADMISSION_REQUIRED's half is in attribution-protected-403.test.mjs.
+// E_PROTECTED_ADMISSION_REQUIRED's half runs on a deployment that never opted
+// in (C-8); its hook-level tests are in attribution-protected-403.test.mjs.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -16,20 +17,31 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ENDORSEMENT_OP, HUMAN, OPS, PROFILE_TEXT, ROOT_ID, SERVICE_URL, TEAM } from "./helpers/attribution-fixture.mjs";
 import { POLICY, fakeAwProtected, writeIdentity } from "./helpers/fake-aw-protected.mjs";
+import { fakeAwWake } from "./helpers/fake-aw-wake.mjs";
 
 const KERNEL = process.env.OATS_ATTRIBUTION_KERNEL_ROOT;
 if (process.env.OATS_ATTRIBUTION_KERNEL_REQUIRED === "1" && !KERNEL) throw new Error("OATS_ATTRIBUTION_KERNEL_REQUIRED=1 needs OATS_ATTRIBUTION_KERNEL_ROOT, an OATS kernel checkout that lists spawn-attribution");
 const CAPABILITY = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb", import.meta.url));
 
-/** An opted-in deployment of a workspace whose soul composes this checkout's oats.aweb. */
-function deployment(t, service) {
+/** An opted-in deployment of a workspace whose soul composes this checkout's oats.aweb;
+ *  with `neverOptedIn`, one with no setting whose team aweb has protected: its member
+ *  invite is refused 403 protected_admission_required (C-8). */
+function deployment(t, service, { neverOptedIn = false } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-attr-kernel-")));
   const tmux = realpathSync(mkdtempSync("/tmp/aak."));
   t.after(() => { rmSync(base, { recursive: true, force: true }); rmSync(tmux, { recursive: true, force: true }); });
   const host = join(base, "source"), dep = join(base, "deployment"), home = join(base, "home");
   for (const d of [join(host, "souls", "probe"), join(dep, "agents"), home]) mkdirSync(d, { recursive: true });
-  const fake = fakeAwProtected(t, { service });
-  const env = { PATH: `${fake.path}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", OATS_REMOTE_CACHE: join(base, "cache"), AW_NO_UPDATE_CHECK: "1" };
+  let fake, path;
+  if (neverOptedIn) {
+    // The legacy mint's fake, behind an aw that answers its registration with the protected 403.
+    fake = fakeAwWake(t);
+    const wrapper = join(base, "protected-bin");
+    mkdirSync(wrapper);
+    writeFileSync(join(wrapper, "aw"), `#!/bin/sh\nFAKE_JOIN_FROM_PROTECTED=reason exec "${fake.path.split(":")[0]}/aw" "$@"\n`, { mode: 0o755 });
+    path = `${wrapper}:${fake.path}`;
+  } else { fake = fakeAwProtected(t, { service }); path = fake.path; }
+  const env = { PATH: `${path}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", OATS_REMOTE_CACHE: join(base, "cache"), AW_NO_UPDATE_CHECK: "1" };
   const ref = pathToFileURL(host).href;
   writeFileSync(join(host, "oats-workspace.yaml"), `schemaVersion: 2\nname: fixture\nmembers:\n  - ${ref}\nteams:\n  default: { team: '${TEAM}' }\n  ops: { team: '${OPS}' }\ndefaultTeam: default\nlocalTeams: true\ndefaults:\n  messaging:\n    oats.aweb: { from: local/${host} }\n`);
   writeFileSync(join(host, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${ref}\n`);
@@ -56,7 +68,7 @@ function deployment(t, service) {
   // that never answers costs a 60-second timeout. YAML holds JSON as it is.
   const harness = join(base, "fake-claude");
   writeFileSync(harness, "#!/bin/sh\necho '[]'\n", { mode: 0o755 });
-  writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    root: ${legacy}\n    delivery: session\n    attribution: ${JSON.stringify(attribution)}\nlaunch-configs:\n  fake:\n    harness: claude\n    executable: "${harness}"\n`);
+  writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    root: ${legacy}\n    delivery: session\n${neverOptedIn ? "" : `    attribution: ${JSON.stringify(attribution)}\n`}launch-configs:\n  fake:\n    harness: claude\n    executable: "${harness}"\n`);
   const oats = (args) => spawnSync(process.execPath, [join(KERNEL, "bin", "oats.mjs"), ...args], { cwd: dep, env, encoding: "utf8", timeout: 120000 });
   return { fake, oats };
 }
@@ -72,4 +84,14 @@ test("acceptance 23: through a real kernel, oats spawn --json carries E_ADMISSIO
   assert.ok(doc.error.message.includes("OATS's count, not the server's"), doc.error.message);
   assert.ok(doc.error.message.includes("wait for the rate window, retire idle instances, or change the policy"), doc.error.message);
   assert.ok(fake.calls().some((c) => c.args.includes("admit")), "the root's admit ran");
+});
+
+test("acceptance 23: through a real kernel, a deployment that never opted in gets E_PROTECTED_ADMISSION_REQUIRED and its whole fix in oats spawn --json's error.message, with one mint", { skip: !KERNEL && "set OATS_ATTRIBUTION_KERNEL_ROOT to an OATS kernel checkout that lists spawn-attribution", timeout: 240000 }, (t) => {
+  const { fake, oats } = deployment(t, {}, { neverOptedIn: true });
+  const r = oats(["spawn", "probe", "--name", "dev-1", "--launch-config", "fake", "--no-launch", "--json"]);
+  let doc; try { doc = JSON.parse(r.stdout); } catch { assert.fail(`no JSON: ${r.stdout}${r.stderr}`); }
+  assert.equal(doc.ok, false, r.stdout);
+  assert.ok(doc.error.message.includes("E_PROTECTED_ADMISSION_REQUIRED"), doc.error.message);
+  assert.ok(doc.error.message.includes("oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw>"), doc.error.message);
+  assert.equal(fake.readCalls().filter((c) => c.args[0] === "init").length, 1, "never retried, never reminted");
 });

@@ -287,3 +287,23 @@ export function startAttribution(recorded, verdict) {
   const why = verdict.kind === "verified" ? `it now verifies to ${verdict.humanId ?? "no human"}` : `${verdict.kind}: ${verdict.reason ?? "no reason"}`;
   return { attribution: { ...UNATTRIBUTED }, warning: `attribution-unverified — this home's chain couldn't be verified at start (${why}), so it is recorded unattributed; respawn to attribute it` };
 }
+
+// ---------------------------------------------------------------------------
+// A deployment that never opted in, on a team aweb has protected (C-8).
+
+/** True when aw's --json error envelope on `stdout` is the 403 a protected
+ *  team answers a member-invite mint with: aw at 44158f1bb reports a server
+ *  refusal as {"error": {"code": "http_error", "http_status": 403, ...}}, the
+ *  server's code as `reason` (a coded detail) or `detail` (a plain one). */
+export function protectedAdmissionRequired(stdout) {
+  for (const line of String(stdout ?? "").trim().split("\n").reverse()) {
+    let doc;
+    try { doc = JSON.parse(line); } catch { continue; }
+    const e = doc?.error;
+    if (!object(e)) continue;
+    return e.http_status === 403 && (e.reason === "protected_admission_required" || e.detail === "protected_admission_required");
+  }
+  return false;
+}
+/** C-8's refusal, in its order: why, the whole fix, the docs, and the step that gets a human ID. */
+export const PROTECTED_ADMISSION_REQUIRED = attributionError("E_PROTECTED_ADMISSION_REQUIRED", 'this team now admits agents only through an endorsed root → oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw> (README, "Human attribution"; oats onboarding); no human ID yet: passkey enrollment', { code: "protected_admission_required" });
