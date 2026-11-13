@@ -197,6 +197,31 @@ test("acceptance 14 (C-2 placement): a fresh root under a symlinked .aweb-endors
   assert.deepEqual(verbs(fx.fake).filter((v) => v.startsWith("id create")), []);
 });
 
+// Acceptance 14 (v4.3.25): the profile's path is refused, never rewritten, unless absolute and normalized.
+for (const [name, spell] of [["a repeated /", (fx) => fx.profile.replace(/\/protected-profile\.json$/, "//protected-profile.json")], ["a . segment", (fx) => fx.profile.replace(/\/protected-profile\.json$/, "/./protected-profile.json")], ["a .. segment", (fx) => fx.profile.replace(/\/protected-profile\.json$/, "/x/../protected-profile.json")], ["a trailing /", (fx) => `${fx.profile}/`]]) {
+  test(`acceptance 14 (v4.3.25): a profile path with ${name} refuses E_ATTRIBUTION_SETTING profile-path at setup, before any effect`, (t) => {
+    const fx = fresh(t);
+    const before = local(fx);
+    const args = endorseArgs(fx);
+    args[args.indexOf("--protected-profile") + 1] = spell(fx);
+    const e = errorOf(json(fx, args));
+    assert.deepEqual([e.code, e.details.problem], ["E_ATTRIBUTION_SETTING", "profile-path"], e.message);
+    assert.ok(e.message.includes("no `.` or `..` segment and no repeated `/`"), e.message);
+    assert.deepEqual(fx.fake.calls().filter((c) => !["version", "--version"].includes(c.args[0])).map((c) => commandArgs(c.args).join(" ")), []);
+    assert.ok(!existsSync(fx.rootHome), "no root was created");
+    assert.equal(local(fx), before);
+  });
+}
+
+test("acceptance 14 (v4.3.25): setup to spawn: the setting setup wrote is one a spawn reads, with no E_ATTRIBUTION_SETTING", (t) => {
+  const fx = fresh(t);
+  json(fx, endorseArgs(fx));
+  assert.equal(json(fx, endorseArgs(fx)).status, 0);
+  const r = fx.hook("spawn", "dev-1", { OATS_SETTINGS: JSON.stringify({ ...fx.settings, attribution: writtenAttribution(fx.ws) }) });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.equal(r.doc.meta.identity.attribution.mode, "human");
+});
+
 test("acceptance 4: with neither --new-root nor --root-home, E_SETUP_ARGUMENT lists the candidates and --new-root", (t) => {
   const fx = attributionFixture(t, { attribution: false, root: "registered" });
   const r = json(fx, ["--endorse-root", "--human", HUMAN, "--protected-profile", fx.profile, "--service", SERVICE_URL, "--teams", "default,ops"]);

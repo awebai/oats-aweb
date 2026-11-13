@@ -6,9 +6,9 @@
 // (protected-client.mjs), and OATS never parses aw's text.
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, normalize, resolve } from "node:path";
 import { policyMissingText } from "./admission.mjs";
-import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, chainRefusal, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
+import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, attributionSetting, chainRefusal, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
 import { PROTECTED_AW_MIN, REQUEST_BINDING_SERVED, AwRefusal, admissionPolicyArgv, awJson, createNoAddressArgv, endorseArgv } from "./protected-client.mjs";
 import { canonicalTeamServerURL } from "./team-server-url.mjs";
 
@@ -43,6 +43,9 @@ export function parseEndorseArgs(argv) {
   if (o.rootHome !== undefined && !isAbsolute(o.rootHome)) throw argumentError("--root-home must be an absolute path");
   if (!DID_AW.test(o.human ?? "")) throw argumentError("--human must be the human's did:aw");
   if (!o.profile || !isAbsolute(o.profile)) throw argumentError("--protected-profile must be the absolute path of the service's protected profile");
+  // Refused, never rewritten (v4.3.25): after a symlinked directory, `..` names another file
+  // than its lexical form does. Spawn's reader takes only this form.
+  if (normalize(o.profile) !== o.profile || o.profile.endsWith("/") || o.profile.includes("\0")) throw attributionError("E_ATTRIBUTION_SETTING", `--protected-profile ${o.profile} isn't a normalized path → pass the profile's path with no \`.\` or \`..\` segment and no repeated \`/\``, { key: "--protected-profile", problem: "profile-path" });
   const service = canonicalTeamServerURL(o.service);
   if (!service.url) throw argumentError(`--service <url>, the aweb service the protected teams use, ${service.reason}`);
   o.service = service.url;
@@ -227,6 +230,8 @@ export function endorseRoot(o, ctx) {
     service: { id: profile.service_id, profile: o.profile, profileDigest: digest, url: o.service },
     teams, endorsement: { operationId: operation.operationId, policy },
   };
+  // The setting is read back with spawn's own reader first: setup never writes one spawn refuses.
+  attributionSetting({ attribution: setting });
   try { ctx.record(setting); }
   catch (e) { throw attributionError("E_ENDORSE_FAILED", `the root is endorsed, but the setting couldn't be written: ${oneLine(e.message)} → rerun the same setup, which records it`, { step: "record" }); }
   spend();
@@ -311,6 +316,7 @@ function refresh(o, ctx) {
   };
   const refreshed = { policy: policyChanged, teams: added.map((a) => a.team), serviceUrl: o.service !== live.service.url, profileDigest: digest !== live.service.profileDigest };
   if (refreshed.policy || refreshed.teams.length || refreshed.serviceUrl || refreshed.profileDigest) {
+    attributionSetting({ attribution: next });
     try { ctx.record(next); }
     catch (e) { throw attributionError("E_ENDORSE_FAILED", `the refresh couldn't be written: ${oneLine(e.message)} → rerun the same setup`, { step: "record" }); }
   }
