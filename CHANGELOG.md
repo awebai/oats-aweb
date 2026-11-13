@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Fixed: a joined team's controller command names the registry aw uses
+  (#250).** A joined-team release that answered `team_not_hosted` took any
+  registry it found in the joined identity's files, or said "aw will use its
+  default". The registry it took could be another membership's `registry_url`
+  in `teams.yaml`, or one aw doesn't use for team commands. When the membership
+  records only its `aweb_url`, aw discovers the registry from that service
+  instead. Now the registry comes from the team's own membership, by #240's
+  rule:
+  - a plain `registry_url` goes into the command and the record;
+  - with only an `aweb_url`, the command omits `--registry`, the record stores
+    none, and the warning says the registry isn't recorded here and aw
+    discovers it from that service;
+  - a membership that records neither gets aw's default: the registry
+    `AWID_REGISTRY_URL` sets, else no `--registry`. A registry elsewhere in the
+    identity's files is never taken.
+
+  A registry aw reports in `aw id team list --json` still comes first.
+  Nothing a deployment must change.
+
 - **Fixed: a retained seat's failed `aw wake register` no longer prints aw's
   output (#259).** The seat's broker registration, at its spawn and at every
   start of its home, ran outside the withholding #241 gave the seat's other

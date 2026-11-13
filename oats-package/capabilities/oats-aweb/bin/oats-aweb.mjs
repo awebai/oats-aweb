@@ -1102,17 +1102,30 @@ function membershipRows(text) {
  *  registry is not recorded here and what the controller adds. */
 function mintRegistryForTeam(root, team) {
   const teamsFile = join(root, ".aw", "teams.yaml");
+  const found = membershipRegistry(teamsFile, team, "the root's service");
+  if (found.kind === "unreadable") return { registry: null, registryError: `the team's registry is not recorded here (${teamsFile} could not be read); the command omits --registry` };
+  if (found.kind === "no-membership") return { registry: null, registryError: `the team's registry is not recorded here (${teamsFile} has no membership of ${team}); the command omits --registry` };
+  if (found.kind === "none") return { registry: null, registryError: "the team's registry is not recorded here (the root records no registry and no service for the team); the command omits --registry" };
+  return found.registry ? { registry: found.registry } : { registry: null, registryError: found.registryError };
+}
+/** What the membership of `team` in an aw `teams.yaml` says about the registry aw uses
+ *  for it (cmd/aw/id_team.go:1643-1656): its registry_url, else discovery from its
+ *  aweb_url, else aw's default. Team ids are matched as aw spells them.
+ *  → `{ kind: "registry", registry }`, `{ kind: "not-plain" | "discovered", registry:
+ *  null, registryError }` (the fixed text; `service` names the service when its URL is not
+ *  plain), or `{ kind: "none" | "no-membership" | "unreadable" }`, where the caller says
+ *  what it knows. */
+function membershipRegistry(teamsFile, team, service) {
   let text;
-  try { text = readFileSync(teamsFile, "utf8"); }
-  catch { return { registry: null, registryError: `the team's registry is not recorded here (${teamsFile} could not be read); the command omits --registry` }; }
+  try { text = readFileSync(teamsFile, "utf8"); } catch { return { kind: "unreadable" }; }
   const row = membershipRows(text).find((r) => sameAwebTeamId(r.team_id, team));
-  if (!row) return { registry: null, registryError: `the team's registry is not recorded here (${teamsFile} has no membership of ${team}); the command omits --registry` };
+  if (!row) return { kind: "no-membership" };
   if (row.registry_url) {
     const registry = registryOrigin(row.registry_url);
-    return registry ? { registry } : { registry: null, registryError: `the registry ${teamsFile} records for the team is not a plain origin, so the command omits --registry: the controller adds --registry with the registry_url of the team's membership there` };
+    return registry ? { kind: "registry", registry } : { kind: "not-plain", registry: null, registryError: `the registry ${teamsFile} records for the team is not a plain origin, so the command omits --registry: the controller adds --registry with the registry_url of the team's membership there` };
   }
-  if (row.aweb_url) return { registry: null, registryError: `the team's registry is not recorded here; aw discovers it from ${plainServiceUrl(row.aweb_url.trim()) || "the root's service"}: the controller adds --registry <that registry> if it is not aw's default` };
-  return { registry: null, registryError: "the team's registry is not recorded here (the root records no registry and no service for the team); the command omits --registry" };
+  if (row.aweb_url) return { kind: "discovered", registry: null, registryError: `the team's registry is not recorded here; aw discovers it from ${plainServiceUrl(row.aweb_url.trim()) || service}: the controller adds --registry <that registry> if it is not aw's default` };
+  return { kind: "none" };
 }
 /** A join that the CLI reported as failed (or that this hook killed on
  *  timeout) may still have completed server-side: the home then holds a
@@ -2035,15 +2048,12 @@ const registryOrigin = (value) => typeof value === "string" ? registryOriginUrl(
 function registryOriginFromJoinedState(row, match, listed) {
   const fromJson = registryOrigin(match?.registry_origin || match?.registry_url || match?.registry || match?.awid_registry_url || listed?.registry_origin || listed?.registry_url || listed?.registry || listed?.awid_registry_url);
   if (fromJson) return { registry: fromJson };
-  for (const file of ["identity.yaml", "teams.yaml", "workspace.yaml", "registry.yaml", "config.yaml"]) {
-    try {
-      const text = readFileSync(join(row.identityHome, file), "utf8");
-      for (const key of ["awid_registry_url", "registry_origin", "registry_url", "registry"]) {
-        const found = registryOrigin(yamlScalar(text, key));
-        if (found) return { registry: found };
-      }
-    } catch { /* keep looking */ }
-  }
+  // Then aw's order (see membershipRegistry): the membership's own registry_url, else
+  // discovery from its aweb_url, else aw's default, which AWID_REGISTRY_URL sets. A
+  // registry anywhere else in the home is one aw does not use for this team.
+  const membership = membershipRegistry(join(row.identityHome, "teams.yaml"), row.team, "the membership's service");
+  if (membership.kind === "registry") return { registry: membership.registry };
+  if (membership.kind === "not-plain" || membership.kind === "discovered") return { registry: null, registryError: membership.registryError };
   const fromEnv = registryOrigin(process.env.AWID_REGISTRY_URL);
   if (fromEnv) return { registry: fromEnv };
   return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };

@@ -722,7 +722,12 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   is held by people (retire answered `team_not_hosted`) is marked: its line ends
   `; retired by OATS on this host <YYYY-MM-DD>; the team controller removes it
   with: <command>`, and the footer counts those certificates. Only the team's
-  controller can remove them, with the printed command. Retire records them in
+  controller can remove them, with the printed command. Its `--registry` is
+  the one aw uses for that membership: the plain `registry_url` that aw reports
+  for it or that the identity's `teams.yaml` records for it. When the
+  membership records only its `aweb_url`, aw discovers the registry from that
+  service, so the command has no `--registry` and says so. With neither, aw
+  uses its default: the registry `AWID_REGISTRY_URL` sets, else none. Retire records them in
   `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
   registry origin and command, never a secret), matched on team and certificate
   id, never on alias. The roster never prints the stored command: it builds the
