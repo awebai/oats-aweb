@@ -38,6 +38,12 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## 1.42.1 — the release OATS pins for 1.42
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
+1.36.58. 1.42.0's changes, with a comment fixed so OATS's mirror check
+accepts the package.
+
 ## 1.42.0 — retained seats are safer, and captured execution is removed
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
