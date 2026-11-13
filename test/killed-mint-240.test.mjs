@@ -14,11 +14,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createPrivateKey, sign } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
+import { joinFromCalls, joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
 import { canonicalAwPath } from "./helpers/canonical-aw.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
 import { verifySignature } from "../oats-package/capabilities/oats-aweb/lib/status-document.mjs";
@@ -411,6 +411,20 @@ test("a mint of a team configured in mixed case, which aw answers in its own spe
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.doesNotMatch(r.doc.warning || "", /team mismatch/);
   assert.doesNotMatch(r.doc.brief, /\[WARNING: joined/);
+});
+
+test("a mint of a team configured in mixed case uses the root that setup recorded under aw's spelling", (t) => {
+  const fx = fixture(t), configured = "Default:Example.Test";
+  const teamRoot = join(fx.fake.base, "team-root");
+  mkdirSync(join(teamRoot, ".aw"), { recursive: true });
+  copyFileSync(join(fx.ws, ".aw", "teams.yaml"), join(teamRoot, ".aw", "teams.yaml"));
+  const env = { OATS_DEFAULT_TEAM_ID: configured, OATS_TEAMS: JSON.stringify([{ label: "default", team: configured, default: true, from: "local" }]),
+    OATS_SETTINGS: JSON.stringify({ roots: { [TEAM]: teamRoot }, delivery: "session" }) };
+  const r = fx.hook("spawn", env);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const mints = joinFromCalls(fx.fake.readCalls());
+  assert.equal(mints.length, 1);
+  assert.ok(mints[0].args.includes(`--join-from=${teamRoot}`), JSON.stringify(mints[0].args));
 });
 
 test("retire's self-delete finds the workspace id when the meta spells the team otherwise than aw", (t) => {

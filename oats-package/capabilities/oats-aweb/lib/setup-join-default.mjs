@@ -47,7 +47,7 @@ export function prepareJoinConfiguration(requestedLabel, deployment, { env = pro
   };
   let initial = observe();
   if (knownTeam && preferMappedLabel) {
-    const mapped = initial.teams.find(row => row.team === knownTeam);
+    const mapped = initial.teams.find(row => sameAwebTeamId(row.team, knownTeam));
     labelFrom = mapped && mapped.label !== label ? 'mapping' : 'derived';
     if (mapped && mapped.label !== label) { label = mapped.label; initial = observe(); }
   }

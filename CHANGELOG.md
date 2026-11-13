@@ -57,11 +57,20 @@
   - a grant renewal kept the previous grant;
   - retire's self-delete missed the workspace id;
   - the roster missed the record and the presence, and setup took its own
-    mapping for another team.
+    mapping for another team;
+  - setup refused an invite to a mapped team (`E_SETUP_JOIN_MISMATCH`,
+    `E_SETUP_LABEL_COLLISION`), or redeemed one for a team a root was
+    already in;
+  - a joined team that became the default was left at launch;
+  - the probe refused the target as `contradictory-team`;
+  - a `roots` entry, which setup records under aw's spelling, was missed, so
+    the hook minted and read from `root` instead.
 
   Every such comparison, in the hook and its libs, now goes through one canonical
-  comparison (`lib/aweb-team-id.mjs`). The joined certificate's file is found
-  by the name aw gives it. Values the hook writes or prints keep the spelling
+  comparison (`lib/aweb-team-id.mjs`), and every `roots` lookup takes the entry
+  aw reads as the same team when no key matches exactly. Two entries that both
+  do (and no exact one) count as none, as before. The joined certificate's file
+  is found by the name aw gives it. Values the hook writes or prints keep the spelling
   the kernel or aw gave. Nothing a deployment must change.
 
 - **Removed: the captured-execution path (#242).** The captured bindings

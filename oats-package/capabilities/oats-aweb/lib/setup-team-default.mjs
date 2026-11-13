@@ -5,7 +5,7 @@ import { isAbsolute, resolve, join } from 'node:path';
 import { realpathSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import { selectedDeployment } from './team-roots.mjs';
 import { kernelQueryEnvironment } from './session-readiness.mjs';
-import { sameAwebTeamId } from "./aweb-team-id.mjs";
+import { sameAwebTeamId, teamKeyIn } from "./aweb-team-id.mjs";
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function setupFailure(code, message, details = {}) {
@@ -186,7 +186,8 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     }
     if (!object(settings) || (Object.hasOwn(settings, 'identity') && !object(settings.identity)) || (Object.hasOwn(settings, 'roots') && !object(settings.roots))) throw setupFailure('E_SETUP_ROOT', 'selected provider root settings are invalid');
     if (settings.identity?.mode && settings.identity.mode !== 'local') throw setupFailure('E_SETUP_ARGUMENT', 'username account setup requires LOCAL identity mode');
-    const raw = object(settings.roots) && Object.hasOwn(settings.roots, predictedTeam) ? settings.roots[predictedTeam] : Object.hasOwn(settings, 'root') ? settings.root : deployment;
+    const rootsKey = teamKeyIn(settings.roots, predictedTeam);
+    const raw = rootsKey !== undefined ? settings.roots[rootsKey] : Object.hasOwn(settings, 'root') ? settings.root : deployment;
     if (typeof raw !== 'string' || !isAbsolute(raw)) throw setupFailure('E_SETUP_ROOT', 'selected account root must be absolute; invalid explicit root cannot fall back');
     root = resolve(raw);
     if (existsSync(root) && !statSync(root).isDirectory()) throw setupFailure('E_SETUP_ROOT', 'selected account root is not a directory');

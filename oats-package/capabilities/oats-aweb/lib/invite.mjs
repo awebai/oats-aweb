@@ -10,7 +10,7 @@ import { yamlScalar } from './binding-wire.mjs';
 import { withheldFailureCause } from './aw-failure-cause.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { plainServiceUrl } from './plain-service.mjs';
-import { sameAwebTeamId } from "./aweb-team-id.mjs";
+import { sameAwebTeamId, teamKeyIn } from "./aweb-team-id.mjs";
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -120,9 +120,10 @@ export function issueInvite(argv, env = process.env) {
   if (!opts.label && env.OATS_DEFAULT_TEAM_ID !== team) fail('E_INVITE_TEAM', 'selected default team does not match current kernel declarations');
   // With no root declared, the team's root is the deployment's own, as setup creates it and spawn
   // reads it. A declared root, even an invalid one, is never replaced.
-  const declared = (object(settings.roots) && Object.hasOwn(settings.roots,team)) || Object.hasOwn(settings,'root');
-  const source = object(settings.roots) && Object.hasOwn(settings.roots,team) ? 'roots[team]' : declared ? 'root' : 'the deployment directory';
-  const raw = object(settings.roots) && Object.hasOwn(settings.roots,team) ? settings.roots[team] : declared ? settings.root : deployment;
+  const rootsKey = teamKeyIn(settings.roots, team);
+  const declared = rootsKey !== undefined || Object.hasOwn(settings,'root');
+  const source = rootsKey !== undefined ? 'roots[team]' : declared ? 'root' : 'the deployment directory';
+  const raw = rootsKey !== undefined ? settings.roots[rootsKey] : declared ? settings.root : deployment;
   let root;
   try { if (typeof raw !== 'string' || !isAbsolute(raw)) throw new Error(); root = realpathSync(raw); if (!statSync(join(root,'.aw')).isDirectory()) throw new Error(); } catch { fail('E_INVITE_ROOT', declared ? 'selected team root is missing, invalid or unreadable; repair its explicit root setting' : 'no team root is set and the deployment has no .aw root; run setup, or set settings.oats.aweb.root'); }
   let membership;

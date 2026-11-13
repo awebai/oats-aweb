@@ -15,6 +15,7 @@ import { identityBooleans } from './boolean-setting.mjs';
 import { retainedSeatCheck } from './retained-seat-service.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { residentRegistryEnv } from './resident-registry.mjs';
+import { teamKeyIn } from './aweb-team-id.mjs';
 
 export const BINDING_WIRE_LIMITS=Object.freeze({bytes:1024*1024,depth:32,entries:16384});
 /** The one fixed reason for the captured-execution path, removed in this release
@@ -182,7 +183,8 @@ function teamFromSettings(settings,candidate,{env=process.env}={}) {
 }
 function rootCandidate(settings,team,{deployment,env=process.env}={}) {
   const roots=obj(settings.roots)?settings.roots:{};
-  if(team && typeof roots[team]==='string' && roots[team].trim()) return {root:roots[team].trim(),key:`settings.oats.aweb.roots[${JSON.stringify(team)}]`,declared:true};
+  const key=team?teamKeyIn(roots,team):undefined;
+  if(key!==undefined && typeof roots[key]==='string' && roots[key].trim()) return {root:roots[key].trim(),key:`settings.oats.aweb.roots[${JSON.stringify(key)}]`,declared:true};
   if(typeof settings.root==='string' && settings.root.trim()) return {root:settings.root.trim(),key:'settings.oats.aweb.root',declared:true};
   const candidates=[env.OATS_WORKSPACE || deployment || process.cwd()];
   for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};

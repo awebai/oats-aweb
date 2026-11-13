@@ -68,7 +68,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { canonicalAwebTeamId, sameAwebTeamId, validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { canonicalAwebTeamId, sameAwebTeamId, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
@@ -406,7 +406,8 @@ const identityMeta = ({ mode = "local", alias, team, address = null, resident = 
 const teamConfigRemedy = () => defaultTeamLabel() && !defaultTeamId() ? unmappedDefaultMessage(defaultTeamLabel()) : NO_TEAMS_MESSAGE;
 function declaredRootCandidate(team = defaultTeamId()) {
   const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
-  if (team && typeof roots[team] === "string" && roots[team].trim()) return { root: roots[team].trim(), key: `settings.oats.aweb.roots[${JSON.stringify(team)}]`, declared: true };
+  const key = team ? teamKeyIn(roots, team) : undefined;
+  if (key !== undefined && typeof roots[key] === "string" && roots[key].trim()) return { root: roots[key].trim(), key: `settings.oats.aweb.roots[${JSON.stringify(key)}]`, declared: true };
   if (typeof settings.root === "string" && settings.root.trim()) return { root: settings.root.trim(), key: "settings.oats.aweb.root", declared: true };
   return undefined;
 }
@@ -1802,7 +1803,8 @@ function rosterLineHead(m, status, kind) {
  *  read with a reader that throws: membership that cannot be read is never "not a member". */
 function deploymentMemberRoot(team) {
   const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
-  const candidates = [roots[team], settings.root, team === defaultTeamId() ? rootSettingCandidate(team)?.root : undefined]
+  const key = teamKeyIn(roots, team);
+  const candidates = [key !== undefined ? roots[key] : undefined, settings.root, sameAwebTeamId(team, defaultTeamId()) ? rootSettingCandidate(team)?.root : undefined]
     .filter((root) => typeof root === "string" && root.trim() && isAbsolute(root.trim())).map((root) => resolve(root.trim()));
   for (const root of [...new Set(candidates)]) {
     if (!existsSync(join(root, ".aw"))) continue;
@@ -2078,7 +2080,7 @@ if (event === "launch") {
       // A joined team that is now the live default stays joined: the primary
       // identity is still in the team it was spawned in, and a home moves only
       // when it is respawned.
-      if (row.label === defaultTeamLabel() && row.team === defaultTeamId()) {
+      if (row.label === defaultTeamLabel() && sameAwebTeamId(row.team, defaultTeamId())) {
         warnings.push(`kept joined team ${row.label}: it is now the default team, and this home's primary identity is still in ${defaultTeamObject(oldMeta)?.label || "its spawn team"}; respawn to move it`);
         continue;
       }
@@ -2943,7 +2945,8 @@ ${JSON.stringify(problem.details || {})}`);
   /** The root a team accepts into: its recorded root, else the label's per-team root. */
   const teamRootFor = (label, expectedTeam) => {
     const configured = joinConfiguration ? expectedTeam : expectedTeam || configuredTeamForLabel(label);
-    const recorded = configured && settings.roots && Object.hasOwn(settings.roots, configured) ? settings.roots[configured] : undefined;
+    const recordedKey = configured ? teamKeyIn(settings.roots, configured) : undefined;
+    const recorded = recordedKey !== undefined ? settings.roots[recordedKey] : undefined;
     if (recorded !== undefined && (typeof recorded !== "string" || !isAbsolute(recorded))) throw new Error(`configured root for ${label} must be an absolute directory`);
     return { configured, teamRoot: recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label) };
   };
