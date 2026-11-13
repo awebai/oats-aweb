@@ -229,7 +229,8 @@ What a retire says when it can't remove a membership:
     only in the revoked root's bucket, never in the new root's.
   - `root-copy-missing`: no certificate for this membership is left, so OATS
     can't remove it. A missing copy is first written again from the home's own
-    certificate when that is the one admitted.
+    certificate when that is the one admitted: admit's `--certificate-out`
+    file, else the certificate aw installed in the home's identity.
 - While an unknown admission's resume can't run for a reason that can be
   fixed (`root-home-unsafe`, `profile-changed`, `service-refused`), the home is
   kept: fix the root, then retire again, which resumes the admission.

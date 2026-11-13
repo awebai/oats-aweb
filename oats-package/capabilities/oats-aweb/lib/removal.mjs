@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { FINAL_CODES, README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, recordAdmission, writePrivate } from "./admission.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
+import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
 import { REMOVE_SERVED, admitArgv, awJson, removeAgentArgv } from "./protected-client.mjs";
 
 export const RECONCILE = "oats aweb setup --reconcile-admissions";
@@ -140,13 +141,19 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     if (record.state !== "committed") continue;
     // The root's copy missing: written again from this home's certificate when it is the
     // one admitted, whenever the root home is there, so a removal blocked below stays
-    // reconcilable. With neither, nothing left can remove the membership.
+    // reconcilable. The home holds it twice: admit's --certificate-out file, and the copy
+    // aw installed in the identity. With neither, nothing left can remove the membership.
     const copy = join(setting.root.home, "admissions", `${record.certificateId}.cert`);
     let copyMissing = false;
     if (!existsSync(copy) && existsSync(join(setting.root.home, ".aw"))) {
-      let cert = null;
-      try { cert = admittedCertificate(record.certificateOut, setting.root.home); } catch { cert = null; }
-      if (cert && cert.id === record.certificateId) { try { keepRootCopy(cert); } catch { copyMissing = true; } }
+      const installedFile = typeof record.identityHome === "string" && teamCertificateRelativePath(team) ? join(record.identityHome, teamCertificateRelativePath(team)) : null;
+      const theOne = (file) => {
+        let cert = null;
+        try { cert = typeof file === "string" && existsSync(file) ? admittedCertificate(file, setting.root.home) : null; } catch { cert = null; }
+        return cert && cert.id === record.certificateId && cert.team === team && (!record.memberKey || cert.memberKey === record.memberKey) ? cert : null;
+      };
+      const cert = theOne(record.certificateOut) || theOne(installedFile);
+      if (cert) { try { keepRootCopy(cert); } catch { copyMissing = true; } }
       else copyMissing = true;
     }
     if (!removeServed) { warnings.push(`${REMOVAL_UNAVAILABLE} (team ${team})`); continue; }

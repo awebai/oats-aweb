@@ -13,7 +13,7 @@
 // `did:key:z<name of the directory holding .aw>` (`-<label>` added for a
 // joined team's `.aweb-identity-<label>`). An installed chain is
 // `<home>/id-chain.json`; an installed team certificate is
-// `<home>/team-certs/<team>.json`; a connected workspace `<home>/workspace.yaml`.
+// `<home>/team-certs/<aw's encoding of the team>.pem`; a connected workspace `<home>/workspace.yaml`.
 //
 // Under --json a refusal prints aw's envelope {"error": {code, message}} on
 // stdout and exits 1. The protected service is <base>/service.json:
@@ -64,6 +64,8 @@ const saveSvc = (s) => fs.writeFileSync(path.join(base, "service.json"), JSON.st
 const emit = (o) => { console.log(JSON.stringify(o, null, 2)); process.exit(0); };
 const fail = (code, message, exit = 1) => { console.error("Error: " + message); if (json) console.log(JSON.stringify({ error: { code, message } })); process.exit(exit); };
 const usage = (message) => fail("", message, 2);
+// aw's installed certificate file name (awconfig EncodeTeamIDForCertificatePath): "__" → "____", then ":" → "__".
+const certFile = (team) => team.replaceAll("__", "____").replaceAll(":", "__") + ".pem";
 const flag = (n) => args.includes(n) ? args[args.indexOf(n) + 1] : undefined;
 const flags = (n) => args.flatMap((a, i) => a === n ? [args[i + 1]] : []);
 const cmd = args.slice(0, 3).join(" ");
@@ -179,10 +181,10 @@ if (cmd === "id team install-cert") {
   let cert; try { cert = readJson(cf); if (!cert.certificate_id) throw 0; } catch { fail("certificate_invalid", cf + " is not a team certificate"); }
   if (cert.member_did_key !== keyOf(h)) fail("member_mismatch", "the certificate names member " + cert.member_did_key + ", not this home's identity " + keyOf(h));
   if (s.install && s.install.code) fail(s.install.code, "install: " + s.install.code);
-  const dest = path.join(store(h, "team-certs"), cert.team_id.replace(":", "__") + ".json");
+  const dest = path.join(store(h, "team-certs"), certFile(cert.team_id));
   let status = "installed";
   if (fs.existsSync(dest)) { if (readJson(dest).certificate_id !== cert.certificate_id) fail("certificate_conflict", h + " already holds certificate for " + cert.team_id); status = "already_installed"; }
-  fs.writeFileSync(dest, JSON.stringify(cert), { mode: 0o600 });
+  fs.writeFileSync(dest, JSON.stringify(cert, null, 2) + "\\n", { mode: 0o600 });
   emit({ status, team_id: cert.team_id, alias: cert.alias, certificate_id: process.env.FAKE_INSTALL_CERT_ID || cert.certificate_id, did_key: keyOf(h), identity_home: h, ...(cert.member_did_aw ? { did_aw: cert.member_did_aw } : {}) });
 }
 
@@ -221,7 +223,7 @@ if (cmd === "id team members") {
   const team = flag("--team-id"); if (!team) usage("--team-id is required here");
   const s = svc(), h = homeDir();
   if (s.membersRead) fail(s.membersRead.code || "", "list team members for " + team + ": " + (s.membersRead.code || "unavailable"));
-  const holds = fs.existsSync(path.join(h, "team-certs", team.replace(":", "__") + ".json"));
+  const holds = fs.existsSync(path.join(h, "team-certs", certFile(team)));
   if (!(s.publicTeams || []).includes(team) && !holds) fail("", "team " + team + " is private, and no signing key available here is authorized to read it");
   const removed = new Set(fs.existsSync(path.join(base, "removed.jsonl")) ? fs.readFileSync(path.join(base, "removed.jsonl"), "utf8").trim().split("\\n").filter(Boolean).map((l) => JSON.parse(l).certificate_id) : []);
   const charges = readJson(path.join(base, "charges.json"));

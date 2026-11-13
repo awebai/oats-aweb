@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, chmodSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { teamCertificateRelativePath } from "../oats-package/capabilities/oats-aweb/lib/aweb-team-id.mjs";
 import { ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
 
 const RECONCILE = "oats aweb setup --reconcile-admissions";
@@ -135,11 +136,40 @@ test("acceptance 13: a blocked removal after the restore keeps the restored copy
   assert.equal(statSync(rootCopy(fx, id)).mode & 0o777, 0o600);
 });
 
-test("acceptance 13: the root's copy missing, and the home's certificate doesn't carry it: admission-removal-blocked root-copy-missing, and the home is removed", (t) => {
+/** The certificate aw installed in the home's identity (aw's own path and encoding). */
+const installed = (fx, name = "dev-1") => join(admission(fx, name).identityHome, teamCertificateRelativePath(TEAM));
+
+test("acceptance 13: the root's copy and the --certificate-out file both gone: retire restores the copy from the certificate aw installed, and the removal goes ahead", (t) => {
   const fx = attributionFixture(t);
   const id = spawned(fx);
   rmSync(rootCopy(fx, id));
   rmSync(admission(fx, "dev-1").certificateOut);
+  assert.ok(existsSync(installed(fx)), "aw installed the certificate at its own path");
+  const r = fx.retire("dev-1");
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [id]);
+  assert.ok(!warningOf(r).includes("root-copy-missing"), warningOf(r));
+});
+
+test("acceptance 13: an installed certificate for another member doesn't restore the copy", (t) => {
+  const fx = attributionFixture(t);
+  const id = spawned(fx);
+  rmSync(rootCopy(fx, id));
+  rmSync(admission(fx, "dev-1").certificateOut);
+  const file = installed(fx);
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), member_did_key: "did:key:zsomeoneelse" }));
+  const r = fx.retire("dev-1");
+  assert.ok(warningOf(r).includes("reason: root-copy-missing"), warningOf(r));
+  assert.ok(!existsSync(rootCopy(fx, id)));
+  assert.deepEqual(removeCalls(fx), []);
+});
+
+test("acceptance 13: the root's copy missing, and neither the home's --certificate-out file nor its installed certificate carries it: admission-removal-blocked root-copy-missing, and the home is removed", (t) => {
+  const fx = attributionFixture(t);
+  const id = spawned(fx);
+  rmSync(rootCopy(fx, id));
+  rmSync(admission(fx, "dev-1").certificateOut);
+  rmSync(installed(fx));
   const r = fx.retire("dev-1");
   assert.equal(r.status, 0, JSON.stringify(r.doc));
   const w = warningOf(r);
@@ -154,6 +184,7 @@ test("acceptance 13: the home's certificate naming another certificate_id doesn'
   const out = admission(fx, "dev-1").certificateOut;
   const changed = { ...JSON.parse(readFileSync(out, "utf8")), certificate_id: "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f" };
   writeFileSync(out, JSON.stringify(changed));
+  writeFileSync(installed(fx), JSON.stringify(changed));
   const r = fx.retire("dev-1");
   assert.ok(warningOf(r).includes("reason: root-copy-missing"), warningOf(r));
   assert.ok(!existsSync(rootCopy(fx, id)) && !existsSync(rootCopy(fx, changed.certificate_id)));
