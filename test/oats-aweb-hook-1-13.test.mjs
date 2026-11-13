@@ -4,6 +4,7 @@
 
 import test from "node:test";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
+import { canonicalAwPath } from "./helpers/canonical-aw.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
@@ -788,4 +789,21 @@ test('path app IDs and non-origin URLs never escape successful grant receipt val
    assert.equal(logLines(base).some(l=>l.argv.slice(0,3).join(' ')==='id grant revoke'),false);
   } finally {rmSync(base,{recursive:true,force:true});}
  }
+});
+
+// awebai/oats-aweb#252: aw spells a team id canonically; a deployment may not.
+test("launch renewal of a team configured in mixed case takes the new grant aw mints in its own spelling", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-252-"));
+  try {
+    const configured = "T:Example.Test";
+    const bin = canonicalAwPath(base, fakeAw(base)); const { root, home } = deployment(base); const custody = resident(base);
+    mkdirSync(join(home, ".aweb-identity"), { recursive: true });
+    const old = { delivery: "channel", identity: { mode: "global", alias: "resident-alias", team: configured, resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
+    const r = runHook(bin, "launch", { ...defaultTeamEnv(configured), OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, /differs from/);
+    assert.notEqual(r.doc.meta.identity.grant.id, "grant-old", "the new grant is taken");
+    assert.equal(r.doc.meta.identity.grant.home, r.doc.env.AWEB_IDENTITY_HOME);
+    assert.ok(logLines(base).some((l) => l.argv.join(" ") === "id grant revoke grant-old --json"), "the old grant is revoked");
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });
