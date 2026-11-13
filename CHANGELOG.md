@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.42.1 — 2026-11-13
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A fix so OATS can pin this release: a comment named the kernel's private module, which OATS's mirror check refuses (1.42.0 can't be mirrored). Nothing a deployment must change beyond 1.42.0's steps.
 
 - **Fixed: no package file names the kernel's private module.** A comment in
   `bin/oats-aweb.mjs` named that file (from #239), and OATS refuses any file of
