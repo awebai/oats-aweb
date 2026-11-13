@@ -218,13 +218,18 @@ if (args[0] === "service" && args[1] === "init") {
   console.log("Connected"); process.exit(0);
 }
 
-// ---- workspace delete (workspace.go). Every team here is outside aweb's hosted zone:
+// ---- workspace delete (workspace.go). A team outside aweb's hosted zone:
 // - through --identity-home (an external home), aw refuses before any request (exit 2);
 // - from the home's own .aw, a plain delete: alias_released false, team_not_hosted;
 // - the server authenticates the delete with the member's certificate, and refuses one the
 //   root revoked (team_auth_deps.py): aw's http_error envelope, 401.
+// In aw's hosted zone (isAwebHostedNamespace: aweb.ai and below), an own workspace's delete is
+// hosted self-retirement: the cloud removes the membership itself (workspace_self_retire.go).
+const hostedZone = (team) => { const d = String(team).split(":").slice(1).join(":").trim().toLowerCase().replace(/\\.$/, ""); return d === "aweb.ai" || (!d.startsWith(".") && !d.includes("..") && d.endsWith(".aweb.ai")); };
 if (args[0] === "workspace" && args[1] === "delete") {
   const h = homeDir();
+  const ownTeam = fs.existsSync(path.join(h, "workspace.yaml")) ? (/^team_id:\\s*(\\S+)/m.exec(fs.readFileSync(path.join(h, "workspace.yaml"), "utf8")) || [])[1] : null;
+  if (ownTeam && hostedZone(ownTeam)) { fs.appendFileSync(path.join(base, "self-retired.jsonl"), JSON.stringify({ home: h, team: ownTeam }) + "\\n"); fs.rmSync(path.join(h, "workspace.yaml")); emit({ alias: args[2], identity_deleted: true, alias_released: true, alias_released_reason: "self_retired" }); }
   if (identityHome) { const principal = (/^did:\\s*(\\S+)/m.exec(fs.existsSync(path.join(h, "identity.yaml")) ? fs.readFileSync(path.join(h, "identity.yaml"), "utf8") : "") || [])[1] || h; console.error("refusing aw workspace delete through external identity home for principal " + principal + "; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)"); process.exit(2); }
   if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("", "no workspace in " + h);
   const wsTeam = (/^team_id:\\s*(\\S+)/m.exec(fs.readFileSync(path.join(h, "workspace.yaml"), "utf8")) || [])[1];
@@ -320,6 +325,7 @@ console.error("fake aw (protected): unexpected aw " + process.argv.slice(2).join
     forbidden: () => lines("forbidden.jsonl"),
     issued: () => lines("issued.jsonl"),
     removed: () => lines("removed.jsonl"),
+    selfRetired: () => lines("self-retired.jsonl"),
     charges: () => JSON.parse(readFileSync(join(base, "charges.json"), "utf8")),
     /** Endorse operations prepared and not yet committed, by id: {intent, prepared}. */
     endorseOps: () => { try { return JSON.parse(readFileSync(join(base, "endorse-ops.json"), "utf8")); } catch { return {}; } },

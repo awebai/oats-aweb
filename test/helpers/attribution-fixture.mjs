@@ -29,12 +29,12 @@ export const PROFILE_TEXT = `${JSON.stringify({ v: 1, service_id: "svc-acme", re
  *  setup finds, "endorsed" (with its chain), "registered" (a did:aw with no
  *  chain yet), "local" (a did:key) or "none". `extraTeams`: more teams the
  *  deployment maps, [{label, team}], beyond default and ops. */
-export function attributionFixture(t, { attribution = true, features = ["spawn-attribution"], label = "Juan Pérez", delivery = "channel", runtime = "claude", settings: extraSettings = {}, teams = [TEAM, OPS], service = {}, capability = CAPABILITY, root = "endorsed", extraTeams = [] } = {}) {
+export function attributionFixture(t, { attribution = true, features = ["spawn-attribution"], label = "Juan Pérez", delivery = "channel", runtime = "claude", settings: extraSettings = {}, teamIds = { default: TEAM, ops: OPS }, teams = [teamIds.default, teamIds.ops], service = {}, capability = CAPABILITY, root = "endorsed", extraTeams = [] } = {}) {
   const hookPath = join(capability, "bin", "oats-aweb.mjs"), binding = join(capability, "bin", "oats-aweb-binding.mjs");
   const ws = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-attr-")));
   t.after(() => rmSync(ws, { recursive: true, force: true }));
   writeIdentity(join(ws, ".aw"));
-  writeFileSync(join(ws, ".aw", "teams.yaml"), `active_team: ${TEAM}\n`);
+  writeFileSync(join(ws, ".aw", "teams.yaml"), `active_team: ${teamIds.default}\n`);
   writeFileSync(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const profile = join(ws, "protected-profile.json");
   writeFileSync(profile, PROFILE_TEXT, { mode: 0o600 });
@@ -60,8 +60,8 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
   const kernel = currentRootQuery(ws, { home: homeOf("dev-1"), deployment: ws, settings, change: `if(args.includes('--version'))doc={schemaVersion:1,name:'@awebai/oats',version:'0.69.19',features:${JSON.stringify(features)}};${status}` });
   const env = {
     PATH: fake.path, HOME: ws, OATS_CLI_BIN: kernel.cli, OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: "github.com/acme/agents", OATS_WORKSPACE_NAME: "acme",
-    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
-    OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }, { label: "ops", team: OPS, default: false, from: "shared" }, ...extraTeams.map(({ label, team }) => ({ label, team, default: false, from: "shared" }))]), OATS_TEAMS_SOURCE: "live",
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: teamIds.default, OATS_DEFAULT_TEAM_FROM: "deployment",
+    OATS_TEAMS: JSON.stringify([{ label: "default", team: teamIds.default, default: true, from: "local" }, { label: "ops", team: teamIds.ops, default: false, from: "shared" }, ...extraTeams.map(({ label, team }) => ({ label, team, default: false, from: "shared" }))]), OATS_TEAMS_SOURCE: "live",
     OATS_RUNTIME: runtime, OATS_SETTINGS: JSON.stringify(settings),
   };
   const hook = (event, name, extra = {}) => {

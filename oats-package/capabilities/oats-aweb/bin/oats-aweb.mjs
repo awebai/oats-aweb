@@ -70,7 +70,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from
 import { leftAdmissionName, retireAdmissions } from "../lib/removal.mjs";
 import { attributionStatus, homesOf, reconcileAdmissions } from "../lib/reconcile.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { inAwebHostedZone, sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
@@ -1548,7 +1548,7 @@ function readDefaultRetireMarker() {
   } catch { /* no completed default retire marker */ }
   return undefined;
 }
-function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReason, receipt }) {
+function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReason, receipt, workspaceDeleted }) {
   const doc = {
     schemaVersion: 1,
     kind: "default-workspace-delete",
@@ -1560,6 +1560,8 @@ function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReaso
     aliasReason: aliasReason || "unstated",
     recordedAt: new Date().toISOString(),
     ...(receipt?.identity_deleted === true ? { identityDeleted: true } : {}),
+    // Absent means a delete ran; false, that none did (a hosted-zone admitted team, C-6).
+    ...(workspaceDeleted === false ? { workspaceDeleted: false } : {}),
   };
   atomicWrite(defaultRetireMarkerFile(), JSON.stringify(doc, null, 2) + "\n");
   return doc;
@@ -1616,10 +1618,18 @@ function teamNotHostedRefusal(e, identityHome) {
   } catch { /* no identity to name: aw names the path */ }
   return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
 }
+/** C-6 (v4.3.25): what retire and leave say of a workspace they leave on a hosted-zone team. */
+const hostedWorkspaceNote = (team) => `the workspace on ${team} stays at the service until it goes stale: the pinned aw has no delete that removes only the workspace on a team in aweb's hosted zone`;
 function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home, { admitted = false } = {}) {
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
   if (!alias) throw new Error(`failed to leave team ${entry.label}; no alias is known for ${entry.identityHome}`);
+  // On a team the root admitted into, in aweb's hosted zone, aw's delete is hosted
+  // self-retirement: a second removal act beside the root's (C-6, v4.3.25). None is sent.
+  if (admitted && inAwebHostedZone(entry.team)) {
+    try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    return { released: undefined, receipt: undefined, note: hostedWorkspaceNote(entry.team) };
+  }
   try {
     receipt = parseAwJson(run(awWithIdentity(entry.identityHome, ["workspace", "delete", alias, "--json"]), cwd, 60000), "aw workspace delete");
     released = releaseReceiptStatus(receipt);
@@ -2880,6 +2890,9 @@ if (event === "launch") {
   if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
     // A retire kept after its workspace delete (an unconfirmed removal) removes now.
     await removeAdmissions();
+    if (completedDefaultRetire.workspaceDeleted === false) {
+      await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: completedDefaultRetire.aliasReason || "hosted-workspace-kept", joinedTeams: joinedTeamsOf(meta) }), warning: `oats-aweb: ${[...retireWarnings, `workspace "${completedDefaultRetire.alias || meta.alias}" was left at the service to go stale (no delete on a team in aweb's hosted zone); ${ALIAS_UNRELEASED_REMEDY}`].join(" | ")}` });
+    }
     const viaRoot = admittedTeam(completedDefaultRetire.team || meta.team || defaultTeamId());
     if (viaRoot) {
       const removed = admittedTeams.get(viaRoot) === true;
@@ -2956,6 +2969,15 @@ if (event === "launch") {
   if (!existsSync(join(home, ".aw"))) {
     await removeAdmissions();
     await finish({ meta: retiredMeta({ retired: false, reason: "no-local-identity-key" }), warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
+  }
+  const primaryTeam = meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId();
+  if (admittedTeam(primaryTeam) && inAwebHostedZone(primaryTeam)) {
+    // C-6 (v4.3.25, v4.3.26): no delete here, so nothing says the alias is free; the marker
+    // records that no delete ran, so a rerun only removes.
+    const workspaceId = workspaceIdOf(home, primaryTeam, meta.alias);
+    writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: false, aliasReason: "hosted-workspace-kept", workspaceDeleted: false });
+    await removeAdmissions();
+    await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "hosted-workspace-kept", joinedTeams: joinedTeamsOf(meta) }), warning: `oats-aweb: ${[...retireWarnings, hostedWorkspaceNote(primaryTeam)].join(" | ")}` });
   }
   try {
     // Self-delete from inside the home, authenticated by its own key — a remote

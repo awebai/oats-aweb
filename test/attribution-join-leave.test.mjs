@@ -8,6 +8,7 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import test from "node:test";
 import { OPS, ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
+import { POLICY } from "./helpers/fake-aw-protected.mjs";
 
 const call = (fake, prefix) => fake.calls().filter((c) => commandArgs(c.args).join(" ").startsWith(prefix));
 const record = (fx, name, label) => JSON.parse(readFileSync(join(fx.homeOf(name), ".oats-aweb", `admission-${label}.json`), "utf8"));
@@ -215,4 +216,18 @@ test("C-3d: an explicit join resuming an unknown operation keeps it unknown when
   assert.equal(r.status, 1);
   assert.ok(r.stderr.startsWith("E_ADMISSION_REFUSED: "), r.stderr);
   assert.deepEqual([record(fx, "dev-1", "ops").state, record(fx, "dev-1", "ops").operationId], ["unknown", operationId]);
+});
+
+test("acceptance 13 (v4.3.25): an explicit leave of an admitted team in aweb's hosted zone runs no workspace delete: the root removes, and the warning says the record goes stale", (t) => {
+  const ids = { default: "backend:review.aweb.ai", ops: "ops:review.aweb.ai" };
+  const fx = attributionFixture(t, { teamIds: ids, teams: [ids.default, ids.ops], service: { policy: { ...POLICY, teams: [ids.default, ids.ops] } }, settings: { join: "ops" } });
+  spawned(fx);
+  const { certificateId } = record(fx, "dev-1", "ops");
+  const r = fx.command("dev-1", "leave", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!verbs(fx.fake).includes("workspace delete"), verbs(fx.fake).join(", "));
+  assert.deepEqual(fx.fake.selfRetired(), []);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
+  assert.ok(JSON.stringify(r.doc.warnings).includes(`the workspace on ${ids.ops} stays at the service until it goes stale`), JSON.stringify(r.doc));
+  assert.ok(!existsSync(joinedHome(fx)));
 });

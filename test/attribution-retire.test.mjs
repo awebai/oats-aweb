@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { appendFileSync, chmodSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { teamCertificateRelativePath } from "../oats-package/capabilities/oats-aweb/lib/aweb-team-id.mjs";
+import { inAwebHostedZone, teamCertificateRelativePath } from "../oats-package/capabilities/oats-aweb/lib/aweb-team-id.mjs";
+import { POLICY } from "./helpers/fake-aw-protected.mjs";
 import { ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
 
 const RECONCILE = "oats aweb setup --reconcile-admissions";
@@ -499,4 +500,74 @@ test("C-3d (v4.3.19): a pending record whose --certificate-out names another mem
   assert.notEqual(r.status, 0, "kept");
   assert.ok(warningOf(r).includes("holds another file") && warningOf(r).includes("retire again"), warningOf(r));
   assert.ok(!existsSync(rootCopy(fx, certificateId)), "no copy from a certificate for another key");
+});
+
+// ---------------------------------------------------------------------------
+// Acceptance 13 (v4.3.25): an admitted team in aweb's hosted zone. There aw's workspace delete
+// is hosted self-retirement, a second removal act, so retire and leave never run it.
+
+const HOSTED = { default: "backend:review.aweb.ai", ops: "ops:review.aweb.ai" };
+const hostedFixture = (t, ids = HOSTED, opts = {}) => attributionFixture(t, { teamIds: ids, service: { policy: { ...POLICY, teams: [ids.default, ids.ops] } }, ...opts });
+const STALE = "stays at the service until it goes stale";
+
+test("acceptance 13 (v4.3.25): on admitted teams in aweb's hosted zone, retire runs no workspace delete, for the primary or a joined identity; the root removes both, and the home goes", (t) => {
+  const fx = hostedFixture(t, HOSTED, { settings: { join: "ops" } });
+  assert.equal(fx.spawn("dev-1").status, 0);
+  const ids = ["default", "ops"].map((label) => admission(fx, "dev-1", label).certificateId);
+  const r = fx.retire("dev-1");
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.ok(!verbs(fx.fake).includes("workspace delete"), verbs(fx.fake).join(", "));
+  assert.deepEqual(fx.fake.selfRetired(), []);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id).sort(), ids.sort());
+  assert.ok(warningOf(r).includes(`the workspace on ${HOSTED.default} ${STALE}`) && warningOf(r).includes(`on ${HOSTED.ops} ${STALE}`), warningOf(r));
+  // v4.3.26: no delete ran, so the alias isn't said to be free, whatever the root's removal did.
+  assert.deepEqual([r.doc.meta.retired, r.doc.meta.aliasReusable, r.doc.meta.aliasReason], [true, false, "hosted-workspace-kept"]);
+  const marker = JSON.parse(readFileSync(join(fx.homeOf("dev-1"), ".oats-aweb", "default-retire.json"), "utf8"));
+  assert.deepEqual([marker.kind, marker.workspaceDeleted], ["default-workspace-delete", false]);
+  // A rerun reads the marker: the workspace was left to go stale, never "deleted".
+  const again = fx.retire("dev-1");
+  assert.equal(again.status, 0, JSON.stringify(again.doc));
+  assert.deepEqual([again.doc.meta.aliasReusable, again.doc.meta.aliasReason], [false, "hosted-workspace-kept"]);
+  assert.ok(warningOf(again).includes(`workspace "dev-1" was left at the service to go stale`) && warningOf(again).includes("--name"), warningOf(again));
+  assert.ok(!/deleted/.test(warningOf(again)), warningOf(again));
+});
+
+test("acceptance 13 (v4.3.25): the rollback retire on a hosted-zone team runs no workspace delete either", (t) => {
+  const fx = hostedFixture(t);
+  fx.fake.setService({ install: { code: "member_mismatch" } });
+  const r0 = fx.hook("spawn", "dev-1");
+  assert.notEqual(r0.status, 0);
+  fx.fake.setService({ install: undefined });
+  const r = fx.retire("dev-1", { fromMeta: r0.doc.meta });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.ok(!verbs(fx.fake).includes("workspace delete"));
+  assert.equal(fx.fake.removed().length, 1);
+});
+
+test("acceptance 13 (v4.3.25): with the root unable to act on a hosted-zone team, retire still runs no workspace delete: the membership is kept, never self-retired", (t) => {
+  const fx = hostedFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  fx.fake.revoke(ROOT_ID);
+  const r = fx.retire("dev-1");
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  assert.ok(warningOf(r).includes("reason: root-revoked"), warningOf(r));
+  assert.ok(!verbs(fx.fake).includes("workspace delete"));
+  assert.deepEqual(fx.fake.selfRetired(), []);
+});
+
+for (const domain of ["evil-aweb.ai", "aweb.ai.example.com"]) {
+  test(`acceptance 13 (v4.3.25): ${domain} is outside aweb's hosted zone: retire deletes the workspace first, then the root removes`, (t) => {
+    const ids = { default: `backend:${domain}`, ops: `ops:${domain}` };
+    const fx = hostedFixture(t, ids);
+    assert.equal(fx.spawn("dev-1").status, 0);
+    const r = fx.retire("dev-1");
+    assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+    const v = verbs(fx.fake);
+    assert.ok(v.includes("workspace delete") && v.indexOf("workspace delete") < v.indexOf("id team remove-agent"), v.join(", "));
+  });
+}
+
+test("C-6 (v4.3.25): aw's hosted zone, as isAwebHostedNamespace reads a team id's domain", () => {
+  const rows = [["a:aweb.ai", true], ["a:review.aweb.ai", true], ["a: Review.AWEB.ai. ", true], ["a:evil-aweb.ai", false], ["a:aweb.ai.example.com", false], ["a:.aweb.ai", false], ["a:x..aweb.ai", false], ["a:acme.example", false], ["not-a-team", false], ["a:", false]];
+  for (const [team, inZone] of rows) assert.equal(inAwebHostedZone(team), inZone, team);
 });
