@@ -112,10 +112,11 @@ test("session-delivery guidance pins broker presentation and exact recovery rule
   assert.match(oatsSkill, /With `renew: off` the\s+grant expires at its TTL/);
   assert.match(oatsSkill, /`renew: launch` plus a restart, or a\s+respawn/);
   assert.doesNotMatch(oatsSkill, /host renews it/);
-  const inject = readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8");
-  assert.match(inject, /At session start in a grant seat, run `aw whoami`,\s+then `aw mail inbox` and `aw chat pending`/);
-  assert.match(inject, /do not run `aw workspace status` or\s+`aw id show` from the grant home/);
-  assert.match(inject, /Grant inspection \(`aw id grant list\/show`\)\s+runs from the resident custody `\.aw`, not from the grant home/);
+  // A grant seat's session-start and inspection rules are in its own Comms brief, pinned in
+  // oats-aweb-hook-1-13.test.mjs; the always-loaded inject routes grant seats there and keeps the stop rule.
+  const inject = readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8").replace(/\s+/g, " ");
+  assert.match(inject, /A grant seat follows its `Comms:` line/);
+  assert.match(inject, /on a `grant_\*` error, report the exact condition and stop messaging/);
   const identitySkill = readFileSync(join(CAPABILITY, "skills", "aweb-identity", "SKILL.md"), "utf8");
   assert.match(identitySkill, /resident session grant[\s\S]*`aw whoami` only[\s\S]*`aw id show` and `aw id grant list\/show`/);
   assert.match(identitySkill, /grant inspection runs from the resident custody `\.aw`/);
