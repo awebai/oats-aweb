@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **Changed: a retained seat reads its aweb service only from its own record
+  (#241).** A retained seat's spawn (`identity.source`) took its service from
+  `OATS_AWEB_URL` when that was set, and from the seat's
+  `<source>/workspace.yaml` `aweb_url` only otherwise, so a spawn and the
+  rebind command a retire prints could name different servers. The service
+  now comes only from that `aweb_url` (aw writes it at `aw workspace
+  connect`): any http or https URL with a host, a path prefix or an IPv6
+  literal included, with no userinfo, query, fragment, whitespace or control
+  characters. The file is read in the form aw writes it (a top-level key and
+  its value on one line, and its `memberships:` list), and a
+  `workspace.yaml` in any other form is refused whole. The reader decides
+  only that `aweb_url` and is not a YAML validator: a file that isn't valid
+  YAML may still be accepted, and the URL checks still bound what reaches
+  aw. The service is never printed: a failed
+  spawn withholds aw's own output, which may name it. `OATS_AWEB_URL` is no
+  longer read. A seat with no such `aweb_url` is refused before anything is
+  copied or locked, and the refusal names the fix: run `aw workspace connect
+  --service <the team's aweb server>` in the seat's parent directory (the one
+  that holds its `.aw`), then spawn again. A soul's readiness reports the same
+  refusal as a `needs-configuration` problem; a seated home's readiness does
+  not read the source again. While `OATS_AWEB_URL` is set, the
+  refusal says the variable is no longer read, and a spawn that has a record
+  warns that the variable is ignored; neither prints its value. The rebind
+  a retire prints names the server in a command only when it is a plain
+  service URL (http or https, a host, an optional port, and no path but `/`
+  or `/api`); otherwise it says to run `aw workspace connect` there with the
+  service in its `workspace.yaml`. **If you set
+  `OATS_AWEB_URL` for a retained seat:** record the server in the seat with
+  that `aw workspace connect` and unset the variable. A seat whose
+  `workspace.yaml` already names its server is unchanged.
+
 - **Removed: the captured-execution path (#242).** The captured bindings
   (the `OATS_BINDING_FILE`, `OATS_INVOCATION_CONTEXT_FILE` and
   `OATS_SOURCE_RECEIPT_FILE` variables, and the `binding` and `invocation`

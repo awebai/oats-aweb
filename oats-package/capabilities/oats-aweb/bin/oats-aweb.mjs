@@ -71,6 +71,7 @@ import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, 
 import { sameAwebTeamId, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
+import { awebUrlVariableSet, retainedSeatService, unknownSeatServiceMessage } from "../lib/retained-seat-service.mjs";
 import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
@@ -153,7 +154,7 @@ const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EV
  *  started. Every aw child of the hook takes its timeout from here. */
 const hookTimeout = (requested) => boundedByHook ? Math.min(requested, Math.floor(HOOK_STARTED_AT + HOOK_BUDGET_MS - performance.now())) : requested;
 const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
-const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, env: extraEnv, unsetEnv = [], input } = {}) => {
+const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input } = {}) => {
   const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
@@ -177,10 +178,11 @@ const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, f
     // The outcome says how the child ended (a timeout or signal included), which
     // is not its output, so even a secretSafe command reports it.
     const outcome = e.code === "E_HOOK_DEADLINE" ? `not started: the hook's ${Math.round(HOOK_BUDGET_MS / 1000)} s deadline had passed` : childOutcome(e, timeout);
-    const output = secretSafe ? "" : scrub(e.stderr).trim();
+    // withhold: the output may hold a value that is never printed; the string says why.
+    const output = secretSafe || withhold ? "" : scrub(e.stderr).trim();
     // failureDetail: a secretSafe command may still name its sanitized class.
     const cls = secretSafe && failureDetail ? failureClass({ stderr: scrub(e.stderr), stdout: scrub(e.stdout) }) : "";
-    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? ` (output withheld: this command handles credentials${cls ? `; ${cls}` : ""})` : ""}`);
+    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? ` (output withheld: this command handles credentials${cls ? `; ${cls}` : ""})` : withhold ? ` (output withheld: ${withhold})` : ""}`);
     err.outcome = outcome;
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
@@ -1113,14 +1115,21 @@ function activeTeamAt(root) {
     return yamlScalar(text, "active_team") || yamlScalar(text, "active");
   } catch { return undefined; }
 }
-/** The service, role and team a retained seat's identity is bound with, from its
- *  source's workspace.yaml and teams.yaml and the default team, as spawn binds it;
- *  a value that cannot be determined is undefined. */
+/** The service, role and team a retained seat's identity is bound with, as spawn binds it
+ *  and as every command that names the seat's server prints it. The service comes from
+ *  lib/retained-seat-service.mjs, the one resolver (the seat's own record only); the team is
+ *  the default team, else the source's active team. A value that cannot be determined is
+ *  undefined. */
 function retainedSeatTarget(source) {
   const read = (name) => { try { return readFileSync(join(source, name), "utf8"); } catch { return ""; } };
   const srcWorkspace = read("workspace.yaml"), srcTeams = read("teams.yaml");
   const team = defaultTeamId() || yamlScalar(srcTeams, "active_team") || yamlScalar(srcTeams, "active");
-  return { service: process.env.OATS_AWEB_URL || yamlScalar(srcWorkspace, "aweb_url"), role: yamlScalar(srcWorkspace, "role_name"), team };
+  return { ...retainedSeatService(source), role: yamlScalar(srcWorkspace, "role_name"), team };
+}
+/** The refusal for a retained seat whose record names no usable service, before any copy or
+ *  effect. The remedy is named in full, so the text is not cut at fatal's 300 characters. */
+function refuseUnknownSeatService(source, record) {
+  out({ warning: `oats-aweb: ${unknownSeatServiceMessage(source, record)}` }, 1);
 }
 /** A field a retained seat's lock names, when it is short and printable. */
 const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
@@ -1139,6 +1148,8 @@ function refuseUnheldLock(lockPath, held) {
 function retainedSeatSpawn(source, takeOver) {
   if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
+  const { service, record, role, team } = retainedSeatTarget(source);
+  if (!service) refuseUnknownSeatService(source, record);
   const lockPath = seatLockPath(source);
   let takenOver, takeOverNote = "";
   // lstat, not exists: a dangling symlink at the lock path is a lock that cannot be read.
@@ -1164,8 +1175,6 @@ function retainedSeatSpawn(source, takeOver) {
       takeOverNote = holderHome ? " (its home is not on this host)" : "";
     }
   }
-  const { service, role, team } = retainedSeatTarget(source);
-  if (!service) fatal(`cannot determine the aweb service for ${source} (no aweb_url in its workspace.yaml)`);
   if (!team || !team.includes(":")) fatal(`cannot determine the team for the retained identity (${teamConfigRemedy()}, or keep an active team in ${join(source, "teams.yaml")})`);
   const dest = join(home, ".aw");
   const legacyHome = dirname(source);
@@ -1181,6 +1190,9 @@ function retainedSeatSpawn(source, takeOver) {
     fatal(`identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied`);
   }
   let connected = false;
+  // The seat's service is never printed, and aw's diagnostics may name it (a network
+  // error does), so its calls here show none.
+  const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, { withhold: "aw's output may name the seat's service, which is never printed" });
   const rollback = () => {
     // Once `aw workspace connect` has started, the server binding may point at the
     // new home (aw binds on the service before it writes locally, so a connect
@@ -1190,7 +1202,7 @@ function retainedSeatSpawn(source, takeOver) {
     // copy; if the restore fails, KEEP the copy so the seat stays recoverable.
     let restored = !connected;
     if (connected) {
-      try { run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], legacyHome, 60000); restored = true; }
+      try { seatRun(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], legacyHome, 60000); restored = true; }
       catch { restored = false; }
     }
     if (restored) { try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ } try { rmSync(lockPath, { force: true }); } catch { /* best effort */ } }
@@ -1212,10 +1224,10 @@ function retainedSeatSpawn(source, takeOver) {
       if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });
     }
     connected = true; // set before the call: a connect that fails may still have bound
-    run(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], home, 60000);
-    run(["aw", "check", "--online"], home, 60000);
-    run(["aw", "heartbeat"], home, 60000);
-    const status = run(["aw", "workspace", "status", "--json"], home, 60000);
+    seatRun(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], home, 60000);
+    seatRun(["aw", "check", "--online"], home, 60000);
+    seatRun(["aw", "heartbeat"], home, 60000);
+    const status = seatRun(["aw", "workspace", "status", "--json"], home, 60000);
     // Thrown, not fatal: the catch below rolls the copy and the lock back first.
     // Verified by parsing: the workspace row's path must be this home. The
     // hostname the row records is whatever the binding stored (on hosted
@@ -1231,7 +1243,9 @@ function retainedSeatSpawn(source, takeOver) {
     // The same-identity check the contract is for: `aw whoami --json` from the
     // new home reports the did and address the CLI now acts as (workspace
     // status carries no did); both must equal the copied identity.yaml.
-    let who; try { who = JSON.parse(String(run(["aw", "whoami", "--json"], home, 60000))); } catch (e) { throw new Error(`aw whoami from ${home} answered no JSON (${e.message || e}); the seat is not verified`); }
+    // A failed call's message is already withheld; a parse error would quote aw's output, so neither is shown.
+    let whoText; try { whoText = String(seatRun(["aw", "whoami", "--json"], home, 60000)); } catch (e) { throw new Error(`aw whoami from ${home} failed (${e.message || e}); the seat is not verified`); }
+    let who; try { who = JSON.parse(whoText); } catch { throw new Error(`aw whoami from ${home} answered no JSON; the seat is not verified`); }
     const shownDid = who.did || who.identity?.did;
     const shownAddress = who.address || who.identity?.address;
     if (expectedDid && shownDid !== expectedDid) throw new Error(`aw whoami shows did ${shownDid || "(none)"}, not the retained identity's ${expectedDid}; the seat is not the same identity`);
@@ -1247,6 +1261,7 @@ function retainedSeatSpawn(source, takeOver) {
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver}${takeOverNote} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
+    if (awebUrlVariableSet()) warnings.push(`oats-aweb: OATS_AWEB_URL is set, but it is ignored for a retained seat: the service comes only from ${join(source, "workspace.yaml")}`);
     out({
       meta: startedMeta({ team, alias, retained: true, source, lock: lockPath, identity: identityMeta({ mode: "local", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) }),
       env,
@@ -1256,7 +1271,8 @@ function retainedSeatSpawn(source, takeOver) {
     });
   } catch (e) {
     const restored = rollback();
-    fatal(`retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}`);
+    // Not fatal's 300 characters: the recovery step at the end must survive the cause before it.
+    out({ warning: `oats-aweb: retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}` }, 1);
   }
 }
 
@@ -2383,6 +2399,7 @@ if (event === "launch") {
     if (meta.spawnUnanswered && (heldHere !== false || existsSync(join(home, ".aw", "workspace.yaml")))) {
       const target = retainedSeatTarget(meta.source);
       const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
+      // Any accepted service is bound, but only a plain service URL is printed in a command.
       const connect = plainServiceUrl(target.service) && validAwebTeamId(target.team) && (!target.role || plainRole)
         ? `\`aw workspace connect --service=${target.service} --team=${target.team}${plainRole ? ` --role=${plainRole}` : ""}\``
         : "`aw workspace connect` with the service, team and role in its workspace.yaml";
