@@ -10,6 +10,7 @@ import { yamlScalar } from './binding-wire.mjs';
 import { withheldFailureCause } from './aw-failure-cause.mjs';
 import { childOutcome } from './child-outcome.mjs';
 import { plainServiceUrl } from './plain-service.mjs';
+import { sameAwebTeamId } from "./aweb-team-id.mjs";
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 // Match the provider's existing canonical team/hostname contract.
@@ -127,7 +128,7 @@ export function issueInvite(argv, env = process.env) {
   let membership;
   try { membership = JSON.parse(isolatedNative(['team','list','--json'], root, env)); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
   if (!Array.isArray(membership?.memberships)) fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership');
-  if (membership.memberships.filter(m => object(m) && m.team_id === team).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
+  if (membership.memberships.filter(m => object(m) && sameAwebTeamId(m.team_id, team)).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
   const result = { label, team, root, awebUrl: rootAwebUrl(root), authority: 'native/server decides at issuance' };
   if (opts.plan) return { ...result, plan: true, command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
   // Fresh native user state prevents an invoking-home BYOT controller key or

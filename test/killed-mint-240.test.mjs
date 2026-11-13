@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
+import { canonicalAwPath } from "./helpers/canonical-aw.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
 import { verifySignature } from "../oats-package/capabilities/oats-aweb/lib/status-document.mjs";
 
@@ -400,4 +401,26 @@ test("a recorded registry that is not a plain origin is not passed or printed: a
   assert.ok(membersCalls(fx).every((c) => !c.args.some((a) => a.startsWith("--registry"))), JSON.stringify(membersCalls(fx)));
   assert.ok(retired.doc.warning.includes("is not a plain origin, so the command omits --registry: the controller adds --registry with the registry_url of the team's membership there"), retired.doc.warning);
   assert.doesNotMatch(retired.doc.warning, /registry\.example\.test\/path/);
+});
+
+// awebai/oats-aweb#252: aw spells a team id canonically; a deployment may not.
+test("a mint of a team configured in mixed case, which aw answers in its own spelling, gives no team-mismatch warning", (t) => {
+  const fx = fixture(t), configured = "Default:Example.Test";
+  const env = { OATS_DEFAULT_TEAM_ID: configured, OATS_TEAMS: JSON.stringify([{ label: "default", team: configured, default: true, from: "local" }]), PATH: canonicalAwPath(fx.fake.base, fx.env.PATH) };
+  const r = fx.hook("spawn", env);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(r.doc.warning || "", /team mismatch/);
+  assert.doesNotMatch(r.doc.brief, /\[WARNING: joined/);
+});
+
+test("retire's self-delete finds the workspace id when the meta spells the team otherwise than aw", (t) => {
+  const fx = fixture(t), configured = "Default:Example.Test";
+  const r = fx.hook("spawn");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const workspaceId = (readFileSync(join(fx.home, ".aw", "workspace.yaml"), "utf8").match(/workspace_id:\s*(\S+)/) || [])[1];
+  assert.match(workspaceId, /^[0-9a-f]{8}-[0-9a-f]{4}-/i, "the fixture's binding records a workspace id");
+  const retired = fx.retire({ ...r.doc.meta, team: configured });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const del = fx.fake.readCalls().find((c) => c.args[0] === "workspace" && c.args[1] === "delete");
+  assert.equal(del.args[2], workspaceId, "deleted by workspace id, not by alias");
 });

@@ -17,6 +17,7 @@ import { awFloorMessage, onPath } from "./binding-wire.mjs";
 import { parseAwJson } from "./grant-custody.mjs";
 import { assertAwebSettingRecordable, recordAwebSetting } from "./local-settings.mjs";
 import { querySelectedKernel } from "./session-readiness.mjs";
+import { sameAwebTeamId } from "./aweb-team-id.mjs";
 import { selectedTeamKernel } from "./setup-team-default.mjs";
 import { normalizeAwebTeamName, selectedDeployment } from "./team-roots.mjs";
 import { conflictMessage, custodyLabel, ensureCustodyUnit, foreignUnitMessage, handStep, lingerProblem, ownUnitServes, residentUnits, retireUnitStep, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
@@ -452,7 +453,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
 
     // ---- verify, with the key absent
     const doctor = identityDoctor(readJson(["doctor", "identity", "--offline", "--json"], "aw doctor identity --offline"), name);
-    if (identity.team && identity.team !== doctor.team) throw failure("E_RESIDENT_VERIFY", "verify", `aw init answered team ${identity.team}, but the identity on disk is in ${doctor.team}`);
+    if (identity.team && !sameAwebTeamId(identity.team, doctor.team)) throw failure("E_RESIDENT_VERIFY", "verify", `aw init answered team ${identity.team}, but the identity on disk is in ${doctor.team}`);
     const team = doctor.team;
     const warnings = registryWarnings(read);
 

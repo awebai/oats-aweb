@@ -5,6 +5,7 @@ import { isAbsolute, resolve, join } from 'node:path';
 import { realpathSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import { selectedDeployment } from './team-roots.mjs';
 import { kernelQueryEnvironment } from './session-readiness.mjs';
+import { sameAwebTeamId } from "./aweb-team-id.mjs";
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function setupFailure(code, message, details = {}) {
@@ -205,7 +206,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
       }
       if (!Array.isArray(doc?.memberships) || doc.memberships.length !== 1) throw setupFailure('E_SETUP_MEMBERSHIP', 'expected exactly one LOCAL root membership; root retained, no repeated signup');
       const member = doc.memberships[0];
-      if (!object(member) || member.team_id !== predictedTeam || !validTeam(member.team_id) || member.alias !== name || member.identity_scope !== 'local') {
+      if (!object(member) || !sameAwebTeamId(member.team_id, predictedTeam) || !validTeam(member.team_id) || member.alias !== name || member.identity_scope !== 'local') {
         throw setupFailure('E_SETUP_MEMBERSHIP', 'root account, alias or LOCAL scope does not match requested inputs; root retained, no repeated signup');
       }
       return member.team_id;

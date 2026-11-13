@@ -68,7 +68,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { sameAwebTeamId, validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { canonicalAwebTeamId, sameAwebTeamId, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
@@ -724,7 +724,7 @@ function verifyGrantCustodyAttachment({ grantHome, custodySocket, alias, team })
   if (String(status.status || "") !== "running") throw new Error(`grant custody status is ${status.status || "unknown"}, not running`);
   if (status.socket_path !== custodySocket) throw new Error(`grant custody status socket_path ${status.socket_path || "<missing>"} differs from preflight ${custodySocket}`);
   if (status.resident?.alias !== alias) throw new Error(`grant custody resident alias ${status.resident?.alias || "<missing>"} differs from ${alias}`);
-  const teamRow = (Array.isArray(status.teams) ? status.teams : []).find((t) => t && (t.team_id || t.id) === team);
+  const teamRow = (Array.isArray(status.teams) ? status.teams : []).find((t) => t && sameAwebTeamId(t.team_id || t.id, team));
   if (!teamRow || teamRow.ready !== true) throw new Error(`grant custody team ${team} is not ready`);
   return status;
 }
@@ -911,7 +911,7 @@ function globalGrantRenew(oldMeta) {
   const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
   const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, seat, grant: { id: grantId, expiresAt, ttl, renew: "launch", scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
   const newGrant = newMeta.identity.grant;
-  if (mintedTeam !== team) keepPrevious(`renewal minted grant team ${mintedTeam} differs from ${team}`, revokeOrNote(custody, newGrant));
+  if (!sameAwebTeamId(mintedTeam, team)) keepPrevious(`renewal minted grant team ${mintedTeam} differs from ${team}`, revokeOrNote(custody, newGrant));
   try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias: newMeta.identity.alias, team: mintedTeam }); }
   catch (e) { keepPrevious(`renewal grant ${grantId} custody attachment failed (${e.message || e})`, revokeOrNote(custody, newGrant)); }
   // The start already registered the previous grant home; the new one replaces it.
@@ -975,7 +975,7 @@ function globalGrantSpawn() {
     const recovered = recoverGrantHome(grantHome);
     const alias = recovered.subjectAlias || mintedAlias || resident;
     meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, seat, grant: { id: grantId, expiresAt, ttl, ...recordedRenew(), scopes, home: grantHome, ...grantAppInventory(minted) } }) });
-    if (mintedTeam !== team) {
+    if (!sameAwebTeamId(mintedTeam, team)) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
       catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}`, unrevokedNote(custody, meta.identity.grant, e)); }
     }
@@ -1053,7 +1053,7 @@ const WORKSPACE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 function workspaceIdOf(homeDir, team, alias) {
   let text;
   try { text = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8"); } catch { return undefined; }
-  const hit = membershipRows(text).find((r) => r.team_id === team && r.alias === alias);
+  const hit = membershipRows(text).find((r) => sameAwebTeamId(r.team_id, team) && r.alias === alias);
   return hit && WORKSPACE_ID_RE.test(hit.workspace_id || "") ? hit.workspace_id : undefined;
 }
 /** The flat mappings of a `memberships:` list in a .aw YAML file (workspace.yaml,
@@ -1448,7 +1448,7 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
 function acceptedTeamMembership(identityHome, expectedTeam) {
   const listed = parseAwJson(run(awWithIdentity(identityHome, ["id", "team", "list", "--json"]), dirname(identityHome), 60000), "aw id team list");
   const ids = teamIdsOf(listed).map(String);
-  if (expectedTeam) return ids.includes(expectedTeam) ? expectedTeam : undefined;
+  if (expectedTeam) return ids.some((id) => sameAwebTeamId(id, expectedTeam)) ? expectedTeam : undefined;
   return ids.length === 1 ? ids[0] : undefined;
 }
 function connectExistingJoinedTeam({ label, identityHome, expectedTeam, root, cwd = home, serviceDocs = [], resumeCommand }) {
@@ -1533,7 +1533,7 @@ function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requ
   const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : requestedAlias;
   const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : expectedTeam;
   if (!team || !validAwebTeamId(team)) throw new Error(`aw id team accept-invite returned no valid team_id for joined team ${label}`);
-  if (expectedTeam && team !== expectedTeam) throw new Error(`joined team differs from requested ${expectedTeam}`);
+  if (expectedTeam && !sameAwebTeamId(team, expectedTeam)) throw new Error(`joined team differs from requested ${expectedTeam}`);
   const joined = { label, team, identityHome, receive: "poll", since: new Date().toISOString(), alias };
   try {
     if (!joinedWorkspacePresent(identityHome)) {
@@ -1584,7 +1584,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   // team id changed) is released for that team, never adopted into this one.
   const pending = pendingJoinsOf(meta).find((p) => p.label === row.label);
   if (pending) {
-    if (pending.team === row.team) {
+    if (sameAwebTeamId(pending.team, row.team)) {
       const settled = settlePendingJoin(pending, { root: () => chooseRoot().root, resumeCommand });
       if (settled.joined) return { meta: { ...withoutPendingJoin(meta, row.label), joinedTeams: [...joinedTeamsOf(meta), settled.joined] }, joined: settled.joined, changed: true };
       meta = withoutPendingJoin(meta, row.label);
@@ -1625,7 +1625,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   }
   return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true };
 }
-const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).includes(team);
+const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).some((id) => sameAwebTeamId(String(id), team));
 /** `join --plan`: the root each label's join would mint from, chosen exactly as
  *  the join chooses it, with no invite, identity or state written. */
 function joinPlan(rows, meta) {
@@ -1677,7 +1677,7 @@ function joinedTeamRootProblem(team, declared = declaredRootCandidate(team)) {
   const canonical = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
   if (canonical(root) === canonical(home) || (existsSync(join(home, ".aw")) && canonical(join(root, ".aw")) === canonical(join(home, ".aw")))) return tried("the instance home's own identity");
   if (!existsSync(join(root, ".aw"))) return tried("no .aw");
-  if (!teamIdsOf(readTeamsAt(root)).map(String).includes(team)) return tried(`aw team list there: not a member of ${team}`);
+  if (!teamIdsOf(readTeamsAt(root)).map(String).some((id) => sameAwebTeamId(id, team))) return tried(`aw team list there: not a member of ${team}`);
   return undefined;
 }
 function joinedTeamRootRefusal(team, label) {
@@ -1754,7 +1754,7 @@ function rosterDocument({ team, certificates, presence, problems, root, retired 
   }
   // A certificate this host's retires recorded, matched on team and certificate id, never on
   // alias alone: aliases are reused.
-  const retiredByCertificate = new Map(retired.filter((r) => r.team === team).map((r) => [r.certificateId, r]));
+  const retiredByCertificate = new Map(retired.filter((r) => sameAwebTeamId(r.team, team)).map((r) => [r.certificateId, r]));
   const members = [...entries.values()].map(({ alias, certificate, workspace, self: isSelf }) => {
     const leftover = typeof certificate?.certificate_id === "string" ? retiredByCertificate.get(certificate.certificate_id) : undefined;
     const scopes = [certificate?.identity_scope, workspace?.agent_identity_scope].filter(Boolean);
@@ -1812,7 +1812,7 @@ function deploymentMemberRoot(team) {
     if (!Array.isArray(listed?.memberships || listed?.teams)) {
       throw Object.assign(new Error(`membership at ${root} could not be read; nothing redeemed`), { code: "E_SETUP_MEMBERSHIP" });
     }
-    if (teamIdsOf(listed).map(String).includes(team)) return root;
+    if (teamIdsOf(listed).map(String).some((id) => sameAwebTeamId(id, team))) return root;
   }
   return undefined;
 }
@@ -1878,11 +1878,12 @@ function registryOriginFromJoinedState(row, match, listed) {
   return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };
 }
 function certificateIdFromJoinedCertificateFile(row) {
-  const certFile = join(row.identityHome, "team-certs", `${String(row.team || "").replace(/:/g, "__")}.pem`);
+  // aw names the file by the team id as it spells it.
+  const certFile = join(row.identityHome, "team-certs", `${String(canonicalAwebTeamId(row.team) || row.team || "").replace(/:/g, "__")}.pem`);
   if (!existsSync(certFile)) return { found: false };
   try {
     const cert = JSON.parse(readFileSync(certFile, "utf8"));
-    if (cert?.team_id !== row.team) return { found: false, error: `certificate file ${certFile} is for ${cert?.team_id || "unknown team"}, not ${row.team}` };
+    if (!sameAwebTeamId(cert?.team_id, row.team)) return { found: false, error: `certificate file ${certFile} is for ${cert?.team_id || "unknown team"}, not ${row.team}` };
     const certificateId = typeof cert?.certificate_id === "string" ? cert.certificate_id.trim() : "";
     if (!certificateId) return { found: false, error: `certificate file ${certFile} did not contain a certificate_id for ${row.team}` };
     return { found: true, certificateId };
@@ -1896,7 +1897,7 @@ function certificateIdForJoinedTeam(row) {
   try {
     listed = parseAwJson(run(awWithIdentity(row.identityHome, ["id", "team", "list", "--json"]), home, 60000), "aw id team list");
     const memberships = teamMemberships(listed);
-    match = memberships.find((m) => String(m?.team_id || m?.id || m?.team || m) === row.team);
+    match = memberships.find((m) => sameAwebTeamId(String(m?.team_id || m?.id || m?.team || m), row.team));
   } catch (e) {
     listError = actionWarning(e.message || e);
   }
@@ -2226,7 +2227,7 @@ if (event === "launch") {
     // leaves the binding aw wrote, which retire finds by itself.
     dropPendingMint();
     const alias = joined.alias;
-    const mismatch = joined.team_id !== team
+    const mismatch = !sameAwebTeamId(joined.team_id, team)
       ? ` [WARNING: joined ${joined.team_id}, expected ${team}]` : "";
     // Runtime integration: for Claude Code sessions the aweb-channel plugin
     // carries real-time push events. This hook does NOT install it. The plugin
@@ -2253,7 +2254,7 @@ if (event === "launch") {
       env,
       brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}, ${defaultTeamBrief}.${mismatch}${deliveryBrief}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` the team's members and workspaces, each labelled.`,
       ...(launch ? { launch } : {}),
-      ...(joined.team_id !== team ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : warnings.length ? { warning: warnings.join(" | ") } : {}),
+      ...(!sameAwebTeamId(joined.team_id, team) ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
   } catch (e) {
     // A join may already have created a REMOTE identity before the failure.
@@ -2557,7 +2558,7 @@ if (event === "launch") {
   };
   const certificates = read("certificates", ["aw", "id", "team", "members", ...teamFlag, "--json"], "aw id team members", (d) => Array.isArray(d?.members));
   let presence = read("presence", ["aw", "workspace", "status", flagEq("--limit", ROSTER_PRESENCE_LIMIT), "--json"], "aw workspace status", (d) => Array.isArray(d?.team));
-  if (presence?.selected_team && presence.selected_team !== team) { problems.push({ source: "presence", message: `aw workspace status at ${root} describes ${presence.selected_team}, not ${team}` }); presence = undefined; }
+  if (presence?.selected_team && !sameAwebTeamId(presence.selected_team, team)) { problems.push({ source: "presence", message: `aw workspace status at ${root} describes ${presence.selected_team}, not ${team}` }); presence = undefined; }
   // The certificates this host's retires left for the team's controller (read-only here).
   // No resolvable deployment, or no record, means nothing to show.
   let retired = [];
@@ -2685,7 +2686,7 @@ if (event === "launch") {
   }
 
   const localRoot = awebRootForTeam(team.team);
-  if (!localRoot || !teamIdsOf(readTeamsAt(localRoot)).map(String).includes(team.team)) {
+  if (!localRoot || !teamIdsOf(readTeamsAt(localRoot)).map(String).some((id) => sameAwebTeamId(id, team.team))) {
     fail("invite", "E_TEAM_NOT_MEMBER", `this deployment is not a member of ${team.team}${localRoot ? ` (its root ${localRoot} holds no membership)` : " (it has no root for that team)"}, so it cannot invite ${serverId}`,
       `join ${team.label} here first (${remedyCommand(["setup", "--join", team.label, "--invite-stdin"])}, with an invite from a member on stdin), or ask a member to connect ${serverId}`);
   }
@@ -2834,14 +2835,14 @@ if (event === "launch") {
         const kernelTeamsDoc = () => { try { return selectedTeamKernel(selected).read(); } catch { return undefined; } };
         const kernelTeams = () => kernelTeamsDoc()?.teams;
         // A resume names the label a row already maps to the team, as the success path uses it.
-        const resumeCommand = (team, service) => setupResumeCommand(kernelTeams()?.find((row) => row.team === team)?.label || labelOf(team), service);
+        const resumeCommand = (team, service) => setupResumeCommand(kernelTeams()?.find((row) => sameAwebTeamId(row.team, team))?.label || labelOf(team), service);
         inviteEnvelope = inspectInvite(invite, selected, { run, validTeam: validAwebTeamId, resumeCommand });
         // A deployment already in the team keeps its root: nothing is redeemed, roots[team] is never re-pointed.
         const memberRoot = deploymentMemberRoot(inviteEnvelope.team);
         if (memberRoot) {
           const team = inviteEnvelope.team, doc = kernelTeamsDoc(), rows = doc?.teams;
           let remedy = "";
-          if (rows && !rows.some((row) => row.team === team)) {
+          if (rows && !rows.some((row) => sameAwebTeamId(row.team, team))) {
             // No kernel row maps the team: a root an earlier run left at the label's per-team root
             // finishes with the tokenless resume; any other root needs only the mapping, added with
             // --no-default (teams-conditional-default) so a workspace default is never overridden, or,
@@ -2890,7 +2891,7 @@ ${JSON.stringify(problem.details || {})}`);
       const team = defaultTeamId() || null, label = defaultTeamLabel() || null;
       const awUsable = aw.status === "ok" || aw.status === "done";
       const teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
-      const member = awUsable ? !!teamRoot && teamIdsOf(readTeamsAt(teamRoot)).map(String).includes(team) : null;
+      const member = awUsable ? !!teamRoot && teamIdsOf(readTeamsAt(teamRoot)).map(String).some((id) => sameAwebTeamId(id, team)) : null;
       console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot }));
       process.exit(aw.status === "failed" ? 1 : 0);
     }
@@ -2910,7 +2911,7 @@ ${JSON.stringify(problem.details || {})}`);
 
   const want = teamId || teamName;
   const readTeams = () => readTeamsAt(scope);
-  const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => String(tid) === want || String(tid).startsWith(`${want}:`)) : undefined;
+  const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => sameAwebTeamId(String(tid), want) || String(tid).toLowerCase().startsWith(`${String(want).trim().toLowerCase()}:`)) : undefined;
   const rootAlias = () => {
     try { const who = JSON.parse(run(["aw", "whoami", "--json"], scope)); return who.alias || who.name; } catch { return undefined; }
   };
@@ -3037,7 +3038,7 @@ ${JSON.stringify(problem.details || {})}`);
     };
     // show-server verifies the record against the team's current key at the registry; that key must
     // also be the one create reported, when it reported one.
-    const recordVerifies = (record) => record?.status === "verified" && record.team_id === team && record.server_url === service && (typeof created.team_did_key !== "string" || record.team_did_key === created.team_did_key);
+    const recordVerifies = (record) => record?.status === "verified" && sameAwebTeamId(record.team_id, team) && record.server_url === service && (typeof created.team_did_key !== "string" || record.team_did_key === created.team_did_key);
     const notVerified = `the AWID team-server record for ${team} did not verify as ${service} under the team key create reported; ${resume}`;
     /** The published record, refused when it names another URL or does not verify; undefined when none is published. */
     const checkedServerRecord = () => {
@@ -3114,8 +3115,8 @@ ${JSON.stringify(problem.details || {})}`);
     if (t.from !== "shared" || !t.label || !t.team) return false;
     const teamRoot = awebRootForTeam(t.team);
     if (!teamRoot) return true;
-    const ids = new Set(teamIdsOf(readTeamsAt(teamRoot)).map(String));
-    return !ids.has(t.team);
+    const ids = teamIdsOf(readTeamsAt(teamRoot)).map(String);
+    return !ids.some((id) => sameAwebTeamId(id, t.team));
   });
   const printSharedMissing = (rows) => {
     for (const row of rows) console.log(`team ${row.label} (${row.team}) is shared: ask its owner for an appropriate invite, then run \`${setupInviteCommand(row.label)}\``);
@@ -3125,7 +3126,7 @@ ${JSON.stringify(problem.details || {})}`);
     if (match) {
       console.log(`readiness: ready`);
       console.log(`✓ aweb workspace initialized and member of ${match}.`);
-      if (teams.active_team && teams.active_team !== match) console.log(`  Note: active team is ${teams.active_team}; instances join ${match} explicitly, but consider \`aw team switch ${match}\`.`);
+      if (teams.active_team && !sameAwebTeamId(teams.active_team, match)) console.log(`  Note: active team is ${teams.active_team}; instances join ${match} explicitly, but consider \`aw team switch ${match}\`.`);
       console.log("  Done — spawned instances will join this team automatically (alias = instance name).");
       console.log("  Roster: `oats aweb roster`  ·  local: `oats status` (in the deployment)");
       return;

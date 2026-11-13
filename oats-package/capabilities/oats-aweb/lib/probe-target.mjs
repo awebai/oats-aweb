@@ -3,6 +3,7 @@
 import {openSync, readSync, closeSync, realpathSync, lstatSync, fstatSync} from 'node:fs';
 import {basename, dirname, join} from 'node:path';
 import {canonicalArgument, parseProbeJson, PROBE_LIMITS, refuse} from './probe-runtime.mjs';
+import { sameAwebTeamId } from "./aweb-team-id.mjs";
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const atom = v => typeof v === 'string' && v.length > 0 && v.length <= 256 && !/[\s\x00-\x1f\x7f]/.test(v);
 export function readProbeRecord(file) {
@@ -61,6 +62,6 @@ export function validateProbeIdentity(who, teams, alias, team) {
   if (who?.identity_scope !== 'local' || who?.stable_id || who?.grant_id || (Object.hasOwn(who, 'custody') && who.custody !== 'self') || !/^did:key:z[1-9A-HJ-NP-Za-km-z]+$/.test(who?.did || '') || who.did.length > 128) refuse('unsupported-identity');
   if (alias !== null && who.alias !== alias) refuse('identity-changed');
   const memberships = teams?.memberships;
-  if (teams?.active_team !== team || !Array.isArray(memberships) || memberships.length !== 1 || memberships[0]?.team_id !== team || memberships[0]?.alias !== who.alias || memberships[0]?.active !== true || memberships[0]?.identity_scope !== 'local') refuse('contradictory-membership');
+  if (!sameAwebTeamId(teams?.active_team, team) || !Array.isArray(memberships) || memberships.length !== 1 || !sameAwebTeamId(memberships[0]?.team_id, team) || memberships[0]?.alias !== who.alias || memberships[0]?.active !== true || memberships[0]?.identity_scope !== 'local') refuse('contradictory-membership');
   return who.did;
 }

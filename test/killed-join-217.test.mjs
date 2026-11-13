@@ -30,6 +30,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import { joinFromFake } from "./helpers/fake-aw-join-from.mjs";
+import { canonicalAwPath } from "./helpers/canonical-aw.mjs";
 
 const REPO = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const HOOK = join(REPO, "oats-package", "capabilities", "oats-aweb", "bin", "oats-aweb.mjs");
@@ -464,4 +465,14 @@ test("after an interrupted hosted accept, once the controller removed the member
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(existsSync(home), false);
   assert.equal(fx.state().pendingJoins, undefined);
+});
+
+// awebai/oats-aweb#252: aw spells a team id canonically; a deployment may not.
+test("a join of a team configured in mixed case, which aw answers in its own spelling, is not 'joined team differs'", (t) => {
+  const fx = fixture(t, { teamOf: { shared: "Shared:Example.Test" } });
+  const path = canonicalAwPath(fx.ws, fx.env.PATH);
+  const r = join217(fx, "shared", { PATH: path, OATS_TEAMS: fx.teams({ shared: "Shared:Example.Test" }) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(r.stdout + r.stderr, /joined team differs/);
+  assert.deepEqual(fx.state().joinedTeams.map((j) => [j.label, j.team]), [["shared", SHARED]], "the joined team is recorded as aw spells it");
 });

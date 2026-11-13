@@ -1,6 +1,7 @@
 // Labelled LOCAL admission: query first, use only verified membership, then
 // public kernel configuration. Setup is operator-serialized, not a transaction.
 import { selectedTeamKernel, teamConfigurationPlan, applyTeamConfiguration, setupFailure } from './setup-team-default.mjs';
+import { sameAwebTeamId } from "./aweb-team-id.mjs";
 
 export function readJoinedLocalMembership(identityHome, expectedTeam, alias, { run, validTeam }) {
   let doc;
@@ -13,7 +14,7 @@ export function readJoinedLocalMembership(identityHome, expectedTeam, alias, { r
   const row = doc?.memberships?.[0];
   if (!Array.isArray(doc?.memberships) || doc.memberships.length !== 1 || !row ||
       !validTeam(row.team_id) || row.identity_scope !== 'local' || typeof row.alias !== 'string' ||
-      !row.alias || (alias && row.alias !== alias) || (expectedTeam && row.team_id !== expectedTeam)) {
+      !row.alias || (alias && row.alias !== alias) || (expectedTeam && !sameAwebTeamId(row.team_id, expectedTeam))) {
     throw setupFailure('E_SETUP_MEMBERSHIP', 'accepted root must have exactly one matching LOCAL membership and alias; root retained, no repeated invite redemption');
   }
   return row.team_id;
