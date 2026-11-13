@@ -1588,7 +1588,10 @@ removes one, or judges age, pid or liveness:
 A change whose step fails (a full disk, an I/O error) undoes its own effect
 before it releases the guard:
 - a guard it could not record itself in is removed;
-- a lock write's partial bytes are removed;
+- the bytes a failed lock write left are removed, all of them or a prefix (a
+  write can fail after its last byte). If they can't be removed, the failure
+  says so: they name no seat, so the fix is to remove them, or, for a
+  take-over, to move the holder's lock back over them (`mv -f`);
 - a moved lock it could not remove goes back to the lock's name, over the
   lock it wrote.
 

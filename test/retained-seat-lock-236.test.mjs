@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -664,7 +664,8 @@ syncBuiltinESMExports();
 });
 
 /** The take-over's exclusive create of the lock writes 20 bytes, then fails with ENOSPC
- *  (a full disk); with STUCK_UNLINK set, removing that partial file fails too. */
+ *  (a full disk); with FULL_WRITE set it writes every byte, then fails with EIO (a
+ *  delayed I/O error); with STUCK_UNLINK set, removing what it wrote fails too. */
 function partialWritePreload(fx) {
   const file = join(fx.base, "partial-write.mjs");
   writeFileSync(file, `import fs from "node:fs";
@@ -673,6 +674,7 @@ const write = fs.writeFileSync, unlink = fs.unlinkSync;
 const lock = ${JSON.stringify(fx.lock)};
 fs.writeFileSync = function (path, data, options, ...rest) {
   if (String(path) === lock && options?.flag === "wx") {
+    if (process.env.FULL_WRITE) { write.call(this, path, data, options); throw Object.assign(new Error("EIO: i/o error, write"), { code: "EIO" }); }
     write.call(this, path, String(data).slice(0, 20), options);
     throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
   }
@@ -713,14 +715,49 @@ test("a take-over whose partial lock write can't be removed names the moved lock
   const w = r.doc.warning;
   assert.ok(w.includes(`could not be taken (ENOSPC); nothing copied`), w);
   assert.ok(w.includes(`${fx.held} is this retained identity's lock, moved aside`), w);
-  assert.ok(w.includes(`${fx.lock}, which is not a lock that can be read`), w);
+  assert.ok(w.includes(`move it back over ${fx.lock}, which holds what the change that failed wrote`), w);
   assert.ok(w.includes(`\`mv -f -- '${fx.held}' '${fx.lock}'\``), w);
-  assert.ok(w.includes(`otherwise remove ${fx.held}`), w);
+  assert.equal(w.includes(`otherwise remove ${fx.held}`), false, `the holder's lock is never to be removed: ${w}`);
   assert.ok(w.endsWith("then retry"), w);
   // The next spawn reports the same pair with the same fix.
   const next = runHook(fx, "spawn", fx.homeOf("seat-c"), { identity: { takeOver: true } });
   assert.notEqual(next.status, 0, next.stdout + next.stderr);
   assert.ok(next.doc.warning.includes(`\`mv -f -- '${fx.held}' '${fx.lock}'\``), next.doc.warning);
+});
+
+test("a plain spawn whose lock write lands whole, then fails, and can't be removed names its own lock and how to remove it", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a");
+  const r = runHook(fx, "spawn", a, { preload: partialWritePreload(fx), env: { FULL_WRITE: "1", STUCK_UNLINK: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, a, "the failed write is a whole lock naming this spawn");
+  assert.equal(existsSync(fx.guard), false);
+  assert.equal(existsSync(join(a, ".aw")), false, "nothing copied");
+  const w = r.doc.warning;
+  assert.ok(w.includes(`could not be taken (EIO); nothing copied`), w);
+  assert.ok(w.includes(`${fx.lock} holds this change's write, which could not be removed (EACCES)`), w);
+  assert.ok(w.includes(`remove ${fx.lock} if it still names home ${a}`), w);
+  assert.ok(w.endsWith("then retry"), w);
+  // Following that fix, the spawn goes through.
+  unlinkSync(fx.lock);
+  const again = runHook(fx, "spawn", a);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+});
+
+test("a take-over whose lock write lands whole, then fails, and can't be removed says to move the holder's lock back over it", (t) => {
+  const fx = fixture(t);
+  write(fx.lock, JSON.stringify(goneHolder(fx)));
+  const before = readFileSync(fx.lock, "utf8");
+  const b = fx.homeOf("seat-b");
+  const r = runHook(fx, "spawn", b, { identity: { takeOver: true }, preload: partialWritePreload(fx), env: { FULL_WRITE: "1", STUCK_UNLINK: "1" } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(readFileSync(fx.held, "utf8"), before, "the holder's lock is kept at the private name");
+  assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
+  const w = r.doc.warning;
+  assert.ok(w.includes(`could not be taken (EIO); nothing copied`), w);
+  assert.ok(w.includes(`move it back over ${fx.lock}, which holds what the change that failed wrote`), w);
+  assert.ok(w.includes(`\`mv -f -- '${fx.held}' '${fx.lock}'\``), w);
+  assert.equal(w.includes(`otherwise remove ${fx.held}`), false, `the holder's lock is never to be removed: ${w}`);
 });
 
 /** Failures at the guard's record and at the moved lock's removal, by env:
@@ -818,7 +855,7 @@ test("a take-over that can neither remove nor put back the moved lock names both
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b, "the lock's name holds the failed take-over's lock");
   assert.ok(w.includes(`could not be taken (EIO); nothing copied`), w);
   assert.ok(w.includes(`${fx.held} is this retained identity's lock, moved aside`), w);
-  assert.ok(w.includes(`move it back over ${fx.lock}, which holds the lock of the change that failed (\`mv -f -- '${fx.held}' '${fx.lock}'\`)`), w);
+  assert.ok(w.includes(`move it back over ${fx.lock}, which holds what the change that failed wrote (\`mv -f -- '${fx.held}' '${fx.lock}'\`)`), w);
   assert.ok(w.endsWith("then retry"), w);
 });
 
