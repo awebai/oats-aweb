@@ -2307,7 +2307,7 @@ function syncWakeReceive(meta) {
 // doesn't have, so its spawn is the legacy one above, unchanged.
 /** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9).
  *  Over the cap, the problem is shortened, never the fix after its " → " (test 23). */
-const REFUSAL_ROOM = 300 - "oats-aweb: ".length;
+const REFUSAL_ROOM = 300; // fatal() keeps 300 characters after its "oats-aweb: " prefix
 const refusalText = (e) => {
   const d = e.details || {};
   const detail = d.problem ? `problem: ${d.problem}` : d.step ? `step: ${d.step}` : d.code ? `code: ${d.code}` : "";
