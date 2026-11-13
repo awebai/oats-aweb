@@ -7,7 +7,7 @@
 //   pinned aw.
 // - `--reconcile-admissions [--plan]` removes only the leaked memberships the
 //   root holds a copy for, with the root's team.agent.remove.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { admissionRecords, committedAdmissions } from "./admission.mjs";
 import { attributionError, readWho } from "./attribution.mjs";
@@ -27,26 +27,50 @@ export function homesOf(statusDoc) {
   });
 }
 
-/** The memberships in the setting's teams whose alias has no live or kept home,
- *  read with `aw id team members`. aw signs that read with the caller's own
- *  key, and the root holds no membership, so each team is read from a home
- *  that holds one, else from the root. Only a local member is OATS's: a
- *  global member (a human, a resident) never is. Returns {leaked, unreadable}. */
+/** The memberships in the setting's teams whose alias has no live or kept home.
+ *  Two sources: `aw id team members`, which aw signs with the caller's own key,
+ *  so a private team is read from a home that holds a membership, else from the
+ *  root (which holds none, so the read fails once the last member is gone); and
+ *  the root's own copies under admissions/, each a membership the root admitted
+ *  and hasn't confirmed removed, which need no reader. A copy for a team that
+ *  was read counts only while the read lists it active. Only a local member is
+ *  OATS's: a global member (a human, a resident) never is. Returns {leaked, unreadable}. */
 export function leakedMemberships({ aw, setting, homes, registry }) {
   const aliases = new Set(homes.map((h) => h.instance));
   const leaked = [], unreadable = [];
+  const active = new Map(); // team → the certificate ids its read lists active
   for (const team of setting.teams) {
     const reader = homes.flatMap((h) => admissionRecords(h.home)).find((r) => r.team === team && r.state === "committed" && typeof r.identityHome === "string" && existsSync(r.identityHome))?.identityHome || join(setting.root.home, ".aw");
     let doc;
     try { doc = awJson(aw, "id team members", ["--identity-home", reader, ...teamMembersArgv({ team, registry })], setting.root.home, 30000); }
     catch (e) { if (e.code) throw e; unreadable.push({ team, reason: String(e.awCode || e.awMessage || e.message).slice(0, 200) }); continue; }
     if (!Array.isArray(doc.members)) { unreadable.push({ team, reason: "aw answered no members list" }); continue; }
+    active.set(team, new Set(doc.members.filter((m) => m && !m.revoked_at).map((m) => String(m.certificate_id))));
     for (const m of doc.members) {
       if (!m || m.revoked_at || m.identity_scope !== "local" || m.member_did_aw || typeof m.alias !== "string" || aliases.has(m.alias)) continue;
       leaked.push({ team, alias: m.alias, certificateId: String(m.certificate_id), removable: existsSync(join(setting.root.home, "admissions", `${m.certificate_id}.cert`)) });
     }
   }
+  const listed = new Set(leaked.map((l) => l.certificateId));
+  for (const copy of rootCopies(setting.root.home)) {
+    if (!setting.teams.includes(copy.team) || aliases.has(copy.alias) || listed.has(copy.certificateId)) continue;
+    if (active.has(copy.team) && !active.get(copy.team).has(copy.certificateId)) continue;
+    leaked.push({ ...copy, removable: true });
+  }
   return { leaked, unreadable };
+}
+
+/** The root's copies under admissions/: {team, alias, certificateId}, each named by its own certificate id. */
+function rootCopies(rootHome) {
+  const dir = join(rootHome, "admissions");
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => n.endsWith(".cert")); } catch { names = []; }
+  return names.flatMap((name) => {
+    try {
+      const cert = JSON.parse(readFileSync(join(dir, name), "utf8"));
+      return cert && `${cert.certificate_id}.cert` === name && typeof cert.team_id === "string" && typeof cert.alias === "string" && cert.identity_scope === "local" ? [{ team: cert.team_id, alias: cert.alias, certificateId: cert.certificate_id }] : [];
+    } catch { return []; }
+  });
 }
 
 /** What the pinned aw doesn't support yet, each with what it waits on. */

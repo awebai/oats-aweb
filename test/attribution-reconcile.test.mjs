@@ -277,3 +277,20 @@ for (const status of ["fail", "malformed"]) {
     assert.ok(a.unreadableTeams.every((u) => u.reason.includes("instance list")), JSON.stringify(a.unreadableTeams));
   });
 }
+
+test("C-5, C-6: after the last member of a private team retires with its removal blocked, fixing the root and reconciling removes it from the root's copy, with no member left to read the team", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  const id = admission(fx, "dev-1").certificateId;
+  fx.fake.setService({ remove: { code: "scope_refused" } });
+  assert.equal(fx.retire("dev-1").status, 0);
+  rmSync(fx.homeOf("dev-1"), { recursive: true, force: true });
+  fx.fake.setService({ remove: "served" });
+  const plan = fx.setup(["--reconcile-admissions", "--plan", "--json"]);
+  assert.equal(plan.status, 0, plan.stdout + plan.stderr);
+  assert.deepEqual(plan.doc.result.removals.map((r) => r.certificateId), [id]);
+  const r = fx.setup(["--reconcile-admissions", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [id]);
+  assert.ok(!existsSync(join(fx.rootHome, "admissions", `${id}.cert`)), "a confirmed removal deletes the root's copy");
+});

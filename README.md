@@ -258,8 +258,13 @@ before the opt-in leaves as before.
 verifies (`verified`); spawners with no chain; each team's bounds and OATS's
 own count of admitted live homes; `leakedMemberships` (active local
 certificates whose alias has no live or kept home here); the key scan's
-findings; and `limits`, what the pinned aw doesn't serve yet. A team no home
-here can read is listed under `unreadableTeams`, never as having no leaks.
+findings; and `limits`, what the pinned aw doesn't serve yet. Leaks come from
+the team's member list, read through a home that holds a membership (aw signs
+that read with a member's key), and from the root's own copies under
+`admissions/`, which need no reader: a membership the root admitted counts
+as leaked once no home here has its alias. A team no home here can read is
+listed under `unreadableTeams`, and only its copies are known there, never
+as having no other leaks.
 
 `oats aweb setup --reconcile-admissions [--plan]` removes the leaked
 memberships the root holds a copy for, each removal's operation id kept
