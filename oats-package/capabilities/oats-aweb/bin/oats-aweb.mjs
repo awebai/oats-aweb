@@ -71,7 +71,7 @@ import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, 
 import { sameAwebTeamId, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
-import { awebUrlVariableSet, retainedSeatService, unknownSeatServiceMessage } from "../lib/retained-seat-service.mjs";
+import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
 import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
@@ -1116,20 +1116,15 @@ function activeTeamAt(root) {
   } catch { return undefined; }
 }
 /** The service, role and team a retained seat's identity is bound with, as spawn binds it
- *  and as every command that names the seat's server prints it. The service comes from
- *  lib/retained-seat-service.mjs, the one resolver (the seat's own record only); the team is
- *  the default team, else the source's active team. A value that cannot be determined is
- *  undefined. */
+ *  and as every command that names the seat's server prints it, and the spawn's pre-effect
+ *  `refusal`. The service, team and refusal come from lib/retained-seat-service.mjs
+ *  retainedSeatCheck, the one predicate soul readiness calls too (the service from the seat's own
+ *  record only; the team the default team, else the source's active team). A value that cannot
+ *  be determined is undefined. */
 function retainedSeatTarget(source) {
-  const read = (name) => { try { return readFileSync(join(source, name), "utf8"); } catch { return ""; } };
-  const srcWorkspace = read("workspace.yaml"), srcTeams = read("teams.yaml");
-  const team = defaultTeamId() || yamlScalar(srcTeams, "active_team") || yamlScalar(srcTeams, "active");
-  return { ...retainedSeatService(source), role: yamlScalar(srcWorkspace, "role_name"), team };
-}
-/** The refusal for a retained seat whose record names no usable service, before any copy or
- *  effect. The remedy is named in full, so the text is not cut at fatal's 300 characters. */
-function refuseUnknownSeatService(source, record) {
-  out({ warning: `oats-aweb: ${unknownSeatServiceMessage(source, record)}` }, 1);
+  let srcWorkspace = "";
+  try { srcWorkspace = readFileSync(join(source, "workspace.yaml"), "utf8"); } catch { /* no record */ }
+  return { ...retainedSeatCheck(source, process.env), role: yamlScalar(srcWorkspace, "role_name") };
 }
 /** A field a retained seat's lock names, when it is short and printable. */
 const lockField = (v) => typeof v === "string" && v && v.length <= 512 && /^[\x20-\x7e]+$/.test(v) ? v : undefined;
@@ -1146,10 +1141,11 @@ function refuseUnheldLock(lockPath, held) {
   out({ warning: `oats-aweb: ${text}` }, 1);
 }
 function retainedSeatSpawn(source, takeOver) {
-  if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
-  if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
-  const { service, record, role, team } = retainedSeatTarget(source);
-  if (!service) refuseUnknownSeatService(source, record);
+  // Every refusal the settings and the source decide, before the lock or any copy, as soul
+  // readiness reports it. The remedies are named in full, so the text is not cut at fatal's 300
+  // characters. The lock is checked after: it is live state, not configuration.
+  const { refusal, service, role, team } = retainedSeatTarget(source);
+  if (refusal) out({ warning: `oats-aweb: ${refusal}` }, 1);
   const lockPath = seatLockPath(source);
   let takenOver, takeOverNote = "";
   // lstat, not exists: a dangling symlink at the lock path is a lock that cannot be read.
@@ -1175,7 +1171,6 @@ function retainedSeatSpawn(source, takeOver) {
       takeOverNote = holderHome ? " (its home is not on this host)" : "";
     }
   }
-  if (!team || !team.includes(":")) fatal(`cannot determine the team for the retained identity (${teamConfigRemedy()}, or keep an active team in ${join(source, "teams.yaml")})`);
   const dest = join(home, ".aw");
   const legacyHome = dirname(source);
   // The lock is taken FIRST: a concurrent second spawn must see it before any
