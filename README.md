@@ -1537,6 +1537,16 @@ The seat directory must contain:
 - the team: the deployment's default team, or else the active team in
   `teams.yaml`.
 
+The spawn checks these before it takes the seat's lock or copies anything, in
+this order: `identity.source` is an absolute path, it holds `signing.key`, its
+`workspace.yaml` records a usable `aweb_url`, and a team can be determined.
+Each refusal names its fix. A soul's readiness (`oats readiness`) reports the
+first one with the spawn's own text. A retained seat mints nothing and takes
+its team as above, so readiness asks it for neither a messaging root nor a
+default team. A lock another seat holds is not a readiness problem: the spawn
+checks it when it runs, after these. A seated home's readiness does not read
+the source again.
+
 The spawn reads the server only from that `workspace.yaml`. Any http or https
 URL with a host is accepted, a path prefix (a server behind a reverse proxy) or
 an IPv6 literal included, as long as it holds no userinfo, query, fragment,
