@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { FINAL_CODES, README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, recordAdmission, writePrivate } from "./admission.mjs";
+import { FINAL_CODES, README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, writePrivate } from "./admission.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
 import { REMOVE_SERVED, admitArgv, awJson, removeAgentArgv } from "./protected-client.mjs";
@@ -69,7 +69,11 @@ export function rootCannotAct({ aw, setting, deployment }) {
   return null;
 }
 
-const removalFile = (providerDir, label) => join(providerDir, `removal-${label}.json`);
+/** Each admission record's removal record, beside it: admission-<x>.json's is removal-<x>.json. */
+const removalFile = (providerDir, name) => join(providerDir, name.replace(/^admission-/, "removal-"));
+/** Where a record a leave couldn't remove is kept (C-6): the joined identity went, and the record
+ *  stays for retire and reconciliation, under a name no label can take ("~" is in none). */
+export const leftAdmissionName = (label, certificateId) => `admission-${label}~left-${certificateId}.json`;
 const readJson = (file) => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return null; } };
 
 /** One removal, from the root's home: `{operation_id, state, certificate_id}`
@@ -98,17 +102,19 @@ export function removeMembership({ aw, setting, certificateId, team, file }) {
  *  cwd, timeout)` runs aw and returns its stdout. Returns {warnings, keep,
  *  memberships}: `keep` is {reason, text} when the home must stay for a
  *  retry; `memberships` [{team, label, removed}] once it needn't. */
-export function retireAdmissions({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED }) {
+export function retireAdmissions({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, labels }) {
   const warnings = [];
   let names = [];
   try { names = readdirSync(providerDir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { names = []; }
+  // A leave acts on its own labels' records only (`labels`); retire on every one.
+  if (labels) names = names.filter((name) => labels.includes(readJson(join(providerDir, name))?.label) && !name.includes("~left-"));
   let root;
   const cannot = () => (root === undefined ? (root = rootCannotAct({ aw, setting, deployment })) : root);
   for (const name of names) {
     let record = readJson(join(providerDir, name));
     if (!record || typeof record.label !== "string") continue;
     const { team, label } = record;
-    const save = (fields) => { record = { ...record, ...fields }; recordAdmission(providerDir, label, record); };
+    const save = (fields) => { record = { ...record, ...fields }; writePrivate(join(providerDir, name), `${JSON.stringify(record, null, 2)}\n`); };
     let resumed = false;
     // A pending record is a spawn killed at its admit (v4.3.19). With a --certificate-out file
     // that verifies (aw's id form, this record's team and member key) the admission committed;
@@ -165,7 +171,7 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     };
     if (blocked) { const keep = block(blocked); if (keep) return { warnings, keep }; continue; }
     if (copyMissing) { warnings.push(blockedText({ reason: "root-copy-missing", why: `the root's copy ${copy} is gone, and this home's certificate doesn't carry ${record.certificateId}`, team })); continue; }
-    const done = removeMembership({ aw, setting, certificateId: record.certificateId, team, file: removalFile(providerDir, label) });
+    const done = removeMembership({ aw, setting, certificateId: record.certificateId, team, file: removalFile(providerDir, name) });
     if (done.outcome === "removed") { save({ state: "removed" }); continue; }
     if (done.outcome === "unavailable") { warnings.push(notServedText({ code: done.code, team })); continue; }
     if (done.outcome === "unconfirmed") return { warnings, keep: { reason: "admission-removal-unconfirmed", text: unconfirmedText({ team, operationId: done.operationId, code: done.code }) } };

@@ -36,7 +36,7 @@ export function leakedMemberships({ aw, setting, homes, registry }) {
   const aliases = new Set(homes.map((h) => h.instance));
   const leaked = [], unreadable = [];
   for (const team of setting.teams) {
-    const reader = homes.flatMap((h) => admissionRecords(h.home)).find((r) => r.team === team && r.state === "committed" && typeof r.identityHome === "string")?.identityHome || join(setting.root.home, ".aw");
+    const reader = homes.flatMap((h) => admissionRecords(h.home)).find((r) => r.team === team && r.state === "committed" && typeof r.identityHome === "string" && existsSync(r.identityHome))?.identityHome || join(setting.root.home, ".aw");
     let doc;
     try { doc = awJson(aw, "id team members", ["--identity-home", reader, ...teamMembersArgv({ team, registry })], setting.root.home, 30000); }
     catch (e) { if (e.code) throw e; unreadable.push({ team, reason: String(e.awCode || e.awMessage || e.message).slice(0, 200) }); continue; }

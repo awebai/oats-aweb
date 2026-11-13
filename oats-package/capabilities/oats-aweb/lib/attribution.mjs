@@ -227,6 +227,14 @@ function depthChecked(issuer) {
  *  failure after the issuer received the request refuses it, best effort.
  *  `dir` holds the request and the response (owner-only, removed after).
  *  Returns the meta's identity.attribution. */
+/** Whether aw who's verdict `v` is a chain to the recorded human, through the root, with `issuer` as its parent. */
+const issuedBy = (v, { issuer, setting }) => v.kind === "verified" && v.humanId === setting.human.id && v.chain.includes(setting.root.id) && v.chain.at(-2) === issuer.id && v.chain.at(-1) === v.id;
+const humanAttribution = ({ issuer, setting }) => ({ mode: "human", human: { id: setting.human.id, label: setting.human.label }, parent: { id: issuer.id } });
+/** The attribution of a resumed identity whose chain `issuer` already installed, or null: aw's
+ *  exchange issues only a first certificate, so a rerun never asks for a second one. */
+export function installedChain({ aw, issuer, identityHome, setting }) {
+  return issuedBy(readWho(aw, identityHome), { issuer, setting }) ? humanAttribution({ issuer, setting }) : null;
+}
 export function issueChain({ aw, issuer, identityHome, instance, setting, dir }) {
   const fail = (step, why) => attributionError("E_ATTRIBUTION_EXCHANGE", `the chain exchange failed at ${step}: ${String(why).replace(/\s+/g, " ").slice(0, 160)} → retry the spawn`, { step });
   const attempt = (step, f, tries) => {
@@ -262,9 +270,7 @@ export function issueChain({ aw, issuer, identityHome, instance, setting, dir })
     throw e;
   } finally { clear(); }
   const v = readWho(aw, identityHome);
-  if (v.kind === "verified" && v.humanId === setting.human.id && v.chain.includes(setting.root.id) && v.chain.at(-2) === issuer.id && v.chain.at(-1) === v.id) {
-    return { mode: "human", human: { id: setting.human.id, label: setting.human.label }, parent: { id: issuer.id } };
-  }
+  if (issuedBy(v, { issuer, setting })) return humanAttribution({ issuer, setting });
   if (v.kind === "revoked" || v.kind === "unavailable") throw chainRefusal(v, { who: "the new identity", step: "verify" });
   throw fail("verify", `the new identity doesn't verify to the recorded human through the root with ${issuer.id} as its parent (aw who: ${v.kind}${v.reason ? `, ${v.reason}` : ""})`);
 }

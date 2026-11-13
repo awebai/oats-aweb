@@ -103,7 +103,14 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
     let doc; try { doc = JSON.parse(r.stdout.trim().split("\n").pop() || "null"); } catch { doc = undefined; }
     return { status: r.status, doc, stdout: r.stdout, stderr: r.stderr };
   };
-  return { ws, rootHome, profile, setting, settings, fake, kernel, env, homeOf, hook, spawn, record, meta, launch, retire, readiness, setup };
+  /** A home's own command (`oats aweb join|leave <args>`), run in that home under the deployment's live settings, from its recorded meta. */
+  const command = (name, event, args, { live = settings, extra = {} } = {}) => {
+    const home = homeOf(name);
+    const r = spawnSync(process.execPath, [hookPath, event, ...args], { cwd: home, env: { ...env, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: name, OATS_EVENT: event, OATS_SETTINGS: JSON.stringify(live), ...extra }, encoding: "utf8", timeout: 60000 });
+    let doc; try { doc = JSON.parse(r.stdout.trim().split("\n").pop() || "null"); } catch { doc = undefined; }
+    return { status: r.status, doc, stdout: r.stdout, stderr: r.stderr };
+  };
+  return { ws, rootHome, profile, setting, settings, fake, kernel, env, homeOf, hook, spawn, record, meta, launch, retire, readiness, setup, command };
 }
 
 /** An aw call's argv without its global flags (--json, and a leading --identity-home <path>, which the fake records as identityHome). */

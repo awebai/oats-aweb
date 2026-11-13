@@ -235,6 +235,17 @@ What a retire says when it can't remove a membership:
   fixed (`root-home-unsafe`, `profile-changed`, `service-refused`), the home is
   kept: fix the root, then retire again, which resumes the admission.
 
+A home's own `oats aweb join` and `leave` follow the same rules. A join
+issues the joined identity's chain from this home and has the root admit it,
+never through a member invite; a team outside `attribution.teams` refuses
+`E_ENDORSE_POLICY` (`unlisted`), and a join that fails after its key exists
+keeps the joined identity for the rerun. A leave removes the membership
+through the root, then deletes the joined identity: an unknown admission or
+an unconfirmed removal keeps it for the rerun, and a root that can't act
+keeps the membership with `admission-removal-blocked`, its record kept for
+the home's retire and `--reconcile-admissions`. A joined team admitted
+before the opt-in leaves as before.
+
 `oats aweb setup --check-only --json` reports, with the setting, an
 `attribution` block: the root, human, service and teams; whether the root
 verifies (`verified`); spawners with no chain; each team's bounds and OATS's

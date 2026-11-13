@@ -45,6 +45,15 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
   membership: report it. A person reruns the same `aw id team accept-invite`
   with the original invite, or the team's controller removes the member and
   the `pending-hosted-accept` marker is deleted; then `oats aweb leave`.
+- **On a deployment that opted in to human attribution**
+  (`settings.oats.aweb.attribution`), a join never takes a member invite: the
+  joined identity's chain is issued from this home (none when this home has
+  none) and the endorsed root admits it, as at spawn. A team outside
+  `attribution.teams` refuses `E_ENDORSE_POLICY` (`unlisted`): rerun
+  `oats aweb setup --endorse-root` to add it. A join that fails after its key
+  exists keeps the joined identity; rerun the join to resume it. A leave
+  removes the membership through the root, as retire does (README, "Human
+  attribution: retire and reconciliation").
 - Since oats.aweb 1.15 a joined team receives **live** (`receive: native`) when
   the host wake broker holds its identity: always on session-delivery homes,
   and on Claude/Pi channel homes through aw's mixed mode (the channel keeps the

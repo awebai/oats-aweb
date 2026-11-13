@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { CHAINLESS, UUID, attributionError, issueChain } from "./attribution.mjs";
+import { CHAINLESS, UUID, attributionError, installedChain, issueChain } from "./attribution.mjs";
 import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, awJson, createLocalArgv, installCertArgv, serviceInitArgv } from "./protected-client.mjs";
 
 /** The README section each spawn refusal names for what doesn't fit its 300 characters. */
@@ -135,10 +135,13 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
   if (!["created", "resumed", "already_exists"].includes(key.status) || typeof key.did_key !== "string" || !key.did_key.startsWith("did:key:")) throw attributionError("E_ATTRIBUTION_EXCHANGE", "aw id create --local answered no key → respawn", { step: "key" });
   try {
     // 2. The chain (C-3a): aw 1.36.58's exchange, local, between the issuer's home and this one.
-    const attribution = plan.action === "issue" ? issueChain({ aw: chainAw, issuer: plan.issuer, identityHome, instance, setting, dir: exchangeDir }) : CHAINLESS;
+    // A key that already existed (a join's rerun) may already carry this issuer's chain.
+    const attribution = plan.action !== "issue" ? CHAINLESS
+      : (key.status !== "created" && installedChain({ aw: chainAw, issuer: plan.issuer, identityHome, setting })) || issueChain({ aw: chainAw, issuer: plan.issuer, identityHome, instance, setting, dir: exchangeDir });
     // 3. The admission (C-3b): its operation id persisted before prepare; a retry reuses it.
     let record = readAdmission(providerDir, label);
-    if (!record || record.team !== team || record.state === "refused") {
+    // A refused admission, or one the root removed (a leave), starts a new operation.
+    if (!record || record.team !== team || record.state === "refused" || record.state === "removed") {
       // The admit's inputs too, so a retire can resume an unknown outcome with C-3b's exact retry (C-3d).
       record = { team, label, alias, operationId: randomUUID(), state: "pending", identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
       recordAdmission(providerDir, label, record);
