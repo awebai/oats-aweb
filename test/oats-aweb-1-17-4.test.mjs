@@ -348,6 +348,20 @@ test("no bookkeeping after the self-delete lets a wake deregistration apply past
 
 /** Whether the process with this pid is still running. */
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+/** Whether a pid still runs: it answers kill(pid, 0) and, where /proc shows it, is not a zombie,
+ *  a process that has died and waits to be reaped. */
+const running = (pid) => {
+  if (!alive(pid)) return false;
+  try { const stat = readFileSync(`/proc/${pid}/stat`, "utf8"); return stat.slice(stat.lastIndexOf(")") + 2)[0] !== "Z"; } catch { return true; }
+};
+/** The pids still running after up to `ms`. A child the hook SIGKILLs as it exits is not reaped by
+ *  the hook, so it still answers kill(pid, 0) until it has died and init has reaped it. */
+function stillRunning(pids, ms = 1000) {
+  const until = Date.now() + ms;
+  let left = pids.filter(running);
+  while (left.length && Date.now() < until) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); left = left.filter(running); }
+  return left;
+}
 const deregistrationPids = (fx) => fx.fake.readCalls().filter((c) => c.args[0] === "wake" && c.args[1] === "deregister").map((c) => c.pid);
 
 test("retire refused for an unreadable seat record still awaits the deregistration, within the deadline", (t) => {
@@ -367,7 +381,7 @@ test("retire refused for an unreadable seat record still awaits the deregistrati
   writeFileSync(join(cut.home, ".oats-aweb", "seat.json"), "{ not json");
   const late = cut.hook("retire", { OATS_META: JSON.stringify(again.doc.meta), FAKE_DEREGISTER_MS: "4000", OATS_AWEB_HOOK_BUDGET_MS: "800" });
   assert.equal(late.doc.meta.reason, "seat-record-unreadable");
-  assert.deepEqual(deregistrationPids(cut).filter(alive), [], "no deregistration outlives the hook");
+  assert.deepEqual(stillRunning(deregistrationPids(cut)), [], "no deregistration outlives the hook");
   assert.ok(cut.fake.registrations()[cut.home], "the deregistration cut at the deadline never applied");
 });
 
@@ -382,7 +396,7 @@ test("no exit of retire leaves a wake deregistration running", (t) => {
   assert.equal(retired.status, 1, retired.stdout + retired.stderr);
   assert.match(retired.doc.warning, /requires identity\.resident/);
   assert.equal(deregistrationPids(fx).length, 2, "the background deregistration and the grant route's own");
-  assert.deepEqual(deregistrationPids(fx).filter(alive), [], "no deregistration is running when the hook exits");
+  assert.deepEqual(stillRunning(deregistrationPids(fx)), [], "no deregistration is running when the hook exits");
 });
 
 test("a wall-clock step back does not lengthen the hook's deadline", (t) => {
