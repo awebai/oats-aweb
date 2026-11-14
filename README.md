@@ -309,7 +309,8 @@ holds a label's admission lock, a leave of it refuses `step: lock`, and a
 retire acts on nothing, exits nonzero and keeps the home
 (`admission-locked`), naming the rerun. A retire holds the lock of every
 label the home could act on, from before its first effect to its exit, so a
-join or leave started during it refuses `step: lock`. A joined team the root
+join or leave started during it refuses `step: lock`; a join or leave holds
+its labels' locks for its whole command the same way. A joined team the root
 admitted that is no longer eligible stays joined at the next start, with a
 warning: a start makes no protected call, so retire (or a leave once the team
 is eligible again) removes it through the root. A joined team admitted

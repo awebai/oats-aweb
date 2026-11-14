@@ -221,3 +221,35 @@ test("a retire releases every lock it took, on its way out", (t) => {
   assert.equal(kept.doc.meta.reason, "admission-locked");
   assert.equal(existsSync(lockOf(fx, "default")), false, "the label it took before the refusal is released");
 });
+
+// A join or leave holds its labels' locks across the whole command: from its first read of the
+// home's state and its preflight to its last receive sync and state write (round 20).
+test("a leave of a label started during that label's join's final wake registration refuses step lock: the join's membership, identity and joined entry stand", (t) => {
+  const fx = spawned(t, { runtime: "pi", delivery: "channel" });
+  const leave = interleave(fx, { at: 'a.includes("wake") && a.includes("register")', args: ["leave", "--labels", "ops", "--json"], cwd: fx.homeOf("dev-1") });
+  const join_ = fx.command("dev-1", "join", ["--labels", "ops", "--json"], { extra: { PATH: leave.path } });
+  const inner = leave.inner();
+  assert.ok(inner, "the leave ran inside the join's wake registration");
+  assert.equal(inner.status, 1, inner.stdout + inner.stderr);
+  assert.ok((inner.stdout + inner.stderr).includes(LOCK_REFUSAL), inner.stdout + inner.stderr);
+  assert.equal(join_.status, 0, join_.stdout + join_.stderr);
+  assert.equal(record(fx, "ops").state, "committed");
+  assert.ok(existsSync(join(fx.homeOf("dev-1"), ".aweb-identity-ops")));
+  assert.deepEqual(fx.fake.removed(), []);
+  assert.deepEqual(fx.command("dev-1", "teams", ["--json"]).doc.joined.map((j) => j.label), ["ops"]);
+});
+
+test("a retire started during a join's preflight acts on nothing and keeps the home; the join commits", (t) => {
+  const fx = spawned(t);
+  const retire = interleave(fx, { at: 'a.includes("who")', args: ["retire"], env: { OATS_META: JSON.stringify(fx.meta("dev-1")) }, cwd: fx.homeOf("dev-1") });
+  const before = fx.fake.calls().length;
+  const join_ = fx.command("dev-1", "join", ["--labels", "ops", "--json"], { extra: { PATH: retire.path } });
+  const inner = retire.inner();
+  assert.ok(inner, "the retire ran inside the join's preflight");
+  assert.notEqual(inner.status, 0, inner.stdout + inner.stderr);
+  assert.ok(inner.stdout.includes("admission-locked"), inner.stdout);
+  assert.equal(join_.status, 0, join_.stdout + join_.stderr);
+  assert.equal(record(fx, "default").state, "committed");
+  assert.equal(record(fx, "ops").state, "committed");
+  assert.deepEqual(removes(fx, before), []);
+});

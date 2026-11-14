@@ -2238,6 +2238,13 @@ function runTeamsCommand(kind) {
       outputJoinPlan(plan, args.json);
       process.exit(plan.every((p) => p.joined || p.member) ? 0 : 1);
     }
+    // On an opted-in deployment the labels' admission locks span the whole command, from its read
+    // of this home's state and its preflight to its last receive sync and state write, so no other
+    // join, leave or retire of these labels runs beside it (admission-lock.mjs). Its admit and
+    // retire take them again within this hold.
+    const held = captured ? holdAdmissionLocks(providerStateDir(), [...new Set(rows.map((row) => row.label))].sort()) : null;
+    try {
+    if (held) meta = readCapabilityMeta();
     // Record every completed label even when a later one fails: a confirmed
     // leave deleted its home, and a join created a remote identity.
     // Who issues and who admits, read once, before any effect: every listed team is checked first.
@@ -2266,6 +2273,7 @@ function runTeamsCommand(kind) {
       for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`);
       writeProviderTeamsState(meta);
     }
+    } finally { held?.release(); }
   }
   const doc = { ...teamsDocument(meta), ...(actions.length ? { actions } : {}), ...(warnings.length ? { warnings } : {}) };
   if (operation) operationOk(doc);
