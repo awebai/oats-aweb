@@ -101,6 +101,20 @@ export function step(on, state, facts = {}) {
   }
 }
 
+/** The states a written record can be in (the table's states but none). */
+export const RECORD_STATES = new Set(["keyed", "pending", "unknown", "committed", "refused", "removed"]);
+/** Why a parsed record isn't one of the table's, or null: a state the table has, its team, and
+ *  what names its certificate where the state shields one (table E): a committed record its
+ *  certificate id or --certificate-out, one awaiting its outcome its alias. A record that fails
+ *  this could hold any certificate, so it is never read as holding none. */
+export function recordProblem(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return "not a record";
+  if (!RECORD_STATES.has(record.state)) return "no state the table has";
+  if (typeof record.team !== "string" || !record.team) return "no team";
+  if (record.state === "committed" && typeof record.certificateId !== "string" && typeof record.certificateOut !== "string") return "committed, naming no certificate";
+  if (awaitsOutcome(record) && (typeof record.alias !== "string" || !record.alias)) return `${record.state}, with no alias`;
+  return null;
+}
 /** Whether a record counts as a membership OATS holds: OATS's count, and check-only's reader. */
 export const holdsMembership = (record) => record?.state === "committed";
 /** Whether a live or kept home's record keeps its certificate out of reconciliation (table E): one that

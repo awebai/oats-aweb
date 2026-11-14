@@ -283,11 +283,21 @@ for (const status of ["fail", "malformed"]) {
 // A live home's admission records are what shield its memberships: a record, or the records'
 // directory, that can't be read is never read as "no records", or reconcile would take that
 // home's own certificate for a leak. An absent directory is still none.
+/** Rewrites dev-1's default admission record with `edit`, keeping it readable. */
+const rewrite = (edit) => (dir) => { const file = join(dir, "admission-default.json"); writeFileSync(file, JSON.stringify(edit(JSON.parse(readFileSync(file, "utf8")))), { mode: 0o600 }); return () => {}; };
 const DAMAGED = [
   ["unreadable", (dir) => { chmodSync(join(dir, "admission-default.json"), 0o000); return () => chmodSync(join(dir, "admission-default.json"), 0o600); }],
   ["malformed", (dir) => { writeFileSync(join(dir, "admission-default.json"), "{", { mode: 0o600 }); return () => {}; }],
   ["not a record", (dir) => { writeFileSync(join(dir, "admission-default.json"), "null\n", { mode: 0o600 }); return () => {}; }],
   ["in an unreadable directory", (dir) => { chmodSync(dir, 0o000); return () => chmodSync(dir, 0o700); }],
+  // An object that isn't a record of the table: no state, one the table doesn't have, or a
+  // shielding state without what names its certificate.
+  ["an empty object", rewrite(() => ({}))],
+  ["with no state", rewrite(({ state, ...r }) => r)],
+  ["with a state the table doesn't have", rewrite((r) => ({ ...r, state: "commited" }))],
+  ["with no team", rewrite(({ team, ...r }) => r)],
+  ["committed, naming no certificate", rewrite(({ certificateId, certificateOut, ...r }) => r)],
+  ["pending, with no alias", rewrite(({ alias, certificateId, ...r }) => ({ ...r, state: "pending" }))],
 ];
 for (const [damage, apply] of DAMAGED) {
   test(`C-5: with a live home's admission record ${damage}, reconcile and its plan refuse E_ATTRIBUTION_EVIDENCE before any removal, naming the record, and the home keeps its membership`, (t) => {

@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { SCOPE_CODES, admitAnswer, holdsMembership, step } from "./admission-states.mjs";
+import { SCOPE_CODES, admitAnswer, holdsMembership, recordProblem, step } from "./admission-states.mjs";
 import { CHAINLESS, UUID, attributionError, installedChain, issueChain } from "./attribution.mjs";
 import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, awJson, createLocalArgv, installCertArgv, serviceInitArgv } from "./protected-client.mjs";
 
@@ -82,7 +82,8 @@ export function writePrivate(file, text) {
 export const admissionRecords = (home) => homeRecords(home).records.map((r) => r.record);
 /** Each admission record a home holds, with whether a leave set it aside (its name carries
  *  `~left-`): {records, unreadable}. A home with no records directory holds none; a directory or
- *  a record that can't be read, or isn't a record, is listed in `unreadable` ({file, reason}),
+ *  a record that can't be read, or isn't one of the table's (recordProblem), is listed in
+ *  `unreadable` ({file, reason}),
  *  never dropped: a record is what says which memberships are its home's (C-5). */
 export function homeRecords(home) {
   const dir = join(home, ".oats-aweb");
@@ -95,7 +96,8 @@ export function homeRecords(home) {
     const file = join(dir, f);
     let record;
     try { record = JSON.parse(readFileSync(file, "utf8")); } catch (e) { unreadable.push({ file, reason: e instanceof SyntaxError ? "not JSON" : why(e) }); continue; }
-    if (!record || typeof record !== "object" || Array.isArray(record)) { unreadable.push({ file, reason: "not a record" }); continue; }
+    const problem = recordProblem(record);
+    if (problem) { unreadable.push({ file, reason: problem }); continue; }
     records.push({ record, left: f.includes("~left-") });
   }
   return { records, unreadable };
