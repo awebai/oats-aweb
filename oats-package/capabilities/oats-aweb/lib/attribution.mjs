@@ -14,6 +14,19 @@ import { canonicalTeamServerURL } from "./team-server-url.mjs";
 /** A refusal of this feature: a code from C-9, a message that names the fix,
  *  and its details (key, problem, step, code, …). */
 export const attributionError = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
+/** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9).
+ *  Over the cap, the problem is shortened, never the fix after its " → " (test 23). */
+export const REFUSAL_ROOM = 300; // fatal() keeps 300 characters after its "oats-aweb: " prefix
+export const refusalText = (e) => {
+  const d = e.details || {};
+  const detail = d.problem ? `problem: ${d.problem}` : d.step ? `step: ${d.step}` : d.code ? `code: ${d.code}` : "";
+  const head = `${e.code}${detail ? ` (${detail})` : ""}: `;
+  const at = e.message.indexOf(" → ");
+  if (head.length + e.message.length <= REFUSAL_ROOM || at < 0) return head + e.message;
+  const fix = e.message.slice(at);
+  const room = REFUSAL_ROOM - head.length - fix.length - 1;
+  return room > 0 ? `${head}${e.message.slice(0, Math.min(at, room))}…${fix}` : head + e.message;
+};
 
 /** The characters the kernel never stores or prints in text it did not write
  *  (OATS lib/refused-text.mjs): control characters, line and paragraph

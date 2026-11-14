@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { PROTECTED_ADMISSION_REQUIRED, refusalText, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
 import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
@@ -2348,19 +2348,6 @@ function syncWakeReceive(meta) {
 // Human attribution (spec human-ids-acxy7 v4.3.10): only with
 // settings.oats.aweb.attribution, which a deployment that never opted in
 // doesn't have, so its spawn is the legacy one above, unchanged.
-/** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9).
- *  Over the cap, the problem is shortened, never the fix after its " → " (test 23). */
-const REFUSAL_ROOM = 300; // fatal() keeps 300 characters after its "oats-aweb: " prefix
-const refusalText = (e) => {
-  const d = e.details || {};
-  const detail = d.problem ? `problem: ${d.problem}` : d.step ? `step: ${d.step}` : d.code ? `code: ${d.code}` : "";
-  const head = `${e.code}${detail ? ` (${detail})` : ""}: `;
-  const at = e.message.indexOf(" → ");
-  if (head.length + e.message.length <= REFUSAL_ROOM || at < 0) return head + e.message;
-  const fix = e.message.slice(at);
-  const room = REFUSAL_ROOM - head.length - fix.length - 1;
-  return room > 0 ? `${head}${e.message.slice(0, Math.min(at, room))}…${fix}` : head + e.message;
-};
 const attributionFatal = (e, meta) => fatal(refusalText(e), meta);
 /** A team outside attribution.teams (acceptance 18): its fix is the refresh that adds it. */
 const unlistedTeam = (team, label) => attributionError("E_ENDORSE_POLICY", `team ${label} (${team}) isn't among the teams this deployment's root admits into → rerun \`oats aweb setup --endorse-root\` to add it`, { problem: "unlisted", team });
