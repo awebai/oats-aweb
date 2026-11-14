@@ -66,7 +66,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
-import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRootChoice, liveAwebSettings, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { leftAdmissionName, retireAdmissions } from "../lib/removal.mjs";
 import { attributionStatus, homesOf, reconcileAdmissions } from "../lib/reconcile.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admissionFile, admitIdentity, committedAdmissions, readAdmission, stateOf, writePrivate } from "../lib/admission.mjs";
 import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
@@ -2211,8 +2211,11 @@ function runTeamsCommand(kind) {
     }
     const rows = validateJoinLabels(args.labels, { action: kind });
     if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
-    // On an opted-in deployment a joined team is the root's to admit and remove (C-3, C-6).
-    const attributed = attributionSetting(settings);
+    // On an opted-in deployment a joined team is the root's to admit and remove (C-3, C-6). A join
+    // admits under what the refresh changed since this home's spawn (liveJoinAttribution); a leave
+    // removes with the captured setting, as retire does.
+    const captured = attributionSetting(settings);
+    const attributed = captured && kind === "join" ? liveJoinAttribution(captured) : captured;
     if (args.plan) {
       if (kind !== "join") { const error = new Error("--plan is supported by join only"); error.code = "E_BAD_ARGS"; throw error; }
       const plan = attributed ? attributedJoinPlan(attributed, rows, meta) : joinPlan(rows, meta);
@@ -2222,7 +2225,7 @@ function runTeamsCommand(kind) {
     // Record every completed label even when a later one fails: a confirmed
     // leave deleted its home, and a join created a remote identity.
     // Who issues and who admits, read once, before any effect: every listed team is checked first.
-    const pre = attributed && kind === "join" ? attributionPreflight({ teams: rows.filter((row) => !joinedTeamsOf(meta).some((j) => j.label === row.label)), spawnerHome: home, fail: (e) => { throw e; } }) : null;
+    const pre = attributed && kind === "join" ? attributionPreflight({ setting: attributed, teams: rows.filter((row) => !joinedTeamsOf(meta).some((j) => j.label === row.label)), spawnerHome: home, fail: (e) => { throw e; } }) : null;
     try {
       for (const row of rows) {
         const result = kind === "join" ? (pre ? attributedJoin(pre, row, meta) : mintJoinedTeam(row, meta, { current: true }))
@@ -2330,13 +2333,21 @@ const refusalText = (e) => {
 const attributionFatal = (e, meta) => fatal(refusalText(e), meta);
 /** A team outside attribution.teams (acceptance 18): its fix is the refresh that adds it. */
 const unlistedTeam = (team, label) => attributionError("E_ENDORSE_POLICY", `team ${label} (${team}) isn't among the teams this deployment's root admits into → rerun \`oats aweb setup --endorse-root\` to add it`, { problem: "unlisted", team });
+/** The setting an attributed home's own join admits under (acceptance 18, 22): the kernel hands a
+ *  command the settings its home captured at spawn, so the deployment's live setting is read
+ *  (`oats inspect --soul`, as the legacy join reads its current root) for what the refresh changed:
+ *  joinSetting. Refuses before any aw call. */
+function liveJoinAttribution(captured) {
+  const unreadable = (cause, at) => { throw attributionError("E_ATTRIBUTION_SETTING", `the deployment's live settings could not be read (${cause}) → run oats inspect ${at.soul ? `--soul ${at.soul}` : `--home ${home}`} --dir ${at.deployment || "<deployment>"} --json in the deployment, fix what it reports, then retry`, { problem: "setting-unreadable" }); };
+  return joinSetting(captured, attributionSetting(liveAwebSettings(home, { unreadable }).settings));
+}
 /** Before any effect (C-1, C-3): the setting, the kernel, the aw floor, the
  *  profile, the teams, the root home and who issues: the spawner (`spawnerHome`, a
  *  home's own join passes itself), else the root. Null without the setting.
  *  `fail(refusal)` never returns: a spawn answers it, a command throws it. */
-function attributionPreflight({ teams, spawnerHome = process.env.OATS_SPAWNER_HOME, fail = attributionFatal }) {
-  let setting;
-  try { setting = attributionSetting(settings); } catch (e) { fail(e); }
+function attributionPreflight({ setting: given, teams, spawnerHome = process.env.OATS_SPAWNER_HOME, fail = attributionFatal }) {
+  let setting = given;
+  if (setting === undefined) try { setting = attributionSetting(settings); } catch (e) { fail(e); }
   if (!setting) return null;
   let version;
   try { version = querySelectedKernel(["--version", "--json"]); } catch { version = undefined; }

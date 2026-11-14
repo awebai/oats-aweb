@@ -57,7 +57,13 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
   // `oats status --json` lists every home under D/agents that has an instance.json, as the kernel does;
   // FAKE_KERNEL_STATUS=fail makes it fail, =malformed answers a document with no agents list.
   const status = `if(args[0]==='status'&&process.env.FAKE_KERNEL_STATUS==='fail'){console.error('kernel status failed');process.exit(1);}if(args[0]==='status'&&process.env.FAKE_KERNEL_STATUS==='malformed'){doc={schemaVersion:1};}else if(args[0]==='status'){const p=require('node:path'),root=p.join(deployment,'agents'),rows=[];for(const soul of fs.existsSync(root)?fs.readdirSync(root):[])for(const name of fs.existsSync(p.join(root,soul,'instances'))?fs.readdirSync(p.join(root,soul,'instances')):[]){const h=p.join(root,soul,'instances',name);if(!fs.existsSync(p.join(h,'instance.json')))continue;rows.push({instance:name,home:h,capabilityMeta:JSON.parse(fs.readFileSync(p.join(h,'instance.json'),'utf8')).capabilityMeta});}doc={schemaVersion:1,agents:[{agent:'dev',instances:rows}]};}`;
-  const kernel = currentRootQuery(ws, { home: homeOf("dev-1"), deployment: ws, settings, change: `if(args.includes('--version'))doc={schemaVersion:1,name:'@awebai/oats',version:'0.69.19',features:${JSON.stringify(features)}};${status}` });
+  // The deployment's live settings, as `oats inspect --soul` answers them: the fixture's, until
+  // setLive() writes others (a refresh); FAKE_KERNEL_INSPECT=fail makes inspect fail. As the kernel
+  // does, `inspect --home` answers for the home it was asked about.
+  const liveFile = join(ws, "kernel-live-settings.json");
+  const liveInspect = `if(args[0]==='inspect'){if(process.env.FAKE_KERNEL_INSPECT==='fail'){console.error('inspect failed');process.exit(1);}if(isHome)doc.result.subject.home=args[args.indexOf('--home')+1];if(fs.existsSync(${JSON.stringify(liveFile)}))doc.result.capabilities[0].settings=JSON.parse(fs.readFileSync(${JSON.stringify(liveFile)},'utf8'));}`;
+  const setLive = (live) => writeFileSync(liveFile, JSON.stringify(live));
+  const kernel = currentRootQuery(ws, { home: homeOf("dev-1"), deployment: ws, settings, change: `${liveInspect}if(args.includes('--version'))doc={schemaVersion:1,name:'@awebai/oats',version:'0.69.19',features:${JSON.stringify(features)}};${status}` });
   const env = {
     PATH: fake.path, HOME: ws, OATS_CLI_BIN: kernel.cli, OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: "github.com/acme/agents", OATS_WORKSPACE_NAME: "acme",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: teamIds.default, OATS_DEFAULT_TEAM_FROM: "deployment",
@@ -112,7 +118,7 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
     let doc; try { doc = JSON.parse(r.stdout.trim().split("\n").pop() || "null"); } catch { doc = undefined; }
     return { status: r.status, doc, stdout: r.stdout, stderr: r.stderr };
   };
-  return { ws, rootHome, profile, setting, settings, fake, kernel, env, homeOf, hook, spawn, record, meta, launch, retire, readiness, setup, command };
+  return { ws, rootHome, profile, setting, settings, fake, kernel, env, homeOf, hook, spawn, record, meta, launch, retire, readiness, setup, command, setLive };
 }
 
 /** An aw call's argv without its global flags (--json, and a leading --identity-home <path>, which the fake records as identityHome). */

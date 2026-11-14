@@ -274,7 +274,20 @@ A home's own `oats aweb join` and `leave` follow the same rules. A join
 issues the joined identity's chain from this home and has the root admit it,
 never through a member invite; a team outside `attribution.teams` refuses
 `E_ENDORSE_POLICY` (`unlisted`), and a join that fails after its key exists
-keeps the joined identity for the rerun, which reuses its key and chain. A
+keeps the joined identity for the rerun, which reuses its key and chain.
+A home's commands run with the settings it captured at spawn, so a join reads
+the deployment's live setting (`oats inspect --soul`, as the legacy join reads
+its current root) for what `setup --endorse-root`'s refresh rewrites: the
+teams and the endorsement's policy. A team mapped and added after the home's
+spawn is joined without a respawn, under the current policy; a pending
+admission's rerun still sends its recorded policy and operation. Everything
+else (the root, the human, the service, the profile and its digest, the
+endorsement's operation) must equal the home's captured setting: a live
+setting that differs, or has no attribution, refuses `E_ATTRIBUTION_SETTING`
+(`setting-diverged`, naming the key) before any protected call → respawn this
+home to use the current setting. Live settings that can't be read refuse
+`setting-unreadable`, naming the `oats inspect` read to repair. A leave, like
+retire, start and readiness, keeps the captured setting. A
 leave removes the membership through the root, then deletes the joined
 identity, its workspace record left to go stale as at retire: an unknown admission or
 an unconfirmed removal keeps it for the rerun, and a root that can't act

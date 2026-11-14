@@ -50,7 +50,10 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
   joined identity's chain is issued from this home (none when this home has
   none) and the endorsed root admits it, as at spawn. A team outside
   `attribution.teams` refuses `E_ENDORSE_POLICY` (`unlisted`): rerun
-  `oats aweb setup --endorse-root` to add it. A join that fails after its key
+  `oats aweb setup --endorse-root` to add it; an existing home then joins it
+  without a respawn, since a join reads the deployment's current teams and
+  policy (a root, service or profile that changed since the spawn refuses
+  `setting-diverged`: respawn the home). A join that fails after its key
   exists keeps the joined identity; rerun the join to resume it. A leave
   removes the membership through the root, as retire does, and deletes the
   joined identity. Its workspace record is left to go stale: aw can't delete

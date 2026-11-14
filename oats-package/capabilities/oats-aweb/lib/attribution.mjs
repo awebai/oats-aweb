@@ -76,6 +76,33 @@ export function attributionSetting(settings = {}) {
   };
 }
 
+/** The fields a setup refresh never rewrites, by the key that names each. */
+const FIXED_AT_SPAWN = {
+  "attribution.root.id": (a) => a.root.id,
+  "attribution.root.home": (a) => a.root.home,
+  "attribution.human.id": (a) => a.human.id,
+  "attribution.human.label": (a) => a.human.label,
+  "attribution.service.id": (a) => a.service.id,
+  "attribution.service.url": (a) => a.service.url,
+  "attribution.service.profile": (a) => a.service.profile,
+  "attribution.service.profileDigest": (a) => a.service.profileDigest,
+  "attribution.endorsement.operationId": (a) => a.endorsement.operationId,
+};
+/** What an existing home's own join admits under (acceptance 18, 22): `captured`, the setting the
+ *  home was spawned with, with the teams and the endorsement's policy of `live`, the deployment's
+ *  setting now: what `setup --endorse-root`'s refresh rewrites, and nothing else. Every other field
+ *  must equal the captured one, or this refuses `setting-diverged`, naming the key: the home's
+ *  retire still acts with its captured root, service and profile, and a changed profile takes a new
+ *  setup and respawned homes (C-1). Both are attributionSetting's answers; `live` may be null. */
+export function joinSetting(captured, live) {
+  const respawn = (why, key) => attributionError("E_ATTRIBUTION_SETTING", `${why} → respawn this home to use the current setting`, { problem: "setting-diverged", ...(key ? { key: `settings.oats.aweb.${key}` } : {}) });
+  if (!live) throw respawn("the deployment's live settings carry no attribution, and this home was spawned with it");
+  for (const [key, field] of Object.entries(FIXED_AT_SPAWN)) {
+    if (field(live) !== field(captured)) throw respawn(`the deployment's live settings.oats.aweb.${key} differs from the one this home was spawned with`, key);
+  }
+  return { ...captured, teams: [...live.teams], endorsement: { ...captured.endorsement, policy: { ...live.endorsement.policy } } };
+}
+
 // ---------------------------------------------------------------------------
 // The protected profile (C-1, Pepe's side 8f5bc6a3): it pins the origins,
 // registry and keys every protected call trusts, so whoever can rewrite it
