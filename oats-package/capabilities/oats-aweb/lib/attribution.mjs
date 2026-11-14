@@ -367,22 +367,34 @@ export function startAttribution(recorded, verdict) {
 // ---------------------------------------------------------------------------
 // A deployment that never opted in, on a team aweb has protected (C-8).
 
-/** True when aw's --json error envelope on `stdout` is the 403 a protected
- *  team answers a member-invite mint with: aw at 44158f1bb reports a server
- *  refusal as {"error": {"code": "http_error", "http_status": 403, ...}}, the
- *  server's code as `reason` (a coded detail) or `detail` (a plain one). */
-export function protectedAdmissionRequired(stdout) {
+/** The legacy path's refusal for aw's --json error envelope on `stdout`, or null. The legacy
+ *  spawn's `aw init --join-from` and a join's `aw id team accept-invite` give, on every deployment:
+ *  - C-8's E_PROTECTED_ADMISSION_REQUIRED, for the 403 a protected team answers a member invite
+ *    with (aw reports a server refusal as {"error": {"code": "http_error", "http_status": 403}},
+ *    the server's code as `reason`, a coded detail, or `detail`, a plain one), or for aw's own
+ *    preflight's form, {"error": {"code": "protected_admission_required"}} with no HTTP status
+ *    (aw 1.36.59-rc.2, protected_invite_preflight.go; v4.3.29);
+ *  - E_PROTECTION_STATE_UNAVAILABLE, for that preflight's protected_state_unavailable: the team's
+ *    registry reports no protection state (v4.3.30). */
+export function legacyPathRefusal(stdout) {
   for (const line of String(stdout ?? "").trim().split("\n").reverse()) {
     let doc;
     try { doc = JSON.parse(line); } catch { continue; }
     const e = doc?.error;
     if (!object(e)) continue;
-    return e.http_status === 403 && (e.reason === "protected_admission_required" || e.detail === "protected_admission_required");
+    if (e.http_status === 403 && (e.reason === "protected_admission_required" || e.detail === "protected_admission_required")) return PROTECTED_ADMISSION_REQUIRED;
+    if (e.http_status === undefined && e.code === "protected_admission_required") return PROTECTED_ADMISSION_REQUIRED;
+    if (e.code === "protected_state_unavailable") return PROTECTION_STATE_UNAVAILABLE;
+    return null;
   }
-  return false;
+  return null;
 }
 /** C-8's refusal, in its order: why, the whole fix (C-2's whole command: setup refuses
  *  E_SETUP_ARGUMENT without --protected-profile and --service, v4.3.27), the docs, and the step
  *  that gets a human ID. aw's reason is kept as `reason`, which the refusal's head doesn't print,
  *  so the whole text fits the 300 characters. */
 export const PROTECTED_ADMISSION_REQUIRED = attributionError("E_PROTECTED_ADMISSION_REQUIRED", 'this team now admits agents only through an endorsed root → oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url> (README, "Human attribution"; oats onboarding); no human ID yet: passkey enrollment', { reason: "protected_admission_required" });
+/** aw 1.36.59 refuses a member-invite accept against a registry that reports no team protection
+ *  state (v4.3.30, v4.3.31): why, then the fix. No downgrade advice: aw 1.36.59 carries the
+ *  forged-sender verification fix. */
+export const PROTECTION_STATE_UNAVAILABLE = attributionError("E_PROTECTION_STATE_UNAVAILABLE", "this team's registry reports no team protection state, which aw 1.36.59 and later require before joining → upgrade the team's registry to one that reports it (awid-service 0.5.40 or later), or ask its operator to", { reason: "protected_state_unavailable" });

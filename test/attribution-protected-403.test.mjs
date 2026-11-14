@@ -30,6 +30,39 @@ for (const spelling of ["reason", "detail"]) {
   });
 }
 
+// v4.3.29: from aw 1.36.59-rc.2 the same refusal also comes from aw's local preflight, before any
+// server call: {"error": {"code": "protected_admission_required"}}, with no HTTP status.
+test("C-8 (v4.3.29): aw's local form, protected_admission_required with no HTTP status, refuses E_PROTECTED_ADMISSION_REQUIRED as the 403 does, within 300 characters, with no retry or remint", (t) => {
+  const fx = fixture(t, { delivery: "channel" });
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_PROTECTED: "local" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = String(r.doc?.warning || "").split(" | ")[0];
+  assert.ok(w.startsWith("oats-aweb: E_PROTECTED_ADMISSION_REQUIRED"), w);
+  assert.ok(w.length <= "oats-aweb: ".length + 300, `${w.length} characters`);
+  assert.ok(w.includes(FIX), w);
+  assert.equal(inits(fx).length, 1, "one mint");
+  assert.equal(r.doc.meta, undefined, "no identity registered");
+  assert.ok(!existsSync(join(fx.home, ".oats-aweb", "pending-mint.json")), "the mint's intent is dropped: aw refused before any effect");
+});
+
+// v4.3.30, v4.3.31: aw 1.36.59 refuses a member-invite accept when the team's registry reports no
+// protection state; the refusal says why and how to fix it, on every deployment.
+const STATE_WHY = "this team's registry reports no team protection state, which aw 1.36.59 and later require before joining";
+const STATE_FIX = "upgrade the team's registry to one that reports it (awid-service 0.5.40 or later), or ask its operator to";
+test("v4.3.30: aw's protected_state_unavailable refuses E_PROTECTION_STATE_UNAVAILABLE: why, then the fix, within 300 characters, with no retry or remint and no downgrade advice", (t) => {
+  const fx = fixture(t, { delivery: "channel" });
+  const r = fx.hook("spawn", { FAKE_JOIN_FROM_PROTECTED: "state" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = String(r.doc?.warning || "").split(" | ")[0];
+  assert.ok(w.startsWith("oats-aweb: E_PROTECTION_STATE_UNAVAILABLE"), w);
+  assert.ok(w.length <= "oats-aweb: ".length + 300, `${w.length} characters`);
+  assert.ok(w.indexOf(STATE_WHY) > 0 && w.indexOf(STATE_WHY) < w.indexOf(` → ${STATE_FIX}`), w);
+  assert.ok(!/below 1\.36\.59|downgrade/.test(w), w);
+  assert.equal(inits(fx).length, 1, "one mint");
+  assert.equal(r.doc.meta, undefined, "no identity registered");
+  assert.ok(!existsSync(join(fx.home, ".oats-aweb", "pending-mint.json")), "the mint's intent is dropped: aw refused before any effect");
+});
+
 test("C-8: the provider never retries the invite and never remints, and nothing is left for retire to settle", (t) => {
   const fx = fixture(t, { delivery: "channel" });
   const r = fx.hook("spawn", { FAKE_JOIN_FROM_PROTECTED: "reason" });
@@ -84,6 +117,24 @@ for (const spelling of ["reason", "detail"]) {
     assert.equal(typeof r.doc.meta?.alias, "string", JSON.stringify(r.doc.meta));
   });
 }
+
+test("C-8 (v4.3.29): a joined team's accept answered aw's local form refuses the spawn E_PROTECTED_ADMISSION_REQUIRED, once, and hands the primary identity back for compensation", (t) => {
+  const { r, accepts } = joinedAcceptRefused(t, { code: "protected_admission_required", message: "team alpha requires the configured protected service/root admission path (--protected-profile <profile>)" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = String(r.doc?.warning || "");
+  assert.ok(w.startsWith("oats-aweb: E_PROTECTED_ADMISSION_REQUIRED") && w.includes(FIX), w);
+  assert.equal(accepts, 1, "never retried");
+  assert.equal(typeof r.doc.meta?.alias, "string", JSON.stringify(r.doc.meta));
+});
+
+test("v4.3.30: a joined team's accept answered protected_state_unavailable refuses the spawn E_PROTECTION_STATE_UNAVAILABLE with its fix, once, and hands the primary identity back for compensation", (t) => {
+  const { r, accepts } = joinedAcceptRefused(t, { code: "protected_state_unavailable", message: "the configured registry did not provide an explicit valid protection state" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const w = String(r.doc?.warning || "");
+  assert.ok(w.startsWith("oats-aweb: E_PROTECTION_STATE_UNAVAILABLE") && w.includes(STATE_FIX), w);
+  assert.equal(accepts, 1, "never retried");
+  assert.equal(typeof r.doc.meta?.alias, "string", JSON.stringify(r.doc.meta));
+});
 
 test("C-8: a joined team's accept answered another 403 maps as it does today, never E_PROTECTED_ADMISSION_REQUIRED", (t) => {
   const { r } = joinedAcceptRefused(t, { code: "http_error", http_status: 403, reason: "forbidden" });

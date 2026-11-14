@@ -429,7 +429,8 @@ Home readiness, with the setting, warns `attribution-revoked`,
 
 Once aweb's operator has protected a team, a deployment that never opted in
 can no longer mint into it with the member invite: the service answers HTTP
-403 `protected_admission_required`, and the spawn refuses
+403 `protected_admission_required`, or aw 1.36.59 refuses the invite itself
+with that code before asking the service, and the spawn refuses
 `E_PROTECTED_ADMISSION_REQUIRED`, for the primary team or a team the spawn
 joins. The invite is never retried and nothing is reminted; readiness reports
 nothing for it.
@@ -441,9 +442,13 @@ the protected service. Any other 403 is reported as before.
 
 Compatibility: from 1.36.59, aw reads a team's protection state at the
 identity registry before it accepts a member invite. So aw 1.36.59 or later
-needs a registry that reports team protection. Against one that doesn't, every
-member-invite spawn and join refuses with aw's `protected_state_unavailable`,
-on every deployment, opted in or not. OATS reports aw's refusal as it stands.
+needs a registry that reports team protection. Against one that doesn't, aw
+refuses `protected_state_unavailable`, and every member-invite spawn and join
+refuses `E_PROTECTION_STATE_UNAVAILABLE`, on every deployment, opted in or
+not: "this team's registry reports no team protection state, which aw 1.36.59
+and later require before joining". The fix is to upgrade the team's registry
+to one that reports it (awid-service 0.5.40 or later), or ask its operator to.
+Like C-8's refusal, it is never retried and nothing is reminted.
 
 ## 1.42.1 — the release OATS pins for 1.42
 

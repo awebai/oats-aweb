@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Opt-in human attribution (aweb-acxy.7), and one change a deployment that never opted in can see: a spawn onto a team aweb has protected refuses with the fix. Nothing changes for a deployment that sets nothing, until aweb protects one of its teams. **What a deployment must change:** nothing, unless aweb's operator protects one of its teams. Then it opts in: `oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>` (README, "Human attribution").
+Opt-in human attribution (aweb-acxy.7), and two changes a deployment that never opted in can see: a spawn onto a team aweb has protected refuses with the fix, and, with aw 1.36.59 or later, so does a member-invite spawn or join against a registry that reports no team protection state. Nothing changes for a deployment that sets nothing, until aweb protects one of its teams. **What a deployment must change:** nothing, unless aweb's operator protects one of its teams. Then it opts in: `oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>` (README, "Human attribution").
 
 - **Added: human attribution, opt-in (`settings.oats.aweb.attribution`, host-only, written by setup).**
   - The deployment's human endorses one registered agent, the endorsed root, with one passkey approval (`oats aweb setup --endorse-root`).
@@ -14,7 +14,11 @@ Opt-in human attribution (aweb-acxy.7), and one change a deployment that never o
   - A deployment that never opted in mints with the member invite. Once aweb's operator protects its team, the service answers HTTP 403 `protected_admission_required`.
   - The spawn then refuses with the reason and C-2's whole setup command, for the primary team or a joined one. It never retries the invite and never remints.
   - To fix it, opt in as above. An operator with no human ID yet first enrolls a passkey at the protected service.
+  - aw 1.36.59 can refuse the invite itself with the same code, before asking the service; the spawn refuses the same way.
   - Any other 403 is reported as before, and readiness is unchanged.
+- **Changed, on every deployment with aw 1.36.59 or later: a member-invite spawn or join against a registry that reports no team protection state refuses `E_PROTECTION_STATE_UNAVAILABLE`.**
+  - aw 1.36.59 reads the team's protection state at the identity registry before it accepts a member invite, and refuses `protected_state_unavailable` when there is none.
+  - The fix: upgrade the team's registry to one that reports it (awid-service 0.5.40 or later), or ask its operator to. It is never retried and nothing is reminted.
 
 ## 1.42.1 — 2026-11-13
 

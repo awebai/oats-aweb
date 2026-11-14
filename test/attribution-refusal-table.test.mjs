@@ -17,7 +17,7 @@ import test from "node:test";
 import { README_ADMISSION, admitIdentity, admitRefusal, admittedCertificate, installRefusal, keepRootCopy, recordAdmission, recordsUnreadable } from "../oats-package/capabilities/oats-aweb/lib/admission.mjs";
 import { lockRefusal } from "../oats-package/capabilities/oats-aweb/lib/admission-lock.mjs";
 import { SCOPE_CODES } from "../oats-package/capabilities/oats-aweb/lib/admission-states.mjs";
-import { CHAIN_MAX_CERTIFICATES, CONTAINER_DEPLOYMENT, PROTECTED_ADMISSION_REQUIRED, REFUSAL_ROOM, ROOT_DIR, attributionSetting, chainRefusal, chooseIssuer, issueChain, profileProblem, recordedProfileProblem, refusalText, rootHomeProblem } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { CHAIN_MAX_CERTIFICATES, CONTAINER_DEPLOYMENT, PROTECTED_ADMISSION_REQUIRED, PROTECTION_STATE_UNAVAILABLE, REFUSAL_ROOM, ROOT_DIR, attributionSetting, chainRefusal, chooseIssuer, issueChain, profileProblem, recordedProfileProblem, refusalText, rootHomeProblem } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { AwRefusal } from "../oats-package/capabilities/oats-aweb/lib/protected-client.mjs";
 import { attributionFixture } from "./helpers/attribution-fixture.mjs";
 import { BIN, refusalSites, templateMatcher } from "./helpers/refusal-sites.mjs";
@@ -127,6 +127,7 @@ const ROWS = [
   [`${LIB}/attribution.mjs`, "the child's chain would hold", (p) => thrown(() => chooseIssuer({ setting: p.setting, root: verified({ chain: Array.from({ length: CHAIN_MAX_CERTIFICATES }, (_, i) => `did:aw:${i}`) }) }))],
   [`${LIB}/attribution.mjs`, "the chain exchange failed at", (p) => thrown(() => issueChain({ aw: () => "{}", issuer: { identityHome: join(p.rootHome, ".aw"), id: LONG.root }, identityHome: p.identityHome, instance: LONG.name, setting: p.setting, dir: join(p.providerDir, "attribution") }))],
   [`${LIB}/attribution.mjs`, "this team now admits agents only through an endorsed root", () => PROTECTED_ADMISSION_REQUIRED],
+  [`${LIB}/attribution.mjs`, "this team's registry reports no team protection state", () => PROTECTION_STATE_UNAVAILABLE],
   [`${LIB}/admission-lock.mjs`, "'s admission lock can't be read", (p) => lockRefusal(LONG.label, join(p.providerDir, `admission-${LONG.label}.lock.takeover`))],
   [`${LIB}/admission-lock.mjs`, "another command holds ${}'s admission lock", (p) => lockRefusal(LONG.label, join(p.providerDir, `admission-${LONG.label}.lock.takeover`), LONG.pid)],
   // The preflight's own, and the region after the admission, through the spawn hook.

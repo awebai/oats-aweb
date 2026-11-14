@@ -9,11 +9,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const CAPABILITY = join(ROOT, "oats-package", "capabilities", "oats-aweb");
-/** C-9's codes, as the spec lists them (v4.3.22, "Error codes and warnings"). */
+/** C-9's codes, as the spec lists them (v4.3.22, "Error codes and warnings"; v4.3.30 adds the legacy path's E_PROTECTION_STATE_UNAVAILABLE). */
 const C9 = new Set([
   "E_SETUP_ARGUMENT", "E_SETUP_KERNEL", "E_SETUP_AW_VERSION", "E_REQUIRED_HOOK_FAILED",
   "E_ENDORSE_ROOT_INELIGIBLE", "E_ENDORSE_POLICY", "E_ENDORSE_NOT_APPROVED", "E_ENDORSE_FAILED", "E_ENDORSE_ONE_ROOT", "E_PROTECTED_KEY_REACHABLE",
-  "E_PROTECTED_ADMISSION_REQUIRED",
+  "E_PROTECTED_ADMISSION_REQUIRED", "E_PROTECTION_STATE_UNAVAILABLE",
   "E_ATTRIBUTION_ROOT_HOME", "E_ATTRIBUTION_EVIDENCE", "E_ATTRIBUTION_SETTING",
   "E_ATTRIBUTION_ISSUER_OUTSIDE_ROOT", "E_ATTRIBUTION_REVOKED", "E_ATTRIBUTION_EXCHANGE", "E_ATTRIBUTION_DEPTH", "E_ADMISSION_LIMIT", "E_ADMISSION_REFUSED", "E_ADMISSION_UNKNOWN",
 ]);

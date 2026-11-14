@@ -33,8 +33,7 @@
 //                              before any local file is written, then the command
 //                              hangs. It models an aw that registers first, which is
 //                              what retire's branch for a home with no key covers.
-//   FAKE_JOIN_FROM_PROTECTED   a 403 at step 4: "reason" or "detail" carries protected_admission_required
-//                              (a team aweb has protected), "other" another code, "none" no code
+//   FAKE_JOIN_FROM_PROTECTED   at step 4: a 403 whose "reason" or "detail" carries protected_admission_required ("other", "none": other 403s); "local" or "state": aw 1.36.59-rc.2's local preflight (protected_admission_required, protected_state_unavailable)
 // FAKE_JOIN_FROM_REPLY (a JSON object) overrides fields of the success reply.
 // A root with no .aw is refused like a non-member root.
 export function joinFromFake(args) {
@@ -93,6 +92,11 @@ export function joinFromFake(args) {
   if (protectedAs === "detail") refuse('Error: accept invite: registry http 403: {"detail":"protected_admission_required"}', { code: "http_error", http_status: 403, detail: "protected_admission_required" });
   if (protectedAs === "other") refuse('Error: accept invite: registry http 403: {"detail":{"code":"team_closed","message":"This team is closed."}}', { code: "http_error", http_status: 403, detail: "This team is closed.", reason: "team_closed" });
   if (protectedAs === "none") refuse("Error: accept invite: registry http 403: forbidden", { code: "http_error", http_status: 403 });
+  // From aw 1.36.59-rc.2 (aweb cba8754f, protected_invite_preflight.go) the accept reads the team's
+  // protection at the registry first and refuses locally, before any key or server effect, with
+  // aw's own code and no HTTP status; root.go appends a hint line to the message (v4.3.29, v4.3.30).
+  if (protectedAs === "local") refuse("Error: team " + team + " requires the configured protected service/root admission path (--protected-profile <profile>)\nThis team admits agents only through its protected service.", { code: "protected_admission_required" });
+  if (protectedAs === "state") refuse("Error: the configured registry did not provide an explicit valid protection state\nThe registry's protection state for this team is unavailable.", { code: "protected_state_unavailable" });
   const held = (readRegistry()[team] || []).some((m) => m.alias === alias && !m.revoked_at);
   if (process.env.FAKE_JOIN_FROM_CONFLICT || held) refuse("Error: accept invite: 409 conflict: alias " + alias + " already has an active certificate (invite TOKEN-SHOULD-NOT-LEAK)", { code: "alias_conflict", http_status: 409, reason: "alias_active" });
   register();
