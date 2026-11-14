@@ -9,9 +9,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fixture } from "./helpers/delivery-fixture.mjs";
+import { PROTECTED_ADMISSION_REQUIRED } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { parseEndorseArgs } from "../oats-package/capabilities/oats-aweb/lib/endorse-root.mjs";
 
 const inits = (fx) => fx.fake.readCalls().filter((c) => c.args[0] === "init");
-const FIX = "oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw>";
+/** C-2's whole command (v4.3.27): setup refuses E_SETUP_ARGUMENT without --protected-profile and --service. */
+const FIX = "oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>";
 
 for (const spelling of ["reason", "detail"]) {
   test(`C-8: a 403 whose ${spelling} is protected_admission_required refuses E_PROTECTED_ADMISSION_REQUIRED: why, the whole fix, the docs, and the human-ID step, in order, within 300 characters`, (t) => {
@@ -86,4 +89,26 @@ test("C-8: a joined team's accept answered another 403 maps as it does today, ne
   assert.equal(r.status, 1);
   assert.ok(!(r.stdout + r.stderr).includes("E_PROTECTED_ADMISSION_REQUIRED"), r.stdout + r.stderr);
   assert.ok(String(r.doc?.warning || "").startsWith("oats-aweb: identity minting failed"), String(r.doc?.warning));
+});
+
+/** The setup command a refusal's fix names, with each placeholder filled, as argv after `oats aweb setup`. */
+function filledSetupCommand(text) {
+  const at = text.indexOf("oats aweb setup --endorse-root");
+  assert.ok(at >= 0, text);
+  const words = text.slice(at).split(/[`(;,]| \(/)[0].trim().split(/\s+/);
+  assert.deepEqual(words.slice(0, 3), ["oats", "aweb", "setup"]);
+  const FILL = { "<alias>": "root-1", "<did:aw>": "did:aw:human1", "<abs>": "/srv/aweb/protected-profile.json", "<url>": "https://aweb.acme.example/api" };
+  const left = words.filter((w) => /^<.*>$/.test(w) && !(w in FILL));
+  assert.deepEqual(left, [], `placeholders no one fills: ${left}`);
+  return words.slice(3).map((w) => FILL[w] ?? w);
+}
+
+test("C-8 (v4.3.27): the setup command E_PROTECTED_ADMISSION_REQUIRED names, its placeholders filled, is one setup accepts", () => {
+  const argv = filledSetupCommand(PROTECTED_ADMISSION_REQUIRED.message);
+  const parsed = parseEndorseArgs(argv);
+  assert.equal(parsed.newRoot, true);
+  assert.equal(parsed.name, "root-1");
+  assert.equal(parsed.human, "did:aw:human1");
+  assert.equal(parsed.profile, "/srv/aweb/protected-profile.json");
+  assert.equal(parsed.service, "https://aweb.acme.example/api");
 });

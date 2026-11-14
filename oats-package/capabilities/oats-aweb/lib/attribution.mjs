@@ -356,5 +356,8 @@ export function protectedAdmissionRequired(stdout) {
   }
   return false;
 }
-/** C-8's refusal, in its order: why, the whole fix, the docs, and the step that gets a human ID. */
-export const PROTECTED_ADMISSION_REQUIRED = attributionError("E_PROTECTED_ADMISSION_REQUIRED", 'this team now admits agents only through an endorsed root → oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw> (README, "Human attribution"; oats onboarding); no human ID yet: passkey enrollment', { code: "protected_admission_required" });
+/** C-8's refusal, in its order: why, the whole fix (C-2's whole command: setup refuses
+ *  E_SETUP_ARGUMENT without --protected-profile and --service, v4.3.27), the docs, and the step
+ *  that gets a human ID. aw's reason is kept as `reason`, which the refusal's head doesn't print,
+ *  so the whole text fits the 300 characters. */
+export const PROTECTED_ADMISSION_REQUIRED = attributionError("E_PROTECTED_ADMISSION_REQUIRED", 'this team now admits agents only through an endorsed root → oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url> (README, "Human attribution"; oats onboarding); no human ID yet: passkey enrollment', { reason: "protected_admission_required" });

@@ -92,6 +92,6 @@ test("acceptance 23: through a real kernel, a deployment that never opted in get
   let doc; try { doc = JSON.parse(r.stdout); } catch { assert.fail(`no JSON: ${r.stdout}${r.stderr}`); }
   assert.equal(doc.ok, false, r.stdout);
   assert.ok(doc.error.message.includes("E_PROTECTED_ADMISSION_REQUIRED"), doc.error.message);
-  assert.ok(doc.error.message.includes("oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw>"), doc.error.message);
+  assert.ok(doc.error.message.includes("oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>"), doc.error.message);
   assert.equal(fake.readCalls().filter((c) => c.args[0] === "init").length, 1, "never retried, never reminted");
 });

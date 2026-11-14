@@ -55,6 +55,12 @@ binding the root.
      --protected-profile <abs> --service <url> [--label "<the human's name>"] [--teams <label,…>]
    ```
 
+   - `<alias>`: the new root's name, 1-64 letters, digits, `-` or `_`;
+   - `<did:aw>`: the human's own `did:aw`, the one who approves;
+   - `<abs>`: the absolute, normalized path of the protected profile the
+     service's operator provided;
+   - `<url>`: the aweb service the protected teams use.
+
    Setup creates the root (a registered agent identity, under
    `D/.aweb-endorsed-root/<alias>`, owner-only), then stops at
    `requester-unbound` until the operator binds it. The rerun after the
@@ -347,8 +353,8 @@ joins. The invite is never retried and nothing is reminted; readiness reports
 nothing for it.
 
 The fix is to opt in, as "Human attribution" above describes:
-`oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw>`.
-An operator who has no human ID yet gets one first, by enrolling a passkey at
+`oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>`,
+each placeholder as that section says. An operator who has no human ID yet gets one first, by enrolling a passkey at
 the protected service. Any other 403 is reported as before.
 
 ## 1.42.1 — the release OATS pins for 1.42
