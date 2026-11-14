@@ -118,10 +118,11 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     if (!record || typeof record.label !== "string") continue;
     const { team, label } = record;
     const save = (fields) => { record = { ...record, ...fields }; writePrivate(join(providerDir, name), `${JSON.stringify(record, null, 2)}\n`); };
-    // A pending record is a spawn killed at its admit (v4.3.19). With a --certificate-out file
-    // that verifies (aw's id form, this record's team and member key) the admission committed;
-    // with none, its outcome is unknown, and it is resumed as an unknown one is.
-    if (record.state === "pending") {
+    // A pending record is a spawn killed at its admit (v4.3.19); an unknown one, an admit whose
+    // answer was lost. With a --certificate-out file that verifies (aw's id form, this record's
+    // team and member key) the admission committed, and is kept as committed before a root
+    // that can't act is asked anything; with none, the same admit resumes it.
+    if (record.state === "pending" || record.state === "unknown") {
       let cert = null;
       try { cert = typeof record.certificateOut === "string" && existsSync(record.certificateOut) ? admittedCertificate(record.certificateOut, setting.root.home) : null; } catch { cert = null; }
       if (cert && cert.team === team && cert.memberKey === record.memberKey) save({ state: "committed", certificateId: cert.id });

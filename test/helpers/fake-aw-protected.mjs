@@ -21,6 +21,7 @@
 //   endorse: [answers, one per call]: "pending" | "committed" | "committed-without-chain" | {code}
 //   workspaceDelete: {code}: the next plain workspace deletes fail with that code
 //   admit: {code} | {code, charge: true} (it commits, then every answer is code: aw's prepare_unconfirmed)
+//          | {code, charge: true, written: true} (each answer writes --certificate-out first)
 //          | {lostOnce: true, then?: code} (the first execute's answer is lost; with `then`, every
 //            later answer for the committed operation is that code)
 //   install: {code}; remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
@@ -167,14 +168,16 @@ if (cmd === "id team admit") {
     fs.writeFileSync(path.join(base, "charges.json"), JSON.stringify(charges));
     if (s.admit && s.admit.lostOnce) { s.admit = s.admit.then ? { code: s.admit.then, charge: true } : undefined; if (!s.admit) delete s.admit; saveSvc(s); fail("receipt_unavailable", "operation " + op + "'s execute answer was lost and it is still pending; resume it with the same operation id"); }
   }
-  // charge: the operation commits, and every answer comes back as this code (aw's prepare_unconfirmed).
-  if (s.admit && s.admit.code && s.admit.charge) fail(s.admit.code, "operation " + op + " committed but its answer was lost: " + s.admit.code);
+  // charge: the operation commits, and every answer comes back as this code (aw's prepare_unconfirmed);
+  // written too: aw wrote the certificate to --certificate-out before its answer was lost.
+  if (s.admit && s.admit.code && s.admit.charge && !s.admit.written) fail(s.admit.code, "operation " + op + " committed but its answer was lost: " + s.admit.code);
   const c = charges[op];
   const cert = { version: 1, certificate_id: c.certificate_id, team_id: team, team_did_key: "did:key:zteam", member_did_key: c.member_did_key, ...(c.member_did_aw ? { member_did_aw: c.member_did_aw } : {}), alias: c.alias, identity_scope: c.member_did_aw ? "global" : "local", issued_at: "2026-11-13T00:00:00Z", signature: "sig" };
   const out = flag("--certificate-out"), text = JSON.stringify(cert, null, 2) + "\\n";
   if (fs.existsSync(out) && fs.readFileSync(out, "utf8") !== text) fail("certificate_out_exists", out + " already holds another file; the service keeps the certificate, so move the file and run again");
   if (!fs.existsSync(path.dirname(out))) fail("", "open " + out + ": no such file or directory");
   fs.writeFileSync(out, text, { mode: 0o600 });
+  if (s.admit && s.admit.code && s.admit.written) fail(s.admit.code, "operation " + op + " committed, its certificate written, but its answer was lost: " + s.admit.code);
   emit({ operation_id: op, state: "committed", certificate_out: out });
 }
 

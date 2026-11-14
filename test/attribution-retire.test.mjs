@@ -613,3 +613,19 @@ test("C-6: a retained seat's retire kept by an unconfirmed removal keeps the sea
   assert.ok(existsSync(rootCopy(fx, certificateId)));
   assert.ok(warningOf(r).includes(RECONCILE) || warningOf(r).includes("retire"), warningOf(r));
 });
+
+test("C-3d: an unknown admission whose certificate file verifies is committed: with the root revoked, retire still writes the root's copy before the home goes, so reconcile can list it", (t) => {
+  const fx = attributionFixture(t);
+  fx.fake.setService({ admit: { code: "receipt_unavailable", charge: true, written: true } });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 1, JSON.stringify(r.doc));
+  const record = admission(fx, "dev-1");
+  assert.equal(record.state, "unknown");
+  const cert = JSON.parse(readFileSync(record.certificateOut, "utf8"));
+  assert.ok(!existsSync(rootCopy(fx, cert.certificate_id)), "no copy yet: admit's answer was lost");
+  fx.fake.setService({ admit: undefined });
+  fx.fake.revoke(ROOT_ID);
+  const retired = fx.retire("dev-1", { fromMeta: r.doc.meta ?? fx.meta("dev-1") });
+  assert.ok(existsSync(rootCopy(fx, cert.certificate_id)), `the root's copy is written: ${warningOf(retired)}`);
+  assert.equal(admission(fx, "dev-1").state, "committed");
+});
