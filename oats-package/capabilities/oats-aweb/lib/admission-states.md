@@ -176,7 +176,7 @@ delete it can't address.
 | readiness | each unknown record: `admission-leaked` |
 | check-only `admittedLive` | live homes' committed records, left ones included: OATS's count |
 | check-only `leakedMemberships` | the member list read through a home whose committed record's identity home exists, else the root; and the root's copies. A certificate a live or kept home's committed, pending or unknown record names (or, awaiting, may name, by the certificate's alias) is that home's; a left record names none (decided L). A list row is unsigned registry metadata: it counts only by the root's copy of its id, of aw's form, whatever alias the row gives; with no copy it is listed, never removable, and only when its alias has no home |
-| `--reconcile-admissions` | the root's copies only, for the leaks above; its removal records under the root's `removals/` |
+| `--reconcile-admissions` | the root's copies only, for the leaks above, read once before the homes' records: every copy then has its record (a record is written before admit, the copy after it), and a copy a join writes during the reads is no candidate; its removal records under the root's `removals/` |
 | check-only, a profile that fails C-1's checks | no policy read and no member list; the block's `problem` names `profile-mode` or `profile-changed`, and its local parts stay |
 | a spawn's issuer count (`E_ADMISSION_LIMIT`) | as `admittedLive` |
 

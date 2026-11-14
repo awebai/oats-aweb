@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { HUMAN, OPS, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
 import { POLICY, writeIdentity } from "./helpers/fake-aw-protected.mjs";
@@ -390,5 +391,35 @@ for (const [problem, change] of [
     assert.ok(a.unreadableTeams.every((u) => u.reason.includes(problem)), JSON.stringify(a.unreadableTeams));
     // The root's verdict comes from aw who, which reads no profile (its registry is the domain's own).
     assert.equal(a.verified, "nearest_human");
+  });
+}
+
+for (const when of ["first-read", "last-read"]) {
+  test(`C-5: a join that commits during reconciliation (${when === "first-read" ? "inside its first member-list read" : "after its last member-list read"}) is never taken for a leak: the root's copies are read before the homes' records`, (t) => {
+    const fx = attributionFixture(t);
+    assert.equal(fx.spawn("dev-1").status, 0);
+    const hookPath = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
+    const bin = mkdtempSync(join(fx.ws, "interleave-")), reads = join(fx.ws, "member-reads"), joined = join(fx.ws, "join-result.json");
+    const fakeAw = join(fx.fake.path.split(":")[0], "aw"), home = fx.homeOf("dev-1"), teams = fx.setting.teams.length;
+    writeFileSync(join(bin, "aw"), `#!${process.execPath}
+const fs = require("node:fs"), cp = require("node:child_process"), args = process.argv.slice(2);
+const join_ = () => { const r = cp.spawnSync(${JSON.stringify(process.execPath)}, [${JSON.stringify(hookPath)}, "join", "--labels", "ops", "--json"], { cwd: ${JSON.stringify(home)}, env: { ...process.env, OATS_EVENT: "join", OATS_INSTANCE: "dev-1", OATS_HOME: ${JSON.stringify(home)}, OATS_INSTANCE_HOME: ${JSON.stringify(home)} }, encoding: "utf8" }); fs.writeFileSync(${JSON.stringify(joined)}, JSON.stringify({ status: r.status, stderr: r.stderr })); };
+const members = args.includes("members");
+const n = members ? (fs.existsSync(${JSON.stringify(reads)}) ? Number(fs.readFileSync(${JSON.stringify(reads)}, "utf8")) : 0) + 1 : 0;
+if (members) fs.writeFileSync(${JSON.stringify(reads)}, String(n));
+if (members && ${JSON.stringify(when)} === "first-read" && n === 1) join_();
+const r = cp.spawnSync(${JSON.stringify(fakeAw)}, args, { stdio: "inherit", env: process.env });
+if (members && ${JSON.stringify(when)} === "last-read" && n === ${teams}) join_();
+process.exit(r.status ?? 1);
+`, { mode: 0o700 });
+    const r = fx.setup(["--reconcile-admissions", "--json"], { extra: { PATH: `${bin}:${fx.env.PATH}` } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const j = JSON.parse(readFileSync(joined, "utf8"));
+    assert.equal(j.status, 0, j.stderr);
+    assert.equal(Number(readFileSync(reads, "utf8")), teams, "the join ran during the reads");
+    const { certificateId } = admission(fx, "dev-1", "ops");
+    assert.ok(!fx.fake.removed().some((x) => x.certificate_id === certificateId), "the new live membership is not removed");
+    assert.ok(existsSync(rootCopy(fx, certificateId)), "its root copy is kept");
+    assert.ok(!JSON.stringify(r.doc).includes(certificateId), JSON.stringify(r.doc));
   });
 }

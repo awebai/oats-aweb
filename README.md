@@ -316,6 +316,9 @@ as leaked once no home here holds its certificate (one a leave set aside
 counts as leaked while its home lives). The list is the registry's, unsigned:
 a row is only acted on through the root's copy of its certificate, and a
 certificate a home holds is never leaked, whatever alias the list gives it.
+The root's copies are read once, before the homes' records: a home records its
+admission before the admit and the copy only after it, so a join that commits
+while reconciliation reads the lists is never taken for a leak.
 With a protected profile that fails its checks (its mode, or bytes that no
 longer match setup's digest), check-only makes no call that relies on it and
 says so under `attribution.problem`. A team no home here can read is

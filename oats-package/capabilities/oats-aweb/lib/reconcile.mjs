@@ -40,6 +40,12 @@ export function homesOf(statusDoc) {
  *  resident) never is. Returns {leaked, unreadable}. */
 export function leakedMemberships({ aw, setting, homes, registry }) {
   const aliases = new Set(homes.map((h) => h.instance));
+  // The root's copies are read once, BEFORE the homes' records, and only that snapshot is ever a
+  // removal candidate. A home writes its admission record (pending) before the admit and the root's
+  // copy only after it commits (C-3, C-3b), so every copy read here has its record in the read
+  // below; a join that commits during the slow member-list reads adds a copy this snapshot never
+  // holds, and so is never taken for a leak. A copy read later could meet no record of it.
+  const copies = new Map(rootCopies(setting.root.home).map((c) => [c.certificateId, c]));
   const records = homes.flatMap((h) => homeRecords(h.home));
   const held = heldBy(records, setting.root.home);
   const leaked = [], unreadable = [];
@@ -55,14 +61,14 @@ export function leakedMemberships({ aw, setting, homes, registry }) {
       if (!m || m.revoked_at || m.identity_scope !== "local" || m.member_did_aw || typeof m.alias !== "string") continue;
       const id = String(m.certificate_id);
       if (held(team, id)) continue;
-      const copy = rootCopyOf(setting.root.home, id);
+      const copy = copies.get(id);
       if (copy && copy.team === team) { if (!held(team, id, copy.alias)) leaked.push({ team, alias: copy.alias, certificateId: id, removable: true }); continue; }
       if (aliases.has(m.alias)) continue;
       leaked.push({ team, alias: m.alias, certificateId: id.slice(0, 80), removable: false });
     }
   }
   const listed = new Set(leaked.map((l) => l.certificateId));
-  for (const copy of rootCopies(setting.root.home)) {
+  for (const copy of copies.values()) {
     if (!setting.teams.includes(copy.team) || listed.has(copy.certificateId) || held(copy.team, copy.certificateId, copy.alias)) continue;
     if (active.has(copy.team) && !active.get(copy.team).has(copy.certificateId)) continue;
     leaked.push({ ...copy, removable: true });
