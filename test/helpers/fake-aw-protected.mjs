@@ -1,5 +1,5 @@
-// A fake aw for human attribution: the commands as aw built from aweb
-// 44158f1bb answers them (cli/go/cmd/aw id_create_unaddressed.go,
+// A fake aw for human attribution: the commands as the published aw 1.36.59-rc.2
+// (aweb cba8754f) answers them, unchanged for these commands since 44158f1bb (cli/go/cmd/aw id_create_unaddressed.go,
 // id_endorse.go, id_team_admission_policy.go, id_team_admit.go,
 // id_team_install_cert.go, id_team_remove_agent.go, service.go, errors.go,
 // who.go, id_child.go, id_parent.go). Their answers, field names, codes and
@@ -36,7 +36,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const PROTECTED_AW_VERSION = "1.36.59-rc.2+44158f1";
+export const PROTECTED_AW_VERSION = "1.36.59-rc.2";
 /** A protected team's policy as aw reports it (handoff/admission_policy.go
  *  decodeAdmissionPolicy: exactly these members; `teams` in code-point order). */
 export const POLICY = Object.freeze({ version: 3, digest: `sha256:${"c".repeat(64)}`, teams: Object.freeze(["backend:acme.example", "ops:acme.example"]), root_selector: Object.freeze({ kind: "service_endorsed_root", service_id: "svc-acme" }), subject_kinds: Object.freeze(["agent"]), member_role: "member", bounds: Object.freeze({ max_active: 50, max_per_window: 10, rate_window_seconds: 3600 }) });

@@ -1,6 +1,6 @@
 // `oats aweb setup --endorse-root` (spec v4.3.13 C-2): acceptance tests 1 to 4,
 // the setup half of 14 (arguments, profile, root home, labels) and 23's
-// pending answer. The fake models aw built from aweb 44158f1bb.
+// pending answer. The fake models the published aw 1.36.59-rc.2 (aweb cba8754f).
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
