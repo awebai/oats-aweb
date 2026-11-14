@@ -101,7 +101,7 @@ jobs:
         env:
           OATS_ATTRIBUTION_KERNEL_COMMIT: 09657344d48893c532aa408a36b12ffc0a72dcc8
         run: |
-          git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/oats-attribution-kernel"
+          git clone --no-checkout https://github.com/oats-project/oats.git "$RUNNER_TEMP/oats-attribution-kernel"
           git -C "$RUNNER_TEMP/oats-attribution-kernel" checkout --detach "$OATS_ATTRIBUTION_KERNEL_COMMIT"
           test "$(git -C "$RUNNER_TEMP/oats-attribution-kernel" rev-parse HEAD)" = "$OATS_ATTRIBUTION_KERNEL_COMMIT"
           cd "$RUNNER_TEMP/oats-attribution-kernel"
