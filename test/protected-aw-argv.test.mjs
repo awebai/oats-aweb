@@ -1,7 +1,7 @@
 // Acceptance test 20's --help check (spec v4.3.16): every aw command line in C-2,
 // C-3 (the exchange included), C-5 and C-6 is checked against the one built aw's --help, and each JSON
 // answer and error envelope is pinned against that binary as far as it can
-// answer with no server. The aw is built from aweb 44158f1bb (cli/go) and named
+// answer with no server. The aw is the published 1.36.59-rc.2 (aweb cba8754f), named
 // by OATS_AWEB_PROTECTED_AW; without it the tests skip, and
 // OATS_AWEB_PROTECTED_AW_REQUIRED=1 turns a skip into a failure.
 import assert from "node:assert/strict";
@@ -13,8 +13,8 @@ import test from "node:test";
 import { admissionPolicyArgv, admitArgv, createLocalArgv, createNoAddressArgv, endorseArgv, installCertArgv, removeAgentArgv, teamMembersArgv, serviceInitArgv } from "../oats-package/capabilities/oats-aweb/lib/protected-client.mjs";
 
 const AW = process.env.OATS_AWEB_PROTECTED_AW;
-if (process.env.OATS_AWEB_PROTECTED_AW_REQUIRED === "1" && !AW) throw new Error("OATS_AWEB_PROTECTED_AW_REQUIRED=1 needs OATS_AWEB_PROTECTED_AW, the aw built from aweb 44158f1bb");
-const skip = !AW && "set OATS_AWEB_PROTECTED_AW to the aw built from aweb 44158f1bb";
+if (process.env.OATS_AWEB_PROTECTED_AW_REQUIRED === "1" && !AW) throw new Error("OATS_AWEB_PROTECTED_AW_REQUIRED=1 needs OATS_AWEB_PROTECTED_AW, the published aw 1.36.59-rc.2");
+const skip = !AW && "set OATS_AWEB_PROTECTED_AW to the published aw 1.36.59-rc.2";
 
 function scratch(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-protected-aw-")));
