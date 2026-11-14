@@ -36,19 +36,13 @@ export function selectedDeployment(env = process.env, explicitDir) {
   }
 }
 
-/** The current root for `team` and the setting that chose it: `roots[team]`, or
- *  the shared `root`, read from the deployment's LIVE settings (a root recorded
- *  after this home's spawn counts). Refuses before any invite is minted unless
- *  that root proves membership in the team, naming the cause and its fix: an
- *  unreadable live read is repaired at `oats inspect`, a missing or non-member
- *  root at setup (awebai/oats-aweb#52). */
-export function currentJoinRootChoice(team, home, { env = process.env, query = querySelectedKernel, membership, label } = {}) {
+/** This home's soul's oats.aweb settings as the deployment has them NOW (`oats inspect --soul`,
+ *  live teams only, no unresolved configuration problem), where a lifecycle hook sees the ones
+ *  its home captured. `unreadable(cause, {deployment, soul})` never returns: each caller says what
+ *  to repair. Returns {settings, deployment, soul}. */
+export function liveAwebSettings(home, { env = process.env, query = querySelectedKernel, unreadable: refuseUnreadable }) {
   let deployment, soul;
-  const refuse = (cause, remedy) => { throw new Error(`cannot join team ${team}: ${cause}; nothing was minted; ${remedy}`); };
-  // The live settings could not be read: the kernel's read is what to repair.
-  const unreadable = cause => refuse(`the deployment's live settings could not be read (${cause})`, `run oats inspect ${soul ? `--soul ${soul}` : `--home ${home}`} --dir ${deployment || '<deployment>'} --json in the deployment, fix what it reports, then retry`);
-  // The live settings name no usable member root for this team: setup makes one.
-  const noRoot = cause => refuse(cause, `check settings.oats.aweb.roots[${JSON.stringify(team)}] in the selected deployment and run oats aweb setup --join ${label || '<label>'} --invite-stdin --dir ${deployment || '<deployment>'} --soul ${soul || '<soul>'} there with an appropriate owner invite`);
+  const unreadable = cause => refuseUnreadable(cause, { deployment, soul });
   let selectedHome;
   try { deployment = selectedDeployment(env); selectedHome = canonical(home); }
   catch { unreadable('the selected deployment or instance home is unavailable or inconsistent'); }
@@ -74,7 +68,24 @@ export function currentJoinRootChoice(team, home, { env = process.env, query = q
   if (!Array.isArray(current.problems) || current.problems.some(p => !object(p) || !p.capability || p.capability === 'oats.aweb')) unreadable('the soul has unresolved configuration problems');
   const rows = Array.isArray(current.capabilities) ? current.capabilities.filter(c => c?.id === 'oats.aweb') : [];
   if (rows.length !== 1 || rows[0].layer !== 'messaging' || current.layers?.messaging?.id !== 'oats.aweb' || rows[0].compatibility?.ok !== true || !object(rows[0].settings)) unreadable('oats.aweb settings or compatibility unavailable for this soul');
-  const settings = rows[0].settings;
+  return { settings: rows[0].settings, deployment, soul };
+}
+
+/** The current root for `team` and the setting that chose it: `roots[team]`, or
+ *  the shared `root`, read from the deployment's LIVE settings (a root recorded
+ *  after this home's spawn counts). Refuses before any invite is minted unless
+ *  that root proves membership in the team, naming the cause and its fix: an
+ *  unreadable live read is repaired at `oats inspect`, a missing or non-member
+ *  root at setup (awebai/oats-aweb#52). */
+export function currentJoinRootChoice(team, home, { env = process.env, query = querySelectedKernel, membership, label } = {}) {
+  let deployment, soul;
+  const refuse = (cause, remedy) => { throw new Error(`cannot join team ${team}: ${cause}; nothing was minted; ${remedy}`); };
+  // The live settings could not be read: the kernel's read is what to repair.
+  const unreadable = (cause, at) => refuse(`the deployment's live settings could not be read (${cause})`, `run oats inspect ${at.soul ? `--soul ${at.soul}` : `--home ${home}`} --dir ${at.deployment || '<deployment>'} --json in the deployment, fix what it reports, then retry`);
+  // The live settings name no usable member root for this team: setup makes one.
+  const noRoot = cause => refuse(cause, `check settings.oats.aweb.roots[${JSON.stringify(team)}] in the selected deployment and run oats aweb setup --join ${label || '<label>'} --invite-stdin --dir ${deployment || '<deployment>'} --soul ${soul || '<soul>'} there with an appropriate owner invite`);
+  let settings;
+  ({ settings, deployment, soul } = liveAwebSettings(home, { env, query, unreadable }));
   if (Object.hasOwn(settings, 'roots') && !object(settings.roots)) noRoot('the live settings.oats.aweb.roots is not a map');
   const rootsKey = teamKeyIn(settings.roots, team);
   const source = rootsKey !== undefined ? 'roots[team]' : 'root';

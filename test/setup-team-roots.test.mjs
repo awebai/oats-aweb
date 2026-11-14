@@ -213,3 +213,27 @@ test('docs say nested roots are not migrated and ship no move procedure', () => 
   assert.doesNotMatch(flat,/aw workspace connect --team <(?:team id|T)>/,`${name} ships no move steps`);
  }
 });
+
+// Round 30, the lead's decision: `setup --join` keeps its own error code, so setup's readers are
+// unchanged, but when aw refuses the accept on the legacy path (C-8, v4.3.30) the message is that
+// refusal's why and whole fix, and details.code names it. Against the same command's generic
+// accept failure, the code is the same.
+const SETUP_JOIN = ['setup', '--join', 'joined', '--invite', 'SECRET', '--name', 'host', '--service', 'https://service.invalid', '--json'];
+const lastJson = (r) => JSON.parse(r.stdout.trim().split('\n').pop());
+for (const [form, error, code, fix] of [
+ ['local protected_admission_required', {code:'protected_admission_required',message:'team joined requires the configured protected service/root admission path (--protected-profile <profile>)'}, 'E_PROTECTED_ADMISSION_REQUIRED', 'oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>'],
+ ['protected_state_unavailable', {code:'protected_state_unavailable',message:'the configured registry did not provide an explicit valid protection state'}, 'E_PROTECTION_STATE_UNAVAILABLE', 'upgrade the team\'s registry to one that reports it (awid-service 0.5.40 or later), or ask its operator to'],
+]) test(`round 30: setup --join whose accept aw answers ${form} keeps setup's code, gives ${code}'s why and fix, and names it in details.code`, t => {
+ const generic = fixture(t).run(SETUP_JOIN, {AW_ACCEPT_FAIL: '1'});
+ assert.equal(generic.status, 1, generic.stderr);
+ const f = fixture(t);
+ const r = f.run(SETUP_JOIN, {AW_ACCEPT_ERROR_JSON: JSON.stringify(error)});
+ assert.equal(r.status, 1, r.stdout + r.stderr);
+ const doc = lastJson(r);
+ assert.equal(doc.ok, false);
+ assert.equal(doc.error.code, lastJson(generic).error.code, 'setup\'s own code, unchanged');
+ assert.equal(doc.error.details?.code, code, JSON.stringify(doc));
+ assert.ok(doc.error.message.includes(fix), doc.error.message);
+ assert.equal(f.fake.readCalls().filter(c => c.args.includes('accept-invite')).length, 1, 'never retried');
+ assert.doesNotMatch(r.stdout + r.stderr, /SECRET/);
+});

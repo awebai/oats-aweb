@@ -54,3 +54,13 @@ export function membershipTeamMatch(stored, wanted) {
   const want = trim(wanted);
   return want !== "" && trim(stored).toLowerCase() === want.toLowerCase();
 }
+/** True when `team`'s domain is in aweb's hosted zone, as aw reads it (isAwebHostedNamespace,
+ *  cli/go/cmd/aw/id_team.go, at the tested version): `aweb.ai`, or a name ending in `.aweb.ai`
+ *  that neither starts with `.` nor holds `..`. Lookalikes (evil-aweb.ai, aweb.ai.example.com)
+ *  and anything that is not a team id are outside it. */
+export function inAwebHostedZone(team) {
+  const id = canonicalAwebTeamId(team);
+  if (id === undefined) return false;
+  const domain = id.slice(id.indexOf(":") + 1);
+  return domain === "aweb.ai" || (!domain.startsWith(".") && !domain.includes("..") && domain.endsWith(".aweb.ai"));
+}

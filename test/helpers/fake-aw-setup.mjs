@@ -27,6 +27,7 @@
 //   AW_FAKE_VERSION   the version `aw version` reports; default: the `version` option (1.36.33)
 //   AW_FAKE_VERSION_FILE when it exists, `aw version` (and the inspect gate) read
 //                     the version from it, so a fake npm can upgrade aw
+//   AW_ACCEPT_ERROR_JSON accept-invite answers aw's --json error envelope {"error": <this JSON>}, exit 1
 //   accept-invite --token-stdin reads the token from stdin; the call records
 //                     `stdin: true` and the token's sha256, never the token
 //   id team create    as aw 1.36.56 does it for --namespace (BYOT): no invite token;
@@ -176,6 +177,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   if (process.env.AW_CREATE_MODE === "token") { console.log(JSON.stringify({ team_id: team, invite_token: "TOKEN__" + team, aweb_url: "https://app.aweb.ai/api" })); process.exit(0); }
   console.log(JSON.stringify({ status: "created", team_id: team, team_did_key: "did:key:zFixtureTeam", team_key_path: key, registry_url: "https://api.awid.ai" }));
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite") {
+  if (process.env.AW_ACCEPT_ERROR_JSON) { console.log(JSON.stringify({ error: JSON.parse(process.env.AW_ACCEPT_ERROR_JSON) })); console.error("Error: refused"); process.exit(1); }
   if (process.env.AW_ACCEPT_FAIL) {
     if (process.env.AW_ACCEPT_FAIL_ADDITION) fs.writeFileSync(path.join(path.dirname(awDir), "concurrent-data"), "keep addition");
     if (process.env.AW_ACCEPT_FAIL_PARTIAL) { fs.mkdirSync(awDir, { recursive: true }); fs.writeFileSync(path.join(awDir, "identity.yaml"), "partial identity"); }

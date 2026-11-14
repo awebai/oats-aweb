@@ -77,6 +77,55 @@ jobs:
           OATS_AWEB_HEALTH_NATIVE: '1'
           OATS_PREVIEW_KERNEL_ROOT: ${{ runner.temp }}/oats-preview-kernel
         run: node --test test/unread-attention-native.test.mjs
+      # Human attribution (spec human-ids-acxy7): the protected aw commands are
+      # checked against the published aw 1.36.59-rc.2 (npm dist-tag next, built
+      # from awebai/aw 0072ed1c, the sync of aweb cba8754f), and a spawn refusal
+      # is checked through a real kernel that lists spawn-attribution (OATS
+      # v0.69.19). The install is pinned by version and fails unless npm's
+      # integrity for the package and for its linux-x64 binary, the gitHead of
+      # both and the binary's own version and commit are exactly these.
+      - name: Install the published protected aw (1.36.59-rc.2)
+        shell: bash
+        env:
+          AW_PROTECTED_VERSION: 1.36.59-rc.2
+          AW_PROTECTED_GITHEAD: 0072ed1c1c7545c59ce743c9cea431e4ce96afcb
+          AW_PROTECTED_INTEGRITY: sha512-IZ0J6EU0VzXbOAouLKOV5PaD/5yOONZ69qLnYhlyKm6uKZY3NsRSZgosPjk+iTjW36dgWpajfXSJgsLDDy3Wlg==
+          AW_PROTECTED_BINARY_INTEGRITY: sha512-A5qHuETnZOg5J8hiHAeC/HZuxDMusJk/OeBmaL7CqZUKlnuTksLNggbaIU8P8WTrlt9yzk1VOqIh+pd+8pnpxg==
+        run: |
+          prefix="$RUNNER_TEMP/aw-protected"
+          npm install --prefix "$prefix" --no-audit --no-fund "@awebai/aw@$AW_PROTECTED_VERSION"
+          node -e '
+            const [prefix, version, gitHead, integrity, binary] = process.argv.slice(1);
+            const lock = require(`${prefix}/node_modules/.package-lock.json`).packages;
+            const want = { "@awebai/aw": integrity, "@awebai/aw-linux-x64": binary };
+            for (const [name, sha] of Object.entries(want)) {
+              const entry = lock[`node_modules/${name}`] || {};
+              const pkg = require(`${prefix}/node_modules/${name}/package.json`);
+              if (entry.version !== version || pkg.version !== version) throw new Error(`${name} is ${pkg.version}, not ${version}`);
+              if (entry.integrity !== sha) throw new Error(`${name} integrity ${entry.integrity} is not the pinned ${sha}`);
+              if (pkg.gitHead !== gitHead) throw new Error(`${name} gitHead ${pkg.gitHead} is not ${gitHead}`);
+            }' "$prefix" "$AW_PROTECTED_VERSION" "$AW_PROTECTED_GITHEAD" "$AW_PROTECTED_INTEGRITY" "$AW_PROTECTED_BINARY_INTEGRITY"
+          reported="$("$prefix/node_modules/.bin/aw" version)"
+          echo "$reported"
+          test "${reported%%$'\n'*}" = "aw $AW_PROTECTED_VERSION"
+          grep -q "commit: $AW_PROTECTED_GITHEAD " <<<"$reported"
+      - name: Provision the spawn-attribution kernel
+        shell: bash
+        env:
+          OATS_ATTRIBUTION_KERNEL_COMMIT: 09657344d48893c532aa408a36b12ffc0a72dcc8
+        run: |
+          git clone --no-checkout https://github.com/oats-project/oats.git "$RUNNER_TEMP/oats-attribution-kernel"
+          git -C "$RUNNER_TEMP/oats-attribution-kernel" checkout --detach "$OATS_ATTRIBUTION_KERNEL_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/oats-attribution-kernel" rev-parse HEAD)" = "$OATS_ATTRIBUTION_KERNEL_COMMIT"
+          cd "$RUNNER_TEMP/oats-attribution-kernel"
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Require the protected aw's --help check and the real-kernel attribution spawn
+        env:
+          OATS_AWEB_PROTECTED_AW_REQUIRED: '1'
+          OATS_AWEB_PROTECTED_AW: ${{ runner.temp }}/aw-protected/node_modules/.bin/aw
+          OATS_ATTRIBUTION_KERNEL_REQUIRED: '1'
+          OATS_ATTRIBUTION_KERNEL_ROOT: ${{ runner.temp }}/oats-attribution-kernel
+        run: node --test test/protected-aw-argv.test.mjs test/attribution-kernel-spawn.test.mjs
       - name: Consumer probe status
         run: echo "PENDING(released-0.19.0-fixtures; package-runtime-api.md Consumer fixture) acquire -> lock -> trust -> activate -> spawn"
 
