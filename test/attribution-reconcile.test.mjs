@@ -2,12 +2,12 @@
 // [--plan]` (spec v4.3.18 C-5), with the halves of acceptance tests 12 and 13
 // that reconcile after a retire couldn't remove a membership.
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { HUMAN, OPS, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
+import { HUMAN, OPS, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, capabilityWith, commandArgs, verbs, writtenAttribution } from "./helpers/attribution-fixture.mjs";
 import { POLICY, writeIdentity } from "./helpers/fake-aw-protected.mjs";
 
 const admission = (fx, name, label = "default") => JSON.parse(readFileSync(join(fx.homeOf(name), ".oats-aweb", `admission-${label}.json`), "utf8"));
@@ -70,6 +70,25 @@ test("v4.3.35: a setting that doesn't read can't say which home it records, so c
   const doc = checkOnly(fx);
   assert.equal(doc.attribution?.problem?.code, "E_ATTRIBUTION_SETTING", JSON.stringify(doc.attribution));
   assert.equal("unrecordedRootHomes" in doc, false, JSON.stringify(doc.unrecordedRootHomes));
+});
+// Round 31: setup accepts a root home through a path alias inside .aweb-endorsed-root/ (its
+// realpath is checked) and records the alias. Check-only compares homes by their physical
+// directory, so the live root is never listed, and never advised to be revoked.
+test("round 31: a root endorsed through a path alias is the recorded root: after setup and a spawn, check-only lists no unrecorded root home", (t) => {
+  const fx = attributionFixture(t, { attribution: false, root: "registered" });
+  const alias = join(fx.ws, ".aweb-endorsed-root", "selected-root");
+  symlinkSync(fx.rootHome, alias, "dir");
+  const args = ["--endorse-root", "--root-home", alias, "--human", HUMAN, "--protected-profile", fx.profile, "--service", SERVICE_URL, "--teams", "default,ops", "--json"];
+  assert.equal(fx.setup(args).doc.error.details.state, "pending");
+  assert.equal(fx.setup(args).status, 0);
+  const setting = writtenAttribution(fx.ws);
+  assert.equal(setting.root.home, alias, "setup records the alias");
+  const settings = { ...fx.settings, attribution: setting };
+  assert.equal(fx.spawn("dev-1", { extra: { OATS_SETTINGS: JSON.stringify(settings) } }).status, 0);
+  const r = fx.setup(["--check-only", "--json"], { live: settings });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.attribution.verified, "nearest_human");
+  assert.equal("unrecordedRootHomes" in r.doc, false, JSON.stringify(r.doc.unrecordedRootHomes));
 });
 test("v4.3.35: with only the recorded root there, check-only has no unrecordedRootHomes field", (t) => {
   const fx = attributionFixture(t);

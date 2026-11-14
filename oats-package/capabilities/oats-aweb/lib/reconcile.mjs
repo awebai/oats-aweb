@@ -7,7 +7,7 @@
 //   pinned aw.
 // - `--reconcile-admissions [--plan]` removes only the leaked memberships the
 //   root holds a copy for, with the root's team.agent.remove.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { committedAdmissions, homeRecords, recordsUnreadable, verifiedCertificate } from "./admission.mjs";
 import { awaitsOutcome, holdsMembership, shieldsCertificate } from "./admission-states.mjs";
@@ -150,8 +150,12 @@ export function unrecordedRootHomes({ aw, deployment, setting }) {
   let names = [];
   try { names = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort(); }
   catch (e) { if (e.code === "ENOENT" || e.code === "ENOTDIR") return []; throw e; }
-  const recorded = setting ? resolve(setting.root.home) : null;
-  return names.filter((name) => resolve(join(dir, name)) !== recorded).map((name) => {
+  // By the physical directory: setup accepts a root home through a path alias (its realpath is
+  // what rootHomeProblem checks), so the recorded spelling may name another entry here. A home
+  // that doesn't resolve is compared as written.
+  const physical = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+  const recorded = setting ? physical(setting.root.home) : null;
+  return names.filter((name) => physical(join(dir, name)) !== recorded).map((name) => {
     const home = join(dir, name), identityHome = join(home, ".aw");
     const verdict = readWho((args) => aw(["aw", ...args], home, 30000), identityHome);
     const verified = verdict.kind === "revoked" ? "revoked" : verdict.kind === "verified" && verdict.humanId ? "nearest_human" : "unavailable";
