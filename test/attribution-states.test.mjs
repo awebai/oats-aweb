@@ -79,6 +79,8 @@ const CELLS = [
   ["removal", "committed", { answer: "unavailable" }, { to: "committed", act: "warn", warn: "admission-removal-unavailable" }],
   ["removal", "committed", { answer: "unconfirmed" }, { to: "committed", act: "keep", keep: true, exit: 1, warn: "admission-removal-unconfirmed" }],
   ["removal", "committed", { answer: "refused" }, { to: "committed", act: "warn", warn: "service-refused" }],
+  ["removal", "committed", { answer: "refused", resumed: true }, { to: "committed", act: "warn", warn: "service-refused" }], // decided S
+  ["remove", "committed", { served: true, root: "root-home-unsafe", copy: true, resumed: true }, { to: "committed", act: "warn", warn: "root-home-unsafe" }], // decided S
   // D. A leave, once B and C kept nothing.
   ["leave", "removed", {}, { to: "removed", act: "delete-identity-and-certificate" }],
   ["leave", "committed", {}, { to: "committed", act: "delete-identity-and-set-aside" }], // decided L

@@ -141,12 +141,10 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
         }
         const admitted = admittedCertificate(record.certificateOut, setting.root.home);
         keepRootCopy(admitted);
-        // Kept on the record, so the remove phase still knows this retire made the membership.
-        save({ state: resumed.to, certificateId: admitted.id, ...(resumed.resumed ? { resumedAtRetire: true } : {}) });
+        save({ state: resumed.to, certificateId: admitted.id });
       }
     }
     if (!holdsMembership(record)) continue;
-    const resumed = record.resumedAtRetire === true;
     // The root's copy missing: written again from this home's certificate when it is the
     // one admitted, whenever the root home is there, so a removal blocked below stays
     // reconcilable. The home holds it twice: admit's --certificate-out file, and the copy
@@ -166,19 +164,16 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     }
     if (phase === "settle") continue;
     const blocked = removeServed ? cannot() : null;
-    const remove = step("remove", record.state, { served: removeServed, root: blocked?.reason ?? null, copy: !copyMissing, resumed });
-    if (remove.act === "keep") return { warnings, keep: { reason: "admission-unknown", text: `${blocked.why} (${blocked.reason}); the resumed admission committed and its removal didn't, so this home is kept → fix the root, then retire again, which resumes the admission` } };
+    const remove = step("remove", record.state, { served: removeServed, root: blocked?.reason ?? null, copy: !copyMissing });
     if (remove.warn === "admission-removal-unavailable") { warnings.push(`${REMOVAL_UNAVAILABLE} (team ${team})`); continue; }
     if (remove.warn === "root-copy-missing") { warnings.push(blockedText({ reason: "root-copy-missing", why: `the root's copy ${copy} is gone, and this home's certificate doesn't carry ${record.certificateId}`, team })); continue; }
     if (remove.act === "warn") { warnings.push(blockedText({ reason: blocked.reason, why: blocked.why, team })); continue; }
     const done = removeMembership({ aw, setting, certificateId: record.certificateId, team, file: removalFile(providerDir, name) });
-    const after = step("removal", record.state, { answer: done.outcome, resumed });
+    const after = step("removal", record.state, { answer: done.outcome });
     if (after.to === "removed") { save({ state: after.to }); continue; }
     if (after.warn === "admission-removal-unavailable") { warnings.push(notServedText({ code: done.code, team })); continue; }
     if (after.warn === "admission-removal-unconfirmed") return { warnings, keep: { reason: "admission-removal-unconfirmed", text: unconfirmedText({ team, operationId: done.operationId, code: done.code }) } };
-    const why = `the protected service refused the removal (${done.code})`;
-    if (after.keep) return { warnings, keep: { reason: "admission-unknown", text: `${why} (service-refused); the resumed admission committed and its removal didn't, so this home is kept → fix the root, then retire again, which resumes the admission` } };
-    warnings.push(blockedText({ reason: "service-refused", why, team }));
+    warnings.push(blockedText({ reason: "service-refused", why: `the protected service refused the removal (${done.code})`, team }));
   }
   // Each team this home was admitted to, and whether the root removed it: the
   // membership, not the workspace delete, says whether the alias is free.

@@ -309,6 +309,19 @@ test("acceptance 12: an unknown admission is resumed first, with the persisted o
   assert.ok(!existsSync(rootCopy(fx, id)), "the copy written from --certificate-out went with the removal");
 });
 
+test("C-6 (decided S): an unknown admission resumed as committed, whose removal the service then refuses, follows the committed row: admission-removal-blocked service-refused, the root's copy kept, and the home removed", (t) => {
+  const fx = attributionFixture(t);
+  const meta = unknownAdmission(fx);
+  const { operationId } = admission(fx, "dev-1");
+  fx.fake.setService({ admit: undefined, remove: { code: "scope_refused" } });
+  const r = fx.retire("dev-1", { fromMeta: meta });
+  assert.equal(r.status, 0, JSON.stringify(r.doc) + r.stderr);
+  assert.notEqual(r.doc.meta.reason, "admission-unknown", "the home isn't kept");
+  assert.ok(warningOf(r).includes("admission-removal-blocked (reason: service-refused"), warningOf(r));
+  assert.ok(warningOf(r).includes(RECONCILE), warningOf(r));
+  assert.ok(existsSync(rootCopy(fx, fx.fake.charges()[operationId].certificate_id)), "the root's copy stays for --reconcile-admissions");
+});
+
 test("acceptance 12: an unknown admission resumed as refused records refused and does nothing more", (t) => {
   const fx = attributionFixture(t);
   const meta = unknownAdmission(fx);
@@ -333,7 +346,8 @@ test("acceptance 12: an unknown admission that stays unknown keeps the home, wit
 const FIXABLE = [
   ["root-home-unsafe", (fx) => chmodSync(fx.rootHome, 0o755), (fx) => chmodSync(fx.rootHome, 0o700)],
   ["profile-changed", (fx) => { renameSync(fx.profile, `${fx.profile}.kept`); appendFileSync(fx.profile, readFileSync(`${fx.profile}.kept`, "utf8") + " "); chmodSync(fx.profile, 0o600); }, (fx) => renameSync(`${fx.profile}.kept`, fx.profile)],
-  ["service-refused", (fx) => fx.fake.setService({ remove: { code: "scope_refused" } }), (fx) => fx.fake.setService({ remove: "served" })],
+  // service-refused during the resume: the resume's own answer refuses the root's request (C-3d).
+  ["service-refused", (fx) => fx.fake.setService({ admit: { code: "scope_refused" } }), (fx) => fx.fake.setService({ admit: undefined })],
 ];
 for (const [reason, cause, fix] of FIXABLE) {
   test(`acceptance 12: the root can't act during the resume (${reason}): retire exits nonzero and keeps the home, naming the reason and "fix the root, then retire again"; once fixed, a second retire resumes and finishes`, (t) => {

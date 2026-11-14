@@ -66,25 +66,26 @@ export function step(on, state, facts = {}) {
     }
     // B: the resume's answer.
     case "resume": {
-      if (facts.answer === "committed") return { to: "committed", act: "copy", resumed: true };
+      if (facts.answer === "committed") return { to: "committed", act: "copy" };
       if (facts.answer === "final") return { to: "refused", act: "none" };
       if (facts.answer === "requester" || facts.answer === "requester-refused") return { ...same, act: "keep", keep: true, exit: 1, warn: "service-refused" };
       return { ...same, act: "keep", keep: true, exit: 1, warn: facts.answer === "exists" ? "certificate-out-exists" : "admission-unknown" };
     }
-    // C: retire's remove, for a committed record. facts: {served, root, copy, resumed}
+    // C: retire's remove, for a committed record, however it committed: a resume that committed
+    // is committed (C-3d "as committed above"; decided S). facts: {served, root, copy}
     case "remove": {
       if (state !== "committed") return { ...same, act: "none" };
       if (!facts.served) return { ...same, act: "warn", warn: "admission-removal-unavailable" };
-      if (facts.root) return facts.resumed && FIXABLE.has(facts.root) ? { ...same, act: "keep", keep: true, exit: 1, warn: facts.root } : { ...same, act: "warn", warn: facts.root };
+      if (facts.root) return { ...same, act: "warn", warn: facts.root };
       if (!facts.copy) return { ...same, act: "warn", warn: "root-copy-missing" };
       return { ...same, act: "remove" };
     }
-    // C: the removal's answer. facts: {answer: "removed"|"unavailable"|"unconfirmed"|"refused", resumed}
+    // C: the removal's answer. facts: {answer: "removed"|"unavailable"|"unconfirmed"|"refused"}
     case "removal": {
       if (facts.answer === "removed") return { to: "removed", act: "delete-copy" };
       if (facts.answer === "unavailable") return { ...same, act: "warn", warn: "admission-removal-unavailable" };
       if (facts.answer === "unconfirmed") return { ...same, act: "keep", keep: true, exit: 1, warn: "admission-removal-unconfirmed" };
-      return facts.resumed ? { ...same, act: "keep", keep: true, exit: 1, warn: "service-refused" } : { ...same, act: "warn", warn: "service-refused" };
+      return { ...same, act: "warn", warn: "service-refused" };
     }
     // D: a leave, once B and C kept nothing: what becomes of the joined identity and the record.
     case "leave": {
