@@ -7,7 +7,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { SCOPE_CODES, admitAnswer, holdsMembership, recordProblem, step } from "./admission-states.mjs";
 import { withAdmissionLock } from "./admission-lock.mjs";
-import { CHAINLESS, UUID, attributionError, installedChain, issueChain } from "./attribution.mjs";
+import { CHAINLESS, UUID, attributionError, installedChain, isRefusal, issueChain, refusalText } from "./attribution.mjs";
 import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, awJson, createLocalArgv, installCertArgv, serviceInitArgv } from "./protected-client.mjs";
 
 /** The README section each spawn refusal names for what doesn't fit its 300 characters. */
@@ -29,7 +29,7 @@ export const policyMissingText = (team, root) => POLICY_CHANGE_SERVED
 /** C-3c's scope text: the team is in the policy and this root isn't bound for its controller. */
 export const bindRootText = (team, root) => `ask the protected service's operator to run bind-root for this root (${root}) and ${team}`;
 /** C-3's connect text, naming both causes. */
-export const connectText = (url) => `check that the aweb service at ${url} is reachable; if the URL itself is wrong, rerun oats aweb setup --endorse-root --service <the correct url>`;
+export const connectText = (url) => `the new home couldn't connect to the aweb service at ${url} → check that it is reachable; if the URL itself is wrong, rerun oats aweb setup --endorse-root --service <the correct url>`;
 /** Retire and readiness while the pinned aw lacks team.agent.remove (C-5, C-6). */
 export const REMOVAL_UNAVAILABLE = "admission-removal-unavailable — the pinned aw doesn't serve team.agent.remove yet, so this membership stays on the protected team: retiring an instance frees no admission slot";
 
@@ -53,11 +53,18 @@ export function admitRefusal(e, { team, root, bounds, count, operationId }) {
     return attributionError("E_ADMISSION_LIMIT", `${team} is at its admission bounds (${limits}; OATS's count, not the server's: ${count} live) → ${REMOVE_SERVED ? "wait for the rate window, retire idle instances, or change the policy" : "wait for the rate window, or change the policy; retiring an instance frees no slot"}`, { code, team, bounds: b, oatsCount: count });
   }
   const refused = (text) => attributionError("E_ADMISSION_REFUSED", text, { code, team });
-  if (code === "admission_policy_missing") return refused(`${firstSentence(policyMissingText(team, root))} (${team}; ${README_ADMISSION})`);
-  if (SCOPE_CODES.has(code)) return refused(`this root likely isn't bound for ${team}'s controller → ${bindRootText(team, root)} (${README_ADMISSION})`);
+  // The policy's text is longer than a spawn's cap: the first sentence, then the README section (C-3c).
+  if (code === "admission_policy_missing") return refused(`${firstSentence(policyMissingText(team, root))} (${team}) → see the README section for what to do (${README_ADMISSION})`);
+  if (SCOPE_CODES.has(code)) {
+    // The fix names this root and the team; one too long for the cap names them in the problem
+    // and leaves the rest to the README section, as C-9 says a fix too long does.
+    const named = refused(`this root likely isn't bound for ${team}'s controller → ${bindRootText(team, root)} (${README_ADMISSION})`);
+    return refusalText(named).endsWith(named.message.slice(named.message.indexOf(" → "))) ? named
+      : refused(`this root (${root}) likely isn't bound for ${team}'s controller → ask the protected service's operator to run bind-root for this root and this team (${README_ADMISSION})`);
+  }
   if (code === "policy_changed") return refused(`${team}'s admission policy changed since the endorsement → rerun \`oats aweb setup --endorse-root\` to refresh it, then rerun the spawn (${README_ADMISSION})`);
   if (code === "operation_conflict") return refused(`aw sent this admission's operation id with other inputs, so it was never sent again → rerun the spawn, which starts a new operation (${README_ADMISSION})`);
-  return refused(`the protected service refused the admission to ${team} with ${code}, a final refusal among the contract's receipt codes (${README_ADMISSION})`);
+  return refused(`the protected service refused the admission to ${team} with ${code}, a final refusal among the contract's receipt codes → see the README section for what it needs (${README_ADMISSION})`);
 }
 
 /** aw's install-cert refusal (C-9): registry_unavailable is worth a retry,
@@ -249,5 +256,5 @@ function admitLocked({ aw, setting, team, label, alias, identityHome, providerDi
     try { aw(["aw", ...serviceInitArgv({ identityHome, service: setting.service.url, team })], dirname(identityHome), 60000); }
     catch { throw attributionError("E_ATTRIBUTION_EXCHANGE", connectText(setting.service.url), { step: "connect", url: setting.service.url }); }
     return { didKey: key.did_key, attribution, certificateId: cert.id };
-  } catch (e) { throw minted(e.code ? e : attributionError("E_ATTRIBUTION_EXCHANGE", `the spawn failed after its key was created: ${String(e.message || e).slice(0, 160)} → respawn`, { step: "verify" })); }
+  } catch (e) { throw minted(isRefusal(e) ? e : attributionError("E_ATTRIBUTION_EXCHANGE", `the spawn failed after its key was created: ${String(e.message || e).slice(0, 160)} → respawn`, { step: "verify" })); }
 }

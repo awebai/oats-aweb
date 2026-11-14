@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { PROTECTED_ADMISSION_REQUIRED, refusalText, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { PROTECTED_ADMISSION_REQUIRED, isRefusal, refusalText, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { README_ADMISSION, admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
 import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
@@ -2382,7 +2382,7 @@ function attributionPreflight({ setting: given, teams, spawnerHome = process.env
   for (const { team, label } of teams) if (!setting.teams.includes(team)) fail(unlistedTeam(team, label));
   let deployment;
   try { deployment = selectedDeployment(process.env); }
-  catch (e) { fail(attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home's deployment can't be confirmed: ${e.message}`, { problem: "placement", home: setting.root.home })); }
+  catch (e) { fail(attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home's deployment can't be confirmed (${e.message}) → spawn from the deployment, with its oats-local.yaml in place`, { problem: "placement", home: setting.root.home })); }
   const rootProblem = rootHomeProblem(setting.root.home, { deployment });
   if (rootProblem) fail(rootProblem);
   const chainAw = (args) => run(["aw", ...args], home, 60000);
@@ -2439,7 +2439,7 @@ function attributedSpawn(pre, { team, label, from, joinRows }) {
   let meta = { team, alias: instance };
   const afterAdmission = (e) => {
     // A refusal of this feature carries its own code; a system error's (EISDIR, …) is a cause.
-    if (typeof e?.code === "string" && e.code.startsWith("E_")) return e;
+    if (isRefusal(e)) return e;
     const cause = String(e?.wakeCause ?? e?.message ?? e).replace(/\s+/g, " ");
     return e?.wakeCause !== undefined
       ? attributionError("E_ATTRIBUTION_EXCHANGE", `the host wake broker couldn't register this home (aw wake register: ${cause}) → install the aweb release that ships aw wake, or start the host wake broker (\`oats aweb wake install\`), then respawn`, { step: "wake" })

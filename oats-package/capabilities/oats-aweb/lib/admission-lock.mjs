@@ -49,7 +49,8 @@ function create(path, doc) {
 // The refusal names the lock within the home (`.oats-aweb/admission-<label>.lock`), so its whole fix
 // fits a spawn's 300 characters however long the home's path is.
 const within = (path) => `${basename(dirname(path))}/${basename(path)} in this home`;
-const held = (label, path, pid) => attributionError("E_ATTRIBUTION_EXCHANGE", pid === undefined
+/** The step lock refusal for `label`'s lock (or its takeover guard) at `path`, held by `pid`, or unreadable. */
+export const lockRefusal = (label, path, pid) => attributionError("E_ATTRIBUTION_EXCHANGE", pid === undefined
   ? `${label}'s admission lock can't be read, so it counts as held → rerun later; if no oats aweb command acts on ${label} here, remove ${within(path)}`
   : `another command holds ${label}'s admission lock (pid ${pid}) → rerun when it ends; if no oats aweb command runs as pid ${pid}, remove ${within(path)}`, { step: "lock", label, pid: pid ?? null, path, shown: within(path) });
 
@@ -64,10 +65,10 @@ export function takeAdmissionLock(providerDir, label, { onStale, onGuarded } = {
     if (create(path, mine)) return { nonce: mine.nonce, release: () => release(path, mine.nonce) };
     const seen = holder(path);
     if (seen.missing) continue; // released between the two: take it again
-    if (seen.unreadable || running(seen.doc.pid)) throw held(label, path, seen.doc?.pid);
+    if (seen.unreadable || running(seen.doc.pid)) throw lockRefusal(label, path, seen.doc?.pid);
     onStale?.();
     const taking = { ...mine, nonce: randomUUID() };
-    if (!create(guard, taking)) { const g = holder(guard); throw held(label, guard, g.doc?.pid); }
+    if (!create(guard, taking)) { const g = holder(guard); throw lockRefusal(label, guard, g.doc?.pid); }
     try {
       onGuarded?.();
       const again = holder(path);
@@ -75,7 +76,7 @@ export function takeAdmissionLock(providerDir, label, { onStale, onGuarded } = {
     } finally { release(guard, taking.nonce); }
   }
   const last = holder(path);
-  throw held(label, path, last.doc?.pid);
+  throw lockRefusal(label, path, last.doc?.pid);
 }
 function release(path, nonce) {
   const now = holder(path);

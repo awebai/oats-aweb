@@ -14,6 +14,9 @@ import { canonicalTeamServerURL } from "./team-server-url.mjs";
 /** A refusal of this feature: a code from C-9, a message that names the fix,
  *  and its details (key, problem, step, code, …). */
 export const attributionError = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
+/** Whether `e` is a refusal of this feature: its code is one of C-9's. A system error's code
+ *  (EISDIR, ETIMEDOUT, …) is not one: it is a failure for a refusal to name. */
+export const isRefusal = (e) => typeof e?.code === "string" && /^E_[A-Z_]+$/.test(e.code);
 /** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9).
  *  Over the cap, the problem is shortened, never the fix after its " → " (test 23), and the text is
  *  never longer than the cap. Every spawn refusal's fix fits with its code
@@ -257,7 +260,7 @@ export function chainRefusal(verdict, { who, step }) {
  *  key. Returns {action: "issue", issuer: {identityHome, id, certificates}}
  *  or {action: "chainless"}, or throws. */
 export function chooseIssuer({ setting, spawner, root }) {
-  if (root.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the endorsed root's identity can't be read (${root.reason}) → check the root home ${setting.root.home}`, { step: "issuer", reason: root.reason });
+  if (root.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the endorsed root's identity in ${setting.root.home} can't be read (${root.reason}) → check the root home that settings.oats.aweb.attribution.root names`, { step: "issuer", reason: root.reason });
   if (root.kind !== "verified") throw chainRefusal(root, { who: "the endorsed root", step: "issuer" });
   if (root.id !== setting.root.id) throw attributionError("E_ATTRIBUTION_SETTING", `settings.oats.aweb.attribution.root names ${setting.root.id}, but its home holds ${root.id} → ${SETTING_FIX}`, { key: "settings.oats.aweb.attribution.root" });
   if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root verifies to another human now → ${REVOKED_FIX}`, { reason: "another_human", humanId: root.humanId ?? null });
@@ -304,7 +307,7 @@ export function issueChain({ aw, issuer, identityHome, instance, setting, dir })
   const attempt = (step, f, tries) => {
     for (let i = 1; ; i++) {
       try { return f(); }
-      catch (e) { if (e.code || i >= tries) throw e.code ? e : fail(step, e.message || e); }
+      catch (e) { if (isRefusal(e) || i >= tries) throw isRefusal(e) ? e : fail(step, e.message || e); }
     }
   };
   const json = (text, what) => { try { return JSON.parse(String(text).trim()); } catch { throw new Error(`${what} answered no JSON`); } };
