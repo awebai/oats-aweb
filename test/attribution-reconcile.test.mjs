@@ -375,8 +375,20 @@ for (const [problem, change] of [
     const doc = checkOnly(fx);
     const calls = fx.fake.calls().slice(before).map((c) => commandArgs(c.args).join(" "));
     assert.ok(!calls.some((c) => c.startsWith("id team admission-policy") || c.startsWith("id team members")), calls.join(", "));
-    assert.equal(doc.attribution.problem?.code, "E_ATTRIBUTION_SETTING", JSON.stringify(doc.attribution));
-    assert.equal(doc.attribution.problem?.problem, problem);
-    assert.ok(Array.isArray(doc.attribution.findings) && doc.attribution.findings.length > 0, "the local findings stay");
+    const a = doc.attribution;
+    assert.equal(a.problem?.code, "E_ATTRIBUTION_SETTING", JSON.stringify(a));
+    assert.equal(a.problem?.problem, problem);
+    assert.ok(Array.isArray(a.findings) && a.findings.length > 0, "the local findings stay");
+    assert.ok(a.findings.some((f) => f.custody === "legacy-minting-root"), "the legacy roots stay");
+    // Local parts stay; what would go through the profile reads as unread, never as clean.
+    assert.deepEqual(a.admittedLive, { countedBy: "oats", teams: Object.fromEntries(a.teams.map((team) => [team, team === TEAM ? 1 : 0])) });
+    assert.deepEqual(a.chainlessSpawners, []);
+    assert.ok(Array.isArray(a.limits));
+    assert.deepEqual(Object.values(a.bounds), a.teams.map(() => null));
+    assert.deepEqual(a.leakedMemberships, []);
+    assert.deepEqual(a.unreadableTeams.map((u) => u.team), a.teams);
+    assert.ok(a.unreadableTeams.every((u) => u.reason.includes(problem)), JSON.stringify(a.unreadableTeams));
+    // The root's verdict comes from aw who, which reads no profile (its registry is the domain's own).
+    assert.equal(a.verified, "nearest_human");
   });
 }
