@@ -211,7 +211,8 @@ holding a lock releases it on its way out. Retire takes the lock of every
 label it could act on before its first effect (the attention claim and the
 wake deregistration included) and holds them to its exit: its records' and lock files' labels (a join that hasn't written its
 first record holds its lock), its joined and pending teams', the primary's,
-and every label the deployment lets it join, so no join, leave or other
+and every team the deployment maps, its live default included (the set a
+home with attribution may join), so no join, leave or other
 retire of the home runs beside it. With a live holder it acts on nothing,
 exits nonzero and keeps the home (`admission-locked`). Every command reads a home's
 records through two readers only (`providerRecords`, `readAdmission`), which apply

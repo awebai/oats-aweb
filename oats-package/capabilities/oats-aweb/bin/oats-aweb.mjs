@@ -1478,6 +1478,10 @@ function parseOatsTeams(env = process.env) {
   } catch { return []; }
 }
 function eligibleTeams() { return parseOatsTeams().filter((t) => !t.default && t.label && t.team); }
+/** Every team the deployment maps, its live default included: what a home with attribution may
+ *  name in a join or leave, and so every label its retire locks (one set, so the two can't drift;
+ *  round 32, the lead's decision). */
+function mappedTeams() { return parseOatsTeams().filter((t) => t.label && t.team); }
 function labelsCsv(text) { return String(text || "").split(",").map((s) => s.trim()).filter(Boolean); }
 function primaryTeamLabel() { return defaultTeamLabel() || null; }
 function requestedJoinLabels() { return labelsCsv(settings.join); }
@@ -1486,7 +1490,7 @@ function requestedJoinLabels() { return labelsCsv(settings.join); }
  *  deployment maps, the live default's included, since its primary is its own record, which the
  *  command checks under its hold (primaryRecordOf; round 31, the lead's decision). */
 function validateJoinLabels(labels, { action = "join", attributed = false } = {}) {
-  const eligible = attributed ? parseOatsTeams().filter((t) => t.label && t.team) : eligibleTeams();
+  const eligible = attributed ? mappedTeams() : eligibleTeams();
   const byLabel = new Map(eligible.map((t) => [t.label, t]));
   for (const label of labels) {
     if (!attributed && action === "leave" && label === defaultTeamLabel()) {
@@ -1883,7 +1887,7 @@ function retireLockLabels(meta) {
   const { records, unreadable } = providerRecords(providerStateDir());
   const fromFiles = [...records, ...unreadable].map((r) => r.label).concat(lockedLabels(providerStateDir()));
   let eligible = [];
-  try { eligible = eligibleTeams().map((t) => t.label); } catch { eligible = []; }
+  try { eligible = mappedTeams().map((t) => t.label); } catch { eligible = []; }
   return [...new Set(["default", ...fromFiles, ...joinedTeamsOf(meta).map((j) => j.label), ...pendingJoinsOf(meta).map((p) => p.label), ...eligible].filter((l) => typeof l === "string" && l))].sort();
 }
 /** This home's primary admission record (C-3): the one whose identityHome is the home's own `.aw`,

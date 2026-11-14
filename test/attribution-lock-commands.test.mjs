@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { OPS, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
+import { OPS, TEAM, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
 import { HOME_RETIRED } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { interleave, interleaveKernel } from "./helpers/interleave.mjs";
 
@@ -293,6 +293,23 @@ test("a join of a home a retire already removed refuses step retired before any 
   assert.deepEqual(calls(fx, before).filter((v) => v !== "version"), [], "no aw call past the version read");
   assert.equal(existsSync(join(fx.homeOf("dev-1"), ".oats-aweb", "admission-ops.json")), false);
   assert.equal(existsSync(join(fx.homeOf("dev-1"), ".aweb-identity-ops")), false);
+});
+
+// Round 32: a home with attribution can join the deployment's current default team (round 31),
+// so retire locks every team the deployment maps, that one included, the same set the label check
+// takes; a join of it started during the retire refuses step lock.
+const SWITCHED = { OATS_DEFAULT_TEAM: "ops", OATS_DEFAULT_TEAM_ID: OPS, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: true, from: "local" }, { label: "default", team: TEAM, default: false, from: "shared" }]) };
+test("with the default switched to a team the home isn't in, a join of it started during the retire's removal refuses step lock and admits nothing", (t) => {
+  const fx = spawned(t);
+  const join_ = interleave(fx, { at: 'a.includes("remove-agent")', args: ["join", "--labels", "ops", "--json"], cwd: fx.homeOf("dev-1") });
+  const r = fx.retire("dev-1", { extra: { ...SWITCHED, PATH: join_.path } });
+  const inner = join_.inner();
+  assert.ok(inner, "the join ran inside the retire's removal");
+  assert.equal(inner.status, 1, inner.stdout + inner.stderr);
+  assert.ok((inner.stdout + inner.stderr).includes(LOCK_REFUSAL), inner.stdout + inner.stderr);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(opsCharges(fx), [], "no ops admission");
+  assert.equal(existsSync(join(fx.homeOf("dev-1"), ".oats-aweb", "admission-ops.json")), false);
 });
 
 // A retire refused by the lock has no effect at all, its broker receive included (round 21):
