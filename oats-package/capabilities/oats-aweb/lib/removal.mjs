@@ -8,7 +8,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { FINAL_CODES, README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, writePrivate } from "./admission.mjs";
+import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, writePrivate } from "./admission.mjs";
+import { admitAnswer, awaitsOutcome, holdsMembership, step } from "./admission-states.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
 import { REMOVE_SERVED, admitArgv, awJson, removeAgentArgv } from "./protected-client.mjs";
@@ -21,9 +22,6 @@ export const RECONCILE = "oats aweb setup --reconcile-admissions";
 // server that doesn't serve the act is told apart by its HTTP status alone.
 const NOT_SERVED = new Set(["handoff_http_404", "handoff_http_405", "handoff_http_501"]);
 const UNCONFIRMED = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "prepare_unconfirmed", "prepare_answer_lost", "execute_answer_lost", "receipt_invalid", "handoff_result_invalid", "effect_in_progress", "evidence_unavailable", "handoff_http_429"]);
-// A resume's refusals that are about the requester, not the operation (v4.3.23): they say
-// nothing of the earlier operation's outcome, so the root is fixed and the retire rerun.
-const REQUESTER_CODES = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous", "signed_request_invalid", "authority_changed", "operation_conflict", "operation_mismatch"]);
 
 /** What a remove-agent refusal code means: "unavailable" (the server doesn't
  *  serve the act), "unconfirmed" (the outcome may still change), or
@@ -45,8 +43,6 @@ export const BLOCKED_FIX = {
   "root-revoked": "no OATS path removes this membership in v1; it counts only in the revoked root's bucket, never in the new root's",
   "root-copy-missing": "no certificate for this membership is left, so OATS can't remove it; check-only lists it under `leakedMemberships`",
 };
-/** The reasons a retire that resumes an unknown admission keeps the home for. */
-const FIXABLE = new Set(["root-home-unsafe", "profile-changed", "service-refused"]);
 
 export const blockedText = ({ reason, why, team }) => `admission-removal-blocked (reason: ${reason}, team ${team}): ${why}; the membership is kept → ${BLOCKED_FIX[reason]}`;
 export const notServedText = ({ code, team }) => `admission-removal-unavailable (team ${team}): the service's server answered ${code} to team.agent.remove, so it may not serve removal yet; the membership is kept → its operator upgrades the server, then run \`${RECONCILE}\``;
@@ -98,6 +94,14 @@ export function removeMembership({ aw, setting, certificateId, team, file }) {
   return { outcome: "removed", operationId: op.operationId };
 }
 
+/** The certificate in a record's --certificate-out file when it is this record's admission
+ *  (aw's id form, the record's team and member key), else null (C-3d). */
+export function verifiedCertificate(record, rootHome) {
+  let cert = null;
+  try { cert = typeof record.certificateOut === "string" && existsSync(record.certificateOut) ? admittedCertificate(record.certificateOut, rootHome) : null; } catch { return null; }
+  return cert && cert.team === record.team && cert.memberKey === record.memberKey ? cert : null;
+}
+
 /** Retire's part for every admission recorded in `providerDir`. `aw(argv,
  *  cwd, timeout)` runs aw and returns its stdout. Returns {warnings, keep,
  *  memberships}: `keep` is {reason, text} when the home must stay for a
@@ -118,36 +122,38 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     if (!record || typeof record.label !== "string") continue;
     const { team, label } = record;
     const save = (fields) => { record = { ...record, ...fields }; writePrivate(join(providerDir, name), `${JSON.stringify(record, null, 2)}\n`); };
-    // A pending record is a spawn killed at its admit (v4.3.19); an unknown one, an admit whose
-    // answer was lost. With a --certificate-out file that verifies (aw's id form, this record's
-    // team and member key) the admission committed, and is kept as committed before a root
-    // that can't act is asked anything; with none, the same admit resumes it.
-    if (record.state === "pending" || record.state === "unknown") {
-      let cert = null;
-      try { cert = typeof record.certificateOut === "string" && existsSync(record.certificateOut) ? admittedCertificate(record.certificateOut, setting.root.home) : null; } catch { cert = null; }
-      if (cert && cert.team === team && cert.memberKey === record.memberKey) save({ state: "committed", certificateId: cert.id });
-    }
-    if (record.state === "unknown" || record.state === "pending") {
-      // C-3d: the same admit, its persisted operation id and inputs, from the root's home.
-      const blocked = cannot();
-      if (blocked && FIXABLE.has(blocked.reason)) return { warnings, keep: { reason: "admission-unknown", text: `${blocked.why} (${blocked.reason}), and the admission's outcome is unknown (operation ${record.operationId}, team ${team}), so this home is kept → fix the root, then retire again, which resumes the admission` } };
-      if (blocked) { warnings.push(`admission-removal-blocked (reason: ${blocked.reason}, team ${team}): ${blocked.why}, and the admission's outcome is unknown (operation ${record.operationId}); nothing in OATS can resume it without the root's key, so a membership it made stays → check-only lists it under \`leakedMemberships\``); continue; }
-      try { awJson(aw, "id team admit", admitArgv({ team, memberKey: record.memberKey, alias: record.alias, policy: record.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile }), setting.root.home, 60000); }
-      catch (e) {
-        if (e.code) throw e;
-        // Only the operation's own final codes establish a refusal (v4.3.23, v4.3.24).
-        if (FINAL_CODES.has(e.awCode)) { save({ state: "refused", code: e.awCode }); continue; }
-        if (REQUESTER_CODES.has(e.awCode)) return { warnings, keep: { reason: "admission-unknown", text: `the protected service refused the root's resume (${e.awCode}) (service-refused), and the admission's outcome is unknown (operation ${record.operationId}, team ${team}), so this home is kept → fix the root, then retire again, which resumes the admission` } };
-        // The service holds this operation's certificate, and aw won't write it over another file.
-        if (e.awCode === "certificate_out_exists") return { warnings, keep: { reason: "admission-unknown", text: `the admission (operation ${record.operationId}, team ${team}) committed, but ${record.certificateOut} holds another file, so its certificate can't be read → move that file aside, then retire again, which resumes the admission` } };
-        return { warnings, keep: { reason: "admission-unknown", text: stillUnknownText({ team, operationId: record.operationId }) } };
+    // Each move is admission-states.md's tables B and C, decided by `step`.
+    if (awaitsOutcome(record)) {
+      // A pending record is a spawn killed at its admit (v4.3.19); an unknown one, an admit whose
+      // answer was lost. A --certificate-out file that verifies (aw's id form, this record's team
+      // and member key) says the admission committed, before a root that can't act is asked anything.
+      const cert = verifiedCertificate(record, setting.root.home);
+      const blocked = cert ? null : cannot();
+      const settle = step("settle", record.state, { cert: !!cert, root: blocked?.reason ?? null });
+      if (settle.act === "mark-committed") save({ state: settle.to, certificateId: cert.id });
+      else if (settle.act === "keep") return { warnings, keep: { reason: "admission-unknown", text: `${blocked.why} (${blocked.reason}), and the admission's outcome is unknown (operation ${record.operationId}, team ${team}), so this home is kept → fix the root, then retire again, which resumes the admission` } };
+      else if (settle.act === "warn") { warnings.push(`admission-removal-blocked (reason: ${blocked.reason}, team ${team}): ${blocked.why}, and the admission's outcome is unknown (operation ${record.operationId}); nothing in OATS can resume it without the root's key, so a membership it made stays → check-only lists it under \`leakedMemberships\``); continue; }
+      else {
+        // C-3d: the same admit, its persisted operation id and inputs, from the root's home.
+        let resumed;
+        try { awJson(aw, "id team admit", admitArgv({ team, memberKey: record.memberKey, alias: record.alias, policy: record.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile }), setting.root.home, 60000); resumed = step("resume", record.state, { answer: "committed" }); }
+        catch (e) {
+          if (e.code) throw e;
+          // Only the operation's own final codes establish a refusal (v4.3.23, v4.3.24).
+          const next = step("resume", record.state, { answer: admitAnswer(e.awCode) });
+          if (next.to === "refused") { save({ state: next.to, code: e.awCode }); continue; }
+          if (next.warn === "service-refused") return { warnings, keep: { reason: "admission-unknown", text: `the protected service refused the root's resume (${e.awCode}) (service-refused), and the admission's outcome is unknown (operation ${record.operationId}, team ${team}), so this home is kept → fix the root, then retire again, which resumes the admission` } };
+          // The service holds this operation's certificate, and aw won't write it over another file.
+          if (next.warn === "certificate-out-exists") return { warnings, keep: { reason: "admission-unknown", text: `the admission (operation ${record.operationId}, team ${team}) committed, but ${record.certificateOut} holds another file, so its certificate can't be read → move that file aside, then retire again, which resumes the admission` } };
+          return { warnings, keep: { reason: "admission-unknown", text: stillUnknownText({ team, operationId: record.operationId }) } };
+        }
+        const admitted = admittedCertificate(record.certificateOut, setting.root.home);
+        keepRootCopy(admitted);
+        // Kept on the record, so the remove phase still knows this retire made the membership.
+        save({ state: resumed.to, certificateId: admitted.id, ...(resumed.resumed ? { resumedAtRetire: true } : {}) });
       }
-      const cert = admittedCertificate(record.certificateOut, setting.root.home);
-      keepRootCopy(cert);
-      // Kept on the record, so the remove phase still knows this retire made the membership.
-      save({ state: "committed", certificateId: cert.id, resumedAtRetire: true });
     }
-    if (record.state !== "committed") continue;
+    if (!holdsMembership(record)) continue;
     const resumed = record.resumedAtRetire === true;
     // The root's copy missing: written again from this home's certificate when it is the
     // one admitted, whenever the root home is there, so a removal blocked below stays
@@ -155,7 +161,7 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
     // aw installed in the identity. With neither, nothing left can remove the membership.
     const copy = join(setting.root.home, "admissions", `${record.certificateId}.cert`);
     let copyMissing = false;
-    if (!existsSync(copy) && existsSync(join(setting.root.home, ".aw"))) {
+    if (step("settle", record.state, { copy: existsSync(copy), rootHome: existsSync(join(setting.root.home, ".aw")) }).act === "restore-copy") {
       const installedFile = typeof record.identityHome === "string" && teamCertificateRelativePath(team) ? join(record.identityHome, teamCertificateRelativePath(team)) : null;
       const theOne = (file) => {
         let cert = null;
@@ -167,24 +173,23 @@ export function retireAdmissions({ aw, setting, providerDir, deployment, removeS
       else copyMissing = true;
     }
     if (phase === "settle") continue;
-    if (!removeServed) { warnings.push(`${REMOVAL_UNAVAILABLE} (team ${team})`); continue; }
-    const blocked = cannot();
-    const block = ({ reason, why }) => {
-      if (resumed && FIXABLE.has(reason)) return { reason: "admission-unknown", text: `${why} (${reason}); the resumed admission committed and its removal didn't, so this home is kept → fix the root, then retire again, which resumes the admission` };
-      warnings.push(blockedText({ reason, why, team }));
-      return null;
-    };
-    if (blocked) { const keep = block(blocked); if (keep) return { warnings, keep }; continue; }
-    if (copyMissing) { warnings.push(blockedText({ reason: "root-copy-missing", why: `the root's copy ${copy} is gone, and this home's certificate doesn't carry ${record.certificateId}`, team })); continue; }
+    const blocked = removeServed ? cannot() : null;
+    const remove = step("remove", record.state, { served: removeServed, root: blocked?.reason ?? null, copy: !copyMissing, resumed });
+    if (remove.act === "keep") return { warnings, keep: { reason: "admission-unknown", text: `${blocked.why} (${blocked.reason}); the resumed admission committed and its removal didn't, so this home is kept → fix the root, then retire again, which resumes the admission` } };
+    if (remove.warn === "admission-removal-unavailable") { warnings.push(`${REMOVAL_UNAVAILABLE} (team ${team})`); continue; }
+    if (remove.warn === "root-copy-missing") { warnings.push(blockedText({ reason: "root-copy-missing", why: `the root's copy ${copy} is gone, and this home's certificate doesn't carry ${record.certificateId}`, team })); continue; }
+    if (remove.act === "warn") { warnings.push(blockedText({ reason: blocked.reason, why: blocked.why, team })); continue; }
     const done = removeMembership({ aw, setting, certificateId: record.certificateId, team, file: removalFile(providerDir, name) });
-    if (done.outcome === "removed") { save({ state: "removed" }); continue; }
-    if (done.outcome === "unavailable") { warnings.push(notServedText({ code: done.code, team })); continue; }
-    if (done.outcome === "unconfirmed") return { warnings, keep: { reason: "admission-removal-unconfirmed", text: unconfirmedText({ team, operationId: done.operationId, code: done.code }) } };
-    const keep = block({ reason: "service-refused", why: `the protected service refused the removal (${done.code})` });
-    if (keep) return { warnings, keep };
+    const after = step("removal", record.state, { answer: done.outcome, resumed });
+    if (after.to === "removed") { save({ state: after.to }); continue; }
+    if (after.warn === "admission-removal-unavailable") { warnings.push(notServedText({ code: done.code, team })); continue; }
+    if (after.warn === "admission-removal-unconfirmed") return { warnings, keep: { reason: "admission-removal-unconfirmed", text: unconfirmedText({ team, operationId: done.operationId, code: done.code }) } };
+    const why = `the protected service refused the removal (${done.code})`;
+    if (after.keep) return { warnings, keep: { reason: "admission-unknown", text: `${why} (service-refused); the resumed admission committed and its removal didn't, so this home is kept → fix the root, then retire again, which resumes the admission` } };
+    warnings.push(blockedText({ reason: "service-refused", why, team }));
   }
   // Each team this home was admitted to, and whether the root removed it: the
   // membership, not the workspace delete, says whether the alias is free.
-  const memberships = names.map((name) => readJson(join(providerDir, name))).filter((r) => r && (r.state === "committed" || r.state === "removed")).map(({ team, label, state }) => ({ team, label, removed: state === "removed" }));
+  const memberships = names.map((name) => readJson(join(providerDir, name))).filter((r) => r && (holdsMembership(r) || r.state === "removed")).map(({ team, label, state }) => ({ team, label, removed: state === "removed" }));
   return { warnings, keep: null, memberships };
 }

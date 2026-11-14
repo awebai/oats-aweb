@@ -95,7 +95,8 @@ import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
-import { admissionFile, admitIdentity, committedAdmissions, readAdmission, writePrivate } from "../lib/admission.mjs";
+import { admissionFile, admitIdentity, committedAdmissions, readAdmission, stateOf, writePrivate } from "../lib/admission.mjs";
+import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
 import { legacyRootInventory, scanProtectedKeys } from "../lib/key-scan.mjs";
 import { PROTECTED_AW_MIN } from "../lib/protected-client.mjs";
@@ -1902,8 +1903,9 @@ function attributedLeave(setting, label, meta) {
   const after = readAdmission(providerDir, label);
   const entry = joinedTeamsOf(meta).find((j) => j.label === label) || { label, team: record.team, identityHome: record.identityHome };
   const { released, receipt, note } = existsSync(entry.identityHome) ? cleanupJoinedIdentity(entry, meta.alias || instance, home, { admitted: true }) : {};
-  if (after?.state === "removed") rmSync(after.certificateOut, { force: true });
-  else if (after?.state === "committed") {
+  const left = step("leave", stateOf(after));
+  if (left.act === "delete-identity-and-certificate") rmSync(after.certificateOut, { force: true });
+  else if (left.act === "delete-identity-and-set-aside") {
     // Aside, with its --certificate-out file, so a later join of this label starts its own admission.
     const left = join(providerDir, leftAdmissionName(label, after.certificateId));
     const certificateOut = left.replace(/\.json$/, ".cert");
@@ -2471,8 +2473,7 @@ if (event === "launch") {
       // A membership the endorsed root admitted is the root's to remove (C-6), and a start makes
       // no protected call (C-4): aw's own delete would be a second removal act (hosted
       // self-retirement) or refused. It stays joined until retire, or a leave, removes it.
-      const admission = readAdmission(providerStateDir(), row.label);
-      if (admission && admission.state !== "removed") {
+      if (step("start", stateOf(readAdmission(providerStateDir(), row.label))).act === "keep-joined") {
         warnings.push(`kept joined team ${row.label}: it is no longer eligible, but the endorsed root admitted it and only the root removes that membership → retire this instance, which removes it through the root, or make ${row.label} eligible again and run \`oats aweb leave --labels ${row.label}\``);
         continue;
       }

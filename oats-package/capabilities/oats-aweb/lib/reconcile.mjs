@@ -10,6 +10,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { admissionRecords, committedAdmissions } from "./admission.mjs";
+import { holdsMembership } from "./admission-states.mjs";
 import { attributionError, readWho } from "./attribution.mjs";
 import { BLOCKED_FIX, notServedText, removeMembership, rootCannotAct } from "./removal.mjs";
 import { REMOVE_SERVED, RESIDENT_CUSTODY_SERVED, admissionPolicyArgv, awJson, teamMembersArgv } from "./protected-client.mjs";
@@ -40,7 +41,7 @@ export function leakedMemberships({ aw, setting, homes, registry }) {
   const leaked = [], unreadable = [];
   const active = new Map(); // team → the certificate ids its read lists active
   for (const team of setting.teams) {
-    const reader = homes.flatMap((h) => admissionRecords(h.home)).find((r) => r.team === team && r.state === "committed" && typeof r.identityHome === "string" && existsSync(r.identityHome))?.identityHome || join(setting.root.home, ".aw");
+    const reader = homes.flatMap((h) => admissionRecords(h.home)).find((r) => r.team === team && holdsMembership(r) && typeof r.identityHome === "string" && existsSync(r.identityHome))?.identityHome || join(setting.root.home, ".aw");
     let doc;
     try { doc = awJson(aw, "id team members", ["--identity-home", reader, ...teamMembersArgv({ team, registry })], setting.root.home, 30000); }
     catch (e) { if (e.code) throw e; unreadable.push({ team, reason: String(e.awCode || e.awMessage || e.message).slice(0, 200) }); continue; }

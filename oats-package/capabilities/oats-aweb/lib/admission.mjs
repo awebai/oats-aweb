@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { SCOPE_CODES, admitAnswer, holdsMembership, step } from "./admission-states.mjs";
 import { CHAINLESS, UUID, attributionError, installedChain, issueChain } from "./attribution.mjs";
 import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, awJson, createLocalArgv, installCertArgv, serviceInitArgv } from "./protected-client.mjs";
 
@@ -14,14 +15,9 @@ export const README_ADMISSION = 'README, "Human attribution: admission refusals"
 // aw's admit codes (C-9's admit column). Only the codes listed here refuse: any other
 // code, or none, leaves the outcome unknown (v4.3.24), so a code aw adds later keeps the
 // home and its operation id rather than leaking a membership no record names.
-/** The operation's own final codes: a resume answered with one of these establishes the
- *  operation was refused (C-3d). */
-export const FINAL_CODES = new Set(["admission_policy_missing", "policy_changed", "admission_limit_reached", "subject_ineligible", "operation_expired", "approval_expired"]);
-const SCOPE_CODES = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
-/** What refuses a first attempt at spawn: the final codes, the scope codes and operation_conflict. */
-const REFUSED_CODES = new Set([...FINAL_CODES, ...SCOPE_CODES, "operation_conflict"]);
-/** Whether an admit refusal code leaves the admission's outcome unknown. */
-export const admitUnknown = (code) => !code || !REFUSED_CODES.has(code);
+/** Whether an admit refusal code leaves the admission's outcome unknown: every class but the
+ *  final codes and the requester codes C-9 refuses (admission-states.mjs). */
+export const admitUnknown = (code) => !["final", "requester-refused"].includes(admitAnswer(code));
 // install-cert's listed codes (C-9); any other refuses the same way, never retried.
 const INSTALL_EVIDENCE = "registry_unavailable";
 
@@ -89,7 +85,9 @@ export function admissionRecords(home) {
   return names.flatMap((f) => { try { return [JSON.parse(readFileSync(join(dir, f), "utf8"))]; } catch { return []; } });
 }
 /** OATS's own count of `rows` (kernel status rows, {home}) holding a committed admission for `team` (R4). */
-export const committedAdmissions = (rows, team) => rows.filter((row) => typeof row?.home === "string").reduce((n, row) => n + admissionRecords(row.home).filter((doc) => doc.team === team && doc.state === "committed").length, 0);
+export const committedAdmissions = (rows, team) => rows.filter((row) => typeof row?.home === "string").reduce((n, row) => n + admissionRecords(row.home).filter((doc) => doc.team === team && holdsMembership(doc)).length, 0);
+/** A record's state for admission-states.mjs: "none" when there is no record. */
+export const stateOf = (record) => (record && typeof record.state === "string" ? record.state : "none");
 export function readAdmission(providerDir, label) {
   try { return JSON.parse(readFileSync(admissionFile(providerDir, label), "utf8")); } catch { return null; }
 }
@@ -124,7 +122,7 @@ export function keepRootCopy({ copy, text }) {
 /** A committed record's certificate, when its --certificate-out file is still the one admitted
  *  (its id, team and member key), else null. */
 function committedCertificate(record, rootHome) {
-  if (record.state !== "committed" || typeof record.certificateOut !== "string" || !existsSync(record.certificateOut)) return null;
+  if (!holdsMembership(record) || typeof record.certificateOut !== "string" || !existsSync(record.certificateOut)) return null;
   let cert = null;
   try { cert = admittedCertificate(record.certificateOut, rootHome); } catch { return null; }
   return cert.id === record.certificateId && cert.team === record.team && cert.memberKey === record.memberKey ? cert : null;
@@ -142,11 +140,13 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
   // adds its files, so a rerun (a join resumed) reuses the key this label's record names when
   // the home holds that very key; any other identity there still refuses below.
   let record = readAdmission(providerDir, label);
-  const ours = record && record.team === team && record.state !== "removed" && typeof record.memberKey === "string" && identityKeyOf(identityHome) === record.memberKey;
+  // A removed record is never resumed: a new key and operation follow (table A, decided R).
+  const ours = !!record && record.team === team && record.state !== "removed" && typeof record.memberKey === "string" && identityKeyOf(identityHome) === record.memberKey;
+  const begin = step("begin", stateOf(record), { ours });
   // An operation recorded for another key is never overwritten: its outcome is retire's to settle.
-  if (!ours && record && ["pending", "unknown", "committed"].includes(record.state)) throw attributionError("E_ATTRIBUTION_EXCHANGE", `this home records an admission to ${record.team} (operation ${record.operationId}) for a key ${identityHome} no longer holds → retire this instance, which settles that admission (${README_ADMISSION})`, { step: "key" });
+  if (begin.act === "refuse-other-key") throw attributionError("E_ATTRIBUTION_EXCHANGE", `this home records an admission to ${record.team} (operation ${record.operationId}) for a key ${identityHome} no longer holds → retire this instance, which settles that admission (${README_ADMISSION})`, { step: "key" });
   let key;
-  if (ours) key = { status: "resumed", did_key: record.memberKey };
+  if (begin.act !== "create-key") key = { status: "resumed", did_key: record.memberKey };
   else try { key = awJson(run, "id create --local", createLocalArgv({ identityHome }), dirname(identityHome), 60000); }
   catch (e) {
     if (e.code) throw e;
@@ -155,23 +155,24 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
   if (!["created", "resumed", "already_exists"].includes(key.status) || typeof key.did_key !== "string" || !key.did_key.startsWith("did:key:")) throw attributionError("E_ATTRIBUTION_EXCHANGE", "aw id create --local answered no key → respawn", { step: "key" });
   try {
     // The key is recorded before the exchange: from here on this home's identity is this label's.
-    if (!ours) { record = { team, label, alias, state: "keyed", identityHome, memberKey: key.did_key, at: new Date().toISOString() }; recordAdmission(providerDir, label, record); }
+    if (begin.act === "create-key") { record = { team, label, alias, state: begin.to, identityHome, memberKey: key.did_key, at: new Date().toISOString() }; recordAdmission(providerDir, label, record); }
     // 2. The chain (C-3a): aw 1.36.58's exchange, local, between the issuer's home and this one.
     // A key that already existed (a join's rerun) may already carry this issuer's chain.
     const attribution = plan.action !== "issue" ? CHAINLESS
       : (key.status !== "created" && installedChain({ aw: chainAw, issuer: plan.issuer, identityHome, setting })) || issueChain({ aw: chainAw, issuer: plan.issuer, identityHome, instance, setting, dir: exchangeDir });
-    // 3. The admission (C-3b): its operation id persisted before prepare; a retry reuses it.
-    // A key with no admission yet, or a refused one, starts a new operation.
+    // 3. The admission (C-3b): its operation id persisted before prepare; a retry reuses it
+    // (admission-states.md, table A).
+    const resume = step("begin", record.state, { ours: true, cert: !!committedCertificate(record, setting.root.home) });
     // A pending or unknown operation resumed here may have reached the service already.
-    let maybeSent = record.state === "pending" || record.state === "unknown";
-    if (record.state === "keyed" || record.state === "refused") {
+    let sent = resume.sent === true;
+    if (resume.act === "new-operation") {
       // The admit's inputs too, so a retire can resume an unknown outcome with C-3b's exact retry (C-3d).
-      record = { team, label, alias, operationId: randomUUID(), state: "pending", identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
+      record = { team, label, alias, operationId: randomUUID(), state: resume.to, identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
       recordAdmission(providerDir, label, record);
     }
     // A committed admission (a join that failed after it) resumes from its verified certificate,
     // with no admit; with that file gone, the exact retry of its operation returns it again.
-    let cert = committedCertificate(record, setting.root.home);
+    let cert = resume.act === "install" ? committedCertificate(record, setting.root.home) : null;
     if (!cert) {
       const argv = admitArgv({ team, memberKey: key.did_key, alias, policy: record.policy ?? setting.endorsement.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile });
       const bounds = () => awJson(run, "id team admission-policy", admissionPolicyArgv({ team, profile: setting.service.profile }), setting.root.home, 30000).policy.bounds;
@@ -180,16 +181,13 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
         try { admitted = awJson(run, "id team admit", argv, setting.root.home, 60000); break; }
         catch (e) {
           if (e.code) throw e;
-          // An exact retry of an unknown outcome returns the original certificate, with no second charge.
-          if (attempt < 2 && admitUnknown(e.awCode)) { maybeSent = true; continue; }
-          const refusal = admitRefusal(e, { team, root: setting.root.id, bounds, count: count(), operationId: record.operationId });
-          // Once this operation may have been sent, only its own final codes establish a refusal
-          // (C-3d): a requester-side one (scope, conflict) refuses as C-9 says, and the record stays
-          // unknown, so retire resumes it once the root is fixed.
-          const refused = refusal.code !== "E_ADMISSION_UNKNOWN" && (!maybeSent || FINAL_CODES.has(e.awCode));
-          // A committed admission stays committed: what the service answers a retry of it never undoes it.
-          if (record.state !== "committed") recordAdmission(providerDir, label, { ...record, state: refused ? "refused" : "unknown", code: e.awCode || null });
-          throw refusal;
+          // An exact retry of an unknown outcome returns the original certificate, with no second
+          // charge. Once the operation may have been sent, only its own final codes establish a
+          // refusal (C-3d); a committed admission stays committed.
+          const next = step("admit", record.state, { answer: admitAnswer(e.awCode), attempt, sent });
+          if (next.act === "retry") { sent = true; continue; }
+          if (next.write) recordAdmission(providerDir, label, { ...record, state: next.to, code: e.awCode || null });
+          throw admitRefusal(e, { team, root: setting.root.id, bounds, count: count(), operationId: record.operationId });
         }
       }
       if (admitted.state !== "committed") throw attributionError("E_ADMISSION_UNKNOWN", `aw id team admit answered ${admitted.state}, operation ${record.operationId}, team ${team} → retire this home (${README_ADMISSION})`, { operationId: record.operationId, team });
@@ -197,7 +195,7 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
     }
     // The root's copy, written right after admit's verified certificate and before install.
     keepRootCopy(cert);
-    record = { ...record, state: "committed", certificateId: cert.id };
+    record = { ...record, state: step("admit", record.state, { answer: "committed" }).to, certificateId: cert.id };
     recordAdmission(providerDir, label, record);
     // The install (A5(b)), its certificate_id the one the root keeps.
     let installed;
