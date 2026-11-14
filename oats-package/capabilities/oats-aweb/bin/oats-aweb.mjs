@@ -68,7 +68,7 @@ import { homedir, hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, liveAwebSettings, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { leftAdmissionName, retireAdmissions } from "../lib/removal.mjs";
-import { attributionStatus, homesOf, reconcileAdmissions } from "../lib/reconcile.mjs";
+import { attributionStatus, homesOf, reconcileAdmissions, unrecordedRootHomes } from "../lib/reconcile.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { inAwebHostedZone, sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { isRefusal, refusalText, legacyPathRefusal, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { isRefusal, refusalText, legacyPathRefusal, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { README_ADMISSION, admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
 import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
@@ -3562,7 +3562,19 @@ ${JSON.stringify(problem.details || {})}`);
           attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), listHomes: kernelHomes, profileProblem: profileBad, registry: profileBad ? undefined : profileRegistry(setting), scan: () => ({ ...scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }), inventory: legacyRootInventory({ deployment, root: settings.root, roots: settings.roots, defaultTeam: defaultTeamId() ?? null, service: setting.service.id, consumer: "oats.aweb" }) }) });
         }
       } catch (e) { attribution = { problem: { code: typeof e.code === "string" ? e.code : "E_ATTRIBUTION_SETTING", message: String(e.message || e).slice(0, 300) } }; }
-      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));
+      // A root home no setting records, with or without the setting (C-5, v4.3.34): only when one
+      // exists. A setting that doesn't read (the attribution block says why) can't say which home it
+      // records, so nothing is listed rather than the live root told to be revoked; with no
+      // deployment selected there is no directory to read.
+      let unrecorded = [];
+      let readable = true, setting = null, deployment = null;
+      try { setting = attributionSetting(settings); } catch { readable = false; }
+      try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+      if (readable && deployment) {
+        try { unrecorded = unrecordedRootHomes({ aw: run, deployment, setting }); }
+        catch (e) { console.error(`oats aweb setup: could not read ${ROOT_DIR}/ for root homes no setting records: ${String(e.message || e).slice(0, 300)}`); }
+      }
+      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}), ...(unrecorded.length ? { unrecordedRootHomes: unrecorded } : {}) }));
       process.exit(aw.status === "failed" ? 1 : 0);
     }
     if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }

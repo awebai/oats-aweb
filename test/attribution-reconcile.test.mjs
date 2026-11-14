@@ -2,7 +2,7 @@
 // [--plan]` (spec v4.3.18 C-5), with the halves of acceptance tests 12 and 13
 // that reconcile after a retire couldn't remove a membership.
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,52 @@ function leaked(fx) {
 
 // ---------------------------------------------------------------------------
 // Check-only (C-5).
+
+// v4.3.34, v4.3.35: `unrecordedRootHomes`, a top-level field beside `attribution`, present only when
+// .aweb-endorsed-root/ holds a root home the live setting doesn't record, with or without the setting.
+// Each entry: its path within the deployment, its did:aw, its own `aw who` verdict, and the fix
+// that verdict calls for. It acts on nothing.
+const OLD = "did:aw:old-root";
+const REVOKE_THEN_REMOVE = "if its endorsement may have committed, have the namespace's controller revoke it (the README's revocation section), then remove this home";
+/** An old root home `name` beside the recorded one, whose `aw who` answers `who` (or its chain's verdict). */
+function oldRootHome(fx, name, who) {
+  const home = join(fx.ws, ".aweb-endorsed-root", name);
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  writeIdentity(join(home, ".aw"), { did: OLD, chain: [{ id: HUMAN, kind: "human", parent: { kind: "namespace", id: "acme.example" } }, { id: OLD, kind: "agent", parent: { kind: "identity", id: HUMAN } }] });
+  if (who) writeFileSync(join(home, ".aw", "fake-who.json"), JSON.stringify(who));
+  return home;
+}
+const REVOKED_WHO = { id: OLD, domain: "acme.example", outcome: "unknown", human_id: null, identity_valid: false, kind: null, reason: "revoked" };
+const UNAVAILABLE_WHO = { id: OLD, domain: "acme.example", outcome: "unavailable", human_id: null, identity_valid: null, kind: null, reason: "status_expired" };
+for (const [verdict, who, fix] of [["nearest_human", undefined, REVOKE_THEN_REMOVE], ["revoked", REVOKED_WHO, "remove this home"], ["unavailable", UNAVAILABLE_WHO, REVOKE_THEN_REMOVE]]) {
+  test(`v4.3.35: an unrecorded root home whose aw who answers ${verdict} is listed in unrecordedRootHomes with "${fix.slice(0, 30)}…", and the recorded root isn't`, (t) => {
+    const fx = attributionFixture(t);
+    const old = oldRootHome(fx, "old-root", who);
+    const before = readdirSync(old, { recursive: true }).sort();
+    const doc = checkOnly(fx);
+    assert.deepEqual(doc.unrecordedRootHomes, [{ path: ".aweb-endorsed-root/old-root", id: OLD, verified: verdict, fix }]);
+    assert.ok(doc.attribution && !("unrecordedRootHomes" in doc.attribution), "beside attribution, not in it");
+    assert.deepEqual(readdirSync(old, { recursive: true }).sort(), before, "it acts on nothing");
+  });
+}
+test("v4.3.34: without the setting, check-only still lists a root home under .aweb-endorsed-root/, and has no attribution block", (t) => {
+  const fx = attributionFixture(t, { attribution: false });
+  oldRootHome(fx, "old-root", REVOKED_WHO);
+  const doc = checkOnly(fx);
+  assert.equal("attribution" in doc, false);
+  assert.deepEqual(doc.unrecordedRootHomes.map((h) => h.path).sort(), [".aweb-endorsed-root/acme-root", ".aweb-endorsed-root/old-root"]);
+});
+test("v4.3.35: a setting that doesn't read can't say which home it records, so check-only lists no root home and its attribution block names the problem", (t) => {
+  const fx = attributionFixture(t, { settings: { attribution: { root: { id: "did:aw:acme-root" } } } });
+  oldRootHome(fx, "old-root", REVOKED_WHO);
+  const doc = checkOnly(fx);
+  assert.equal(doc.attribution?.problem?.code, "E_ATTRIBUTION_SETTING", JSON.stringify(doc.attribution));
+  assert.equal("unrecordedRootHomes" in doc, false, JSON.stringify(doc.unrecordedRootHomes));
+});
+test("v4.3.35: with only the recorded root there, check-only has no unrecordedRootHomes field", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal("unrecordedRootHomes" in checkOnly(fx), false);
+});
 
 test("C-5: check-only has no attribution block without the setting", (t) => {
   const fx = attributionFixture(t, { attribution: false });

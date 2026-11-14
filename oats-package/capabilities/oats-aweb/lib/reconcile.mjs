@@ -8,10 +8,11 @@
 // - `--reconcile-admissions [--plan]` removes only the leaked memberships the
 //   root holds a copy for, with the root's team.agent.remove.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { committedAdmissions, homeRecords, recordsUnreadable, verifiedCertificate } from "./admission.mjs";
 import { awaitsOutcome, holdsMembership, shieldsCertificate } from "./admission-states.mjs";
-import { UUID, attributionError, readWho } from "./attribution.mjs";
+import { ROOT_DIR, UUID, attributionError, readWho } from "./attribution.mjs";
+import { registeredId } from "./endorse-root.mjs";
 import { BLOCKED_FIX, notServedText, removeMembership, rootCannotAct } from "./removal.mjs";
 import { REMOVE_SERVED, RESIDENT_CUSTODY_SERVED, admissionPolicyArgv, awJson, teamMembersArgv } from "./protected-client.mjs";
 
@@ -136,6 +137,29 @@ function rootVerified(aw, setting) {
   if (verdict.kind === "verified" && verdict.humanId === setting.human.id) return { verified: "nearest_human" };
   if (verdict.kind === "revoked") return { verified: "revoked" };
   return { verified: "unavailable", verifiedReason: verdict.kind === "verified" ? `verifies to ${verdict.humanId ?? "no human"}` : `${verdict.kind}: ${verdict.reason ?? "no reason"}` };
+}
+
+/** check-only's `unrecordedRootHomes` (C-5, v4.3.34, v4.3.35): each root home under the
+ *  deployment's .aweb-endorsed-root/ that the live setting (or none) doesn't record, as {path
+ *  within the deployment, id (its did:aw, or null), verified (its own `aw who`: revoked,
+ *  nearest_human or unavailable), fix}. Such a home holds a key and may be an endorsed root that
+ *  nothing tracks, until the namespace's controller revokes it and its home is removed (README,
+ *  "Human attribution: an endorsement aw keeps"). It acts on nothing; with no such directory or home it is [], and any other read failure throws. */
+export function unrecordedRootHomes({ aw, deployment, setting }) {
+  const dir = join(deployment, ROOT_DIR);
+  let names = [];
+  try { names = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort(); }
+  catch (e) { if (e.code === "ENOENT" || e.code === "ENOTDIR") return []; throw e; }
+  const recorded = setting ? resolve(setting.root.home) : null;
+  return names.filter((name) => resolve(join(dir, name)) !== recorded).map((name) => {
+    const home = join(dir, name), identityHome = join(home, ".aw");
+    const verdict = readWho((args) => aw(["aw", ...args], home, 30000), identityHome);
+    const verified = verdict.kind === "revoked" ? "revoked" : verdict.kind === "verified" && verdict.humanId ? "nearest_human" : "unavailable";
+    return {
+      path: `${ROOT_DIR}/${name}`, id: registeredId(identityHome), verified,
+      fix: verified === "revoked" ? "remove this home" : "if its endorsement may have committed, have the namespace's controller revoke it (the README's revocation section), then remove this home",
+    };
+  });
 }
 
 /** check-only's `attribution` block. `scan()` is the A5 scan's {findings, unknown}, with the

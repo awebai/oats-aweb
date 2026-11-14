@@ -327,7 +327,7 @@ function refresh(o, ctx) {
 const oneLine = (text) => String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
 
 /** The registered did:aw in `identityHome`, or null (a local did:key, or none). */
-function registeredId(identityHome) {
+export function registeredId(identityHome) {
   try { const did = readFileSync(join(identityHome, "did"), "utf8").trim(); if (DID_AW.test(did)) return did; } catch { /* no recorded did */ }
   try { const m = /^stable_id:\s*(did:aw:\S+)\s*$/m.exec(readFileSync(join(identityHome, "identity.yaml"), "utf8")); if (m) return m[1]; } catch { /* no identity */ }
   return null;
