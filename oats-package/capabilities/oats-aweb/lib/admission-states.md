@@ -183,10 +183,19 @@ delete it can't address.
 ## Concurrent commands
 
 Nothing serializes commands on one home or one root, so every path that reads
-records or copies, makes a slow aw call, then acts destructively, rests on one
-order: **a home writes its admission record (pending) before the admit, and
-the root's copy only after the admit commits** (C-3, C-3b). The kernel lists a
-spawning home from its first `instance.json`, before the spawn hooks run.
+records or copies, makes a slow aw call, then acts destructively, is checked
+against one invariant:
+
+> **A copy is written only after its home exists and its pending record is
+> written. Any copy in a snapshot therefore has a home that a later home list
+> finds, and a record that a later read finds.**
+
+It holds because the kernel lists a spawning home from its first
+`instance.json`, before the spawn hooks run, and a home writes its admission
+record (pending) before the admit and the root's copy only after the admit
+commits (C-3, C-3b). A path is safe when it reads the copies first and the
+homes and records after; one that reads them in any other order can miss the
+home or the record a copy belongs to. The paths today:
 
 - **Reconcile** reads the root's copies once, then lists the homes, then reads
   their records, and only that snapshot of copies is a removal candidate:
