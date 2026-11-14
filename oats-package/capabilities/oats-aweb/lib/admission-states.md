@@ -193,9 +193,10 @@ read of the home's state and its preflight to its last receive sync and
 state write, so another command can't change the label between them. A
 holder whose pid no longer runs is taken over by exactly one taker, under the
 takeover's own guard; a live holder, or a lock that can't be read, refuses
-`E_ATTRIBUTION_EXCHANGE` step `lock` with its fix. Retire takes the lock of
-every label it could act on before its first effect and holds them to its
-exit: its records' and lock files' labels (a join that hasn't written its
+`E_ATTRIBUTION_EXCHANGE` step `lock` with its fix. A command that exits
+holding a lock releases it on its way out. Retire takes the lock of every
+label it could act on before its first effect (the attention claim and the
+wake deregistration included) and holds them to its exit: its records' and lock files' labels (a join that hasn't written its
 first record holds its lock), its joined and pending teams', the primary's,
 and every label the deployment lets it join, so no join, leave or other
 retire of the home runs beside it. With a live holder it acts on nothing,

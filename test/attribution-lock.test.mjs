@@ -115,3 +115,11 @@ test("the lock's directory is created owner-only when the home has none yet", (t
   withAdmissionLock(dir, "default", () => assert.ok(existsSync(admissionLockPath(dir, "default"))));
   assert.equal(existsSync(admissionLockPath(dir, "default")), false);
 });
+
+test("a command that exits holding a lock, on a path no finally reaches, releases it on its way out", (t) => {
+  const dir = scratch(t);
+  const lock = new URL("../oats-package/capabilities/oats-aweb/lib/admission-lock.mjs", import.meta.url).href;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", `import { holdAdmissionLocks } from ${JSON.stringify(lock)}; holdAdmissionLocks(${JSON.stringify(dir)}, ["ops"]); process.exit(3);`], { encoding: "utf8" });
+  assert.equal(r.status, 3, r.stderr);
+  assert.equal(existsSync(admissionLockPath(dir, "ops")), false);
+});

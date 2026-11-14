@@ -253,3 +253,17 @@ test("a retire started during a join's preflight acts on nothing and keeps the h
   assert.equal(record(fx, "ops").state, "committed");
   assert.deepEqual(removes(fx, before), []);
 });
+
+// A retire refused by the lock has no effect at all, its broker receive included (round 21):
+// the locks are taken before retire's first effect.
+test("a retire refused by a live lock leaves a broker-delivered home's wake registration alone", (t) => {
+  const fx = attributionFixture(t, { runtime: "codex", delivery: "session", service: { wake: "running" } });
+  assert.equal(fx.spawn("dev-1").status, 0);
+  assert.equal(fx.command("dev-1", "join", ["--labels", "ops", "--json"]).status, 0);
+  liveLock(fx, "ops");
+  const before = fx.fake.calls().length;
+  const r = fx.retire("dev-1");
+  assert.notEqual(r.status, 0);
+  assert.equal(r.doc.meta.reason, "admission-locked");
+  assert.deepEqual(calls(fx, before).filter((v) => v.startsWith("wake") && !v.startsWith("wake status")), [], "no wake deregistration");
+});

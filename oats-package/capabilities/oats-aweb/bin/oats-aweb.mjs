@@ -2717,9 +2717,20 @@ if (event === "launch") {
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
   const retireWarnings = [];
+  // An opted-in retire takes the lock of every label it could act on before its first effect
+  // (the attention claim, the wake deregistration, any delete) and holds them to its exit, so no
+  // join, leave or other retire of this home runs beside it. A live holder: this retire has no
+  // effect at all, and keeps the home (admission-lock.mjs).
+  let retireSetting = null;
+  try { retireSetting = attributionSetting(settings); } catch (e) { retireWarnings.push(`admission removal skipped: ${String(e.message || e).slice(0, 200)}`); }
+  let retireLocks = null, lockedOut = null;
+  if (retireSetting) {
+    try { retireLocks = holdAdmissionLocks(providerStateDir(), retireLockLabels(meta)); }
+    catch (e) { if (e?.details?.step !== "lock") throw e; lockedOut = e.details; }
+  }
   // Use the selected kernel and authoritative hook scope; no event-log writes
   // or inherited instance selectors. Clear even on an incomplete retirement.
-  try {
+  if (!lockedOut) try {
     const {healthHost} = await import('../lib/health-host.mjs');
     const probe = healthHost({deployment: home, env: process.env});
     if (await probe.supportsWaiting()) {
@@ -2772,9 +2783,7 @@ if (event === "launch") {
   // Broker delivery: the broker registration goes in a child that runs beside
   // the rest of retire (it is local and independent of the self-delete); every
   // way out of this branch awaits it through finish().
-  const deregistration = brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
-  // An opted-in retire's admission locks (below), held from before its first effect to its exit.
-  let retireLocks = null;
+  const deregistration = !lockedOut && brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
   const finish = async (o, code) => {
     // The deregistration is awaited first: its kill at the hook's deadline is a
     // timer, which the record's synchronous lock wait below would hold off.
@@ -2789,6 +2798,7 @@ if (event === "launch") {
     retireLocks?.release();
     out(o, code);
   };
+  if (lockedOut) await finish({ meta: { retired: false, reason: "admission-locked" }, warning: `oats-aweb: ${[...retireWarnings, lockedRetireText(lockedOut)].join(" | ")}` }, 1);
   // A grant seat, or a home whose seat record outlived its meta (a hook killed
   // after the mint, before it answered), retires through the grant path.
   if (!meta.retained) {
@@ -2807,14 +2817,12 @@ if (event === "launch") {
   // OATS can still learn keeps the home before any delete; the root removes them only after
   // the home's own workspace delete, which their certificate authenticates and the removal
   // revokes. Every way out with nothing left to delete removes them too.
-  let retireSetting = null;
   // team → whether the root removed its membership (C-6). On these teams the workspace
   // delete is a plain delete (team_not_hosted): the membership is the root's, not a controller cleanup.
   const admittedTeams = new Map();
   // What C-6 says is said on every way out, a home with nothing to delete included.
   const admissionNotes = [];
   const admittedTeam = (team) => [...admittedTeams.keys()].find((t) => sameAwebTeamId(t, team));
-  try { retireSetting = attributionSetting(settings); } catch (e) { retireWarnings.push(`admission removal skipped: ${String(e.message || e).slice(0, 200)}`); }
   let retireDeployment = null;
   const admissions = async (phase) => {
     let removal;
@@ -2829,11 +2837,6 @@ if (event === "launch") {
   /** The root's removals, once: after the workspace delete, or where there is none to make. */
   const removeAdmissions = async () => { if (!retireSetting || removalsDone) return; removalsDone = true; await admissions("remove"); };
   if (retireSetting) {
-    // Every label this retire could act on is locked before its first effect and stays locked to
-    // its exit, so no join, leave or other retire of this home runs beside it: a live holder
-    // keeps the home, with nothing acted on (admission-lock.mjs).
-    try { retireLocks = holdAdmissionLocks(providerStateDir(), retireLockLabels(meta)); }
-    catch (e) { if (e?.details?.step !== "lock") throw e; await finish({ meta: { retired: false, reason: "admission-locked" }, warning: `oats-aweb: ${[...retireWarnings, lockedRetireText(e.details)].join(" | ")}` }, 1); }
     try { retireDeployment = selectedDeployment(process.env); } catch { retireDeployment = null; }
     await admissions("settle");
   }

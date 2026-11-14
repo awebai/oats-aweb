@@ -76,7 +76,9 @@ function release(path, nonce) {
 }
 
 // The locks this command holds, by path: a nested take of one (leave's own retire) is the same hold.
+// A command that exits holding any (an exit no `finally` reaches) releases them on its way out.
 const holding = new Map();
+process.once("exit", () => { for (const lock of holding.values()) lock.release(); holding.clear(); });
 /** Takes, or enters again, `label`'s lock for this command. → its exit, which releases it at the last. */
 function enter(providerDir, label) {
   const path = admissionLockPath(providerDir, label);
