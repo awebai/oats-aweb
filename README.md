@@ -71,7 +71,11 @@ binding the root.
    `subject_ineligible`, `operation_expired`, `approval_expired`) is
    `state: refused`, and the rerun starts a new operation; any other answer
    aw doesn't map, or none, is `state: unknown`, and the rerun resumes the
-   same one. Once the human approves, setup records
+   same one. A policy read that establishes nothing (aw's unconfirmed
+   codes, such as `receipt_unavailable`, `handoff_result_invalid` or
+   `handoff_http_503`) refuses `E_ATTRIBUTION_EVIDENCE` and is never read
+   as a missing policy. Before the link, it shows no link: the rerun keeps
+   the operation and shows the link with its bounds. Once the human approves, setup records
    `settings.oats.aweb.attribution` in `oats-local.yaml`, last.
 3. From then on, each spawn into those teams creates a key-only identity,
    has the root (or a chained spawner) issue its chain, and has the root

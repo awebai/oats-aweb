@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, resolve } from "node:path";
 import { policyMissingText } from "./admission.mjs";
+import { unconfirmedCode } from "./admission-states.mjs";
 import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, attributionSetting, chainRefusal, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
 import { PROTECTED_AW_MIN, REQUEST_BINDING_SERVED, AwRefusal, admissionPolicyArgv, awJson, createNoAddressArgv, endorseArgv } from "./protected-client.mjs";
 import { canonicalTeamServerURL } from "./team-server-url.mjs";
@@ -211,7 +212,9 @@ export function endorseRoot(o, ctx) {
   };
   let answer = endorse(false);
   if (answer?.state === "pending") {
-    const bounds = Object.fromEntries(teams.map((team) => [team, policyOf(run, team, o.profile)?.bounds ?? null]));
+    // The link carries each team's bounds, so the human approves knowing them: a read that
+    // establishes nothing refuses before the link, and the operation is kept for the rerun.
+    const bounds = Object.fromEntries(teams.map((team) => [team, requiredPolicy(run, team, o.profile).bounds ?? null]));
     const pending = { state: "pending", operationId: operation.operationId, url: answer.page, digest: answer.digest, fingerprint: answer.fingerprint, expiresAt: answer.expires_at, teams, bounds };
     if (!ctx.print) throw attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement waits for ${o.human}'s approval → open ${answer.page} as the human, then rerun the same setup`, pending);
     ctx.print(linkText({ pending, human: o.human, root: rootId, optIn: ctx.optIn }));
@@ -224,7 +227,7 @@ export function endorseRoot(o, ctx) {
   if (answer.chain_installed !== true) throw attributionError("E_ENDORSE_FAILED", `the root's endorsement committed (certificate ${answer.certificate_id ?? "unnamed"}), but aw didn't install its chain in ${identityHome}, so the root can't issue → rerun setup, which installs it`, { step: "install", operationId: operation.operationId });
   const who = readWho((args) => ctx.aw(["aw", ...args], rootHome, 60000), identityHome);
   if (who.kind !== "verified" || who.humanId !== o.human) throw attributionError("E_ENDORSE_FAILED", `the root's endorsement committed, but aw who doesn't show ${o.human} as its nearest human (${who.humanId ?? who.reason ?? who.kind}) → rerun the same setup`, { step: "install", reason: who.reason ?? who.kind });
-  const policies = teams.map((team) => policyOf(run, team, o.profile, { required: true }));
+  const policies = teams.map((team) => requiredPolicy(run, team, o.profile));
   const policy = { version: policies[0].version, digest: policies[0].digest };
   if (policies.some((p) => p.version !== policy.version || p.digest !== policy.digest)) throw attributionError("E_ENDORSE_POLICY", `the teams' admission policies differ (${teams.join(", ")}), so one endorsement can't record them → have the service's operator check the deployment's admission policy`, { problem: "changed" });
   const setting = {
@@ -282,18 +285,10 @@ function refresh(o, ctx) {
   if (who.humanId !== live.human.id) throw chainRefusal({ kind: "revoked", reason: "another_human" }, { who: "the endorsed root", step: "issuer" });
 
   const run = (argv) => awJson(ctx.aw, "id team admission-policy", argv, rootHome, 60000);
-  /** One team's policy as the root: {policy}, or {problem}; an unavailable read throws, so nothing changes. */
+  /** One team's policy as the root: {policy}, or {problem}; a read that establishes nothing throws, so nothing changes. */
   const read = (team) => {
-    let doc;
-    try { doc = run(admissionPolicyArgv({ team, profile: o.profile })); }
-    catch (e) {
-      if (!(e instanceof AwRefusal)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${oneLine(e.message)}); nothing was changed → retry setup`, { team });
-      if (e.awCode === "admission_policy_missing") return { problem: "unlisted" };
-      if (SCOPE.has(e.awCode)) return { problem: "requester-unbound" };
-      if (!e.awCode || /_unavailable$|_unresolved$|_unconfirmed$/.test(e.awCode)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${e.awCode || "no answer"}); nothing was changed → retry setup once the protected service answers`, { team, code: e.awCode ?? null });
-      throw attributionError("E_ENDORSE_FAILED", `${team}'s admission policy read was refused (${e.awCode}); nothing was changed → rerun setup`, { step: "prepare", team, code: e.awCode });
-    }
-    return doc?.mode === "protected" && doc.policy ? { policy: doc.policy } : { problem: "unlisted" };
+    const r = readPolicy(run, team, o.profile);
+    return r.policy ? { policy: r.policy } : { problem: r.problem === "requester-unbound" ? "requester-unbound" : "unlisted" };
   };
   const recorded = live.teams.map((team) => ({ team, ...read(team) }));
   const added = mappedTeams(ctx).map((t) => t.team).filter((team) => !live.teams.includes(team)).map((team) => ({ team, ...read(team) }));
@@ -334,18 +329,31 @@ function registeredId(identityHome) {
   return null;
 }
 
-/** A team's admission policy read as the root, or null where `required` is false and it can't be read. */
-function policyOf(run, team, profile, { required = false } = {}) {
-  try {
-    const doc = run(admissionPolicyArgv({ team, profile }));
-    if (doc?.mode === "protected" && doc.policy) return doc.policy;
-    if (!required) return null;
-    throw attributionError("E_ENDORSE_POLICY", `${team} has no protected admission policy (${doc?.mode ?? "no answer"}) → have the service's operator provision it`, { problem: doc?.mode === "legacy" ? "legacy" : "missing", team });
-  } catch (e) {
-    if (!required || e.code?.startsWith?.("E_")) { if (required) throw e; return null; }
-    if (e instanceof AwRefusal && /_unavailable$/.test(e.awCode || "")) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${e.awCode}) → retry setup once the protected service answers`, { code: e.awCode, team });
-    throw attributionError("E_ENDORSE_POLICY", `${team}'s admission policy couldn't be read (${e.awCode || oneLine(e.message)}) → rerun setup`, { problem: "missing", team, code: e.awCode ?? null });
+/** One team's admission policy, read as the root: setup's one reader, for the pending link's
+ *  bounds, the committed check and the refresh (C-2 steps 5 and 6). {policy}, or {problem, code}
+ *  where the service said what it holds: "unlisted" (admission_policy_missing, or no protected
+ *  policy), "legacy" or "requester-unbound" (C-9's scope codes). A read that establishes nothing,
+ *  C-9's unconfirmed row as for an admit, refuses E_ATTRIBUTION_EVIDENCE and is never absence;
+ *  any other refusal is E_ENDORSE_FAILED step prepare. Nothing has changed when it throws. */
+function readPolicy(run, team, profile) {
+  let doc;
+  try { doc = run(admissionPolicyArgv({ team, profile })); }
+  catch (e) {
+    const code = e instanceof AwRefusal ? e.awCode : undefined;
+    if (code === "admission_policy_missing") return { problem: "unlisted", code };
+    if (SCOPE.has(code)) return { problem: "requester-unbound", code };
+    if (!(e instanceof AwRefusal) || unconfirmedCode(code)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${code || oneLine(e.message)}); nothing was changed → retry setup once the protected service answers`, { team, code: code ?? null });
+    throw attributionError("E_ENDORSE_FAILED", `${team}'s admission policy read was refused (${code}); nothing was changed → rerun setup`, { step: "prepare", team, code });
   }
+  if (doc?.mode === "protected" && doc.policy) return { policy: doc.policy };
+  return { problem: doc?.mode === "legacy" ? "legacy" : "unlisted", mode: doc?.mode ?? null };
+}
+/** A team's policy that must be there: a pending link's and a committed setup's. */
+function requiredPolicy(run, team, profile) {
+  const read = readPolicy(run, team, profile);
+  if (read.policy) return read.policy;
+  if (read.problem === "requester-unbound") throw attributionError("E_ENDORSE_FAILED", `${team}'s admission policy read was refused (${read.code}); nothing was changed → rerun setup`, { step: "prepare", team, code: read.code });
+  throw attributionError("E_ENDORSE_POLICY", `${team} has no protected admission policy (${read.mode ?? read.code ?? "no answer"}) → have the service's operator provision it`, { problem: read.problem === "legacy" ? "legacy" : "missing", team });
 }
 
 /** The teams the service holds as legacy, read as the root (best effort): an admission_policy_missing names them. */

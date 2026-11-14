@@ -141,6 +141,35 @@ test("acceptance 3: an unavailable read refuses E_ATTRIBUTION_EVIDENCE: setup's 
   assert.equal(local(fx), before);
 });
 
+// A read that establishes nothing is C-9's unconfirmed row, as for an admit: never absence or a
+// refusal (round 26; the lead, mail 013181f3-2ed1-4e73-ba04-8d5e71ed4a71).
+for (const code of ["handoff_result_invalid", "handoff_http_503"]) {
+  test(`acceptance 3: a policy read answered ${code} establishes nothing: E_ATTRIBUTION_EVIDENCE, never missing`, (t) => {
+    const fx = fresh(t, { service: { endorse: ["committed"], policyRead: { code } } });
+    const before = local(fx);
+    const e = errorOf(json(fx, endorseArgs(fx)));
+    assert.equal(e.code, "E_ATTRIBUTION_EVIDENCE", JSON.stringify(e));
+    assert.equal(local(fx), before);
+  });
+}
+
+test("acceptance 3, C-2 step 6: a pending endorsement whose bounds can't be read refuses E_ATTRIBUTION_EVIDENCE before its link, and the rerun shows the link with them, on the same operation", (t) => {
+  const fx = fresh(t, { service: { endorse: ["pending"], policyRead: { code: "receipt_unavailable" } } });
+  const before = local(fx);
+  const e = errorOf(json(fx, endorseArgs(fx)));
+  assert.equal(e.code, "E_ATTRIBUTION_EVIDENCE", JSON.stringify(e));
+  assert.ok(!/https?:\/\/human\./.test(e.message) && e.details?.url === undefined, `no link: ${e.message}`);
+  assert.equal(local(fx), before);
+  fx.fake.setService({ policyRead: undefined });
+  const again = errorOf(json(fx, endorseArgs(fx)));
+  assert.equal(again.code, "E_ENDORSE_NOT_APPROVED");
+  assert.ok(again.details.url, "the link");
+  assert.ok(Object.values(again.details.bounds).every((b) => b && typeof b.max_active === "number"), JSON.stringify(again.details.bounds));
+  const ops = fx.fake.calls().map((c) => commandArgs(c.args)).filter((a) => a.join(" ").startsWith("id endorse")).map((a) => a[a.indexOf("--operation-id") + 1]);
+  assert.ok(ops.length >= 2 && ops.every((op) => op === ops[0]), `one operation: ${ops}`);
+  assert.equal(local(fx), before);
+});
+
 // C-9's endorse column, row by row.
 const ENDORSE_ROWS = [
   ["admission_policy_missing", "E_ENDORSE_POLICY", { problem: "missing" }],

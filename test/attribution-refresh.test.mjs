@@ -112,6 +112,16 @@ test("acceptance 22: an unknown policy read changes nothing and refuses E_ATTRIB
   assert.equal(local(fx), before);
 });
 
+for (const code of ["handoff_result_invalid", "handoff_http_503"]) {
+  test(`acceptance 22: a refresh's policy read answered ${code} establishes nothing: E_ATTRIBUTION_EVIDENCE, and nothing changes`, (t) => {
+    const fx = attributionFixture(t);
+    fx.fake.setService({ policy: NEW_POLICY, policyRead: { code } });
+    const before = local(fx);
+    assert.equal(errorOf(rerun(fx)).code, "E_ATTRIBUTION_EVIDENCE");
+    assert.equal(local(fx), before);
+  });
+}
+
 test("acceptance 14: a rerun after success with another --service rewrites only service.url", (t) => {
   const fx = attributionFixture(t);
   const r = rerun(fx).status === 0 && fx.setup(["--endorse-root", "--root-home", fx.rootHome, "--human", HUMAN, "--protected-profile", fx.profile, "--service", "https://aweb2.acme.example/api", "--json"]);
