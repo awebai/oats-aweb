@@ -39,7 +39,8 @@ export function step(on, state, facts = {}) {
     case "begin": {
       if (!facts.ours) return ["pending", "unknown", "committed"].includes(state) ? { ...same, act: "refuse-other-key", exit: 1 } : { to: "keyed", act: "create-key" };
       if (state === "keyed" || state === "refused") return { to: "pending", act: "new-operation" };
-      if (state === "pending" || state === "unknown") return { ...same, act: "resend", sent: true };
+      // A verified --certificate-out is a signed result: committed, at every resume (decided P).
+      if (state === "pending" || state === "unknown") return facts.cert ? { to: "committed", act: "install" } : { ...same, act: "resend", sent: true };
       if (state === "committed") return facts.cert ? { ...same, act: "install" } : { ...same, act: "resend" };
       return { to: "keyed", act: "create-key" };
     }

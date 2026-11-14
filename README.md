@@ -196,9 +196,10 @@ its first sentence and this section; the full texts are here.
   again. An unknown admission whose `--certificate-out` file holds the
   admitted certificate (its team and member key) committed, and is kept as
   committed even while the root can't act.
-- Once an admission committed, nothing undoes it: a rerun of a join that
-  failed after it resumes from its certificate with no second admit, and a
-  refusal of a retry leaves it committed, for its leave or retire to remove.
+- Once an admission committed, nothing undoes it: a rerun of a spawn's or a
+  join's admission whose `--certificate-out` file holds its certificate
+  resumes from it with no second admit, and a refusal of a retry leaves it
+  committed, for its leave or retire to remove.
 - `E_ATTRIBUTION_EXCHANGE` with `step: install`: the admitted certificate
   couldn't be installed in the new home, or its id isn't aw's form. Respawn.
   A code aw doesn't list is never retried.

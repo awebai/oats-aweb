@@ -21,6 +21,8 @@ const CELLS = [
   ["begin", "refused", { ours: true }, { to: "pending", act: "new-operation" }], // decided Q
   ["begin", "pending", { ours: true, cert: false }, { to: "pending", act: "resend", sent: true }],
   ["begin", "unknown", { ours: true, cert: false }, { to: "unknown", act: "resend", sent: true }],
+  ["begin", "pending", { ours: true, cert: true }, { to: "committed", act: "install" }], // decided P
+  ["begin", "unknown", { ours: true, cert: true }, { to: "committed", act: "install" }], // decided P
   ["begin", "committed", { ours: true, cert: true }, { to: "committed", act: "install" }],
   ["begin", "committed", { ours: true, cert: false }, { to: "committed", act: "resend" }],
   // A. Admit's answer.

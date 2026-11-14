@@ -77,7 +77,7 @@ runs table B then C.
 | keyed, or refused | pending | a new operation id, persisted, then admit |
 | removed | keyed | a new key and, then, a new operation: a leave deleted the old identity **[decided: R]** |
 | pending or unknown, no cert | (same) | the same operation, sent again (C-3b's exact retry); *sent* |
-| pending or unknown, cert | committed | no admit: as committed, cert (the check retire makes) **[decided: P]** |
+| pending or unknown, cert | committed | no admit: install and connect from the certificate, the check retire makes **[decided: P]** |
 | committed, cert | committed | no admit: install and connect from the certificate |
 | committed, no cert | committed | the exact retry of its operation returns the certificate |
 | another key's pending, unknown or committed | (same) | refuse `E_ATTRIBUTION_EXCHANGE` `step: key`: retire settles it **[decided: F]** |

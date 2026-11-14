@@ -119,13 +119,15 @@ export function keepRootCopy({ copy, text }) {
   writePrivate(copy, text);
 }
 
-/** A committed record's certificate, when its --certificate-out file is still the one admitted
- *  (its id, team and member key), else null. */
-function committedCertificate(record, rootHome) {
-  if (!holdsMembership(record) || typeof record.certificateOut !== "string" || !existsSync(record.certificateOut)) return null;
-  let cert = null;
+/** The certificate in a record's --certificate-out file when it is this record's admission: aw's
+ *  id form, the record's team and member key, and its certificate id once one is recorded (C-3d).
+ *  Else null. */
+export function verifiedCertificate(record, rootHome) {
+  if (!record || typeof record.certificateOut !== "string" || !existsSync(record.certificateOut)) return null;
+  let cert;
   try { cert = admittedCertificate(record.certificateOut, rootHome); } catch { return null; }
-  return cert.id === record.certificateId && cert.team === record.team && cert.memberKey === record.memberKey ? cert : null;
+  if (cert.team !== record.team || cert.memberKey !== record.memberKey) return null;
+  return record.certificateId === undefined || cert.id === record.certificateId ? cert : null;
 }
 /** One identity of a spawn, on an opted-in deployment. `aw(argv, cwd, timeout)`
  *  runs aw; `plan` is chooseIssuer's; `registry` the profile's registry
@@ -162,7 +164,8 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
       : (key.status !== "created" && installedChain({ aw: chainAw, issuer: plan.issuer, identityHome, setting })) || issueChain({ aw: chainAw, issuer: plan.issuer, identityHome, instance, setting, dir: exchangeDir });
     // 3. The admission (C-3b): its operation id persisted before prepare; a retry reuses it
     // (admission-states.md, table A).
-    const resume = step("begin", record.state, { ours: true, cert: !!committedCertificate(record, setting.root.home) });
+    const verified = verifiedCertificate(record, setting.root.home);
+    const resume = step("begin", record.state, { ours: true, cert: !!verified });
     // A pending or unknown operation resumed here may have reached the service already.
     let sent = resume.sent === true;
     if (resume.act === "new-operation") {
@@ -170,9 +173,10 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
       record = { team, label, alias, operationId: randomUUID(), state: resume.to, identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
       recordAdmission(providerDir, label, record);
     }
-    // A committed admission (a join that failed after it) resumes from its verified certificate,
-    // with no admit; with that file gone, the exact retry of its operation returns it again.
-    let cert = resume.act === "install" ? committedCertificate(record, setting.root.home) : null;
+    // A verified certificate (a join that failed after its admit committed, or whose answer was
+    // lost after aw wrote it) resumes with no admit; with no such file, the exact retry of its
+    // operation returns it again.
+    let cert = resume.act === "install" ? verified : null;
     if (!cert) {
       const argv = admitArgv({ team, memberKey: key.did_key, alias, policy: record.policy ?? setting.endorsement.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile });
       const bounds = () => awJson(run, "id team admission-policy", admissionPolicyArgv({ team, profile: setting.service.profile }), setting.root.home, 30000).policy.bounds;

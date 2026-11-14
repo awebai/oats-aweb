@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, writePrivate } from "./admission.mjs";
+import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, verifiedCertificate, writePrivate } from "./admission.mjs";
 import { admitAnswer, awaitsOutcome, holdsMembership, step } from "./admission-states.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
@@ -92,14 +92,6 @@ export function removeMembership({ aw, setting, certificateId, team, file }) {
   rmSync(copy, { force: true });
   writePrivate(file, `${JSON.stringify({ ...op, state: "committed" }, null, 2)}\n`);
   return { outcome: "removed", operationId: op.operationId };
-}
-
-/** The certificate in a record's --certificate-out file when it is this record's admission
- *  (aw's id form, the record's team and member key), else null (C-3d). */
-export function verifiedCertificate(record, rootHome) {
-  let cert = null;
-  try { cert = typeof record.certificateOut === "string" && existsSync(record.certificateOut) ? admittedCertificate(record.certificateOut, rootHome) : null; } catch { return null; }
-  return cert && cert.team === record.team && cert.memberKey === record.memberKey ? cert : null;
 }
 
 /** Retire's part for every admission recorded in `providerDir`. `aw(argv,

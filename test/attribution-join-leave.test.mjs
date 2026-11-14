@@ -302,3 +302,20 @@ test("C-3d: a committed join whose certificate file is gone, retried while the s
   assert.equal(left.status, 0, left.stdout + left.stderr);
   assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
 });
+
+test("C-3d (decided P): a rerun of a join whose admit committed and wrote its certificate, its answer lost, reads it as committed: no second admit, so the service's refusal now can't touch it", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  fx.fake.setService({ admit: { code: "receipt_unavailable", charge: true, written: true } });
+  const first = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(first.status, 1, first.stdout + first.stderr);
+  assert.equal(record(fx, "dev-1", "ops").state, "unknown");
+  const cert = JSON.parse(readFileSync(record(fx, "dev-1", "ops").certificateOut, "utf8"));
+  fx.fake.setService({ admit: { code: "scope_refused", charge: true } });
+  const before = call(fx.fake, "id team admit").length;
+  const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(call(fx.fake, "id team admit").length, before, "no second admit");
+  assert.deepEqual([record(fx, "dev-1", "ops").state, record(fx, "dev-1", "ops").certificateId], ["committed", cert.certificate_id]);
+  assert.ok(existsSync(join(fx.rootHome, "admissions", `${cert.certificate_id}.cert`)), "the root's copy is written");
+});
