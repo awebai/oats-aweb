@@ -164,10 +164,11 @@ if (cmd === "id team admit") {
   if (!charges[op]) {
     if (s.admit && s.admit.code && !s.admit.charge) fail(s.admit.code, "operation " + op + ": " + s.admit.code);
     if (flag("--policy-digest") !== s.policy.digest || Number(flag("--policy-version")) !== s.policy.version) fail("policy_changed", "operation " + op + " is refused: policy_changed");
-    charges[op] = { body, certificate_id: crypto.randomUUID(), team, alias: flag("--alias"), member_did_key: flag("--member-key"), member_did_aw: flag("--member-id") || "" };
+    charges[op] = { body, certificate_id: s.certificateId ?? crypto.randomUUID(), team, alias: flag("--alias"), member_did_key: flag("--member-key"), member_did_aw: flag("--member-id") || "" };
     fs.writeFileSync(path.join(base, "charges.json"), JSON.stringify(charges));
     if (s.admit && s.admit.lostOnce) { s.admit = s.admit.then ? { code: s.admit.then, charge: true } : undefined; if (!s.admit) delete s.admit; saveSvc(s); fail("receipt_unavailable", "operation " + op + "'s execute answer was lost and it is still pending; resume it with the same operation id"); }
   }
+  // s.certificateId: the id the committed certificate names, as aw would write it (C-3: OATS checks it before it becomes a filename).
   // charge: the operation commits, and every answer comes back as this code (aw's prepare_unconfirmed);
   // written too: aw wrote the certificate to --certificate-out before its answer was lost.
   if (s.admit && s.admit.code && s.admit.charge && !s.admit.written) fail(s.admit.code, "operation " + op + " committed but its answer was lost: " + s.admit.code);

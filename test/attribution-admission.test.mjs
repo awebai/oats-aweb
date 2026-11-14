@@ -2,7 +2,7 @@
 // C-3d), with acceptance test 8 and the spawn half of test 23 (each refusal
 // starts with its code and holds its fix within the 300-character cap).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs } from "./helpers/attribution-fixture.mjs";
@@ -136,6 +136,32 @@ test("C-3c: an install-cert code outside C-9's table refuses step install, with 
   const text = refusal(fx.spawn("dev-1"));
   assert.ok(text.startsWith("E_ATTRIBUTION_EXCHANGE (step: install): "), text);
   assert.equal(fx.fake.calls().filter((c) => commandArgs(c.args).join(" ").startsWith("id team install-cert")).length, 1);
+});
+
+// Acceptance 12: aw's certificate_id becomes the root's copy's filename, so one with "/", ".",
+// ".." or outside aw's id pattern refuses before anything is written from it.
+const afterAdmit = (fx) => fx.fake.calls().map((c) => commandArgs(c.args).join(" ")).filter((v) => /^id team (install-cert|connect)|^init\b|^workspace /.test(v));
+const rootAdmissions = (fx) => { try { return readdirSync(join(fx.rootHome, "admissions")); } catch { return []; } };
+for (const id of ["../escape", "a/b", ".", "..", "not-a-uuid", "8B1C45E7-61AC-42D3-9544-E5303E6F2E7E"]) {
+  test(`acceptance 12: an admitted certificate_id ${JSON.stringify(id)} refuses E_ATTRIBUTION_EXCHANGE step install before the root's copy, the install or the connect`, (t) => {
+    const fx = attributionFixture(t);
+    fx.fake.setService({ certificateId: id });
+    const text = refusal(fx.spawn("dev-1"));
+    assert.ok(text.startsWith("E_ATTRIBUTION_EXCHANGE (step: install): "), text);
+    assert.deepEqual(rootAdmissions(fx), [], "no root copy");
+    assert.ok(!existsSync(join(fx.rootHome, "escape.cert")), "nothing written outside admissions/");
+    assert.deepEqual(afterAdmit(fx), [], "no install or connect");
+  });
+}
+
+test("acceptance 12: an admitted certificate_id of aw's form is the root's copy's name, and the spawn admits", (t) => {
+  const fx = attributionFixture(t);
+  const id = "8b1c45e7-61ac-42d3-9544-e5303e6f2e7e";
+  fx.fake.setService({ certificateId: id });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  assert.deepEqual(rootAdmissions(fx), [`${id}.cert`]);
+  assert.equal(admission(fx, "dev-1").certificateId, id);
 });
 
 test("C-3c: install-cert's registry_unavailable refuses E_ATTRIBUTION_EVIDENCE, worth a retry", (t) => {
