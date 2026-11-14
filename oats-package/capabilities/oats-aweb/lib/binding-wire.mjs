@@ -233,7 +233,10 @@ function unmappedPrimary(env=process.env){return undefined;}
  *  binding path ask this through readinessDetails. */
 function needsMintingRoot(settings) {
   const identity=obj(settings.identity)?settings.identity:{};
-  return !(identity.mode==='global' && typeof identity.resident==='string' && identity.resident.trim());
+  if(identity.mode==='global' && typeof identity.resident==='string' && identity.resident.trim()) return false;
+  // An opted-in deployment's endorsed root issues and admits every identity; its legacy minting
+  // roots mint nothing (C-1, C-2), so none is a prerequisite. The caller has validated the setting.
+  return !attributionSetting(settings);
 }
 /** retainedSeat: a soul-scope retained seat (identity.source), whose spawn mints nothing and
  *  takes its team from the seat's own predicate (retainedSeatCheck), so neither the messaging

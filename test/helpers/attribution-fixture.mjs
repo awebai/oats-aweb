@@ -88,12 +88,14 @@ export function attributionFixture(t, { attribution = true, features = ["spawn-a
   };
   /** Retire `name` from `fromMeta` (default: its recorded meta). */
   const retire = (name, { fromMeta, captured = settings, extra = {} } = {}) => hook("retire", name, { OATS_META: JSON.stringify(fromMeta ?? meta(name)), OATS_SETTINGS: JSON.stringify(captured), ...extra });
-  /** Home readiness through the binding check, under `captured` settings. */
-  const readiness = (name, { captured = settings } = {}) => {
-    const home = homeOf(name);
-    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: captured, input: { action: { kind: "readiness" }, context: { kind: "workspace", workspace: env.OATS_WORKSPACE_KEY, deployment: ws, soul: "dev", team: "default", instance: name, home } } };
+  /** Readiness through the binding check, under `captured` settings: `name`'s home, or, with
+   *  `soul: true`, the soul's (no instance, no home). */
+  const readiness = (name, { captured = settings, soul = false } = {}) => {
+    const home = soul ? ws : homeOf(name);
+    const context = { kind: "workspace", workspace: env.OATS_WORKSPACE_KEY, deployment: ws, soul: "dev", team: "default", ...(soul ? {} : { instance: name, home }) };
+    const input = { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", settings: captured, input: { action: { kind: "readiness" }, context } };
     const { OATS_SETTINGS, OATS_RUNTIME, ...rest } = env;
-    const r = spawnSync(process.execPath, [binding, "check"], { cwd: home, input: JSON.stringify(input), env: { ...rest, OATS_INSTANCE_HOME: home }, encoding: "utf8", timeout: 60000 });
+    const r = spawnSync(process.execPath, [binding, "check"], { cwd: home, input: JSON.stringify(input), env: { ...rest, ...(soul ? {} : { OATS_INSTANCE_HOME: home }) }, encoding: "utf8", timeout: 60000 });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     return JSON.parse(r.stdout.trim().split("\n").pop()).result;
   };

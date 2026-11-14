@@ -4,7 +4,7 @@
 // lacks team.agent.remove, admission-removal-unavailable; and the A5 scan's
 // findings (acceptance 15's readiness half).
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { ROOT_ID, attributionFixture, capabilityWith } from "./helpers/attribution-fixture.mjs";
@@ -78,4 +78,23 @@ test("C-5: without the captured setting, none of these items appear", (t) => {
   fx.fake.revoke(ROOT_ID);
   const { attribution, ...captured } = fx.settings;
   assert.deepEqual(codes(fx.readiness("dev-1", { captured })), []);
+});
+
+const noRootProblem = (result) => (result.problems || []).find((p) => /no messaging root/.test(p.message));
+test("C-1, C-2: an opted-in deployment with its endorsed root and no legacy minting root is ready: home and soul readiness ask for no messaging root", (t) => {
+  const fx = attributionFixture(t);
+  rmSync(join(fx.ws, ".aw"), { recursive: true });
+  assert.equal(fx.spawn("dev-1").status, 0);
+  for (const result of [fx.readiness("dev-1"), fx.readiness("dev-1", { soul: true })]) {
+    assert.equal(noRootProblem(result), undefined, JSON.stringify(result));
+    assert.notEqual(result.status, "needs-configuration", JSON.stringify(result));
+  }
+});
+
+test("C-1: without the setting, a deployment with no legacy minting root still asks for one, as before", (t) => {
+  const fx = attributionFixture(t);
+  rmSync(join(fx.ws, ".aw"), { recursive: true });
+  const { attribution, ...captured } = fx.settings;
+  const result = fx.readiness("dev-1", { captured, soul: true });
+  assert.ok(noRootProblem(result), JSON.stringify(result));
 });
