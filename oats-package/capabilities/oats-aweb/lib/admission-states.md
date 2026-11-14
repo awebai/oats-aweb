@@ -192,8 +192,12 @@ included), leave and retire take it for each label they act on, and hold it
 across their aw calls until a `finally` releases it, so no two commands move
 one label's record at once: a stale writer can't replace a newer record. A
 join or leave command holds its labels' locks for the whole command, from its
-read of the home's state and its preflight to its last receive sync and
-state write, so another command can't change the label between them. A
+read of the live setting (a join's) and of the home's state, through its
+preflight, to its last receive sync and state write, so another command can't
+change the label between them; `join --plan` reads and takes no lock. A join
+whose home a retire already removed (the primary's record `removed`, read
+under the hold) refuses `E_ATTRIBUTION_EXCHANGE` step `retired` before any
+effect. A
 holder whose pid no longer runs is taken over by exactly one taker, under the
 takeover's own guard; a live holder, or a lock that can't be read, refuses
 `E_ATTRIBUTION_EXCHANGE` step `lock` with its fix. A command that exits

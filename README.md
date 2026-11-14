@@ -266,6 +266,9 @@ its first sentence and this section; the full texts are here.
   If no oats aweb command runs as the pid it names, remove that file (the
   refusal names it within the home): a lock
   whose process has ended is taken over by the next command anyway.
+- `E_ATTRIBUTION_EXCHANGE` with `step: retired`, at a join: a retire already
+  removed this home's primary membership, so there is nothing to join it to.
+  Spawn a new instance.
 - `E_ATTRIBUTION_EXCHANGE` with `step: wake`: the admission committed, but
   the host wake broker couldn't register the home. The refusal carries aw's
   cause. Install the aweb release that ships `aw wake`, or start the broker
@@ -365,7 +368,8 @@ retire acts on nothing, exits nonzero and keeps the home
 (`admission-locked`), naming the rerun. A retire holds the lock of every
 label the home could act on, from before its first effect to its exit, so a
 join or leave started during it refuses `step: lock`; a join or leave holds
-its labels' locks for its whole command the same way. A joined team the root
+its labels' locks for its whole command the same way, a join's read of the
+live setting included (`join --plan` takes none). A joined team the root
 admitted that is no longer eligible stays joined at the next start, with a
 warning: a start makes no protected call, so retire (or a leave once the team
 is eligible again) removes it through the root. A joined team admitted

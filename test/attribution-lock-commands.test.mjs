@@ -7,7 +7,8 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { OPS, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
-import { interleave } from "./helpers/interleave.mjs";
+import { HOME_RETIRED } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { interleave, interleaveKernel } from "./helpers/interleave.mjs";
 
 const record = (fx, label, name = "dev-1") => JSON.parse(readFileSync(join(fx.homeOf(name), ".oats-aweb", `admission-${label}.json`), "utf8"));
 const lockOf = (fx, label, name = "dev-1") => join(fx.homeOf(name), ".oats-aweb", `admission-${label}.lock`);
@@ -252,6 +253,46 @@ test("a retire started during a join's preflight acts on nothing and keeps the h
   assert.equal(record(fx, "default").state, "committed");
   assert.equal(record(fx, "ops").state, "committed");
   assert.deepEqual(removes(fx, before), []);
+});
+
+// Round 28: the join's live-setting read (the kernel's `inspect --soul`, liveJoinAttribution) runs
+// under its labels' locks too, so a retire started there acts on nothing.
+test("a retire started during a join's live-setting read acts on nothing and keeps the home; the join commits", (t) => {
+  const fx = spawned(t);
+  const home = fx.homeOf("dev-1");
+  // The kernel runs with the environment the hook gives it, so the retire gets the fixture's own.
+  const retire = interleaveKernel(fx, { at: "args[0]==='inspect'&&!isHome", args: ["retire"], env: { ...fx.env, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_META: JSON.stringify(fx.meta("dev-1")) }, cwd: home });
+  const before = fx.fake.calls().length;
+  const join_ = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  const inner = retire.inner();
+  assert.ok(inner, "the retire ran inside the join's live-setting read");
+  assert.notEqual(inner.status, 0, inner.stdout + inner.stderr);
+  assert.ok(inner.stdout.includes("admission-locked"), inner.stdout);
+  assert.equal(join_.status, 0, join_.stdout + join_.stderr);
+  assert.equal(record(fx, "default").state, "committed");
+  assert.equal(record(fx, "ops").state, "committed");
+  assert.deepEqual(removes(fx, before), []);
+});
+
+// Round 28, the lead's decision: a retire that ran to its end before the join took its locks left
+// the primary's record removed; the join then refuses before any effect.
+const RETIRED_REFUSAL = "E_ATTRIBUTION_EXCHANGE: this home's primary membership was removed (it was retired) → nothing to join; spawn a new instance";
+test("the retired-home refusal is E_ATTRIBUTION_EXCHANGE with step retired, within C-9's step vocabulary", () => {
+  assert.equal(HOME_RETIRED.code, "E_ATTRIBUTION_EXCHANGE");
+  assert.deepEqual(HOME_RETIRED.details, { step: "retired" });
+});
+test("a join of a home a retire already removed refuses step retired before any effect: no key, no admission, no record", (t) => {
+  const fx = spawned(t);
+  const retired = fx.retire("dev-1");
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(record(fx, "default").state, "removed");
+  const before = fx.fake.calls().length;
+  const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok((r.stdout + r.stderr).includes(RETIRED_REFUSAL), r.stdout + r.stderr);
+  assert.deepEqual(calls(fx, before).filter((v) => v !== "version"), [], "no aw call past the version read");
+  assert.equal(existsSync(join(fx.homeOf("dev-1"), ".oats-aweb", "admission-ops.json")), false);
+  assert.equal(existsSync(join(fx.homeOf("dev-1"), ".aweb-identity-ops")), false);
 });
 
 // A retire refused by the lock has no effect at all, its broker receive included (round 21):

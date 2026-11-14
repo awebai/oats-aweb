@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { isRefusal, refusalText, legacyPathRefusal, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { isRefusal, refusalText, legacyPathRefusal, HOME_RETIRED, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { README_ADMISSION, admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
 import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
@@ -2231,26 +2231,34 @@ function runTeamsCommand(kind) {
     // admits under what the refresh changed since this home's spawn (liveJoinAttribution); a leave
     // removes with the captured setting, as retire does.
     const captured = attributionSetting(settings);
-    const attributed = captured && kind === "join" ? liveJoinAttribution(captured) : captured;
     if (args.plan) {
+      // Read-only: no lock, no effect.
       if (kind !== "join") { const error = new Error("--plan is supported by join only"); error.code = "E_BAD_ARGS"; throw error; }
+      const attributed = captured ? liveJoinAttribution(captured) : null;
       const plan = attributed ? attributedJoinPlan(attributed, rows, meta) : joinPlan(rows, meta);
       outputJoinPlan(plan, args.json);
       process.exit(plan.every((p) => p.joined || p.member) ? 0 : 1);
     }
     // On an opted-in deployment the labels' admission locks span the whole command, from its read
-    // of this home's state and its preflight to its last receive sync and state write, so no other
-    // join, leave or retire of these labels runs beside it (admission-lock.mjs). Its admit and
-    // retire take them again within this hold.
+    // of the live setting and of this home's state, through its preflight, to its last receive sync
+    // and state write, so no other join, leave or retire of these labels runs beside it
+    // (admission-lock.mjs). Its admit and retire take them again within this hold.
     const labels = [...new Set(rows.map((row) => row.label))].sort();
     const held = captured ? holdAdmissionLocks(providerStateDir(), labels) : null;
     try {
+    let attributed = captured;
     if (held) {
       // Every named label's record is checked under the hold, before the preflight and any effect
       // (its receive sync and state write included): one that can't be read, or isn't one of the
       // table's, refuses here, so no label is acted on.
-      const bad = providerRecords(providerStateDir()).unreadable.find((u) => u.label === null || labels.includes(u.label));
+      const { records, unreadable } = providerRecords(providerStateDir());
+      const bad = unreadable.find((u) => u.label === null || labels.includes(u.label));
       if (bad) throw recordsUnreadable(bad, kind === "leave" ? "leave again" : "rerun");
+      // A retire that ended before this hold removed the primary's membership (its record, under
+      // the label the spawn admitted it with): nothing to join.
+      const primaryLabel = defaultTeamLabel() || "default";
+      if (kind === "join" && records.some((r) => !r.left && r.label === primaryLabel && r.record.state === "removed")) throw HOME_RETIRED;
+      if (kind === "join") attributed = liveJoinAttribution(captured);
       meta = readCapabilityMeta();
     }
     // Record every completed label even when a later one fails: a confirmed

@@ -398,3 +398,6 @@ export const PROTECTED_ADMISSION_REQUIRED = attributionError("E_PROTECTED_ADMISS
  *  state (v4.3.30, v4.3.31): why, then the fix. No downgrade advice: aw 1.36.59 carries the
  *  forged-sender verification fix. */
 export const PROTECTION_STATE_UNAVAILABLE = attributionError("E_PROTECTION_STATE_UNAVAILABLE", "this team's registry reports no team protection state, which aw 1.36.59 and later require before joining → upgrade the team's registry to one that reports it (awid-service 0.5.40 or later), or ask its operator to", { reason: "protected_state_unavailable" });
+/** A join of a home whose primary membership a retire already removed (its record `removed`): the
+ *  join, under its labels' locks, refuses before any effect (round 28, the lead's decision). */
+export const HOME_RETIRED = attributionError("E_ATTRIBUTION_EXCHANGE", "this home's primary membership was removed (it was retired) → nothing to join; spawn a new instance", { step: "retired" });
