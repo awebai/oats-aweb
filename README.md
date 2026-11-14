@@ -222,6 +222,14 @@ its first sentence and this section; the full texts are here.
   If no oats aweb command runs as the pid it names, remove that file (the
   refusal names it within the home): a lock
   whose process has ended is taken over by the next command anyway.
+- `E_ATTRIBUTION_EXCHANGE` with `step: wake`: the admission committed, but
+  the host wake broker couldn't register the home. The refusal carries aw's
+  cause. Install the aweb release that ships `aw wake`, or start the broker
+  (`oats aweb wake install`), then respawn. The failed spawn's rollback
+  removes the membership it was admitted to.
+- `E_ATTRIBUTION_EXCHANGE` with `step: spawn`: another step failed after the
+  admission committed (its cause is named). Respawn: the rollback removes
+  the membership, as for `step: wake`.
 
 ## Human attribution: retire and reconciliation
 
