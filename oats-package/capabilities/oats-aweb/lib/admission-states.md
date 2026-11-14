@@ -163,6 +163,10 @@ A joined identity that never connected (no `workspace.yaml`: a join killed
 after its key, refused, or whose install or connect failed) has no workspace
 to delete: it is deleted locally, with no workspace delete, which aw would
 refuse for want of a service URL. The record's row above still applies.
+"Never connected" is read from the identity home alone: no `workspace.yaml`.
+A home that connected and then lost that file takes the same local delete,
+and its workspace at the service is left to go stale; a leave never sends a
+delete it can't address.
 
 ## E. What reads records and writes none
 

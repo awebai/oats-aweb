@@ -222,6 +222,9 @@ that record stays at the service until it goes stale. A joined identity
 that never connected (a join killed after its key, refused, or whose install
 or connect failed) has no workspace: a leave or retire deletes it locally,
 with no workspace delete, and the root still removes any membership it holds.
+"Never connected" means no `workspace.yaml` in the joined identity's home: one
+that connected and then lost that file is deleted the same way, and its
+workspace at the service goes stale.
 The root removes a
 membership through the protected service
 (`aw id team remove-agent`, from the root's home, with the root's copy of the
