@@ -95,7 +95,7 @@ import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
-import { admissionFile, admitIdentity, committedAdmissions, readAdmission, stateOf, writePrivate } from "../lib/admission.mjs";
+import { admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
 import { holdAdmissionLocks, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
@@ -1917,13 +1917,13 @@ function attributedLeave(setting, label, meta) {
 }
 function attributedLeaveLocked(setting, label, meta) {
   const providerDir = providerStateDir();
-  const record = readAdmission(providerDir, label);
+  const record = readAdmission(providerDir, label, { then: "leave again" });
   if (!record) return leaveJoinedTeam(label, meta);
   let deployment = null;
   try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
-  const removal = retireAdmissions({ aw: run, setting, providerDir, deployment, labels: [label] });
+  const removal = retireAdmissions({ aw: run, setting, providerDir, deployment, labels: [label], then: "leave again" });
   if (removal.keep) throw new Error(`${removal.keep.text}; the joined identity is kept → rerun \`oats aweb leave --labels ${label}\``);
-  const after = readAdmission(providerDir, label);
+  const after = readAdmission(providerDir, label, { then: "leave again" });
   const entry = joinedTeamsOf(meta).find((j) => j.label === label) || { label, team: record.team, identityHome: record.identityHome };
   const { released, receipt, note } = existsSync(entry.identityHome) ? cleanupJoinedIdentity(entry, meta.alias || instance, home, { admitted: true }) : {};
   const left = step("leave", stateOf(after));
@@ -2514,7 +2514,12 @@ if (event === "launch") {
       // A membership the endorsed root admitted is the root's to remove (C-6), and a start makes
       // no protected call (C-4): aw's own delete would be a second removal act (hosted
       // self-retirement) or refused. It stays joined until retire, or a leave, removes it.
-      if (step("start", stateOf(readAdmission(providerStateDir(), row.label))).act === "keep-joined") {
+      // A record that can't be read could be an admission only the root removes: a start, never
+      // blocked, keeps the team joined and says so.
+      let admitted;
+      try { admitted = readAdmission(providerStateDir(), row.label, { then: "start again" }); }
+      catch (e) { if (e?.details?.problem !== "records-unreadable") throw e; warnings.push(`kept joined team ${row.label}: it is no longer eligible, but ${e.message}`); continue; }
+      if (step("start", stateOf(admitted)).act === "keep-joined") {
         warnings.push(`kept joined team ${row.label}: it is no longer eligible, but the endorsed root admitted it and only the root removes that membership → retire this instance, which removes it through the root, or make ${row.label} eligible again and run \`oats aweb leave --labels ${row.label}\``);
         continue;
       }
@@ -2723,10 +2728,14 @@ if (event === "launch") {
   // effect at all, and keeps the home (admission-lock.mjs).
   let retireSetting = null;
   try { retireSetting = attributionSetting(settings); } catch (e) { retireWarnings.push(`admission removal skipped: ${String(e.message || e).slice(0, 200)}`); }
+  // An admission record that can't be read keeps the home the same way (records-unreadable): it
+  // could hold any membership or operation, so nothing here acts on the home.
   let retireLocks = null, lockedOut = null;
   if (retireSetting) {
     try { retireLocks = holdAdmissionLocks(providerStateDir(), retireLockLabels(meta)); }
-    catch (e) { if (e?.details?.step !== "lock") throw e; lockedOut = e.details; }
+    catch (e) { if (e?.details?.step !== "lock") throw e; lockedOut = { reason: "admission-locked", text: lockedRetireText(e.details) }; }
+    const bad = lockedOut ? null : providerRecords(providerStateDir()).unreadable[0];
+    if (bad) { const e = recordsUnreadable(bad, "retire again"); lockedOut = { reason: "records-unreadable", text: `${e.code} (problem: records-unreadable): ${e.message}` }; }
   }
   // Use the selected kernel and authoritative hook scope; no event-log writes
   // or inherited instance selectors. Clear even on an incomplete retirement.
@@ -2798,7 +2807,7 @@ if (event === "launch") {
     retireLocks?.release();
     out(o, code);
   };
-  if (lockedOut) await finish({ meta: { retired: false, reason: "admission-locked" }, warning: `oats-aweb: ${[...retireWarnings, lockedRetireText(lockedOut)].join(" | ")}` }, 1);
+  if (lockedOut) await finish({ meta: { retired: false, reason: lockedOut.reason }, warning: `oats-aweb: ${[...retireWarnings, lockedOut.text].join(" | ")}` }, 1);
   // A grant seat, or a home whose seat record outlived its meta (a hook killed
   // after the mint, before it answered), retires through the grant path.
   if (!meta.retained) {

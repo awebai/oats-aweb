@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, verifiedCertificate, writePrivate } from "./admission.mjs";
+import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, providerRecords, recordsUnreadable, verifiedCertificate, writePrivate } from "./admission.mjs";
 import { lockedRetireText, withAdmissionLocks } from "./admission-lock.mjs";
 import { admitAnswer, awaitsOutcome, holdsMembership, step } from "./admission-states.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
@@ -106,10 +106,13 @@ export function retireAdmissions(options) {
   // Every label it acts on is locked before any is acted on (admission-lock.mjs): a live holder
   // means this retire acts on nothing, keeps the home and names the rerun, as an unconfirmed
   // removal does.
-  const { providerDir, labels } = options;
-  let names = [];
-  try { names = readdirSync(providerDir).filter((f) => /^admission-.+\.json$/.test(f)); } catch { names = []; }
-  const locked = [...new Set(names.map((name) => readJson(join(providerDir, name))?.label).filter((l) => typeof l === "string" && (!labels || labels.includes(l))))].sort();
+  const { providerDir, labels, then = "retire again" } = options;
+  // A record of its labels that can't be read could hold any membership or operation: this retire
+  // acts on nothing and keeps the home, naming it (records-unreadable).
+  const { records, unreadable } = providerRecords(providerDir);
+  const bad = unreadable.find((u) => !labels || u.label === null || labels.includes(u.label));
+  if (bad) { const e = recordsUnreadable(bad, then); return { warnings: [], keep: { reason: "records-unreadable", text: `${e.code} (problem: records-unreadable): ${e.message}` } }; }
+  const locked = [...new Set(records.map((r) => r.label).filter((l) => typeof l === "string" && (!labels || labels.includes(l))))].sort();
   try { return withAdmissionLocks(providerDir, locked, () => retireLocked(options)); }
   catch (e) {
     if (e?.details?.step !== "lock") throw e;

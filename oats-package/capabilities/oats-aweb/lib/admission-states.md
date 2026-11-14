@@ -200,7 +200,12 @@ wake deregistration included) and holds them to its exit: its records' and lock 
 first record holds its lock), its joined and pending teams', the primary's,
 and every label the deployment lets it join, so no join, leave or other
 retire of the home runs beside it. With a live holder it acts on nothing,
-exits nonzero and keeps the home (`admission-locked`). A failed spawn's hook releases
+exits nonzero and keeps the home (`admission-locked`). Every command reads a home's
+records the same way (`providerRecords`, `readAdmission`): a missing record is
+none, and one that can't be read or isn't one of this table's refuses
+`E_ATTRIBUTION_EVIDENCE` (problem `records-unreadable`) before any effect; a
+retire then keeps the home (`records-unreadable`), and a start keeps the
+joined team with a warning. A failed spawn's hook releases
 its lock before it exits, so its rollback retire finds it free; a killed
 spawn's lock names a dead pid, which the rollback takes over.
 

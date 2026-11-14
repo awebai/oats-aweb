@@ -5,13 +5,15 @@
 // holder refuses E_ATTRIBUTION_EXCHANGE step lock, naming its fix.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { admissionLockPath, takeAdmissionLock, withAdmissionLock } from "../oats-package/capabilities/oats-aweb/lib/admission-lock.mjs";
 
-const scratch = (t) => { const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-lock-"))); t.after(() => rmSync(dir, { recursive: true, force: true })); return dir; };
+/** A home's `.oats-aweb`, in a scratch directory removed after the test. */
+const scratch = (t) => { const root = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-lock-"))); t.after(() => rmSync(root, { recursive: true, force: true })); const dir = join(root, ".oats-aweb"); mkdirSync(dir, { mode: 0o700 }); return dir; };
+const WITHIN_HOME = ".oats-aweb/admission-ops.lock in this home";
 /** A pid that ran and has ended. */
 const deadPid = () => Number(spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout);
 const holderOf = (path) => JSON.parse(readFileSync(path, "utf8"));
@@ -37,7 +39,7 @@ test("a live holder refuses E_ATTRIBUTION_EXCHANGE step lock, naming the label, 
   assert.equal(e.code, "E_ATTRIBUTION_EXCHANGE");
   assert.equal(e.details.step, "lock");
   assert.ok(e.message.includes("ops") && e.message.includes(`pid ${process.pid}`), e.message);
-  assert.ok(e.message.endsWith(`rerun when it ends; if no oats aweb command runs as pid ${process.pid}, remove ${path}`), e.message);
+  assert.ok(e.message.endsWith(`rerun when it ends; if no oats aweb command runs as pid ${process.pid}, remove ${WITHIN_HOME}`), e.message);
   assert.ok(`E_ATTRIBUTION_EXCHANGE (step: lock): ${e.message}`.length <= 300, e.message);
   assert.equal(holderOf(path).nonce, "another-command", "the holder's lock is untouched");
 });
@@ -48,7 +50,7 @@ test("a lock that can't be read refuses as held, never as free: it names the pat
   writeFileSync(path, "");
   const e = lockRefusal(() => takeAdmissionLock(dir, "ops"));
   assert.equal(e.details.step, "lock");
-  assert.ok(e.message.includes(`remove ${path}`), e.message);
+  assert.ok(e.message.includes(`remove ${WITHIN_HOME}`), e.message);
   assert.equal(readFileSync(path, "utf8"), "");
 });
 
@@ -111,7 +113,7 @@ test("withAdmissionLock holds the lock across its function, releases it when the
 });
 
 test("the lock's directory is created owner-only when the home has none yet", (t) => {
-  const dir = join(scratch(t), ".oats-aweb");
+  const dir = join(scratch(t), "new");
   withAdmissionLock(dir, "default", () => assert.ok(existsSync(admissionLockPath(dir, "default"))));
   assert.equal(existsSync(admissionLockPath(dir, "default")), false);
 });

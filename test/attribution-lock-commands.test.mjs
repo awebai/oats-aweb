@@ -70,7 +70,7 @@ test("a join while a live command holds the label's lock refuses step lock befor
   const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const text = r.stdout + r.stderr;
-  assert.ok(text.includes(LOCK_REFUSAL) && text.includes(`pid ${process.pid}`) && text.includes(`remove ${path}`), text);
+  assert.ok(text.includes(LOCK_REFUSAL) && text.includes(`pid ${process.pid}`) && text.includes("remove .oats-aweb/admission-ops.lock in this home"), text);
   assert.deepEqual(calls(fx, before).filter((v) => v !== "version" && v !== "who"), [], "only the preflight's reads");
   assert.equal(JSON.parse(readFileSync(path, "utf8")).nonce, "a-live-command");
 });
@@ -122,7 +122,7 @@ test("a retire while a live command holds a label's lock acts on nothing: it exi
   assert.equal(r.doc.meta.retired, false);
   assert.equal(r.doc.meta.reason, "admission-locked");
   const w = r.doc.warning || "";
-  assert.ok(w.includes(`pid ${process.pid}`) && w.includes("rerun the retire when it ends") && w.includes(`remove ${path}`), w);
+  assert.ok(w.includes(`pid ${process.pid}`) && w.includes("rerun the retire when it ends") && w.includes("remove .oats-aweb/admission-ops.lock in this home"), w);
   assert.deepEqual(removes(fx, before), []);
   assert.ok(!calls(fx, before).some((v) => v.startsWith("workspace delete")), "nothing deleted");
   assert.equal(record(fx, "ops").state, "committed");

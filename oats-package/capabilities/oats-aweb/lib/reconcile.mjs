@@ -9,7 +9,7 @@
 //   root holds a copy for, with the root's team.agent.remove.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { committedAdmissions, homeRecords, verifiedCertificate } from "./admission.mjs";
+import { committedAdmissions, homeRecords, recordsUnreadable, verifiedCertificate } from "./admission.mjs";
 import { awaitsOutcome, holdsMembership, shieldsCertificate } from "./admission-states.mjs";
 import { UUID, attributionError, readWho } from "./attribution.mjs";
 import { BLOCKED_FIX, notServedText, removeMembership, rootCannotAct } from "./removal.mjs";
@@ -87,7 +87,7 @@ export function leakedMemberships({ aw, setting, listHomes, registry }) {
 const homesUnavailableError = (reason) => attributionError("E_ATTRIBUTION_EVIDENCE", `the kernel's instance list is unavailable (${String(reason).slice(0, 160)}), so which memberships have no home can't be told → retry once \`oats status --json\` answers`, { problem: "homes-unavailable", reason: String(reason).slice(0, 160) });
 
 /** A live home's record that can't be read could hold any of the copies, so none is told leaked. */
-const recordsUnreadableError = ({ file, reason }) => attributionError("E_ATTRIBUTION_EVIDENCE", `an admission record can't be read (${file.slice(-160)}: ${reason}), so which memberships its home holds can't be told → make it readable by this user, owner-only, or restore it, then retry`, { problem: "records-unreadable", file, reason });
+const recordsUnreadableError = ({ file, reason }) => recordsUnreadable({ shown: file.slice(-160), reason }, "retry");
 
 /** Whether a live or kept home holds a certificate: a record of `team` that names its id (or
  *  whose verified --certificate-out does), or, given the certificate's own `alias`, one awaiting

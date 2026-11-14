@@ -18,7 +18,7 @@
 // - A release removes the lock only while it is still its own.
 import { randomUUID } from "node:crypto";
 import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { attributionError } from "./attribution.mjs";
 
 export const admissionLockPath = (providerDir, label) => join(providerDir, `admission-${label}.lock`);
@@ -42,9 +42,12 @@ function create(path, doc) {
   catch (e) { if (e?.code === "EEXIST") return false; throw e; }
   finally { unlinkSync(tmp); }
 }
+// The refusal names the lock within the home (`.oats-aweb/admission-<label>.lock`), so its whole fix
+// fits a spawn's 300 characters however long the home's path is.
+const within = (path) => `${basename(dirname(path))}/${basename(path)} in this home`;
 const held = (label, path, pid) => attributionError("E_ATTRIBUTION_EXCHANGE", pid === undefined
-  ? `${label}'s admission lock can't be read, so it counts as held → rerun later; if no oats aweb command acts on ${label} here, remove ${path}`
-  : `another command holds ${label}'s admission lock (pid ${pid}) → rerun when it ends; if no oats aweb command runs as pid ${pid}, remove ${path}`, { step: "lock", label, pid: pid ?? null, path });
+  ? `${label}'s admission lock can't be read, so it counts as held → rerun later; if no oats aweb command acts on ${label} here, remove ${within(path)}`
+  : `another command holds ${label}'s admission lock (pid ${pid}) → rerun when it ends; if no oats aweb command runs as pid ${pid}, remove ${within(path)}`, { step: "lock", label, pid: pid ?? null, path, shown: within(path) });
 
 /** Takes `label`'s lock under `providerDir`, or throws the step lock refusal. → {nonce, release()}.
  *  `onStale` and `onGuarded` run when a stale lock was read, and while its takeover's guard is
@@ -105,4 +108,4 @@ export function withAdmissionLocks(providerDir, labels, fn) {
 }
 /** A retire's text for a label another command holds (a lock refusal's details): it acts on nothing
  *  and keeps the home, as an unconfirmed removal does. */
-export const lockedRetireText = ({ label, pid, path }) => `${label}'s admission lock is held by ${pid === null ? "a command whose lock can't be read" : `pid ${pid}`}, so this retire acted on nothing and the home is kept → rerun the retire when it ends; if no oats aweb command ${pid === null ? `acts on ${label} here` : `runs as pid ${pid}`}, remove ${path}`;
+export const lockedRetireText = ({ label, pid, shown }) => `${label}'s admission lock is held by ${pid === null ? "a command whose lock can't be read" : `pid ${pid}`}, so this retire acted on nothing and the home is kept → rerun the retire when it ends; if no oats aweb command ${pid === null ? `acts on ${label} here` : `runs as pid ${pid}`}, remove ${shown}`;

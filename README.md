@@ -219,7 +219,8 @@ its first sentence and this section; the full texts are here.
 - `E_ATTRIBUTION_EXCHANGE` with `step: lock`: another command of this home
   is acting on the same team label (a spawn, join, leave or retire holds its
   admission lock, `.oats-aweb/admission-<label>.lock`). Rerun once it ends.
-  If no oats aweb command runs as the pid it names, remove that file: a lock
+  If no oats aweb command runs as the pid it names, remove that file (the
+  refusal names it within the home): a lock
   whose process has ended is taken over by the next command anyway.
 
 ## Human attribution: retire and reconciliation
@@ -345,7 +346,12 @@ committed record naming no certificate, a certificate id that isn't aw's
 form or an empty `--certificate-out`, a pending or unknown record with no
 alias), is never read as none: check-only lists every team under `unreadableTeams` with that
 record's path, and reconciliation refuses `E_ATTRIBUTION_EVIDENCE`, plan
-included, until it is readable again (owner-only) or restored.
+included, until it is readable again (owner-only) or restored. Every other
+command reads a home's records the same way, `E_ATTRIBUTION_EVIDENCE` with
+problem `records-unreadable`, naming the record, before any effect: a retire
+keeps the home (`records-unreadable`) and a leave or a join's rerun refuses,
+each until the record is readable again or restored; a start, never blocked,
+keeps that joined team and warns.
 With a protected profile that fails its checks (its mode, or bytes that no
 longer match setup's digest), check-only makes no call that relies on it and
 says so under `attribution.problem`. A team no home here can read is

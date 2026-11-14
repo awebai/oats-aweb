@@ -4,7 +4,7 @@
 // makes one identity: the primary, or a joined team's.
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { SCOPE_CODES, admitAnswer, holdsMembership, recordProblem, step } from "./admission-states.mjs";
 import { withAdmissionLock } from "./admission-lock.mjs";
 import { CHAINLESS, UUID, attributionError, installedChain, issueChain } from "./attribution.mjs";
@@ -81,34 +81,48 @@ export function writePrivate(file, text) {
 /** The admission records a home holds that can be read, each as written, set-aside ones included:
  *  for counts and warnings, which remove nothing. Removal reads homeRecords' `unreadable` too. */
 export const admissionRecords = (home) => homeRecords(home).records.map((r) => r.record);
-/** Each admission record a home holds, with whether a leave set it aside (its name carries
- *  `~left-`): {records, unreadable}. A home with no records directory holds none; a directory or
- *  a record that can't be read, or isn't one of the table's (recordProblem), is listed in
- *  `unreadable` ({file, reason}),
- *  never dropped: a record is what says which memberships are its home's (C-5). */
-export function homeRecords(home) {
-  const dir = join(home, ".oats-aweb");
+/** The admission records under a provider directory, with each file's label and whether a leave
+ *  set it aside (its name carries `~left-`): {records, unreadable}. No directory holds none; a
+ *  directory or a record that can't be read, or isn't one of the table's (recordProblem), is
+ *  listed in `unreadable` ({file, shown, label, reason}), never dropped: a record is what says
+ *  which memberships are its home's (C-5). `shown` is its path within the home. */
+export function providerRecords(dir) {
   const why = (e) => String(e?.code || e?.message || e).slice(0, 80);
   let names;
   try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); }
-  catch (e) { return e?.code === "ENOENT" ? { records: [], unreadable: [] } : { records: [], unreadable: [{ file: dir, reason: why(e) }] }; }
+  catch (e) { return e?.code === "ENOENT" ? { records: [], unreadable: [] } : { records: [], unreadable: [{ file: dir, shown: basename(dir), label: null, reason: why(e) }] }; }
   const records = [], unreadable = [];
   for (const f of names) {
-    const file = join(dir, f);
+    const file = join(dir, f), shown = `${basename(dir)}/${f}`, label = /^admission-(.+?)(?:~left-[^.]*)?\.json$/.exec(f)?.[1] ?? null;
     let record;
-    try { record = JSON.parse(readFileSync(file, "utf8")); } catch (e) { unreadable.push({ file, reason: e instanceof SyntaxError ? "not JSON" : why(e) }); continue; }
+    try { record = JSON.parse(readFileSync(file, "utf8")); } catch (e) { unreadable.push({ file, shown, label, reason: e instanceof SyntaxError ? "not JSON" : why(e) }); continue; }
     const problem = recordProblem(record);
-    if (problem) { unreadable.push({ file, reason: problem }); continue; }
-    records.push({ record, left: f.includes("~left-") });
+    if (problem) { unreadable.push({ file, shown, label, reason: problem }); continue; }
+    records.push({ record, left: f.includes("~left-"), label });
   }
   return { records, unreadable };
 }
+/** A home's admission records (providerRecords of its `.oats-aweb`). */
+export const homeRecords = (home) => providerRecords(join(home, ".oats-aweb"));
+/** The refusal for a record that can't be read: no command acts on it, since it could hold any
+ *  membership or operation. `then` ends the fix: "retire again", "leave again", "rerun", "retry". */
+export const recordsUnreadable = ({ shown, reason }, then) => attributionError("E_ATTRIBUTION_EVIDENCE", `an admission record can't be read (${shown}: ${reason}), so which memberships its home holds can't be told → make it readable by this user, owner-only, or restore it, then ${then}`, { problem: "records-unreadable", file: shown, reason });
 /** OATS's own count of `rows` (kernel status rows, {home}) holding a committed admission for `team` (R4). */
 export const committedAdmissions = (rows, team) => rows.filter((row) => typeof row?.home === "string").reduce((n, row) => n + admissionRecords(row.home).filter((doc) => doc.team === team && holdsMembership(doc)).length, 0);
 /** A record's state for admission-states.mjs: "none" when there is no record. */
 export const stateOf = (record) => (record && typeof record.state === "string" ? record.state : "none");
-export function readAdmission(providerDir, label) {
-  try { return JSON.parse(readFileSync(admissionFile(providerDir, label), "utf8")); } catch { return null; }
+/** `label`'s admission record, or null when it has none; one that can't be read, or isn't one of
+ *  the table's, throws recordsUnreadable, its fix ending in `then`. */
+export function readAdmission(providerDir, label, { then = "rerun" } = {}) {
+  const file = admissionFile(providerDir, label), shown = `${basename(providerDir)}/${basename(file)}`;
+  let text;
+  try { text = readFileSync(file, "utf8"); }
+  catch (e) { if (e?.code === "ENOENT") return null; throw recordsUnreadable({ shown, reason: String(e?.code || e?.message || e).slice(0, 80) }, then); }
+  let record;
+  try { record = JSON.parse(text); } catch { throw recordsUnreadable({ shown, reason: "not JSON" }, then); }
+  const problem = recordProblem(record);
+  if (problem) throw recordsUnreadable({ shown, reason: problem }, then);
+  return record;
 }
 export const recordAdmission = (providerDir, label, doc) => writePrivate(admissionFile(providerDir, label), `${JSON.stringify(doc, null, 2)}\n`);
 
