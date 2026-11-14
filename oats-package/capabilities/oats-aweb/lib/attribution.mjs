@@ -6,7 +6,7 @@
 // certificate; this module holds the provider's decisions about them and never
 // holds key material.
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { REQUEST_BINDING_SERVED } from "./protected-client.mjs";
 import { canonicalTeamServerURL } from "./team-server-url.mjs";
@@ -266,7 +266,8 @@ function depthChecked(issuer) {
  *  It is local, with no server call. Transient failures of invite, request,
  *  receive and import are retried once; approve, which signs, never is. A
  *  failure after the issuer received the request refuses it, best effort.
- *  `dir` holds the request and the response (owner-only, removed after).
+ *  `dir` holds each exchange's own scratch directory, with its request and response (owner-only,
+ *  removed after).
  *  Returns the meta's identity.attribution. */
 /** Whether aw who's verdict `v` is a chain to the recorded human, through the root, with `issuer` as its parent. */
 const issuedBy = (v, { issuer, setting }) => v.kind === "verified" && v.humanId === setting.human.id && v.chain.includes(setting.root.id) && v.chain.at(-2) === issuer.id && v.chain.at(-1) === v.id;
@@ -286,7 +287,10 @@ export function issueChain({ aw, issuer, identityHome, instance, setting, dir })
   };
   const json = (text, what) => { try { return JSON.parse(String(text).trim()); } catch { throw new Error(`${what} answered no JSON`); } };
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const requestFile = join(dir, "request.json"), responseFile = join(dir, "response.json");
+  // Each exchange has a scratch directory of its own: two joins of one home run at once, and
+  // neither may clear the other's request. Nothing in it outlives the exchange.
+  const scratch = mkdtempSync(join(dir, "exchange-"));
+  const requestFile = join(scratch, "request.json"), responseFile = join(scratch, "response.json");
   const clear = () => { for (const f of [requestFile, responseFile]) rmSync(f, { force: true }); };
   const asIssuer = (args) => aw(["--identity-home", issuer.identityHome, ...args]);
   const asChild = (args) => aw(["--identity-home", identityHome, ...args]);
@@ -309,7 +313,7 @@ export function issueChain({ aw, issuer, identityHome, instance, setting, dir })
   } catch (e) {
     if (received) { try { asIssuer(["id", "child", "refuse", received.request_id, "--json"]); } catch { /* best effort: the invitation expires at 10 minutes */ } }
     throw e;
-  } finally { clear(); }
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
   const v = readWho(aw, identityHome);
   if (issuedBy(v, { issuer, setting })) return humanAttribution({ issuer, setting });
   if (v.kind === "revoked" || v.kind === "unavailable") throw chainRefusal(v, { who: "the new identity", step: "verify" });

@@ -385,3 +385,30 @@ process.exit(r.status ?? 1);
   assert.ok(!existsSync(joinedHome(fx)));
   assert.deepEqual(joinedLabels(fx), []);
 });
+
+test("C-3: two joins of different labels running at once on one home each keep their own chain exchange: both admit", (t) => {
+  const QA = "qa:acme.example";
+  const fx = attributionFixture(t, { teams: [TEAM, OPS, QA], extraTeams: [{ label: "qa", team: QA }], service: { policy: { ...POLICY, teams: [TEAM, OPS, QA] } } });
+  spawned(fx);
+  const hookPath = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
+  const bin = mkdtempSync(join(fx.ws, "interleave-")), inner = join(fx.ws, "inner-join.json");
+  const fakeAw = join(fx.fake.path.split(":")[0], "aw");
+  // ops pauses right after its child exported the request; qa's whole join runs on the same home.
+  writeFileSync(join(bin, "aw"), `#!${process.execPath}
+const fs = require("node:fs"), cp = require("node:child_process"), a = process.argv.slice(2);
+const r = cp.spawnSync(${JSON.stringify(fakeAw)}, a, { stdio: "inherit" });
+if (r.status === 0 && a.includes("parent") && a.includes("request") && a.some((x) => x.endsWith(".aweb-identity-ops")) && !fs.existsSync(${JSON.stringify(inner)})) {
+  const j = cp.spawnSync(${JSON.stringify(process.execPath)}, [${JSON.stringify(hookPath)}, "join", "--labels", "qa", "--json"], { cwd: process.cwd(), env: { ...process.env, PATH: ${JSON.stringify(fx.fake.path)} }, encoding: "utf8" });
+  fs.writeFileSync(${JSON.stringify(inner)}, JSON.stringify({ status: j.status, stderr: j.stderr }));
+}
+process.exit(r.status ?? 1);
+`, { mode: 0o700 });
+  const outer = fx.command("dev-1", "join", ["--labels", "ops", "--json"], { extra: { PATH: `${bin}:${fx.fake.path}` } });
+  const qa = JSON.parse(readFileSync(inner, "utf8"));
+  assert.equal(qa.status, 0, qa.stderr);
+  assert.equal(outer.status, 0, outer.stdout + outer.stderr);
+  assert.equal(record(fx, "dev-1", "ops").state, "committed");
+  assert.equal(record(fx, "dev-1", "qa").state, "committed");
+  const scratch = join(fx.homeOf("dev-1"), ".oats-aweb", "attribution");
+  assert.deepEqual(existsSync(scratch) ? readdirSync(scratch) : [], [], "no exchange's scratch outlives it");
+});
