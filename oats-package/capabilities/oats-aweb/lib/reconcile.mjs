@@ -121,15 +121,19 @@ function rootVerified(aw, setting) {
 
 /** check-only's `attribution` block. `scan()` is the A5 scan's {findings, unknown}, with the
  *  legacy roots' `inventory` (listed with the findings, never refused on). */
-export function attributionStatus({ aw, setting, homes, homesUnavailable, registry, scan, removeServed = REMOVE_SERVED }) {
+export function attributionStatus({ aw, setting, homes, homesUnavailable, profileProblem = null, registry, scan, removeServed = REMOVE_SERVED }) {
+  // A profile that fails C-1's checks backs no call: the policy reads and the member lists are
+  // skipped, and the block says why (`problem`), with its local parts kept.
   const bounds = {};
   for (const team of setting.teams) {
+    if (profileProblem) { bounds[team] = null; continue; }
     try { bounds[team] = awJson(aw, "id team admission-policy", admissionPolicyArgv({ team, profile: setting.service.profile }), setting.root.home, 30000).policy?.bounds ?? null; }
     catch (e) { if (e.code) throw e; bounds[team] = null; }
   }
   // Without the kernel's instance list, nothing here says which homes exist.
   const unknownHomes = homesUnavailable ? `the kernel's instance list is unavailable (${String(homesUnavailable).slice(0, 160)})` : null;
-  const leaks = !removeServed ? null : unknownHomes ? { leaked: [], unreadable: setting.teams.map((team) => ({ team, reason: unknownHomes })) } : leakedMemberships({ aw, setting, homes, registry });
+  const unread = unknownHomes || (profileProblem ? `the protected profile can't be used (${profileProblem.details?.problem})` : null);
+  const leaks = !removeServed ? null : unread ? { leaked: [], unreadable: setting.teams.map((team) => ({ team, reason: unread })) } : leakedMemberships({ aw, setting, homes, registry });
   const found = scan();
   return {
     root: setting.root, human: setting.human, service: { id: setting.service.id, url: setting.service.url }, teams: setting.teams,
@@ -140,6 +144,7 @@ export function attributionStatus({ aw, setting, homes, homesUnavailable, regist
     ...(leaks ? { leakedMemberships: leaks.leaked, ...(leaks.unreadable.length ? { unreadableTeams: leaks.unreadable } : {}) } : {}),
     findings: [...found.findings, ...found.unknown, ...(found.inventory || [])],
     limits: limitsOf({ removeServed }),
+    ...(profileProblem ? { problem: { code: profileProblem.code, problem: profileProblem.details?.problem, message: String(profileProblem.message).slice(0, 300) } } : {}),
   };
 }
 

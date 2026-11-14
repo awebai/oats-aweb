@@ -98,6 +98,18 @@ export function profileProblem(path, { key, uid = process.getuid() }) {
 /** sha256:<hex> of the profile file's bytes, as setup records it. */
 export const profileDigest = (path) => `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
 
+/** The recorded profile's problem before any call that relies on it (C-1): its mode, then
+ *  whether its bytes still match the digest setup recorded. Null when it may be used. */
+export function recordedProfileProblem(setting) {
+  const key = "settings.oats.aweb.attribution.service.profile";
+  const problem = profileProblem(setting.service.profile, { key });
+  if (problem) return problem;
+  let digest = null;
+  try { digest = profileDigest(setting.service.profile); } catch { digest = null; }
+  if (digest !== setting.service.profileDigest) return attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} changed since setup recorded it → rerun setup if the operator changed the profile`, { key, problem: "profile-changed" });
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // The root's home (v3.3's rules, carried over): owner-only, directly in D's
 // .aweb-endorsed-root, never in a Git work tree, an instance home or a team

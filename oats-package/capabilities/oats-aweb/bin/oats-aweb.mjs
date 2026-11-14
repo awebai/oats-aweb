@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, profileDigest, profileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admissionFile, admitIdentity, committedAdmissions, readAdmission, stateOf, writePrivate } from "../lib/admission.mjs";
 import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
@@ -2336,9 +2336,8 @@ function attributionPreflight({ teams, spawnerHome = process.env.OATS_SPAWNER_HO
   if (!Array.isArray(version?.features) || !version.features.includes(SPAWN_ATTRIBUTION_FEATURE)) fail(attributionError("E_SETUP_KERNEL", `attribution needs an OATS kernel that lists ${SPAWN_ATTRIBUTION_FEATURE} (OATS ${KERNEL_FLOOR} or later); this one (${typeof version?.version === "string" ? version.version : "unknown"}) doesn't → upgrade OATS`));
   if (!versionAtLeast(spawnAwVersion, PROTECTED_AW_MIN)) fail(attributionError("E_SETUP_AW_VERSION", `attribution needs aw ${PROTECTED_AW_MIN} or later, the protected-client floor; this host has ${spawnAwVersion || "an unreadable aw"} → upgrade aw`));
   const key = "settings.oats.aweb.attribution.service.profile";
-  const problem = profileProblem(setting.service.profile, { key });
+  const problem = recordedProfileProblem(setting);
   if (problem) fail(problem);
-  if (profileDigest(setting.service.profile) !== setting.service.profileDigest) fail(attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} changed since setup recorded it → rerun setup if the operator changed the profile`, { key, problem: "profile-changed" }));
   let registry;
   try { registry = JSON.parse(readFileSync(setting.service.profile, "utf8")).registry_origin; }
   catch { fail(attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} can't be read as JSON → have the service's operator provision it again`, { key, problem: "profile-mode" })); }
@@ -3482,7 +3481,9 @@ ${JSON.stringify(problem.details || {})}`);
         if (setting) {
           let deployment = null;
           try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
-          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), registry: profileRegistry(setting), scan: () => ({ ...scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }), inventory: legacyRootInventory({ deployment, root: settings.root, roots: settings.roots, defaultTeam: defaultTeamId() ?? null, service: setting.service.id, consumer: "oats.aweb" }) }) });
+          // A profile that fails C-1's checks is never read for its registry, and backs no call.
+          const profileBad = recordedProfileProblem(setting);
+          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), profileProblem: profileBad, registry: profileBad ? undefined : profileRegistry(setting), scan: () => ({ ...scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }), inventory: legacyRootInventory({ deployment, root: settings.root, roots: settings.roots, defaultTeam: defaultTeamId() ?? null, service: setting.service.id, consumer: "oats.aweb" }) }) });
         }
       } catch (e) { attribution = { problem: { code: typeof e.code === "string" ? e.code : "E_ATTRIBUTION_SETTING", message: String(e.message || e).slice(0, 300) } }; }
       console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));

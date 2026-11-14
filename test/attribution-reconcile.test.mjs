@@ -362,3 +362,21 @@ test("C-5, C-6 (decided L): a joined membership a blocked leave set aside is rec
   assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
   assert.deepEqual(fx.fake.removed().length, 1, "dev-1's own membership stays");
 });
+
+for (const [problem, change] of [
+  ["profile-changed", (fx) => appendFileSync(fx.profile, " ")],
+  ["profile-mode", (fx) => chmodSync(fx.profile, 0o666)],
+]) {
+  test(`C-1, C-5: check-only with a ${problem === "profile-mode" ? "world-writable" : "changed"} protected profile reports ${problem} and makes no profile-backed call, keeping its local findings`, (t) => {
+    const fx = attributionFixture(t);
+    assert.equal(fx.spawn("dev-1").status, 0);
+    change(fx);
+    const before = fx.fake.calls().length;
+    const doc = checkOnly(fx);
+    const calls = fx.fake.calls().slice(before).map((c) => commandArgs(c.args).join(" "));
+    assert.ok(!calls.some((c) => c.startsWith("id team admission-policy") || c.startsWith("id team members")), calls.join(", "));
+    assert.equal(doc.attribution.problem?.code, "E_ATTRIBUTION_SETTING", JSON.stringify(doc.attribution));
+    assert.equal(doc.attribution.problem?.problem, problem);
+    assert.ok(Array.isArray(doc.attribution.findings) && doc.attribution.findings.length > 0, "the local findings stay");
+  });
+}

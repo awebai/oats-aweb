@@ -294,7 +294,10 @@ that read with a member's key), and from the root's own copies under
 as leaked once no home here holds its certificate (one a leave set aside
 counts as leaked while its home lives). The list is the registry's, unsigned:
 a row is only acted on through the root's copy of its certificate, and a
-certificate a home holds is never leaked, whatever alias the list gives it. A team no home here can read is
+certificate a home holds is never leaked, whatever alias the list gives it.
+With a protected profile that fails its checks (its mode, or bytes that no
+longer match setup's digest), check-only makes no call that relies on it and
+says so under `attribution.problem`. A team no home here can read is
 listed under `unreadableTeams`, and only its copies are known there, never
 as having no other leaks.
 
