@@ -126,7 +126,12 @@ export function endorseRoot(o, ctx) {
   const fresh = o.newRoot && !existsSync(rootHome);
   if (fresh) {
     // The home doesn't exist yet: the container and placement rules from D, before creating it.
-    if (resolve(D) === CONTAINER_DEPLOYMENT || resolve(D).startsWith(`${CONTAINER_DEPLOYMENT}/`)) throw rootHomeProblem(rootHome, { deployment: D });
+    // D's real path: a deployment reached through a link is placed where the link points, a team
+    // container's included.
+    let real = resolve(D);
+    try { real = realpathSync(D); } catch { real = resolve(D); }
+    const inContainer = (dir) => dir === CONTAINER_DEPLOYMENT || dir.startsWith(`${CONTAINER_DEPLOYMENT}/`);
+    if (inContainer(resolve(D)) || inContainer(real)) throw rootHomeProblem(rootHome, { deployment: D });
     // The anchor the home is made under, if it exists, is a plain directory of D's own: a link
     // could put the key anywhere, a Git work tree included.
     const anchor = join(D, ROOT_DIR);
@@ -134,9 +139,6 @@ export function endorseRoot(o, ctx) {
     try { anchorStat = lstatSync(anchor); } catch { anchorStat = null; }
     if (anchorStat && (anchorStat.isSymbolicLink() || !anchorStat.isDirectory())) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `${anchor} is ${anchorStat.isSymbolicLink() ? "a symbolic link" : "not a directory"}, so the root home ${rootHome} wouldn't be the deployment's own → make it a plain directory of the deployment`, { problem: "placement", home: rootHome });
     if (anchorStat && (existsSync(join(anchor, ".git")) || existsSync(join(anchor, "instance.json")))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `${anchor} is a Git work tree or an instance home, where the root's key could be committed or taken → make it a plain directory of the deployment`, { problem: "placement", home: rootHome });
-    // D's real path: a deployment reached through a link is placed where the link points.
-    let real = resolve(D);
-    try { real = realpathSync(D); } catch { real = resolve(D); }
     for (let dir = real; ; dir = resolve(dir, "..")) {
       if (existsSync(join(dir, ".git"))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home ${rootHome} would be inside a Git work tree (${dir}), where its key could be committed → move the deployment out of any work tree`, { problem: "placement", home: rootHome });
       if (existsSync(join(dir, "instance.json"))) throw attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home ${rootHome} would be under an instance home (${dir}) → run setup in the deployment itself`, { problem: "placement", home: rootHome });
