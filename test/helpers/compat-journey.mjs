@@ -6,7 +6,7 @@
 // sorted set: retire runs its steps concurrently, so their order varies.
 //
 // This file runs unchanged inside an extracted v1.42.1 tree, against that
-// tree's own hook and fixture: test/helpers/record-compat-fixture.mjs records
+// tree's own hook and fixture: scripts/record-compat-fixture.mjs records
 // test/fixtures/compat-1.42.1.json that way.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";

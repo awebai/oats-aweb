@@ -3,7 +3,7 @@
 // restart, readiness, setup --check-only and retire are byte-identical to
 // v1.42.1, the release this change builds on, aw calls included.
 // fixtures/compat-1.42.1.json was recorded from the v1.42.1 tree itself
-// (test/helpers/record-compat-fixture.mjs). The second half, a protected team's
+// (scripts/record-compat-fixture.mjs). The second half, a protected team's
 // 403, is in test/attribution-protected-403.test.mjs.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
