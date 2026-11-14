@@ -272,7 +272,11 @@ its first sentence and this section; the full texts are here.
 - `E_TEAM_DEFAULT` at a join or a leave that names this home's primary team.
   The primary is the team the home was spawned into, even after the
   deployment changes its default team: a leave can't remove it, and the home
-  is already its member. Respawn the instance to move it.
+  is already its member. Respawn the instance to move it. On a home with
+  attribution, the deployment's current default is otherwise a team like any
+  other: a joined team that became the default can be left, and a home that
+  isn't in it can join it. A home without attribution keeps the rule that the
+  current default can't be left or joined.
 - `E_ATTRIBUTION_EXCHANGE` with `step: wake`: the admission committed, but
   the host wake broker couldn't register the home. The refusal carries aw's
   cause. Install the aweb release that ships `aw wake`, or start the broker

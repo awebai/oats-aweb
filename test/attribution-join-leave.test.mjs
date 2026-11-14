@@ -463,3 +463,69 @@ test("round 29: with the default switched, join --plan of the home's primary lab
   assert.equal(row?.member, false, JSON.stringify(r.doc));
   assert.ok(String(row?.problem).includes("default is this home's primary team; this home is already its member"), JSON.stringify(r.doc));
 });
+
+// Round 31, the lead's decision (following round 29's): on a home with attribution the label check
+// takes every team the deployment maps, the live default's included, and the home's own primary
+// record decides the primary refusal under the hold. A home without attribution keeps the base's
+// live-default rule (test 9).
+const PRIMARY_JOIN = "E_TEAM_DEFAULT: default is this home's primary team; this home is already its member";
+const PRIMARY_LEAVE = "E_TEAM_DEFAULT: default is this home's primary team and cannot be left";
+const once = (text, piece) => text.split(piece.split(": ")[0] + ":").length - 1;
+for (const [what, args, expected] of [
+  ["join", ["join", "--labels", "default", "--json"], PRIMARY_JOIN],
+  ["leave", ["leave", "--labels", "default", "--json"], PRIMARY_LEAVE],
+]) test(`round 31: with the default unchanged, a ${what} of the home's own primary refuses E_TEAM_DEFAULT with the primary-team text, its code printed once`, (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  const before = charges(fx);
+  const r = fx.command("dev-1", args[0], args.slice(1));
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.stderr.includes(expected), r.stderr);
+  assert.equal(once(r.stderr, expected), 1, `the code once: ${r.stderr}`);
+  assert.equal(charges(fx), before, "no admission");
+  assert.deepEqual(fx.fake.removed(), []);
+  assert.ok(existsSync(primaryKey(fx)));
+});
+test("round 31: with the default unchanged, join --plan of the home's own primary reports the primary-team refusal", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  const r = fx.command("dev-1", "join", ["--labels", "default", "--plan", "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const row = r.doc.plan.find((p) => p.label === "default");
+  assert.equal(row.member, false, JSON.stringify(r.doc));
+  assert.equal(row.problem, "default is this home's primary team; this home is already its member");
+});
+test("round 31: with the default switched to a team the home joined, a leave of it removes that membership through the root; the primary stays", (t) => {
+  const fx = attributionFixture(t, { settings: { join: "ops" } });
+  spawned(fx);
+  assert.ok(existsSync(joinedHome(fx)));
+  const r = fx.command("dev-1", "leave", ["--labels", "ops", "--json"], { extra: SWITCHED });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(fx.fake.removed().length, 1, "one removal, ops's");
+  assert.equal(existsSync(joinedHome(fx)), false);
+  assert.ok(existsSync(primaryKey(fx)));
+  assert.equal(record(fx, "dev-1", "default").state, "committed");
+});
+test("round 31: with the default switched to a team the home isn't in, a join of it admits it through the root as a joined team", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  const before = charges(fx);
+  const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"], { extra: SWITCHED });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(charges(fx), before + 1, "one admission");
+  assert.equal(record(fx, "dev-1", "ops").state, "committed");
+  assert.ok(existsSync(joinedHome(fx)));
+});
+test("round 31: a home spawned while ops was the default keeps ops as its primary after the default moves back: leave ops refuses, join default joins", (t) => {
+  const fx = attributionFixture(t);
+  const s = fx.spawn("dev-1", { extra: SWITCHED });
+  assert.equal(s.status, 0, JSON.stringify(s.doc) + s.stderr);
+  assert.equal(record(fx, "dev-1", "ops").state, "committed", "the primary was admitted under ops");
+  const left = fx.command("dev-1", "leave", ["--labels", "ops", "--json"]);
+  assert.equal(left.status, 1, left.stdout + left.stderr);
+  assert.ok(left.stderr.includes("E_TEAM_DEFAULT: ops is this home's primary team and cannot be left"), left.stderr);
+  assert.deepEqual(fx.fake.removed(), []);
+  const joined = fx.command("dev-1", "join", ["--labels", "default", "--json"]);
+  assert.equal(joined.status, 0, joined.stdout + joined.stderr);
+  assert.equal(record(fx, "dev-1", "default").state, "committed");
+});

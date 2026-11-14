@@ -200,7 +200,10 @@ under the hold) refuses `E_ATTRIBUTION_EXCHANGE` step `retired` before any
 effect. The primary is the record whose identityHome is the home's own
 `.aw`, never the live default label (a default-team change moves that label,
 not the home's primary): a join or leave that names its label refuses
-`E_TEAM_DEFAULT` before any effect, and `join --plan` reports the same. A
+`E_TEAM_DEFAULT` before any effect, and `join --plan` reports the same. Such
+a home's labels are checked against every team the deployment maps, the live
+default's included; a home without attribution keeps the base's check, which
+never takes the live default. A
 holder whose pid no longer runs is taken over by exactly one taker, under the
 takeover's own guard; a live holder, or a lock that can't be read, refuses
 `E_ATTRIBUTION_EXCHANGE` step `lock` with its fix. A command that exits

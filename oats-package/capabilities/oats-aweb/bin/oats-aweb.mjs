@@ -1481,11 +1481,15 @@ function eligibleTeams() { return parseOatsTeams().filter((t) => !t.default && t
 function labelsCsv(text) { return String(text || "").split(",").map((s) => s.trim()).filter(Boolean); }
 function primaryTeamLabel() { return defaultTeamLabel() || null; }
 function requestedJoinLabels() { return labelsCsv(settings.join); }
-function validateJoinLabels(labels, { action = "join" } = {}) {
-  const eligible = eligibleTeams();
+/** The teams a join or leave may name. A home without attribution: the eligible teams, never the
+ *  live default, which can't be left. A home with attribution (`attributed`): every team the
+ *  deployment maps, the live default's included, since its primary is its own record, which the
+ *  command checks under its hold (primaryRecordOf; round 31, the lead's decision). */
+function validateJoinLabels(labels, { action = "join", attributed = false } = {}) {
+  const eligible = attributed ? parseOatsTeams().filter((t) => t.label && t.team) : eligibleTeams();
   const byLabel = new Map(eligible.map((t) => [t.label, t]));
   for (const label of labels) {
-    if (action === "leave" && label === defaultTeamLabel()) {
+    if (!attributed && action === "leave" && label === defaultTeamLabel()) {
       const error = new Error(`E_TEAM_DEFAULT: ${label} is the default team and cannot be left`);
       error.code = "E_TEAM_DEFAULT";
       throw error;
@@ -1892,7 +1896,7 @@ function primaryRecordOf(records) {
 const primaryTeamText = (label, kind) => kind === "leave" ? `${label} is this home's primary team and cannot be left` : `${label} is this home's primary team; this home is already its member`;
 /** A join or leave that names the home's primary team (round 29, the lead's decision). */
 function primaryTeamRefusal(label, kind) {
-  const error = new Error(`E_TEAM_DEFAULT: ${primaryTeamText(label, kind)}`);
+  const error = new Error(primaryTeamText(label, kind));
   error.code = "E_TEAM_DEFAULT";
   return error;
 }
@@ -2242,12 +2246,12 @@ function runTeamsCommand(kind) {
       error.code = "E_TEAM_GLOBAL_MODE";
       throw error;
     }
-    const rows = validateJoinLabels(args.labels, { action: kind });
-    if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
     // On an opted-in deployment a joined team is the root's to admit and remove (C-3, C-6). A join
     // admits under what the refresh changed since this home's spawn (liveJoinAttribution); a leave
     // removes with the captured setting, as retire does.
     const captured = attributionSetting(settings);
+    const rows = validateJoinLabels(args.labels, { action: kind, attributed: !!captured });
+    if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
     if (args.plan) {
       // Read-only: no lock, no effect.
       if (kind !== "join") { const error = new Error("--plan is supported by join only"); error.code = "E_BAD_ARGS"; throw error; }
