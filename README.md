@@ -402,6 +402,12 @@ The fix is to opt in, as "Human attribution" above describes:
 each placeholder as that section says. An operator who has no human ID yet gets one first, by enrolling a passkey at
 the protected service. Any other 403 is reported as before.
 
+Compatibility: from 1.36.59, aw reads a team's protection state at the
+identity registry before it accepts a member invite. So aw 1.36.59 or later
+needs a registry that reports team protection. Against one that doesn't, every
+member-invite spawn and join refuses with aw's `protected_state_unavailable`,
+on every deployment, opted in or not. OATS reports aw's refusal as it stands.
+
 ## 1.42.1 — the release OATS pins for 1.42
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
