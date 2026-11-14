@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { SCOPE_CODES, admitAnswer, holdsMembership, recordProblem, step } from "./admission-states.mjs";
+import { withAdmissionLock } from "./admission-lock.mjs";
 import { CHAINLESS, UUID, attributionError, installedChain, issueChain } from "./attribution.mjs";
 import { POLICY_CHANGE_SERVED, REMOVE_SERVED, admissionPolicyArgv, admitArgv, awJson, createLocalArgv, installCertArgv, serviceInitArgv } from "./protected-client.mjs";
 
@@ -152,7 +153,12 @@ export function verifiedCertificate(record, rootHome) {
  *  origin; `count()` OATS's count of committed admissions for the team.
  *  Returns {didKey, attribution, certificateId}, or throws a refusal; a
  *  refusal after the key exists carries `minted: true`. */
-export function admitIdentity({ aw, setting, team, label, alias, identityHome, providerDir, plan, registry, count, instance, exchangeDir }) {
+export function admitIdentity(options) {
+  // The label's admission lock spans the whole admission, from the record's first read to its
+  // last write, so two commands never move one label's record at once (admission-lock.mjs).
+  return withAdmissionLock(options.providerDir, options.label, () => admitLocked(options));
+}
+function admitLocked({ aw, setting, team, label, alias, identityHome, providerDir, plan, registry, count, instance, exchangeDir }) {
   const run = (argv, cwd, timeout) => aw(argv, cwd, timeout);
   const chainAw = (args) => aw(["aw", ...args], dirname(identityHome), 60000);
   const minted = (e) => Object.assign(e, { minted: true });

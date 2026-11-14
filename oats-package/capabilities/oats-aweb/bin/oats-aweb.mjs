@@ -96,6 +96,7 @@ import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admissionFile, admitIdentity, committedAdmissions, readAdmission, stateOf, writePrivate } from "../lib/admission.mjs";
+import { withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
 import { legacyRootInventory, scanProtectedKeys } from "../lib/key-scan.mjs";
@@ -1900,6 +1901,10 @@ function attributedJoin(pre, row, meta) {
  *  the membership with its warning, and the identity goes; its record is kept aside for retire and
  *  reconciliation. A joined team with no admission record (joined before the opt-in) leaves as before. */
 function attributedLeave(setting, label, meta) {
+  // The label's admission lock spans the whole leave, its own retireAdmissions included.
+  return withAdmissionLock(providerStateDir(), label, () => attributedLeaveLocked(setting, label, meta));
+}
+function attributedLeaveLocked(setting, label, meta) {
   const providerDir = providerStateDir();
   const record = readAdmission(providerDir, label);
   if (!record) return leaveJoinedTeam(label, meta);

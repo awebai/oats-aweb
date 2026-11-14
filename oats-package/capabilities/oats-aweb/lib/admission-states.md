@@ -182,9 +182,23 @@ delete it can't address.
 
 ## Concurrent commands
 
-Nothing serializes commands on one home or one root, so every path that reads
-records or copies, makes a slow aw call, then acts destructively, is checked
-against one invariant:
+**The admission lock** (`admission-lock.mjs`; the lead, mail
+24e49058-3946-4389-a959-89dbdf301e15): one lock per home and team label,
+`.oats-aweb/admission-<label>.lock`. Spawn's and join's admission (its resume
+included), leave and retire take it for each label they act on, and hold it
+across their aw calls until a `finally` releases it, so no two commands move
+one label's record at once: a stale writer can't replace a newer record. A
+holder whose pid no longer runs is taken over by exactly one taker, under the
+takeover's own guard; a live holder, or a lock that can't be read, refuses
+`E_ATTRIBUTION_EXCHANGE` step `lock` with its fix. Retire takes every label's
+lock before it acts on any: with a live holder it acts on nothing, exits
+nonzero and keeps the home (`admission-locked`). A failed spawn's hook releases
+its lock before it exits, so its rollback retire finds it free; a killed
+spawn's lock names a dead pid, which the rollback takes over.
+
+Nothing serializes commands across labels or across homes, and reconcile
+takes no lock, so every path that reads records or copies, makes a slow aw
+call, then acts destructively, is checked against one invariant:
 
 > **A copy is written only after its home exists and its pending record is
 > written. Any copy in a snapshot therefore has a home that a later home list
@@ -197,8 +211,15 @@ commits (C-3, C-3b). A path is safe when it reads the copies first and the
 homes and records after; one that reads them in any other order can miss the
 home or the record a copy belongs to. The paths today:
 
-- **Reconcile** reads the root's copies once, then lists the homes, then reads
-  their records, and only that snapshot of copies is a removal candidate:
+- **Reconcile** takes no lock. It only reads a home's records, and the lock
+  makes every write to one record come from one command at a time, each
+  writing its record before the aw call whose result the record is to name
+  and the copy only after it; so a record reconcile reads is one a command
+  wrote whole, in the table's order, and the invariant holds for it as it does
+  without concurrency. A lock would also make reconcile wait on, or refuse
+  for, any home's command. It reads the root's copies once, then lists the
+  homes, then reads their records, and only that snapshot of copies is a
+  removal candidate:
   every snapshotted copy has its home in the later list and its record in the
   later read, and a spawn or join that commits at any point after the
   snapshot adds a copy it never holds. A home list taken before the copies
@@ -209,11 +230,9 @@ home or the record a copy belongs to. The paths today:
   leaves its copy for reconcile: a leak, never a revocation.
 - **The rollback retire** runs on a failed spawn's home, which no session
   uses.
-- **Leave**'s only aw call after it reads the record is the root's removal; a
-  join of the same label at that point finds the label joined and its record
-  committed, and admits nothing. A join and a leave of one label run at once
-  are otherwise unordered: the leave can delete what the join made, which the
-  home's retire then removes.
+- **A join, a leave and a retire of one label** hold its lock, so they run
+  one after another: the second refuses step `lock` while the first runs.
+  Two joins of one label can't both create a key or send an operation.
 - **Reconcile and a retire** may remove one certificate twice; the second
   answers without effect on any other membership.
 

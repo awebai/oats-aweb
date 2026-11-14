@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, verifiedCertificate, writePrivate } from "./admission.mjs";
+import { withAdmissionLocks } from "./admission-lock.mjs";
 import { admitAnswer, awaitsOutcome, holdsMembership, step } from "./admission-states.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
@@ -101,7 +102,22 @@ export function removeMembership({ aw, setting, certificateId, team, file }) {
  *  `phase` "settle" only resumes unknown admissions and restores missing root copies, with no
  *  removal; "remove" then removes. A retire runs them around its workspace delete, which the
  *  member's certificate authenticates and the removal revokes (C-6). Without `phase`, both. */
-export function retireAdmissions({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, labels, phase }) {
+export function retireAdmissions(options) {
+  // Every label it acts on is locked before any is acted on (admission-lock.mjs): a live holder
+  // means this retire acts on nothing, keeps the home and names the rerun, as an unconfirmed
+  // removal does.
+  const { providerDir, labels } = options;
+  let names = [];
+  try { names = readdirSync(providerDir).filter((f) => /^admission-.+\.json$/.test(f)); } catch { names = []; }
+  const locked = [...new Set(names.map((name) => readJson(join(providerDir, name))?.label).filter((l) => typeof l === "string" && (!labels || labels.includes(l))))].sort();
+  try { return withAdmissionLocks(providerDir, locked, () => retireLocked(options)); }
+  catch (e) {
+    if (e?.details?.step !== "lock") throw e;
+    const { label, pid, path } = e.details;
+    return { warnings: [], keep: { reason: "admission-locked", text: `${label}'s admission lock is held by ${pid === null ? "a command whose lock can't be read" : `pid ${pid}`}, so this retire acted on nothing and the home is kept → rerun the retire when it ends; if no oats aweb command ${pid === null ? `acts on ${label} here` : `runs as pid ${pid}`}, remove ${path}` } };
+  }
+}
+function retireLocked({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, labels, phase }) {
   const warnings = [];
   let names = [];
   try { names = readdirSync(providerDir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { names = []; }

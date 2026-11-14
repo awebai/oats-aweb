@@ -216,6 +216,11 @@ its first sentence and this section; the full texts are here.
 - `E_ATTRIBUTION_EXCHANGE` with `step: connect`: check that the aweb service
   at the recorded URL is reachable; if the URL itself is wrong, rerun
   `oats aweb setup --endorse-root --service <the correct url>`.
+- `E_ATTRIBUTION_EXCHANGE` with `step: lock`: another command of this home
+  is acting on the same team label (a spawn, join, leave or retire holds its
+  admission lock, `.oats-aweb/admission-<label>.lock`). Rerun once it ends.
+  If no oats aweb command runs as the pid it names, remove that file: a lock
+  whose process has ended is taken over by the next command anyway.
 
 ## Human attribution: retire and reconciliation
 
@@ -299,7 +304,10 @@ leave removes the membership through the root, then deletes the joined
 identity, its workspace record left to go stale as at retire: an unknown admission or
 an unconfirmed removal keeps it for the rerun, and a root that can't act
 keeps the membership with `admission-removal-blocked`, its record kept for
-the home's retire and `--reconcile-admissions`. A joined team the root
+the home's retire and `--reconcile-admissions`. While another command
+holds a label's admission lock, a leave of it refuses `step: lock`, and a
+retire acts on nothing, exits nonzero and keeps the home
+(`admission-locked`), naming the rerun. A joined team the root
 admitted that is no longer eligible stays joined at the next start, with a
 warning: a start makes no protected call, so retire (or a leave once the team
 is eligible again) removes it through the root. A joined team admitted
