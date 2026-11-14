@@ -38,14 +38,18 @@ export function homesOf(statusDoc) {
  *  removable, and only when its alias has no home. A copy for a team that was read counts only
  *  while the read lists it active. Only a local member is OATS's: a global member (a human, a
  *  resident) never is. Returns {leaked, unreadable}. */
-export function leakedMemberships({ aw, setting, homes, registry }) {
-  const aliases = new Set(homes.map((h) => h.instance));
-  // The root's copies are read once, BEFORE the homes' records, and only that snapshot is ever a
-  // removal candidate. A home writes its admission record (pending) before the admit and the root's
-  // copy only after it commits (C-3, C-3b), so every copy read here has its record in the read
-  // below; a join that commits during the slow member-list reads adds a copy this snapshot never
-  // holds, and so is never taken for a leak. A copy read later could meet no record of it.
+export function leakedMemberships({ aw, setting, listHomes, registry }) {
+  // The root's copies are read once, BEFORE the homes are listed and their records read, and only
+  // that snapshot is ever a removal candidate. A spawning home is listed from its first
+  // instance.json, and a home writes its admission record (pending) before the admit and the root's
+  // copy only after it commits (C-3, C-3b): every copy read here has its home in the list and its
+  // record in the reads below. A spawn or join that commits later adds a copy this snapshot never
+  // holds, and so is never taken for a leak. A home list taken before the copies could miss a
+  // home whose copy they hold.
   const copies = new Map(rootCopies(setting.root.home).map((c) => [c.certificateId, c]));
+  const { homes, homesUnavailable } = listHomes();
+  if (homesUnavailable) throw homesUnavailableError(homesUnavailable);
+  const aliases = new Set(homes.map((h) => h.instance));
   const records = homes.flatMap((h) => homeRecords(h.home));
   const held = heldBy(records, setting.root.home);
   const leaked = [], unreadable = [];
@@ -75,6 +79,9 @@ export function leakedMemberships({ aw, setting, homes, registry }) {
   }
   return { leaked, unreadable };
 }
+
+/** Without the kernel's instance list nothing says which homes exist, so no membership is told leaked. */
+const homesUnavailableError = (reason) => attributionError("E_ATTRIBUTION_EVIDENCE", `the kernel's instance list is unavailable (${String(reason).slice(0, 160)}), so which memberships have no home can't be told → retry once \`oats status --json\` answers`, { problem: "homes-unavailable", reason: String(reason).slice(0, 160) });
 
 /** Whether a live or kept home holds a certificate: a record of `team` that names its id (or
  *  whose verified --certificate-out does), or, given the certificate's own `alias`, one awaiting
@@ -127,7 +134,7 @@ function rootVerified(aw, setting) {
 
 /** check-only's `attribution` block. `scan()` is the A5 scan's {findings, unknown}, with the
  *  legacy roots' `inventory` (listed with the findings, never refused on). */
-export function attributionStatus({ aw, setting, homes, homesUnavailable, profileProblem = null, registry, scan, removeServed = REMOVE_SERVED }) {
+export function attributionStatus({ aw, setting, homes, homesUnavailable, listHomes, profileProblem = null, registry, scan, removeServed = REMOVE_SERVED }) {
   // A profile that fails C-1's checks backs no call: the policy reads and the member lists are
   // skipped, and the block says why (`problem`), with its local parts kept.
   const bounds = {};
@@ -139,7 +146,13 @@ export function attributionStatus({ aw, setting, homes, homesUnavailable, profil
   // Without the kernel's instance list, nothing here says which homes exist.
   const unknownHomes = homesUnavailable ? `the kernel's instance list is unavailable (${String(homesUnavailable).slice(0, 160)})` : null;
   const unread = unknownHomes || (profileProblem ? `the protected profile can't be used (${profileProblem.details?.problem})` : null);
-  const leaks = !removeServed ? null : unread ? { leaked: [], unreadable: setting.teams.map((team) => ({ team, reason: unread })) } : leakedMemberships({ aw, setting, homes, registry });
+  const unreadAll = (reason) => ({ leaked: [], unreadable: setting.teams.map((team) => ({ team, reason })) });
+  let leaks = null;
+  if (removeServed) {
+    if (unread) leaks = unreadAll(unread);
+    else try { leaks = leakedMemberships({ aw, setting, listHomes, registry }); }
+    catch (e) { if (e.details?.problem !== "homes-unavailable") throw e; leaks = unreadAll(`the kernel's instance list is unavailable (${e.details.reason})`); }
+  }
   const found = scan();
   return {
     root: setting.root, human: setting.human, service: { id: setting.service.id, url: setting.service.url }, teams: setting.teams,
@@ -165,12 +178,12 @@ function rootRefusal({ reason, why }) {
  *  apply removes each from the root's copy, its UUID persisted under the root
  *  home before prepare. Returns {result, ok}: ok is false when a removal
  *  didn't go through. Throws a refusal before any effect. */
-export function reconcileAdmissions({ aw, setting, homes, homesUnavailable, registry, deployment, plan = false, removeServed = REMOVE_SERVED }) {
-  if (homesUnavailable) throw attributionError("E_ATTRIBUTION_EVIDENCE", `the kernel's instance list is unavailable (${String(homesUnavailable).slice(0, 160)}), so which memberships have no home can't be told → retry once \`oats status --json\` answers`);
+export function reconcileAdmissions({ aw, setting, homesUnavailable, listHomes, registry, deployment, plan = false, removeServed = REMOVE_SERVED }) {
+  if (homesUnavailable) throw homesUnavailableError(homesUnavailable);
   if (!removeServed) throw attributionError("E_SETUP_AW_VERSION", "the pinned aw doesn't serve team.agent.remove yet (aweb A2), so no membership can be removed → reconcile once an aw that serves it is pinned");
   const blocked = rootCannotAct({ aw, setting, deployment });
   if (blocked) throw rootRefusal(blocked);
-  const { leaked, unreadable } = leakedMemberships({ aw, setting, homes, registry });
+  const { leaked, unreadable } = leakedMemberships({ aw, setting, listHomes, registry });
   const row = ({ team, alias, certificateId }) => ({ team, alias, certificateId });
   const removals = leaked.filter((l) => l.removable).map(row);
   const notRemovable = leaked.filter((l) => !l.removable).map((l) => ({ ...row(l), reason: "no-root-copy" }));

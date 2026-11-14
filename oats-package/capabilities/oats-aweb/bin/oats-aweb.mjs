@@ -3283,7 +3283,7 @@ if (event === "launch") {
       if (!setting) throw attributionError("E_SETUP_ARGUMENT", "--reconcile-admissions needs settings.oats.aweb.attribution: this deployment hasn't opted in", { stage: "arguments" });
       let deployment = null;
       try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
-      const { ok, result } = reconcileAdmissions({ aw: run, setting, ...kernelHomes(), registry: profileRegistry(setting), deployment, plan: args.includes("--plan") });
+      const { ok, result } = reconcileAdmissions({ aw: run, setting, ...kernelHomes(), listHomes: kernelHomes, registry: profileRegistry(setting), deployment, plan: args.includes("--plan") });
       const line = (r) => `${r.alias} in ${r.team} (certificate ${r.certificateId})`;
       const text = [
         `${result.plan ? "would remove" : "removals"}: ${result.removals.length ? result.removals.map(line).join("; ") : "none"}`,
@@ -3501,7 +3501,7 @@ ${JSON.stringify(problem.details || {})}`);
           try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
           // A profile that fails C-1's checks is never read for its registry, and backs no call.
           const profileBad = recordedProfileProblem(setting);
-          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), profileProblem: profileBad, registry: profileBad ? undefined : profileRegistry(setting), scan: () => ({ ...scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }), inventory: legacyRootInventory({ deployment, root: settings.root, roots: settings.roots, defaultTeam: defaultTeamId() ?? null, service: setting.service.id, consumer: "oats.aweb" }) }) });
+          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), listHomes: kernelHomes, profileProblem: profileBad, registry: profileBad ? undefined : profileRegistry(setting), scan: () => ({ ...scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }), inventory: legacyRootInventory({ deployment, root: settings.root, roots: settings.roots, defaultTeam: defaultTeamId() ?? null, service: setting.service.id, consumer: "oats.aweb" }) }) });
         }
       } catch (e) { attribution = { problem: { code: typeof e.code === "string" ? e.code : "E_ATTRIBUTION_SETTING", message: String(e.message || e).slice(0, 300) } }; }
       console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));

@@ -176,7 +176,7 @@ delete it can't address.
 | readiness | each unknown record: `admission-leaked` |
 | check-only `admittedLive` | live homes' committed records, left ones included: OATS's count |
 | check-only `leakedMemberships` | the member list read through a home whose committed record's identity home exists, else the root; and the root's copies. A certificate a live or kept home's committed, pending or unknown record names (or, awaiting, may name, by the certificate's alias) is that home's; a left record names none (decided L). A list row is unsigned registry metadata: it counts only by the root's copy of its id, of aw's form, whatever alias the row gives; with no copy it is listed, never removable, and only when its alias has no home |
-| `--reconcile-admissions` | the root's copies only, for the leaks above, read once before the homes' records: every copy then has its record (a record is written before admit, the copy after it), and a copy a join writes during the reads is no candidate; its removal records under the root's `removals/` |
+| `--reconcile-admissions` | the root's copies only, for the leaks above, read once before the homes are listed and their records read: every copy then has its home listed and its record read (a home is listed from its first record, its admission record is written before admit, the copy after it), and a copy a spawn or join writes later is no candidate; its removal records under the root's `removals/` |
 | check-only, a profile that fails C-1's checks | no policy read and no member list; the block's `problem` names `profile-mode` or `profile-changed`, and its local parts stay |
 | a spawn's issuer count (`E_ADMISSION_LIMIT`) | as `admittedLive` |
 
@@ -188,10 +188,12 @@ order: **a home writes its admission record (pending) before the admit, and
 the root's copy only after the admit commits** (C-3, C-3b). The kernel lists a
 spawning home from its first `instance.json`, before the spawn hooks run.
 
-- **Reconcile** reads the root's copies once, before the homes' records, and
-  only that snapshot is a removal candidate: every snapshotted copy has its
-  record in the later read, and a spawn or join that commits during the
-  member-list reads adds a copy the snapshot never holds.
+- **Reconcile** reads the root's copies once, then lists the homes, then reads
+  their records, and only that snapshot of copies is a removal candidate:
+  every snapshotted copy has its home in the later list and its record in the
+  later read, and a spawn or join that commits at any point after the
+  snapshot adds a copy it never holds. A home list taken before the copies
+  could miss the home a copy belongs to; a list that can't be read refuses.
 - **Retire's removals** act only on certificates the home's own records
   name, through the root's copy of each; certificate ids are unique, so no
   other home's membership is reached. A join that commits during a retire
