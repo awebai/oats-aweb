@@ -262,3 +262,43 @@ test("C-4, C-6: a start keeps an admitted joined team that is no longer eligible
   assert.equal(record(fx, "dev-1", "ops").state, "committed");
   assert.ok(String(r.doc.warning).includes("kept joined team ops") && String(r.doc.warning).includes("retire"), String(r.doc.warning));
 });
+
+/** dev-1 spawned, then a join of ops that committed its admission and failed at install. */
+function committedJoinFailedAtInstall(fx) {
+  spawned(fx);
+  fx.fake.setService({ install: { code: "registry_unavailable" } });
+  const first = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(first.status, 1, first.stdout + first.stderr);
+  assert.equal(record(fx, "dev-1", "ops").state, "committed");
+  fx.fake.setService({ install: undefined });
+  return record(fx, "dev-1", "ops");
+}
+
+test("C-3d: a rerun of a join whose admission committed resumes from its certificate: no second admit, so a refusal the service would now give can't make it refused", (t) => {
+  const fx = attributionFixture(t);
+  const { certificateId, operationId } = committedJoinFailedAtInstall(fx);
+  fx.fake.setService({ admit: { code: "scope_refused" } });
+  const before = call(fx.fake, "id team admit").length;
+  const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(call(fx.fake, "id team admit").length, before, "no second admit");
+  assert.deepEqual([record(fx, "dev-1", "ops").state, record(fx, "dev-1", "ops").certificateId, record(fx, "dev-1", "ops").operationId], ["committed", certificateId, operationId]);
+  fx.fake.setService({ admit: undefined });
+  const left = fx.command("dev-1", "leave", ["--labels", "ops", "--json"]);
+  assert.equal(left.status, 0, left.stdout + left.stderr);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
+});
+
+test("C-3d: a committed join whose certificate file is gone, retried while the service refuses the root, stays committed, and its leave still removes it through the root", (t) => {
+  const fx = attributionFixture(t);
+  const { certificateId, certificateOut } = committedJoinFailedAtInstall(fx);
+  rmSync(certificateOut);
+  fx.fake.setService({ admit: { code: "scope_refused", charge: true } });
+  const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.deepEqual([record(fx, "dev-1", "ops").state, record(fx, "dev-1", "ops").certificateId], ["committed", certificateId]);
+  fx.fake.setService({ admit: undefined });
+  const left = fx.command("dev-1", "leave", ["--labels", "ops", "--json"]);
+  assert.equal(left.status, 0, left.stdout + left.stderr);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
+});

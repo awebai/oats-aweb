@@ -121,6 +121,14 @@ export function keepRootCopy({ copy, text }) {
   writePrivate(copy, text);
 }
 
+/** A committed record's certificate, when its --certificate-out file is still the one admitted
+ *  (its id, team and member key), else null. */
+function committedCertificate(record, rootHome) {
+  if (record.state !== "committed" || typeof record.certificateOut !== "string" || !existsSync(record.certificateOut)) return null;
+  let cert = null;
+  try { cert = admittedCertificate(record.certificateOut, rootHome); } catch { return null; }
+  return cert.id === record.certificateId && cert.team === record.team && cert.memberKey === record.memberKey ? cert : null;
+}
 /** One identity of a spawn, on an opted-in deployment. `aw(argv, cwd, timeout)`
  *  runs aw; `plan` is chooseIssuer's; `registry` the profile's registry
  *  origin; `count()` OATS's count of committed admissions for the team.
@@ -161,27 +169,33 @@ export function admitIdentity({ aw, setting, team, label, alias, identityHome, p
       record = { team, label, alias, operationId: randomUUID(), state: "pending", identityHome, certificateOut: certificateOutFile(providerDir, label), memberKey: key.did_key, policy: setting.endorsement.policy, at: new Date().toISOString() };
       recordAdmission(providerDir, label, record);
     }
-    const argv = admitArgv({ team, memberKey: key.did_key, alias, policy: record.policy ?? setting.endorsement.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile });
-    const bounds = () => awJson(run, "id team admission-policy", admissionPolicyArgv({ team, profile: setting.service.profile }), setting.root.home, 30000).policy.bounds;
-    let admitted;
-    for (let attempt = 1; ; attempt++) {
-      try { admitted = awJson(run, "id team admit", argv, setting.root.home, 60000); break; }
-      catch (e) {
-        if (e.code) throw e;
-        // An exact retry of an unknown outcome returns the original certificate, with no second charge.
-        if (attempt < 2 && admitUnknown(e.awCode)) { maybeSent = true; continue; }
-        const refusal = admitRefusal(e, { team, root: setting.root.id, bounds, count: count(), operationId: record.operationId });
-        // Once this operation may have been sent, only its own final codes establish a refusal
-        // (C-3d): a requester-side one (scope, conflict) refuses as C-9 says, and the record stays
-        // unknown, so retire resumes it once the root is fixed.
-        const refused = refusal.code !== "E_ADMISSION_UNKNOWN" && (!maybeSent || FINAL_CODES.has(e.awCode));
-        recordAdmission(providerDir, label, { ...record, state: refused ? "refused" : "unknown", code: e.awCode || null });
-        throw refusal;
+    // A committed admission (a join that failed after it) resumes from its verified certificate,
+    // with no admit; with that file gone, the exact retry of its operation returns it again.
+    let cert = committedCertificate(record, setting.root.home);
+    if (!cert) {
+      const argv = admitArgv({ team, memberKey: key.did_key, alias, policy: record.policy ?? setting.endorsement.policy, operationId: record.operationId, certificateOut: record.certificateOut, profile: setting.service.profile });
+      const bounds = () => awJson(run, "id team admission-policy", admissionPolicyArgv({ team, profile: setting.service.profile }), setting.root.home, 30000).policy.bounds;
+      let admitted;
+      for (let attempt = 1; ; attempt++) {
+        try { admitted = awJson(run, "id team admit", argv, setting.root.home, 60000); break; }
+        catch (e) {
+          if (e.code) throw e;
+          // An exact retry of an unknown outcome returns the original certificate, with no second charge.
+          if (attempt < 2 && admitUnknown(e.awCode)) { maybeSent = true; continue; }
+          const refusal = admitRefusal(e, { team, root: setting.root.id, bounds, count: count(), operationId: record.operationId });
+          // Once this operation may have been sent, only its own final codes establish a refusal
+          // (C-3d): a requester-side one (scope, conflict) refuses as C-9 says, and the record stays
+          // unknown, so retire resumes it once the root is fixed.
+          const refused = refusal.code !== "E_ADMISSION_UNKNOWN" && (!maybeSent || FINAL_CODES.has(e.awCode));
+          // A committed admission stays committed: what the service answers a retry of it never undoes it.
+          if (record.state !== "committed") recordAdmission(providerDir, label, { ...record, state: refused ? "refused" : "unknown", code: e.awCode || null });
+          throw refusal;
+        }
       }
+      if (admitted.state !== "committed") throw attributionError("E_ADMISSION_UNKNOWN", `aw id team admit answered ${admitted.state}, operation ${record.operationId}, team ${team} → retire this home (${README_ADMISSION})`, { operationId: record.operationId, team });
+      cert = admittedCertificate(record.certificateOut, setting.root.home);
     }
-    if (admitted.state !== "committed") throw attributionError("E_ADMISSION_UNKNOWN", `aw id team admit answered ${admitted.state}, operation ${record.operationId}, team ${team} → retire this home (${README_ADMISSION})`, { operationId: record.operationId, team });
     // The root's copy, written right after admit's verified certificate and before install.
-    const cert = admittedCertificate(record.certificateOut, setting.root.home);
     keepRootCopy(cert);
     record = { ...record, state: "committed", certificateId: cert.id };
     recordAdmission(providerDir, label, record);
