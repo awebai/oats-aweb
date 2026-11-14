@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, resolve } from "node:path";
 import { policyMissingText } from "./admission.mjs";
-import { unconfirmedCode } from "./admission-states.mjs";
+import { rowCode, unconfirmedCode } from "./admission-states.mjs";
 import { CONTAINER_DEPLOYMENT, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, attributionError, attributionSetting, chainRefusal, profileDigest, profileProblem, readWho, rootHomeProblem, validLabel } from "./attribution.mjs";
 import { PROTECTED_AW_MIN, REQUEST_BINDING_SERVED, AwRefusal, admissionPolicyArgv, awJson, createNoAddressArgv, endorseArgv } from "./protected-client.mjs";
 import { canonicalTeamServerURL } from "./team-server-url.mjs";
@@ -78,7 +78,11 @@ export const deploymentLabel = (host, deployment) => { const short = String(host
 // rerun resumes it (v4.3.24).
 const SCOPE = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
 const REGISTER = new Set(["registration_conflict", "human_chain_unverified", "signed_certificate_invalid"]);
-const REFUSED = new Set(["subject_ineligible", "human_refused", "operation_expired", "approval_expired"]);
+// earlier_operation_refused: aw's guard found an endorsement an older aw saved, refused, and forgot
+// it (aw 1.36.59-rc.2, protected_unfinished.go): this operation took no effect (v4.3.29).
+const REFUSED = new Set(["subject_ineligible", "human_refused", "operation_expired", "approval_expired", "earlier_operation_refused"]);
+/** The README section on an endorsement aw keeps from an older aw (v4.3.30). */
+export const README_KEPT = 'README, "Human attribution: an endorsement aw keeps"';
 
 /** The operator's binding step, as setup prints it (step 2b). */
 export function bindingStep({ root, human, teams }) {
@@ -340,9 +344,12 @@ function readPolicy(run, team, profile) {
   try { doc = run(admissionPolicyArgv({ team, profile })); }
   catch (e) {
     const code = e instanceof AwRefusal ? e.awCode : undefined;
+    // aw's own `error` here is a local failure (a profile, key or identity it can't use), so it
+    // stays a refusal; any other code is read as C-9's rows read it (rowCode, v4.3.30).
+    const read = code === "error" ? code : rowCode(code, e.awHttpStatus);
     if (code === "admission_policy_missing") return { problem: "unlisted", code };
     if (SCOPE.has(code)) return { problem: "requester-unbound", code };
-    if (!(e instanceof AwRefusal) || unconfirmedCode(code)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${code || oneLine(e.message)}); nothing was changed → retry setup once the protected service answers`, { team, code: code ?? null });
+    if (!(e instanceof AwRefusal) || unconfirmedCode(read)) throw attributionError("E_ATTRIBUTION_EVIDENCE", `${team}'s admission policy couldn't be read (${code || oneLine(e.message)}); nothing was changed → retry setup once the protected service answers`, { team, code: code ?? null });
     throw attributionError("E_ENDORSE_FAILED", `${team}'s admission policy read was refused (${code}); nothing was changed → rerun setup`, { step: "prepare", team, code });
   }
   if (doc?.mode === "protected" && doc.policy) return { policy: doc.policy };
@@ -378,6 +385,9 @@ export function endorseRefusal(e, { binding, operationId, spend, legacy }) {
   if (SCOPE.has(code)) return attributionError("E_ENDORSE_FAILED", `the protected service hasn't bound the root ${binding.root} as a requester for the human ${binding.human} and the teams ${binding.teams.join(", ")} (${code}); nothing was recorded → ${bindingStep(binding)}; then rerun this setup`, { ...details, step: "prepare", problem: "requester-unbound", bind: binding });
   if (REGISTER.has(code)) return attributionError("E_ENDORSE_FAILED", `the endorsement couldn't be registered (${code}), operation ${operationId} → rerun the same setup`, { ...details, step: "register" });
   if (code === "operation_conflict") return attributionError("E_ENDORSE_FAILED", `aw refused the endorsement request (${code}), operation ${operationId}; it is never sent again by itself → rerun the same setup`, { ...details, step: "prepare" });
+  // aw keeps an endorsement an older aw saved for this root until --replace, which OATS never
+  // passes: whether to ask for a second approval is the person's call (v4.3.29, v4.3.33).
+  if (code === "operation_reconciliation_required") return attributionError("E_ENDORSE_FAILED", `aw keeps an earlier endorsement of this root, operation ${operationId}, that it can't settle (${code}) → see the README section for the way out (${README_KEPT})`, { ...details, step: "prepare" });
   if (!REFUSED.has(code)) return unknown();
   spend();
   return attributionError("E_ENDORSE_NOT_APPROVED", `the endorsement was refused (${code}) → rerun setup, which starts a new operation with a new link`, { ...details, state: "refused" });

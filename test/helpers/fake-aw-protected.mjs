@@ -25,7 +25,7 @@
 //          | {lostOnce: true, then?: code} (the first execute's answer is lost; with `then`, every
 //            later answer for the committed operation is that code)
 //   install: {code}; serviceInit: {code} (the connect fails, workspace.yaml unwritten); remove: "served" | "unserved" (handoff_http_404) | "pending" | {code, http_status?}, or a list of those, one per call
-//   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
+//   policyRead: {code, http_status?, teams?} (every team's read, or only those teams', refuses code)
 //   createKill: true (create --no-address dies after its key)
 //   wake: "running" (the host wake broker runs; otherwise it doesn't)
 //   wakeRegister: "<text>" (aw wake register fails, exit 1, printing <text>)
@@ -66,7 +66,8 @@ const readJson = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
 const svc = () => readJson(path.join(base, "service.json"));
 const saveSvc = (s) => fs.writeFileSync(path.join(base, "service.json"), JSON.stringify(s));
 const emit = (o) => { console.log(JSON.stringify(o, null, 2)); process.exit(0); };
-const fail = (code, message, exit = 1) => { console.error("Error: " + message); if (json) console.log(JSON.stringify({ error: { code, message } })); process.exit(exit); };
+// aw's envelope (cmd/aw/errors.go errorEnvelope): its code, and for awid's http_error the HTTP status.
+const fail = (code, message, exit = 1, httpStatus) => { console.error("Error: " + message); if (json) console.log(JSON.stringify({ error: { code, message, ...(httpStatus ? { http_status: httpStatus } : {}) } })); process.exit(exit); };
 const usage = (message) => fail("", message, 2);
 // aw's installed certificate file name (awconfig EncodeTeamIDForCertificatePath): "__" → "____", then ":" → "__".
 const certFile = (team) => team.replaceAll("__", "____").replaceAll(":", "__") + ".pem";
@@ -147,7 +148,7 @@ if (cmd === "id team admission-policy") {
   const team = flag("--team"); if (!team) usage("--team is required");
   profile(); registered(homeDir());
   const s = svc();
-  if (s.policyRead && (!s.policyRead.teams || s.policyRead.teams.includes(team))) fail(s.policyRead.code, "team " + team + ": " + s.policyRead.code);
+  if (s.policyRead && (!s.policyRead.teams || s.policyRead.teams.includes(team))) fail(s.policyRead.code, "team " + team + ": " + s.policyRead.code, 1, s.policyRead.http_status);
   // A protected team the policy doesn't list has no policy for it: admission_policy_missing (RequireAdmissionPolicy).
   const mode = s.teams[team] || (s.policy.teams.includes(team) ? "protected" : "missing");
   if (mode === "missing") fail("admission_policy_missing", "team " + team + ": team " + team + " has no protected admission policy at this service");
@@ -210,8 +211,7 @@ if (cmd === "id team remove-agent") {
   if (Array.isArray(s.remove)) saveSvc(s);
   // A server that doesn't serve the act: aw's handoff client names the HTTP status (handoff/client.go refusal()).
   if (answer === "unserved") fail("handoff_http_404", "team.agent.remove: the server answered 404");
-  // aw's envelope: its code, and for awid's http_error the server's HTTP status (cmd/aw/errors.go errorEnvelope).
-  if (answer && typeof answer === "object") { console.error("Error: operation " + op + ": " + answer.code); if (json) console.log(JSON.stringify({ error: { code: answer.code, message: answer.code + " (operation " + op + ")", ...(answer.http_status ? { http_status: answer.http_status } : {}) } })); process.exit(1); }
+  if (answer && typeof answer === "object") fail(answer.code, answer.code + " (operation " + op + ")", 1, answer.http_status);
   if (answer === "pending") emit({ operation_id: op, state: "pending", certificate_id: cert.certificate_id });
   fs.appendFileSync(path.join(base, "removed.jsonl"), JSON.stringify({ certificate_id: cert.certificate_id, operation_id: op }) + "\\n");
   emit({ operation_id: op, state: "committed", certificate_id: cert.certificate_id });

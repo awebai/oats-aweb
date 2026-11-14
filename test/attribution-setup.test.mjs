@@ -8,7 +8,7 @@ import { hostname } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
 import { HUMAN, PROFILE_TEXT, ROOT_ID, SERVICE_URL, TEAM, OPS, attributionFixture, commandArgs, verbs, writtenAttribution } from "./helpers/attribution-fixture.mjs";
-import { POLICY } from "./helpers/fake-aw-protected.mjs";
+import { POLICY, writeIdentity } from "./helpers/fake-aw-protected.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const fresh = (t, opts = {}) => attributionFixture(t, { attribution: false, root: "none", ...opts });
@@ -150,6 +150,68 @@ for (const code of ["handoff_result_invalid", "handoff_http_503"]) {
     const e = errorOf(json(fx, endorseArgs(fx)));
     assert.equal(e.code, "E_ATTRIBUTION_EVIDENCE", JSON.stringify(e));
     assert.equal(local(fx), before);
+  });
+}
+
+// v4.3.30, setup's policy read at aw 1.36.59-rc.2: aw's own `error` there is a local failure (a
+// profile, key or identity it can't use), so it keeps E_ENDORSE_FAILED step prepare;
+// `outcome_unknown`, and awid's http_error read by its status, are C-9's rows.
+for (const [name, policyRead, expected] of [
+  ["outcome_unknown", { code: "outcome_unknown" }, "E_ATTRIBUTION_EVIDENCE"],
+  ["http_error 503", { code: "http_error", http_status: 503 }, "E_ATTRIBUTION_EVIDENCE"],
+  ["error", { code: "error" }, "E_ENDORSE_FAILED"],
+]) {
+  test(`v4.3.30: a policy read answered ${name} is ${expected}, and nothing is changed`, (t) => {
+    const fx = fresh(t, { service: { endorse: ["committed"], policyRead } });
+    const before = local(fx);
+    const e = errorOf(json(fx, endorseArgs(fx)));
+    assert.equal(e.code, expected, JSON.stringify(e));
+    if (expected === "E_ENDORSE_FAILED") assert.equal(e.details.step, "prepare");
+    assert.equal(local(fx), before);
+  });
+}
+
+// v4.3.29, aw 1.36.59-rc.2's guard for an endorsement an older aw saved (protected_unfinished.go).
+test("v4.3.29: earlier_operation_refused is E_ENDORSE_NOT_APPROVED refused, and the operation is spent so the rerun starts a new one", (t) => {
+  const fx = fresh(t, { service: { endorse: [{ code: "earlier_operation_refused" }] } });
+  const before = local(fx);
+  const e = errorOf(json(fx, endorseArgs(fx)));
+  assert.deepEqual([e.code, e.details.state, e.details.code], ["E_ENDORSE_NOT_APPROVED", "refused", "earlier_operation_refused"], e.message);
+  assert.ok(!existsSync(operationFile(fx)), "the operation is spent");
+  assert.equal(local(fx), before);
+});
+test("v4.3.29: operation_reconciliation_required is E_ENDORSE_FAILED step prepare, naming the kept operation and the README, and the operation is kept", (t) => {
+  const fx = fresh(t, { service: { endorse: [{ code: "operation_reconciliation_required" }] } });
+  const before = local(fx);
+  const e = errorOf(json(fx, endorseArgs(fx)));
+  assert.deepEqual([e.code, e.details.step, e.details.code], ["E_ENDORSE_FAILED", "prepare", "operation_reconciliation_required"], e.message);
+  const operationId = JSON.parse(readFileSync(operationFile(fx), "utf8")).operationId;
+  assert.ok(e.message.includes(operationId) && e.message.includes("Human attribution: an endorsement aw keeps"), e.message);
+  assert.ok(!e.message.includes("--replace "), "OATS never runs --replace itself");
+  assert.equal(local(fx), before);
+});
+// v4.3.33: a kept committed or unreadable endorsement's way out is a new root. aw's guard matches by
+// target, the root's root_id and root_key, so a new alias is a new target; setup goes ahead while the
+// old, unrecorded root home stays where it is, untouched.
+test("v4.3.33: --new-root with a new alias goes ahead while an old, unrecorded root home exists in .aweb-endorsed-root/, and leaves it byte-identical", (t) => {
+  const fx = fresh(t);
+  const old = join(fx.ws, ".aweb-endorsed-root", "old-root");
+  mkdirSync(old, { recursive: true, mode: 0o700 });
+  writeIdentity(join(old, ".aw"), { did: "did:aw:old-root" });
+  writeFileSync(join(old, "endorse-operation.json"), JSON.stringify({ operationId: "11111111-1111-4111-8111-111111111111" }), { mode: 0o600 });
+  const before = tree(old);
+  const e = errorOf(json(fx, endorseArgs(fx)));
+  assert.deepEqual([e.code, e.details.state], ["E_ENDORSE_NOT_APPROVED", "pending"], e.message);
+  assert.equal(endorses(fx).length, 1);
+  assert.equal(endorses(fx)[0].cwd, fx.rootHome, "the new root endorses, from its own home");
+  assert.deepEqual(tree(old), before, "the old root home is untouched");
+});
+for (const code of ["error", "outcome_unknown"]) {
+  test(`v4.3.29: an endorse aw answers ${code} is as no code: E_ENDORSE_NOT_APPROVED unknown, the operation kept for the rerun`, (t) => {
+    const fx = fresh(t, { service: { endorse: [{ code }] } });
+    const e = errorOf(json(fx, endorseArgs(fx)));
+    assert.deepEqual([e.code, e.details.state], ["E_ENDORSE_NOT_APPROVED", "unknown"], e.message);
+    assert.ok(existsSync(operationFile(fx)), "the operation is kept");
   });
 }
 

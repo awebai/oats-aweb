@@ -159,6 +159,41 @@ refusal names no other fix.
   `attribution-revoked`. Until then its status row still names the human:
   restart, or respawn, to clear the name.
 
+## Human attribution: an endorsement aw keeps
+
+A setup started with an aw older than 1.36.59 and rerun with a newer one can
+refuse `E_ENDORSE_FAILED` (`step: prepare`, aw's
+`operation_reconciliation_required`), naming the operation. aw saved that
+endorsement in a form it no longer sends, so it keeps the request, for that
+root, until it is settled or replaced. OATS never replaces it. aw's own
+message says what it knows of the request.
+
+- **The kept request is still pending:** the human refuses it at its link, or
+  lets it expire. The next rerun of the same setup then reads it refused
+  (`earlier_operation_refused`, which spends the operation) and starts a new
+  endorsement, with one new approval. Approving the kept request doesn't help:
+  aw keeps its committed receipt unregistered.
+- **The kept request committed, or its receipt can't be read:** the way out is
+  a new root:
+  `oats aweb setup --endorse-root --new-root --name <a new alias> --human <did:aw> --protected-profile <abs> --service <url>`.
+  It takes one approval and the operator's bind-root, as the revocation
+  section's path does. The kept request stays in aw's state, harmless, since it
+  names the old root. Then the old root ends:
+  1. The namespace's current controller revokes it, with
+     `aw id revoke --as-root --domain <domain> <old root did:aw>`. Its
+     endorsement may have committed, and nothing records or tracks it. Skip
+     this step only when the endorsement is known never to have committed.
+  2. Only then remove its home under `.aweb-endorsed-root/`. Removing the home
+     alone would leave a registered identity, possibly endorsed, that nothing
+     tracks. Until then, `oats aweb setup --check-only` lists it in
+     `unrecordedRootHomes`.
+
+The other option is aw's own command, run from the old root's identity home:
+`aw id endorse --human <did:aw> --team <team>… --deployment-label <label> --protected-profile <abs> --replace <operation id>`,
+without `--operation-id`. OATS doesn't run it: it asks for a second,
+separately approved endorsement that setup doesn't record, so the deployment
+still has no setting.
+
 ## Human attribution: admission refusals
 
 At spawn, the endorsed root admits each new identity into its protected
