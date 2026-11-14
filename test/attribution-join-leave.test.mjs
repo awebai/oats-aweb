@@ -319,3 +319,39 @@ test("C-3d (decided P): a rerun of a join whose admit committed and wrote its ce
   assert.deepEqual([record(fx, "dev-1", "ops").state, record(fx, "dev-1", "ops").certificateId], ["committed", cert.certificate_id]);
   assert.ok(existsSync(join(fx.rootHome, "admissions", `${cert.certificate_id}.cert`)), "the root's copy is written");
 });
+
+/** dev-1 with a join of ops left unfinished: `how` "keyed" (killed after its key, before any
+ *  operation), "refused" (a final refusal) or "unconnected" (committed, its connect failed). */
+function unfinishedJoin(t, how) {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  fx.fake.setService(how === "unconnected" ? { serviceInit: { code: "receipt_unavailable" } } : { admit: { code: "subject_ineligible" } });
+  const join_ = fx.command("dev-1", "join", ["--labels", "ops"]);
+  assert.equal(join_.status, 1, join_.stdout + join_.stderr);
+  assert.ok(join_.stderr.includes("oats aweb leave --labels ops"), join_.stderr);
+  fx.fake.setService({ admit: undefined, serviceInit: undefined });
+  if (how === "keyed") {
+    const { team, label, alias, identityHome, memberKey } = record(fx, "dev-1", "ops");
+    writeFileSync(join(fx.homeOf("dev-1"), ".oats-aweb", "admission-ops.json"), JSON.stringify({ team, label, alias, identityHome, memberKey, state: "keyed" }));
+  }
+  assert.ok(existsSync(joinedHome(fx)) && !existsSync(join(joinedHome(fx), "workspace.yaml")), "the joined identity was never connected");
+  const before = fx.fake.calls().length;
+  return { fx, since: () => fx.fake.calls().slice(before) };
+}
+for (const how of ["keyed", "refused", "unconnected"]) {
+  test(`acceptance 18, table D: a leave of a join left ${how}, on a team outside aweb's hosted zone, deletes the joined identity it never connected, with no workspace delete`, (t) => {
+    const { fx, since } = unfinishedJoin(t, how);
+    const committed = how === "unconnected" ? record(fx, "dev-1", "ops") : null;
+    if (committed) assert.equal(committed.state, "committed");
+    const r = fx.command("dev-1", "leave", ["--labels", "ops", "--json"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.ok(!existsSync(joinedHome(fx)), "the joined identity is deleted");
+    const verbsSince = since().map((c) => commandArgs(c.args).join(" "));
+    assert.ok(!verbsSince.some((v) => v.startsWith("workspace delete")), "no workspace to delete: aw would fail on its empty base url");
+    assert.ok(!JSON.stringify(r.doc.warnings || []).includes("stays at the service"), "no workspace was connected, so none is left to go stale");
+    if (committed) assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [committed.certificateId], "a committed admission is still removed through the root");
+    const back = fx.command("dev-1", "join", ["--labels", "ops"]);
+    assert.equal(back.status, 0, back.stdout + back.stderr);
+    assert.equal(record(fx, "dev-1", "ops").state, "committed");
+  });
+}

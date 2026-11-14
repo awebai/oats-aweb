@@ -218,7 +218,11 @@ membership's certificate, which the removal revokes. Before either, it resumes
 an admission whose outcome is unknown, so an outcome OATS can still learn
 keeps the home with nothing deleted. A joined identity's workspace can't be
 deleted through aw on a team outside aweb's hosted zone: retire says so, and
-that record stays at the service until it goes stale. The root removes a
+that record stays at the service until it goes stale. A joined identity
+that never connected (a join killed after its key, refused, or whose install
+or connect failed) has no workspace: a leave or retire deletes it locally,
+with no workspace delete, and the root still removes any membership it holds.
+The root removes a
 membership through the protected service
 (`aw id team remove-agent`, from the root's home, with the root's copy of the
 certificate under `D/.aweb-endorsed-root/<alias>/admissions/`). The removal's

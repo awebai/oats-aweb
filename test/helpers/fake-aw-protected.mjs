@@ -24,7 +24,7 @@
 //          | {code, charge: true, written: true} (each answer writes --certificate-out first)
 //          | {lostOnce: true, then?: code} (the first execute's answer is lost; with `then`, every
 //            later answer for the committed operation is that code)
-//   install: {code}; remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
+//   install: {code}; serviceInit: {code} (the connect fails, workspace.yaml unwritten); remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
 //   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
 //   createKill: true (create --no-address dies after its key)
 //   wake: "running" (the host wake broker runs; otherwise it doesn't)
@@ -216,6 +216,7 @@ if (cmd === "id team remove-agent") {
 // ---- service init (service.go)
 if (args[0] === "service" && args[1] === "init") {
   if (!flag("--service")) usage("--service is required");
+  if (svc().serviceInit && svc().serviceInit.code) fail(svc().serviceInit.code, "service init: " + svc().serviceInit.code);
   const h = homeDir();
   fs.writeFileSync(path.join(h, "workspace.yaml"), "alias: " + path.basename(path.dirname(h)) + "\\nteam_id: " + flag("--team") + "\\naweb_url: " + flag("--service") + "\\n", { mode: 0o600 });
   console.log("Connected"); process.exit(0);
@@ -231,10 +232,13 @@ if (args[0] === "service" && args[1] === "init") {
 const hostedZone = (team) => { const d = String(team).split(":").slice(1).join(":").trim().toLowerCase().replace(/\\.$/, ""); return d === "aweb.ai" || (!d.startsWith(".") && !d.includes("..") && d.endsWith(".aweb.ai")); };
 if (args[0] === "workspace" && args[1] === "delete") {
   const h = homeDir();
+  // aw resolves its client from workspace.yaml's aweb_url before anything else (workspace.go
+  // runWorkspaceDelete → resolveClientSelectionForDir): a home never connected fails here,
+  // before the external-home refusal, with no team_not_hosted reason.
+  if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("error", "empty base url");
   const ownTeam = fs.existsSync(path.join(h, "workspace.yaml")) ? (/^team_id:\\s*(\\S+)/m.exec(fs.readFileSync(path.join(h, "workspace.yaml"), "utf8")) || [])[1] : null;
   if (ownTeam && hostedZone(ownTeam)) { fs.appendFileSync(path.join(base, "self-retired.jsonl"), JSON.stringify({ home: h, team: ownTeam }) + "\\n"); fs.rmSync(path.join(h, "workspace.yaml")); emit({ alias: args[2], identity_deleted: true, alias_released: true, alias_released_reason: "self_retired" }); }
   if (identityHome) { const principal = (/^did:\\s*(\\S+)/m.exec(fs.existsSync(path.join(h, "identity.yaml")) ? fs.readFileSync(path.join(h, "identity.yaml"), "utf8") : "") || [])[1] || h; console.error("refusing aw workspace delete through external identity home for principal " + principal + "; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)"); process.exit(2); }
-  if (!fs.existsSync(path.join(h, "workspace.yaml"))) fail("", "no workspace in " + h);
   const wsTeam = (/^team_id:\\s*(\\S+)/m.exec(fs.readFileSync(path.join(h, "workspace.yaml"), "utf8")) || [])[1];
   const certPath = wsTeam ? path.join(h, "team-certs", certFile(wsTeam)) : null;
   const certId = certPath && fs.existsSync(certPath) ? readJson(certPath).certificate_id : null;

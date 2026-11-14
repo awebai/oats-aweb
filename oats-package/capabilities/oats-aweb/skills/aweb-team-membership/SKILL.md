@@ -56,7 +56,8 @@ oats aweb leave --labels <label>[,<label>]  # leave joined wider-team labels
   joined identity. Its workspace record is left to go stale: aw can't delete
   it on a team outside aweb's hosted zone, and inside the zone aw's delete
   would be a second removal, so none is sent (README, "Human attribution:
-  retire and reconciliation").
+  retire and reconciliation"). A join that never connected has no workspace:
+  its leave deletes the joined identity locally, with no workspace delete.
 - Since oats.aweb 1.15 a joined team receives **live** (`receive: native`) when
   the host wake broker holds its identity: always on session-delivery homes,
   and on Claude/Pi channel homes through aw's mixed mode (the channel keeps the

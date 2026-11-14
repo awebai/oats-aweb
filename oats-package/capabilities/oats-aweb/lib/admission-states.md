@@ -159,6 +159,11 @@ B then C for the label's own record (never a left one), then:
 | B or C kept the home | kept | (same): exit 1, rerun the leave |
 | no record (joined before the opt-in) | the legacy leave | — |
 
+A joined identity that never connected (no `workspace.yaml`: a join killed
+after its key, refused, or whose install or connect failed) has no workspace
+to delete: it is deleted locally, with no workspace delete, which aw would
+refuse for want of a service URL. The record's row above still applies.
+
 ## E. What reads records and writes none
 
 | Reader | Reads |

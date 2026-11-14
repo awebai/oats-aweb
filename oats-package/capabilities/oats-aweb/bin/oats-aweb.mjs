@@ -1625,6 +1625,13 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home, { admitted = fa
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
   if (!alias) throw new Error(`failed to leave team ${entry.label}; no alias is known for ${entry.identityHome}`);
+  // An admitted join that never connected (killed after its key, refused, or its install or connect
+  // failed) has no workspace: aw can't even resolve a service for it ("empty base url"), and there is
+  // nothing at the service to delete or leave stale. The membership, if any, is the root's to remove.
+  if (admitted && !joinedWorkspacePresent(entry.identityHome)) {
+    try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    return { released: undefined, receipt: undefined };
+  }
   // On a team the root admitted into, in aweb's hosted zone, aw's delete is hosted
   // self-retirement: a second removal act beside the root's (C-6, v4.3.25). None is sent.
   if (admitted && inAwebHostedZone(entry.team)) {
