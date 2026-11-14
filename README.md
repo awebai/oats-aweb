@@ -103,7 +103,9 @@ What opting in means, as the endorse output says it:
   them.
 - One approval: the human approves this root once, at its link; later spawns
   need no approval.
-- Revocation: if the human revokes this root, new spawns refuse
+- Revocation: the namespace's current controller revokes this root with
+  `aw id revoke --as-root`, which revokes the root's ID and its descendants
+  (revoking only the endorsement isn't served yet). New spawns then refuse
   E_ATTRIBUTION_REVOKED; the path out is in the README, "Human attribution:
   revocation".
 - BYOT: a deployment whose user can reach team or controller keys
@@ -125,7 +127,10 @@ label.
 
 ## Human attribution: revocation
 
-When the human revokes the endorsed root, or its chain is revoked or replaced,
+The endorsed root is revoked by its namespace's current controller, with
+`aw id revoke --as-root --domain <domain> <root did:aw>`, which revokes the
+root's ID and its descendants. An act that revokes only the root's endorsement
+isn't served yet. Once the root is revoked, or its chain is revoked or replaced,
 every new spawn refuses `E_ATTRIBUTION_REVOKED`, before any key: each spawn
 reads the root's own verdict, whoever spawns it, a chainless spawner included. Each refusal gives this
 section's first step, then the second as setup's whole command, each

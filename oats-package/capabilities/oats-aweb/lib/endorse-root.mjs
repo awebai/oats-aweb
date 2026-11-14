@@ -64,7 +64,7 @@ export const OPT_IN = Object.freeze([
   "Outages: spawns into the protected teams stop while the protected service's or the identity registry's evidence is unavailable.",
   "Existing instances keep their identities, unattributed: respawn to attribute them.",
   "One approval: the human approves this root once, at its link; later spawns need no approval.",
-  "Revocation: if the human revokes this root, new spawns refuse E_ATTRIBUTION_REVOKED; the path out is in the README, \"Human attribution: revocation\".",
+  "Revocation: the namespace's current controller revokes this root with `aw id revoke --as-root`, which revokes the root's ID and its descendants (revoking only the endorsement isn't served yet). New spawns then refuse E_ATTRIBUTION_REVOKED; the path out is in the README, \"Human attribution: revocation\".",
   "BYOT: a deployment whose user can reach team or controller keys (~/.awid/team-keys, ~/.awid/controllers), which today is every existing BYOT deployment, can't opt in until aweb's package 8 migrates those keys; that's a known precondition, not a bug.",
   "Residents: opting in means no new residents until aweb's custody update lands (aweb-acxy.18): resident create and resident certify refuse here; existing residents are unchanged.",
   "Membership doesn't imply attribution: a genuinely chainless spawner's child is still admitted by the root, but carries no chain.",
