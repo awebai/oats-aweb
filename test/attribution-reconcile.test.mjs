@@ -423,3 +423,31 @@ process.exit(r.status ?? 1);
     assert.ok(!JSON.stringify(r.doc).includes(certificateId), JSON.stringify(r.doc));
   });
 }
+
+test("C-5: a spawn whose admission commits during reconciliation is never taken for a leak: the kernel lists the home from its first record, before the spawn hook records the admission", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  const hookPath = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
+  const bin = mkdtempSync(join(fx.ws, "interleave-")), spawned = join(fx.ws, "spawn-result.json"), home = fx.homeOf("dev-2");
+  const fakeAw = join(fx.fake.path.split(":")[0], "aw");
+  // Inside reconcile's first member-list read, dev-2 is spawned as the kernel spawns it: its home and
+  // a stub instance.json first (lib/materialize.mjs), then the spawn hook, which admits it.
+  writeFileSync(join(bin, "aw"), `#!${process.execPath}
+const fs = require("node:fs"), cp = require("node:child_process"), args = process.argv.slice(2);
+if (args.includes("members") && !fs.existsSync(${JSON.stringify(spawned)})) {
+  fs.mkdirSync(${JSON.stringify(home)}, { recursive: true });
+  fs.writeFileSync(${JSON.stringify(join(home, "instance.json"))}, JSON.stringify({ instance: "dev-2" }));
+  const s = cp.spawnSync(${JSON.stringify(process.execPath)}, [${JSON.stringify(hookPath)}, "spawn"], { cwd: ${JSON.stringify(home)}, env: { ...process.env, PATH: ${JSON.stringify(fx.fake.path)}, OATS_HOME: ${JSON.stringify(home)}, OATS_INSTANCE_HOME: ${JSON.stringify(home)}, OATS_INSTANCE: "dev-2", OATS_EVENT: "spawn" }, encoding: "utf8" });
+  fs.writeFileSync(${JSON.stringify(spawned)}, JSON.stringify({ status: s.status, stderr: s.stderr }));
+}
+const r = cp.spawnSync(${JSON.stringify(fakeAw)}, args, { stdio: "inherit", env: process.env });
+process.exit(r.status ?? 1);
+`, { mode: 0o700 });
+  const r = fx.setup(["--reconcile-admissions", "--json"], { extra: { PATH: `${bin}:${fx.env.PATH}` } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const s = JSON.parse(readFileSync(spawned, "utf8"));
+  assert.equal(s.status, 0, s.stderr);
+  const { certificateId } = admission(fx, "dev-2");
+  assert.ok(!fx.fake.removed().some((x) => x.certificate_id === certificateId), "the new spawn's membership is not removed");
+  assert.ok(existsSync(rootCopy(fx, certificateId)), "its root copy is kept");
+});

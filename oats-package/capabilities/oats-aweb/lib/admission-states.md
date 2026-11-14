@@ -180,6 +180,32 @@ delete it can't address.
 | check-only, a profile that fails C-1's checks | no policy read and no member list; the block's `problem` names `profile-mode` or `profile-changed`, and its local parts stay |
 | a spawn's issuer count (`E_ADMISSION_LIMIT`) | as `admittedLive` |
 
+## Concurrent commands
+
+Nothing serializes commands on one home or one root, so every path that reads
+records or copies, makes a slow aw call, then acts destructively, rests on one
+order: **a home writes its admission record (pending) before the admit, and
+the root's copy only after the admit commits** (C-3, C-3b). The kernel lists a
+spawning home from its first `instance.json`, before the spawn hooks run.
+
+- **Reconcile** reads the root's copies once, before the homes' records, and
+  only that snapshot is a removal candidate: every snapshotted copy has its
+  record in the later read, and a spawn or join that commits during the
+  member-list reads adds a copy the snapshot never holds.
+- **Retire's removals** act only on certificates the home's own records
+  name, through the root's copy of each; certificate ids are unique, so no
+  other home's membership is reached. A join that commits during a retire
+  leaves its copy for reconcile: a leak, never a revocation.
+- **The rollback retire** runs on a failed spawn's home, which no session
+  uses.
+- **Leave**'s only aw call after it reads the record is the root's removal; a
+  join of the same label at that point finds the label joined and its record
+  committed, and admits nothing. A join and a leave of one label run at once
+  are otherwise unordered: the leave can delete what the join made, which the
+  home's retire then removes.
+- **Reconcile and a retire** may remove one certificate twice; the second
+  answers without effect on any other membership.
+
 ## The decided cells (the lead, mail 18adc37d-1f51-4bda-b9f2-a2d9150a97c4)
 
 - **K.** `keyed` is a sub-state of none: no operation was sent, so nothing

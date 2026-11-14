@@ -4,8 +4,9 @@
 // attribution.teams refuses at join; a leave removes the membership through
 // the root, as retire does.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { OPS, ROOT_ID, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
 import { POLICY } from "./helpers/fake-aw-protected.mjs";
@@ -355,3 +356,32 @@ for (const how of ["keyed", "refused", "unconnected"]) {
     assert.equal(record(fx, "dev-1", "ops").state, "committed");
   });
 }
+
+test("C-6: a join of the same label, run at the leave's only aw call after it read the record (the root's removal), admits nothing: the leave's removal and deletion stand", (t) => {
+  const fx = attributionFixture(t, { settings: { join: "ops" } });
+  spawned(fx);
+  const removedId = record(fx, "dev-1", "ops").certificateId;
+  const hookPath = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
+  const bin = mkdtempSync(join(fx.ws, "interleave-")), joined = join(fx.ws, "join-result.json"), home = fx.homeOf("dev-1");
+  const fakeAw = join(fx.fake.path.split(":")[0], "aw");
+  // Right after the root's removal answers, the home's own join of the same label runs.
+  writeFileSync(join(bin, "aw"), `#!${process.execPath}
+const fs = require("node:fs"), cp = require("node:child_process"), args = process.argv.slice(2);
+const r = cp.spawnSync(${JSON.stringify(fakeAw)}, args, { stdio: "inherit", env: process.env });
+if (args.includes("remove-agent") && !fs.existsSync(${JSON.stringify(joined)})) {
+  const j = cp.spawnSync(${JSON.stringify(process.execPath)}, [${JSON.stringify(hookPath)}, "join", "--labels", "ops", "--json"], { cwd: ${JSON.stringify(home)}, env: { ...process.env, OATS_EVENT: "join" }, encoding: "utf8" });
+  fs.writeFileSync(${JSON.stringify(joined)}, JSON.stringify({ status: j.status, stderr: j.stderr }));
+}
+process.exit(r.status ?? 1);
+`, { mode: 0o700 });
+  const admitsBefore = Object.keys(fx.fake.charges()).length;
+  const r = fx.command("dev-1", "leave", ["--labels", "ops", "--json"], { extra: { PATH: `${bin}:${fx.fake.path}` } });
+  assert.ok(existsSync(joined), "the join ran during the leave");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  // The join finds ops joined, and its admission record still committed (the leave records the
+  // removal after aw answers): it admits nothing, so nothing new is deleted or set aside.
+  assert.equal(Object.keys(fx.fake.charges()).length, admitsBefore, "no new admission");
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [removedId]);
+  assert.ok(!existsSync(joinedHome(fx)));
+  assert.deepEqual(joinedLabels(fx), []);
+});
