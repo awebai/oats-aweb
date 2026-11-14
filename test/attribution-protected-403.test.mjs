@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fixture } from "./helpers/delivery-fixture.mjs";
+import { filledSetupCommand } from "./helpers/setup-command.mjs";
 import { PROTECTED_ADMISSION_REQUIRED } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { parseEndorseArgs } from "../oats-package/capabilities/oats-aweb/lib/endorse-root.mjs";
 
@@ -90,18 +91,6 @@ test("C-8: a joined team's accept answered another 403 maps as it does today, ne
   assert.ok(!(r.stdout + r.stderr).includes("E_PROTECTED_ADMISSION_REQUIRED"), r.stdout + r.stderr);
   assert.ok(String(r.doc?.warning || "").startsWith("oats-aweb: identity minting failed"), String(r.doc?.warning));
 });
-
-/** The setup command a refusal's fix names, with each placeholder filled, as argv after `oats aweb setup`. */
-function filledSetupCommand(text) {
-  const at = text.indexOf("oats aweb setup --endorse-root");
-  assert.ok(at >= 0, text);
-  const words = text.slice(at).split(/[`(;,]| \(/)[0].trim().split(/\s+/);
-  assert.deepEqual(words.slice(0, 3), ["oats", "aweb", "setup"]);
-  const FILL = { "<alias>": "root-1", "<did:aw>": "did:aw:human1", "<abs>": "/srv/aweb/protected-profile.json", "<url>": "https://aweb.acme.example/api" };
-  const left = words.filter((w) => /^<.*>$/.test(w) && !(w in FILL));
-  assert.deepEqual(left, [], `placeholders no one fills: ${left}`);
-  return words.slice(3).map((w) => FILL[w] ?? w);
-}
 
 test("C-8 (v4.3.27): the setup command E_PROTECTED_ADMISSION_REQUIRED names, its placeholders filled, is one setup accepts", () => {
   const argv = filledSetupCommand(PROTECTED_ADMISSION_REQUIRED.message);
