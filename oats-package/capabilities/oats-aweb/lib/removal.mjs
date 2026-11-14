@@ -10,7 +10,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, providerRecords, recordsUnreadable, verifiedCertificate, writePrivate } from "./admission.mjs";
 import { lockedRetireText, withAdmissionLocks } from "./admission-lock.mjs";
-import { admitAnswer, awaitsOutcome, holdsMembership, step } from "./admission-states.mjs";
+import { admitAnswer, awaitsOutcome, holdsMembership, step, unconfirmedCode } from "./admission-states.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
 import { REMOVE_SERVED, admitArgv, awJson, removeAgentArgv } from "./protected-client.mjs";
@@ -22,7 +22,6 @@ export const RECONCILE = "oats aweb setup --reconcile-admissions";
 // `handoff_http_<status>` (cli/go/internal/handoff/client.go refusal()), so a
 // server that doesn't serve the act is told apart by its HTTP status alone.
 const NOT_SERVED = new Set(["handoff_http_404", "handoff_http_405", "handoff_http_501"]);
-const UNCONFIRMED = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "prepare_unconfirmed", "prepare_answer_lost", "execute_answer_lost", "receipt_invalid", "handoff_result_invalid", "effect_in_progress", "evidence_unavailable", "handoff_http_429"]);
 
 /** What a remove-agent refusal code means: "unavailable" (the server doesn't
  *  serve the act), "unconfirmed" (the outcome may still change), or
@@ -30,7 +29,7 @@ const UNCONFIRMED = new Set(["receipt_unavailable", "external_effect_unresolved"
 export function removeOutcome(code) {
   if (!code) return "unconfirmed";
   if (NOT_SERVED.has(code)) return "unavailable";
-  if (UNCONFIRMED.has(code) || /_unavailable$/.test(code) || /^handoff_http_5\d\d$/.test(code)) return "unconfirmed";
+  if (unconfirmedCode(code)) return "unconfirmed";
   return "refused";
 }
 

@@ -10,6 +10,12 @@ import { UUID } from "./attribution.mjs";
 /** The operation's own final codes: they establish the operation was refused (C-3d). */
 export const FINAL_CODES = new Set(["admission_policy_missing", "policy_changed", "admission_limit_reached", "subject_ineligible", "operation_expired", "approval_expired"]);
 export const SCOPE_CODES = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
+/** C-9's unconfirmed row (v4.3.23): codes that establish no outcome, so an act may have happened
+ *  and a read has read nothing. */
+export const UNCONFIRMED_CODES = new Set(["receipt_unavailable", "external_effect_unresolved", "registration_unconfirmed", "prepare_unconfirmed", "prepare_answer_lost", "execute_answer_lost", "receipt_invalid", "handoff_result_invalid", "effect_in_progress", "evidence_unavailable", "handoff_http_429"]);
+/** Whether `code` is in that row: one listed, any other `*_unavailable`, `handoff_http_5xx` but 501
+ *  (a server that doesn't serve the act), or no code at all. */
+export const unconfirmedCode = (code) => !code || UNCONFIRMED_CODES.has(code) || /_unavailable$/.test(code) || (/^handoff_http_5\d\d$/.test(code) && code !== "handoff_http_501");
 /** Requester-side codes C-9 refuses at a first send. */
 const REQUESTER_REFUSED = new Set([...SCOPE_CODES, "operation_conflict"]);
 /** Requester-side codes in no row of C-9's admit column: unknown at a first send. */
