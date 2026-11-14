@@ -10,7 +10,7 @@
 // of 400 characters, and a deployment path of over 600, so every home under it is longer still.
 // What a refusal's problem names, refusalText shortens; its fix must fit whole.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -113,6 +113,7 @@ const ROWS = [
   [`${LIB}/attribution.mjs`, "is inside a Git work tree", (p) => { mkdirSync(join(p.D, ".git")); return rootHomeProblem(p.rootHome, { deployment: p.D }); }],
   [`${LIB}/attribution.mjs`, "is under an instance home", (p) => { writeFileSync(join(p.D, "instance.json"), "{}"); return rootHomeProblem(p.rootHome, { deployment: p.D }); }],
   [`${LIB}/attribution.mjs`, "is open to other users", (p) => { mkdirSync(join(p.rootHome, "w".repeat(200)), { mode: 0o755 }); return rootHomeProblem(p.rootHome, { deployment: p.D }); }],
+  [`${LIB}/attribution.mjs`, "can't be read at", (p) => { const d = join(p.rootHome, "u".repeat(200)); mkdirSync(d, { mode: 0o300 }); try { return rootHomeProblem(p.rootHome, { deployment: p.D }); } finally { chmodSync(d, 0o700); } }],
   [`${LIB}/attribution.mjs`, "'s chain is revoked or replaced", () => chainRefusal({ kind: "revoked", reason: LONG.code }, { who: "the endorsed root", step: "issuer" })],
   [`${LIB}/attribution.mjs`, "'s chain is unavailable", () => chainRefusal({ kind: "unavailable", reason: LONG.code }, { who: "the endorsed root", step: "issuer" })],
   [`${LIB}/attribution.mjs`, "'s chain doesn't verify", () => chainRefusal({ kind: "malformed", reason: LONG.code }, { who: "the endorsed root", step: "issuer" })],

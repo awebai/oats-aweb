@@ -184,14 +184,25 @@ export function rootHomeProblem(rootHome, { deployment }) {
     if (existsSync(join(dir, "instance.json"))) return fail("placement", `the root home ${rootHome} is under an instance home (${dir}) → ${under}`);
     if (dirname(dir) === dir) break;
   }
+  // Other homes' admissions publish and delete copies under the root while this runs (one root,
+  // no per-home lock covers it): a descendant that vanished between its listing and its check is
+  // skipped, since it can't be open to others, and a copy published after the listing is written
+  // owner-only (writePrivate). Any other read failure fails closed (round 32, the lead's decision).
   const wide = [];
+  let unreadable = null;
+  const gone = (p, e) => e?.code === "ENOENT" && p !== real;
   const walk = (p) => {
-    const s = lstatSync(p);
+    if (unreadable) return;
+    let s, names;
+    try { s = lstatSync(p); } catch (e) { if (!gone(p, e)) unreadable = { p, code: e?.code || "error" }; return; }
     if (s.isSymbolicLink()) { wide.push(p); return; }
     if (s.mode & 0o077) wide.push(p);
-    if (s.isDirectory()) for (const name of readdirSync(p)) walk(join(p, name));
+    if (!s.isDirectory()) return;
+    try { names = readdirSync(p); } catch (e) { if (!gone(p, e)) unreadable = { p, code: e?.code || "error" }; return; }
+    for (const name of names) walk(join(p, name));
   };
   walk(real);
+  if (unreadable) return fail("mode", `the root home ${rootHome} can't be read at ${relative(real, unreadable.p) || "."} (${unreadable.code}) → make it readable by its owner only (\`chmod -R u+rwX,go-rwx ${ROOT_DIR}\` in the deployment), then try again`);
   // Each open path relative to the root, so the problem stays short.
   const named = wide.slice(0, 2).map((p) => relative(real, p) || ".");
   // Every root under the deployment's ROOT_DIR is owner-only, so the fix names the directory.
