@@ -50,7 +50,10 @@ export function leakedMemberships({ aw, setting, listHomes, registry }) {
   const { homes, homesUnavailable } = listHomes();
   if (homesUnavailable) throw homesUnavailableError(homesUnavailable);
   const aliases = new Set(homes.map((h) => h.instance));
-  const records = homes.flatMap((h) => homeRecords(h.home));
+  const read = homes.map((h) => homeRecords(h.home));
+  const unreadRecord = read.flatMap((r) => r.unreadable)[0];
+  if (unreadRecord) throw recordsUnreadableError(unreadRecord);
+  const records = read.flatMap((r) => r.records);
   const held = heldBy(records, setting.root.home);
   const leaked = [], unreadable = [];
   const active = new Map(); // team → the certificate ids its read lists active
@@ -82,6 +85,9 @@ export function leakedMemberships({ aw, setting, listHomes, registry }) {
 
 /** Without the kernel's instance list nothing says which homes exist, so no membership is told leaked. */
 const homesUnavailableError = (reason) => attributionError("E_ATTRIBUTION_EVIDENCE", `the kernel's instance list is unavailable (${String(reason).slice(0, 160)}), so which memberships have no home can't be told → retry once \`oats status --json\` answers`, { problem: "homes-unavailable", reason: String(reason).slice(0, 160) });
+
+/** A live home's record that can't be read could hold any of the copies, so none is told leaked. */
+const recordsUnreadableError = ({ file, reason }) => attributionError("E_ATTRIBUTION_EVIDENCE", `an admission record can't be read (${file.slice(-160)}: ${reason}), so which memberships its home holds can't be told → make it readable by this user, owner-only, or restore it, then retry`, { problem: "records-unreadable", file, reason });
 
 /** Whether a live or kept home holds a certificate: a record of `team` that names its id (or
  *  whose verified --certificate-out does), or, given the certificate's own `alias`, one awaiting
@@ -151,7 +157,11 @@ export function attributionStatus({ aw, setting, homes, homesUnavailable, listHo
   if (removeServed) {
     if (unread) leaks = unreadAll(unread);
     else try { leaks = leakedMemberships({ aw, setting, listHomes, registry }); }
-    catch (e) { if (e.details?.problem !== "homes-unavailable") throw e; leaks = unreadAll(`the kernel's instance list is unavailable (${e.details.reason})`); }
+    catch (e) {
+      if (e.details?.problem === "homes-unavailable") leaks = unreadAll(`the kernel's instance list is unavailable (${e.details.reason})`);
+      else if (e.details?.problem === "records-unreadable") leaks = unreadAll(`an admission record can't be read (${e.details.file.slice(-160)}: ${e.details.reason})`);
+      else throw e;
+    }
   }
   const found = scan();
   return {

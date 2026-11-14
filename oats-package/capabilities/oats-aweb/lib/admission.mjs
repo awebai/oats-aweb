@@ -77,19 +77,28 @@ export function writePrivate(file, text) {
   writeFileSync(tmp, text, { mode: 0o600 });
   renameSync(tmp, file);
 }
-/** The admission records a home holds, each as written. */
-export function admissionRecords(home) {
-  const dir = join(home, ".oats-aweb");
-  let names = [];
-  try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { return []; }
-  return names.flatMap((f) => { try { return [JSON.parse(readFileSync(join(dir, f), "utf8"))]; } catch { return []; } });
-}
-/** Each admission record a home holds, with whether a leave set it aside (its name carries `~left-`). */
+/** The admission records a home holds that can be read, each as written, set-aside ones included:
+ *  for counts and warnings, which remove nothing. Removal reads homeRecords' `unreadable` too. */
+export const admissionRecords = (home) => homeRecords(home).records.map((r) => r.record);
+/** Each admission record a home holds, with whether a leave set it aside (its name carries
+ *  `~left-`): {records, unreadable}. A home with no records directory holds none; a directory or
+ *  a record that can't be read, or isn't a record, is listed in `unreadable` ({file, reason}),
+ *  never dropped: a record is what says which memberships are its home's (C-5). */
 export function homeRecords(home) {
   const dir = join(home, ".oats-aweb");
-  let names = [];
-  try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { return []; }
-  return names.flatMap((f) => { try { return [{ record: JSON.parse(readFileSync(join(dir, f), "utf8")), left: f.includes("~left-") }]; } catch { return []; } });
+  const why = (e) => String(e?.code || e?.message || e).slice(0, 80);
+  let names;
+  try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); }
+  catch (e) { return e?.code === "ENOENT" ? { records: [], unreadable: [] } : { records: [], unreadable: [{ file: dir, reason: why(e) }] }; }
+  const records = [], unreadable = [];
+  for (const f of names) {
+    const file = join(dir, f);
+    let record;
+    try { record = JSON.parse(readFileSync(file, "utf8")); } catch (e) { unreadable.push({ file, reason: e instanceof SyntaxError ? "not JSON" : why(e) }); continue; }
+    if (!record || typeof record !== "object" || Array.isArray(record)) { unreadable.push({ file, reason: "not a record" }); continue; }
+    records.push({ record, left: f.includes("~left-") });
+  }
+  return { records, unreadable };
 }
 /** OATS's own count of `rows` (kernel status rows, {home}) holding a committed admission for `team` (R4). */
 export const committedAdmissions = (rows, team) => rows.filter((row) => typeof row?.home === "string").reduce((n, row) => n + admissionRecords(row.home).filter((doc) => doc.team === team && holdsMembership(doc)).length, 0);

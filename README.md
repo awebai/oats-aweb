@@ -327,6 +327,11 @@ The root's copies are read once, before the homes are listed and their records
 read: the kernel lists a spawning home from its first record, and a home
 records its admission before the admit and the copy only after it, so a spawn
 or join that commits while reconciliation runs is never taken for a leak.
+A record is what says which memberships are its home's, so a live home's
+admission record, or its `.oats-aweb` directory, that can't be read is never
+read as none: check-only lists every team under `unreadableTeams` with that
+record's path, and reconciliation refuses `E_ATTRIBUTION_EVIDENCE`, plan
+included, until it is readable again (owner-only) or restored.
 With a protected profile that fails its checks (its mode, or bytes that no
 longer match setup's digest), check-only makes no call that relies on it and
 says so under `attribution.problem`. A team no home here can read is

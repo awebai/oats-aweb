@@ -280,6 +280,55 @@ for (const status of ["fail", "malformed"]) {
   });
 }
 
+// A live home's admission records are what shield its memberships: a record, or the records'
+// directory, that can't be read is never read as "no records", or reconcile would take that
+// home's own certificate for a leak. An absent directory is still none.
+const DAMAGED = [
+  ["unreadable", (dir) => { chmodSync(join(dir, "admission-default.json"), 0o000); return () => chmodSync(join(dir, "admission-default.json"), 0o600); }],
+  ["malformed", (dir) => { writeFileSync(join(dir, "admission-default.json"), "{", { mode: 0o600 }); return () => {}; }],
+  ["not a record", (dir) => { writeFileSync(join(dir, "admission-default.json"), "null\n", { mode: 0o600 }); return () => {}; }],
+  ["in an unreadable directory", (dir) => { chmodSync(dir, 0o000); return () => chmodSync(dir, 0o700); }],
+];
+for (const [damage, apply] of DAMAGED) {
+  test(`C-5: with a live home's admission record ${damage}, reconcile and its plan refuse E_ATTRIBUTION_EVIDENCE before any removal, naming the record, and the home keeps its membership`, (t) => {
+    const fx = attributionFixture(t);
+    assert.equal(fx.spawn("dev-1").status, 0);
+    const id = admission(fx, "dev-1").certificateId;
+    const restore = apply(join(fx.homeOf("dev-1"), ".oats-aweb"));
+    try {
+      for (const extra of [["--plan"], []]) {
+        const r = reconcile(fx, extra);
+        assert.equal(r.doc?.ok, false, r.stdout);
+        assert.equal(r.doc.error.code, "E_ATTRIBUTION_EVIDENCE");
+        assert.ok(r.doc.error.message.includes(join(fx.homeOf("dev-1"), ".oats-aweb")), r.doc.error.message);
+      }
+    } finally { restore(); }
+    assert.deepEqual(removeCalls(fx), []);
+    assert.deepEqual(fx.fake.removed(), []);
+    assert.ok(existsSync(rootCopy(fx, id)), "the root's copy is kept");
+  });
+
+  test(`C-5: with a live home's admission record ${damage}, check-only reports every team unread, never leaked`, (t) => {
+    const fx = attributionFixture(t);
+    assert.equal(fx.spawn("dev-1").status, 0);
+    const restore = apply(join(fx.homeOf("dev-1"), ".oats-aweb"));
+    let a;
+    try { a = checkOnly(fx).attribution; } finally { restore(); }
+    assert.deepEqual(a.leakedMemberships, []);
+    assert.deepEqual(a.unreadableTeams.map((u) => u.team), a.teams);
+    assert.ok(a.unreadableTeams.every((u) => u.reason.includes("admission record")), JSON.stringify(a.unreadableTeams));
+  });
+}
+
+test("C-5: a live home with no admission records at all (no .oats-aweb directory) holds nothing, and reconcile reads it as none", (t) => {
+  const fx = attributionFixture(t);
+  const { id } = leaked(fx);
+  rmSync(join(fx.homeOf("dev-1"), ".oats-aweb"), { recursive: true, force: true });
+  const r = reconcile(fx, ["--plan"]);
+  assert.equal(r.doc?.ok, true, r.stdout);
+  assert.ok(r.doc.result.removals.some((x) => x.certificateId === id), JSON.stringify(r.doc.result));
+});
+
 test("C-5, C-6: after the last member of a private team retires with its removal blocked, fixing the root and reconciling removes it from the root's copy, with no member left to read the team", (t) => {
   const fx = attributionFixture(t);
   assert.equal(fx.spawn("dev-1").status, 0);
