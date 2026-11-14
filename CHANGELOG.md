@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Opt-in human attribution (aweb-acxy.7), and one change a deployment that never opted in can see: a spawn onto a team aweb has protected refuses with the fix. Nothing changes for a deployment that sets nothing, until aweb protects one of its teams. **What a deployment must change:** nothing, unless aweb's operator protects one of its teams. Then it opts in: `oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>` (README, "Human attribution").
+
+- **Added: human attribution, opt-in (`settings.oats.aweb.attribution`, host-only, written by setup).**
+  - The deployment's human endorses one registered agent, the endorsed root, with one passkey approval (`oats aweb setup --endorse-root`).
+  - From then on, every identity a spawn or a join makes carries the signed chain of its actual parent, so `aw who` resolves its nearest human to that person, and the kernel's `attributedHuman` shows it.
+  - The root admits each identity into the protected teams through the protected service, within the team's admission policy, never through a member invite, and it removes the membership at retire and leave.
+  - Check-only reports the root, the bounds, OATS's own count, leaked memberships and the reachable-key findings. `--reconcile-admissions` removes the memberships no home holds. Readiness warns `attribution-revoked`, `attribution-unverified`, `attribution-spawner-unchained` and `admission-leaked`.
+  - The README's "Human attribution" sections hold the whole path, revocation included.
+- **Changed, on every deployment: a spawn onto a team aweb has protected refuses `E_PROTECTED_ADMISSION_REQUIRED`.**
+  - A deployment that never opted in mints with the member invite. Once aweb's operator protects its team, the service answers HTTP 403 `protected_admission_required`.
+  - The spawn then refuses with the reason and C-2's whole setup command, for the primary team or a joined one. It never retries the invite and never remints.
+  - To fix it, opt in as above. An operator with no human ID yet first enrolls a passkey at the protected service.
+  - Any other 403 is reported as before, and readiness is unchanged.
+
 ## 1.42.1 — 2026-11-13
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A fix so OATS can pin this release: a comment named the kernel's private module, which OATS's mirror check refuses (1.42.0 can't be mirrored). Nothing a deployment must change beyond 1.42.0's steps.
