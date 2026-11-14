@@ -5,7 +5,7 @@
 // drive the same moves through the hook and a fake aw.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { admitAnswer, awaitsOutcome, holdsMembership, outcomeUnknown, step } from "../oats-package/capabilities/oats-aweb/lib/admission-states.mjs";
+import { admitAnswer, awaitsOutcome, holdsMembership, outcomeUnknown, shieldsCertificate, step } from "../oats-package/capabilities/oats-aweb/lib/admission-states.mjs";
 
 /** [event, state, facts, the expected fields of step's answer]. */
 const CELLS = [
@@ -122,6 +122,12 @@ test("table E: only a committed record holds a membership, only pending and unkn
   assert.deepEqual(states.filter((state) => awaitsOutcome({ state })), ["pending", "unknown"]);
   assert.deepEqual(states.filter((state) => outcomeUnknown({ state })), ["unknown"]);
   assert.equal(holdsMembership(null), false);
+});
+
+test("table E: a live home's committed, pending or unknown record keeps its certificate out of reconciliation, and one a leave set aside keeps nothing (decided L)", () => {
+  const states = ["none", "keyed", "pending", "unknown", "committed", "refused", "removed"];
+  assert.deepEqual(states.filter((state) => shieldsCertificate({ state })), ["pending", "unknown", "committed"]);
+  assert.deepEqual(states.filter((state) => shieldsCertificate({ state }, { left: true })), []);
 });
 
 test("table: an event the table doesn't name is an error, never a guess", () => {

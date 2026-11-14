@@ -2,11 +2,11 @@
 // [--plan]` (spec v4.3.18 C-5), with the halves of acceptance tests 12 and 13
 // that reconcile after a retire couldn't remove a membership.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { HUMAN, OPS, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, capabilityWith, commandArgs } from "./helpers/attribution-fixture.mjs";
+import { HUMAN, OPS, ROOT_ID, SERVICE_URL, TEAM, attributionFixture, capabilityWith, commandArgs, verbs } from "./helpers/attribution-fixture.mjs";
 import { POLICY, writeIdentity } from "./helpers/fake-aw-protected.mjs";
 
 const admission = (fx, name, label = "default") => JSON.parse(readFileSync(join(fx.homeOf(name), ".oats-aweb", `admission-${label}.json`), "utf8"));
@@ -317,4 +317,48 @@ test("C-5, A9: check-only lists the deployment's legacy minting roots as package
     assert.ok(/package 8/.test(f.action), f.action);
   }
   assert.ok(!JSON.stringify(doc).includes("signing.key"), "no key file is named or read");
+});
+
+/** dev-1 alive, and a row the registry lists beside its real one: unsigned list metadata. */
+function forgedRow(fx, certificateId) {
+  assert.equal(fx.spawn("dev-1").status, 0);
+  const id = admission(fx, "dev-1").certificateId;
+  fx.fake.setService({ members: { [TEAM]: [{ certificate_id: certificateId(id), team_id: TEAM, alias: "nonexistent-ghost", member_did_key: "did:key:zghost", identity_scope: "local" }] } });
+  return id;
+}
+
+test("C-5: a member row whose certificate id isn't aw's form is never removed, and no path is built from it", (t) => {
+  const fx = attributionFixture(t);
+  const id = forgedRow(fx, (real) => `../admissions/${real}`);
+  const r = reconcile(fx);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.fake.removed(), [], "the live home's membership stays");
+  assert.ok(existsSync(rootCopy(fx, id)));
+  assert.ok(!existsSync(join(fx.rootHome, "admissions", `${id}.json`)), "no removal record outside removals/");
+  assert.deepEqual(r.doc.result.removals, []);
+});
+
+test("C-5: a member row with a live home's certificate id under another alias is that home's membership, never a leak", (t) => {
+  const fx = attributionFixture(t);
+  const id = forgedRow(fx, (real) => real);
+  assert.ok(!checkOnly(fx).attribution.leakedMemberships.some((l) => l.certificateId === id), "not listed as leaked");
+  const r = reconcile(fx);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.fake.removed(), [], "the live home's membership stays");
+  assert.ok(existsSync(rootCopy(fx, id)));
+});
+
+test("C-5, C-6 (decided L): a joined membership a blocked leave set aside is reconcilable while its parent home lives", (t) => {
+  const fx = attributionFixture(t, { settings: { join: "ops" } });
+  assert.equal(fx.spawn("dev-1").status, 0);
+  const { certificateId } = admission(fx, "dev-1", "ops");
+  fx.fake.setService({ remove: { code: "scope_refused" } });
+  const left = fx.command("dev-1", "leave", ["--labels", "ops", "--json"]);
+  assert.equal(left.status, 0, left.stdout + left.stderr);
+  fx.fake.setService({ remove: "served" });
+  assert.ok(checkOnly(fx).attribution.leakedMemberships.some((l) => l.certificateId === certificateId && l.removable), "listed as leaked, removable");
+  const r = reconcile(fx);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [certificateId]);
+  assert.deepEqual(fx.fake.removed().length, 1, "dev-1's own membership stays");
 });

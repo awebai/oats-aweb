@@ -103,6 +103,9 @@ export function step(on, state, facts = {}) {
 
 /** Whether a record counts as a membership OATS holds: OATS's count, and check-only's reader. */
 export const holdsMembership = (record) => record?.state === "committed";
+/** Whether a live or kept home's record keeps its certificate out of reconciliation (table E): one that
+ *  holds a membership or awaits its outcome, unless a leave set it aside (decided L). */
+export const shieldsCertificate = (record, { left = false } = {}) => !left && (holdsMembership(record) || awaitsOutcome(record));
 /** Whether a record awaits its admission's outcome: retire settles it first (table B). */
 export const awaitsOutcome = (record) => record?.state === "pending" || record?.state === "unknown";
 /** Whether a record's outcome is unknown: readiness's `admission-leaked`. */

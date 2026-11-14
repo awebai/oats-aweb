@@ -291,7 +291,10 @@ serve yet. Leaks come from
 the team's member list, read through a home that holds a membership (aw signs
 that read with a member's key), and from the root's own copies under
 `admissions/`, which need no reader: a membership the root admitted counts
-as leaked once no home here has its alias. A team no home here can read is
+as leaked once no home here holds its certificate (one a leave set aside
+counts as leaked while its home lives). The list is the registry's, unsigned:
+a row is only acted on through the root's copy of its certificate, and a
+certificate a home holds is never leaked, whatever alias the list gives it. A team no home here can read is
 listed under `unreadableTeams`, and only its copies are known there, never
 as having no other leaks.
 

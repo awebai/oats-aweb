@@ -9,9 +9,9 @@
 //   root holds a copy for, with the root's team.agent.remove.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { admissionRecords, committedAdmissions } from "./admission.mjs";
-import { holdsMembership } from "./admission-states.mjs";
-import { attributionError, readWho } from "./attribution.mjs";
+import { committedAdmissions, homeRecords, verifiedCertificate } from "./admission.mjs";
+import { awaitsOutcome, holdsMembership, shieldsCertificate } from "./admission-states.mjs";
+import { UUID, attributionError, readWho } from "./attribution.mjs";
 import { BLOCKED_FIX, notServedText, removeMembership, rootCannotAct } from "./removal.mjs";
 import { REMOVE_SERVED, RESIDENT_CUSTODY_SERVED, admissionPolicyArgv, awJson, teamMembersArgv } from "./protected-client.mjs";
 
@@ -28,49 +28,80 @@ export function homesOf(statusDoc) {
   });
 }
 
-/** The memberships in the setting's teams whose alias has no live or kept home.
- *  Two sources: `aw id team members`, which aw signs with the caller's own key,
- *  so a private team is read from a home that holds a membership, else from the
- *  root (which holds none, so the read fails once the last member is gone); and
- *  the root's own copies under admissions/, each a membership the root admitted
- *  and hasn't confirmed removed, which need no reader. A copy for a team that
- *  was read counts only while the read lists it active. Only a local member is
- *  OATS's: a global member (a human, a resident) never is. Returns {leaked, unreadable}. */
+/** The memberships in the setting's teams that no live or kept home holds. Two sources: `aw id
+ *  team members`, which aw signs with the caller's own key, so a private team is read from a
+ *  home that holds a membership, else from the root (which holds none, so the read fails once the
+ *  last member is gone); and the root's own copies under admissions/, which need no reader.
+ *  A member list is unsigned registry metadata: a row is only ever acted on through the root's
+ *  copy of its certificate, by an id of aw's form, and a certificate a home's record names (or
+ *  may name) is that home's, whatever alias the row gives it. A row with no copy is listed, never
+ *  removable, and only when its alias has no home. A copy for a team that was read counts only
+ *  while the read lists it active. Only a local member is OATS's: a global member (a human, a
+ *  resident) never is. Returns {leaked, unreadable}. */
 export function leakedMemberships({ aw, setting, homes, registry }) {
   const aliases = new Set(homes.map((h) => h.instance));
+  const records = homes.flatMap((h) => homeRecords(h.home));
+  const held = heldBy(records, setting.root.home);
   const leaked = [], unreadable = [];
   const active = new Map(); // team → the certificate ids its read lists active
   for (const team of setting.teams) {
-    const reader = homes.flatMap((h) => admissionRecords(h.home)).find((r) => r.team === team && holdsMembership(r) && typeof r.identityHome === "string" && existsSync(r.identityHome))?.identityHome || join(setting.root.home, ".aw");
+    const reader = records.map((r) => r.record).find((r) => r.team === team && holdsMembership(r) && typeof r.identityHome === "string" && existsSync(r.identityHome))?.identityHome || join(setting.root.home, ".aw");
     let doc;
     try { doc = awJson(aw, "id team members", ["--identity-home", reader, ...teamMembersArgv({ team, registry })], setting.root.home, 30000); }
     catch (e) { if (e.code) throw e; unreadable.push({ team, reason: String(e.awCode || e.awMessage || e.message).slice(0, 200) }); continue; }
     if (!Array.isArray(doc.members)) { unreadable.push({ team, reason: "aw answered no members list" }); continue; }
     active.set(team, new Set(doc.members.filter((m) => m && !m.revoked_at).map((m) => String(m.certificate_id))));
     for (const m of doc.members) {
-      if (!m || m.revoked_at || m.identity_scope !== "local" || m.member_did_aw || typeof m.alias !== "string" || aliases.has(m.alias)) continue;
-      leaked.push({ team, alias: m.alias, certificateId: String(m.certificate_id), removable: existsSync(join(setting.root.home, "admissions", `${m.certificate_id}.cert`)) });
+      if (!m || m.revoked_at || m.identity_scope !== "local" || m.member_did_aw || typeof m.alias !== "string") continue;
+      const id = String(m.certificate_id);
+      if (held(team, id)) continue;
+      const copy = rootCopyOf(setting.root.home, id);
+      if (copy && copy.team === team) { if (!held(team, id, copy.alias)) leaked.push({ team, alias: copy.alias, certificateId: id, removable: true }); continue; }
+      if (aliases.has(m.alias)) continue;
+      leaked.push({ team, alias: m.alias, certificateId: id.slice(0, 80), removable: false });
     }
   }
   const listed = new Set(leaked.map((l) => l.certificateId));
   for (const copy of rootCopies(setting.root.home)) {
-    if (!setting.teams.includes(copy.team) || aliases.has(copy.alias) || listed.has(copy.certificateId)) continue;
+    if (!setting.teams.includes(copy.team) || listed.has(copy.certificateId) || held(copy.team, copy.certificateId, copy.alias)) continue;
     if (active.has(copy.team) && !active.get(copy.team).has(copy.certificateId)) continue;
     leaked.push({ ...copy, removable: true });
   }
   return { leaked, unreadable };
 }
 
-/** The root's copies under admissions/: {team, alias, certificateId}, each named by its own certificate id. */
+/** Whether a live or kept home holds a certificate: a record of `team` that names its id (or
+ *  whose verified --certificate-out does), or, given the certificate's own `alias`, one awaiting
+ *  its outcome for that alias, which may yet name it. A record a leave set aside holds nothing. */
+function heldBy(records, rootHome) {
+  const named = new Set(), awaiting = new Set();
+  for (const { record, left } of records) {
+    if (!record || !shieldsCertificate(record, { left })) continue;
+    const id = record.certificateId ?? verifiedCertificate(record, rootHome)?.id;
+    if (typeof id === "string") named.add(`${record.team}\n${id}`);
+    else if (awaitsOutcome(record)) awaiting.add(`${record.team}\n${record.alias}`);
+  }
+  return (team, id, alias) => named.has(`${team}\n${id}`) || (alias !== undefined && awaiting.has(`${team}\n${alias}`));
+}
+
+/** The root's copy of certificate `id`, read only for an id of aw's form: {team, alias}, or null. */
+function rootCopyOf(rootHome, id) {
+  if (!UUID.test(id)) return null;
+  try {
+    const cert = JSON.parse(readFileSync(join(rootHome, "admissions", `${id}.cert`), "utf8"));
+    return cert && cert.certificate_id === id && typeof cert.team_id === "string" && typeof cert.alias === "string" && cert.identity_scope === "local" ? { team: cert.team_id, alias: cert.alias } : null;
+  } catch { return null; }
+}
+
+/** The root's copies under admissions/: {team, alias, certificateId}, each named by its own certificate id, of aw's form. */
 function rootCopies(rootHome) {
   const dir = join(rootHome, "admissions");
   let names = [];
   try { names = readdirSync(dir).filter((n) => n.endsWith(".cert")); } catch { names = []; }
   return names.flatMap((name) => {
-    try {
-      const cert = JSON.parse(readFileSync(join(dir, name), "utf8"));
-      return cert && `${cert.certificate_id}.cert` === name && typeof cert.team_id === "string" && typeof cert.alias === "string" && cert.identity_scope === "local" ? [{ team: cert.team_id, alias: cert.alias, certificateId: cert.certificate_id }] : [];
-    } catch { return []; }
+    const id = name.slice(0, -".cert".length);
+    const copy = rootCopyOf(rootHome, id);
+    return copy ? [{ team: copy.team, alias: copy.alias, certificateId: id }] : [];
   });
 }
 

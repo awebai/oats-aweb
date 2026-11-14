@@ -84,6 +84,13 @@ export function admissionRecords(home) {
   try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { return []; }
   return names.flatMap((f) => { try { return [JSON.parse(readFileSync(join(dir, f), "utf8"))]; } catch { return []; } });
 }
+/** Each admission record a home holds, with whether a leave set it aside (its name carries `~left-`). */
+export function homeRecords(home) {
+  const dir = join(home, ".oats-aweb");
+  let names = [];
+  try { names = readdirSync(dir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { return []; }
+  return names.flatMap((f) => { try { return [{ record: JSON.parse(readFileSync(join(dir, f), "utf8")), left: f.includes("~left-") }]; } catch { return []; } });
+}
 /** OATS's own count of `rows` (kernel status rows, {home}) holding a committed admission for `team` (R4). */
 export const committedAdmissions = (rows, team) => rows.filter((row) => typeof row?.home === "string").reduce((n, row) => n + admissionRecords(row.home).filter((doc) => doc.team === team && holdsMembership(doc)).length, 0);
 /** A record's state for admission-states.mjs: "none" when there is no record. */

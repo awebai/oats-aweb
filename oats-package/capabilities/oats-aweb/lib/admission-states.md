@@ -166,8 +166,8 @@ B then C for the label's own record (never a left one), then:
 | start (C-4) | no record moves. A joined team that is no longer eligible with a record that isn't removed stays joined, with a warning: only the root removes it (round 5) |
 | readiness | each unknown record: `admission-leaked` |
 | check-only `admittedLive` | live homes' committed records, left ones included: OATS's count |
-| check-only `leakedMemberships` | the member list read through a home whose committed record's identity home exists, else the root; and the root's copies |
-| `--reconcile-admissions` | the root's copies only; its removal records under the root's `removals/` |
+| check-only `leakedMemberships` | the member list read through a home whose committed record's identity home exists, else the root; and the root's copies. A certificate a live or kept home's committed, pending or unknown record names (or, awaiting, may name, by the certificate's alias) is that home's; a left record names none (decided L). A list row is unsigned registry metadata: it counts only by the root's copy of its id, of aw's form, whatever alias the row gives; with no copy it is listed, never removable, and only when its alias has no home |
+| `--reconcile-admissions` | the root's copies only, for the leaks above; its removal records under the root's `removals/` |
 | a spawn's issuer count (`E_ADMISSION_LIMIT`) | as `admittedLive` |
 
 ## The decided cells (the lead, mail 18adc37d-1f51-4bda-b9f2-a2d9150a97c4)
