@@ -45,7 +45,7 @@ test("acceptance 14: a root home open to others refuses E_ATTRIBUTION_ROOT_HOME 
   chmodSync(fx.rootHome, 0o755);
   const { text, calls } = refused(fx, fx.spawn("dev-1"));
   assert.ok(text.startsWith("E_ATTRIBUTION_ROOT_HOME (problem: mode): "), text);
-  assert.ok(text.includes(`chmod -R go-rwx ${fx.rootHome}`), text);
+  assert.ok(text.includes("`chmod -R go-rwx .aweb-endorsed-root` in the deployment"), text);
   assert.deepEqual(calls, []);
 });
 
@@ -59,7 +59,7 @@ test("acceptance 23: a root home open to others under a longer alias still carri
   const settings = { ...fx.settings, attribution: { ...fx.setting, root: { ...fx.setting.root, home: rootHome } } };
   const { text, calls } = refused(fx, fx.hook("spawn", "dev-1", { OATS_SETTINGS: JSON.stringify(settings) }));
   assert.ok(text.startsWith("E_ATTRIBUTION_ROOT_HOME (problem: mode): "), text);
-  assert.ok(text.endsWith(`→ \`chmod -R go-rwx ${rootHome}\`, then try again`), text);
+  assert.ok(text.endsWith("→ `chmod -R go-rwx .aweb-endorsed-root` in the deployment, then try again"), text);
   assert.deepEqual(calls, []);
 });
 

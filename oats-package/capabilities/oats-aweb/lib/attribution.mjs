@@ -15,17 +15,20 @@ import { canonicalTeamServerURL } from "./team-server-url.mjs";
  *  and its details (key, problem, step, code, …). */
 export const attributionError = (code, message, details) => Object.assign(new Error(message), { code, ...(details ? { details } : {}) });
 /** A refusal of this feature as a spawn's fatal answer: its code first, its detail, then its fix (C-9).
- *  Over the cap, the problem is shortened, never the fix after its " → " (test 23). */
+ *  Over the cap, the problem is shortened, never the fix after its " → " (test 23), and the text is
+ *  never longer than the cap. Every spawn refusal's fix fits with its code
+ *  (test/attribution-refusal-room.test.mjs); one that didn't would be cut at the cap. */
 export const REFUSAL_ROOM = 300; // fatal() keeps 300 characters after its "oats-aweb: " prefix
 export const refusalText = (e) => {
   const d = e.details || {};
   const detail = d.problem ? `problem: ${d.problem}` : d.step ? `step: ${d.step}` : d.code ? `code: ${d.code}` : "";
   const head = `${e.code}${detail ? ` (${detail})` : ""}: `;
   const at = e.message.indexOf(" → ");
-  if (head.length + e.message.length <= REFUSAL_ROOM || at < 0) return head + e.message;
+  if (head.length + e.message.length <= REFUSAL_ROOM) return head + e.message;
+  if (at < 0) return `${head}${e.message}`.slice(0, REFUSAL_ROOM - 1) + "…";
   const fix = e.message.slice(at);
   const room = REFUSAL_ROOM - head.length - fix.length - 1;
-  return room > 0 ? `${head}${e.message.slice(0, Math.min(at, room))}…${fix}` : head + e.message;
+  return room >= 0 ? `${head}${e.message.slice(0, Math.min(at, room))}…${fix}` : `${head}…${fix}`.slice(0, REFUSAL_ROOM);
 };
 
 /** The characters the kernel never stores or prints in text it did not write
@@ -168,11 +171,14 @@ export function rootHomeProblem(rootHome, { deployment }) {
   if (inside(realD, CONTAINER_DEPLOYMENT) || inside(rootHome, CONTAINER_DEPLOYMENT)) return fail("container", `this deployment is a team container's (${CONTAINER_DEPLOYMENT}); attribution isn't supported in a team container in v1 → don't opt in on this deployment`);
   const expected = join(realD, ROOT_DIR);
   let real;
-  try { real = realpathSync(rootHome); } catch { return fail("placement", `the root home ${rootHome} doesn't exist → rerun setup with the root under ${expected}/`); }
+  // Each fix names the root within the deployment, so a long deployment path never pushes it past
+  // a spawn's cap: the problem names the paths, and is what the cap shortens.
+  const under = `rerun setup with the root under the deployment's ${ROOT_DIR}/`;
+  try { real = realpathSync(rootHome); } catch { return fail("placement", `the root home ${rootHome} doesn't exist → ${under}`); }
   if (dirname(real) !== expected) return fail("placement", `the root home ${rootHome} is not directly under ${expected}/ → rerun setup with the root there`);
   for (let dir = real; ; dir = dirname(dir)) {
     if (existsSync(join(dir, ".git"))) return fail("placement", `the root home ${rootHome} is inside a Git work tree (${dir}), where its key could be committed → move the deployment's root out of any work tree`);
-    if (existsSync(join(dir, "instance.json"))) return fail("placement", `the root home ${rootHome} is under an instance home (${dir}) → rerun setup with the root under ${expected}/`);
+    if (existsSync(join(dir, "instance.json"))) return fail("placement", `the root home ${rootHome} is under an instance home (${dir}) → ${under}`);
     if (dirname(dir) === dir) break;
   }
   const wide = [];
@@ -183,9 +189,10 @@ export function rootHomeProblem(rootHome, { deployment }) {
     if (s.isDirectory()) for (const name of readdirSync(p)) walk(join(p, name));
   };
   walk(real);
-  // Each open path relative to the root, so the fix, which names the root, fits the cap.
+  // Each open path relative to the root, so the problem stays short.
   const named = wide.slice(0, 2).map((p) => relative(real, p) || ".");
-  if (wide.length) return fail("mode", `the root home ${rootHome} is open to other users (${named.join(", ")}${wide.length > 2 ? ", …" : ""}) → \`chmod -R go-rwx ${rootHome}\`, then try again`);
+  // Every root under the deployment's ROOT_DIR is owner-only, so the fix names the directory.
+  if (wide.length) return fail("mode", `the root home ${rootHome} is open to other users (${named.join(", ")}${wide.length > 2 ? ", …" : ""}) → \`chmod -R go-rwx ${ROOT_DIR}\` in the deployment, then try again`);
   return null;
 }
 
