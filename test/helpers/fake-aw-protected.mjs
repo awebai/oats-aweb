@@ -24,7 +24,7 @@
 //          | {code, charge: true, written: true} (each answer writes --certificate-out first)
 //          | {lostOnce: true, then?: code} (the first execute's answer is lost; with `then`, every
 //            later answer for the committed operation is that code)
-//   install: {code}; serviceInit: {code} (the connect fails, workspace.yaml unwritten); remove: "served" | "unserved" (handoff_http_404) | "pending" | {code}, or a list of those, one per call
+//   install: {code}; serviceInit: {code} (the connect fails, workspace.yaml unwritten); remove: "served" | "unserved" (handoff_http_404) | "pending" | {code, http_status?}, or a list of those, one per call
 //   policyRead: {code, teams?} (every team's read, or only those teams', refuses code)
 //   createKill: true (create --no-address dies after its key)
 //   wake: "running" (the host wake broker runs; otherwise it doesn't)
@@ -210,7 +210,8 @@ if (cmd === "id team remove-agent") {
   if (Array.isArray(s.remove)) saveSvc(s);
   // A server that doesn't serve the act: aw's handoff client names the HTTP status (handoff/client.go refusal()).
   if (answer === "unserved") fail("handoff_http_404", "team.agent.remove: the server answered 404");
-  if (answer && typeof answer === "object") fail(answer.code, "operation " + op + ": " + answer.code);
+  // aw's envelope: its code, and for awid's http_error the server's HTTP status (cmd/aw/errors.go errorEnvelope).
+  if (answer && typeof answer === "object") { console.error("Error: operation " + op + ": " + answer.code); if (json) console.log(JSON.stringify({ error: { code: answer.code, message: answer.code + " (operation " + op + ")", ...(answer.http_status ? { http_status: answer.http_status } : {}) } })); process.exit(1); }
   if (answer === "pending") emit({ operation_id: op, state: "pending", certificate_id: cert.certificate_id });
   fs.appendFileSync(path.join(base, "removed.jsonl"), JSON.stringify({ certificate_id: cert.certificate_id, operation_id: op }) + "\\n");
   emit({ operation_id: op, state: "committed", certificate_id: cert.certificate_id });

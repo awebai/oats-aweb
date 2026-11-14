@@ -16,6 +16,14 @@ export const UNCONFIRMED_CODES = new Set(["receipt_unavailable", "external_effec
 /** Whether `code` is in that row: one listed, any other `*_unavailable`, `handoff_http_5xx` but 501
  *  (a server that doesn't serve the act), or no code at all. */
 export const unconfirmedCode = (code) => !code || UNCONFIRMED_CODES.has(code) || /_unavailable$/.test(code) || (/^handoff_http_5\d\d$/.test(code) && code !== "handoff_http_501");
+/** The code C-9's rows read for aw's refusal (v4.3.29): aw's own `error` (a failure it doesn't
+ *  name) and `outcome_unknown` (a request whose outcome it couldn't learn) are no code, and awid's
+ *  `http_error` is read by its HTTP status, as the handoff_http rows are. Any other code is itself. */
+export function rowCode(code, httpStatus) {
+  if (code === "error" || code === "outcome_unknown") return undefined;
+  if (code === "http_error") return Number.isInteger(httpStatus) ? `handoff_http_${httpStatus}` : undefined;
+  return code;
+}
 /** Requester-side codes C-9 refuses at a first send. */
 const REQUESTER_REFUSED = new Set([...SCOPE_CODES, "operation_conflict"]);
 /** Requester-side codes in no row of C-9's admit column: unknown at a first send. */

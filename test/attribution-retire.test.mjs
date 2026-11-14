@@ -121,6 +121,61 @@ for (const code of ["handoff_http_404", "handoff_http_405", "handoff_http_501"])
   });
 }
 
+// v4.3.29 (C-9, C-6), at aw 1.36.59-rc.2: aw codes a failure it doesn't name `error`, and an
+// outcome it couldn't learn `outcome_unknown`, which read as no code; awid's `http_error` is read
+// by its HTTP status, as the handoff_http rows are; the signer's `operation_not_served` is C-6's
+// not-served signal.
+const UNCONFIRMED_AW = [["error", { code: "error" }], ["outcome_unknown", { code: "outcome_unknown" }],
+  ["http_error 429", { code: "http_error", http_status: 429 }], ["http_error 500", { code: "http_error", http_status: 500 }], ["http_error 503", { code: "http_error", http_status: 503 }]];
+for (const [name, answer] of UNCONFIRMED_AW) {
+  test(`v4.3.29: a removal aw answers ${name} is unconfirmed: retire exits nonzero and keeps the home and the root's copy`, (t) => {
+    const fx = attributionFixture(t);
+    const id = spawned(fx);
+    fx.fake.setService({ remove: answer });
+    const r = fx.retire("dev-1");
+    assert.notEqual(r.status, 0, "the kernel keeps the home");
+    assert.equal(r.doc.meta.retired, false);
+    assert.ok(existsSync(fx.homeOf("dev-1")), "the home is kept");
+    assert.ok(warningOf(r).includes(RECONCILE), warningOf(r));
+    assert.ok(!warningOf(r).includes("service-refused"), warningOf(r));
+    assert.ok(existsSync(rootCopy(fx, id)));
+  });
+}
+const NOT_SERVED_AW = [["operation_not_served", { code: "operation_not_served" }], ["http_error 404", { code: "http_error", http_status: 404 }],
+  ["http_error 405", { code: "http_error", http_status: 405 }], ["http_error 501", { code: "http_error", http_status: 501 }]];
+for (const [name, answer] of NOT_SERVED_AW) {
+  test(`v4.3.29: a removal aw answers ${name} is not served: admission-removal-unavailable, never service-refused, the root's copy kept and the home removed`, (t) => {
+    const fx = attributionFixture(t);
+    const id = spawned(fx);
+    fx.fake.setService({ remove: answer });
+    const r = fx.retire("dev-1");
+    assert.equal(r.status, 0, JSON.stringify(r.doc));
+    const w = warningOf(r);
+    assert.ok(w.includes("admission-removal-unavailable") && w.includes("to team.agent.remove") && w.includes(RECONCILE), w);
+    assert.ok(!w.includes("service-refused") && !w.includes("admission-removal-blocked"), w);
+    assert.ok(existsSync(rootCopy(fx, id)));
+  });
+}
+// Juan's side's check (v4.3.30): an unnamed 400, 403 or 409 takes C-6's refused path, which keeps
+// the root's copy, so check-only lists the membership as leaked and reconcile can act on it.
+for (const status of [400, 403, 409]) {
+  test(`v4.3.29: a removal aw answers http_error ${status} is refused: service-refused, the root's copy kept, and check-only lists the membership in leakedMemberships`, (t) => {
+    const fx = attributionFixture(t);
+    spawned(fx, "dev-1");
+    const id = spawned(fx, "dev-2");
+    fx.fake.setService({ remove: { code: "http_error", http_status: status } });
+    const r = fx.retire("dev-2");
+    assert.equal(r.status, 0, JSON.stringify(r.doc));
+    assert.ok(warningOf(r).includes("admission-removal-blocked") && warningOf(r).includes("reason: service-refused"), warningOf(r));
+    assert.ok(existsSync(rootCopy(fx, id)), "the root's copy is kept");
+    assert.notEqual(r.doc.meta.retired, false, "the home goes");
+    rmSync(fx.homeOf("dev-2"), { recursive: true, force: true }); // the kernel removes the home
+    const check = fx.setup(["--check-only", "--json"]);
+    assert.equal(check.status, 0, check.stdout + check.stderr);
+    assert.deepEqual(check.doc.attribution.leakedMemberships.filter((l) => l.certificateId === id), [{ team: TEAM, alias: "dev-2", certificateId: id, removable: true }]);
+  });
+}
+
 const FIX_ROOT = `fix the root, then run \`${RECONCILE}\``;
 const CANT_ACT = [
   ["root-home-missing", (fx) => rmSync(fx.rootHome, { recursive: true, force: true }), FIX_ROOT],

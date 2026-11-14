@@ -10,18 +10,19 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, providerRecords, recordsUnreadable, verifiedCertificate, writePrivate } from "./admission.mjs";
 import { lockedRetireText, withAdmissionLocks } from "./admission-lock.mjs";
-import { admitAnswer, awaitsOutcome, holdsMembership, step, unconfirmedCode } from "./admission-states.mjs";
+import { admitAnswer, awaitsOutcome, holdsMembership, rowCode, step, unconfirmedCode } from "./admission-states.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
 import { REMOVE_SERVED, admitArgv, awJson, removeAgentArgv } from "./protected-client.mjs";
 
 export const RECONCILE = "oats aweb setup --reconcile-admissions";
 
-// aw's remove-agent codes at aweb 44158f1bb (the hand-back lists this table).
+// aw's remove-agent codes at aweb 44158f1bb and cba8754f (the code map lists them).
 // aw's handoff client names a refusal by the server's `detail` code, else
 // `handoff_http_<status>` (cli/go/internal/handoff/client.go refusal()), so a
 // server that doesn't serve the act is told apart by its HTTP status alone.
-const NOT_SERVED = new Set(["handoff_http_404", "handoff_http_405", "handoff_http_501"]);
+// The signer names an act it doesn't serve operation_not_served (aweb cba8754f, v4.3.29).
+const NOT_SERVED = new Set(["handoff_http_404", "handoff_http_405", "handoff_http_501", "operation_not_served"]);
 
 /** What a remove-agent refusal code means: "unavailable" (the server doesn't
  *  serve the act), "unconfirmed" (the outcome may still change), or
@@ -86,7 +87,9 @@ export function removeMembership({ aw, setting, certificateId, team, file }) {
   try { answer = awJson(aw, "id team remove-agent", removeAgentArgv({ certificate: copy, operationId: op.operationId, profile: setting.service.profile }), setting.root.home, 60000); }
   catch (e) {
     if (e.code) throw e;
-    return { outcome: removeOutcome(e.awCode), code: e.awCode || null, operationId: op.operationId };
+    // Classed by the code C-9's rows read (rowCode); named as aw answered, with an http_error's status.
+    const code = e.awCode === "http_error" && e.awHttpStatus ? `http_error ${e.awHttpStatus}` : e.awCode || null;
+    return { outcome: removeOutcome(rowCode(e.awCode, e.awHttpStatus)), code, operationId: op.operationId };
   }
   if (answer?.state !== "committed" || answer.certificate_id !== certificateId) return { outcome: "unconfirmed", code: `state ${String(answer?.state).slice(0, 40)}`, operationId: op.operationId };
   rmSync(copy, { force: true });

@@ -25,12 +25,14 @@ export const RESIDENT_CUSTODY_SERVED = false;
  *  aweb 44158f1bb (v4.3.17) and cba8754f. The branch for false stays built and tested. */
 export const REQUEST_BINDING_SERVED = true;
 
-/** aw's refusal: its envelope's code (or none, for a failure aw didn't code),
- *  and a bounded, single-line form of its message for a person. */
+/** aw's refusal: its envelope's code (or none, for a failure aw didn't code), the HTTP
+ *  status its envelope gives (awid's `http_error`), and a bounded, single-line form of its
+ *  message for a person. */
 export class AwRefusal extends Error {
-  constructor(command, { code, message, outcome }) {
+  constructor(command, { code, httpStatus, message, outcome }) {
     super(`aw ${command} ${code ? `refused ${code}` : outcome || "failed"}${message ? `: ${message}` : ""}`);
     this.awCode = code || undefined;
+    this.awHttpStatus = httpStatus;
     this.awMessage = message || "";
     this.command = command;
   }
@@ -58,7 +60,8 @@ export function awJson(run, command, argv, cwd, timeout) {
   catch (e) {
     const envelope = stdoutJson(e.stdout)?.error;
     const code = object(envelope) && typeof envelope.code === "string" && AW_CODE.test(envelope.code) ? envelope.code : undefined;
-    throw new AwRefusal(command, { code, message: oneLine(object(envelope) ? envelope.message : e.stderr || e.message), outcome: e.outcome });
+    const httpStatus = object(envelope) && Number.isInteger(envelope.http_status) ? envelope.http_status : undefined;
+    throw new AwRefusal(command, { code, httpStatus, message: oneLine(object(envelope) ? envelope.message : e.stderr || e.message), outcome: e.outcome });
   }
   const doc = stdoutJson(stdout);
   if (!object(doc)) throw new AwRefusal(command, { message: "answered no JSON object" });

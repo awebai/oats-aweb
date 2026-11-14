@@ -279,9 +279,11 @@ rerun only removes.
 What a retire says when it can't remove a membership:
 
 - An unconfirmed removal (an unknown or lost receipt, HTTP 429 or 5xx, or no
-  code) keeps the home: retire it again once the service answers.
+  code, which includes aw's own `error` and `outcome_unknown`) keeps the home:
+  retire it again once the service answers.
 - `admission-removal-unavailable`: the service's server answered 404, 405 or
-  501 to `team.agent.remove`, so it may not serve removal yet. Its operator
+  501, or `operation_not_served`, to `team.agent.remove`, so it may not serve
+  removal yet. Its operator
   upgrades the server; then run `oats aweb setup --reconcile-admissions`. With
   an aw that doesn't serve the act, retiring an instance frees no admission
   slot.

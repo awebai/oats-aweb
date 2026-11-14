@@ -58,9 +58,12 @@ not settled by the spec, and the lead decided it (mail
 - *exists*: `certificate_out_exists`: the file holds another certificate;
 - *unknown*: every other code, or none.
 
-**aw's remove answers, classed** (C-6, mapped at aweb 44158f1bb):
+**aw's remove answers, classed** (C-6, mapped at aweb 44158f1bb and cba8754f). Each code is
+read as `rowCode` gives it: aw's own `error` and `outcome_unknown` are no code, and awid's
+`http_error` is `handoff_http_<its status>` (v4.3.29).
 - *removed*: `state: committed` for this certificate;
-- *unavailable*: `handoff_http_404`, `handoff_http_405`, `handoff_http_501`;
+- *unavailable*: `handoff_http_404`, `handoff_http_405`, `handoff_http_501`,
+  `operation_not_served`;
 - *unconfirmed*: the unconfirmed row, any `*_unavailable`, `handoff_http_429`,
   `handoff_http_5xx`, no code, or an answer that isn't committed;
 - *refused*: every other code (`service-refused`).
