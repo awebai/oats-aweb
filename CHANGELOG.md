@@ -15,10 +15,12 @@ Opt-in human attribution (aweb-acxy.7), and two changes a deployment that never 
   - The spawn then refuses with the reason and C-2's whole setup command, for the primary team or a joined one. It never retries the invite and never remints.
   - To fix it, opt in as above. An operator with no human ID yet first enrolls a passkey at the protected service.
   - aw 1.36.59 can refuse the invite itself with the same code, before asking the service; the spawn refuses the same way.
+  - A home's own `oats aweb join` refuses the same way, as an operation too. `oats aweb setup --join` keeps its own error code, and its message gives this refusal's text and fix, with `details.code` naming it.
   - Any other 403 is reported as before, and readiness is unchanged.
 - **Changed, on every deployment with aw 1.36.59 or later: a member-invite spawn or join against a registry that reports no team protection state refuses `E_PROTECTION_STATE_UNAVAILABLE`.**
   - aw 1.36.59 reads the team's protection state at the identity registry before it accepts a member invite, and refuses `protected_state_unavailable` when there is none.
   - The fix: upgrade the team's registry to one that reports it (awid-service 0.5.40 or later), or ask its operator to. It is never retried and nothing is reminted.
+  - It covers the spawn, a home's own `oats aweb join` and `oats aweb setup --join`, which keeps its own code and names this one in `details.code`.
 
 ## 1.42.1 — 2026-11-13
 

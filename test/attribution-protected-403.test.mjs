@@ -6,13 +6,17 @@
 // as it does today.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { fixture } from "./helpers/delivery-fixture.mjs";
+import { currentRootQuery } from "./helpers/current-root-query.mjs";
 import { filledSetupCommand } from "./helpers/setup-command.mjs";
 import { PROTECTED_ADMISSION_REQUIRED } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 import { parseEndorseArgs } from "../oats-package/capabilities/oats-aweb/lib/endorse-root.mjs";
 
+const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
 const inits = (fx) => fx.fake.readCalls().filter((c) => c.args[0] === "init");
 /** C-2's whole command (v4.3.27): setup refuses E_SETUP_ARGUMENT without --protected-profile and --service. */
 const FIX = "oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>";
@@ -152,3 +156,60 @@ test("C-8 (v4.3.27): the setup command E_PROTECTED_ADMISSION_REQUIRED names, its
   assert.equal(parsed.profile, "/srv/aweb/protected-profile.json");
   assert.equal(parsed.service, "https://aweb.acme.example/api");
 });
+
+// Round 30: a home's own `oats aweb join`, on a deployment that never opted in, refuses as the
+// spawn does when aw refuses its member-invite accept on the legacy path (C-8, C-9's
+// protected_state_unavailable row: "the join's `aw id team accept-invite`"), and as an operation
+// its envelope carries the same code and fix. The invite is accepted once, never retried.
+/** dev-1 spawned and recorded, then its own join of alpha, whose accept aw answers `error`. */
+function explicitJoinRefused(t, error, { operation } = {}) {
+  const fx = fixture(t, { delivery: "channel" });
+  fx.record(fx.spawn().meta, "claude");
+  // The deployment's file, which the join's live-settings read confirms the deployment by.
+  writeFileSync(join(fx.ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  const settings = { root: fx.ws, delivery: "channel" };
+  const kernel = currentRootQuery(fx.ws, { home: fx.home, deployment: fx.ws, settings });
+  const wrapper = join(fx.ws, "wrapper"), log = join(fx.ws, "accepts.log");
+  mkdirSync(wrapper);
+  const native = join(fx.fake.path.split(":")[0], "aw");
+  writeFileSync(join(wrapper, "aw"), `#!${process.execPath}
+const a = process.argv.slice(2);
+if (a.includes("accept-invite")) { require("node:fs").appendFileSync(${JSON.stringify(log)}, "accept\\n"); console.log(${JSON.stringify(JSON.stringify({ error }))}); console.error("Error: refused"); process.exit(1); }
+const r = require("node:child_process").spawnSync(${JSON.stringify(native)}, a, { stdio: "inherit" });
+process.exit(r.status ?? 1);
+`, { mode: 0o700 });
+  const env = {
+    PATH: `${wrapper}:${fx.fake.path}`, HOME: fx.ws, OATS_CLI_BIN: kernel.cli, OATS_WORKSPACE: fx.ws, OATS_WORKSPACE_KEY: "github.com/acme/agents", OATS_WORKSPACE_NAME: "acme",
+    OATS_HOME: fx.home, OATS_INSTANCE_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_EVENT: "join", OATS_RUNTIME: "claude", OATS_SETTINGS: JSON.stringify(settings),
+    OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "legacy:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS_SOURCE: "live",
+    OATS_TEAMS: JSON.stringify([{ label: "default", team: "legacy:example.test", default: true, from: "local" }, { label: "alpha", team: "alpha:example.test", default: false, from: "shared" }]),
+    ...(operation ? { OATS_OPERATION: "messaging:join" } : {}),
+  };
+  const r = spawnSync(process.execPath, [HOOK, "join", "--labels", "alpha", "--json"], { cwd: fx.home, env, encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] });
+  const accepts = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0;
+  return { r, accepts };
+}
+const EXPLICIT = [
+  ["a 403 whose reason is protected_admission_required", { code: "http_error", http_status: 403, reason: "protected_admission_required" }, "E_PROTECTED_ADMISSION_REQUIRED", FIX],
+  ["a 403 whose detail is protected_admission_required", { code: "http_error", http_status: 403, detail: "protected_admission_required" }, "E_PROTECTED_ADMISSION_REQUIRED", FIX],
+  ["aw's local protected_admission_required", { code: "protected_admission_required", message: "team alpha requires the configured protected service/root admission path (--protected-profile <profile>)" }, "E_PROTECTED_ADMISSION_REQUIRED", FIX],
+  ["protected_state_unavailable", { code: "protected_state_unavailable", message: "the configured registry did not provide an explicit valid protection state" }, "E_PROTECTION_STATE_UNAVAILABLE", STATE_FIX],
+];
+for (const [what, error, code, fix] of EXPLICIT) {
+  test(`round 30: a home's own join whose accept aw answers ${what} refuses ${code} with its whole fix, the invite accepted once`, (t) => {
+    const { r, accepts } = explicitJoinRefused(t, error);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.ok(r.stderr.startsWith(`${code}: `), r.stderr);
+    assert.ok(r.stderr.includes(fix), r.stderr);
+    assert.equal(accepts, 1, "never retried");
+  });
+  test(`round 30: as an operation, a home's own join whose accept aw answers ${what} fails with ${code} and its whole fix in the envelope`, (t) => {
+    const { r, accepts } = explicitJoinRefused(t, error, { operation: true });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    const envelope = JSON.parse(r.stdout.trim().split("\n").pop());
+    assert.equal(envelope.ok, false, r.stdout);
+    assert.equal(envelope.error.code, code, r.stdout);
+    assert.ok(envelope.error.message.includes(fix), r.stdout);
+    assert.equal(accepts, 1, "never retried");
+  });
+}

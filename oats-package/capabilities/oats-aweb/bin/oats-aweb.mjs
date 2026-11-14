@@ -94,7 +94,7 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
-import { isRefusal, refusalText, legacyPathRefusal, HOME_RETIRED, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { isRefusal, refusalText, legacyRefusalOf, HOME_RETIRED, KERNEL_FLOOR, ROOT_DIR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { README_ADMISSION, admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
 import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
@@ -1819,7 +1819,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
     // aw's own output stays withheld (it can hold a token); the failure says
     // which root and setting minted, the class of the cause and where to look.
     // A spawn-time join has no home yet to run --plan from: the root and its setting are enough.
-    throw Object.assign(new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`), { legacyRefusal: legacyPathRefusal(e.stdout) });
+    throw Object.assign(new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`), { legacyRefusal: legacyRefusalOf(e) });
   }
   const inv = parseSecretJson(minted, "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
@@ -1835,7 +1835,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] })); }
   catch (e) {
     if (preexisting) throw e;
-    if (holdsIdentity(identityHome)) throw Object.assign(new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`), { legacyRefusal: e.legacyRefusal || legacyPathRefusal(e.stdout) });
+    if (holdsIdentity(identityHome)) throw Object.assign(new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`), { legacyRefusal: legacyRefusalOf(e) });
     // Confirmed: aw left no identity, so nothing was joined and nothing needs releasing.
     try { rmdirSync(identityHome); } catch { /* never created, or holds what is not an identity */ }
     if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });
@@ -2659,7 +2659,7 @@ if (event === "launch") {
       // A team aweb has protected admits agents only through an endorsed root (C-8), and aw
       // 1.36.59 joins no team whose registry reports no protection state (v4.3.30): the server or
       // aw's own preflight refused the invite, so nothing registered; never retried, never reminted.
-      const legacy = legacyPathRefusal(e.stdout);
+      const legacy = legacyRefusalOf(e);
       if (legacy) { dropPendingMint(); attributionFatal(legacy); }
       // Another agent holds the alias in this team: an instance of that name
       // on another machine, or a retired one whose certificate stays. Say
@@ -2757,7 +2757,7 @@ if (event === "launch") {
     const pendingMint = minted ? undefined : readPendingMint().intent;
     // A joined team's member invite refused on the legacy path (C-8, v4.3.30) refuses as the
     // primary's does, with the primary identity handed back for compensation.
-    const legacy = e.legacyRefusal || legacyPathRefusal(e.stdout);
+    const legacy = legacyRefusalOf(e);
     fatal(legacy ? refusalText(legacy) : `identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
   }
 } else if (event === "retire") {
@@ -3137,8 +3137,12 @@ if (event === "launch") {
 } else if (["teams", "join", "leave"].includes(event)) {
   try { runTeamsCommand(event); process.exit(0); }
   catch (e) {
-    console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`);
-    if (operation) operationFail(e.code, e.message || String(e), e.partial ? { ...e.partial, joined: teamsDocument(readCapabilityMeta()).joined } : undefined);
+    // A member invite aw refused on the legacy path (C-8, v4.3.30) refuses as the spawn's does,
+    // with its own code and whole fix; aw's raw output stays withheld, and nothing is retried.
+    const legacy = legacyRefusalOf(e);
+    const code = legacy ? legacy.code : e.code, message = legacy ? legacy.message : e.message || String(e);
+    console.error(code ? `${code}: ${message}` : `oats aweb ${event}: ${message}`);
+    if (operation) operationFail(code, message, e.partial ? { ...e.partial, joined: teamsDocument(readCapabilityMeta()).joined } : undefined);
     process.exit(1);
   }
 } else if (event === "roster") {
@@ -3693,6 +3697,11 @@ ${JSON.stringify(problem.details || {})}`);
         // Roll back only our newly created, still-empty directory; retain any
         // partial identity or concurrent content for explicit reconciliation.
         if (createdRoot) { try { rmdirSync(teamRoot); } catch { /* nonempty or unavailable: retain it */ } }
+        // A member invite aw refused on the legacy path (C-8, v4.3.30): setup keeps its own code,
+        // which its readers know, and says that refusal's why and whole fix, naming it in
+        // details.code (the lead's decision, round 30). aw's raw output stays withheld.
+        const legacy = legacyRefusalOf(e);
+        if (legacy) { e.message = legacy.message; e.details = { ...(e.details ?? joinConfiguration?.details()), code: legacy.code }; }
         throw e;
       }
     }

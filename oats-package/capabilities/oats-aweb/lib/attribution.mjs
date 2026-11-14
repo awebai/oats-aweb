@@ -389,6 +389,11 @@ export function legacyPathRefusal(stdout) {
   }
   return null;
 }
+/** The legacy-path refusal a failure carries: one a wrapper recorded (`legacyRefusal`), else the one
+ *  its own aw output gives, else null. Every command boundary above a member-invite accept (a
+ *  spawn's `aw init --join-from`, a join's `aw id team accept-invite`) maps a failure through it;
+ *  test/attribution-legacy-boundaries.test.mjs finds each. */
+export const legacyRefusalOf = (e) => e?.legacyRefusal || legacyPathRefusal(e?.stdout);
 /** C-8's refusal, in its order: why, the whole fix (C-2's whole command: setup refuses
  *  E_SETUP_ARGUMENT without --protected-profile and --service, v4.3.27), the docs, and the step
  *  that gets a human ID. aw's reason is kept as `reason`, which the refusal's head doesn't print,
