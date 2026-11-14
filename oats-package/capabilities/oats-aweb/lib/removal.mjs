@@ -6,8 +6,8 @@
 // and the root's copy, and the home goes. Only an outcome OATS can still learn
 // (an unknown admission, an unconfirmed removal) keeps the home.
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { basename, join } from "node:path";
 import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, providerRecords, recordsUnreadable, verifiedCertificate, writePrivate } from "./admission.mjs";
 import { lockedRetireText, withAdmissionLocks } from "./admission-lock.mjs";
 import { admitAnswer, awaitsOutcome, holdsMembership, step } from "./admission-states.mjs";
@@ -106,32 +106,41 @@ export function retireAdmissions(options) {
   // Every label it acts on is locked before any is acted on (admission-lock.mjs): a live holder
   // means this retire acts on nothing, keeps the home and names the rerun, as an unconfirmed
   // removal does.
-  const { providerDir, labels, then = "retire again" } = options;
-  // A record of its labels that can't be read could hold any membership or operation: this retire
-  // acts on nothing and keeps the home, naming it (records-unreadable).
-  const { records, unreadable } = providerRecords(providerDir);
-  const bad = unreadable.find((u) => !labels || u.label === null || labels.includes(u.label));
-  if (bad) { const e = recordsUnreadable(bad, then); return { warnings: [], keep: { reason: "records-unreadable", text: `${e.code} (problem: records-unreadable): ${e.message}` } }; }
-  const locked = [...new Set(records.map((r) => r.label).filter((l) => typeof l === "string" && (!labels || labels.includes(l))))].sort();
+  const { providerDir } = options;
+  const checked = checkedRecords(options);
+  if (checked.keep) return { warnings: [], keep: checked.keep };
+  const locked = [...new Set(checked.all.map((r) => r.label))].sort();
   try { return withAdmissionLocks(providerDir, locked, () => retireLocked(options)); }
   catch (e) {
     if (e?.details?.step !== "lock") throw e;
     return { warnings: [], keep: { reason: "admission-locked", text: lockedRetireText(e.details) } };
   }
 }
-function retireLocked({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, labels, phase }) {
+/** The records a retire or a leave acts on, each one of the table's ({all, acted}), or {keep}: a
+ *  record of its labels that can't be read, or isn't one of the table's, could hold any membership
+ *  or operation, so this retire acts on nothing and keeps the home, naming it (records-unreadable).
+ *  A leave acts on its own labels' records only (`labels`), set-aside ones aside; retire on every one. */
+function checkedRecords({ providerDir, labels, then = "retire again" }) {
+  const { records, unreadable } = providerRecords(providerDir);
+  const bad = unreadable.find((u) => !labels || u.label === null || labels.includes(u.label));
+  if (bad) { const e = recordsUnreadable(bad, then); return { keep: { reason: "records-unreadable", text: `${e.code} (problem: records-unreadable): ${e.message}` } }; }
+  const all = labels ? records.filter((r) => labels.includes(r.label)) : records;
+  return { all, acted: labels ? all.filter((r) => !r.left) : all };
+}
+function retireLocked(options) {
+  const { aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, phase } = options;
   const warnings = [];
-  let names = [];
-  try { names = readdirSync(providerDir).filter((f) => /^admission-.+\.json$/.test(f)).sort(); } catch { names = []; }
-  // A leave acts on its own labels' records only (`labels`); retire on every one.
-  if (labels) names = names.filter((name) => labels.includes(readJson(join(providerDir, name))?.label) && !name.includes("~left-"));
+  // Read again under the locks: what this retire acts on is what no other command can change now.
+  const checked = checkedRecords(options);
+  if (checked.keep) return { warnings, keep: checked.keep };
+  const finals = new Map(checked.acted.map(({ file, record }) => [file, record]));
   let root;
   const cannot = () => (root === undefined ? (root = rootCannotAct({ aw, setting, deployment })) : root);
-  for (const name of names) {
-    let record = readJson(join(providerDir, name));
-    if (!record || typeof record.label !== "string") continue;
-    const { team, label } = record;
-    const save = (fields) => { record = { ...record, ...fields }; writePrivate(join(providerDir, name), `${JSON.stringify(record, null, 2)}\n`); };
+  for (const { file, record: read } of checked.acted) {
+    let record = read;
+    const name = basename(file);
+    const { team } = record;
+    const save = (fields) => { record = { ...record, ...fields }; finals.set(file, record); writePrivate(file, `${JSON.stringify(record, null, 2)}\n`); };
     // Each move is admission-states.md's tables B and C, decided by `step`.
     if (awaitsOutcome(record)) {
       // A pending record is a spawn killed at its admit (v4.3.19); an unknown one, an admit whose
@@ -195,6 +204,6 @@ function retireLocked({ aw, setting, providerDir, deployment, removeServed = REM
   }
   // Each team this home was admitted to, and whether the root removed it: the
   // membership, not the workspace delete, says whether the alias is free.
-  const memberships = names.map((name) => readJson(join(providerDir, name))).filter((r) => r && (holdsMembership(r) || r.state === "removed")).map(({ team, label, state }) => ({ team, label, removed: state === "removed" }));
+  const memberships = [...finals.values()].filter((r) => holdsMembership(r) || r.state === "removed").map(({ team, label, state }) => ({ team, label, removed: state === "removed" }));
   return { warnings, keep: null, memberships };
 }

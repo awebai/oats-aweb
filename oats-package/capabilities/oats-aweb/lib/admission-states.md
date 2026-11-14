@@ -176,7 +176,7 @@ delete it can't address.
 | readiness | each unknown record: `admission-leaked` |
 | check-only `admittedLive` | live homes' committed records, left ones included: OATS's count |
 | check-only `leakedMemberships` | the member list read through a home whose committed record's identity home exists, else the root; and the root's copies. A certificate a live or kept home's committed, pending or unknown record names (or, awaiting, may name, by the certificate's alias) is that home's; a left record names none (decided L). A list row is unsigned registry metadata: it counts only by the root's copy of its id, of aw's form, whatever alias the row gives; with no copy it is listed, never removable, and only when its alias has no home |
-| `--reconcile-admissions` | the root's copies only, for the leaks above, read once before the homes are listed and their records read: every copy then has its home listed and its record read (a home is listed from its first record, its admission record is written before admit, the copy after it), and a copy a spawn or join writes later is no candidate; a listed home's record or records directory that can't be read, or a record that isn't one of this table's (`recordProblem`: a state it has, the team, for a committed record its certificate id or `--certificate-out`, for a pending or unknown one its alias, and any certificate id of aw's form and any `--certificate-out` a path), refuses `E_ATTRIBUTION_EVIDENCE` before any removal, never read as none; its removal records under the root's `removals/` |
+| `--reconcile-admissions` | the root's copies only, for the leaks above, read once before the homes are listed and their records read: every copy then has its home listed and its record read (a home is listed from its first record, its admission record is written before admit, the copy after it), and a copy a spawn or join writes later is no candidate; a listed home's record or records directory that can't be read, or a record that isn't one of this table's (`recordProblem`: a state it has, the team, the label of its file, for a committed record its certificate id, for a pending or unknown one its alias, and any certificate id of aw's form and any `--certificate-out` a path: what every writer writes, and what a removal acts on), refuses `E_ATTRIBUTION_EVIDENCE` before any removal, never read as none; its removal records under the root's `removals/` |
 | check-only, a profile that fails C-1's checks | no policy read and no member list; the block's `problem` names `profile-mode` or `profile-changed`, and its local parts stay |
 | a spawn's issuer count (`E_ADMISSION_LIMIT`) | as `admittedLive` |
 
@@ -205,7 +205,10 @@ records the same way (`providerRecords`, `readAdmission`): a missing record is
 none, and one that can't be read or isn't one of this table's refuses
 `E_ATTRIBUTION_EVIDENCE` (problem `records-unreadable`) before any effect; a
 retire then keeps the home (`records-unreadable`), and a start keeps the
-joined team with a warning. A failed spawn's hook releases
+joined team with a warning. A join or a leave checks the records of every label
+it names as soon as it holds their locks, before its preflight, its receive
+sync and its state write, so a bad record of one label leaves every other
+untouched; a retire acts only on the records it checked under its locks. A failed spawn's hook releases
 its lock before it exits, so its rollback retire finds it free; a killed
 spawn's lock names a dead pid, which the rollback takes over.
 

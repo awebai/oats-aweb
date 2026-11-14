@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { OPS, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
+import { OPS, TEAM, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
+import { providerRecords } from "../oats-package/capabilities/oats-aweb/lib/admission.mjs";
 import { POLICY } from "./helpers/fake-aw-protected.mjs";
 
 const recordFile = (fx, label, name = "dev-1") => join(fx.homeOf(name), ".oats-aweb", `admission-${label}.json`);
@@ -110,4 +111,150 @@ test("the lock refusal names the lock relative to the home, so its whole fix fit
   assert.ok(text.length <= 300, `${text.length}: ${text}`);
   assert.ok(text.startsWith("E_ATTRIBUTION_EXCHANGE (step: lock): "), text);
   assert.ok(text.endsWith(`if no oats aweb command runs as pid ${process.pid}, remove .oats-aweb/admission-default.lock in this home`), text);
+});
+
+// A record the check accepts is one retire can act on (round 23; the lead, mail
+// f4973d11-554b-4883-9b98-d66ff6e03052): its label is its file's, and a committed one names its
+// certificate id. One that isn't is refused as unreadable, never skipped or read as holding none.
+const rewriteRecord = (fx, label, edit) => { const file = recordFile(fx, label); writeFileSync(file, JSON.stringify(edit(JSON.parse(readFileSync(file, "utf8")))), { mode: 0o600 }); };
+for (const [damage, edit] of [
+  ["names its certificate only by --certificate-out", ({ certificateId, ...r }) => r],
+  ["has no label", ({ label, ...r }) => r],
+  ["carries another label than its file's", (r) => ({ ...r, label: "ops" })],
+]) {
+  test(`C-6: a home whose committed record ${damage} is kept by its retire, records-unreadable, with no effect`, (t) => {
+    const fx = hosted(t);
+    assert.equal(fx.spawn("dev-1").status, 0);
+    rewriteRecord(fx, "default", edit);
+    const before = fx.fake.calls().length;
+    const r = fx.retire("dev-1");
+    assert.notEqual(r.status, 0, "the kernel keeps the home");
+    assert.equal(r.doc.meta.reason, "records-unreadable");
+    assert.ok((r.doc.warning || "").includes(".oats-aweb/admission-default.json"), r.doc.warning);
+    assert.deepEqual(fx.fake.removed(), []);
+    assert.deepEqual(calls(fx, before).filter((v) => v !== "version"), [], "no aw call at all");
+  });
+}
+
+// A refusal for a record that can't be read comes before every effect of the command, its
+// receive sync and its state write included: the labels' records are checked as soon as their
+// locks are held.
+const BROKER = { runtime: "codex", delivery: "session", service: { wake: "running" } };
+const teamsState = (fx) => readFileSync(join(fx.homeOf("dev-1"), ".oats-aweb", "teams.json"), "utf8");
+
+test("C-6: a broker-delivered leave of a label whose record isn't one of the table's refuses with no aw call and no state write", (t) => {
+  const fx = attributionFixture(t, { ...BROKER, settings: { join: "ops" } });
+  assert.equal(fx.spawn("dev-1").status, 0);
+  writeFileSync(recordFile(fx, "ops"), "{}\n", { mode: 0o600 });
+  const state = teamsState(fx);
+  const before = fx.fake.calls().length;
+  const r = fx.command("dev-1", "leave", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok((r.stdout + r.stderr).includes(`${FIX} leave again`), r.stdout + r.stderr);
+  assert.deepEqual(calls(fx, before).filter((v) => v !== "version"), []);
+  assert.equal(teamsState(fx), state, "the provider's team state is untouched");
+});
+
+test("C-3b: a broker-delivered join over a record that isn't one of the table's refuses with no aw call and no state write", (t) => {
+  const fx = attributionFixture(t, BROKER);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  fx.fake.setService({ admit: { code: "receipt_unavailable", charge: true } });
+  assert.equal(fx.command("dev-1", "join", ["--labels", "ops"]).status, 1);
+  fx.fake.setService({ admit: undefined });
+  writeFileSync(recordFile(fx, "ops"), "{}\n", { mode: 0o600 });
+  const state = teamsState(fx);
+  const before = fx.fake.calls().length;
+  const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok((r.stdout + r.stderr).includes(`${FIX} rerun`), r.stdout + r.stderr);
+  assert.deepEqual(calls(fx, before).filter((v) => v !== "version"), [], "not even the preflight's reads");
+  assert.equal(teamsState(fx), state);
+});
+
+test("C-6: a leave of two labels, the second's record unreadable, leaves the first untouched", (t) => {
+  const QA = "qa:acme.example";
+  const fx = attributionFixture(t, { teams: [TEAM, OPS, QA], extraTeams: [{ label: "qa", team: QA }] });
+  assert.equal(fx.spawn("dev-1").status, 0);
+  assert.equal(fx.command("dev-1", "join", ["--labels", "ops,qa"]).status, 0);
+  const ops = readFileSync(recordFile(fx, "ops"), "utf8");
+  unreadable(t, fx, "qa");
+  const before = fx.fake.calls().length;
+  const r = fx.command("dev-1", "leave", ["--labels", "ops,qa", "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok((r.stdout + r.stderr).includes(".oats-aweb/admission-qa.json"), r.stdout + r.stderr);
+  assert.deepEqual(calls(fx, before).filter((v) => v !== "version"), []);
+  assert.deepEqual(fx.fake.removed(), []);
+  assert.equal(readFileSync(recordFile(fx, "ops"), "utf8"), ops, "ops's record is untouched");
+  assert.ok(existsSync(join(fx.homeOf("dev-1"), ".aweb-identity-ops")));
+});
+
+// Every writer of a record writes one the check accepts, so a writer and the check its readers use
+// can't drift apart (the lead, mail f4973d11).
+/** Asserts every admission record under dev-1's home is one of the table's, and returns them. */
+function checkedRecords(fx) {
+  const { records, unreadable: bad } = providerRecords(join(fx.homeOf("dev-1"), ".oats-aweb"));
+  assert.deepEqual(bad, [], "every record passes the check");
+  return records.map((r) => r.record);
+}
+const stateOf = (fx, label) => checkedRecords(fx).find((r) => r.label === label)?.state;
+/** A spawn hook killed during its admit: its record pending, no certificate yet. */
+function killedDuringAdmit(fx) {
+  fx.fake.setService({ admit: { code: "receipt_unavailable" } });
+  fx.hook("spawn", "dev-1");
+  fx.fake.setService({ admit: undefined });
+  rewriteRecord(fx, "default", (r) => ({ ...r, state: "pending" }));
+}
+
+test("C-5: the admission's record of a spawn is one of the table's", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  assert.equal(stateOf(fx, "default"), "committed");
+});
+
+test("C-5: the admission's record of a join whose answer was lost is one of the table's", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  fx.fake.setService({ admit: { code: "receipt_unavailable", charge: true } });
+  assert.equal(fx.command("dev-1", "join", ["--labels", "ops"]).status, 1);
+  assert.equal(stateOf(fx, "ops"), "unknown");
+});
+
+test("C-5: retire's mark-committed writes a record of the table's", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  rewriteRecord(fx, "default", ({ certificateId, ...r }) => ({ ...r, state: "pending" }));
+  fx.fake.setService({ remove: "pending" });
+  assert.notEqual(fx.retire("dev-1", { fromMeta: {} }).status, 0, "kept at the unconfirmed removal");
+  assert.equal(fx.fake.calls().filter((c) => commandArgs(c.args).join(" ").startsWith("id team admit")).length, 1, "no resume: the spawn's admit only");
+  assert.equal(stateOf(fx, "default"), "committed");
+});
+
+test("C-5: retire's resume writes a record of the table's", (t) => {
+  const fx = attributionFixture(t);
+  killedDuringAdmit(fx);
+  fx.fake.setService({ remove: "pending" });
+  assert.notEqual(fx.retire("dev-1", { fromMeta: {} }).status, 0, "kept at the unconfirmed removal");
+  assert.equal(stateOf(fx, "default"), "committed");
+});
+
+test("C-5: retire's resume refused writes a record of the table's", (t) => {
+  const fx = attributionFixture(t);
+  killedDuringAdmit(fx);
+  fx.fake.setService({ admit: { code: "subject_ineligible" } });
+  assert.equal(fx.retire("dev-1", { fromMeta: {} }).status, 0);
+  assert.equal(stateOf(fx, "default"), "refused");
+});
+
+test("C-5: retire's removal writes a record of the table's", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  assert.equal(fx.retire("dev-1").status, 0);
+  assert.equal(stateOf(fx, "default"), "removed");
+});
+
+test("C-5: a leave's set-aside record is one of the table's", (t) => {
+  const fx = attributionFixture(t, { settings: { join: "ops" } });
+  assert.equal(fx.spawn("dev-1").status, 0);
+  assert.equal(fx.command("dev-1", "leave", ["--labels", "ops"]).status, 0);
+  assert.ok(checkedRecords(fx).some((r) => r.label === "ops"), "the set-aside record is read");
 });

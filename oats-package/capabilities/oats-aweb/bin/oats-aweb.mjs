@@ -2242,9 +2242,17 @@ function runTeamsCommand(kind) {
     // of this home's state and its preflight to its last receive sync and state write, so no other
     // join, leave or retire of these labels runs beside it (admission-lock.mjs). Its admit and
     // retire take them again within this hold.
-    const held = captured ? holdAdmissionLocks(providerStateDir(), [...new Set(rows.map((row) => row.label))].sort()) : null;
+    const labels = [...new Set(rows.map((row) => row.label))].sort();
+    const held = captured ? holdAdmissionLocks(providerStateDir(), labels) : null;
     try {
-    if (held) meta = readCapabilityMeta();
+    if (held) {
+      // Every named label's record is checked under the hold, before the preflight and any effect
+      // (its receive sync and state write included): one that can't be read, or isn't one of the
+      // table's, refuses here, so no label is acted on.
+      const bad = providerRecords(providerStateDir()).unreadable.find((u) => u.label === null || labels.includes(u.label));
+      if (bad) throw recordsUnreadable(bad, kind === "leave" ? "leave again" : "rerun");
+      meta = readCapabilityMeta();
+    }
     // Record every completed label even when a later one fails: a confirmed
     // leave deleted its home, and a join created a remote identity.
     // Who issues and who admits, read once, before any effect: every listed team is checked first.

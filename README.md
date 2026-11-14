@@ -341,16 +341,18 @@ records its admission before the admit and the copy only after it, so a spawn
 or join that commits while reconciliation runs is never taken for a leak.
 A record is what says which memberships are its home's, so a live home's
 admission record, or its `.oats-aweb` directory, that can't be read, or a
-record that isn't one of the state table's (no state it has, no team, a
-committed record naming no certificate, a certificate id that isn't aw's
+record that isn't one of the state table's (no state it has, no team, no
+label or another than its file's, a committed record naming no certificate
+id, a certificate id that isn't aw's
 form or an empty `--certificate-out`, a pending or unknown record with no
 alias), is never read as none: check-only lists every team under `unreadableTeams` with that
 record's path, and reconciliation refuses `E_ATTRIBUTION_EVIDENCE`, plan
 included, until it is readable again (owner-only) or restored. Every other
 command reads a home's records the same way, `E_ATTRIBUTION_EVIDENCE` with
 problem `records-unreadable`, naming the record, before any effect: a retire
-keeps the home (`records-unreadable`) and a leave or a join's rerun refuses,
-each until the record is readable again or restored; a start, never blocked,
+keeps the home (`records-unreadable`) and a leave or a join's rerun refuses
+before it acts on any label it names, each until the record is readable again
+or restored; a start, never blocked,
 keeps that joined team and warns.
 With a protected profile that fails its checks (its mode, or bytes that no
 longer match setup's digest), check-only makes no call that relies on it and

@@ -85,7 +85,8 @@ export const admissionRecords = (home) => homeRecords(home).records.map((r) => r
  *  set it aside (its name carries `~left-`): {records, unreadable}. No directory holds none; a
  *  directory or a record that can't be read, or isn't one of the table's (recordProblem), is
  *  listed in `unreadable` ({file, shown, label, reason}), never dropped: a record is what says
- *  which memberships are its home's (C-5). `shown` is its path within the home. */
+ *  which memberships are its home's (C-5). `shown` is its path within the home; `file` is each
+ *  record's path too. */
 export function providerRecords(dir) {
   const why = (e) => String(e?.code || e?.message || e).slice(0, 80);
   let names;
@@ -96,9 +97,10 @@ export function providerRecords(dir) {
     const file = join(dir, f), shown = `${basename(dir)}/${f}`, label = /^admission-(.+?)(?:~left-[^.]*)?\.json$/.exec(f)?.[1] ?? null;
     let record;
     try { record = JSON.parse(readFileSync(file, "utf8")); } catch (e) { unreadable.push({ file, shown, label, reason: e instanceof SyntaxError ? "not JSON" : why(e) }); continue; }
-    const problem = recordProblem(record);
+    // A record's label is its file's: a leave, a retire and a lock all name it by its file.
+    const problem = recordProblem(record) ?? (record.label !== label ? "a label other than its file's" : null);
     if (problem) { unreadable.push({ file, shown, label, reason: problem }); continue; }
-    records.push({ record, left: f.includes("~left-"), label });
+    records.push({ record, left: f.includes("~left-"), label, file });
   }
   return { records, unreadable };
 }

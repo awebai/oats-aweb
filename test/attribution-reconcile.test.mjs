@@ -303,6 +303,11 @@ const DAMAGED = [
   ["committed, with an empty certificate id", rewrite((r) => ({ ...r, certificateId: "" }))],
   ["committed, with a certificate id that isn't aw's form", rewrite((r) => ({ ...r, certificateId: "not-a-uuid" }))],
   ["committed, naming only an empty --certificate-out", rewrite(({ certificateId, ...r }) => ({ ...r, certificateOut: "" }))],
+  // What every writer writes, so what removal acts on: the label of its file, and for a committed
+  // record its certificate id.
+  ["committed, naming its certificate only by --certificate-out", rewrite(({ certificateId, ...r }) => r)],
+  ["with no label", rewrite(({ label, ...r }) => r)],
+  ["with another label than its file's", rewrite((r) => ({ ...r, label: "ops" }))],
 ];
 for (const [damage, apply] of DAMAGED) {
   test(`C-5: with a live home's admission record ${damage}, reconcile and its plan refuse E_ATTRIBUTION_EVIDENCE before any removal, naming the record, and the home keeps its membership`, (t) => {
