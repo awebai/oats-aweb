@@ -1809,7 +1809,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
     // aw's own output stays withheld (it can hold a token); the failure says
     // which root and setting minted, the class of the cause and where to look.
     // A spawn-time join has no home yet to run --plan from: the root and its setting are enough.
-    throw new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`);
+    throw Object.assign(new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`), { protectedAdmission: protectedAdmissionRequired(e.stdout) });
   }
   const inv = parseSecretJson(minted, "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
@@ -1825,7 +1825,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] })); }
   catch (e) {
     if (preexisting) throw e;
-    if (holdsIdentity(identityHome)) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
+    if (holdsIdentity(identityHome)) throw Object.assign(new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`), { protectedAdmission: e.protectedAdmission || protectedAdmissionRequired(e.stdout) });
     // Confirmed: aw left no identity, so nothing was joined and nothing needs releasing.
     try { rmdirSync(identityHome); } catch { /* never created, or holds what is not an identity */ }
     if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });
@@ -2668,7 +2668,9 @@ if (event === "launch") {
     const pendingJoins = minted ? readProviderTeamsState().pendingJoins : [];
     // No identity recorded: the mint's intent, while it stands, is what retire acts on.
     const pendingMint = minted ? undefined : readPendingMint().intent;
-    fatal(`identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
+    // A joined team aweb has protected refuses its member invite (C-8) as the primary's does,
+    // with the primary identity handed back for compensation.
+    fatal(e.protectedAdmission || protectedAdmissionRequired(e.stdout) ? refusalText(PROTECTED_ADMISSION_REQUIRED) : `identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));

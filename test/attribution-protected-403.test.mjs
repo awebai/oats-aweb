@@ -5,7 +5,7 @@
 // the invite and never reminting. Readiness is unchanged. Any other 403 maps
 // as it does today.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fixture } from "./helpers/delivery-fixture.mjs";
@@ -49,4 +49,41 @@ test("C-8: readiness is unchanged: it reports nothing for a protected team", (t)
   fx.hook("spawn", { FAKE_JOIN_FROM_PROTECTED: "reason" });
   const result = fx.readiness();
   assert.ok(!JSON.stringify(result).includes("protected"), JSON.stringify(result));
+});
+
+/** A spawn that joins alpha, whose accept-invite aw answers with `error` (a 403 envelope) and
+ *  exit 1; every other aw call goes to the fake. Returns the answer and the accept calls made. */
+function joinedAcceptRefused(t, error) {
+  const fx = fixture(t, { delivery: "channel", settings: { join: "alpha" } });
+  const wrapper = join(fx.ws, "wrapper"), log = join(fx.ws, "accepts.log");
+  mkdirSync(wrapper);
+  const native = join(fx.fake.path.split(":")[0], "aw");
+  writeFileSync(join(wrapper, "aw"), `#!${process.execPath}
+const a = process.argv.slice(2);
+if (a.includes("accept-invite")) { require("node:fs").appendFileSync(${JSON.stringify(log)}, "accept\\n"); console.log(${JSON.stringify(JSON.stringify({ error }))}); console.error("Error: refused"); process.exit(1); }
+const r = require("node:child_process").spawnSync(${JSON.stringify(native)}, a, { stdio: "inherit" });
+process.exit(r.status ?? 1);
+`, { mode: 0o700 });
+  const r = fx.hook("spawn", { PATH: `${wrapper}:${fx.fake.path}` });
+  const accepts = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0;
+  return { r, accepts };
+}
+
+for (const spelling of ["reason", "detail"]) {
+  test(`C-8: a joined team's member-invite accept answered 403 with ${spelling} protected_admission_required refuses the spawn E_PROTECTED_ADMISSION_REQUIRED with its fix, once, and hands the primary identity back for compensation`, (t) => {
+    const { r, accepts } = joinedAcceptRefused(t, { code: "http_error", http_status: 403, [spelling]: "protected_admission_required" });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    const w = String(r.doc?.warning || "");
+    assert.ok(w.startsWith("oats-aweb: E_PROTECTED_ADMISSION_REQUIRED"), w);
+    assert.ok(w.includes(FIX), w);
+    assert.equal(accepts, 1, "never retried");
+    assert.equal(typeof r.doc.meta?.alias, "string", JSON.stringify(r.doc.meta));
+  });
+}
+
+test("C-8: a joined team's accept answered another 403 maps as it does today, never E_PROTECTED_ADMISSION_REQUIRED", (t) => {
+  const { r } = joinedAcceptRefused(t, { code: "http_error", http_status: 403, reason: "forbidden" });
+  assert.equal(r.status, 1);
+  assert.ok(!(r.stdout + r.stderr).includes("E_PROTECTED_ADMISSION_REQUIRED"), r.stdout + r.stderr);
+  assert.ok(String(r.doc?.warning || "").startsWith("oats-aweb: identity minting failed"), String(r.doc?.warning));
 });

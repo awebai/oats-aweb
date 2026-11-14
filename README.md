@@ -193,7 +193,12 @@ its first sentence and this section; the full texts are here.
   of the root's request itself (a scope code, `signed_request_invalid`,
   `authority_changed`, `operation_conflict` or `operation_mismatch`) says
   nothing of the operation, so the home is kept: fix the root, then retire
-  again.
+  again. An unknown admission whose `--certificate-out` file holds the
+  admitted certificate (its team and member key) committed, and is kept as
+  committed even while the root can't act.
+- Once an admission committed, nothing undoes it: a rerun of a join that
+  failed after it resumes from its certificate with no second admit, and a
+  refusal of a retry leaves it committed, for its leave or retire to remove.
 - `E_ATTRIBUTION_EXCHANGE` with `step: install`: the admitted certificate
   couldn't be installed in the new home, or its id isn't aw's form. Respawn.
   A code aw doesn't list is never retried.
@@ -305,8 +310,9 @@ Home readiness, with the setting, warns `attribution-revoked`,
 Once aweb's operator has protected a team, a deployment that never opted in
 can no longer mint into it with the member invite: the service answers HTTP
 403 `protected_admission_required`, and the spawn refuses
-`E_PROTECTED_ADMISSION_REQUIRED`. The invite is never retried and nothing is
-reminted; readiness reports nothing for it.
+`E_PROTECTED_ADMISSION_REQUIRED`, for the primary team or a team the spawn
+joins. The invite is never retried and nothing is reminted; readiness reports
+nothing for it.
 
 The fix is to opt in, as "Human attribution" above describes:
 `oats aweb setup --endorse-root --new-root --name <alias> --human <your human did:aw>`.
