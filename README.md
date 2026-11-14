@@ -414,6 +414,24 @@ says so under `attribution.problem`. A team no home here can read is
 listed under `unreadableTeams`, and only its copies are known there, never
 as having no other leaks.
 
+Beside `attribution`, not in it, and with or without the setting, check-only
+lists `unrecordedRootHomes` when `.aweb-endorsed-root/` holds a root home the
+live setting doesn't record (an earlier root that was replaced, say):
+
+```json
+"unrecordedRootHomes": [{"path": ".aweb-endorsed-root/old-root",
+  "id": "did:aw:...", "verified": "revoked", "fix": "remove this home"}]
+```
+
+`id` is the home's `did:aw` (`null` when its identity doesn't read) and
+`verified` is its own `aw who` verdict: `revoked`, `nearest_human` or
+`unavailable`. A revoked root's fix is to remove its home. Any other verdict's
+is: if its endorsement may have committed, have the namespace's controller
+revoke it (the revocation section), then remove the home. Check-only acts on
+nothing here. With no such home, the field is absent. While the setting
+doesn't read, the field is absent too: the setting is what says which home is
+the live root, and `attribution.problem` says why it doesn't read.
+
 `oats aweb setup --reconcile-admissions [--plan]` removes the leaked
 memberships the root holds a copy for, each removal's operation id kept
 under the root's `removals/`. `--plan` lists them first and removes nothing. A
@@ -1117,7 +1135,9 @@ The join half works on its own when someone else mints the invite:
   `aw.status` is `ok`, `done` (installed now: `detail` says from what),
   `needs-human` (`detail`, `remedy`) or `failed` (`code`, `detail`; exit 1).
   `member` is `null` when aw cannot be asked, and `root` is the root that mints
-  for the default team (`roots[team]`, else `root`) when one exists.
+  for the default team (`roots[team]`, else `root`) when one exists. An
+  `attribution` block and an `unrecordedRootHomes` list appear only for human
+  attribution ("Human attribution", check-only).
 
 **The invite token** exists only in connect's memory and on the routed join's
 stdin. It never appears in oats argv, a file, a log, the result or an error
