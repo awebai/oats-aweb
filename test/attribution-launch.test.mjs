@@ -1,12 +1,18 @@
 // Start and restart of an attributed home (spec v4.3.10 C-4) and revocation
 // (C-3c), with acceptance tests 10 and 16.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { HUMAN, ROOT_ID, attributionFixture, capabilityWith, verbs } from "./helpers/attribution-fixture.mjs";
 import { writeIdentity } from "./helpers/fake-aw-protected.mjs";
+import { filledSetupCommand } from "./helpers/setup-command.mjs";
+import { parseEndorseArgs } from "../oats-package/capabilities/oats-aweb/lib/endorse-root.mjs";
+
+const SETUP_COMMAND = "oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>";
+const README_SECTION = '(README, "Human attribution: revocation")';
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 const HUMAN_ATTRIBUTION = { mode: "human", human: { id: HUMAN, label: "Juan Pérez" }, parent: { id: ROOT_ID } };
@@ -82,15 +88,40 @@ function revokedText(t, capability) {
   assert.ok(text.length <= 300, `${text.length}: ${text}`);
   assert.ok(text.includes("remove settings.oats.aweb.attribution"), text);
   assert.ok(text.endsWith('(README, "Human attribution: revocation")'), text);
+  assert.ok(!text.includes("…"), `the why is whole, not shortened to fit: ${text}`);
   assert.ok(!verbs(fx.fake).includes("id create"), "before any effect");
   return text;
 }
 
-test("acceptance 16: after the root is revoked, a new spawn refuses E_ATTRIBUTION_REVOKED, naming the whole path and that re-endorsing the same root is outside v1, within 300 characters", (t) => {
+// C-3c: the spawn's 300-character text gives the code, the first step and the README section; the
+// section holds the whole path. So the path's order and "outside v1" are read in the section, below.
+test("acceptance 16 (C-3c): after the root is revoked, a new spawn refuses E_ATTRIBUTION_REVOKED within 300 characters, giving the first step, then setup's whole command, then the README section that holds the whole path", (t) => {
   const text = revokedText(t);
   const at = (part) => { const i = text.indexOf(part); assert.ok(i >= 0, `${part}: ${text}`); return i; };
-  assert.ok(at("remove settings.oats.aweb.attribution") < at("--endorse-root --new-root") && at("--endorse-root --new-root") < at("bind-root") && at("bind-root") < at("rerun setup"), "in the path's order");
-  assert.ok(text.includes("re-endorsing this root is outside v1"), text);
+  assert.ok(at("remove settings.oats.aweb.attribution") < at(SETUP_COMMAND), "the first step, then the second");
+  assert.ok(at(SETUP_COMMAND) < at(README_SECTION), "then the section");
+});
+
+test("acceptance 16 (C-3c): the setup command E_ATTRIBUTION_REVOKED names, its placeholders filled, is one setup accepts", (t) => {
+  const argv = filledSetupCommand(revokedText(t));
+  const parsed = parseEndorseArgs(argv);
+  assert.equal(parsed.newRoot, true);
+  assert.equal(parsed.name, "root-1");
+});
+
+test("acceptance 16: a root that now verifies to another human refuses a new spawn E_ATTRIBUTION_REVOKED before any key, its why whole within 300 characters, with the same fix", (t) => {
+  const fx = attributionFixture(t);
+  const rootAw = join(fx.rootHome, ".aw");
+  const who = JSON.parse(execFileSync("aw", ["--identity-home", rootAw, "who", "--json"], { env: { ...fx.env, PATH: fx.fake.path }, encoding: "utf8" }));
+  assert.equal(who.reason, "verified", JSON.stringify(who));
+  writeFileSync(join(rootAw, "fake-who.json"), JSON.stringify({ ...who, human_id: "did:aw:zAnotherHuman" }), { mode: 0o600 }); // the root home stays owner-only
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 1);
+  const text = segments(r)[0].replace(/^oats-aweb: /, "");
+  assert.ok(text.startsWith("E_ATTRIBUTION_REVOKED: the endorsed root verifies to another human now → remove settings.oats.aweb.attribution"), text);
+  assert.ok(text.length <= 300 && !text.includes("…"), `${text.length}: ${text}`);
+  assert.ok(text.includes(SETUP_COMMAND) && text.endsWith(README_SECTION), text);
+  assert.ok(!verbs(fx.fake).includes("id create"), "before any key");
 });
 
 test("acceptance 16: a spawn from a genuinely chainless spawner, after the root is revoked, refuses E_ATTRIBUTION_REVOKED too, not the service's refusal", (t) => {
@@ -115,7 +146,9 @@ test("acceptance 16: the README's revocation section names the whole path, says 
   assert.ok(start >= 0, "the section exists");
   const end = text.indexOf("\n## ", start + 1);
   const section = text.slice(start, end < 0 ? undefined : end).replace(/\s+/g, " "); // as read, not as wrapped
-  for (const step of ["settings.oats.aweb.attribution", "oats aweb setup --endorse-root --new-root", "bind", "rerun"]) assert.ok(section.includes(step), step);
+  const at = (part) => { const i = section.indexOf(part); assert.ok(i >= 0, part); return i; };
+  const steps = ["settings.oats.aweb.attribution", SETUP_COMMAND, "bind-root", "rerun"];
+  for (let i = 1; i < steps.length; i++) assert.ok(at(steps[i - 1]) < at(steps[i]), `the whole path in order: ${steps[i - 1]}, then ${steps[i]}`);
   assert.ok(section.includes("a new root needs the protected service's operator to bind it, and that step isn't available yet, so this deployment can't spawn into its protected teams until it is"), "the text for an aw that doesn't serve the binding");
   assert.ok(/re-endors\w+ the same root[^.]*outside v1/i.test(section));
   assert.ok(section.includes("restart, or respawn, to clear the name"));

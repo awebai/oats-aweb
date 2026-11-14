@@ -214,11 +214,13 @@ export function readWho(aw, identityHome) {
 
 /** The README section that holds the whole revocation path. */
 export const README_REVOCATION = 'README, "Human attribution: revocation"';
-/** The revocation path within the spawn's 300 characters (C-3c): with the
- *  binding act served, the whole path; while it isn't, the first step and
- *  that no path works yet, with no other fix. The README section holds it all. */
+/** The revocation fix within the spawn's 300 characters (C-3c): the first
+ *  step, the second as setup's whole command, and the README section, which
+ *  holds the whole path (the operator's binding, the rerun, and that
+ *  re-endorsing the same root is outside v1). While the binding act isn't
+ *  served, the first step and that no path works yet, with no other fix. */
 export const REVOKED_FIX = REQUEST_BINDING_SERVED
-  ? `remove settings.oats.aweb.attribution, run \`oats aweb setup --endorse-root --new-root\`, have the operator bind-root it, then rerun setup; re-endorsing this root is outside v1 (${README_REVOCATION})`
+  ? `remove settings.oats.aweb.attribution, run \`oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>\`, then the rest (${README_REVOCATION})`
   : `remove settings.oats.aweb.attribution; a new root then needs the operator's binding, which isn't available yet, so no working path exists yet (${README_REVOCATION})`;
 
 /** The refusal for an identity whose chain doesn't verify: revoked, unavailable (retry), else the exchange step that read it. */
@@ -238,7 +240,7 @@ export function chooseIssuer({ setting, spawner, root }) {
   if (root.kind === "error") throw attributionError("E_ATTRIBUTION_EXCHANGE", `the endorsed root's identity can't be read (${root.reason}) → check the root home ${setting.root.home}`, { step: "issuer", reason: root.reason });
   if (root.kind !== "verified") throw chainRefusal(root, { who: "the endorsed root", step: "issuer" });
   if (root.id !== setting.root.id) throw attributionError("E_ATTRIBUTION_SETTING", `settings.oats.aweb.attribution.root names ${setting.root.id}, but its home holds ${root.id} → ${SETTING_FIX}`, { key: "settings.oats.aweb.attribution.root" });
-  if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root no longer verifies to the recorded human → ${REVOKED_FIX}`, { reason: "another_human", humanId: root.humanId ?? null });
+  if (root.humanId !== setting.human.id) throw attributionError("E_ATTRIBUTION_REVOKED", `the endorsed root verifies to another human now → ${REVOKED_FIX}`, { reason: "another_human", humanId: root.humanId ?? null });
   if (!spawner) return depthChecked({ identityHome: join(setting.root.home, ".aw"), id: root.id, certificates: root.chain.length });
   const v = spawner.verdict;
   if (spawner.grant) {

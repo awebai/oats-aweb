@@ -124,7 +124,8 @@ label.
 When the human revokes the endorsed root, or its chain is revoked or replaced,
 every new spawn refuses `E_ATTRIBUTION_REVOKED`, before any key: each spawn
 reads the root's own verdict, whoever spawns it, a chainless spawner included. Each refusal gives this
-section's first step. The whole path is:
+section's first step, then the second as setup's whole command, each
+placeholder as "Human attribution" says. The whole path is:
 
 1. Remove `settings.oats.aweb.attribution` from this deployment's
    `oats-local.yaml`.
