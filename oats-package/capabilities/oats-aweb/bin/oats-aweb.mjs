@@ -96,7 +96,7 @@ import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
-import { holdAdmissionLocks, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
+import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
 import { legacyRootInventory, scanProtectedKeys } from "../lib/key-scan.mjs";
@@ -1875,9 +1875,8 @@ function leaveJoinedTeam(label, meta) {
  *  (a join that hasn't written its first record holds its lock), its joined and pending teams',
  *  the primary's, and every label this deployment lets it join. */
 function retireLockLabels(meta) {
-  let names = [];
-  try { names = readdirSync(providerStateDir()); } catch { names = []; }
-  const fromFiles = names.map((name) => /^admission-(.+?)(?:~left-[^.]*)?\.(?:json|lock)$/.exec(name)?.[1]).filter(Boolean);
+  const { records, unreadable } = providerRecords(providerStateDir());
+  const fromFiles = [...records, ...unreadable].map((r) => r.label).concat(lockedLabels(providerStateDir()));
   let eligible = [];
   try { eligible = eligibleTeams().map((t) => t.label); } catch { eligible = []; }
   return [...new Set(["default", ...fromFiles, ...joinedTeamsOf(meta).map((j) => j.label), ...pendingJoinsOf(meta).map((p) => p.label), ...eligible].filter((l) => typeof l === "string" && l))].sort();
@@ -2425,7 +2424,9 @@ function profileRegistry(setting) {
 }
 /** True when this home recorded an admission (an attributed spawn reached C-3 step 3). */
 function hasAdmissionRecords() {
-  try { return readdirSync(providerStateDir()).some((f) => /^admission-.+\.json$/.test(f)); } catch { return false; }
+  // One that can't be read counts: retire then keeps the home for it (records-unreadable).
+  const { records, unreadable } = providerRecords(providerStateDir());
+  return records.length > 0 || unreadable.length > 0;
 }
 /** OATS's own count of live homes holding a committed admission for `team` (R4): not the server's. */
 function committedAdmissionCount(team) {

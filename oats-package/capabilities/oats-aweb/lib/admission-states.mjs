@@ -109,13 +109,15 @@ export const RECORD_STATES = new Set(["keyed", "pending", "unknown", "committed"
  *  label, and what names its certificate where the state shields one (table E): a committed
  *  record its certificate id, one awaiting its outcome its alias; and a certificate id of aw's
  *  form and a --certificate-out that is a path wherever one is given. That is what every writer
- *  writes and what removal acts on. A record that fails this could hold any certificate, so it is
- *  never read as holding none. */
-export function recordProblem(record) {
+ *  writes and what removal acts on. `label` is the label of the record's file, which the
+ *  record's own must equal. A record that fails this could hold any certificate, so it is never
+ *  read as holding none. */
+export function recordProblem(record, label) {
   if (!record || typeof record !== "object" || Array.isArray(record)) return "not a record";
   if (!RECORD_STATES.has(record.state)) return "no state the table has";
   if (typeof record.team !== "string" || !record.team) return "no team";
   if (typeof record.label !== "string" || !record.label) return "no label";
+  if (record.label !== label) return "a label other than its file's";
   // A reference that names nothing usable would hold another certificate than the home's.
   if (record.certificateId !== undefined && !(typeof record.certificateId === "string" && UUID.test(record.certificateId))) return "a certificate id that isn't aw's form";
   if (record.certificateOut !== undefined && !(typeof record.certificateOut === "string" && record.certificateOut)) return "an empty --certificate-out";

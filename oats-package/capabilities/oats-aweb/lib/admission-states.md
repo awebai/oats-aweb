@@ -201,7 +201,10 @@ first record holds its lock), its joined and pending teams', the primary's,
 and every label the deployment lets it join, so no join, leave or other
 retire of the home runs beside it. With a live holder it acts on nothing,
 exits nonzero and keeps the home (`admission-locked`). Every command reads a home's
-records the same way (`providerRecords`, `readAdmission`): a missing record is
+records through two readers only (`providerRecords`, `readAdmission`), which apply
+one check (`recordProblem`, given the label of the record's file);
+`test/attribution-record-readers.test.mjs` fails on any other line of the package
+that names a record's path. A missing record is
 none, and one that can't be read or isn't one of this table's refuses
 `E_ATTRIBUTION_EVIDENCE` (problem `records-unreadable`) before any effect; a
 retire then keeps the home (`records-unreadable`), and a start keeps the

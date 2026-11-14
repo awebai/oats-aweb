@@ -17,11 +17,15 @@
 //   reused by another process only makes the refusal wrong, never the records.
 // - A release removes the lock only while it is still its own.
 import { randomUUID } from "node:crypto";
-import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { attributionError } from "./attribution.mjs";
 
 export const admissionLockPath = (providerDir, label) => join(providerDir, `admission-${label}.lock`);
+/** The labels whose locks are in `providerDir`: a join that hasn't written its first record holds one. */
+export function lockedLabels(providerDir) {
+  try { return readdirSync(providerDir).map((name) => /^admission-(.+)\.lock$/.exec(name)?.[1]).filter(Boolean); } catch { return []; }
+}
 
 /** Whether a process runs as `pid` here (one another user runs counts). */
 function running(pid) {

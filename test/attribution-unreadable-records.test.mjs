@@ -9,7 +9,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 import test from "node:test";
 import { OPS, TEAM, attributionFixture, commandArgs } from "./helpers/attribution-fixture.mjs";
-import { providerRecords } from "../oats-package/capabilities/oats-aweb/lib/admission.mjs";
+import { providerRecords, readAdmission } from "../oats-package/capabilities/oats-aweb/lib/admission.mjs";
 import { POLICY } from "./helpers/fake-aw-protected.mjs";
 
 const recordFile = (fx, label, name = "dev-1") => join(fx.homeOf(name), ".oats-aweb", `admission-${label}.json`);
@@ -257,4 +257,43 @@ test("C-5: a leave's set-aside record is one of the table's", (t) => {
   assert.equal(fx.spawn("dev-1").status, 0);
   assert.equal(fx.command("dev-1", "leave", ["--labels", "ops"]).status, 0);
   assert.ok(checkedRecords(fx).some((r) => r.label === "ops"), "the set-aside record is read");
+});
+
+// Both readers apply one check, so a record that one refuses the other never acts on (round 24;
+// the lead, mail 2bf3ffb7-b48b-4385-89a9-ffd945f54901).
+test("C-3b: readAdmission refuses a record whose label isn't its file's, as providerRecords does", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  rewriteRecord(fx, "default", (r) => ({ ...r, label: "ops" }));
+  const dir = join(fx.homeOf("dev-1"), ".oats-aweb");
+  assert.throws(() => readAdmission(dir, "default"), (e) => e.code === "E_ATTRIBUTION_EVIDENCE" && e.details?.problem === "records-unreadable" && e.message.includes("a label other than its file's") && e.message.endsWith(`${FIX} rerun`));
+  assert.equal(providerRecords(dir).unreadable[0]?.reason, "a label other than its file's");
+});
+
+test("C-3b: a resumed spawn over a record whose label isn't its file's refuses before any effect: no admit, install or connect, and the record is untouched", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  rewriteRecord(fx, "default", (r) => ({ ...r, label: "ops" }));
+  const bytes = readFileSync(recordFile(fx, "default"), "utf8");
+  const before = fx.fake.calls().length;
+  const r = fx.hook("spawn", "dev-1");
+  assert.equal(r.status, 1, JSON.stringify(r.doc) + r.stderr);
+  assert.ok(String(r.doc?.warning).includes("E_ATTRIBUTION_EVIDENCE"), String(r.doc?.warning));
+  assert.deepEqual(calls(fx, before).filter((v) => !["version", "who"].includes(v)), [], "nothing but the preflight's reads");
+  assert.equal(readFileSync(recordFile(fx, "default"), "utf8"), bytes);
+});
+
+test("C-3b: a join's rerun over a record whose label isn't its file's refuses with no aw call, and the record is untouched", (t) => {
+  const fx = attributionFixture(t);
+  assert.equal(fx.spawn("dev-1").status, 0);
+  fx.fake.setService({ admit: { code: "receipt_unavailable", charge: true } });
+  assert.equal(fx.command("dev-1", "join", ["--labels", "ops"]).status, 1);
+  fx.fake.setService({ admit: undefined });
+  rewriteRecord(fx, "ops", (r) => ({ ...r, label: "default" }));
+  const bytes = readFileSync(recordFile(fx, "ops"), "utf8");
+  const before = fx.fake.calls().length;
+  const r = fx.command("dev-1", "join", ["--labels", "ops", "--json"]);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.deepEqual(calls(fx, before).filter((v) => v !== "version"), []);
+  assert.equal(readFileSync(recordFile(fx, "ops"), "utf8"), bytes);
 });

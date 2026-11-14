@@ -97,8 +97,7 @@ export function providerRecords(dir) {
     const file = join(dir, f), shown = `${basename(dir)}/${f}`, label = /^admission-(.+?)(?:~left-[^.]*)?\.json$/.exec(f)?.[1] ?? null;
     let record;
     try { record = JSON.parse(readFileSync(file, "utf8")); } catch (e) { unreadable.push({ file, shown, label, reason: e instanceof SyntaxError ? "not JSON" : why(e) }); continue; }
-    // A record's label is its file's: a leave, a retire and a lock all name it by its file.
-    const problem = recordProblem(record) ?? (record.label !== label ? "a label other than its file's" : null);
+    const problem = recordProblem(record, label);
     if (problem) { unreadable.push({ file, shown, label, reason: problem }); continue; }
     records.push({ record, left: f.includes("~left-"), label, file });
   }
@@ -122,7 +121,7 @@ export function readAdmission(providerDir, label, { then = "rerun" } = {}) {
   catch (e) { if (e?.code === "ENOENT") return null; throw recordsUnreadable({ shown, reason: String(e?.code || e?.message || e).slice(0, 80) }, then); }
   let record;
   try { record = JSON.parse(text); } catch { throw recordsUnreadable({ shown, reason: "not JSON" }, then); }
-  const problem = recordProblem(record);
+  const problem = recordProblem(record, label);
   if (problem) throw recordsUnreadable({ shown, reason: problem }, then);
   return record;
 }
