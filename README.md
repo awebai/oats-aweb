@@ -269,6 +269,10 @@ its first sentence and this section; the full texts are here.
 - `E_ATTRIBUTION_EXCHANGE` with `step: retired`, at a join: a retire already
   removed this home's primary membership, so there is nothing to join it to.
   Spawn a new instance.
+- `E_TEAM_DEFAULT` at a join or a leave that names this home's primary team.
+  The primary is the team the home was spawned into, even after the
+  deployment changes its default team: a leave can't remove it, and the home
+  is already its member. Respawn the instance to move it.
 - `E_ATTRIBUTION_EXCHANGE` with `step: wake`: the admission committed, but
   the host wake broker couldn't register the home. The refusal carries aw's
   cause. Install the aweb release that ships `aw wake`, or start the broker

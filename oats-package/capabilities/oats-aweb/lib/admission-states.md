@@ -197,7 +197,10 @@ preflight, to its last receive sync and state write, so another command can't
 change the label between them; `join --plan` reads and takes no lock. A join
 whose home a retire already removed (the primary's record `removed`, read
 under the hold) refuses `E_ATTRIBUTION_EXCHANGE` step `retired` before any
-effect. A
+effect. The primary is the record whose identityHome is the home's own
+`.aw`, never the live default label (a default-team change moves that label,
+not the home's primary): a join or leave that names its label refuses
+`E_TEAM_DEFAULT` before any effect, and `join --plan` reports the same. A
 holder whose pid no longer runs is taken over by exactly one taker, under the
 takeover's own guard; a live holder, or a lock that can't be read, refuses
 `E_ATTRIBUTION_EXCHANGE` step `lock` with its fix. A command that exits

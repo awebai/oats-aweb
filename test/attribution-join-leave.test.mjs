@@ -412,3 +412,54 @@ process.exit(r.status ?? 1);
   const scratch = join(fx.homeOf("dev-1"), ".oats-aweb", "attribution");
   assert.deepEqual(existsSync(scratch) ? readdirSync(scratch) : [], [], "no exchange's scratch outlives it");
 });
+
+// Round 29, the lead's decision: a home's primary is its own, the admission record whose
+// identityHome is the home's primary `.aw`, never the live default label. A deployment that
+// changes its default team moves that label; the home's primary stays where it was spawned.
+const SWITCHED = { OATS_DEFAULT_TEAM: "ops", OATS_DEFAULT_TEAM_ID: OPS, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: true, from: "local" }, { label: "default", team: TEAM, default: false, from: "shared" }]) };
+const charges = (fx) => Object.keys(fx.fake.charges()).length;
+const primaryKey = (fx) => join(fx.homeOf("dev-1"), ".aw", "signing.key");
+test("round 29: with the default switched, a leave of the home's primary label refuses E_TEAM_DEFAULT before any effect, its key and membership kept", (t) => {
+  const fx = attributionFixture(t);
+  const after = spawned(fx);
+  assert.ok(existsSync(primaryKey(fx)));
+  const r = fx.command("dev-1", "leave", ["--labels", "default", "--json"], { extra: SWITCHED });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.stderr.includes("E_TEAM_DEFAULT: default is this home's primary team and cannot be left"), r.stderr);
+  assert.ok(existsSync(primaryKey(fx)), "the primary identity stays");
+  assert.deepEqual(fx.fake.removed(), []);
+  assert.deepEqual(call({ calls: after }, "id team remove-agent"), []);
+  assert.equal(record(fx, "dev-1", "default").state, "committed");
+});
+test("round 29: with the default switched, a join of the home's primary label refuses E_TEAM_DEFAULT before any effect, never advising a retire", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  const before = charges(fx);
+  const r = fx.command("dev-1", "join", ["--labels", "default", "--json"], { extra: SWITCHED });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.stderr.includes("E_TEAM_DEFAULT: default is this home's primary team; this home is already its member"), r.stderr);
+  assert.ok(!/retire/.test(r.stderr), r.stderr);
+  assert.equal(charges(fx), before, "no admission");
+  assert.equal(existsSync(join(fx.homeOf("dev-1"), ".aweb-identity-default")), false);
+});
+test("round 29: with the default switched, a join of a home a retire already removed refuses step retired whatever the primary's label, with no admission", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  assert.equal(fx.retire("dev-1", { extra: SWITCHED }).status, 0);
+  assert.equal(record(fx, "dev-1", "default").state, "removed");
+  const before = charges(fx);
+  // `default` is no longer the live default's label, so only the record says it is the primary.
+  const r = fx.command("dev-1", "join", ["--labels", "default", "--json"], { extra: SWITCHED });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.stderr.includes("E_ATTRIBUTION_EXCHANGE: this home's primary membership was removed (it was retired)"), r.stderr);
+  assert.equal(charges(fx), before, "no admission");
+});
+test("round 29: with the default switched, join --plan of the home's primary label reports the refusal, not a join", (t) => {
+  const fx = attributionFixture(t);
+  spawned(fx);
+  const r = fx.command("dev-1", "join", ["--labels", "default", "--plan", "--json"], { extra: SWITCHED });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const row = r.doc.find?.((p) => p.label === "default") ?? r.doc.plan?.find((p) => p.label === "default");
+  assert.equal(row?.member, false, JSON.stringify(r.doc));
+  assert.ok(String(row?.problem).includes("default is this home's primary team; this home is already its member"), JSON.stringify(r.doc));
+});

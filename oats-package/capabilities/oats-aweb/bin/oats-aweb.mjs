@@ -1882,9 +1882,26 @@ function retireLockLabels(meta) {
   try { eligible = eligibleTeams().map((t) => t.label); } catch { eligible = []; }
   return [...new Set(["default", ...fromFiles, ...joinedTeamsOf(meta).map((j) => j.label), ...pendingJoinsOf(meta).map((p) => p.label), ...eligible].filter((l) => typeof l === "string" && l))].sort();
 }
-/** `join --plan` on an opted-in deployment: the root that would admit each team, or why it can't. */
-function attributedJoinPlan(setting, rows, meta) {
+/** This home's primary admission record (C-3): the one whose identityHome is the home's own `.aw`,
+ *  whatever label the deployment's live default has now (a default-team change moves that label;
+ *  the primary stays where the home was spawned). Null when none is recorded. */
+function primaryRecordOf(records) {
+  const own = resolve(localIdentityHome());
+  return records.find((r) => !r.left && typeof r.record?.identityHome === "string" && resolve(r.record.identityHome) === own) || null;
+}
+const primaryTeamText = (label, kind) => kind === "leave" ? `${label} is this home's primary team and cannot be left` : `${label} is this home's primary team; this home is already its member`;
+/** A join or leave that names the home's primary team (round 29, the lead's decision). */
+function primaryTeamRefusal(label, kind) {
+  const error = new Error(`E_TEAM_DEFAULT: ${primaryTeamText(label, kind)}`);
+  error.code = "E_TEAM_DEFAULT";
+  return error;
+}
+/** `join --plan` on an opted-in deployment: the root that would admit each team, or why it can't
+ *  (a retired home, or the home's own primary team, as the join itself refuses). */
+function attributedJoinPlan(setting, rows, meta, primary) {
   return rows.map((row) => {
+    if (primary?.record.state === "removed") return { label: row.label, team: row.team, root: null, source: null, member: false, problem: HOME_RETIRED.message };
+    if (primary?.label === row.label) return { label: row.label, team: row.team, root: null, source: null, member: false, problem: primaryTeamText(row.label, "join") };
     if (joinedTeamsOf(meta).some((j) => j.label === row.label)) return { label: row.label, team: row.team, joined: true };
     if (!setting.teams.includes(row.team)) return { label: row.label, team: row.team, root: null, source: null, member: false, problem: unlistedTeam(row.team, row.label).message };
     return { label: row.label, team: row.team, root: setting.root.home, source: "settings.oats.aweb.attribution.root", admittedBy: setting.root.id, member: true };
@@ -2235,7 +2252,7 @@ function runTeamsCommand(kind) {
       // Read-only: no lock, no effect.
       if (kind !== "join") { const error = new Error("--plan is supported by join only"); error.code = "E_BAD_ARGS"; throw error; }
       const attributed = captured ? liveJoinAttribution(captured) : null;
-      const plan = attributed ? attributedJoinPlan(attributed, rows, meta) : joinPlan(rows, meta);
+      const plan = attributed ? attributedJoinPlan(attributed, rows, meta, primaryRecordOf(providerRecords(providerStateDir()).records)) : joinPlan(rows, meta);
       outputJoinPlan(plan, args.json);
       process.exit(plan.every((p) => p.joined || p.member) ? 0 : 1);
     }
@@ -2254,10 +2271,12 @@ function runTeamsCommand(kind) {
       const { records, unreadable } = providerRecords(providerStateDir());
       const bad = unreadable.find((u) => u.label === null || labels.includes(u.label));
       if (bad) throw recordsUnreadable(bad, kind === "leave" ? "leave again" : "rerun");
-      // A retire that ended before this hold removed the primary's membership (its record, under
-      // the label the spawn admitted it with): nothing to join.
-      const primaryLabel = defaultTeamLabel() || "default";
-      if (kind === "join" && records.some((r) => !r.left && r.label === primaryLabel && r.record.state === "removed")) throw HOME_RETIRED;
+      // The home's primary is its own record, never the live default label (primaryRecordOf). A
+      // retire that ended before this hold removed it: nothing to join. A join or leave that names
+      // the primary's label refuses before any effect.
+      const primary = primaryRecordOf(records);
+      if (kind === "join" && primary?.record.state === "removed") throw HOME_RETIRED;
+      if (primary && labels.includes(primary.label)) throw primaryTeamRefusal(primary.label, kind);
       if (kind === "join") attributed = liveJoinAttribution(captured);
       meta = readCapabilityMeta();
     }
