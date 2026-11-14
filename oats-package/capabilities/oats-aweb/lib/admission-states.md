@@ -87,12 +87,11 @@ Then admit's answer:
 | Answer | Next | Writes | Exit and text |
 |---|---|---|---|
 | committed | committed | the root's copy, then the record, then install, connect | 0 |
-| unknown, first attempt | (same) | nothing | retried once, the same operation; *sent* |
-| unknown, second attempt | unknown | the record | 1, `E_ADMISSION_UNKNOWN`, the home kept |
+| unknown, exists, or a requester code in no C-9 row, first attempt | (same) | nothing | retried once, the same operation; *sent* |
+| the same, second attempt | unknown | the record | 1, `E_ADMISSION_UNKNOWN`, the home kept |
 | final | refused | the record | 1, `E_ADMISSION_REFUSED` or `E_ADMISSION_LIMIT` |
-| requester, not *sent*, a C-9 refusal code | refused | the record | 1, `E_ADMISSION_REFUSED` **[decided: Q]** |
-| requester, not *sent*, not a C-9 code | unknown | the record | 1, `E_ADMISSION_UNKNOWN` |
-| requester, *sent* | unknown | the record | 1, C-9's text (`E_ADMISSION_REFUSED`), the record kept unknown (C-3d) |
+| a requester code C-9 refuses, not *sent* | refused | the record | 1, `E_ADMISSION_REFUSED` **[decided: Q]** |
+| a requester code C-9 refuses, *sent* | unknown | the record | 1, C-9's text (`E_ADMISSION_REFUSED`), the record kept unknown (C-3d) |
 | any failure, record committed | committed | nothing | 1, that answer's refusal |
 
 Install's or connect's failure leaves the record committed, with the root's
