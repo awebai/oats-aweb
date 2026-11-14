@@ -64,11 +64,13 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await
 
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
-import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRootChoice, liveAwebSettings, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { leftAdmissionName, retireAdmissions } from "../lib/removal.mjs";
+import { attributionStatus, homesOf, reconcileAdmissions } from "../lib/reconcile.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { inAwebHostedZone, sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
@@ -80,7 +82,7 @@ import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, aw
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
-import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
+import { assertAwebSettingRecordable, atomicWrite, recordAttributionSetting, recordAwebSetting } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
 import { AW_MIN, CAPTURED_UNSUPPORTED, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
@@ -92,6 +94,14 @@ import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
+import { PROTECTED_ADMISSION_REQUIRED, isRefusal, refusalText, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
+import { README_ADMISSION, admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
+import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
+import { step } from "../lib/admission-states.mjs";
+import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
+import { legacyRootInventory, scanProtectedKeys } from "../lib/key-scan.mjs";
+import { PROTECTED_AW_MIN } from "../lib/protected-client.mjs";
+import { querySelectedKernel } from "../lib/session-readiness.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -586,7 +596,8 @@ function wakeRegister(instanceHome, identityHome, runner = run) {
   try {
     runner(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
-    throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
+    // aw's own code or cause travels with it: a registration can fail for more than a missing `aw wake`.
+    throw Object.assign(new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`), { wakeCause: e.awCode || String(e.message || e) });
   }
 }
 function wakeDeregister(instanceHome) {
@@ -1540,7 +1551,7 @@ function readDefaultRetireMarker() {
   } catch { /* no completed default retire marker */ }
   return undefined;
 }
-function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReason, receipt }) {
+function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReason, receipt, workspaceDeleted }) {
   const doc = {
     schemaVersion: 1,
     kind: "default-workspace-delete",
@@ -1552,6 +1563,8 @@ function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReaso
     aliasReason: aliasReason || "unstated",
     recordedAt: new Date().toISOString(),
     ...(receipt?.identity_deleted === true ? { identityDeleted: true } : {}),
+    // Absent means a delete ran; false, that none did (a hosted-zone admitted team, C-6).
+    ...(workspaceDeleted === false ? { workspaceDeleted: false } : {}),
   };
   atomicWrite(defaultRetireMarkerFile(), JSON.stringify(doc, null, 2) + "\n");
   return doc;
@@ -1608,14 +1621,36 @@ function teamNotHostedRefusal(e, identityHome) {
   } catch { /* no identity to name: aw names the path */ }
   return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
 }
-function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
+/** C-6 (v4.3.25): what retire and leave say of a workspace they leave on a hosted-zone team. */
+const hostedWorkspaceNote = (team) => `the workspace on ${team} stays at the service until it goes stale: the pinned aw has no delete that removes only the workspace on a team in aweb's hosted zone`;
+function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home, { admitted = false } = {}) {
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
   if (!alias) throw new Error(`failed to leave team ${entry.label}; no alias is known for ${entry.identityHome}`);
+  // An admitted join that never connected (killed after its key, refused, or its install or connect
+  // failed) has no workspace: aw can't even resolve a service for it ("empty base url"), and there is
+  // nothing at the service to delete or leave stale. The membership, if any, is the root's to remove.
+  if (admitted && !joinedWorkspacePresent(entry.identityHome)) {
+    try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    return { released: undefined, receipt: undefined };
+  }
+  // On a team the root admitted into, in aweb's hosted zone, aw's delete is hosted
+  // self-retirement: a second removal act beside the root's (C-6, v4.3.25). None is sent.
+  if (admitted && inAwebHostedZone(entry.team)) {
+    try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    return { released: undefined, receipt: undefined, note: hostedWorkspaceNote(entry.team) };
+  }
   try {
     receipt = parseAwJson(run(awWithIdentity(entry.identityHome, ["workspace", "delete", alias, "--json"]), cwd, 60000), "aw workspace delete");
     released = releaseReceiptStatus(receipt);
   } catch (e) {
+    // On a team the root admitted into (C-6), aw deletes no workspace through an external
+    // identity home outside aweb's hosted zone, and says so before any request. The membership
+    // is the root's to remove; the workspace record stays at the service until it goes stale.
+    if (admitted && teamNotHostedRefusal(e, entry.identityHome)) {
+      try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+      return { released: undefined, receipt: undefined, note: `the joined identity's workspace on ${entry.team} stays at the service until it goes stale: aw deletes no joined identity's workspace on a team outside aweb's hosted zone` };
+    }
     const error = new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
     if (teamNotHostedRefusal(e, entry.identityHome)) error.nativeReason = "team_not_hosted";
     throw error;
@@ -1784,7 +1819,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
     // aw's own output stays withheld (it can hold a token); the failure says
     // which root and setting minted, the class of the cause and where to look.
     // A spawn-time join has no home yet to run --plan from: the root and its setting are enough.
-    throw new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`);
+    throw Object.assign(new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`), { protectedAdmission: protectedAdmissionRequired(e.stdout) });
   }
   const inv = parseSecretJson(minted, "aw team invite");
   if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
@@ -1800,7 +1835,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] })); }
   catch (e) {
     if (preexisting) throw e;
-    if (holdsIdentity(identityHome)) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
+    if (holdsIdentity(identityHome)) throw Object.assign(new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`), { protectedAdmission: e.protectedAdmission || protectedAdmissionRequired(e.stdout) });
     // Confirmed: aw left no identity, so nothing was joined and nothing needs releasing.
     try { rmdirSync(identityHome); } catch { /* never created, or holds what is not an identity */ }
     if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });
@@ -1822,6 +1857,7 @@ function outputJoinPlan(plan, json) {
   if (json) { console.log(JSON.stringify({ plan })); return; }
   for (const p of plan) {
     if (p.joined) console.log(`${p.label} (${p.team}): already joined; nothing to do`);
+    else if (p.admittedBy) console.log(`${p.label} (${p.team}): admitted by the endorsed root ${p.admittedBy} (${p.root}), its identity issued from this home`);
     else if (p.member) console.log(`${p.label} (${p.team}): root ${p.root} from ${p.source}, membership confirmed`);
     else console.log(`${p.label} (${p.team}): refused: ${p.problem}`);
   }
@@ -1835,6 +1871,72 @@ function leaveJoinedTeam(label, meta) {
   }
   const { released, receipt } = cleanupJoinedIdentity(entry, meta.alias || instance, home);
   return { meta: { ...meta, joinedTeams: joined.filter((j) => j.label !== label) }, changed: true, released, receipt };
+}
+/** Every team label an opted-in home's retire could act on: its admission records' and locks'
+ *  (a join that hasn't written its first record holds its lock), its joined and pending teams',
+ *  the primary's, and every label this deployment lets it join. */
+function retireLockLabels(meta) {
+  const { records, unreadable } = providerRecords(providerStateDir());
+  const fromFiles = [...records, ...unreadable].map((r) => r.label).concat(lockedLabels(providerStateDir()));
+  let eligible = [];
+  try { eligible = eligibleTeams().map((t) => t.label); } catch { eligible = []; }
+  return [...new Set(["default", ...fromFiles, ...joinedTeamsOf(meta).map((j) => j.label), ...pendingJoinsOf(meta).map((p) => p.label), ...eligible].filter((l) => typeof l === "string" && l))].sort();
+}
+/** `join --plan` on an opted-in deployment: the root that would admit each team, or why it can't. */
+function attributedJoinPlan(setting, rows, meta) {
+  return rows.map((row) => {
+    if (joinedTeamsOf(meta).some((j) => j.label === row.label)) return { label: row.label, team: row.team, joined: true };
+    if (!setting.teams.includes(row.team)) return { label: row.label, team: row.team, root: null, source: null, member: false, problem: unlistedTeam(row.team, row.label).message };
+    return { label: row.label, team: row.team, root: setting.root.home, source: "settings.oats.aweb.attribution.root", admittedBy: setting.root.id, member: true };
+  });
+}
+/** A home's own join on an opted-in deployment (C-3, acceptance 18): the joined identity's key,
+ *  its chain issued from this home (none when this home has none), and the root's admission,
+ *  exactly as a spawn's joined team; no member invite. A failure after the key exists keeps the
+ *  joined identity and its admission record: the rerun resumes them, or a leave removes them. */
+function attributedJoin(pre, row, meta) {
+  const existing = joinedTeamsOf(meta).find((j) => j.label === row.label);
+  if (existing) return { meta, joined: existing, changed: false };
+  const identityHome = identityHomeForLabel(row.label);
+  try { admitIdentity({ aw: run, setting: pre.setting, team: row.team, label: row.label, alias: instance, identityHome, providerDir: providerStateDir(), plan: pre.plan, registry: pre.registry, count: () => committedAdmissionCount(row.team), instance, exchangeDir: join(providerStateDir(), "attribution") }); }
+  catch (e) {
+    if (e.minted) e.message = `${e.message}; the joined identity ${identityHome} is kept → rerun \`oats aweb join --labels ${row.label}\` to resume it, or \`oats aweb leave --labels ${row.label}\``;
+    throw e;
+  }
+  const joined = { label: row.label, team: row.team, identityHome, receive: "poll", since: new Date().toISOString() };
+  return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true };
+}
+/** A home's own leave on an opted-in deployment (C-6): the membership is removed through the root,
+ *  as retire removes it, then the joined identity is deleted. An outcome OATS can still learn (an
+ *  unknown admission, an unconfirmed removal) keeps it for the rerun. A root that can't act keeps
+ *  the membership with its warning, and the identity goes; its record is kept aside for retire and
+ *  reconciliation. A joined team with no admission record (joined before the opt-in) leaves as before. */
+function attributedLeave(setting, label, meta) {
+  // The label's admission lock spans the whole leave, its own retireAdmissions included.
+  return withAdmissionLock(providerStateDir(), label, () => attributedLeaveLocked(setting, label, meta));
+}
+function attributedLeaveLocked(setting, label, meta) {
+  const providerDir = providerStateDir();
+  const record = readAdmission(providerDir, label, { then: "leave again" });
+  if (!record) return leaveJoinedTeam(label, meta);
+  let deployment = null;
+  try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+  const removal = retireAdmissions({ aw: run, setting, providerDir, deployment, labels: [label], then: "leave again" });
+  if (removal.keep) throw new Error(`${removal.keep.text}; the joined identity is kept → rerun \`oats aweb leave --labels ${label}\``);
+  const after = readAdmission(providerDir, label, { then: "leave again" });
+  const entry = joinedTeamsOf(meta).find((j) => j.label === label) || { label, team: record.team, identityHome: record.identityHome };
+  const { released, receipt, note } = existsSync(entry.identityHome) ? cleanupJoinedIdentity(entry, meta.alias || instance, home, { admitted: true }) : {};
+  const left = step("leave", stateOf(after));
+  if (left.act === "delete-identity-and-certificate") rmSync(after.certificateOut, { force: true });
+  else if (left.act === "delete-identity-and-set-aside") {
+    // Aside, with its --certificate-out file, so a later join of this label starts its own admission.
+    const left = join(providerDir, leftAdmissionName(label, after.certificateId));
+    const certificateOut = left.replace(/\.json$/, ".cert");
+    if (existsSync(after.certificateOut)) renameSync(after.certificateOut, certificateOut);
+    writePrivate(left, `${JSON.stringify({ ...after, certificateOut }, null, 2)}\n`);
+    rmSync(admissionFile(providerDir, label), { force: true });
+  }
+  return { meta: { ...withoutPendingJoin(meta, label), joinedTeams: joinedTeamsOf(meta).filter((j) => j.label !== label) }, changed: true, released, receipt, ...(removal.warnings.length || note ? { warning: [...removal.warnings, ...(note ? [note] : [])].join(" | ") } : {}) };
 }
 function awebRootForTeam(team) {
   const declared = declaredRootCandidate(team);
@@ -2125,17 +2227,40 @@ function runTeamsCommand(kind) {
     }
     const rows = validateJoinLabels(args.labels, { action: kind });
     if (!rows.length) { const error = new Error("labels are required"); error.code = "E_BAD_ARGS"; throw error; }
+    // On an opted-in deployment a joined team is the root's to admit and remove (C-3, C-6). A join
+    // admits under what the refresh changed since this home's spawn (liveJoinAttribution); a leave
+    // removes with the captured setting, as retire does.
+    const captured = attributionSetting(settings);
+    const attributed = captured && kind === "join" ? liveJoinAttribution(captured) : captured;
     if (args.plan) {
       if (kind !== "join") { const error = new Error("--plan is supported by join only"); error.code = "E_BAD_ARGS"; throw error; }
-      const plan = joinPlan(rows, meta);
+      const plan = attributed ? attributedJoinPlan(attributed, rows, meta) : joinPlan(rows, meta);
       outputJoinPlan(plan, args.json);
       process.exit(plan.every((p) => p.joined || p.member) ? 0 : 1);
     }
+    // On an opted-in deployment the labels' admission locks span the whole command, from its read
+    // of this home's state and its preflight to its last receive sync and state write, so no other
+    // join, leave or retire of these labels runs beside it (admission-lock.mjs). Its admit and
+    // retire take them again within this hold.
+    const labels = [...new Set(rows.map((row) => row.label))].sort();
+    const held = captured ? holdAdmissionLocks(providerStateDir(), labels) : null;
+    try {
+    if (held) {
+      // Every named label's record is checked under the hold, before the preflight and any effect
+      // (its receive sync and state write included): one that can't be read, or isn't one of the
+      // table's, refuses here, so no label is acted on.
+      const bad = providerRecords(providerStateDir()).unreadable.find((u) => u.label === null || labels.includes(u.label));
+      if (bad) throw recordsUnreadable(bad, kind === "leave" ? "leave again" : "rerun");
+      meta = readCapabilityMeta();
+    }
     // Record every completed label even when a later one fails: a confirmed
     // leave deleted its home, and a join created a remote identity.
+    // Who issues and who admits, read once, before any effect: every listed team is checked first.
+    const pre = attributed && kind === "join" ? attributionPreflight({ setting: attributed, teams: rows.filter((row) => !joinedTeamsOf(meta).some((j) => j.label === row.label)), spawnerHome: home, fail: (e) => { throw e; } }) : null;
     try {
       for (const row of rows) {
-        const result = kind === "join" ? mintJoinedTeam(row, meta, { current: true }) : leaveJoinedTeam(row.label, meta);
+        const result = kind === "join" ? (pre ? attributedJoin(pre, row, meta) : mintJoinedTeam(row, meta, { current: true }))
+          : (attributed ? attributedLeave(attributed, row.label, meta) : leaveJoinedTeam(row.label, meta));
         meta = result.meta;
         writeProviderTeamsState(meta);
         const boundedWarning = result.warning ? actionWarning(result.warning) : undefined;
@@ -2156,6 +2281,7 @@ function runTeamsCommand(kind) {
       for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`);
       writeProviderTeamsState(meta);
     }
+    } finally { held?.release(); }
   }
   const doc = { ...teamsDocument(meta), ...(actions.length ? { actions } : {}), ...(warnings.length ? { warnings } : {}) };
   if (operation) operationOk(doc);
@@ -2219,6 +2345,132 @@ function syncWakeReceive(meta) {
   return { meta: next, warnings };
 }
 
+// ---------------------------------------------------------------------------
+// Human attribution (spec human-ids-acxy7 v4.3.10): only with
+// settings.oats.aweb.attribution, which a deployment that never opted in
+// doesn't have, so its spawn is the legacy one above, unchanged.
+const attributionFatal = (e, meta) => fatal(refusalText(e), meta);
+/** A team outside attribution.teams (acceptance 18): its fix is the refresh that adds it. */
+const unlistedTeam = (team, label) => attributionError("E_ENDORSE_POLICY", `team ${label} (${team}) isn't among the teams this deployment's root admits into → rerun \`oats aweb setup --endorse-root\` to add it`, { problem: "unlisted", team });
+/** The setting an attributed home's own join admits under (acceptance 18, 22): the kernel hands a
+ *  command the settings its home captured at spawn, so the deployment's live setting is read
+ *  (`oats inspect --soul`, as the legacy join reads its current root) for what the refresh changed:
+ *  joinSetting. Refuses before any aw call. */
+function liveJoinAttribution(captured) {
+  const unreadable = (cause, at) => { throw attributionError("E_ATTRIBUTION_SETTING", `the deployment's live settings could not be read (${cause}) → run oats inspect ${at.soul ? `--soul ${at.soul}` : `--home ${home}`} --dir ${at.deployment || "<deployment>"} --json in the deployment, fix what it reports, then retry`, { problem: "setting-unreadable" }); };
+  return joinSetting(captured, attributionSetting(liveAwebSettings(home, { unreadable }).settings));
+}
+/** Before any effect (C-1, C-3): the setting, the kernel, the aw floor, the
+ *  profile, the teams, the root home and who issues: the spawner (`spawnerHome`, a
+ *  home's own join passes itself), else the root. Null without the setting.
+ *  `fail(refusal)` never returns: a spawn answers it, a command throws it. */
+function attributionPreflight({ setting: given, teams, spawnerHome = process.env.OATS_SPAWNER_HOME, fail = attributionFatal }) {
+  let setting = given;
+  if (setting === undefined) try { setting = attributionSetting(settings); } catch (e) { fail(e); }
+  if (!setting) return null;
+  let version;
+  try { version = querySelectedKernel(["--version", "--json"]); } catch { version = undefined; }
+  if (!Array.isArray(version?.features) || !version.features.includes(SPAWN_ATTRIBUTION_FEATURE)) fail(attributionError("E_SETUP_KERNEL", `attribution needs an OATS kernel that lists ${SPAWN_ATTRIBUTION_FEATURE} (OATS ${KERNEL_FLOOR} or later); this one (${typeof version?.version === "string" ? version.version : "unknown"}) doesn't → upgrade OATS`));
+  if (!versionAtLeast(spawnAwVersion, PROTECTED_AW_MIN)) fail(attributionError("E_SETUP_AW_VERSION", `attribution needs aw ${PROTECTED_AW_MIN} or later, the protected-client floor; this host has ${spawnAwVersion || "an unreadable aw"} → upgrade aw`));
+  const key = "settings.oats.aweb.attribution.service.profile";
+  const problem = recordedProfileProblem(setting);
+  if (problem) fail(problem);
+  let registry;
+  try { registry = JSON.parse(readFileSync(setting.service.profile, "utf8")).registry_origin; }
+  catch { fail(attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} can't be read as JSON → have the service's operator provision it again`, { key, problem: "profile-mode" })); }
+  if (typeof registry !== "string" || !/^https?:\/\//.test(registry)) fail(attributionError("E_ATTRIBUTION_SETTING", `the protected profile ${setting.service.profile} names no registry origin → have the service's operator provision it again`, { key, problem: "profile-mode" }));
+  for (const { team, label } of teams) if (!setting.teams.includes(team)) fail(unlistedTeam(team, label));
+  let deployment;
+  try { deployment = selectedDeployment(process.env); }
+  catch (e) { fail(attributionError("E_ATTRIBUTION_ROOT_HOME", `the root home's deployment can't be confirmed (${e.message}) → spawn from the deployment, with its oats-local.yaml in place`, { problem: "placement", home: setting.root.home })); }
+  const rootProblem = rootHomeProblem(setting.root.home, { deployment });
+  if (rootProblem) fail(rootProblem);
+  const chainAw = (args) => run(["aw", ...args], home, 60000);
+  let spawner = null;
+  const rootVerdict = readWho(chainAw, join(setting.root.home, ".aw"));
+  if (spawnerHome) {
+    if (!isAbsolute(spawnerHome)) fail(attributionError("E_ATTRIBUTION_EXCHANGE", `OATS_SPAWNER_HOME is not an absolute path → spawn again from a person or an instance`, { step: "issuer" }));
+    let spawnerMeta = {};
+    try { spawnerMeta = JSON.parse(readFileSync(join(spawnerHome, "instance.json"), "utf8")).capabilityMeta?.["oats.aweb"] || {}; } catch { spawnerMeta = {}; }
+    const grant = spawnerMeta.identity?.mode === "global" && spawnerMeta.identity?.grant && typeof spawnerMeta.identity.grant.home === "string" ? spawnerMeta.identity.grant : null;
+    const identityHome = grant ? grant.home : join(spawnerHome, ".aw");
+    spawner = { home: spawnerHome, identityHome, grant: !!grant, verdict: readWho(chainAw, identityHome), recordedChain: spawnerMeta.identity?.attribution?.mode === "human" };
+  }
+  let plan;
+  try { plan = chooseIssuer({ setting, spawner, root: rootVerdict }); } catch (e) { fail(e); }
+  return { setting, plan, registry };
+}
+/** Each live or kept home the kernel lists, with this provider's meta: {homes}, or
+ *  {homesUnavailable: why} when the kernel can't be asked or answers no list. */
+function kernelHomes() {
+  try { return { homes: homesOf(querySelectedKernel(["status", "--json"])) }; }
+  catch (e) { return { homes: [], homesUnavailable: String(e.message || e).replace(/\s+/g, " ").slice(0, 200) }; }
+}
+/** The protected profile's registry origin, or undefined. */
+function profileRegistry(setting) {
+  try { const origin = JSON.parse(readFileSync(setting.service.profile, "utf8")).registry_origin; return typeof origin === "string" ? origin : undefined; } catch { return undefined; }
+}
+/** True when this home recorded an admission (an attributed spawn reached C-3 step 3). */
+function hasAdmissionRecords() {
+  // One that can't be read counts: retire then keeps the home for it (records-unreadable).
+  const { records, unreadable } = providerRecords(providerStateDir());
+  return records.length > 0 || unreadable.length > 0;
+}
+/** OATS's own count of live homes holding a committed admission for `team` (R4): not the server's. */
+function committedAdmissionCount(team) {
+  let rows;
+  try { rows = querySelectedKernel(["status", "--json"])?.agents?.flatMap((a) => a.instances || []) || []; } catch { return "unknown"; }
+  return committedAdmissions(rows, team);
+}
+/** The attributed spawn (C-3): the primary, then each joined team, each with
+ *  its own identity home; no legacy mint, no invite. Answers and exits. */
+function attributedSpawn(pre, { team, label, from, joinRows }) {
+  const warnings = [];
+  if (pre.plan.action === "chainless") warnings.push(`oats-aweb: ${SPAWNER_UNCHAINED}`);
+  let minted;
+  const one = (row, identityHome) => admitIdentity({ aw: run, setting: pre.setting, team: row.team, label: row.label, alias: instance, identityHome, providerDir: providerStateDir(), plan: pre.plan, registry: pre.registry, count: () => committedAdmissionCount(row.team), instance, exchangeDir: join(providerStateDir(), "attribution") });
+  let primary;
+  try { primary = one({ team, label: label || "default" }, localIdentityHome()); }
+  catch (e) { attributionFatal(e, e.minted ? { team, alias: instance, attributionFailed: true } : undefined); }
+  minted = { team, alias: instance };
+  // From here the primary's admission has committed: a failure hands back the minted meta, so the
+  // kernel's rollback retire removes what was admitted, and refuses with its code and fix (C-3d,
+  // C-9) under C-9's exchange rule: step wake for the registration, step spawn for anything else.
+  let meta = { team, alias: instance };
+  const afterAdmission = (e) => {
+    // A refusal of this feature carries its own code; a system error's (EISDIR, …) is a cause.
+    if (isRefusal(e)) return e;
+    const cause = String(e?.wakeCause ?? e?.message ?? e).replace(/\s+/g, " ");
+    return e?.wakeCause !== undefined
+      ? attributionError("E_ATTRIBUTION_EXCHANGE", `the host wake broker couldn't register this home (aw wake register: ${cause}) → install the aweb release that ships aw wake, or start the host wake broker (\`oats aweb wake install\`), then respawn`, { step: "wake" })
+      : attributionError("E_ATTRIBUTION_EXCHANGE", `the spawn failed after its admission: ${cause} → respawn; the admission is retired with this home (${README_ADMISSION})`, { step: "spawn" });
+  };
+  try {
+  const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
+  const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
+  if (broker) wakeRegister(home, localIdentityHome());
+  meta = startedMeta({ team, alias: instance, delivery: deliveryMode, defaultTeam: { label, team, from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: { ...identityMeta({ mode: "local", alias: instance, team }), attribution: primary.attribution } });
+  for (const row of joinRows) {
+    const identityHome = identityHomeForLabel(row.label);
+    try { one(row, identityHome); }
+    catch (e) { attributionFatal(e, { ...minted, ...(joinedTeamsOf(meta).length ? { joinedTeams: joinedTeamsOf(meta) } : {}), attributionFailed: true }); }
+    meta = { ...meta, joinedTeams: [...joinedTeamsOf(meta), { label: row.label, team: row.team, identityHome, receive: "poll", since: new Date().toISOString() }] };
+    writeProviderTeamsState(meta);
+  }
+  if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
+  writeProviderTeamsState(meta);
+  const defaultTeamBrief = { soul: "the default team configured for this soul", workspace: "the workspace's default team" }[from] || "this deployment's default team";
+  const joinedNow = joinedTeamsOf(meta);
+  const joinedBrief = joinedNow.length ? ` Joined teams: ${joinedNow.map((j) => `${j.label} (${j.team}, receive ${j.receive}, send with \`aw --identity-home ${j.identityHome} mail|chat ...\`)`).join("; ")}.` : "";
+  out({
+    meta, env,
+    brief: `Comms: you have an aweb identity — alias "${instance}" on team ${team}, ${defaultTeamBrief}.${deliveryBrief}${joinedBrief} Load the oats-aweb skill before messaging: \`oats aweb teams --json\` shows your teams, \`oats aweb roster\` the team's members and workspaces, each labelled.`,
+    ...(launch ? { launch } : {}),
+    ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
+  });
+  } catch (e) { attributionFatal(afterAdmission(e), { ...minted, ...(joinedTeamsOf(meta).length ? { joinedTeams: joinedTeamsOf(meta) } : {}), attributionFailed: true }); }
+}
+
 if (event === "launch") {
   // The delivery path is decided afresh at every start: the runtime may have
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
@@ -2252,6 +2504,12 @@ if (event === "launch") {
   syncPrimaryDelivery(primaryIdentityHomeOf(started), { retained: started.retained === true });
   if (globalLaunch) globalGrantRenew(started);
   let oldMeta = withProviderTeams(started);
+  // C-4: a home recorded `mode: human` is checked at every start with `aw who`, never the protected server.
+  if (oldMeta.identity?.attribution?.mode === "human") {
+    const verdict = readWho((args) => run(["aw", ...args], home, 60000), primaryIdentityHomeOf(started));
+    const checked = startAttribution(oldMeta.identity.attribution, verdict);
+    if (checked.warning) { oldMeta = { ...oldMeta, identity: { ...oldMeta.identity, attribution: checked.attribution } }; outNotes.push(checked.warning); }
+  }
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
     const eligible = new Set(eligibleTeams().map((t) => t.label));
@@ -2262,6 +2520,18 @@ if (event === "launch") {
       // when it is respawned.
       if (row.label === defaultTeamLabel() && sameAwebTeamId(row.team, defaultTeamId())) {
         warnings.push(`kept joined team ${row.label}: it is now the default team, and this home's primary identity is still in ${defaultTeamObject(oldMeta)?.label || "its spawn team"}; respawn to move it`);
+        continue;
+      }
+      // A membership the endorsed root admitted is the root's to remove (C-6), and a start makes
+      // no protected call (C-4): aw's own delete would be a second removal act (hosted
+      // self-retirement) or refused. It stays joined until retire, or a leave, removes it.
+      // A record that can't be read could be an admission only the root removes: a start, never
+      // blocked, keeps the team joined and says so.
+      let admitted;
+      try { admitted = readAdmission(providerStateDir(), row.label, { then: "start again" }); }
+      catch (e) { if (e?.details?.problem !== "records-unreadable") throw e; warnings.push(`kept joined team ${row.label}: it is no longer eligible, but ${e.message}`); continue; }
+      if (step("start", stateOf(admitted)).act === "keep-joined") {
+        warnings.push(`kept joined team ${row.label}: it is no longer eligible, but the endorsed root admitted it and only the root removes that membership → retire this instance, which removes it through the root, or make ${row.label} eligible again and run \`oats aweb leave --labels ${row.label}\``);
         continue;
       }
       try {
@@ -2309,6 +2579,14 @@ if (event === "launch") {
   let joinRows;
   try { joinRows = validateJoinLabels(requestedJoinLabels()); }
   catch (e) { fatal(e.message || e); }
+  // An opted-in deployment admits through its protected teams only, never the legacy mint.
+  if (Object.hasOwn(settings, "attribution")) {
+    const team = defaultTeamId();
+    if (!team) fatal(teamConfigRemedy());
+    const label = defaultTeamLabel();
+    const pre = attributionPreflight({ teams: [{ team, label: label || team }, ...joinRows] });
+    if (pre) attributedSpawn(pre, { team, label, from: defaultTeamFromEnv(), joinRows });
+  }
   let minted;                 // external identity, once the mint succeeds
   let spawnMeta;              // with joined teams, once any is accepted
   try {
@@ -2351,6 +2629,9 @@ if (event === "launch") {
         dropPendingMint(); // the identity is in this answer's meta, and its binding in the home
         fatal(`aw init --join-from was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
       }
+      // A team aweb has protected admits agents only through an endorsed root (C-8): the
+      // server refused the invite, so nothing registered; never retried, never reminted.
+      if (protectedAdmissionRequired(e.stdout)) { dropPendingMint(); attributionFatal(PROTECTED_ADMISSION_REQUIRED); }
       // Another agent holds the alias in this team: an instance of that name
       // on another machine, or a retired one whose certificate stays. Say
       // that, and the remedy, instead of relaying a bare join error.
@@ -2445,14 +2726,31 @@ if (event === "launch") {
     const pendingJoins = minted ? readProviderTeamsState().pendingJoins : [];
     // No identity recorded: the mint's intent, while it stands, is what retire acts on.
     const pendingMint = minted ? undefined : readPendingMint().intent;
-    fatal(`identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
+    // A joined team aweb has protected refuses its member invite (C-8) as the primary's does,
+    // with the primary identity handed back for compensation.
+    fatal(e.protectedAdmission || protectedAdmissionRequired(e.stdout) ? refusalText(PROTECTED_ADMISSION_REQUIRED) : `identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
   const retireWarnings = [];
+  // An opted-in retire takes the lock of every label it could act on before its first effect
+  // (the attention claim, the wake deregistration, any delete) and holds them to its exit, so no
+  // join, leave or other retire of this home runs beside it. A live holder: this retire has no
+  // effect at all, and keeps the home (admission-lock.mjs).
+  let retireSetting = null;
+  try { retireSetting = attributionSetting(settings); } catch (e) { retireWarnings.push(`admission removal skipped: ${String(e.message || e).slice(0, 200)}`); }
+  // An admission record that can't be read keeps the home the same way (records-unreadable): it
+  // could hold any membership or operation, so nothing here acts on the home.
+  let retireLocks = null, lockedOut = null;
+  if (retireSetting) {
+    try { retireLocks = holdAdmissionLocks(providerStateDir(), retireLockLabels(meta)); }
+    catch (e) { if (e?.details?.step !== "lock") throw e; lockedOut = { reason: "admission-locked", text: lockedRetireText(e.details) }; }
+    const bad = lockedOut ? null : providerRecords(providerStateDir()).unreadable[0];
+    if (bad) { const e = recordsUnreadable(bad, "retire again"); lockedOut = { reason: "records-unreadable", text: `${e.code} (problem: records-unreadable): ${e.message}` }; }
+  }
   // Use the selected kernel and authoritative hook scope; no event-log writes
   // or inherited instance selectors. Clear even on an incomplete retirement.
-  try {
+  if (!lockedOut) try {
     const {healthHost} = await import('../lib/health-host.mjs');
     const probe = healthHost({deployment: home, env: process.env});
     if (await probe.supportsWaiting()) {
@@ -2505,7 +2803,7 @@ if (event === "launch") {
   // Broker delivery: the broker registration goes in a child that runs beside
   // the rest of retire (it is local and independent of the self-delete); every
   // way out of this branch awaits it through finish().
-  const deregistration = brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
+  const deregistration = !lockedOut && brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
   const finish = async (o, code) => {
     // The deregistration is awaited first: its kill at the hook's deadline is a
     // timer, which the record's synchronous lock wait below would hold off.
@@ -2517,8 +2815,10 @@ if (event === "launch") {
       o = { ...o, meta: { ...o.meta, ...(incomplete ? {} : { retired: false, reason: "joined-team-leave-failed" }), failedLeaves } };
       code = 1;
     }
+    retireLocks?.release();
     out(o, code);
   };
+  if (lockedOut) await finish({ meta: { retired: false, reason: lockedOut.reason }, warning: `oats-aweb: ${[...retireWarnings, lockedOut.text].join(" | ")}` }, 1);
   // A grant seat, or a home whose seat record outlived its meta (a hook killed
   // after the mint, before it answered), retires through the grant path.
   if (!meta.retained) {
@@ -2532,9 +2832,44 @@ if (event === "launch") {
     }
     if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
   }
+  // An opted-in home's memberships (C-6, C-3d), in two steps around the workspace delete:
+  // first an unknown admission is resumed and a missing root copy restored, and an outcome
+  // OATS can still learn keeps the home before any delete; the root removes them only after
+  // the home's own workspace delete, which their certificate authenticates and the removal
+  // revokes. Every way out with nothing left to delete removes them too.
+  // team → whether the root removed its membership (C-6). On these teams the workspace
+  // delete is a plain delete (team_not_hosted): the membership is the root's, not a controller cleanup.
+  const admittedTeams = new Map();
+  // What C-6 says is said on every way out, a home with nothing to delete included.
+  const admissionNotes = [];
+  const admittedTeam = (team) => [...admittedTeams.keys()].find((t) => sameAwebTeamId(t, team));
+  let retireDeployment = null;
+  const admissions = async (phase) => {
+    let removal;
+    try { removal = retireAdmissions({ aw: run, setting: retireSetting, providerDir: providerStateDir(), deployment: retireDeployment, phase }); }
+    catch (e) { removal = { warnings: [], keep: { reason: "admission-unknown", text: `${String(e.message || e).slice(0, 240)}; this home is kept, with its admission records → retire it again` } }; }
+    retireWarnings.push(...removal.warnings);
+    admissionNotes.push(...removal.warnings);
+    for (const m of removal.memberships || []) admittedTeams.set(m.team, m.removed);
+    if (removal.keep) await finish({ meta: { retired: false, reason: removal.keep.reason }, warning: `oats-aweb: ${[...retireWarnings, removal.keep.text].join(" | ")}` }, 1);
+  };
+  let removalsDone = false;
+  /** The root's removals, once: after the workspace delete, or where there is none to make. */
+  const removeAdmissions = async () => { if (!retireSetting || removalsDone) return; removalsDone = true; await admissions("remove"); };
+  if (retireSetting) {
+    try { retireDeployment = selectedDeployment(process.env); } catch { retireDeployment = null; }
+    await admissions("settle");
+  }
   for (const joined of joinedTeamsOf(meta)) {
+    if (admittedTeam(joined.team)) {
+      // The root removes this membership below; aw can't delete its workspace (cleanupJoinedIdentity).
+      try { const { note } = cleanupJoinedIdentity(joined, meta.alias || instance, home, { admitted: true }); if (note) retireWarnings.push(note); }
+      catch (e) { retireWarnings.push(String(e.message || e).slice(0, 300)); }
+      meta = { ...meta, joinedTeams: joinedTeamsOf(meta).filter((j) => j.label !== joined.label) };
+      continue;
+    }
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
-    catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
+    catch (e) { const failed = failedLeaveDisposition(joined, e); if (failed.data.cleanup === "controller" && admittedTeam(joined.team)) continue; retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
   }
   // A join killed or failed after its accept is released the same way
   // (adopted, then left), with the same rule for keeping the key.
@@ -2548,6 +2883,9 @@ if (event === "launch") {
   meta = { ...meta, wakeJoined: false };
   writeProviderTeamsState(meta);
   if (meta.retained) {
+    // The seat deletes no workspace of its own, so the root removes what it admitted (a team the
+    // seat joined) now, before the lock goes: an outcome OATS can still learn keeps the seat.
+    await removeAdmissions();
     // The lock is released only when it names this home: one another seat has
     // taken over, or that cannot be read, is never removed here.
     // heldHere: true when the lock names this home, false when it does not, undefined when unknown.
@@ -2644,6 +2982,16 @@ if (event === "launch") {
   if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
   const completedDefaultRetire = readDefaultRetireMarker();
   if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
+    // A retire kept after its workspace delete (an unconfirmed removal) removes now.
+    await removeAdmissions();
+    if (completedDefaultRetire.workspaceDeleted === false) {
+      await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: completedDefaultRetire.aliasReason || "hosted-workspace-kept", joinedTeams: joinedTeamsOf(meta) }), warning: `oats-aweb: ${[...retireWarnings, `workspace "${completedDefaultRetire.alias || meta.alias}" was left at the service to go stale (no delete on a team in aweb's hosted zone); ${ALIAS_UNRELEASED_REMEDY}`].join(" | ")}` });
+    }
+    const viaRoot = admittedTeam(completedDefaultRetire.team || meta.team || defaultTeamId());
+    if (viaRoot) {
+      const removed = admittedTeams.get(viaRoot) === true;
+      await finish({ meta: retiredMeta({ retired: true, aliasReusable: removed, aliasReason: removed ? "admission-removed" : "admission-kept", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : {}) });
+    }
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); ${ALIAS_UNRELEASED_REMEDY}` }) });
   }
   // A mint killed or failed after aw may have registered the identity, with no bound
@@ -2707,9 +3055,23 @@ if (event === "launch") {
       await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `this home's record of an interrupted mint, ${pendingMintFile()}, is unusable (${onDisk.problem}), so whether alias "${instance}" was registered is unknown: run ${membersRead(team && validAwebTeamId(team) ? team : "<team>")} in the team's root to see whether it holds a certificate there, then remove that file and retire again`].join(" | ")}` }, 1);
     }
   }
-  if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }) });
+  if (!meta.alias) await removeAdmissions();
+  if (!meta.alias) await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(admissionNotes.length ? { warning: `oats-aweb: ${admissionNotes.join(" | ")}` } : {}) });
+  // An attributed spawn rolled back before its connect has no workspace to delete:
+  // its one remote effect, the membership, was settled above.
+  if (retireSetting && hasAdmissionRecords() && !existsSync(join(home, ".aw", "workspace.yaml"))) { await removeAdmissions(); await finish({ meta: retiredMeta({ retired: false, reason: "nothing-to-delete" }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : {}) }); }
   if (!existsSync(join(home, ".aw"))) {
+    await removeAdmissions();
     await finish({ meta: retiredMeta({ retired: false, reason: "no-local-identity-key" }), warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);
+  }
+  const primaryTeam = meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId();
+  if (admittedTeam(primaryTeam) && inAwebHostedZone(primaryTeam)) {
+    // C-6 (v4.3.25, v4.3.26): no delete here, so nothing says the alias is free; the marker
+    // records that no delete ran, so a rerun only removes.
+    const workspaceId = workspaceIdOf(home, primaryTeam, meta.alias);
+    writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: false, aliasReason: "hosted-workspace-kept", workspaceDeleted: false });
+    await removeAdmissions();
+    await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "hosted-workspace-kept", joinedTeams: joinedTeamsOf(meta) }), warning: `oats-aweb: ${[...retireWarnings, hostedWorkspaceNote(primaryTeam)].join(" | ")}` });
   }
   try {
     // Self-delete from inside the home, authenticated by its own key — a remote
@@ -2720,9 +3082,16 @@ if (event === "launch") {
     const workspaceId = workspaceIdOf(home, meta.team || meta.defaultTeam?.team || meta.identity?.team, meta.alias);
     const raw = run(["aw", "workspace", "delete", workspaceId || meta.alias, "--json"], home);
     let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
-    const released = doc?.alias_released === true;
-    const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
-    if (!released && reason === "team_not_hosted") {
+    const viaRoot = admittedTeam(meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId());
+    if (viaRoot) {
+      // The delete is done: recorded first, so a retire kept by an unconfirmed removal
+      // doesn't send it again, then the root removes.
+      writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: false, aliasReason: "admission-kept", receipt: doc });
+      await removeAdmissions();
+    }
+    const released = viaRoot ? admittedTeams.get(viaRoot) === true : doc?.alias_released === true;
+    const reason = viaRoot ? (released ? "admission-removed" : "admission-kept") : typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
+    if (!viaRoot && !released && reason === "team_not_hosted") {
       const failed = failedLeaveDisposition({ label: "default", team: meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId(), alias: meta.alias, identityHome: join(home, ".aw") }, reason);
       retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
       rememberControllerCleanup({ ...failed.data, label: "default" });
@@ -2955,6 +3324,67 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
+  // Human attribution (C-5): the reconciliation of memberships no home holds.
+  if (args.includes("--reconcile-admissions")) {
+    const answer = (status, doc, text) => {
+      if (json) console.log(JSON.stringify(doc));
+      else if (text) (status ? console.error : console.log)(text);
+      process.exit(status);
+    };
+    try {
+      const extra = args.filter((a) => a !== "--reconcile-admissions" && a !== "--plan");
+      if (extra.length) throw attributionError("E_SETUP_ARGUMENT", `--reconcile-admissions takes only --plan and --json, not ${extra[0]}`, { stage: "arguments" });
+      const setting = attributionSetting(settings);
+      if (!setting) throw attributionError("E_SETUP_ARGUMENT", "--reconcile-admissions needs settings.oats.aweb.attribution: this deployment hasn't opted in", { stage: "arguments" });
+      let deployment = null;
+      try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+      const { ok, result } = reconcileAdmissions({ aw: run, setting, ...kernelHomes(), listHomes: kernelHomes, registry: profileRegistry(setting), deployment, plan: args.includes("--plan") });
+      const line = (r) => `${r.alias} in ${r.team} (certificate ${r.certificateId})`;
+      const text = [
+        `${result.plan ? "would remove" : "removals"}: ${result.removals.length ? result.removals.map(line).join("; ") : "none"}`,
+        ...(result.notRemovable.length ? [`not removable, no copy under the root's admissions/ (admitted before v4.3.3): ${result.notRemovable.map(line).join("; ")}`] : []),
+        ...(result.unreadableTeams ? [`unread, so not reconciled: ${result.unreadableTeams.map((u) => `${u.team} (${u.reason})`).join("; ")}`] : []),
+        ...(result.failed || []).map((f) => `${line(f)}: ${f.text}`),
+      ].join("\n");
+      answer(ok ? 0 : 1, { schemaVersion: 1, ok, result }, text);
+    } catch (e) {
+      const code = typeof e.code === "string" && e.code.startsWith("E_") ? e.code : "E_SETUP_ARGUMENT";
+      const { stage, ...details } = e.details || {};
+      answer(stage === "arguments" ? 2 : 1, { schemaVersion: 1, ok: false, error: { code, message: e.message, details } }, `oats aweb setup: ${code}: ${e.message}`);
+    }
+  }
+  // Human attribution (spec human-ids-acxy7 C-2): a setup form of its own.
+  if (args.includes("--endorse-root")) {
+    const answer = (status, doc, text) => {
+      if (json) console.log(JSON.stringify(doc));
+      else if (text) (status ? console.error : console.log)(text);
+      process.exit(status);
+    };
+    try {
+      const options = parseEndorseArgs(args);
+      let deployment;
+      try { deployment = selectedDeployment(process.env); }
+      catch (e) { throw attributionError("E_SETUP_ARGUMENT", `${e.message}`, { stage: "arguments" }); }
+      const live = attributionSetting(settings) ?? undefined;
+      const result = endorseRoot(options, {
+        aw: run, deployment, live, versionAtLeast, awVersion: await readAwVersion(),
+        kernel: () => { try { return querySelectedKernel(["--version", "--json"]); } catch { return undefined; } },
+        teams: { default: defaultTeamId() ? { label: defaultTeamLabel() || defaultTeamId(), team: defaultTeamId() } : null, mapped: eligibleTeams().map(({ label, team }) => ({ label, team })) },
+        scan: ({ service }) => scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service, consumer: "oats.aweb" }),
+        record: (setting) => recordAttributionSetting(setting, { start: deployment }),
+        writePrivate: (file, text) => atomicWrite(file, text, 0o600),
+        host: hostname(), optIn: OPT_IN,
+        print: json ? undefined : (text) => console.log(text),
+      });
+      answer(0, { schemaVersion: 1, ok: true, result }, result.state === "already-endorsed"
+        ? `✓ already endorsed: the root ${result.root.id}, by ${result.human.id}, for ${result.teams.join(", ")}${Object.values(result.refreshed).some((v) => v === true || v.length) ? `; refreshed ${JSON.stringify(result.refreshed)}` : "; nothing changed"}.`
+        : `✓ the root ${result.root.id} is endorsed by ${result.human.id} for ${result.teams.join(", ")}; settings.oats.aweb.attribution is recorded. Spawns into these teams are now attributed.`);
+    } catch (e) {
+      const code = typeof e.code === "string" && e.code.startsWith("E_") ? e.code : "E_ENDORSE_FAILED";
+      const { stage, ...details } = e.details || {};
+      answer(stage === "arguments" ? 2 : 1, { schemaVersion: 1, ok: false, error: { code, message: e.message, details } }, `oats aweb setup: ${code}: ${e.message}`);
+    }
+  }
   const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] [--name <alias>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
   let setupDir, setupLabel, setupPlan = false;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
@@ -3117,7 +3547,19 @@ ${JSON.stringify(problem.details || {})}`);
       const awUsable = aw.status === "ok" || aw.status === "done";
       const teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
       const member = awUsable ? !!teamRoot && teamIdsOf(readTeamsAt(teamRoot)).map(String).some((id) => sameAwebTeamId(id, team)) : null;
-      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot }));
+      // Human attribution (C-5): only when the live setting exists.
+      let attribution;
+      try {
+        const setting = attributionSetting(settings);
+        if (setting) {
+          let deployment = null;
+          try { deployment = selectedDeployment(process.env); } catch { deployment = null; }
+          // A profile that fails C-1's checks is never read for its registry, and backs no call.
+          const profileBad = recordedProfileProblem(setting);
+          attribution = attributionStatus({ aw: run, setting, ...kernelHomes(), listHomes: kernelHomes, profileProblem: profileBad, registry: profileBad ? undefined : profileRegistry(setting), scan: () => ({ ...scanProtectedKeys({ home: process.env.HOME || homedir(), deployment, service: setting.service.id, consumer: "oats.aweb" }), inventory: legacyRootInventory({ deployment, root: settings.root, roots: settings.roots, defaultTeam: defaultTeamId() ?? null, service: setting.service.id, consumer: "oats.aweb" }) }) });
+        }
+      } catch (e) { attribution = { problem: { code: typeof e.code === "string" ? e.code : "E_ATTRIBUTION_SETTING", message: String(e.message || e).slice(0, 300) } }; }
+      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, ...(attribution ? { attribution } : {}) }));
       process.exit(aw.status === "failed" ? 1 : 0);
     }
     if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }

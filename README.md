@@ -38,6 +38,365 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## Human attribution
+
+A deployment can opt in to human attribution: every instance a person
+spawns into the deployment's protected teams then carries a chain to that
+human, and the protected service admits it. It takes one endorsed root per
+deployment, one approval by the human, and the protected service's operator
+binding the root.
+
+1. The service's operator provides the protected profile (a public file that
+   pins the service's origins, registry and keys) and binds the root.
+2. The setup expert runs, in the deployment:
+
+   ```sh
+   oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> \
+     --protected-profile <abs> --service <url> [--label "<the human's name>"] [--teams <label,…>]
+   ```
+
+   - `<alias>`: the new root's name, 1-64 letters, digits, `-` or `_`;
+   - `<did:aw>`: the human's own `did:aw`, the one who approves;
+   - `<abs>`: the absolute, normalized path of the protected profile the
+     service's operator provided;
+   - `<url>`: the aweb service the protected teams use.
+
+   Setup creates the root (a registered agent identity, under
+   `D/.aweb-endorsed-root/<alias>`, owner-only), then stops at
+   `requester-unbound` until the operator binds it. The rerun after the
+   binding prints the approval link, its digest and fingerprint, the teams
+   and their bounds. Under `--json` it answers `E_ENDORSE_NOT_APPROVED`,
+   `state: pending`, with the link at once, and a rerun resumes the same
+   operation. Only the human's or the service's final no (`human_refused`,
+   `subject_ineligible`, `operation_expired`, `approval_expired`) is
+   `state: refused`, and the rerun starts a new operation; any other answer
+   aw doesn't map, or none, is `state: unknown`, and the rerun resumes the
+   same one. A policy read that establishes nothing (aw's unconfirmed
+   codes, such as `receipt_unavailable`, `handoff_result_invalid` or
+   `handoff_http_503`) refuses `E_ATTRIBUTION_EVIDENCE` and is never read
+   as a missing policy. Before the link, it shows no link: the rerun keeps
+   the operation and shows the link with its bounds. Once the human approves, setup records
+   `settings.oats.aweb.attribution` in `oats-local.yaml`, last.
+3. From then on, each spawn into those teams creates a key-only identity,
+   has the root (or a chained spawner) issue its chain, and has the root
+   admit it with the protected service. Each start checks the chain with
+   `aw who`; status rows show the human's label as `attributedHuman`.
+
+`--protected-profile` takes the profile's absolute path as written, with no
+`.` or `..` segment and no repeated or trailing `/`; any other form refuses
+`E_ATTRIBUTION_SETTING` (`problem: profile-path`) before any effect, and setup
+never rewrites it. `--label` is the human's display name in status rows; without it, rows show
+the human's did:aw. A rerun of the same command after success refreshes the
+recorded policy and adds newly mapped teams the policy lists, all or nothing.
+A deployment that never opts in is unchanged.
+
+## Human attribution: opting in
+
+What opting in means, as the endorse output says it:
+
+- Custody: the root's agent key is readable by every instance of this
+  deployment (the same OS user), within its bounds: it can admit agents only
+  within this root's own admission bounds.
+- Outages: spawns into the protected teams stop while the protected service's
+  or the identity registry's evidence is unavailable.
+- Existing instances keep their identities, unattributed: respawn to attribute
+  them.
+- One approval: the human approves this root once, at its link; later spawns
+  need no approval.
+- Revocation: if the human revokes this root, new spawns refuse
+  E_ATTRIBUTION_REVOKED; the path out is in the README, "Human attribution:
+  revocation".
+- BYOT: a deployment whose user can reach team or controller keys
+  (~/.awid/team-keys, ~/.awid/controllers), which today is every existing BYOT
+  deployment, can't opt in until aweb's package 8 migrates those keys; that's
+  a known precondition, not a bug.
+- Residents: opting in means no new residents until aweb's custody update
+  lands (aweb-acxy.18): resident create and resident certify refuse here;
+  existing residents are unchanged.
+- Membership doesn't imply attribution: a genuinely chainless spawner's child
+  is still admitted by the root, but carries no chain.
+
+The deployment label aw requires is derived, never a flag:
+`<short host name>:<basename of D>` (the basename alone with no host name).
+It is sent to the protected service and shown on the approval page, so the
+host and directory names reach the service's operator. It is recorded with
+the endorsement's operation, so a rerun of that operation sends the same
+label.
+
+## Human attribution: revocation
+
+When the human revokes the endorsed root, or its chain is revoked or replaced,
+every new spawn refuses `E_ATTRIBUTION_REVOKED`, before any key: each spawn
+reads the root's own verdict, whoever spawns it, a chainless spawner included. Each refusal gives this
+section's first step, then the second as setup's whole command, each
+placeholder as "Human attribution" says. The whole path is:
+
+1. Remove `settings.oats.aweb.attribution` from this deployment's
+   `oats-local.yaml`.
+2. Create a new root with
+   `oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>`.
+   It stops at `requester-unbound`.
+3. The protected service's operator binds the new root (bind-root).
+4. Then rerun the same setup, which endorses the new root.
+
+Step 3 is aweb's request-binding act (`bind-root`, with `--replace-root <old
+root>` for a replacement), which the aw this release pins serves. With an aw
+that doesn't serve it, a new root needs the protected service's operator to
+bind it, and that step isn't available yet, so this deployment can't spawn
+into its protected teams until it is: no working path exists, and the
+refusal names no other fix.
+
+- Removing the setting alone is no fix: a spawn into a protected team would
+  then take the legacy invite and refuse `E_PROTECTED_ADMISSION_REQUIRED`.
+- Re-endorsing the same root is outside v1.
+- A home already running keeps its identity and its memberships. Its next
+  start runs `aw who`, records it unattributed and warns
+  `attribution-revoked`. Until then its status row still names the human:
+  restart, or respawn, to clear the name.
+
+## Human attribution: admission refusals
+
+At spawn, the endorsed root admits each new identity into its protected
+team, under the operation id persisted in the new home
+(`.oats-aweb/admission-<team-label>.json`). A spawn refusal carries its code,
+its first sentence and this section; the full texts are here.
+
+- `E_ADMISSION_LIMIT` (aw `admission_limit_reached`): the team is at its
+  policy's bounds (`max_active`, `max_per_window` per `rate_window_seconds`).
+  The refusal gives those bounds and OATS's count of live homes holding a
+  committed admission for the team, labelled "OATS's count, not the
+  server's": the server reports no count. Wait for the rate window, retire
+  idle instances (a retire removes its memberships through the root), or
+  change the policy. With an aw that doesn't serve `team.agent.remove`,
+  retiring an instance frees no slot, and the refusal says so.
+- `E_ADMISSION_REFUSED`, with aw's code as `details.code`:
+  - `admission_policy_missing`: this team is not in the deployment's
+    admission policy, and this aweb release can't add a team to it: the
+    policy stays as provisioned. Once aweb serves
+    `team.admission-policy.change`, the team's owner approves adding it, and
+    then the operator runs bind-root for this root and the team.
+  - `scope_refused`, `profile_scope_refused`, `profile_scope_ambiguous`: the
+    team is in the policy, but this root most likely isn't bound for that
+    team's controller, for example a team added after the operator bound the
+    root. Ask the protected service's operator to run bind-root for this
+    root (its did:aw is in the refusal) and the team. Rerunning bind-root
+    with an added team leaves the root's other grants unchanged.
+  - `policy_changed`: the team's admission policy changed since the
+    endorsement. Rerun `oats aweb setup --endorse-root` to refresh it, then
+    rerun the spawn, which starts a new attempt.
+  - `subject_ineligible`, `operation_expired` and `approval_expired`: the
+    protected service's final refusal, with its code.
+  - `operation_conflict`: aw sent this operation id with other inputs, and
+    never sends it again. Rerun the spawn, which starts a new operation.
+- `E_ADMISSION_UNKNOWN`: the admission's outcome is unknown. Only the codes
+  above refuse: every other code aw answers (for example
+  `receipt_unavailable`, `prepare_unconfirmed`, which aw gives even for a
+  committed receipt, `execute_answer_lost`, an HTTP 429 or 5xx, or a code aw
+  adds later), or no code at all, leaves it unknown. The spawn retries once
+  with the same operation id; the refusal then names the operation id and the
+  team, and the home is kept. Retire it once the service answers: the retire
+  resumes the admission with the same operation id, which never charges
+  twice. A committed one is then removed with the rest of the home's
+  memberships, and one still unknown keeps the home again. Only the
+  operation's own final codes (`admission_policy_missing`, `policy_changed`,
+  `admission_limit_reached`, `subject_ineligible`, `operation_expired`,
+  `approval_expired`) record it refused, which needs nothing more. A refusal
+  of the root's request itself (a scope code, `signed_request_invalid`,
+  `authority_changed`, `operation_conflict` or `operation_mismatch`) says
+  nothing of the operation, so the home is kept: fix the root, then retire
+  again. An unknown admission whose `--certificate-out` file holds the
+  admitted certificate (its team and member key) committed, and is kept as
+  committed even while the root can't act.
+- Once an admission committed, nothing undoes it: a rerun of a spawn's or a
+  join's admission whose `--certificate-out` file holds its certificate
+  resumes from it with no second admit, and a refusal of a retry leaves it
+  committed, for its leave or retire to remove.
+- `E_ATTRIBUTION_EXCHANGE` with `step: install`: the admitted certificate
+  couldn't be installed in the new home, or its id isn't aw's form. Respawn.
+  A code aw doesn't list is never retried.
+- `E_ATTRIBUTION_EVIDENCE`: registry evidence was unavailable (for example
+  install-cert's `registry_unavailable`). Retry the spawn: spawns stop while
+  evidence is unavailable.
+- `E_ATTRIBUTION_EXCHANGE` with `step: connect`: check that the aweb service
+  at the recorded URL is reachable; if the URL itself is wrong, rerun
+  `oats aweb setup --endorse-root --service <the correct url>`.
+- `E_ATTRIBUTION_EXCHANGE` with `step: lock`: another command of this home
+  is acting on the same team label (a spawn, join, leave or retire holds its
+  admission lock, `.oats-aweb/admission-<label>.lock`). Rerun once it ends.
+  If no oats aweb command runs as the pid it names, remove that file (the
+  refusal names it within the home): a lock
+  whose process has ended is taken over by the next command anyway.
+- `E_ATTRIBUTION_EXCHANGE` with `step: wake`: the admission committed, but
+  the host wake broker couldn't register the home. The refusal carries aw's
+  cause. Install the aweb release that ships `aw wake`, or start the broker
+  (`oats aweb wake install`), then respawn. The failed spawn's rollback
+  removes the membership it was admitted to.
+- `E_ATTRIBUTION_EXCHANGE` with `step: spawn`: another step failed after the
+  admission committed (its cause is named). Respawn: the rollback removes
+  the membership, as for `step: wake`.
+
+## Human attribution: retire and reconciliation
+
+A retire removes each membership an opted-in home holds, right after it
+deletes the home's workspace: the server authenticates that delete with the
+membership's certificate, which the removal revokes. Before either, it resumes
+an admission whose outcome is unknown, so an outcome OATS can still learn
+keeps the home with nothing deleted. A joined identity's workspace can't be
+deleted through aw on a team outside aweb's hosted zone: retire says so, and
+that record stays at the service until it goes stale. A joined identity
+that never connected (a join killed after its key, refused, or whose install
+or connect failed) has no workspace: a leave or retire deletes it locally,
+with no workspace delete, and the root still removes any membership it holds.
+"Never connected" means no `workspace.yaml` in the joined identity's home: one
+that connected and then lost that file is deleted the same way, and its
+workspace at the service goes stale.
+The root removes a
+membership through the protected service
+(`aw id team remove-agent`, from the root's home, with the root's copy of the
+certificate under `D/.aweb-endorsed-root/<alias>/admissions/`). The removal's
+operation id is kept in the home (`.oats-aweb/removal-<team-label>.json`), so
+a retry never sends a second one, and a confirmed removal deletes the root's
+copy. A retire kept by an unconfirmed removal never sends the workspace
+delete again: the rerun only removes. A retained seat deletes no workspace of
+its own: its retire removes the memberships it joined before it releases the
+seat, and an unconfirmed removal keeps the seat and its lock.
+
+On an admitted team in aweb's hosted zone (`aweb.ai` and its subdomains), aw's
+workspace delete is hosted self-retirement: the service would revoke the
+membership itself, a second removal beside the root's. So there retire, the
+rollback of a failed spawn and `oats aweb leave` send no workspace delete, for
+the primary identity or a joined one: the root's removal is the only act, and
+the workspace record stays until it goes stale. Retire answers
+`aliasReusable: false`, `aliasReason: hosted-workspace-kept`, whether or not
+the removal was confirmed, and says the workspace was left to go stale; a
+rerun only removes.
+
+What a retire says when it can't remove a membership:
+
+- An unconfirmed removal (an unknown or lost receipt, HTTP 429 or 5xx, or no
+  code) keeps the home: retire it again once the service answers.
+- `admission-removal-unavailable`: the service's server answered 404, 405 or
+  501 to `team.agent.remove`, so it may not serve removal yet. Its operator
+  upgrades the server; then run `oats aweb setup --reconcile-admissions`. With
+  an aw that doesn't serve the act, retiring an instance frees no admission
+  slot.
+- `admission-removal-blocked`, with a `reason`: the root can't act. The
+  membership and the root's copy are kept, and the home goes.
+  - `root-home-missing`, `root-home-unsafe`, `profile-changed` or
+    `service-refused`: fix the root, then run
+    `oats aweb setup --reconcile-admissions`.
+  - `root-revoked`: no OATS path removes this membership in v1. It counts
+    only in the revoked root's bucket, never in the new root's.
+  - `root-copy-missing`: no certificate for this membership is left, so OATS
+    can't remove it. A missing copy is first written again from the home's own
+    certificate when that is the one admitted: admit's `--certificate-out`
+    file, else the certificate aw installed in the home's identity.
+- While an unknown admission's resume can't run for a reason that can be
+  fixed (`root-home-unsafe`, `profile-changed`, `service-refused`), the home is
+  kept: fix the root, then retire again, which resumes the admission.
+
+A home's own `oats aweb join` and `leave` follow the same rules. A join
+issues the joined identity's chain from this home and has the root admit it,
+never through a member invite; a team outside `attribution.teams` refuses
+`E_ENDORSE_POLICY` (`unlisted`), and a join that fails after its key exists
+keeps the joined identity for the rerun, which reuses its key and chain.
+A home's commands run with the settings it captured at spawn, so a join reads
+the deployment's live setting (`oats inspect --soul`, as the legacy join reads
+its current root) for what `setup --endorse-root`'s refresh rewrites: the
+teams and the endorsement's policy. A team mapped and added after the home's
+spawn is joined without a respawn, under the current policy; a pending
+admission's rerun still sends its recorded policy and operation. Everything
+else (the root, the human, the service, the profile and its digest, the
+endorsement's operation) must equal the home's captured setting: a live
+setting that differs, or has no attribution, refuses `E_ATTRIBUTION_SETTING`
+(`setting-diverged`, naming the key) before any protected call → respawn this
+home to use the current setting. Live settings that can't be read refuse
+`setting-unreadable`, naming the `oats inspect` read to repair. A leave, like
+retire, start and readiness, keeps the captured setting. A
+leave removes the membership through the root, then deletes the joined
+identity, its workspace record left to go stale as at retire: an unknown admission or
+an unconfirmed removal keeps it for the rerun, and a root that can't act
+keeps the membership with `admission-removal-blocked`, its record kept for
+the home's retire and `--reconcile-admissions`. While another command
+holds a label's admission lock, a leave of it refuses `step: lock`, and a
+retire acts on nothing, exits nonzero and keeps the home
+(`admission-locked`), naming the rerun. A retire holds the lock of every
+label the home could act on, from before its first effect to its exit, so a
+join or leave started during it refuses `step: lock`; a join or leave holds
+its labels' locks for its whole command the same way. A joined team the root
+admitted that is no longer eligible stays joined at the next start, with a
+warning: a start makes no protected call, so retire (or a leave once the team
+is eligible again) removes it through the root. A joined team admitted
+before the opt-in leaves as before.
+
+`oats aweb setup --check-only --json` reports, with the setting, an
+`attribution` block: the root, human, service and teams; whether the root
+verifies (`verified`); spawners with no chain; each team's bounds and OATS's
+own count of admitted live homes; `leakedMemberships` (active local
+certificates whose alias has no live or kept home here); the key scan's
+findings, with the legacy minting roots (the configured `root` and
+`roots`, the deployment's own `.aw` and each `.aweb-roots/<label>/.aw`)
+listed as package 8 inventory by their public id (`legacy-minting-root`:
+left untouched, never refused on: an opted-in deployment needs none, and
+readiness asks for no messaging root there); and `limits`, what the pinned aw doesn't
+serve yet. Leaks come from
+the team's member list, read through a home that holds a membership (aw signs
+that read with a member's key), and from the root's own copies under
+`admissions/`, which need no reader: a membership the root admitted counts
+as leaked once no home here holds its certificate (one a leave set aside
+counts as leaked while its home lives). The list is the registry's, unsigned:
+a row is only acted on through the root's copy of its certificate, and a
+certificate a home holds is never leaked, whatever alias the list gives it.
+The root's copies are read once, before the homes are listed and their records
+read: the kernel lists a spawning home from its first record, and a home
+records its admission before the admit and the copy only after it, so a spawn
+or join that commits while reconciliation runs is never taken for a leak.
+A record is what says which memberships are its home's, so a live home's
+admission record, or its `.oats-aweb` directory, that can't be read, or a
+record that isn't one of the state table's (no state it has, no team, no
+label or another than its file's, a committed record naming no certificate
+id, a certificate id that isn't aw's
+form or an empty `--certificate-out`, a pending or unknown record with no
+alias), is never read as none: check-only lists every team under `unreadableTeams` with that
+record's path, and reconciliation refuses `E_ATTRIBUTION_EVIDENCE`, plan
+included, until it is readable again (owner-only) or restored. Every other
+command reads a home's records the same way, `E_ATTRIBUTION_EVIDENCE` with
+problem `records-unreadable`, naming the record, before any effect: a retire
+keeps the home (`records-unreadable`) and a leave or a join's rerun refuses
+before it acts on any label it names, each until the record is readable again
+or restored; a start, never blocked,
+keeps that joined team and warns.
+With a protected profile that fails its checks (its mode, or bytes that no
+longer match setup's digest), check-only makes no call that relies on it and
+says so under `attribution.problem`. A team no home here can read is
+listed under `unreadableTeams`, and only its copies are known there, never
+as having no other leaks.
+
+`oats aweb setup --reconcile-admissions [--plan]` removes the leaked
+memberships the root holds a copy for, each removal's operation id kept
+under the root's `removals/`. `--plan` lists them first and removes nothing. A
+leaked membership with no copy (admitted before the root kept copies) is
+reported and never removed.
+
+Home readiness, with the setting, warns `attribution-revoked`,
+`attribution-unverified`, `attribution-spawner-unchained`, `admission-leaked`
+(the home holds an admission whose outcome is unknown),
+`admission-removal-unavailable` and `protected-key-reachable`.
+
+## Human attribution: a deployment that never opted in
+
+Once aweb's operator has protected a team, a deployment that never opted in
+can no longer mint into it with the member invite: the service answers HTTP
+403 `protected_admission_required`, and the spawn refuses
+`E_PROTECTED_ADMISSION_REQUIRED`, for the primary team or a team the spawn
+joins. The invite is never retried and nothing is reminted; readiness reports
+nothing for it.
+
+The fix is to opt in, as "Human attribution" above describes:
+`oats aweb setup --endorse-root --new-root --name <alias> --human <did:aw> --protected-profile <abs> --service <url>`,
+each placeholder as that section says. An operator who has no human ID yet gets one first, by enrolling a passkey at
+the protected service. Any other 403 is reported as before.
+
 ## 1.42.1 — the release OATS pins for 1.42
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is

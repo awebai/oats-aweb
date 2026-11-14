@@ -136,3 +136,29 @@ export function recordAwebSetting(map, entryKey, entryValue, { start = process.e
   } else lines.splice(blockEndIndex, 0, row);
   atomicWrite(file, `${lines.join("\n")}\n`);
 }
+
+/** Writes settings.oats.aweb.attribution (spec human-ids-acxy7 C-1) as one
+ *  JSON flow mapping, which is YAML, replacing any earlier value of it with
+ *  its indented lines (block or flow), and nothing else in the file. */
+export function recordAttributionSetting(value, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
+  const file = join(start, "oats-local.yaml");
+  const lines = existsSync(file) ? readFileSync(file, "utf8").split(/\r?\n/) : ["schemaVersion: 2", "workspace: local"];
+  while (lines.length && lines.at(-1) === "") lines.pop();
+  const refuse = (detail) => { throw new Error(`${file}: cannot safely update settings.oats.aweb.attribution automatically (${detail}); add this line by hand under block-style settings.oats.aweb: attribution: ${JSON.stringify(value)}`); };
+  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
+  if (typeof settings === "object") refuse(`line ${settings.unsupported + 1} is not a block-style settings: mapping`);
+  if (settings < 0) { lines.push("settings:"); settings = lines.length - 1; }
+  const settingsEnd = blockEnd(lines, settings, 0);
+  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
+  if (typeof aweb === "object") refuse(`line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`);
+  if (aweb < 0) aweb = ensureYamlBlock(lines, settings, settingsEnd, 2, "oats.aweb");
+  const awebEnd = blockEnd(lines, aweb, 2);
+  const row = `    attribution: ${JSON.stringify(value)}`;
+  const found = findBlockHeader(lines, aweb + 1, awebEnd, 4, ["attribution", '"attribution"', "'attribution'"]);
+  if (found === -1) lines.splice(awebEnd, 0, row);
+  else {
+    const at = typeof found === "object" ? found.unsupported : found;
+    lines.splice(at, blockEnd(lines, at, 4) - at, row);
+  }
+  atomicWrite(file, `${lines.join("\n")}\n`);
+}

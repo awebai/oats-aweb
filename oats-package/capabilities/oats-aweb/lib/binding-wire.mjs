@@ -14,6 +14,10 @@ import {healthPublish, healthSettings} from './health-settings.mjs';
 import { identityBooleans } from './boolean-setting.mjs';
 import { retainedSeatCheck } from './retained-seat-service.mjs';
 import { childOutcome } from './child-outcome.mjs';
+import { attributionSetting } from './attribution.mjs';
+import { attributionReadiness } from './attribution-readiness.mjs';
+import { scanProtectedKeys } from './key-scan.mjs';
+import { homedir } from 'node:os';
 import { residentRegistryEnv } from './resident-registry.mjs';
 import { teamKeyIn } from './aweb-team-id.mjs';
 
@@ -90,7 +94,7 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
 function settings(value) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
-  keys(value,['delivery','claudeChannelMode','root','roots','identity','residents','join','health'],[]);
+  keys(value,['delivery','claudeChannelMode','root','roots','identity','residents','join','health','attribution'],[]);
   // health.publish's refusal is carried into the readiness result (readinessDetails), so the
   // wire checks every other health setting here.
   try {healthSettings(obj(value.health)?{...value,health:{...value.health,publish:undefined}}:value);} catch {wireError('needs-configuration');}
@@ -229,7 +233,10 @@ function unmappedPrimary(env=process.env){return undefined;}
  *  binding path ask this through readinessDetails. */
 function needsMintingRoot(settings) {
   const identity=obj(settings.identity)?settings.identity:{};
-  return !(identity.mode==='global' && typeof identity.resident==='string' && identity.resident.trim());
+  if(identity.mode==='global' && typeof identity.resident==='string' && identity.resident.trim()) return false;
+  // An opted-in deployment's endorsed root issues and admits every identity; its legacy minting
+  // roots mint nothing (C-1, C-2), so none is a prerequisite. The caller has validated the setting.
+  return !attributionSetting(settings);
 }
 /** retainedSeat: a soul-scope retained seat (identity.source), whose spawn mints nothing and
  *  takes its team from the seat's own predicate (retainedSeatCheck), so neither the messaging
@@ -239,7 +246,8 @@ async function readinessDetails(settings,{deployment,env=process.env,retainedSea
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   // The refusal spawn and start, or the health commands, give for a boolean setting that is
   // neither a boolean nor its string.
-  try { identityBooleans(obj(settings.identity)?settings.identity:{}); healthPublish(settings); }
+  // and the refusal a spawn gives for a malformed settings.oats.aweb.attribution, naming its key.
+  try { identityBooleans(obj(settings.identity)?settings.identity:{}); healthPublish(settings); attributionSetting(settings); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
@@ -383,6 +391,12 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
         if(targetProblems.length) for(const joined of expected.joined) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
       }
     }
+  }
+  // Human attribution (C-5): only with the home's captured setting.
+  if(ctx.home) {
+    let setting=null;
+    try {setting=attributionSetting(req.settings);} catch {setting=null;}
+    if(setting) warnings.push(...attributionReadiness({aw:(args)=>localAw(['aw',...args],ctx.home),home:ctx.home,meta:recordedStart(ctx.home).meta,scan:()=>scanProtectedKeys({home:env.HOME||homedir(),deployment:ctx.deployment,service:setting.service.id,consumer:'oats.aweb'})}));
   }
   // A pi home's pi folder loads no aweb skills: the extension below 0.5.0
   // filters out its bundled ones, and @awebai/claude-skills is not listed
