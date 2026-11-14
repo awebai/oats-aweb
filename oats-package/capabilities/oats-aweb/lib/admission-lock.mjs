@@ -16,6 +16,14 @@
 //   E_ATTRIBUTION_EXCHANGE step lock, naming the lock and its fix: it fails safe. A pid
 //   reused by another process only makes the refusal wrong, never the records.
 // - A release removes the lock only while it is still its own.
+// - A taker killed while it holds `<lock>.takeover` leaves that guard behind: every later
+//   takeover of that lock refuses, naming the guard, until it is removed by hand. That
+//   fails safe, like any held guard.
+//
+// Why this lock reads a pid's liveness when the retained seat's lock (seat-lock.mjs) infers
+// none: this lock's holder is one process, on the host its home is on, for one command, so
+// a pid that no longer runs there is a holder that is gone. The seat lock's holder is a
+// seat, named by its host, for the seat's whole life: no pid read here can say it is gone.
 import { randomUUID } from "node:crypto";
 import { linkSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
