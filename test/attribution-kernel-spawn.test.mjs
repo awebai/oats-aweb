@@ -86,6 +86,16 @@ test("acceptance 23: through a real kernel, oats spawn --json carries E_ADMISSIO
   assert.ok(fake.calls().some((c) => c.args.includes("admit")), "the root's admit ran");
 });
 
+test("acceptance 23: through a real kernel, a wake registration that fails after the admission reaches oats spawn --json as E_ATTRIBUTION_EXCHANGE step wake with its whole fix, and the rollback removes the membership", { skip: !KERNEL && "set OATS_ATTRIBUTION_KERNEL_ROOT to an OATS kernel checkout that lists spawn-attribution", timeout: 240000 }, (t) => {
+  const { fake, oats } = deployment(t, { wake: "running", wakeRegister: "the wake daemon refused this home" });
+  const r = oats(["spawn", "probe", "--name", "dev-1", "--launch-config", "fake", "--no-launch", "--json"]);
+  let doc; try { doc = JSON.parse(r.stdout); } catch { assert.fail(`no JSON: ${r.stdout}${r.stderr}`); }
+  assert.equal(doc.ok, false, r.stdout);
+  assert.ok(doc.error.message.includes("E_ATTRIBUTION_EXCHANGE (step: wake): "), doc.error.message);
+  assert.ok(doc.error.message.includes("install the aweb release that ships aw wake, or start the host wake broker (`oats aweb wake install`), then respawn"), doc.error.message);
+  assert.equal(fake.removed().length, 1, "the rollback retire removed the admitted membership");
+});
+
 test("acceptance 23: through a real kernel, a deployment that never opted in gets E_PROTECTED_ADMISSION_REQUIRED and its whole fix in oats spawn --json's error.message, with one mint", { skip: !KERNEL && "set OATS_ATTRIBUTION_KERNEL_ROOT to an OATS kernel checkout that lists spawn-attribution", timeout: 240000 }, (t) => {
   const { fake, oats } = deployment(t, {}, { neverOptedIn: true });
   const r = oats(["spawn", "probe", "--name", "dev-1", "--launch-config", "fake", "--no-launch", "--json"]);

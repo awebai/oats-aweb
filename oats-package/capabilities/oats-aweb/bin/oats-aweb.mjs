@@ -95,7 +95,7 @@ import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { PROTECTED_ADMISSION_REQUIRED, refusalText, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
-import { admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
+import { README_ADMISSION, admissionFile, admitIdentity, committedAdmissions, providerRecords, readAdmission, recordsUnreadable, stateOf, writePrivate } from "../lib/admission.mjs";
 import { holdAdmissionLocks, lockedLabels, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
@@ -596,7 +596,8 @@ function wakeRegister(instanceHome, identityHome, runner = run) {
   try {
     runner(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
-    throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
+    // aw's own code or cause travels with it: a registration can fail for more than a missing `aw wake`.
+    throw Object.assign(new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`), { wakeCause: e.awCode || String(e.message || e) });
   }
 }
 function wakeDeregister(instanceHome) {
@@ -2432,10 +2433,23 @@ function attributedSpawn(pre, { team, label, from, joinRows }) {
   try { primary = one({ team, label: label || "default" }, localIdentityHome()); }
   catch (e) { attributionFatal(e, e.minted ? { team, alias: instance, attributionFailed: true } : undefined); }
   minted = { team, alias: instance };
+  // From here the primary's admission has committed: a failure hands back the minted meta, so the
+  // kernel's rollback retire removes what was admitted, and refuses with its code and fix (C-3d,
+  // C-9) under C-9's exchange rule: step wake for the registration, step spawn for anything else.
+  let meta = { team, alias: instance };
+  const afterAdmission = (e) => {
+    // A refusal of this feature carries its own code; a system error's (EISDIR, …) is a cause.
+    if (typeof e?.code === "string" && e.code.startsWith("E_")) return e;
+    const cause = String(e?.wakeCause ?? e?.message ?? e).replace(/\s+/g, " ");
+    return e?.wakeCause !== undefined
+      ? attributionError("E_ATTRIBUTION_EXCHANGE", `the host wake broker couldn't register this home (aw wake register: ${cause}) → install the aweb release that ships aw wake, or start the host wake broker (\`oats aweb wake install\`), then respawn`, { step: "wake" })
+      : attributionError("E_ATTRIBUTION_EXCHANGE", `the spawn failed after its admission: ${cause} → respawn; the admission is retired with this home (${README_ADMISSION})`, { step: "spawn" });
+  };
+  try {
   const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
   const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
   if (broker) wakeRegister(home, localIdentityHome());
-  let meta = startedMeta({ team, alias: instance, delivery: deliveryMode, defaultTeam: { label, team, from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: { ...identityMeta({ mode: "local", alias: instance, team }), attribution: primary.attribution } });
+  meta = startedMeta({ team, alias: instance, delivery: deliveryMode, defaultTeam: { label, team, from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: { ...identityMeta({ mode: "local", alias: instance, team }), attribution: primary.attribution } });
   for (const row of joinRows) {
     const identityHome = identityHomeForLabel(row.label);
     try { one(row, identityHome); }
@@ -2454,6 +2468,7 @@ function attributedSpawn(pre, { team, label, from, joinRows }) {
     ...(launch ? { launch } : {}),
     ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
   });
+  } catch (e) { attributionFatal(afterAdmission(e), { ...minted, ...(joinedTeamsOf(meta).length ? { joinedTeams: joinedTeamsOf(meta) } : {}), attributionFailed: true }); }
 }
 
 if (event === "launch") {

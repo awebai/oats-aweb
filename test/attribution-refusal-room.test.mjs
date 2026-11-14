@@ -80,3 +80,36 @@ test("C-9, test 23: a spawn whose root home is open to other users, on a long de
   assert.ok(text.startsWith("E_ATTRIBUTION_ROOT_HOME (problem: mode): "), text);
   assert.ok(text.endsWith(`\`chmod -R go-rwx ${ROOT_DIR}\` in the deployment, then try again`), text);
 });
+
+// C-3d: a failure after the primary's admission committed refuses with its code and its fix, and
+// hands back the minted meta, so the kernel's rollback retire removes what was admitted.
+const WAKE_FIX = "→ install the aweb release that ships aw wake, or start the host wake broker (`oats aweb wake install`), then respawn";
+test("C-3d, C-9: a broker home whose wake registration fails after its admission refuses E_ATTRIBUTION_EXCHANGE step wake, with aw's cause, its whole fix and the minted meta", (t) => {
+  const fx = attributionFixture(t, { runtime: "codex", delivery: "session", service: { wake: "running", wakeRegister: "the wake daemon refused this home" } });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.doc, `a refusal, not a crash: ${r.stderr}`);
+  const text = r.doc.warning.split(" | ")[0].replace(/^oats-aweb: /, "");
+  assert.ok(text.startsWith("E_ATTRIBUTION_EXCHANGE (step: wake): "), text);
+  assert.ok(text.includes("the wake daemon refused this home"), `aw's cause: ${text}`);
+  assert.ok(text.endsWith(WAKE_FIX), text);
+  assert.ok(text.length <= REFUSAL_ROOM, `${text.length}`);
+  assert.equal(r.doc.meta?.attributionFailed, true, JSON.stringify(r.doc.meta));
+  assert.equal(r.doc.meta.alias, "dev-1");
+  assert.equal(Object.keys(fx.fake.charges()).length, 1, "the admission committed before the registration");
+});
+
+test("C-3d, C-9: any other failure after the admission refuses E_ATTRIBUTION_EXCHANGE step spawn, with its whole fix and the minted meta", (t) => {
+  const fx = attributionFixture(t);
+  // The provider's team state can't be written: a directory holds its path.
+  mkdirSync(join(fx.homeOf("dev-1"), ".oats-aweb", "teams.json"), { recursive: true });
+  const r = fx.spawn("dev-1");
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.doc, `a refusal, not a crash: ${r.stderr}`);
+  const text = r.doc.warning.split(" | ")[0].replace(/^oats-aweb: /, "");
+  assert.ok(text.startsWith("E_ATTRIBUTION_EXCHANGE (step: spawn): the spawn failed after its admission: "), text);
+  assert.ok(text.endsWith('→ respawn; the admission is retired with this home (README, "Human attribution: admission refusals")'), text);
+  assert.ok(text.length <= REFUSAL_ROOM, `${text.length}`);
+  assert.equal(r.doc.meta?.attributionFailed, true, JSON.stringify(r.doc.meta));
+  assert.equal(Object.keys(fx.fake.charges()).length, 1, "the admission committed first");
+});
