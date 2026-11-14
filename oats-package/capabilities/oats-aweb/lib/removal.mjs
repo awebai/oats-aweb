@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { README_ADMISSION, REMOVAL_UNAVAILABLE, admittedCertificate, keepRootCopy, verifiedCertificate, writePrivate } from "./admission.mjs";
-import { withAdmissionLocks } from "./admission-lock.mjs";
+import { lockedRetireText, withAdmissionLocks } from "./admission-lock.mjs";
 import { admitAnswer, awaitsOutcome, holdsMembership, step } from "./admission-states.mjs";
 import { profileDigest, profileProblem, readWho, rootHomeProblem } from "./attribution.mjs";
 import { teamCertificateRelativePath } from "./aweb-team-id.mjs";
@@ -113,8 +113,7 @@ export function retireAdmissions(options) {
   try { return withAdmissionLocks(providerDir, locked, () => retireLocked(options)); }
   catch (e) {
     if (e?.details?.step !== "lock") throw e;
-    const { label, pid, path } = e.details;
-    return { warnings: [], keep: { reason: "admission-locked", text: `${label}'s admission lock is held by ${pid === null ? "a command whose lock can't be read" : `pid ${pid}`}, so this retire acted on nothing and the home is kept → rerun the retire when it ends; if no oats aweb command ${pid === null ? `acts on ${label} here` : `runs as pid ${pid}`}, remove ${path}` } };
+    return { warnings: [], keep: { reason: "admission-locked", text: lockedRetireText(e.details) } };
   }
 }
 function retireLocked({ aw, setting, providerDir, deployment, removeServed = REMOVE_SERVED, labels, phase }) {

@@ -298,6 +298,11 @@ const DAMAGED = [
   ["with no team", rewrite(({ team, ...r }) => r)],
   ["committed, naming no certificate", rewrite(({ certificateId, certificateOut, ...r }) => r)],
   ["pending, with no alias", rewrite(({ alias, certificateId, ...r }) => ({ ...r, state: "pending" }))],
+  // A certificate reference that names nothing usable: it would hold another certificate than the
+  // home's, so the one it does hold would read as leaked.
+  ["committed, with an empty certificate id", rewrite((r) => ({ ...r, certificateId: "" }))],
+  ["committed, with a certificate id that isn't aw's form", rewrite((r) => ({ ...r, certificateId: "not-a-uuid" }))],
+  ["committed, naming only an empty --certificate-out", rewrite(({ certificateId, ...r }) => ({ ...r, certificateOut: "" }))],
 ];
 for (const [damage, apply] of DAMAGED) {
   test(`C-5: with a live home's admission record ${damage}, reconcile and its plan refuse E_ATTRIBUTION_EVIDENCE before any removal, naming the record, and the home keeps its membership`, (t) => {

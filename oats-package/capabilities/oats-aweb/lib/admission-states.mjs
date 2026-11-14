@@ -5,6 +5,8 @@
 // and remove phases, leave and start. `step` decides and does nothing: the
 // caller runs aw, writes files and keeps or removes the home as it answers.
 
+import { UUID } from "./attribution.mjs";
+
 /** The operation's own final codes: they establish the operation was refused (C-3d). */
 export const FINAL_CODES = new Set(["admission_policy_missing", "policy_changed", "admission_limit_reached", "subject_ineligible", "operation_expired", "approval_expired"]);
 export const SCOPE_CODES = new Set(["scope_refused", "profile_scope_refused", "profile_scope_ambiguous"]);
@@ -105,13 +107,17 @@ export function step(on, state, facts = {}) {
 export const RECORD_STATES = new Set(["keyed", "pending", "unknown", "committed", "refused", "removed"]);
 /** Why a parsed record isn't one of the table's, or null: a state the table has, its team, and
  *  what names its certificate where the state shields one (table E): a committed record its
- *  certificate id or --certificate-out, one awaiting its outcome its alias. A record that fails
+ *  certificate id or --certificate-out, one awaiting its outcome its alias; and a certificate id
+ *  of aw's form and a --certificate-out that is a path wherever one is given. A record that fails
  *  this could hold any certificate, so it is never read as holding none. */
 export function recordProblem(record) {
   if (!record || typeof record !== "object" || Array.isArray(record)) return "not a record";
   if (!RECORD_STATES.has(record.state)) return "no state the table has";
   if (typeof record.team !== "string" || !record.team) return "no team";
-  if (record.state === "committed" && typeof record.certificateId !== "string" && typeof record.certificateOut !== "string") return "committed, naming no certificate";
+  // A reference that names nothing usable would hold another certificate than the home's.
+  if (record.certificateId !== undefined && !(typeof record.certificateId === "string" && UUID.test(record.certificateId))) return "a certificate id that isn't aw's form";
+  if (record.certificateOut !== undefined && !(typeof record.certificateOut === "string" && record.certificateOut)) return "an empty --certificate-out";
+  if (record.state === "committed" && record.certificateId === undefined && record.certificateOut === undefined) return "committed, naming no certificate";
   if (awaitsOutcome(record) && (typeof record.alias !== "string" || !record.alias)) return `${record.state}, with no alias`;
   return null;
 }

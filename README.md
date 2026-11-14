@@ -307,7 +307,9 @@ keeps the membership with `admission-removal-blocked`, its record kept for
 the home's retire and `--reconcile-admissions`. While another command
 holds a label's admission lock, a leave of it refuses `step: lock`, and a
 retire acts on nothing, exits nonzero and keeps the home
-(`admission-locked`), naming the rerun. A joined team the root
+(`admission-locked`), naming the rerun. A retire holds the lock of every
+label the home could act on, from before its first effect to its exit, so a
+join or leave started during it refuses `step: lock`. A joined team the root
 admitted that is no longer eligible stays joined at the next start, with a
 warning: a start makes no protected call, so retire (or a leave once the team
 is eligible again) removes it through the root. A joined team admitted
@@ -338,7 +340,8 @@ or join that commits while reconciliation runs is never taken for a leak.
 A record is what says which memberships are its home's, so a live home's
 admission record, or its `.oats-aweb` directory, that can't be read, or a
 record that isn't one of the state table's (no state it has, no team, a
-committed record naming no certificate, a pending or unknown one with no
+committed record naming no certificate, a certificate id that isn't aw's
+form or an empty `--certificate-out`, a pending or unknown record with no
 alias), is never read as none: check-only lists every team under `unreadableTeams` with that
 record's path, and reconciliation refuses `E_ATTRIBUTION_EVIDENCE`, plan
 included, until it is readable again (owner-only) or restored.

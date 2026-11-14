@@ -77,14 +77,30 @@ function release(path, nonce) {
 
 // The locks this command holds, by path: a nested take of one (leave's own retire) is the same hold.
 const holding = new Map();
-/** Runs `fn` holding `label`'s lock, re-entrant within this command; releases it after, a throw included. */
-export function withAdmissionLock(providerDir, label, fn) {
+/** Takes, or enters again, `label`'s lock for this command. → its exit, which releases it at the last. */
+function enter(providerDir, label) {
   const path = admissionLockPath(providerDir, label);
-  const outer = holding.get(path);
-  if (outer) { outer.depth++; try { return fn(); } finally { outer.depth--; } }
-  const lock = { ...takeAdmissionLock(providerDir, label), depth: 1 };
-  holding.set(path, lock);
-  try { return fn(); } finally { if (--lock.depth === 0) { holding.delete(path); lock.release(); } }
+  let lock = holding.get(path);
+  if (lock) lock.depth++;
+  else { lock = { ...takeAdmissionLock(providerDir, label), depth: 1 }; holding.set(path, lock); }
+  let exited = false;
+  return () => { if (exited) return; exited = true; if (--lock.depth === 0) { holding.delete(path); lock.release(); } };
 }
-/** Runs `fn` holding each of `labels`' locks, taken in order; a refusal releases those taken. */
-export const withAdmissionLocks = (providerDir, labels, fn) => labels.reduceRight((inner, label) => () => withAdmissionLock(providerDir, label, inner), fn)();
+/** Holds each of `labels`' locks, taken in order, until `release()`; a refusal releases those taken
+ *  and throws. Within this command, a later take of a held label enters the same hold. */
+export function holdAdmissionLocks(providerDir, labels) {
+  const exits = [];
+  try { for (const label of labels) exits.push(enter(providerDir, label)); }
+  catch (e) { for (const exit of exits.reverse()) exit(); throw e; }
+  return { release: () => { for (const exit of exits.reverse()) exit(); } };
+}
+/** Runs `fn` holding `label`'s lock, re-entrant within this command; releases it after, a throw included. */
+export const withAdmissionLock = (providerDir, label, fn) => withAdmissionLocks(providerDir, [label], fn);
+/** Runs `fn` holding each of `labels`' locks; releases them after, a throw included. */
+export function withAdmissionLocks(providerDir, labels, fn) {
+  const held = holdAdmissionLocks(providerDir, labels);
+  try { return fn(); } finally { held.release(); }
+}
+/** A retire's text for a label another command holds (a lock refusal's details): it acts on nothing
+ *  and keeps the home, as an unconfirmed removal does. */
+export const lockedRetireText = ({ label, pid, path }) => `${label}'s admission lock is held by ${pid === null ? "a command whose lock can't be read" : `pid ${pid}`}, so this retire acted on nothing and the home is kept → rerun the retire when it ends; if no oats aweb command ${pid === null ? `acts on ${label} here` : `runs as pid ${pid}`}, remove ${path}`;

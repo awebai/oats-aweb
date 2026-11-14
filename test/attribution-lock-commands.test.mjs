@@ -168,3 +168,56 @@ test("reconcile takes no lock: a live command holding a home's label lock doesn'
   assert.equal(r.doc?.ok, true, r.stdout);
   assert.deepEqual(fx.fake.removed().map((x) => x.certificate_id), [lost]);
 });
+
+// Retire holds the lock of every label it could act on, from before its first effect to its
+// exit: its records' labels, its joined teams' and every label the deployment lets it join,
+// so a join that hasn't written its first record yet is excluded too (round 19).
+const PRIMARY_DELETE = 'a.includes("workspace") && a.includes("delete") && !a.includes("--identity-home")';
+
+test("a retire started while a join of the home creates its key, before that join's first record, acts on nothing: it keeps the home, and the join commits", (t) => {
+  const fx = spawned(t);
+  const retire = interleave(fx, { at: 'a.includes("create") && a.includes("--local") && a.some((x) => x.endsWith(".aweb-identity-ops"))', args: ["retire"], env: { OATS_META: JSON.stringify(fx.meta("dev-1")) }, cwd: fx.homeOf("dev-1") });
+  const before = fx.fake.calls().length;
+  const join_ = fx.command("dev-1", "join", ["--labels", "ops", "--json"], { extra: { PATH: retire.path } });
+  const inner = retire.inner();
+  assert.ok(inner, "the retire ran inside the join's key creation");
+  assert.notEqual(inner.status, 0, inner.stdout + inner.stderr);
+  assert.ok(inner.stdout.includes("admission-locked"), inner.stdout);
+  assert.equal(join_.status, 0, join_.stdout + join_.stderr);
+  assert.equal(record(fx, "default").state, "committed", "the retire removed nothing");
+  assert.equal(record(fx, "ops").state, "committed");
+  assert.deepEqual(removes(fx, before), []);
+  assert.ok(!calls(fx, before).some((v) => v.startsWith("workspace delete")), "nothing deleted");
+});
+
+test("a leave of a joined label started during a retire's workspace delete refuses step lock: the retire still holds the label and removes it", (t) => {
+  const fx = joined(t);
+  const leave = interleave(fx, { at: PRIMARY_DELETE, args: ["leave", "--labels", "ops", "--json"], cwd: fx.homeOf("dev-1") });
+  const r = fx.retire("dev-1", { extra: { PATH: leave.path } });
+  const inner = leave.inner();
+  assert.ok(inner, "the leave ran inside the retire's workspace delete");
+  assert.equal(inner.status, 1, inner.stdout + inner.stderr);
+  assert.ok((inner.stdout + inner.stderr).includes(LOCK_REFUSAL), inner.stdout + inner.stderr);
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  assert.equal(fx.fake.removed().length, 2, "the retire removed both memberships");
+});
+
+test("a join of a label the home never joined, started during its retire's workspace delete, refuses step lock: nothing is admitted into a home being removed", (t) => {
+  const fx = spawned(t);
+  const join_ = interleave(fx, { at: PRIMARY_DELETE, args: ["join", "--labels", "ops", "--json"], cwd: fx.homeOf("dev-1") });
+  const r = fx.retire("dev-1", { extra: { PATH: join_.path } });
+  const inner = join_.inner();
+  assert.ok(inner, "the join ran inside the retire's workspace delete");
+  assert.equal(inner.status, 1, inner.stdout + inner.stderr);
+  assert.ok((inner.stdout + inner.stderr).includes(LOCK_REFUSAL), inner.stdout + inner.stderr);
+  assert.equal(opsCharges(fx).length, 0, "no admission");
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+});
+
+test("a retire releases every lock it took, on its way out", (t) => {
+  const fx = joined(t);
+  liveLock(fx, "ops");
+  const kept = fx.retire("dev-1");
+  assert.equal(kept.doc.meta.reason, "admission-locked");
+  assert.equal(existsSync(lockOf(fx, "default")), false, "the label it took before the refusal is released");
+});

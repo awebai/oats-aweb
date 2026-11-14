@@ -96,7 +96,7 @@ import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 import { PROTECTED_ADMISSION_REQUIRED, protectedAdmissionRequired, KERNEL_FLOOR, SPAWN_ATTRIBUTION_FEATURE, SPAWNER_UNCHAINED, attributionError, attributionSetting, chooseIssuer, joinSetting, recordedProfileProblem, readWho, rootHomeProblem, startAttribution } from "../lib/attribution.mjs";
 import { admissionFile, admitIdentity, committedAdmissions, readAdmission, stateOf, writePrivate } from "../lib/admission.mjs";
-import { withAdmissionLock } from "../lib/admission-lock.mjs";
+import { holdAdmissionLocks, lockedRetireText, withAdmissionLock } from "../lib/admission-lock.mjs";
 import { step } from "../lib/admission-states.mjs";
 import { OPT_IN, endorseRoot, parseEndorseArgs } from "../lib/endorse-root.mjs";
 import { legacyRootInventory, scanProtectedKeys } from "../lib/key-scan.mjs";
@@ -1871,6 +1871,17 @@ function leaveJoinedTeam(label, meta) {
   const { released, receipt } = cleanupJoinedIdentity(entry, meta.alias || instance, home);
   return { meta: { ...meta, joinedTeams: joined.filter((j) => j.label !== label) }, changed: true, released, receipt };
 }
+/** Every team label an opted-in home's retire could act on: its admission records' and locks'
+ *  (a join that hasn't written its first record holds its lock), its joined and pending teams',
+ *  the primary's, and every label this deployment lets it join. */
+function retireLockLabels(meta) {
+  let names = [];
+  try { names = readdirSync(providerStateDir()); } catch { names = []; }
+  const fromFiles = names.map((name) => /^admission-(.+?)(?:~left-[^.]*)?\.(?:json|lock)$/.exec(name)?.[1]).filter(Boolean);
+  let eligible = [];
+  try { eligible = eligibleTeams().map((t) => t.label); } catch { eligible = []; }
+  return [...new Set(["default", ...fromFiles, ...joinedTeamsOf(meta).map((j) => j.label), ...pendingJoinsOf(meta).map((p) => p.label), ...eligible].filter((l) => typeof l === "string" && l))].sort();
+}
 /** `join --plan` on an opted-in deployment: the root that would admit each team, or why it can't. */
 function attributedJoinPlan(setting, rows, meta) {
   return rows.map((row) => {
@@ -2754,6 +2765,8 @@ if (event === "launch") {
   // the rest of retire (it is local and independent of the self-delete); every
   // way out of this branch awaits it through finish().
   const deregistration = brokerDeliveredTo(meta) && (meta.retained || meta.identity?.mode !== "global") ? wakeDeregisterStarted(home) : undefined;
+  // An opted-in retire's admission locks (below), held from before its first effect to its exit.
+  let retireLocks = null;
   const finish = async (o, code) => {
     // The deregistration is awaited first: its kill at the hook's deadline is a
     // timer, which the record's synchronous lock wait below would hold off.
@@ -2765,6 +2778,7 @@ if (event === "launch") {
       o = { ...o, meta: { ...o.meta, ...(incomplete ? {} : { retired: false, reason: "joined-team-leave-failed" }), failedLeaves } };
       code = 1;
     }
+    retireLocks?.release();
     out(o, code);
   };
   // A grant seat, or a home whose seat record outlived its meta (a hook killed
@@ -2807,6 +2821,11 @@ if (event === "launch") {
   /** The root's removals, once: after the workspace delete, or where there is none to make. */
   const removeAdmissions = async () => { if (!retireSetting || removalsDone) return; removalsDone = true; await admissions("remove"); };
   if (retireSetting) {
+    // Every label this retire could act on is locked before its first effect and stays locked to
+    // its exit, so no join, leave or other retire of this home runs beside it: a live holder
+    // keeps the home, with nothing acted on (admission-lock.mjs).
+    try { retireLocks = holdAdmissionLocks(providerStateDir(), retireLockLabels(meta)); }
+    catch (e) { if (e?.details?.step !== "lock") throw e; await finish({ meta: { retired: false, reason: "admission-locked" }, warning: `oats-aweb: ${[...retireWarnings, lockedRetireText(e.details)].join(" | ")}` }, 1); }
     try { retireDeployment = selectedDeployment(process.env); } catch { retireDeployment = null; }
     await admissions("settle");
   }
