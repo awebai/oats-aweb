@@ -68,7 +68,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { ownerRemovalCommand, ownerRemovalProblem, recordOwnerRemovals } from "../lib/owner-removals.mjs";
+import { ownerRemovalCommand, ownerRemovalProblem, readOwnerRemovals, recordOwnerRemovals } from "../lib/owner-removals.mjs";
 import { AWEB_ALIAS_RE, sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
@@ -1917,7 +1917,16 @@ function retiredProjection(leftover, alias, problems, workspace) {
   retiredLineNotes.set(projection, conflict ? { conflict } : problem ? { problem } : { registryRecorded: leftover.registry != null });
   return projection;
 }
-function rosterDocument({ team, certificates, presence, problems, root, retired = [] }) {
+/** A member a retire on this host handed to the team's owner, as the roster shows it. The
+ *  command is rebuilt from the entry's validated team and alias (lib/owner-removals.mjs),
+ *  and, as for a retired certificate, a member whose workspace reads active is shown as a
+ *  conflict with no command. */
+function ownerRemovalProjection(handed, alias, problems, workspace) {
+  const conflict = workspace?.status === "active" ? "workspace-active" : undefined;
+  if (conflict) problems.push({ source: "owner-removals-record", message: `the record entry for ${alias} marks it handed to the team owner, but its workspace is active: check before removing; no command to remove it is shown` });
+  return { at: handed.retiredAt, instance: handed.instance, command: conflict ? null : ownerRemovalCommand(handed), ...(conflict ? { conflict } : {}) };
+}
+function rosterDocument({ team, certificates, presence, problems, root, retired = [], ownerRemovals = [] }) {
   const certificatesComplete = !!certificates;
   const presenceComplete = !!presence && presence.team_has_more !== true && (presence.team || []).length < ROSTER_PRESENCE_LIMIT;
   if (presence && !presenceComplete) problems.push({ source: "presence", message: `aw workspace status reports more than ${ROSTER_PRESENCE_LIMIT} workspaces; only the first ${ROSTER_PRESENCE_LIMIT} were read` });
@@ -1939,8 +1948,14 @@ function rosterDocument({ team, certificates, presence, problems, root, retired 
   // A certificate this host's retires recorded, matched on team and certificate id, never on
   // alias alone: aliases are reused.
   const retiredByCertificate = new Map(retired.filter((r) => sameAwebTeamId(r.team, team)).map((r) => [r.certificateId, r]));
+  // A member this host's retires handed to the team's owner, matched on team and alias: the
+  // owner removes it by member address. Never when the alias's certificate is another than
+  // the one recorded: aliases are reused, and that holder proves the recorded member gone.
+  const handedToOwner = ownerRemovals.filter((r) => sameAwebTeamId(r.team, team));
+  const heldByAnother = (handed, certificate) => !!handed.certificateId && typeof certificate?.certificate_id === "string" && certificate.certificate_id !== handed.certificateId;
   const members = [...entries.values()].map(({ alias, certificate, workspace, self: isSelf }) => {
     const leftover = typeof certificate?.certificate_id === "string" ? retiredByCertificate.get(certificate.certificate_id) : undefined;
+    const handed = handedToOwner.find((r) => r.alias === alias && !heldByAnother(r, certificate));
     const scopes = [certificate?.identity_scope, workspace?.agent_identity_scope].filter(Boolean);
     const identityScope = scopes.includes("global") ? "global" : scopes[0] || null;
     return {
@@ -1953,10 +1968,16 @@ function rosterDocument({ team, certificates, presence, problems, root, retired 
       sources: [certificate ? "certificate" : null, workspace ? "presence" : null].filter(Boolean),
       presence: workspace ? { status: workspace.status || null, hostname: workspace.hostname || null, lastSeen: workspace.last_seen || null } : null,
       ...(leftover ? { retired: retiredProjection(leftover, alias, problems, workspace) } : {}),
+      ...(handed ? { ownerRemoval: ownerRemovalProjection(handed, alias, problems, workspace) } : {}),
     };
   });
   members.sort((a, b) => ROSTER_KINDS.indexOf(a.kind) - ROSTER_KINDS.indexOf(b.kind) || a.alias.localeCompare(b.alias));
-  return { team, members, certificatesComplete, presenceComplete, problems };
+  // A handed member this roster does not show is gone only when both reads are complete;
+  // otherwise it is listed, with the owner's command.
+  const unseen = certificatesComplete && presenceComplete ? [] : handedToOwner
+    .filter((r) => !entries.has(r.alias))
+    .map((r) => ({ alias: r.alias, at: r.retiredAt, instance: r.instance, command: ownerRemovalCommand(r) }));
+  return { team, members, ...(unseen.length ? { ownerRemovalsUnseen: unseen } : {}), certificatesComplete, presenceComplete, problems };
 }
 function sinceText(iso) {
   const minutes = Math.floor((Date.now() - Date.parse(iso)) / 60000);
@@ -1966,17 +1987,23 @@ function sinceText(iso) {
   return `${Math.floor(minutes / (24 * 60))}d ago`;
 }
 const ROSTER_STATUS_TEXT = { "no-workspace-record": "certificate only: no workspace record", "presence-unknown": "certificate only: presence incomplete" };
+/** ` <date>` from a record entry's time, or nothing when it is not one. */
+const recordedDay = (at) => typeof at === "string" && /^\d{4}-\d{2}-\d{2}/.test(at) ? ` ${at.slice(0, 10)}` : "";
+const HANDED_TO_OWNER = "handed to the team owner by OATS on this host";
 function rosterLine(m) {
   const since = m.presence?.lastSeen ? sinceText(m.presence.lastSeen) : undefined;
   const status = m.status === "active" ? "active" : m.status === "offline" ? (since ? `seen ${since}` : "offline") : ROSTER_STATUS_TEXT[m.status];
   const kind = ROSTER_KIND_FROM_TEXT[m.kindFrom] ? `${m.kind} (${ROSTER_KIND_FROM_TEXT[m.kindFrom]})` : m.kind;
+  const owner = !m.ownerRemoval ? ""
+    : m.ownerRemoval.conflict ? "; recorded as handed to the team owner, but its workspace is active: check before removing"
+      : `; ${HANDED_TO_OWNER}${recordedDay(m.ownerRemoval.at)} (its certificate was revoked); the team owner removes it with: ${m.ownerRemoval.command}`;
   const notes = m.retired ? retiredLineNotes.get(m.retired) : undefined;
-  if (notes?.conflict) return `${rosterLineHead(m, status, kind)}; recorded as retired, but its workspace is active: check before removing`;
+  if (notes?.conflict) return `${rosterLineHead(m, status, kind)}; recorded as retired, but its workspace is active: check before removing${owner}`;
   const cleanup = !notes ? ""
     : notes.problem ? `; its record entry is malformed (${notes.problem}), so no command to remove it is shown`
       : `; the team controller removes it with: ${m.retired.command}${notes.registryRecorded ? "" : " (the registry was not recorded; the command omits --registry)"}`;
-  const retired = m.retired ? `; retired by OATS on this host${typeof m.retired.at === "string" && /^\d{4}-\d{2}-\d{2}/.test(m.retired.at) ? ` ${m.retired.at.slice(0, 10)}` : ""}${cleanup}` : "";
-  return `${rosterLineHead(m, status, kind)}${retired}`;
+  const retired = m.retired ? `; retired by OATS on this host${recordedDay(m.retired.at)}${cleanup}` : "";
+  return `${rosterLineHead(m, status, kind)}${retired}${owner}`;
 }
 function rosterLineHead(m, status, kind) {
   return `${[`${m.alias} — ${kind}`, status, m.presence?.hostname, m.address, m.role ? `role ${m.role}` : null].filter(Boolean).join(", ")} [${m.sources.join(", ")}]`;
@@ -2829,16 +2856,26 @@ if (event === "launch") {
     if (record.problem) problems.push({ source: "retired-record", message: record.problem });
     retired = record.entries;
   } catch { /* no deployment: no record to read */ }
-  const roster = rosterDocument({ team: certificates?.team_id || team, certificates, presence, problems, root, retired });
+  // The members this host's retires handed to the team's owner (read-only here).
+  let ownerRemovals = [];
+  try {
+    const record = readOwnerRemovals(selectedDeployment(process.env));
+    if (record.problem) problems.push({ source: "owner-removals-record", message: record.problem });
+    ownerRemovals = record.entries;
+  } catch { /* no deployment: no record to read */ }
+  const roster = rosterDocument({ team: certificates?.team_id || team, certificates, presence, problems, root, retired, ownerRemovals });
   // One synchronous write: a large roster piped to a reader must not lose its tail at exit.
   if (argv.includes("--json")) { writeSync(1, `${JSON.stringify(roster, null, 2)}\n`); process.exit(0); }
   const lines = [`aweb team ${roster.team} — ${roster.members.length} entries (membership certificates and workspaces):`];
   if (!roster.members.length) lines.push("  (no member certificates or workspaces visible from this root)");
   for (const m of roster.members) lines.push(`  ${rosterLine(m)}`);
+  for (const r of roster.ownerRemovalsUnseen || []) lines.push(`Not seen in this roster, which is incomplete: ${r.alias}, ${HANDED_TO_OWNER}${recordedDay(r.at)} (its certificate was revoked); if it is still a member, the team owner removes it with: ${r.command}`);
   lines.push("");
   for (const problem of roster.problems) lines.push(`Incomplete: ${problem.source}: ${problem.message}.`);
   const leftovers = roster.members.filter((m) => m.retired && !m.retired.conflict).length;
   if (leftovers) lines.push(leftovers === 1 ? "1 certificate belongs to an instance OATS retired on this host; only the team's controller can remove it." : `${leftovers} certificates belong to instances OATS retired on this host; only the team's controller can remove them.`);
+  const handed = roster.members.filter((m) => m.ownerRemoval && !m.ownerRemoval.conflict).length;
+  if (handed) lines.push(handed === 1 ? `1 member was ${HANDED_TO_OWNER}; only the team owner can remove it.` : `${handed} members were ${HANDED_TO_OWNER}; only the team owner can remove them.`);
   lines.push("aw does not mark the team's coordinator (a workspace's role is its own setting): look among the global identities and ask your expert or coordinator which one coordinates.");
   lines.push("Certificates come from `aw id team members`; `aw workspace status` is the presence view.");
   lines.push(`Message an entry with \`aw mail send --to <alias> --subject "..." --body-file <file>\`${label ? ` as this team: \`aw --identity-home <identityHome> mail send ...\` (identityHome from \`oats aweb teams --json\`)` : ""}.`);
