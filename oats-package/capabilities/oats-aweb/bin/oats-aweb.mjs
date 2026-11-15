@@ -68,7 +68,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { ownerRemovalCommand, ownerRemovalProblem } from "../lib/owner-removals.mjs";
+import { ownerRemovalCommand, ownerRemovalProblem, recordOwnerRemovals } from "../lib/owner-removals.mjs";
 import { AWEB_ALIAS_RE, sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
@@ -2494,17 +2494,26 @@ if (event === "launch") {
   const failedLeaves = [];
   const retiredMeta = (fields = {}) => ({ ...fields, ...(pendingControllerCleanup.length ? { pendingControllerCleanup } : {}), ...(pendingJoinsOf(meta).length ? { pendingJoins: pendingJoinsOf(meta) } : {}) });
   // Each controller cleanup is also recorded at the deployment, for `oats aweb roster` on
-  // this host (lib/retired-certificates.mjs). Best effort: a failure is one more warning,
-  // never another exit code or meta.
+  // this host (lib/retired-certificates.mjs), and each owner removal in its own record
+  // (lib/owner-removals.mjs). Best effort: a failure is one more warning, never another exit
+  // code or meta.
   const recordControllerCleanup = () => {
-    const entries = pendingControllerCleanup.filter((c) => c.cleanup !== "owner" && c.certificateId && c.command);
-    if (!entries.length) return;
+    const controller = pendingControllerCleanup.filter((c) => c.cleanup !== "owner" && c.certificateId && c.command);
+    const owner = pendingControllerCleanup.filter((c) => c.cleanup === "owner" && c.command);
+    if (!controller.length && !owner.length) return;
+    const what = controller.length ? "the controller cleanup" : "the owner removal";
     let deployment;
     try { deployment = selectedDeployment(process.env); }
-    catch { outNotes.push("could not record the controller cleanup on this host: the deployment could not be resolved"); return; }
+    catch { outNotes.push(`could not record ${what} on this host: the deployment could not be resolved`); return; }
     const retiredAt = new Date().toISOString();
-    const { cause } = recordRetiredCertificates(deployment, entries.map((c) => ({ team: c.team, certificateId: c.certificateId, registry: cleanupRegistries.get(c) ?? null, alias: c.alias, instance: instance || null, retiredAt })));
-    if (cause) outNotes.push(`could not record the controller cleanup on this host: ${cause}`);
+    if (controller.length) {
+      const { cause } = recordRetiredCertificates(deployment, controller.map((c) => ({ team: c.team, certificateId: c.certificateId, registry: cleanupRegistries.get(c) ?? null, alias: c.alias, instance: instance || null, retiredAt })));
+      if (cause) outNotes.push(`could not record the controller cleanup on this host: ${cause}`);
+    }
+    if (owner.length) {
+      const { cause } = recordOwnerRemovals(deployment, owner.map((c) => ({ team: c.team, alias: c.alias, certificateId: c.certificateId ?? null, instance: instance || null, retiredAt })));
+      if (cause) outNotes.push(`could not record the owner removal on this host: ${cause}`);
+    }
   };
   if (hasStaleTeamSetting) retireWarnings.push(TEAM_SETTING_MESSAGE);
   // A retained seat's spawn that did not answer (killed, or failed after the

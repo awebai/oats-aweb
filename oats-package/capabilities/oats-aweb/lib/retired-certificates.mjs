@@ -36,13 +36,15 @@ const keyOf = (e) => `${e.team}\u0000${e.certificateId}`;
 // A certificate id as aw issues them (a UUID): letters, digits, `_` and `-`, starting with
 // a letter or digit so it can never read as a flag.
 const CERTIFICATE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+/** True when `value` is a certificate id as aw issues them. */
+export const validCertificateId = (value) => typeof value === "string" && CERTIFICATE_ID_RE.test(value);
 
 /** Why no controller cleanup command can be built from `{team, certificateId, registry}`, or
  *  undefined when one can. `registry` is optional: undefined or null builds a command without
  *  --registry. The reason is fixed text and never echoes the value. */
 export function controllerCleanupProblem({ team, certificateId, registry } = {}) {
   if (typeof team !== "string" || !validAwebTeamId(team)) return "its team is not a valid aweb team id";
-  if (typeof certificateId !== "string" || !CERTIFICATE_ID_RE.test(certificateId)) return "its certificate id is not valid";
+  if (!validCertificateId(certificateId)) return "its certificate id is not valid";
   if (registry != null && !registryOriginUrl(registry)) return "its registry is not a plain registry origin";
   return undefined;
 }

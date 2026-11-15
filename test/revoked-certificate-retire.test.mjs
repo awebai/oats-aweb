@@ -60,6 +60,8 @@ console.error("unexpected aw " + args.join(" ")); process.exit(93);
  *  certificate file, as a spawned home does. */
 function fixture(t) {
   const ws = tempDir(t), home = join(ws, "agents", "dev", "instances", "dev-1");
+  // The deployment the retire records at is the one this file makes (lib/team-roots.mjs).
+  write(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   write(join(home, ".aw", "identity.yaml"), "alias: dev-1\nteam_id: default:example.test\n");
   write(join(home, ".aw", "team-certs", "default__example.test.pem"), JSON.stringify({ version: 1, certificate_id: "cert-default-123", team_id: "default:example.test", alias: "dev-1" }));
   const env = {
@@ -162,3 +164,23 @@ for (const [name, label] of [["http401", "an http_error 401"], ["reasonOnly", "a
     assert.equal(existsSync(join(fx.home, ".aweb-identity-shared", "identity.yaml")), true, "the member key stays for the retry");
   });
 }
+
+const ownerRecord = (fx) => JSON.parse(readFileSync(join(fx.ws, ".oats-aweb", "owner-removals.json"), "utf8"));
+const recordedShape = (doc) => doc.entries.map(({ retiredAt, ...rest }) => ({ ...rest, retiredAtIsTime: !Number.isNaN(Date.parse(retiredAt)) })).sort((a, b) => a.team.localeCompare(b.team));
+
+test("the member handed to the owner is recorded at the deployment, and never as a controller's certificate", (t) => {
+  const fake = fakeAw(t), fx = fixture(t);
+  assert.equal(retire(fx, fake, { FAKE_DELETE_DEFAULT: "revoked" }).status, 0);
+  assert.deepEqual(recordedShape(ownerRecord(fx)), [{ team: "default:example.test", alias: "dev-1", certificateId: "cert-default-123", instance: "dev-1", retiredAtIsTime: true }]);
+  assert.equal(existsSync(join(fx.ws, ".oats-aweb", "retired-certificates.json")), false);
+});
+
+test("a retire run again records the owner's member once", (t) => {
+  const fake = fakeAw(t), fx = fixture(t), meta = withJoined(fx);
+  assert.equal(retire(fx, fake, { FAKE_DELETE_DEFAULT: "revoked", FAKE_DELETE_JOINED: "http401" }, meta).status, 1);
+  assert.equal(retire(fx, fake, { FAKE_DELETE_JOINED: "revoked" }, meta).status, 0);
+  assert.deepEqual(recordedShape(ownerRecord(fx)), [
+    { team: "default:example.test", alias: "dev-1", certificateId: "cert-default-123", instance: "dev-1", retiredAtIsTime: true },
+    { team: "shared:example.test", alias: "dev-1", certificateId: "cert-shared-123", instance: "dev-1", retiredAtIsTime: true },
+  ]);
+});
