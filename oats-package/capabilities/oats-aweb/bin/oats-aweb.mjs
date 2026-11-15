@@ -68,6 +68,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
+import { ownerRemovalCommand, ownerRemovalProblem } from "../lib/owner-removals.mjs";
 import { AWEB_ALIAS_RE, sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
@@ -1617,6 +1618,7 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
   } catch (e) {
     const error = new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
     if (teamNotHostedRefusal(e, entry.identityHome)) error.nativeReason = "team_not_hosted";
+    else if (e.awErrorCode === "certificate_revoked") error.nativeReason = "certificate_revoked";
     throw error;
   }
   if (!released) {
@@ -2091,20 +2093,33 @@ function certificateIdForJoinedTeam(row) {
   }
   return { certificateId: null, certificateIdError: fromFile.error || listError || `aw id team list --json returned no membership for ${row.team}`, ...registry };
 }
-/** `error` is a structured reason string (the default identity's
- *  alias_released_reason) or a cleanupJoinedIdentity error, whose nativeReason
- *  alone says team_not_hosted: its message text never does. */
+/** Who removes a membership whose own release failed for each reason that hands it over:
+ *  team_not_hosted to the team's controller, by certificate (aw refusing the release, or its
+ *  alias_released_reason); certificate_revoked to the team's owner, by member address (aw's
+ *  --json error code when the server already revoked the member's own certificate). */
+const HANDED_OVER_TO = { team_not_hosted: "controller", certificate_revoked: "owner" };
+/** `error` is a structured reason string (the default identity's) or a cleanupJoinedIdentity
+ *  error, whose nativeReason alone says it is handed over: its message text never does. */
 function failedLeaveDisposition(row, error) {
   const text = String(error?.message || error || "");
-  const notHosted = typeof error === "string" ? error === "team_not_hosted" : error?.nativeReason === "team_not_hosted";
-  const reason = notHosted ? "team_not_hosted" : actionWarning(text);
-  const data = { label: row.label, team: row.team, alias: row.alias || instance || null, ...certificateIdForJoinedTeam(row), at: new Date().toISOString(), reason, ...(reason === "team_not_hosted" ? { cleanup: "controller" } : {}) };
+  const native = typeof error === "string" ? error : error?.nativeReason;
+  const cleanupBy = Object.hasOwn(HANDED_OVER_TO, native) ? HANDED_OVER_TO[native] : undefined;
+  const reason = cleanupBy ? native : actionWarning(text);
+  const data = { label: row.label, team: row.team, alias: row.alias || instance || null, ...certificateIdForJoinedTeam(row), at: new Date().toISOString(), reason, ...(cleanupBy ? { cleanup: cleanupBy } : {}) };
+  if (cleanupBy === "owner") {
+    // Built from validated values only (lib/owner-removals.mjs), as the roster rebuilds it.
+    const command = ownerRemovalCommand({ team: row.team, alias: data.alias });
+    const removal = command
+      ? `the team owner removes the member with: ${command}`
+      : `the team owner removes the member, but no command is shown: ${ownerRemovalProblem({ team: row.team, alias: data.alias })}`;
+    return { data: { ...data, ...(command ? { command } : {}) }, warning: `joined team ${row.label} cleanup failed: ${reason}; its certificate was revoked by the server, so it cannot retire itself; ${removal}` };
+  }
   // Built from validated values only (lib/retired-certificates.mjs), as the roster rebuilds it.
   const cleanup = { team: row.team, certificateId: data.certificateId, registry: data.registry };
-  const command = reason === "team_not_hosted" && data.certificateId ? controllerCleanupCommand(cleanup) : undefined;
+  const command = cleanupBy === "controller" && data.certificateId ? controllerCleanupCommand(cleanup) : undefined;
   const ownerCommand = command
     ? `; controller cleanup: ${command}${data.registryError ? ` (${data.registryError})` : ""}`
-    : reason === "team_not_hosted"
+    : cleanupBy === "controller"
       ? data.certificateId
         ? `; controller cleanup has no command: the certificate read for it is unusable (${controllerCleanupProblem(cleanup)})`
         : `; controller cleanup needs the certificate id, but ${data.certificateIdError || "it could not be read"}${data.registryError ? ` (${data.registryError})` : ""}`
@@ -2463,8 +2478,8 @@ if (event === "launch") {
   // The registry each cleanup's command was built with, recorded beside it but kept out of the meta.
   const cleanupRegistries = new Map();
   const rememberControllerCleanup = (data) => {
-    if (data?.cleanup !== "controller") return;
-    const cleanup = { label: data.label, team: data.team, alias: data.alias, certificateId: data.certificateId, ...(data.command ? { command: data.command } : {}) };
+    if (data?.cleanup !== "controller" && data?.cleanup !== "owner") return;
+    const cleanup = { label: data.label, team: data.team, alias: data.alias, certificateId: data.certificateId, ...(data.cleanup === "owner" ? { cleanup: "owner" } : {}), ...(data.command ? { command: data.command } : {}) };
     pendingControllerCleanup.push(cleanup);
     cleanupRegistries.set(cleanup, data.registry ?? null);
   };
@@ -2482,7 +2497,7 @@ if (event === "launch") {
   // this host (lib/retired-certificates.mjs). Best effort: a failure is one more warning,
   // never another exit code or meta.
   const recordControllerCleanup = () => {
-    const entries = pendingControllerCleanup.filter((c) => c.certificateId && c.command);
+    const entries = pendingControllerCleanup.filter((c) => c.cleanup !== "owner" && c.certificateId && c.command);
     if (!entries.length) return;
     let deployment;
     try { deployment = selectedDeployment(process.env); }
@@ -2533,13 +2548,13 @@ if (event === "launch") {
   }
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
-    catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
+    catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (!failed.data.cleanup) failedLeaves.push(joined.label); }
   }
   // A join killed or failed after its accept is released the same way
   // (adopted, then left), with the same rule for keeping the key.
   for (const pending of pendingJoinsOf(meta)) {
     try { meta = releasePendingJoin(pending, meta).meta; }
-    catch (e) { const failed = failedLeaveDisposition(pending, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(pending.label); }
+    catch (e) { const failed = failedLeaveDisposition(pending, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (!failed.data.cleanup) failedLeaves.push(pending.label); }
   }
   // A native (channel/pi) home registered with the broker only for its joined
   // teams; a broker home was deregistered above.
@@ -2641,8 +2656,17 @@ if (event === "launch") {
   // timeout that completed anyway) still carries the alias in its workspace
   // binding: use it rather than leaving the workspace orphaned.
   if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
+  // The default identity handed to its team's controller or owner (failedLeaveDisposition).
+  const handDefaultOver = (reason, alias = meta.alias) => {
+    const failed = failedLeaveDisposition({ label: "default", team: meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId(), alias, identityHome: join(home, ".aw") }, reason);
+    retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
+    rememberControllerCleanup({ ...failed.data, label: "default" });
+  };
   const completedDefaultRetire = readDefaultRetireMarker();
   if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
+    // A retire run again (killed after the marker, or kept for a joined team's key) hands the
+    // owner's member over again: its first answer may never have been recorded.
+    if (completedDefaultRetire.aliasReason === "certificate_revoked") handDefaultOver("certificate_revoked", completedDefaultRetire.alias || meta.alias);
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); ${ALIAS_UNRELEASED_REMEDY}` }) });
   }
   // A mint killed or failed after aw may have registered the identity, with no bound
@@ -2717,15 +2741,20 @@ if (event === "launch") {
     // By workspace id when the home records it: one request, where an alias
     // is first resolved to an id with a workspace list call.
     const workspaceId = workspaceIdOf(home, meta.team || meta.defaultTeam?.team || meta.identity?.team, meta.alias);
-    const raw = run(["aw", "workspace", "delete", workspaceId || meta.alias, "--json"], home);
-    let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
-    const released = doc?.alias_released === true;
-    const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
-    if (!released && reason === "team_not_hosted") {
-      const failed = failedLeaveDisposition({ label: "default", team: meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId(), alias: meta.alias, identityHome: join(home, ".aw") }, reason);
-      retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
-      rememberControllerCleanup({ ...failed.data, label: "default" });
+    // aw's certificate_revoked (its --json error code, never its prose): the server already
+    // revoked this identity's own certificate, so no self-delete can succeed. Retire
+    // finishes, and the team's owner removes the member. Any other failure stays a failure.
+    let doc, revoked = false;
+    try {
+      const raw = run(["aw", "workspace", "delete", workspaceId || meta.alias, "--json"], home);
+      try { doc = JSON.parse(raw); } catch { doc = undefined; }
+    } catch (e) {
+      if (e.awErrorCode !== "certificate_revoked") throw e;
+      revoked = true;
     }
+    const released = doc?.alias_released === true;
+    const reason = revoked ? "certificate_revoked" : typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
+    if (revoked || (!released && reason === "team_not_hosted")) handDefaultOver(reason);
     writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: released, aliasReason: reason, receipt: doc });
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: released, aliasReason: reason, joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); ${ALIAS_UNRELEASED_REMEDY}` }) });
   } catch (e) {

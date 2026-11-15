@@ -4,8 +4,10 @@
 
 /** The refusal codes read from aw's --json error envelope
  *  (`{"error":{"code":...}}`, aw 1.36.52-rc.3 and later). A code is a fixed
- *  word, so naming it leaks nothing; anything else is never read. */
-export const AW_ERROR_CODES = new Set(["unknown_or_invalid"]);
+ *  word, so naming it leaks nothing; anything else is never read.
+ *  certificate_revoked: `aw workspace delete` refused because the server already
+ *  revoked the caller's own certificate. */
+export const AW_ERROR_CODES = new Set(["unknown_or_invalid", "certificate_revoked"]);
 
 /** Transport failures as Go's net, net/http and crypto/tls word them in the aw
  *  binary: a dial (tcp, tcp4, tcp6), DNS, refused/reset/unreachable, timeouts
