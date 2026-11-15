@@ -68,7 +68,7 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
-import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
+import { AWEB_ALIAS_RE, sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
@@ -344,7 +344,6 @@ if ((process.env.OATS_EVENT || process.argv[2]) === "upgrade") upgrade();
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;
 let home = process.env.OATS_HOME || process.cwd();
-const AWEB_ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const AWEB_ALIAS_RULE = "invalid alias: aweb aliases must be 1-64 characters, start with a letter or digit, and then contain only letters, digits, '-' or '_'";
 /** A retired alias held until the server releases it: --purpose derives <agent>-<purpose>, so either flag gives a free one. */
 const ALIAS_UNRELEASED_REMEDY = "spawn successors with a different --name or --purpose until it is released";
