@@ -762,16 +762,36 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   problem. The record is left as it is. A marked member whose workspace is
   offline, that has none, or whose presence could not be read keeps the mark
   and the command.
+- A member a retire on this host handed to the team's owner (aw answered
+  `certificate_revoked`, recorded in `<deployment>/.oats-aweb/owner-removals.json`)
+  is marked: its line ends `; handed to the team owner by OATS on this host
+  <YYYY-MM-DD> (its certificate was revoked); the team owner removes it with:
+  aw team admin remove-agent <namespace>/<alias> --team-id <team>`, and the
+  footer counts those members. It is matched on team and alias, never when the
+  alias's certificate is another than the one recorded (that holder proves the
+  recorded member gone). The command is built from the entry's validated team
+  and alias, and a record with an entry it can't be built from is a problem
+  with source `owner-removals-record`, with nothing from it shown. A marked
+  member whose workspace reads `active` shows `; recorded as handed to the team
+  owner, but its workspace is active: check before removing` and no command. A
+  recorded member the roster doesn't show is gone when both reads are
+  complete; while either is incomplete it is listed after the members as `Not
+  seen in this roster, which is incomplete: <alias>, …; if it is still a
+  member, the team owner removes it with: <command>`.
 - aw does not mark the team's coordinator; the roster says so and points at
   the global identities.
 - If a source cannot be read, or presence is past its 200-workspace cap, the
   roster lists what it has and prints `Incomplete: <source>: <why>.`
 - `--json`: `{team, members: [{alias, kind, kindFrom, identityScope, address,
-  role, status, sources, presence, retired?}], certificatesComplete,
-  presenceComplete, problems}`. Status is `active`, `offline`,
-  `no-workspace-record` or `presence-unknown`. `retired: {at, instance,
-  command, conflict?}` is on marked members only. A record that cannot be read is a
-  `problems` entry with source `retired-record`, and nothing from it is shown.
+  role, status, sources, presence, retired?, ownerRemoval?}],
+  ownerRemovalsUnseen?, certificatesComplete, presenceComplete, problems}`.
+  Status is `active`, `offline`, `no-workspace-record` or `presence-unknown`.
+  `retired: {at, instance, command, conflict?}` is on marked members only, and
+  `ownerRemoval: {at, instance, command, conflict?}` on members handed to the
+  owner. `ownerRemovalsUnseen: [{alias, at, instance, command}]` is there only
+  when an incomplete roster doesn't show a recorded member. A record that cannot
+  be read is a `problems` entry with source `retired-record` or
+  `owner-removals-record`, and nothing from it is shown.
 
 ## 1.19.0 — team model 3
 
@@ -1546,7 +1566,36 @@ the recorded ones. It falls back to the alias when no entry matches. For a home
 whose last start was on the broker path, `aw wake deregister` runs at the same
 time as the delete. Before that, retire leaves each joined team and releases each
 unfinished join. While a release that needs the member key fails (anything but
-`team_not_hosted`), retire keeps the key and the record and exits nonzero.
+`team_not_hosted` or `certificate_revoked`), retire keeps the key and the record
+and exits nonzero.
+
+When the server has already revoked an identity's own certificate, `aw workspace
+delete --json` exits 1 with `error.code: "certificate_revoked"` on stdout. That
+identity can never release itself, so retire hands the member to the team's
+owner and finishes: the default identity answers `retired: true`,
+`aliasReusable: false`, `aliasReason: "certificate_revoked"` and writes its
+retire marker, and a joined team is no longer kept for a retry. Each answers a
+`pendingControllerCleanup` entry with `cleanup: "owner"` and the owner's command,
+`aw team admin remove-agent <namespace>/<alias> --team-id <team>`, and warns
+`<…> cleanup failed: certificate_revoked; its certificate was revoked by the
+server, so it cannot retire itself; the team owner removes the member with:
+<command>`. Only that code counts: an `http_error` 401, or the words in the
+message, reason or detail, stays a failure that keeps the instance retiring. A
+retire run again after the marker hands the member over again and does not
+self-delete twice. The code needs an aw that reports it (on aweb main from
+233c5ffef05190bab3b49e64bd1c5bead358a506); with an older aw such a retire still
+fails as `self-delete-failed`.
+
+The kernel keeps no hook answer once it removes the home, so retire also records
+each member it hands to the owner at the deployment, in
+`<deployment>/.oats-aweb/owner-removals.json` (`lib/owner-removals.mjs`): team,
+alias, certificate id when the home could read it, instance and time, never a
+command. A retire run again replaces its own entry. The file is separate from
+`retired-certificates.json`, which an older provider on the same host rewrites
+whole when it meets an entry it doesn't know. Both records are written the same
+way (`lib/host-record.mjs`): under a lock beside the file, merged, and renamed
+into place. An entry leaves the record only when it is past the newest 500, and
+the roster never writes either record.
 
 ### A retained seat on a server other than aweb Cloud
 

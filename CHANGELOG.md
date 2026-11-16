@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: a retire finishes when the server has already revoked the
+  identity's own certificate (aweb-adbl).** `aw workspace delete --json` exits 1
+  with `error.code: "certificate_revoked"` for such an identity, which can never
+  release itself, so its retire stayed RETIRING. Retire now hands the member to
+  the team's owner and finishes: the default identity answers `retired: true`,
+  `aliasReusable: false`, `aliasReason: "certificate_revoked"`, and a joined team
+  is no longer kept for a retry. Each answers a `pendingControllerCleanup` entry
+  with `cleanup: "owner"` and the owner's command, `aw team admin remove-agent
+  <namespace>/<alias> --team-id <team>`, and warns. Only that code counts: an
+  `http_error` 401 still keeps the instance retiring. Needs an aw that reports
+  the code (on aweb main from 233c5ffef05190bab3b49e64bd1c5bead358a506); with an
+  older aw such a retire still fails as `self-delete-failed`. Run `oats retire`
+  again on an instance stuck this way once aw reports it.
+- **Added: `<deployment>/.oats-aweb/owner-removals.json`, and the roster lists
+  it.** The kernel keeps no hook answer once it removes the home, so retire
+  records each member it hands to the owner there: team, alias, certificate id
+  when readable, instance and time, never a command. A retire run again
+  replaces its own entry; the newest 500 are kept. It is a file of its own, so
+  an older provider that rewrites `retired-certificates.json` on the same host
+  leaves it alone. `oats aweb roster` marks each such member with the owner's
+  command, rebuilt from the validated team and alias, shows a conflict with no
+  command when its workspace is active, and keeps listing a recorded member
+  until complete reads show it gone. `--json` adds `ownerRemoval` to members,
+  `ownerRemovalsUnseen`, and problems with source `owner-removals-record`.
+  Nothing a deployment must change.
+
 ## 1.42.1 — 2026-11-13
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A fix so OATS can pin this release: a comment named the kernel's private module, which OATS's mirror check refuses (1.42.0 can't be mirrored). Nothing a deployment must change beyond 1.42.0's steps.
