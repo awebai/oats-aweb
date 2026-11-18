@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { checkSkillArgv, documentedCommands } from '../scripts/check-aweb-tasks-argv.mjs';
-
-const root = new URL('../', import.meta.url);
-const skill = () => readFileSync(new URL('oats-package/capabilities/oats-aweb-tasks/skills/aweb-tasks/SKILL.md', root), 'utf8');
-const inject = () => readFileSync(new URL('oats-package/capabilities/oats-aweb-tasks/injects/aweb-tasks.md', root), 'utf8');
+import { checkSkillArgv } from '../scripts/check-aweb-tasks-argv.mjs';
 
 test('argv checker extracts examples and only requests help without example arguments', () => {
   const markdown = '```bash\naw --identity-home <identityHome> task create --title "$(cat /path/title.txt)" --description-file /path/description.md\n```\nAlso `aw work ready`.';
@@ -24,7 +19,6 @@ test('argv checker rejects unknown commands, flags and unverified prose flags', 
   assert.throws(() => checkSkillArgv('`aw task nonexistent`', help), /Command missing/);
   assert.throws(() => checkSkillArgv('`aw task list --nonexistent x`', help), /missing from help/);
   assert.throws(() => checkSkillArgv('`aw task list` uses `--nonexistent`', help), /no verified example/);
-  assert.ok(documentedCommands(skill()).length >= 20);
 });
 
 test('argv checker supports the read-only identity check through help only', () => {

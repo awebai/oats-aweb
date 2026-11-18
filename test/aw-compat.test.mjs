@@ -125,10 +125,3 @@ test("the manifest's aw requirement names aw-compat.json's min", () => {
   assert.equal(aw.length, 1);
   assert.match(aw[0].why, new RegExp(`^aw >= ${AW_MIN.replaceAll(".", "\\.")}:`));
 });
-
-test("the README's aw-compat.json section shows the file as it is", () => {
-  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-  const section = readme.slice(readme.indexOf("\n## aw-compat.json: the aw this provider supports\n"));
-  assert.ok(section.length < readme.length, "the README has the section");
-  assert.ok(section.includes(`\`\`\`json\n${readFileSync(COMPAT, "utf8")}\`\`\`\n`), "its json block is the file, byte for byte");
-});

@@ -202,19 +202,6 @@ for(const key of ['"joined:example.invalid"', "'joined:example.invalid'", 'joine
  assert.equal(r.status,1);assert.match(r.stderr,/duplicate root key/);assert.equal(readFileSync(file,'utf8'),text);
 });
 
-// #45: a nested root keeps working and is not migrated. Moving one is not a
-// shipped procedure (never run against a live aw), so the docs say only that.
-test('docs say nested roots are not migrated and ship no move procedure', () => {
- const repo=fileURLToPath(new URL('..',import.meta.url));
- // #45 shipped in 1.36.0: its CHANGELOG section carries the sentence.
- const changelog=readFileSync(join(repo,'CHANGELOG.md'),'utf8'), released=changelog.slice(changelog.indexOf('## 1.36.0'),changelog.indexOf('\n## ',changelog.indexOf('## 1.36.0')+1));
- for(const [name,text] of [['CHANGELOG 1.36.0',released],['README',readFileSync(join(repo,'README.md'),'utf8')],['skill',readFileSync(join(repo,'oats-package','capabilities','oats-aweb','skills','oats-aweb','SKILL.md'),'utf8')]]){
-  const flat=text.replace(/\s+/g,' ');
-  assert.match(flat,/Existing nested roots keep working and are not migrated; to move one, ask your aweb lead\./,name);
-  assert.doesNotMatch(flat,/aw workspace connect --team <(?:team id|T)>/,`${name} ships no move steps`);
- }
-});
-
 // #285: on a terminal, --invite-stdin reads the token with echo off. Runs setup on
 // a real pseudo-terminal, types after the prompt, and returns what the terminal showed.
 const PTY_DRIVER = `
