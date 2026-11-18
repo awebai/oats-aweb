@@ -30,6 +30,12 @@
   Workspace deletion reads only aw's `alias_released_reason`; an answer with
   only `reason` now records `unstated`. No deployment migration is required.
 
+- **Fixed: joined-team retire reads aw's `team_not_hosted` error code.**
+  The `--json` envelope decides whether cleanup can be handed to the
+  controller. Diagnostic text, principal naming and exit-status wording no
+  longer decide whether the member key may go. A missing or different code
+  keeps the home and key for retry. No deployment migration is required.
+
 ## 1.42.1 — 2026-11-13
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A fix so OATS can pin this release: a comment named the kernel's private module, which OATS's mirror check refuses (1.42.0 can't be mirrored). Nothing a deployment must change beyond 1.42.0's steps.

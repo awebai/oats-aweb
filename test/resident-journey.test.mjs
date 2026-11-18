@@ -383,6 +383,11 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   assert.equal(listed.status, 0, listed.stdout + listed.stderr);
   assert.match(listed.stdout, new RegExp(joinedTeam.replace(/\./g, "\\.")));
 
+  // The native refusal carries its decision on stdout, not in diagnostic prose.
+  const refusal = j.aw(home, ["--identity-home", identityHome, "workspace", "delete", "joined-seat", "--json"]);
+  assert.notEqual(refusal.status, 0, refusal.stdout + refusal.stderr);
+  assert.equal(JSON.parse(refusal.stdout).error.code, "team_not_hosted");
+
   const retired = j.shell("oats retire joined-seat --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false);

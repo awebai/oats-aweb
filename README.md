@@ -1553,6 +1553,9 @@ whose last start was on the broker path, `aw wake deregister` runs at the same
 time as the delete. Before that, retire leaves each joined team and releases each
 unfinished join. While a release that needs the member key fails (anything but
 `team_not_hosted`), retire keeps the key and the record and exits nonzero.
+For an external identity home, that handoff is decided only by the
+`team_not_hosted` code in aw's `--json` error envelope; diagnostic wording and
+principal names do not decide whether the member key may go.
 
 A grant seat with no grant or seat id answers `retired: false` with
 `reason: "nothing-to-delete"`, the kernel's completed no-op vocabulary.

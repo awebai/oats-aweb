@@ -1584,27 +1584,9 @@ function serviceForJoinedTeam(root, label, accepted, ...docs) {
 function releaseReceiptStatus(doc) {
   return doc && typeof doc === "object" && doc.alias_released === true ? "released" : undefined;
 }
-// The one refusal that hands a joined membership to the team's controller: aw
-// refusing an external-home self-release on a team that is not hosted, or
-// answering alias_released_reason "team_not_hosted". It decides whether retire
-// may let the member key go, so it is recognized only as aw states it: the
-// whole refusal (exit 2, one stderr line, the principal being this identity
-// home as aw names it), or that JSON field. Never a part of
-// stderr (an HTTP error's prose may end the same way) and never a message
-// this hook builds (those carry paths and labels). Anything else keeps the key.
-function teamNotHostedRefusal(e, identityHome) {
-  if (e?.status !== 2) return false;
-  const stderr = String(e?.stderr ?? "").trim();
-  const principals = new Set([identityHome]);
-  try { principals.add(realpathSync(identityHome)); } catch { /* the given path is the one aw names */ }
-  // aw names a home by the first of these its identity.yaml has, else by its path.
-  try {
-    const identity = readFileSync(join(identityHome, "identity.yaml"), "utf8");
-    const name = ["stable_id", "address", "did"].map((key) => yamlScalar(identity, key)).find(Boolean);
-    if (name) principals.add(name);
-  } catch { /* no identity to name: aw names the path */ }
-  return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
-}
+// A joined membership is handed to the controller only on aw's structured
+// team_not_hosted refusal, or its successful alias_released_reason receipt.
+// Other failures need the member key and keep the home for a retry.
 function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
@@ -1614,7 +1596,7 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
     released = releaseReceiptStatus(receipt);
   } catch (e) {
     const error = new Error(`failed to leave team ${entry.label}; kept ${entry.identityHome} so cleanup can be retried: ${String(commandOutput(e)).slice(0, 300)}`);
-    if (teamNotHostedRefusal(e, entry.identityHome)) error.nativeReason = "team_not_hosted";
+    if (e.awErrorCode === "team_not_hosted") error.nativeReason = "team_not_hosted";
     throw error;
   }
   if (!released) {
