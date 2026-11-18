@@ -858,6 +858,10 @@ function launchSeat(meta) {
   catch { fatal(`respawn this home; refusing to replace an unreadable or incomplete seat record or mint a new seat: ${seatRecordFile()}`, meta); }
   const grantTeam = record ? recoverGrantHome(priorGrantHome(meta)).team : undefined;
   if (record && grantTeam && !sameAwebTeamId(grantTeam, record.team)) fatal(`respawn this home; the selected grant home records a different team from the seat record: ${seatRecordFile()}`, meta);
+  // Do not erase the only evidence needed for manual cleanup of a grant in
+  // another team. A readable local grant in the seat's team can corroborate
+  // a metadata repair; a missing or unreadable grant home cannot.
+  if (record && meta.identity?.grant?.id && meta.identity.team && !sameAwebTeamId(meta.identity.team, record.team) && !sameAwebTeamId(grantTeam, record.team)) fatal(`respawn this home; the recorded grant names another team and its selected grant home cannot confirm the seat's team: ${seatRecordFile()}`, meta);
   if (record && ((identitySettings.resident && identitySettings.resident !== record.resident) || (defaultTeamId() && !sameAwebTeamId(defaultTeamId(), record.team)))) fatal(`respawn this home to change its resident or team; the configured resident or team differs from the seat record: ${seatRecordFile()}`, meta);
   return record;
 }
@@ -1038,11 +1042,12 @@ const kernelRetireIncomplete = (meta) => meta.retired === false && meta.reason !
 function globalGrantRetire(meta, seatRecord) {
   const reportedIdentity = meta.identity;
   meta = withRecordedSeat(meta, seatRecord);
-  if (brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
   const id = meta.identity?.grant?.id, seat = meta.identity?.seat;
+  const team = meta.identity?.team || defaultTeamId();
+  if ((id || seat) && !team) fatal(teamConfigRemedy(), meta);
+  if (brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
   if (!id && !seat) out({ meta: { retired: false, reason: "nothing-to-delete" } });
   const custody = resolveResidentCustody(meta.identity?.resident);
-  const team = meta.identity?.team || defaultTeamId();
   // Every active grant of this seat goes, the current one included; the
   // custody's list also finds a grant minted before a crash.
   const label = seat ? seatGrantLabel(instance, seat) : undefined;

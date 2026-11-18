@@ -519,8 +519,9 @@ test("an anomalous wrong-team mint names manual cleanup; retire never queries an
   assert.ok(retired.doc.warning.includes(cleanup), retired.doc.warning);
   assert.match(retired.doc.warning, /after that manual cleanup, run `oats retire probe --force`/);
   assert.ok(s.calls().slice(before).filter(a => a.slice(0,2).join(" ") === "id grant").every(a => a.includes(`--team=${TEAM}`)));
-  const manual = spawnSync(join(s.base, "bin", "aw"), ["id", "grant", "revoke", "grant-spawn", `--team=${other}`, "--json"], {
-    cwd: s.custody, encoding: "utf8", env: { HOME: s.base, PATH: process.env.PATH },
+  const command = retired.doc.warning.match(/: run `([^`]+)`/)[1];
+  const manual = spawnSync("/bin/sh", ["-c", command], {
+    cwd: s.custody, encoding: "utf8", env: { HOME: s.base, PATH: `${join(s.base,"bin")}:${process.env.PATH}` },
   });
   assert.equal(manual.status, 0, manual.stdout + manual.stderr);
   assert.deepEqual(active(s), [], "the printed manual cleanup ends the fake credential");

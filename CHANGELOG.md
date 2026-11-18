@@ -57,6 +57,10 @@
   homes use this behavior only when they receive the new provider module.
   Start also refuses a selected grant home recording another team, including
   preview and `renew: off`, even if the configured default matches the seat.
+  If metadata records a grant in another team, start refuses unless the
+  selected readable grant file confirms the seat's team; a missing grant home
+  cannot erase the other team's cleanup evidence. Retire refuses an unresolved
+  team with a configuration remedy, preserving metadata and the credential.
   Homes already renewed into another default team under an earlier release
   refuse start too; their retire requires the printed manual revoke followed
   by `oats retire <instance> --force`.

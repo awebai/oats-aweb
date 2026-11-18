@@ -804,6 +804,10 @@ A present `seat.json` owns this home's seat id, resident and team. A different
 configured resident or default team refuses start with a respawn remedy; an
 unreadable or incomplete record refuses both start and retire. A selected grant
 home recording another team also refuses start, preview and `renew: off` included.
+Metadata naming a grant in another team refuses start unless the selected readable
+grant file confirms the seat's team; missing grant homes cannot erase cleanup
+evidence. Retire with no resolvable team refuses with a configuration remedy and
+keeps the metadata and credential.
 When a recorded grant names another team, including a home renewed there by an
 earlier release, follow retire's printed manual revoke command with its `--team`, then the operator's
 `oats retire <instance> --force`: ordinary retire cannot confirm cleanup outside

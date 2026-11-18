@@ -37,6 +37,49 @@ function seat(t) {
 }
 const ok = r => assert.equal(r.status, 0, r.stdout + r.stderr);
 
+test('a missing grant home cannot erase the team of a recorded grant before retire', t => {
+  const s = seat(t), spawned = s.run('spawn'); ok(spawned);
+  const identity = {...spawned.doc.meta.identity,team:OTHER,grant:{...spawned.doc.meta.identity.grant,id:'grant-y'}};
+  rmSync(identity.grant.home,{recursive:true,force:true});
+  writeFileSync(join(s.base,'grants.json'),JSON.stringify([
+    {grant_id:'grant-y',team_id:OTHER,label:`oats:probe:${identity.seat}`,status:'active',expires_at:'never'},
+  ]));
+  const meta = {...spawned.doc.meta,identity};
+  for (const renew of ['off','launch']) for (const preview of [false,true]) {
+    const before = s.calls().length;
+    const launched = s.run('launch',meta,{
+      OATS_SETTINGS:JSON.stringify({...s.settings,identity:{...s.settings.identity,renew}}),
+      ...(preview?{OATS_LAUNCH_PREVIEW:'1'}:{}),
+    });
+    assert.equal(launched.status,1,launched.stdout+launched.stderr);
+    assert.match(launched.doc.warning,/respawn this home/);
+    assert.equal(launched.doc.meta.identity.team,OTHER);
+    assert.equal(s.calls().length,before,'refusal precedes every aw call');
+    const retired = s.run('retire',launched.doc.meta);
+    assert.equal(retired.status,1);
+    assert.ok(retired.doc.warning.includes(`aw id grant revoke --team=${OTHER} -- grant-y`));
+    assert.match(retired.doc.warning,/oats retire probe --force/);
+    assert.equal(s.grants()[0].status,'active');
+    // Retire is deliberately confined to the recorded seat's team.
+    const afterRetire = s.calls().length;
+    assert.ok(s.calls().slice(before,afterRetire).filter(c=>c.argv.slice(0,2).join(' ')==='id grant').every(c=>c.argv.includes(`--team=${TEAM}`)));
+  }
+});
+
+test('legacy retire without any recorded or configured team refuses before aw', t => {
+  const s = seat(t), spawned = s.run('spawn'); ok(spawned);
+  rmSync(s.recordPath);
+  const identity = {...spawned.doc.meta.identity};
+  delete identity.team;
+  const before = s.calls().length;
+  const retired = s.run('retire',{...spawned.doc.meta,identity},{OATS_DEFAULT_TEAM_ID:''});
+  assert.equal(retired.status,1);
+  assert.equal(s.calls().length,before,'no grant operation can use an unresolved team');
+  assert.deepEqual(retired.doc.meta.identity,identity);
+  assert.doesNotMatch(retired.doc.warning,/--team=undefined/);
+  assert.ok(s.grants().every(g=>g.status==='active'));
+});
+
 test('renewal and retire revoke in seat team X while resident custody selects Y', t => {
   const s = seat(t), spawned = s.run('spawn'); ok(spawned);
   const launched = s.run('launch', spawned.doc.meta); ok(launched);

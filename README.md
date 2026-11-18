@@ -54,6 +54,10 @@ before 1.25.0 that have no seat record keep their existing lifecycle path.
 Existing homes receive this change through a provider module upgrade or respawn.
 A selected grant home recording another team refuses start even when the
 configured default matches the seat, including preview and `renew: off`.
+Metadata naming a grant in another team also refuses start unless the selected
+readable grant file confirms the seat's team. Missing grant homes preserve that
+cleanup evidence. If neither metadata nor configuration resolves a team, retire
+refuses with a configuration remedy and preserves the credential and metadata.
 Homes already renewed into another default team under an earlier release refuse
 start too; their retire requires the printed manual revoke followed by
 `oats retire <instance> --force`.
