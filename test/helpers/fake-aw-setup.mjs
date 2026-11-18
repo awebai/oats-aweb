@@ -42,8 +42,8 @@
 //                     registry-409 (create-team-registry-409)
 //   id team register  needs the team key; prints created, then synced. With
 //                     AW_REGISTER_FAIL_CODE it is refused as aw reports a server
-//                     refusal: `aweb: http <AW_REGISTER_FAIL_STATUS, 422> (...): <body>`
-//                     whose detail is {code: <that code>, message: RAW-AW-SENTINEL}
+//                     refusal: `service register: http <AW_REGISTER_FAIL_STATUS, 422>: <body>`
+//                     with {code: <that code>, message: RAW-AW-SENTINEL}
 //   id team invite    needs the team key ("no team key for D/N"); prints a local
 //                     invite as aw 1.36.56 does ({invite_id, status, token},
 //                     test/fixtures/byot-create/invite-team-key.stdout) whose
@@ -57,6 +57,8 @@
 //                     AW_SERVER_RECORD_AFTER_REGISTER=<url> another writer publishes
 //                     that record while register runs;
 //                     AW_SET_SERVER_FAIL the registry refuses the publish;
+//                     AW_SET_SERVER_FAIL_CODE the wrapped aweb-client refusal
+//                     `aweb: http 409 (<headers>): {detail:{code,message}}`;
 //                     AW_SET_SERVER_UNSTORED set-server reports published but the
 //                     registry keeps nothing; AW_SHOW_SERVER_DID the team key the
 //                     record verifies against (default did:key:zFixtureTeam)
@@ -141,7 +143,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "register") {
   const team = flag("--team"), [name, namespace] = team.split(":");
   if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "local team controller key for " + team + " was not found: open " + path.join(teamKeys, namespace, name + ".key") + ": no such file or directory RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
-  if (process.env.AW_REGISTER_FAIL_CODE !== undefined) { console.error("aweb: http " + (process.env.AW_REGISTER_FAIL_STATUS || "422") + " (Content-Type: application/json; X-Fixture: RAW-AW-SENTINEL): " + JSON.stringify({ detail: { code: process.env.AW_REGISTER_FAIL_CODE, message: "RAW-AW-SENTINEL " + flag("--service") } })); process.exit(1); }
+  if (process.env.AW_REGISTER_FAIL_CODE !== undefined) { console.error("service register: http " + (process.env.AW_REGISTER_FAIL_STATUS || "422") + ": " + JSON.stringify({ code: process.env.AW_REGISTER_FAIL_CODE, message: "RAW-AW-SENTINEL " + flag("--service") })); process.exit(1); }
   const registered = path.join(teamKeys, namespace, name + ".registered");
   const status = fs.existsSync(registered) ? "synced" : "created";
   fs.writeFileSync(registered, flag("--service"));
@@ -153,6 +155,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   const out = (status, url) => console.log(JSON.stringify({ status, team_id: team, server_url: url, audience: new URL(url).origin, issued_at: "2026-11-09T00:00:00Z", team_did_key: process.env.AW_SHOW_SERVER_DID || "did:key:zFixtureTeam", registry_url: "https://api.awid.ai" }));
   if (args[2] === "set-server") {
     if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "local team controller key for " + team + " was not found: open " + path.join(teamKeys, namespace, name + ".key") + ": no such file or directory RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
+    if (process.env.AW_SET_SERVER_FAIL_CODE) { console.error("aweb: http 409 (Content-Type: application/json): " + JSON.stringify({detail: {code: process.env.AW_SET_SERVER_FAIL_CODE, message: "RAW-AW-SENTINEL"}})); process.exit(1); }
     if (process.env.AW_SET_SERVER_FAIL) { const m = "publish team server for " + team + ": registry http 503: RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
     if (!process.env.AW_SET_SERVER_UNSTORED) fs.writeFileSync(record, flag("--url"));
     out("published", flag("--url"));

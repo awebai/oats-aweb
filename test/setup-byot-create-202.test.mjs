@@ -162,10 +162,17 @@ test('a missing namespace controller key gets the fixed cause and remedy, never 
   assert.deepEqual(f.calls(), ['whoami --json', `id team create --name=eng --namespace=${NS} --json`]);
 });
 
+test('a wrapped client refusal still names detail.code without relaying the message', t => {
+  const f = fixture(t), r = f.run({AW_SET_SERVER_FAIL_CODE: 'service_url_mismatch'});
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /http 409, detail\.code: service_url_mismatch/);
+  assert.doesNotMatch(r.stdout + r.stderr, /RAW-AW-SENTINEL|Content-Type/);
+});
+
 test('a register refusal names the HTTP status and the known code, and nothing else of the body', (t) => {
   const f = fixture(t), r = f.run({ AW_REGISTER_FAIL_CODE: 'service_url_mismatch' });
   assert.equal(r.status, 1);
-  assert.match(r.stderr, new RegExp(`registering ${TEAM} with the aweb service at ${SERVICE} failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials; http 422, detail\\.code: service_url_mismatch\\); team ${TEAM} exists and its key is kept on this machine; re-run the same command to resume`));
+  assert.match(r.stderr, new RegExp(`registering ${TEAM} with the aweb service at ${SERVICE} failed: aw id team failed \\(exit 1\\) \\(output withheld: this command handles credentials; http 422, code: service_url_mismatch\\); team ${TEAM} exists and its key is kept on this machine; re-run the same command to resume`));
   assert.doesNotMatch(r.stdout + r.stderr, new RegExp(`${SENTINEL}|Content-Type`));
   assert.deepEqual(named(f.calls(), 'id team invite'), [], 'no invite before the service knows the team');
 });

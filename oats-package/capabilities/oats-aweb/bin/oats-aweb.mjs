@@ -115,24 +115,27 @@ const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
  *  still say (awebai/oats-aweb#149). aw reports a server refusal as
  *  `aweb: http <status> (<headers>): <body>`; only a string `detail` of a JSON
  *  body is taken, or the `code` of an object `detail` through its fixed
- *  vocabulary (serviceDetailCode, #202), never the headers or any other text. */
+ *  vocabulary (serviceDetailCode, #202), never the headers or any other text.
+ *  `service register: http <status>: <detail>` unwraps the response's detail;
+ *  its code is therefore at the top level of the printed object. */
 const TOKEN_SHAPED_RE = /[A-Za-z0-9_\-.~+/=]{20,}/g;
 function failureClass(e) {
   const text = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`;
   const http = /\bhttp (\d{3})\b/.exec(text);
   // Without an HTTP status, still a cause from a fixed vocabulary (awebai/oats-aweb#52).
   if (!http) return withheldFailureCause({ stderr: e?.stderr, stdout: e?.stdout });
-  let detail, code;
+  let detail, code, codeField = "detail.code";
   const body = text.indexOf("{", http.index);
   if (body >= 0) {
     try {
       const doc = leadingJsonObject(text.slice(body));
       if (typeof doc?.detail === "string") detail = doc.detail;
       else if (doc?.detail && typeof doc.detail === "object" && !Array.isArray(doc.detail) && Object.hasOwn(doc.detail, "code")) code = serviceDetailCode(doc.detail.code);
+      else if (doc && typeof doc === "object" && !Array.isArray(doc) && Object.hasOwn(doc, "code")) { code = serviceDetailCode(doc.code); codeField = "code"; }
     } catch { /* no JSON body */ }
   }
   if (code === SERVICE_REFUSED) return `http ${http[1]}, ${SERVICE_REFUSED}`;
-  if (code) return `http ${http[1]}, detail.code: ${code}`;
+  if (code) return `http ${http[1]}, ${codeField}: ${code}`;
   const redacted = detail === undefined ? undefined : detail.replace(TOKEN_SHAPED_RE, "<redacted>").replace(/\s+/g, " ").trim().slice(0, 200);
   return `http ${http[1]}${redacted ? `, detail: ${JSON.stringify(redacted)}` : ""}`;
 }
