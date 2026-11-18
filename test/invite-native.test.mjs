@@ -37,11 +37,11 @@ function snapshot(dir) {
   }));
 }
 test('pinned real member invite: selected-root wire, token once, safe status adapter and read-only plan', async t => {
-  if (!process.env.OATS_TEST_AW_1_36_23) {
-    assert.notEqual(process.env.OATS_INVITE_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_23');
-    t.skip('requires explicit pinned real aw 1.36.23 executable'); return;
+  if (!process.env.OATS_TEST_AW_1_36_33) {
+    assert.notEqual(process.env.OATS_INVITE_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_33');
+    t.skip('requires explicit pinned real aw 1.36.33 executable'); return;
   }
-  const binary = realpathSync(process.env.OATS_TEST_AW_1_36_23);
+  const binary = realpathSync(process.env.OATS_TEST_AW_1_36_33);
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'invite-native-')));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const root = join(scratch, 'root'), dep = join(scratch, 'deployment'), home = join(scratch, 'foreign'), bin = join(scratch, 'bin');

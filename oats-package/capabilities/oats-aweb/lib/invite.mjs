@@ -1,4 +1,6 @@
 import { awChildEnv } from './aw-child-env.mjs';
+
+import { parseProviderSettings } from './provider-settings.mjs';
 // Selected-deployment member invitation. Native/server issuance decides authority;
 // membership and a plan never claim an owner/admin role or permission to mint.
 import { execFileSync } from 'node:child_process';
@@ -45,7 +47,7 @@ function nativeEnv(env, home) {
 function native(args, root, env, issuance) {
   try { return execFileSync('aw', args, { cwd: root, env, encoding: 'utf8', stdio: ['ignore','pipe','pipe'], timeout: 45000, maxBuffer: 1024 * 1024 }); }
   catch (e) {
-    // aw 1.36.23 prints a CLI-generated HTTP prefix followed by an arbitrary
+    // The supported aw 1.36.33 floor prints a CLI-generated HTTP prefix followed by an arbitrary
     // server body, even under --json. Never classify by or expose body prose.
     const status = /^create hosted team invite: aweb: http (\d{3}):/.exec(String(e.stderr || ''))?.[1];
     if (issuance && ['401','403'].includes(status)) fail('E_INVITE_DENIED', `aw denied member invite (HTTP ${status}); native detail withheld because it may contain credentials`);
@@ -103,7 +105,8 @@ export function issueInvite(argv, env = process.env) {
   let deployment;
   try { deployment = selectedDeployment(env, opts.dir); } catch { fail('E_INVITE_DEPLOYMENT', 'selected deployment is missing, unreadable or inconsistent'); }
   let settings;
-  try { settings = JSON.parse(env.OATS_SETTINGS || ''); } catch { fail('E_INVITE_ROOT', 'selected provider settings are malformed'); }
+  if (env.OATS_SETTINGS === undefined) fail('E_INVITE_ROOT', 'OATS_SETTINGS is missing');
+  try { settings = parseProviderSettings(env); } catch (error) { fail('E_INVITE_ROOT', error.message); }
   if (!object(settings) || Object.hasOwn(settings,'team') || (Object.hasOwn(settings,'roots') && !object(settings.roots))) fail('E_INVITE_ROOT', 'selected provider root settings are invalid');
   let doc;
   try { doc = querySelectedKernel(['teams','--dir',deployment,'--json'], { env, cwd: deployment }); } catch { fail('E_INVITE_TEAM_QUERY', 'selected kernel team query unavailable'); }

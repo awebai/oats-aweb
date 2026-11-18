@@ -93,7 +93,7 @@ test("1. a joined membership that records only its service: the command omits --
   assert.ok(doc.warning.includes(`joined team shared cleanup failed: team_not_hosted; controller cleanup: ${SHARED_NO_REGISTRY} ${DISCOVERS}`), doc.warning);
   assert.equal(sharedPending(doc).command, SHARED_NO_REGISTRY);
   assert.equal(sharedEntry(fx).registry, null);
-  assert.equal(sharedEntry(fx).command, SHARED_NO_REGISTRY);
+  assert.equal(Object.hasOwn(sharedEntry(fx), "command"), false);
 });
 
 test("2. a joined membership that records a plain registry_url: the command, the record and the meta carry it", (t) => {

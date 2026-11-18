@@ -53,6 +53,9 @@ lists any duplicate with its id.
   the commit its `origin/main` points at.
 - Network for `npm ci` and the Docker base images.
 
+The repository carries no saved PASS receipt: the old aw 1.36.23 receipt
+predates the supported floor. Generate current evidence with the command below.
+
 ## Run
 
 ```bash
