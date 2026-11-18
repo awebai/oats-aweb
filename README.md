@@ -2089,6 +2089,14 @@ do not prove live grant or Folio authority.
 
 ## Explicit round-trip probe
 
+The probe checks the selected aw's `mail send --help` contract before any
+send. At the 1.36.33 floor it supplies `--new-conversation`; modern aw starts
+a new thread from recipient plus subject and rejects that removed flag.
+Unknown help refuses before sending. Both routes send once, with no discovery,
+fallback or retry. The transition is aw commit
+`91ea73fee07f39e44f1be8c8d06fee8496b94719`; remove the legacy branch when the
+supported floor contains it.
+
 `oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
 reports a verified nonce round trip when qualified CLI **and** server support
 are available. It is an explicit send action, never a readiness/lifecycle check.

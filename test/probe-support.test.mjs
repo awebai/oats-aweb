@@ -12,12 +12,13 @@ import {PROBE_RELEASE_SUPPORT, qualifyProbeSupport, observeProbeMetadata, probeA
 const native = readFileSync(new URL('./fixtures/probe/native-workspace-1.36.28.yaml', import.meta.url), 'utf8');
 const url = 'https://app.aweb.ai/api', meta = 'https://app.aweb.ai/meta';
 const metadata = {version: '0.0.1', build: {aweb_version: '1.27.12'}};
-function configured(t, options = {}) {
+const legacyHelp = '\nUsage:\n  aw mail send [flags]\nFlags:\n      --to string   Recipient\n      --subject string   Subject\n      --body-file string   Body file\n      --new-conversation   Start fresh\n';
+function configured(t, options = {}, {help = legacyHelp, helpError = false} = {}) {
   const f = fixture(t, options);
   for (const home of [join(f.root, '.aw'), join(f.home, '.aw')]) writeFileSync(join(home, 'workspace.yaml'), native);
   const binary = join(f.deployment, 'aw'); writeFileSync(binary, 'offline executable fixture', {mode: 0o700});
   const requests = [];
-  f.deps.support = args => qualifyProbeSupport({...args, resolveAw: () => binary, observe: async (u, budget) => {budget.check();requests.push(u);return metadata;}, execute: async (cmd, argv, cap) => argv[0] === 'version' ? Buffer.from('aw 1.36.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4 (github.com/awebai/aw)\n  built:  2026-10-10T13:18:16Z\n') : args.execute(cmd, argv, cap)});
+  f.deps.support = args => qualifyProbeSupport({...args, resolveAw: () => binary, observe: async (u, budget) => {budget.check();requests.push(u);return metadata;}, execute: async (cmd, argv, cap) => argv[0] === 'version' ? Buffer.from('aw 1.36.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4 (github.com/awebai/aw)\n  built:  2026-10-10T13:18:16Z\n') : argv.join(' ') === 'mail send --help' ? helpError ? Promise.reject(Error('secret')) : Buffer.from(help) : args.execute(cmd, argv, cap)});
   return {...f, binary, requests};
 }
 test('released floors: probe-only origins and server floor, and the provider aw floor', () => assert.deepEqual(PROBE_RELEASE_SUPPORT, {origins:['https://app.aweb.ai'],cliFloor:'1.36.33',serverFloor:'1.27.12'}));
@@ -111,4 +112,16 @@ test('metadata expiration/cancellation remain total-budget reasons and cannot se
   f.deps.support=args=>qualifyProbeSupport({...args,resolveAw:()=>f.binary,execute:async()=>Buffer.from('aw 1.36.33\n'),observe:async()=>{if(cancel)c.abort();else args.budget.deadline=0;throw Error('secret');}});
   const r=await runProbe(f.args,f.deps);assert.equal(r.reason,cancel?'cancelled':'timeout');assert.equal(f.calls.filter(c=>c.args.includes('send')).length,0);
  }
+});
+
+for (const [name, answer, reason] of [
+  ['unknown help', {help: 'unrecognized send contract'}, 'probe-cli-fresh-send-unsupported'],
+  ['unavailable help', {helpError: true}, 'probe-cli-fresh-send-unavailable'],
+]) test(`fresh-send qualification refuses ${name} before any send`, async t => {
+  const f = configured(t, {}, answer);
+  const result = await runProbe(f.args, f.deps);
+  assert.equal(result.outcome, 'FAIL');
+  assert.equal(result.reason, reason);
+  assert.equal(f.calls.some(c => c.args.includes('send')), false);
+  assert.equal(JSON.stringify(result).includes('secret'), false);
 });
