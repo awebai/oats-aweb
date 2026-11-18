@@ -40,9 +40,11 @@
 - **Fixed: malformed OATS_SETTINGS refuses instead of using defaults.** One
   parser serves hooks, setup, upgrade plan/apply, resident, wake, invite and
   health. Each command names the variable through its own error envelope and
-  never echoes its input. Repair the injected JSON before retrying; upgrade
-  planning refuses adoption. Retired-certificate records write only authoritative
-  inputs and accept old records while ignoring their stored command field.
+  never echoes its input. An empty OATS_SETTINGS is malformed too. Repair the
+  injected JSON before retrying; upgrade
+  planning refuses adoption. Retired-certificate readers accept an optional
+  command and ignore it; writers rebuild that compatibility field from validated
+  inputs so older homes sharing the record keep reading every certificate.
   Hosted-create refusals explain the current provider boundary rather than
   obsolete aw versions. Native contract fixtures now qualify against the
   supported aw 1.36.33 floor, including its pre-help TTL bounds; the stale

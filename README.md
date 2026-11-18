@@ -746,8 +746,9 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   uses its built-in default; the cleanup command omits `--registry`. An
   ambient `AWID_REGISTRY_URL` does not choose the cleanup destination. Retire records them in
   `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
-  registry origin, never a secret), matched on team and certificate
-  id, never on alias. Legacy stored command fields are ignored. The roster builds the
+  registry origin and rebuilt compatibility command, never a secret), matched on team and certificate
+  id, never on alias. Stored command fields are ignored by this reader, but writers
+  rebuild them for older homes sharing this record. The roster builds the
   command from the entry's team, certificate id and registry, each validated,
   as retire does. An entry it can't be built from shows `; its record entry is
   malformed (<why>), so no command to remove it is shown` (and `--json` gives

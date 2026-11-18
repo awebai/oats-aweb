@@ -9,6 +9,13 @@ const hook = new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs',
 for (const [name, args, extra, code] of [
   ['main hook', ['spawn'], {}, null],
   ['username setup', ['setup', '--username', 'fixture-user', '--name', 'fixture', '--json'], {}, 'E_SETUP_ROOT'],
+  ['setup check', ['setup', '--check-only', '--json'], {}, 'E_SETUP_ROOT'],
+  ['setup create', ['setup', '--create', 'fixture', '--json'], {}, 'E_SETUP_ROOT'],
+  ['setup join', ['setup', '--join', 'fixture', '--invite-stdin', '--json'], {}, 'E_SETUP_ROOT'],
+  ['setup text', ['setup', '--check-only'], {}, 'stderr:E_SETUP_ROOT'],
+  ...['roster', 'connect', 'teams', 'join', 'leave'].map(event => [event, [event, '--json'], {}, 'stderr']),
+  ['teams operation', ['teams', '--json'], { OATS_OPERATION: 'teams' }, 'E_SETTINGS'],
+  ['empty settings', ['spawn'], { OATS_SETTINGS: '' }, null],
   ['upgrade plan', ['upgrade'], { OATS_UPGRADE_PHASE: 'plan' }, 'plan'],
   ['upgrade apply', ['upgrade'], { OATS_UPGRADE_PHASE: 'apply' }, null],
   ['resident', ['resident', 'create', 'fixture', '--plan', '--json'], {}, 'E_RESIDENT_FAILED'],
@@ -35,6 +42,11 @@ for (const [name, args, extra, code] of [
   assert.equal(existsSync(calls), false, 'invalid settings stop before any external command');
   assert.doesNotMatch(output, /SECRET_SETTINGS_INPUT/);
   assert.match(output, /OATS_SETTINGS/);
+  if (code?.startsWith('stderr')) {
+    assert.equal(result.status, 1); assert.equal(result.stdout, ''); assert.match(result.stderr, /oats aweb/);
+    if (code.includes(':')) assert.ok(result.stderr.includes(code.split(':')[1]));
+    return;
+  }
   const doc = JSON.parse(result.stdout);
   if (code === 'plan') { assert.equal(result.status, 0); assert.equal(doc.adopt, false); }
   else { assert.equal(result.status, 1); if (code) assert.equal(doc.error.code, code); }

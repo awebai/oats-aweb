@@ -181,10 +181,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     try { deployment = selectedDeployment(env, dir); } catch {
       throw setupFailure('E_SETUP_DEPLOYMENT', 'selected deployment is missing, unreadable or inconsistent');
     }
-    let settings;
-    try { settings = parseProviderSettings(env); } catch (error) {
-      throw setupFailure('E_SETUP_ROOT', error.message);
-    }
+    const settings = parseProviderSettings(env);
     if (!object(settings) || (Object.hasOwn(settings, 'identity') && !object(settings.identity)) || (Object.hasOwn(settings, 'roots') && !object(settings.roots))) throw setupFailure('E_SETUP_ROOT', 'selected provider root settings are invalid');
     if (settings.identity?.mode && settings.identity.mode !== 'local') throw setupFailure('E_SETUP_ARGUMENT', 'username account setup requires LOCAL identity mode');
     const rootsKey = teamKeyIn(settings.roots, predictedTeam);

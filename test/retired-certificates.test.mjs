@@ -104,11 +104,11 @@ test("retire records each controller cleanup at the deployment, its warning and 
   const record = readRecord(fx.recordFile);
   assert.equal(record.version, 1);
   assert.deepEqual(record.entries.map(({ retiredAt, ...rest }) => rest), [
-    { team: SHARED, certificateId: "cert-shared-123", alias: "dev-1", instance: "dev-1", registry: "https://api.awid.ai" },
-    { team: DEFAULT, certificateId: "cert-default-123", alias: "dev-1", instance: "dev-1", registry: "https://api.awid.ai" },
+    { team: SHARED, certificateId: "cert-shared-123", alias: "dev-1", instance: "dev-1", registry: "https://api.awid.ai", command: SHARED_COMMAND },
+    { team: DEFAULT, certificateId: "cert-default-123", alias: "dev-1", instance: "dev-1", registry: "https://api.awid.ai", command: DEFAULT_COMMAND },
   ]);
   for (const e of record.entries) assert.ok(!Number.isNaN(Date.parse(e.retiredAt)), e.retiredAt);
-  assert.doesNotMatch(readFileSync(fx.recordFile, "utf8"), /BEGIN|PRIVATE|secret|token/i, "authoritative certificate inputs only");
+  assert.doesNotMatch(readFileSync(fx.recordFile, "utf8"), /BEGIN|PRIVATE|secret|token/i, "certificate ids and commands only");
 
   // A second retire of the same certificates replaces their entries, never duplicates them.
   const first = record.entries.map((e) => e.retiredAt);
@@ -379,7 +379,7 @@ test("A3: retire never builds a command from a registry in a home's identity fil
   assert.ok(doc.warning.includes(`joined team shared cleanup failed: team_not_hosted; controller cleanup: ${shared} ${undetermined}`), doc.warning);
   assert.equal(doc.meta.pendingControllerCleanup[0].command, shared);
   const entry = readRecord(fx.recordFile).entries.find((e) => e.team === SHARED);
-  assert.equal(Object.hasOwn(entry, "command"), false);
+  assert.equal(entry.command, shared);
   assert.equal(entry.registry, null);
   for (const out of [JSON.stringify(doc), readFileSync(fx.recordFile, "utf8")]) assert.doesNotMatch(out, /evil\.test|\$\(id\)/);
 });

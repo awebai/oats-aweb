@@ -27,7 +27,7 @@ export const CAPTURED_UNSUPPORTED='captured bindings are not supported since oat
 const CAPABILITY='oats.aweb',SLOT='messaging';
 const phases=new Set(['normalize','bind','check']);
 const errorCodes=new Set(['needs-configuration','invalid-binding','provider-not-qualified']);
-// Kernel 0.68.1 hookEnvironment preserves raw capability.settings, including
+// Kernel 0.68.1 lifecycleHookEnv preserves raw capability.settings, including
 // captured legacy team fields; the floor cannot prove this guard unreachable.
 const TEAM_SETTING_MESSAGE='teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams';
 const AWEB_TEAM_ID_MESSAGE='aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)';
