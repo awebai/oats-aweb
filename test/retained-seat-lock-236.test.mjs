@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -21,7 +21,7 @@ const CONNECT = `\`aw workspace connect --service=https://fixture.invalid/api --
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 function fixture(t) {
-  const base = mkdtempSync(join(tmpdir(), "oats-aweb-236-"));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-236-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
   const source = join(base, "seats", "retained", ".aw");
@@ -363,7 +363,7 @@ test("a take-over that completes while a spawn is seated: the spawn leaves the s
 });
 
 test("the moved-aside lock's recovery command works for a path with spaces and quotes", (t) => {
-  const base = mkdtempSync(join(tmpdir(), "oats-aweb-236-"));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-236-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const lock = join(base, "seat with 'spaces'", ".aw-retained-seat.json");
   write(`${lock}.held`, JSON.stringify({ home: "/elsewhere/seat-a", instance: "seat-a" }));
@@ -385,8 +385,8 @@ test("a take-over that lands while a spawn's rollback reconnects the legacy home
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
   const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
-  // A connects, fails its check, and pauses at its rollback's read of its own lock.
-  const pending = startHook(fx, "spawn", a, { preload: pauseAtPreload(fx), env: { LOCK: fx.lock, PAUSE_MARK: paused, GO: go, FAKE_RETAINED_FAIL: "check" } });
+  // A connects, fails its status read, and pauses at its rollback's read of its own lock.
+  const pending = startHook(fx, "spawn", a, { preload: pauseAtPreload(fx), env: { LOCK: fx.lock, PAUSE_MARK: paused, GO: go, FAKE_RETAINED_FAIL: "status" } });
   let won;
   try {
     await until(() => existsSync(paused), "the rollback's read");
@@ -426,8 +426,8 @@ test("a take-over that lands while a spawn's failed reconnect of the legacy home
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
   const paused = join(fx.base, "a-paused"), go = join(fx.base, "go");
-  // A connects, fails its check, reads its own lock in rollback, and its reconnect of the legacy home fails.
-  const pending = startHook(fx, "spawn", a, { preload: pauseAtPreload(fx), env: { LOCK: fx.lock, PAUSE_MARK: paused, GO: go, FAKE_RETAINED_FAIL: "check", FAKE_RETAINED_RESTORE_FAIL: "1" } });
+  // A connects, fails its status read, reads its own lock in rollback, and its reconnect of the legacy home fails.
+  const pending = startHook(fx, "spawn", a, { preload: pauseAtPreload(fx), env: { LOCK: fx.lock, PAUSE_MARK: paused, GO: go, FAKE_RETAINED_FAIL: "status", FAKE_RETAINED_RESTORE_FAIL: "1" } });
   let won;
   try {
     await until(() => existsSync(paused), "the rollback's read");
@@ -561,7 +561,7 @@ test("a take-over mid-rewrite while a spawn registers with the wake broker: the 
 // protocol: rollback-read/refused
 test("a take-over mid-rewrite while a failing spawn rolls back: the rollback's read waits for the guard, and nothing is reconnected while the holder is unknown", async (t) => {
   const fx = fixture(t);
-  const { a, b, lost, won } = await midRewriteRace(fx, "check", { FAKE_RETAINED_FAIL: "check" });
+  const { a, b, lost, won } = await midRewriteRace(fx, "workspace status", { FAKE_RETAINED_FAIL: "status" });
   assert.equal(won.status, 0, won.stdout + won.stderr);
   assert.equal(lost.status, 1, lost.stdout + lost.stderr);
   assert.match(lost.doc.warning, /whether another seat took the identity over is unknown/);
@@ -571,7 +571,7 @@ test("a take-over mid-rewrite while a failing spawn rolls back: the rollback's r
   assert.equal(JSON.parse(readFileSync(fx.lock, "utf8")).home, b);
 });
 
-/** Pauses twice: before the hook's `aw check` (MARK1/GO1), and before it removes
+/** Pauses twice: before the hook's `aw workspace status` (MARK1/GO1), and before it removes
  *  PAUSE_REMOVE, its copy, in rollback (MARK2/GO2). */
 function pauseCheckAndRemovePreload(fx) {
   const file = join(fx.base, "pause-check-remove.mjs");
@@ -582,7 +582,7 @@ const wait = (mark, go) => { fs.writeFileSync(mark, "paused"); while (!fs.exists
 const exec = cp.execFileSync, rm = fs.rmSync;
 let checked = false, removed = false;
 cp.execFileSync = function (f, args, ...rest) {
-  if (process.env.MARK1 && !checked && f === "aw" && args[0] === "check") { checked = true; wait(process.env.MARK1, process.env.GO1); }
+  if (process.env.MARK1 && !checked && f === "aw" && args[0] === "workspace" && args[1] === "status") { checked = true; wait(process.env.MARK1, process.env.GO1); }
   return exec.call(this, f, args, ...rest);
 };
 fs.rmSync = function (p, ...args) {
@@ -599,12 +599,12 @@ test("a second take-over that lands in a rollback's cleanup: the exit names the 
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b"), c = fx.homeOf("seat-c");
   const m1 = join(fx.base, "m1"), g1 = join(fx.base, "g1"), m2 = join(fx.base, "m2"), g2 = join(fx.base, "g2");
-  // A connects and pauses at its check; B takes over. A's check fails, its rollback reads
+  // A connects and pauses at its status read; B takes over. A's status read fails, its rollback reads
   // B and pauses before removing its copy; C takes over from B. A then releases.
-  const pending = startHook(fx, "spawn", a, { preload: pauseCheckAndRemovePreload(fx), env: { FAKE_RETAINED_FAIL: "check", PAUSE_REMOVE: join(a, ".aw"), MARK1: m1, GO1: g1, MARK2: m2, GO2: g2 } });
+  const pending = startHook(fx, "spawn", a, { preload: pauseCheckAndRemovePreload(fx), env: { FAKE_RETAINED_FAIL: "status", PAUSE_REMOVE: join(a, ".aw"), MARK1: m1, GO1: g1, MARK2: m2, GO2: g2 } });
   let wonB, wonC;
   try {
-    await until(() => existsSync(m1), "A's check");
+    await until(() => existsSync(m1), "A's status read");
     wonB = runHook(fx, "spawn", b, { identity: { takeOver: true } });
     writeFileSync(g1, "go");
     await until(() => existsSync(m2), "A's cleanup");
@@ -624,9 +624,9 @@ test("a take-over that lands after a rollback's reconnect and before its cleanup
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");
   const m2 = join(fx.base, "m2"), g2 = join(fx.base, "g2");
-  // A's check fails; its rollback finds its own lock, reconnects the legacy home, and pauses
+  // A's status read fails; its rollback finds its own lock, reconnects the legacy home, and pauses
   // before removing its copy; B takes over then.
-  const pending = startHook(fx, "spawn", a, { preload: pauseCheckAndRemovePreload(fx), env: { FAKE_RETAINED_FAIL: "check", PAUSE_REMOVE: join(a, ".aw"), MARK2: m2, GO2: g2 } });
+  const pending = startHook(fx, "spawn", a, { preload: pauseCheckAndRemovePreload(fx), env: { FAKE_RETAINED_FAIL: "status", PAUSE_REMOVE: join(a, ".aw"), MARK2: m2, GO2: g2 } });
   let won;
   try {
     await until(() => existsSync(m2), "A's cleanup");
@@ -1012,7 +1012,7 @@ test("a retire that links another seat's lock back but can't remove the moved na
 test("a rollback whose read after its reconnect leaves the guard stops there, keeping the copy and the lock, and names the guard", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
-  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { GUARD_UNLINK_FAIL: "4", FAKE_RETAINED_FAIL: "check" } });
+  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { GUARD_UNLINK_FAIL: "4", FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const w = r.doc.warning;
   assert.ok(w.includes("the server binding was restored to the legacy home, but the lock's read after that left files it could not clean"), w);
@@ -1052,7 +1052,7 @@ test("a guard whose close reports an error is removed, and the spawn says the gu
 test("a rollback that can't read the lock's bytes treats its holder as unknown: no reconnect, and the copy is kept", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a");
-  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { READ_LOCK_FAIL: "1", FAKE_RETAINED_FAIL: "check" } });
+  const r = runHook(fx, "spawn", a, { preload: stageFailPreload(fx), env: { READ_LOCK_FAIL: "1", FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const w = r.doc.warning;
   assert.ok(w.includes(`whether another seat took the identity over is unknown: ${fx.lock} could not be read (EIO)`), w);
@@ -1215,18 +1215,18 @@ test("a spawn whose lock can't be read after its last aw call is not briefed, an
 
 // protocol: rollback-read/leftovers (the read before the reconnect)
 test("a rollback whose first read leaves its guard reconnects nothing, keeps the copy and the lock, and names the guard", (t) => {
-  const { fx, a, r, w, calls } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "3", FAKE_RETAINED_FAIL: "check" } });
+  const { fx, a, r, w, calls } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "3", FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(w.includes(`whether another seat took the identity over is unknown: a lock step of this spawn left files it could not clean, named in this failure`), w);
   assert.ok(w.includes(`${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
-  assert.equal(calls.at(-1), "check --online", "no aw call after the read that left the guard");
+  assert.equal(calls.at(-1), "workspace status", "no aw call after the read that left the guard");
   assert.equal(existsSync(join(a, ".aw")), true);
   assert.equal(lockHome(fx), a);
 });
 
 // protocol: rollback-read/unknown (the read after the reconnect)
 test("a rollback whose read after the reconnect can't read the lock says whether another seat holds it is unknown, and leaves the lock", (t) => {
-  const { fx, a, r, w } = spawnWith(t, { at: 4, change: "unreadable", env: { FAKE_RETAINED_FAIL: "check" } });
+  const { fx, a, r, w } = spawnWith(t, { at: 4, change: "unreadable", env: { FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(w.includes(`the server binding was restored to the legacy home and the copy removed, but whether another seat took the identity over while that ran is unknown: ${fx.lock} could not be read (EIO); if one holds the lock, run ${CONNECT} from its home`), w);
   assert.ok(w.endsWith(`the lock ${fx.lock} was left in place: ${fx.lock} could not be read (EIO)`), w);
@@ -1236,7 +1236,7 @@ test("a rollback whose read after the reconnect can't read the lock says whether
 
 // protocol: release/another
 test("a rollback's release that finds another seat's lock leaves it and names that seat", (t) => {
-  const { fx, r, w } = spawnWith(t, { at: 5, change: "another", env: { FAKE_RETAINED_FAIL: "check" } });
+  const { fx, r, w } = spawnWith(t, { at: 5, change: "another", env: { FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const x = anotherSeat(fx);
   assert.ok(w.includes(`another seat took the identity over while that ran (instance seat-x, home ${x.home}, host container-b, since ${x.takenAt}), so the binding may point at the legacy home, not at that seat: run ${CONNECT} from ${x.home}`), w);
@@ -1246,7 +1246,7 @@ test("a rollback's release that finds another seat's lock leaves it and names th
 
 // protocol: release/absent
 test("a rollback's release that finds no lock has nothing to remove and adds nothing", (t) => {
-  const { fx, a, r } = spawnWith(t, { at: 5, change: "remove", env: { FAKE_RETAINED_FAIL: "check" } });
+  const { fx, a, r } = spawnWith(t, { at: 5, change: "remove", env: { FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const text = r.doc?.warning || r.stderr;
   assert.ok(text.includes("(the server binding was restored to the legacy home and the copy removed)"), text);
@@ -1257,7 +1257,7 @@ test("a rollback's release that finds no lock has nothing to remove and adds not
 
 // protocol: release/unknown
 test("a rollback's release that can't read the lock leaves it and says it could not be read", (t) => {
-  const { fx, a, r, w } = spawnWith(t, { at: 5, change: "unreadable", env: { FAKE_RETAINED_FAIL: "check" } });
+  const { fx, a, r, w } = spawnWith(t, { at: 5, change: "unreadable", env: { FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(w.includes(`whether another seat took the identity over while that ran is unknown: ${fx.lock} could not be read (EIO)`), w);
   assert.ok(w.endsWith(`the lock ${fx.lock} was left in place: ${fx.lock} could not be read (EIO)`), w);
@@ -1266,7 +1266,7 @@ test("a rollback's release that can't read the lock leaves it and says it could 
 
 // protocol: release/leftovers
 test("a rollback's release that removes its lock but leaves its guard says both, with the guard's fix", (t) => {
-  const { fx, r, w } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "5", FAKE_RETAINED_FAIL: "check" } });
+  const { fx, r, w } = spawnWith(t, { env: { GUARD_UNLINK_FAIL: "5", FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(w.includes(`the lock ${fx.lock} was removed, but that step left files it could not clean; ${fx.guard} is this change's guard, and it could not be removed (EIO)`), w);
   assert.ok(w.endsWith(`remove ${fx.guard} and retry`), w);
@@ -1338,7 +1338,7 @@ test("a take-over that finds a moved-aside lock another change left at its take 
 
 // protocol: release/refused
 test("a rollback's release that finds a moved-aside lock another change left leaves its lock and names that file's fix", (t) => {
-  const { fx, a, r, w } = spawnWith(t, { at: 5, change: "STRAY", env: { FAKE_RETAINED_FAIL: "check" } });
+  const { fx, a, r, w } = spawnWith(t, { at: 5, change: "STRAY", env: { FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(w.includes(`whether another seat took the identity over while that ran is unknown: ${STRAY_TEXT(fx)}`), w);
   assert.ok(w.includes(`the lock ${fx.lock} was left in place: ${STRAY_TEXT(fx)}`), w);
@@ -1357,7 +1357,7 @@ test("a retire that finds a moved-aside lock another change left at its removal 
 
 // protocol: rollback-read/leftovers (another seat's lock seen by the read that left files)
 test("a rollback whose read after the reconnect sees another seat's lock and leaves its guard names that seat and its connect, keeping the copy", (t) => {
-  const { fx, a, r, w, calls } = spawnWith(t, { at: 4, change: "another", env: { GUARD_UNLINK_FAIL: "4", FAKE_RETAINED_FAIL: "check" } });
+  const { fx, a, r, w, calls } = spawnWith(t, { at: 4, change: "another", env: { GUARD_UNLINK_FAIL: "4", FAKE_RETAINED_FAIL: "status" } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const x = anotherSeat(fx);
   assert.ok(w.includes(`that read found another seat holding the lock (instance seat-x, home ${x.home}, host container-b, since ${x.takenAt}), so the binding may point at the legacy home, not at that seat: once those files are cleaned, run ${CONNECT} from ${x.home}, and remove ${join(a, ".aw")}`), w);

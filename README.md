@@ -1579,7 +1579,8 @@ The seat directory must contain:
   `teams.yaml`.
 
 The spawn checks these before it takes the seat's lock or copies anything, in
-this order: `identity.source` is an absolute path, it holds `signing.key`, its
+this order: `identity.source` is an absolute path, its copied authority contains
+only regular files and directories (no symlinks), it holds `signing.key`, its
 `workspace.yaml` records a usable `aweb_url`, a team can be determined, and its
 `teams.yaml` records a membership of that team. Each refusal names its fix. A soul's readiness (`oats readiness`) reports the
 first one with the spawn's own text. A retained seat mints nothing and takes
@@ -1599,6 +1600,13 @@ after the copy. When that connect fails, the spawn binds the seat back from
 its source and removes the copy; if aw refuses that too, as it does for the
 same `teams.yaml`, the spawn keeps the copy and the lock and says how to
 restore them.
+
+Replace an authority symlink with the real file at the source before seating;
+the refusal names its path and copies nothing. Copied authority directories
+are 0700 and files are 0600 at every depth, regardless of their source modes.
+After connect, the parsed `workspace status` path and `whoami` identity verify
+the seat. `aw check --online` is not a gate: it exits zero even for failed checks.
+The seat and pending-mint records are written with mode 0600.
 
 The spawn reads the server only from that `workspace.yaml`. Any http or https
 URL with a host is accepted, a path prefix (a server behind a reverse proxy) or
