@@ -108,8 +108,8 @@ unknown/incomplete variants, and exactly one send for either route.
 
 The modern no-discovery contract is in
 [a3223c1d mail.go:158–161](https://github.com/awebai/aw/blob/a3223c1d32b8144abfd34d63b521b38d2b227ad5/cmd/aw/mail.go#L158):
-any recipient target calls `startNewThread` before resolving it. The flag was
-removed in [91ea73fe](https://github.com/awebai/aw/commit/91ea73fee07f39e44f1be8c8d06fee8496b94719).
+any recipient target calls `startNewThread` before resolving it. The removal first shipped in aw 1.36.53, at
+[91ea73fe](https://github.com/awebai/aw/commit/91ea73fee07f39e44f1be8c8d06fee8496b94719).
 These help/source observations establish CLI selection, not hosted delivery.
 P2 PR1 adds the ongoing executions against the installed matrix binaries.
 

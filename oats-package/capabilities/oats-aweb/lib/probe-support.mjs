@@ -31,7 +31,8 @@ export function projectProbeSupport({awebUrl, cliVersion, metadata, observedUrl,
 }
 // aw 1.36.33 (877bbee9), cmd/aw/mail.go:436, reuses a thread by default;
 // it needs --new-conversation. Commit 91ea73fee07f39e44f1be8c8d06fee8496b94719
-// removed that flag and made recipient+subject start a new thread. Detect the
+// first shipped in aw 1.36.53, removed that flag, and made recipient+subject
+// start a new thread. Detect the
 // published help contract, never infer freshness from accepting a legacy send.
 // Delete this legacy branch when AW_MIN contains that commit.
 export function freshMailSendFlag(help) {

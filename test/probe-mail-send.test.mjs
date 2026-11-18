@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runProbe } from '../oats-package/capabilities/oats-aweb/lib/probe.mjs';
 import { freshMailSendFlag } from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
+import { AW_MIN, versionAtLeast } from '../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs';
 import { fixture } from './helpers/probe-fixture.mjs';
 
 const captured = version => readFileSync(new URL(`./fixtures/probe/mail-send-help-${version}.txt`, import.meta.url), 'utf8');
@@ -31,4 +32,16 @@ for (const newConversationFlag of [true, false]) test(`probe sends once with fre
   assert.equal(sends[0].args.includes('--conversation-id'), false);
   const firstMail = f.calls.find(c => c.args.includes('mail'));
   assert.equal(firstMail, sends[0], 'no conversation or inbox discovery before the send');
+});
+
+test('the legacy fresh-thread branch cannot outlive its supported floor', () => {
+  assert.ok(!versionAtLeast(AW_MIN, '1.36.53'), 'floor contains 91ea73fe: delete the --new-conversation branch');
+});
+
+test('an incomplete fresh-send qualification cannot send', async t => {
+  const f = fixture(t);
+  f.deps.support = async () => ({cli: true, server: true, awBinary: '/fixture/aw'});
+  const result = await runProbe(f.args, f.deps);
+  assert.equal(result.reason, 'probe-cli-fresh-send-unqualified');
+  assert.equal(f.calls.some(c => c.args.includes('send')), false);
 });

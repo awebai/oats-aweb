@@ -68,8 +68,9 @@ this observation is required for each invocation.
 After CLI/server admission, the probe reads the same pinned executable's
 `aw mail send --help`. At aw 1.36.33 it selects the explicit
 `--new-conversation` flag because default sends may reuse an existing thread
-([877bbee9 mail.go:417](https://github.com/awebai/aw/blob/877bbee94ce45aa1ff103912bc9850556e61dfb4/cmd/aw/mail.go#L417)).
-Modern aw removed that flag in `91ea73fee07f39e44f1be8c8d06fee8496b94719`;
+([877bbee9 mail.go:436](https://github.com/awebai/aw/blob/877bbee94ce45aa1ff103912bc9850556e61dfb4/cmd/aw/mail.go#L436)).
+aw 1.36.53 first shipped the flag removal in
+`91ea73fee07f39e44f1be8c8d06fee8496b94719`;
 recipient plus subject creates a fresh thread before target resolution
 ([1.36.58 mail.go:158](https://github.com/awebai/aw/blob/a3223c1d32b8144abfd34d63b521b38d2b227ad5/cmd/aw/mail.go#L158)).
 Both routes send once without prior conversation/inbox discovery or retry.
