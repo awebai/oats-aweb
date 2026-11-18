@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
@@ -20,7 +20,7 @@ const VARIABLE = "https://variable.invalid/api";
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 function fixture(t, { workspace = `alias: retained\naweb_url: ${RECORD}\n` } = {}) {
-  const base = mkdtempSync(join(tmpdir(), "oats-aweb-241-"));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-241-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
   const home = join(root, "agents", "dev", "instances", "retained"); mkdirSync(home, { recursive: true });
@@ -196,7 +196,7 @@ test("a record with Windows line endings names its service without the carriage 
 // The seat's service is never printed, and aw's diagnostics may name it, so a failed spawn's
 // aw calls show none of their output, whatever the service's shape.
 for (const [shape, url] of [["a plain service URL", RECORD], ["a service with a path prefix and shell text", "https://record.invalid/mark-$(id)/api"]]) {
-  for (const call of ["connect", "check", "heartbeat", "status", "whoami", "register"]) {
+  for (const call of ["connect", "heartbeat", "status", "whoami", "register"]) {
     test(`a spawn whose ${call} fails never prints its service, ${shape}`, (t) => {
       const fx = fixture(t, { workspace: `alias: retained\naweb_url: ${url}\n` });
       const refused = runHook(fx, "spawn", { FAKE_RETAINED_ECHO: call });

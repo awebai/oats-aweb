@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
@@ -18,7 +18,7 @@ const TEAM = "t:example.test";
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 function fixture(t) {
-  const base = mkdtempSync(join(tmpdir(), "oats-aweb-228-"));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-228-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "root"); mkdirSync(join(root, ".aw"), { recursive: true });
   const home = join(root, "agents", "dev", "instances", "retained"); mkdirSync(home, { recursive: true });
@@ -95,10 +95,10 @@ test("such a connect whose restore fails keeps the seat, and the retire names th
 // leaves its rollback no time to restore the binding, so the spawn answers no meta.
 test("a retained spawn the hook's deadline cuts after connect: the compensating retire deletes no workspace", (t) => {
   const fx = fixture(t);
-  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_HANG: "check", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
+  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_HANG: "status", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
   assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
   assert.equal(spawned.doc.meta, undefined, "the cut spawn answers no meta");
-  assert.match(spawned.doc.warning, /aw check timed out.*KEPT/, "the deadline cut the check and left the rollback no time");
+  assert.match(spawned.doc.warning, /aw workspace status timed out.*KEPT/, "the deadline cut the status read and left the rollback no time");
   const retired = compensate(fx);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.deepEqual(deletes(fx), [], "no aw workspace delete with the standing identity's key");
@@ -108,7 +108,7 @@ test("a retained spawn the hook's deadline cuts after connect: the compensating 
 
 test("a retained spawn that fails after connect and cannot restore: the compensating retire deletes no workspace", (t) => {
   const fx = fixture(t);
-  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_FAIL: "check", FAKE_RETAINED_RESTORE_FAIL: "1" });
+  const spawned = runHook(fx, "spawn", { FAKE_RETAINED_FAIL: "status", FAKE_RETAINED_RESTORE_FAIL: "1" });
   assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
   assert.match(spawned.doc.warning, /KEPT/);
   const retired = compensate(fx);

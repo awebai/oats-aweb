@@ -24,6 +24,19 @@
   recorded/default registry, ignoring the caller's ambient registry. See
   docs/aw-child-environment.md.
 
+- **Fixed: retained seating verifies native status and identity, and makes
+  every copied key depth private.** The `check --online` verification step
+  is removed because aw exits zero for failed checks. Rollback regressions
+  now fail the real status/identity reads. Copied directories are 0700 and
+  files 0600 recursively; the source's modes are untouched. Any symlink or
+  special file in the copied authority refuses before copying, with the path
+  and a remedy: replace it with the real file at the source before seating.
+  A symlinked identity.source is also refused; set it to the real directory
+  named in the refusal. Each copy rechecks its source and opens files without
+  following links, so a link substituted after preflight is refused too.
+  Readiness uses the same refusal. Seat and pending-mint records remain 0600.
+  Retained-seat test fixtures use canonical temporary paths on macOS and Linux.
+
 - **Fixed: an empty global grant seat completes retire.** With neither grant
   nor seat id, retire answers `retired: false, reason: "nothing-to-delete"`
   instead of `nothing-to-revoke`, so the kernel can remove the completed home.

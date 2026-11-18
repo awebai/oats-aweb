@@ -64,7 +64,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await
 
 import { execFileSync, spawn } from "node:child_process";
 import { awChildEnv } from "../lib/aw-child-env.mjs";
-import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
@@ -74,6 +74,7 @@ import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
+import { IDENTITY_AUTHORITY, checkAuthorityEntry, privateAuthorityModes } from "../lib/retained-seat-authority.mjs";
 import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
@@ -526,12 +527,11 @@ if ((isCommand && !setupHandlesAw) || event === "spawn") {
 // did:aw and address when re-seated as an OATS instance. Per aweb's contract
 // (2026-09-05): copy exactly the identity-authority files from the source
 // .aw into the home's .aw, reconnect the coordination binding with
-// `aw workspace connect`, verify online, heartbeat and status show the new
+// `aw workspace connect`, verify workspace status and whoami, heartbeat the new
 // path, and hold a lock BESIDE the source so no second seat can take it.
 // Never copy workspace.yaml, caches or locks; never delete the source; never
 // team-join (that is the mint path, which would try to create the alias
 // again). Retire releases the lock and leaves the identity alone.
-const IDENTITY_AUTHORITY = ["signing.key", "identity.yaml", "teams.yaml", "team-certs", "encryption.yaml", "encryption-keys"];
 /** Both spawn's own start and same-home launch disclose the selected mode's
  * limits. Approved reads the machine policy read-only, as readiness does, and
  * stays silent only when the file admits the plugin. */
@@ -1344,21 +1344,33 @@ function retainedSeatSpawn(source, takeOver) {
     chmodSync(dest, 0o700);
     for (const name of IDENTITY_AUTHORITY) {
       const from = join(source, name);
-      if (!existsSync(from)) continue; // encryption material may be absent on an identity that never had it
+      let st;
+      try { st = checkAuthorityEntry(from); }
+      catch (error) { if (error.code === 'ENOENT' && error.path === from) continue; throw error; } // optional encryption material may be absent
       const to = join(dest, name);
-      if (statSync(from).isDirectory()) {
-        cpSync(from, to, { recursive: true }); chmodSync(to, 0o700);
-        for (const f of readdirSync(to)) { const p = join(to, f); if (statSync(p).isFile()) chmodSync(p, 0o600); } // private keys inside, whatever the source modes were
-      } else { copyFileSync(from, to); chmodSync(to, 0o600); }
+      if (st.isDirectory()) {
+        cpSync(from, to, { recursive: true, dereference: false });
+        privateAuthorityModes(to);
+      } else {
+        // Refuse a link substituted after the local check, and read only the
+        // opened regular file. A concurrent directory/FIFO is never copied.
+        const fd = openSync(from, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+        try {
+          if (!fstatSync(fd).isFile()) throw new Error(`non-regular authority entry at ${from}`);
+          writeFileSync(to, readFileSync(fd), { mode: 0o600 });
+          chmodSync(to, 0o600);
+        } finally { closeSync(fd); }
+      }
     }
     for (const forbidden of ["workspace.yaml", "context", "interaction-log.jsonl", "channel-delivered-ids.json", "chat-delivered-ids.json"]) {
       if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });
     }
     connected = true; // set before the call: a connect that fails may still have bound
     seatRun(["aw", "workspace", "connect", flagEq("--service", service), flagEq("--team", team), ...(role ? [flagEq("--role", role)] : [])], home, 60000);
-    seatRun(["aw", "check", "--online"], home, 60000);
-    seatRun(["aw", "heartbeat"], home, 60000);
+    // workspace status and whoami are the verification checks. aw check reports
+    // failed checks with exit 0, so it cannot gate seating.
     const status = seatRun(["aw", "workspace", "status", "--json"], home, 60000);
+    seatRun(["aw", "heartbeat"], home, 60000);
     // Thrown, not fatal: the catch below rolls the copy and the lock back first.
     // Verified by parsing: the workspace row's path must be this home. The
     // hostname the row records is whatever the binding stored (on hosted

@@ -37,8 +37,8 @@ if (s.startsWith("wake ")) process.exit(0);
 //   FAKE_RETAINED_KILL=after-connect  connect writes the binding, then SIGKILLs its parent (the hook)
 //   FAKE_RETAINED_KILL=mid-connect    the server accepts the connect, and the parent is SIGKILLed
 //                                     before the local workspace.yaml is written (aw posts first)
-//   FAKE_RETAINED_FAIL=check          aw check --online fails after the connect
-//   FAKE_RETAINED_HANG=check          aw check --online hangs (for a hook deadline to cut)
+//   FAKE_RETAINED_FAIL=status|whoami  a native verification read fails after connect
+//   FAKE_RETAINED_HANG=status|whoami  a verification read hangs until the hook deadline
 //   FAKE_RETAINED_FAIL=connect        the server accepts a connect from OATS_HOME, which then exits 1
 //                                     before the local workspace.yaml is written (aw posts first)
 //   FAKE_RETAINED_RESTORE_FAIL=1      a connect from any directory but OATS_HOME fails
@@ -50,10 +50,10 @@ if (s.startsWith("wake ")) process.exit(0);
 //                                     Opt-in: older fixtures write a teams.yaml with no memberships,
 //                                     which aw itself would refuse there.
 if (process.env.FAKE_RETAINED === "1") {
-  // FAKE_RETAINED_ECHO=connect|check|heartbeat|status|whoami (register: above): that call from OATS_HOME fails with a
+  // FAKE_RETAINED_ECHO=connect|heartbeat|status|whoami (register: above): that call from OATS_HOME fails with a
   // network error naming the service, as aw's do (the --service it was given, else the home's record).
   const echo = process.env.FAKE_RETAINED_ECHO;
-  if (echo && process.cwd() === process.env.OATS_HOME && ({ connect: a[0] === "workspace" && a[1] === "connect", check: a[0] === "check", heartbeat: a[0] === "heartbeat", status: s === "workspace status --json", whoami: s === "whoami --json" })[echo]) {
+  if (echo && process.cwd() === process.env.OATS_HOME && ({ connect: a[0] === "workspace" && a[1] === "connect", heartbeat: a[0] === "heartbeat", status: s === "workspace status --json", whoami: s === "whoami --json" })[echo]) {
     let service = val("--service");
     if (!service) { try { service = /^aweb_url: (.*)$/m.exec(fs.readFileSync(path.join(process.cwd(), ".aw", "workspace.yaml"), "utf8"))[1]; } catch { service = "(none)"; } }
     console.error('Post "' + service + '/v1/workspaces": dial tcp: connection refused'); process.exit(1);
@@ -76,11 +76,15 @@ if (process.env.FAKE_RETAINED === "1") {
     if (process.env.FAKE_RETAINED_KILL === "after-connect") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
     process.exit(0);
   }
-  if (a[0] === "check" && process.env.FAKE_RETAINED_FAIL === "check") { console.error("check failed"); process.exit(1); }
-  if (a[0] === "check" && process.env.FAKE_RETAINED_HANG === "check") { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20000); process.exit(0); }
+  // Real verification reads may fail or hang; check --online itself returns
+  // success even when its report contains failed checks.
+  const verification = s === "workspace status --json" ? "status" : s === "whoami --json" ? "whoami" : undefined;
+  if (verification && process.env.FAKE_RETAINED_FAIL === verification) { console.error(verification + " failed"); process.exit(1); }
+  if (verification && process.env.FAKE_RETAINED_HANG === verification) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20000); process.exit(0); }
   if (a[0] === "check" || a[0] === "heartbeat") process.exit(0);
-  if (s === "workspace status --json") { console.log(j({workspace:{alias:"retained",workspace_path:process.cwd()}})); process.exit(0); }
-  if (s === "whoami --json") { console.log(j({did:"did:key:zRetained",address:"fixture.test/retained"})); process.exit(0); }
+  if (s === "workspace status --json") { console.log(j({workspace:{alias:"retained",workspace_path:process.env.FAKE_RETAINED_STATUS_PATH || process.cwd()}})); process.exit(0); }
+  if (s === "whoami --json") { console.log(j({did:process.env.FAKE_RETAINED_WHOAMI_DID || "did:key:zRetained",address:"fixture.test/retained"})); process.exit(0); }
+
 }
 
 if (a[0] === "team" && a[1] === "list" && a.includes("--json")) {
