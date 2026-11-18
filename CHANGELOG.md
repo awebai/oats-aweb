@@ -16,7 +16,8 @@
   a call deliberately passes one by name. Retire and reads use their selected
   home's service even when the caller exported another URL. Setup's documented
   URL, API key and registry still reach its init; username signup explicitly
-  receives its URL and registry. A resident's documented inputs retain
+  receives its URL and registry. BYOT create's admin calls explicitly receive
+  its registry. A resident's documented inputs retain
   their existing explicit treatment. A deployment that depended on exporting
   selectors for ordinary lifecycle commands records the service and registry
   in the selected aw home instead. Controller-cleanup commands use that same

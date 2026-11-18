@@ -1281,7 +1281,9 @@ Supported acts:
   1.36.53 (this host has <version>): upgrade with npm install -g
   @awebai/aw@<tested>; nothing was created", `<tested>` being aw-compat.json's
   `tested`. With `--install-aw` it installs that tested aw. It normalizes `<label>` to aweb's team-name
-  rule and, before any aw call, resolves the aweb service: `AWEB_URL` (the
+  rule. `AWID_REGISTRY_URL` selects the registry for create, show-server,
+  register, set-server and invite; when unset, aw uses `https://api.awid.ai`.
+  Before any aw call, it resolves the aweb service: `AWEB_URL` (the
   server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
   `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
   neither, it refuses and nothing is created. The per-team root's identity
