@@ -898,6 +898,9 @@ function globalGrantRenew(oldMeta, seatRecord) {
   const custody = resolveResidentCustody(resident);
   const team = seatRecord?.team || defaultTeamId() || oldMeta.identity.team;
   if (!team) fatal(teamConfigRemedy());
+  // A pre-seat home can mint in a changed default team. Its previous grant
+  // still belongs to the team recorded with that grant, not the new mint.
+  const oldGrantTeam = seatRecord ? team : (oldMeta.identity.team || team);
   const scopes = grantScopes();
   // A renewal keeps the seat's duration; only a new spawn defaults to never.
   const ttl = renewalGrantTTL(identitySettings.ttl, oldMeta.identity.grant.ttl);
@@ -945,10 +948,10 @@ function globalGrantRenew(oldMeta, seatRecord) {
     catch (e) { keepPrevious(`renewal session delivery registration failed for new grant ${grantId} (${e.message || e})`, revokeOrNote(custody, newGrant, mintedTeam)); }
   }
   let warning;
-  try { revokeGrant(custody, oldMeta.identity.grant.id, team); }
-  // The seat has a working new grant: the start proceeds, and the next start
-  // or retire finds the previous one in the custody's list.
-  catch (e) { warning = `oats-aweb: new grant ${grantId} is kept; previous grant ${oldMeta.identity.grant.id} was not revoked${unrevokedNote(custody, oldMeta.identity.grant, e, team)}`; }
+  try { revokeGrant(custody, oldMeta.identity.grant.id, oldGrantTeam); }
+  // The seat has a working new grant, so start proceeds. A later sweep retries
+  // grants with this seat's label; a legacy bare label needs the printed cleanup.
+  catch (e) { warning = `oats-aweb: new grant ${grantId} is kept; previous grant ${oldMeta.identity.grant.id} was not revoked${unrevokedNote(custody, oldMeta.identity.grant, e, oldGrantTeam)}`; }
   out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
 /** The renew mode a spawned grant records, when it is one launch accepts;

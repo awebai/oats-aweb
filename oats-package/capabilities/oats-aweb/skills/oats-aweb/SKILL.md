@@ -813,6 +813,13 @@ earlier release, follow retire's printed manual revoke command with its `--team`
 `oats retire <instance> --force`: ordinary retire cannot confirm cleanup outside
 the recorded team.
 
+A pre-1.25.0 home renewing into a changed default team revokes its previous
+grant in that grant's recorded team. A failed renewal keeps the previous
+grant and the newly written seat record. If they name different teams, the
+next start refuses until the home is respawned; follow retire's printed
+cleanup steps. Do not rewrite the record: it keeps a grant minted before a
+crash discoverable.
+
 `oats readiness --home H --json` reads the grant recorded at the seat's last
 mint, asking neither aw nor custody. A never-grant gets no lifetime diagnostic
 (the agent's brief says it never expires); for any finite recorded expiry,

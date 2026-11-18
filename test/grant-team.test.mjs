@@ -37,6 +37,49 @@ function seat(t) {
 }
 const ok = r => assert.equal(r.status, 0, r.stdout + r.stderr);
 
+for (const scenario of ['success','old revoke fails','mint fails','attachment fails']) {
+  test(`a legacy seat renewed into another team: ${scenario}`, t => {
+    const s = seat(t), spawned = s.run('spawn'); ok(spawned);
+    rmSync(s.recordPath);
+    const identity = {...spawned.doc.meta.identity};
+    delete identity.seat;
+    writeFileSync(join(s.base,'grants.json'),JSON.stringify(s.grants().map(g=>({...g,label:'oats:probe'}))));
+    const env = {OATS_DEFAULT_TEAM_ID:OTHER,FAKE_CUSTODY_TEAM:OTHER,
+      ...(scenario==='mint fails'?{FAKE_MINT_FAIL:'1'}:{}),
+      ...(scenario==='attachment fails'?{FAKE_VERIFY_ERROR:'attachment refused'}:{}),
+      ...(scenario==='old revoke fails'?{FAKE_REVOKE_FAIL:identity.grant.id}:{}),
+    };
+    const before = s.calls().length;
+    const launched = s.run('launch',{...spawned.doc.meta,identity},env); ok(launched);
+    const record = readFileSync(s.recordPath,'utf8');
+    assert.equal(JSON.parse(record).team,OTHER,'the existing legacy bootstrap keeps its mint destination');
+    const old = s.grants().find(g=>g.grant_id===identity.grant.id);
+    if (scenario==='success' || scenario==='old revoke fails') {
+      assert.equal(launched.doc.meta.identity.team,OTHER);
+      const previousRevokes = s.calls().slice(before).filter(c=>c.argv.slice(0,3).join(' ')==='id grant revoke' && c.argv.includes(identity.grant.id));
+      assert.equal(previousRevokes.length,1);
+      assert.ok(previousRevokes[0].argv.includes(`--team=${TEAM}`),'cleanup uses the old grant team, not the new mint team');
+      assert.equal(old.status,scenario==='success'?'revoked':'active');
+      if (scenario==='old revoke fails') {
+        assert.ok(launched.doc.warning.includes(`aw id grant revoke --team=${TEAM} -- ${identity.grant.id}`));
+      } else assert.doesNotMatch(launched.doc.warning || '',/previous grant .* was not revoked/);
+    } else {
+      assert.equal(old.status,'active');
+      assert.equal(launched.doc.meta.identity.team,TEAM);
+      assert.equal(launched.doc.meta.identity.grant.id,identity.grant.id);
+      assert.match(launched.doc.warning,/keeping previous grant/);
+      const after = s.calls().length;
+      const next = s.run('launch',launched.doc.meta,env);
+      assert.equal(next.status,1);
+      assert.match(next.doc.warning,/respawn this home/);
+      assert.equal(s.calls().length,after,'the consistency refusal precedes every aw call');
+      assert.deepEqual(next.doc.meta.identity,launched.doc.meta.identity);
+      assert.equal(readFileSync(s.recordPath,'utf8'),record,'failure never rewrites the durable mint record');
+      assert.ok(s.grants().filter(g=>g.grant_id!==identity.grant.id).every(g=>g.status==='revoked'));
+    }
+  });
+}
+
 test('a missing grant home cannot erase the team of a recorded grant before retire', t => {
   const s = seat(t), spawned = s.run('spawn'); ok(spawned);
   const identity = {...spawned.doc.meta.identity,team:OTHER,grant:{...spawned.doc.meta.identity.grant,id:'grant-y'}};

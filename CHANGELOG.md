@@ -55,6 +55,11 @@
   cleanup, or respawn to choose a new team or resident. Homes from before
   1.25.0 with no seat record keep their existing lifecycle path. Existing
   homes use this behavior only when they receive the new provider module.
+  A legacy renewal into a changed default team revokes the previous grant in
+  its own recorded team. If that renewal fails after writing its first seat
+  record, the previous grant is kept; when its team differs from the new
+  record, the next start refuses until the home is respawned. The durable
+  record is kept so a grant minted before a crash remains discoverable.
   Start also refuses a selected grant home recording another team, including
   preview and `renew: off`, even if the configured default matches the seat.
   If metadata records a grant in another team, start refuses unless the

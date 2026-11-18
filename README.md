@@ -62,6 +62,13 @@ Homes already renewed into another default team under an earlier release refuse
 start too; their retire requires the printed manual revoke followed by
 `oats retire <instance> --force`.
 
+A pre-1.25.0 home renewing into a changed default team revokes its previous
+grant in that grant's recorded team. If renewal fails after writing its first
+seat record, it keeps the previous grant. When that grant and the new record
+name different teams, the next start refuses until the home is respawned;
+follow retire's printed cleanup steps. The record stays durable so a grant
+minted before a crash remains discoverable.
+
 If a mint receipt anomalously reports another team and immediate compensation
 cannot revoke it, retire stays within the recorded team and refuses. Run its
 printed revoke command with that other team's `--team` in the resident's
