@@ -1606,6 +1606,10 @@ by the refusal before seating. Replace an authority symlink with the real file
 at the source before seating;
 the refusal names its path and copies nothing. Copied authority directories
 are 0700 and files are 0600 at every depth, regardless of their source modes.
+Preflight walks the whole authority tree before copying. If a nested source
+link appears afterwards, the directory copy preserves it as a link. The mode
+walk uses `lstat`, rejects that destination link before chmodding it, and rolls
+the copy back before connect; it never changes the link target's permissions.
 After connect, the parsed `workspace status` path and `whoami` identity verify
 the seat. `aw check --online` is not a gate: it exits zero even for failed checks.
 The seat and pending-mint records are written with mode 0600.

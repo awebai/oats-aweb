@@ -117,6 +117,29 @@ test('soul readiness reports the same authority-symlink refusal as spawn', t => 
   assert.ok(problems.some(p=>JSON.parse(spawned.stdout).warning.includes(p.message)&&p.message.includes(link)),checked.stdout);
 });
 
+test('a nested link substituted just before directory copy is rejected without chmodding its target', t => {
+  const f = fixture(t), outside = join(f.base, 'outside'), preload = join(f.base, 'nested-race.mjs');
+  const from = join(f.source, 'encryption-keys'), key = join(from, 'nested', 'key');
+  f.write(key, 'source-encryption-key'); f.write(outside, 'outside-private-material');
+  writeFileSync(preload, `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+const copy = fs.cpSync; let raced = false;
+fs.cpSync = function(source, ...args) {
+  if (!raced && source === ${JSON.stringify(from)}) {
+    raced = true; fs.unlinkSync(${JSON.stringify(key)}); fs.symlinkSync(${JSON.stringify(outside)}, ${JSON.stringify(key)});
+  }
+  return copy.call(this, source, ...args);
+}; syncBuiltinESMExports();`);
+  const r = f.run({NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`});
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /copied authority entry is not a regular file or directory/);
+  assert.equal(existsSync(join(f.home, '.aw')), false);
+  assert.equal(lstatSync(key).isSymbolicLink(), true, 'race actually inserted a source link');
+  assert.equal(mode(outside), 0o644);
+  assert.equal(readFileSync(outside, 'utf8'), 'outside-private-material');
+  const calls = readFileSync(join(f.base, 'aw.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse);
+  assert.equal(calls.some(c => c.argv[0] === 'workspace' && c.argv[1] === 'connect'), false);
+});
+
 test('seat and pending-mint records are owner-only even with a permissive umask', t => {
   const priorMask = process.umask(0);
   t.after(() => process.umask(priorMask));
