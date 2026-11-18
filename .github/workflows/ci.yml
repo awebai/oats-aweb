@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       versions: ${{ steps.matrix.outputs.versions }}
+      floor: ${{ steps.matrix.outputs.floor }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +25,7 @@ jobs:
           node-version: 22
       - id: matrix
         run: |
+          echo "floor=$(node --input-type=module -e "import {AW_MIN} from './oats-package/capabilities/oats-aweb/lib/aw-floor.mjs'; console.log(AW_MIN)")" >> "$GITHUB_OUTPUT"
           echo "versions=$(node --input-type=module -e "import {AW_TEST_VERSIONS} from './scripts/aw-test-versions.mjs'; console.log(JSON.stringify(AW_TEST_VERSIONS))")" >> "$GITHUB_OUTPUT"
 
   aw-contract:
@@ -159,7 +161,7 @@ jobs:
             OATS_RESIDENT_JOURNEY_KERNEL="$RUNNER_TEMP/kernel" \
             node scripts/test-ci.mjs stack
       - name: Recapture the supported resident baseline with real aw
-        if: ${{ !cancelled() && matrix.aw == '1.36.33' }}
+        if: ${{ !cancelled() && matrix.aw == needs.aw-versions.outputs.floor }}
         run: |
           mkdir -p "$RUNNER_TEMP/captures/resident"
           env -i HOME="$RUNNER_TEMP/test-home" PATH="$RUNNER_TEMP/aw/node_modules/.bin:$PATH" \

@@ -21,12 +21,10 @@ export function verifySourceAwFixture(binary, version, receiptPath) {
   return { kind: receipt.kind, binary, sha256, version: version.stdout.trim(), sourceCommit };
 }
 
-// Preserve explicit historical source-build receipts for the source fixture;
-// CI qualification uses only the released matrix below.
-export function verifyPinnedAw(binary, version, receiptPath = process.env.OATS_TEST_AW_SOURCE_RECEIPT) {
+// Native admission always enforces the current released matrix.
+export function verifyPinnedAw(binary, version) {
   assert.equal(version.status, 0, version.stderr);
   const sha256 = createHash('sha256').update(readFileSync(binary)).digest('hex');
-  if (receiptPath) return verifySourceAwFixture(binary, version, receiptPath);
   const actual = /^aw (\S+)$/m.exec(version.stdout)?.[1];
   const expected = process.env.OATS_TEST_AW_VERSION;
   assert.ok(AW_TEST_VERSIONS.includes(actual), `unqualified aw ${actual}`);
