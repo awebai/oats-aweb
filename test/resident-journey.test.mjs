@@ -34,10 +34,15 @@ import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { targetReceiveAssessment } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 import { seatGrantLabel, teamGrants } from "../oats-package/capabilities/oats-aweb/lib/seat-grants.mjs";
-import { AW_MIN, AW_TESTED, versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
+import { AW_TEST_VERSIONS } from '../scripts/aw-test-versions.mjs';
+import { AW_MIN, versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 
 const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
+import { nativeCapture } from './helpers/native-capture.mjs';
+import { healthHost } from '../oats-package/capabilities/oats-aweb/lib/health-host.mjs';
 const CAPABILITY = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb", import.meta.url));
 const AW = process.env.OATS_RESIDENT_JOURNEY_AW, AWEB_URL = process.env.OATS_RESIDENT_JOURNEY_AWEB_URL, AWID_URL = process.env.OATS_RESIDENT_JOURNEY_AWID_URL;
 const KERNEL = process.env.OATS_RESIDENT_JOURNEY_KERNEL;
@@ -48,10 +53,11 @@ const OATS = KERNEL ? join(KERNEL, "bin", "oats.mjs") : undefined;
 const QUALIFIED_AW = Object.freeze({
   "1.36.33": "877bbee94ce45aa1ff103912bc9850556e61dfb4",
   "1.36.58": "a3223c1d32b8144abfd34d63b521b38d2b227ad5",
+  "1.36.59-rc.3": "d36bfb9de23a0256c1b8721c009ca2895f985064",
 });
 
-test("the journeys are qualified on exactly aw-compat.json's [min, tested]", () => {
-  assert.deepEqual(Object.keys(QUALIFIED_AW), [AW_MIN, AW_TESTED]);
+test("the journeys are qualified on the floor, tested and pinned next aw", () => {
+  assert.deepEqual(Object.keys(QUALIFIED_AW), AW_TEST_VERSIONS);
 });
 
 function configured(t) {
@@ -77,7 +83,9 @@ function journey(t) {
   // harness, which --preview and --no-launch never start.
   writeFileSync(join(bin, "oats"), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(OATS)} "$@"\n`, { mode: 0o755 });
   for (const harness of ["claude", "codex", "pi"]) writeFileSync(join(bin, harness), "#!/bin/sh\necho unexpected-harness-launch >&2\nexit 99\n", { mode: 0o755 });
+  const tmuxDir = realpathSync(mkdtempSync('/tmp/aw-journey.'));
   const env = {
+    TMUX_TMPDIR: tmuxDir,
     PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, OATS_TEAM_SCOPE: deployment, OATS_SETTINGS: "{}", OATS_CLI_BIN: OATS,
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", OATS_REMOTE_CACHE: join(base, "cache"),
     ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}),
@@ -86,7 +94,7 @@ function journey(t) {
   const features = JSON.parse(spawnSync(process.execPath, [OATS, "--version", "--json"], { encoding: "utf8", env }).stdout).features;
   assert.ok(features.includes("teams-conditional-default"), "the journeys need a kernel with teams-conditional-default");
   const cleanups = [];
-  t.after(() => { for (const c of cleanups.reverse()) { try { c(); } catch { /* best effort */ } } rmSync(base, { recursive: true, force: true }); });
+  t.after(() => { for (const c of cleanups.reverse()) { try { c(); } catch { /* best effort */ } } rmSync(tmuxDir, { recursive: true, force: true }); rmSync(base, { recursive: true, force: true }); });
   const parsed = (r) => { let doc; try { doc = JSON.parse(r.stdout.trim().split("\n").at(-1)); } catch { doc = undefined; } return { ...r, doc }; };
   const run = (args, extra = {}) => parsed(spawnSync(process.execPath, [HOOK, "resident", ...args], { env: { ...env, ...extra }, cwd: deployment, encoding: "utf8", input: "", timeout: 180000 }));
   /** A command line as an operator types it in the deployment, `oats` being the kernel. */
@@ -123,7 +131,7 @@ function journey(t) {
       spawnSync("sleep", ["0.2"]);
     }
   };
-  return { base, deployment, home, bin, env, run, shell, aw, workspace, cleanups, teamReadFirst };
+  return { base, deployment, home, bin, env, run, shell, aw, workspace, cleanups, teamReadFirst, awVersion, awCommit, tmuxDir };
 }
 /** A complete global identity in root, made the way aweb's own real-stack e2e
  *  makes one, whose custody and per-user unit the cleanups stop. */
@@ -283,7 +291,7 @@ function printedSteps(stdout) {
  *  line, runs every printed step in order through the kernel, the spawn first
  *  with --preview and then with --no-launch, checks the scaffold's grant at
  *  the resident's custody, and retires it. */
-function printedStepsJourney(t, { teams, defaultTeam, expectStatus, expectDefault, expectFirstStep }) {
+async function printedStepsJourney(t, { teams, defaultTeam, expectStatus, expectDefault, expectFirstStep }) {
   if (!configured(t)) return;
   if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
   const j = journey(t);
@@ -332,6 +340,38 @@ function printedStepsJourney(t, { teams, defaultTeam, expectStatus, expectDefaul
   assert.match(identity.grant.id, /\S/);
   // The seat verifies at the resident's registry, from its identity.yaml.
   assert.equal(record.launch.hooks.env.AWID_REGISTRY_URL, AWID_URL);
+  // Health observes only this journey's disposable resident and scaffold.
+  const health = healthHost({ deployment: j.deployment, env: j.env });
+  const who = JSON.parse(j.aw(root, ['whoami', '--json']).stdout);
+  assert.deepEqual(await health.identityOf({ cwd: root }), { did: who.did, stable_id: who.stable_id });
+  assert.match(who.stable_id, /^did:aw:/);
+  const readiness = await health.readiness(home);
+  assert.ok(readiness && ['ready', 'needs-configuration', 'authorization-required', 'unavailable'].includes(readiness.status), JSON.stringify(readiness));
+  assert.ok(Array.isArray(readiness.problems) && Array.isArray(readiness.warnings));
+  const shown = j.aw(root, ['id', 'grant', 'show', identity.grant.id, '--json']);
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.equal(JSON.parse(shown.stdout).status, 'active');
+  nativeCapture('grant-show', JSON.parse(shown.stdout), { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
+  nativeCapture('resident-whoami', who, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
+  const captureHome = join(j.base, 'capture-grant');
+  const custodyStatus = j.aw(root, ['custody', 'status', '--json']);
+  assert.equal(custodyStatus.status, 0, custodyStatus.stderr);
+  const custodySocket = JSON.parse(custodyStatus.stdout).socket_path;
+  assert.equal(typeof custodySocket, 'string');
+  const minted = j.aw(root, ['id', 'grant', 'mint', '--team=' + team, '--scope=mail.read', '--ttl=never', '--out=' + captureHome, '--custody-socket=' + custodySocket, '--json']);
+  assert.equal(minted.status, 0, minted.stdout + minted.stderr);
+  const mintDoc = JSON.parse(minted.stdout);
+  nativeCapture('grant-mint', mintDoc, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
+  const revokedCapture = j.aw(root, ['id', 'grant', 'revoke', mintDoc.grant_id, '--json']);
+  assert.equal(revokedCapture.status, 0, revokedCapture.stderr);
+
+  const unattached = join(j.base, 'unattached-grant');
+  cpSync(identity.grant.home, unattached, { recursive: true });
+  const grantYaml = join(unattached, 'grant.yaml');
+  writeFileSync(grantYaml, readFileSync(grantYaml, 'utf8').split('\n').filter(line => !line.trimStart().startsWith('socket_path:')).join('\n'));
+  const missingLocator = j.aw(j.base, ['custody', 'status', '--json'], { AWEB_IDENTITY_HOME: unattached });
+  assert.notEqual(missingLocator.status, 0);
+  assert.match(missingLocator.stdout + missingLocator.stderr, /grant home has no custody\.socket_path locator/);
   const list = (argv) => { const r = j.aw(root, argv.slice(1)); assert.equal(r.status, 0, r.stderr); return r.stdout; };
   const seatLabel = seatGrantLabel(instance, identity.seat);
   const active = () => teamGrants(list, team).filter((g) => g.label === seatLabel && g.status === "active").map((g) => g.grant_id);
@@ -343,18 +383,18 @@ function printedStepsJourney(t, { teams, defaultTeam, expectStatus, expectDefaul
 }
 
 test("printed steps, no default team: the command sets it, and the spawn line alone previews and scaffolds a seat", (t) => {
-  printedStepsJourney(t, { expectStatus: "added", expectDefault: "set" });
+  return printedStepsJourney(t, { expectStatus: "added", expectDefault: "set" });
 });
 
 test("printed steps, the workspace's default team is another: it is kept, and `oats teams default` printed first makes the spawn work", (t) => {
-  printedStepsJourney(t, { teams: () => "teams:\n  core: { team: 'core:example.invalid' }\n", defaultTeam: "core", expectStatus: "added", expectDefault: "kept", expectFirstStep: "oats teams default default" });
+  return printedStepsJourney(t, { teams: () => "teams:\n  core: { team: 'core:example.invalid' }\n", defaultTeam: "core", expectStatus: "added", expectDefault: "kept", expectFirstStep: "oats teams default default" });
 });
 
 test("printed steps, the derived label already maps to the resident's team and is the default: reused, and the spawn line alone works", (t) => {
-  printedStepsJourney(t, { teams: (team) => `teams:\n  default: { team: '${team}' }\n`, defaultTeam: "default", expectStatus: "reused", expectDefault: "already" });
+  return printedStepsJourney(t, { teams: (team) => `teams:\n  default: { team: '${team}' }\n`, defaultTeam: "default", expectStatus: "reused", expectDefault: "already" });
 });
 
-test("a real joined-team spawn: invite, accept, connect and register on this aw, and a retire leaves nothing", (t) => {
+test("a real joined-team spawn: invite, accept, connect and register on this aw, and a retire leaves nothing", async (t) => {
   if (!configured(t)) return;
   if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
   const j = journey(t);
@@ -383,6 +423,25 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   assert.equal(listed.status, 0, listed.stdout + listed.stderr);
   assert.match(listed.stdout, new RegExp(joinedTeam.replace(/\./g, "\\.")));
 
+  const who = j.aw(home, ['whoami', '--json']);
+  assert.equal(who.status, 0, who.stderr);
+  const ids = await healthHost({ deployment: j.deployment, env: j.env }).identityOf({ identityHome: join(home, '.aw') });
+  assert.equal(ids.did, JSON.parse(who.stdout).did);
+  assert.match(ids.did, /^did:key:z/);
+  assert.equal(ids.stable_id, undefined);
+  for (const args of [['id', 'team', 'members', '--team-id', team, '--registry', AWID_URL, '--json'], ['workspace', 'status', '--limit=200', '--json'], ['mail', 'inbox', '--count-only', '--json']]) {
+    const r = j.aw(home, args);
+    if (args.includes('--count-only') && j.awVersion === '1.36.33') {
+      assert.notEqual(r.status, 0, 'the floor must refuse unsupported count-only');
+      assert.match(r.stderr, /unknown flag: --count-only/);
+      assert.equal(await healthHost({ deployment: j.deployment, env: j.env }).supportsUnreadCount(), false);
+      continue;
+    }
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const doc = JSON.parse(r.stdout);
+    assert.ok(doc, 'real roster/count response is JSON');
+    nativeCapture(args[0] === 'id' ? 'roster-members' : args[0] === 'workspace' ? 'roster-presence' : 'mail-inbox-count', doc, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
+  }
   const retired = j.shell("oats retire joined-seat --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false);
@@ -441,4 +500,63 @@ test("a real join killed right after this aw accepted the invite (awebai/oats-aw
   const [, ...cleanupArgs] = cleanup.command.split(" ");
   step(cleanupArgs);
   assert.ok(!members().includes(cleanup.certificateId), "the team no longer lists the member");
+});
+
+test('a real retained seat copies authority, reconnects, checks, heartbeats, reports its identity and releases only its own lock', async t => {
+  if (!configured(t)) return;
+  const j = journey(t), ns = `retained-${randomBytes(4).toString('hex')}.test`, team = `default:${ns}`;
+  j.workspace({ teams: `teams:\n  default: { team: '${team}' }\n`, defaultTeam: 'default' });
+  const sourceRoot = join(j.base, 'standing-seat');
+  globalIdentity(j, sourceRoot, 'retained', ns);
+  Object.assign(j.env, { AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+  const source = join(sourceRoot, '.aw'), sourceKey = readFileSync(join(source, 'signing.key'));
+  const result = j.shell(`oats spawn probe --name real-retained --harness codex --provider oats.aweb identity.source=${source} --no-launch --json`);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const home = result.doc.result.home;
+  const record = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
+  const meta = record.capabilityMeta['oats.aweb'];
+  assert.equal(meta.retained, true);
+  assert.equal(meta.identity.mode, 'local');
+  assert.equal(meta.identity.grant, undefined);
+  const who = j.aw(home, ['whoami', '--json']);
+  assert.equal(who.status, 0, who.stderr);
+  assert.equal(JSON.parse(who.stdout).did, JSON.parse(j.aw(sourceRoot, ['whoami', '--json']).stdout).did);
+  const status = j.aw(home, ['workspace', 'status', '--json']);
+  assert.equal(status.status, 0, status.stderr);
+  assert.equal(JSON.parse(status.stdout).workspace.workspace_path, home);
+  const paths = { [home]: '/fixture/codex', [j.base]: '/fixture/journey' };
+  nativeCapture('workspace-record', readFileSync(join(home, '.aw', 'workspace.yaml'), 'utf8'), { version: j.awVersion, commit: j.awCommit, paths });
+  nativeCapture('retained-presence', JSON.parse(status.stdout), { version: j.awVersion, commit: j.awCommit, paths });
+  assert.deepEqual(readFileSync(join(source, 'signing.key')), sourceKey);
+  const lock = join(sourceRoot, '.aw-retained-seat.json');
+  assert.equal(JSON.parse(readFileSync(lock, 'utf8')).home, home);
+  // Start only the journey's inert harness on its own tmux server. The broker
+  // and service are real; no person's pane or agent participates in this run.
+  writeFileSync(join(j.bin, 'codex'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "codex 0.1.0"; exit 0; fi\nexec sleep 3600\n', { mode: 0o755 });
+  j.cleanups.push(() => {
+    for (const rel of readdirSync(j.tmuxDir, { recursive: true })) {
+      const socket = join(j.tmuxDir, rel);
+      if (statSync(socket).isSocket()) spawnSync('tmux', ['-S', socket, 'kill-server'], { env: j.env });
+    }
+  });
+  const started = j.shell(`oats session start --home ${home} --json`);
+  assert.equal(started.status, 0, started.stdout + started.stderr);
+  let wake;
+  for (const deadline = Date.now() + 30000; ;) {
+    const observed = j.aw(home, ['wake', 'status', '--json']);
+    assert.equal(observed.status, 0, observed.stderr);
+    wake = JSON.parse(observed.stdout);
+    const row = wake.instances.find(row => row.home === home);
+    if (row?.phase === 'active' && row.receive_identities?.some(r => r.stream_admitted === true && r.stream_phase === 'streaming')) break;
+    if (Date.now() >= deadline) break;
+    await delay(500);
+  }
+  nativeCapture('codex-wake-status', wake, { version: j.awVersion, commit: j.awCommit, paths });
+  const assessment = targetReceiveAssessment(wake, { home, runtime: 'codex', runtimeDelivery: 'external-session', primary: join(home, '.aw'),
+    bindings: [{ identity_home: join(home, '.aw'), team, controls: true, event_classes: [] }] }, { minimumVersion: AW_MIN });
+  assert.deepEqual(assessment.problems, [], JSON.stringify(assessment));
+  const retired = j.shell('oats retire real-retained --json');
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(existsSync(lock), false);
+  assert.deepEqual(readFileSync(join(source, 'signing.key')), sourceKey);
 });

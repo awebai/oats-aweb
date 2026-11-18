@@ -1,3 +1,4 @@
+import { fakeAwArgvCheck } from "./aw-argv.mjs";
 import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { dirname, join } from "node:path";
 function write(p,c) {mkdirSync(dirname(p),{recursive:true});writeFileSync(p,c);}
@@ -7,6 +8,7 @@ export function fakeAw(base) {
 const fs = require("node:fs");
 const path = require("node:path");
 const a = process.argv.slice(2);
+${fakeAwArgvCheck("a")}
 const s = a.join(" ");
 const log = ${JSON.stringify(join(base, "aw.log"))};
 const j = (obj) => JSON.stringify(obj, null, 2);
@@ -84,7 +86,6 @@ if (process.env.FAKE_RETAINED === "1") {
   if (a[0] === "check" || a[0] === "heartbeat") process.exit(0);
   if (s === "workspace status --json") { console.log(j({workspace:{alias:"retained",workspace_path:process.env.FAKE_RETAINED_STATUS_PATH || process.cwd()}})); process.exit(0); }
   if (s === "whoami --json") { console.log(j({did:process.env.FAKE_RETAINED_WHOAMI_DID || "did:key:zRetained",address:"fixture.test/retained"})); process.exit(0); }
-
 }
 
 if (a[0] === "team" && a[1] === "list" && a.includes("--json")) {
@@ -145,6 +146,7 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "mint") {
   // aw creates the grant on the server first, then writes the grant home: a
   // failure there (or a timeout) exits 1 with the grant already live.
   if (process.env.FAKE_MINT_FAIL_AFTER_REGISTER) { console.error(process.env.FAKE_MINT_FAIL_AFTER_REGISTER); process.exit(1); }
+  if (process.env.FAKE_MINT_NO_JSON) { console.log("minted without a JSON receipt"); process.exit(0); }
   const reply = { grant_id: grant, expires_at: expires, team_id: team, address: "oats.aweb.ai/resident-alias", out };
   if (process.env.FAKE_MINT_ALIAS !== "missing") reply.alias = process.env.FAKE_MINT_ALIAS || "resident-alias";
   if (process.env.FAKE_APP_INVENTORY) Object.assign(reply, JSON.parse(process.env.FAKE_APP_INVENTORY));
@@ -152,6 +154,7 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "mint") {
   process.exit(0);
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "revoke") {
+  if (process.env.FAKE_REVOKE_STDERR) { console.error(process.env.FAKE_REVOKE_STDERR); process.exit(1); }
   // FAKE_REVOKE_FAIL: "1" fails every revoke, a grant id fails only that grant's.
   if (process.env.FAKE_REVOKE_FAIL && (process.env.FAKE_REVOKE_FAIL === "1" || process.env.FAKE_REVOKE_FAIL.split(",").includes(a[3]))) { console.error("revoke unavailable"); process.exit(1); }
   saveGrants(grants().map(g => g.grant_id === a[3] ? { ...g, status: "revoked" } : g));
@@ -163,7 +166,7 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "list") {
   const team = val("--team");
   console.log(j({ grants: grants().filter(g => !team || g.team_id === team) })); process.exit(0);
 }
-if (a[0] === "id" && a[1] === "grant" && a[2] === "show") { console.log(j({ grant_id: a[3], status: "revoked" })); process.exit(0); }
+if (a[0] === "id" && a[1] === "grant" && a[2] === "show") { const found = grants().find(g => g.grant_id === a[3]); console.log(j({ ...found, grant_id: a[3], status: process.env.FAKE_GRANT_SHOW_STATUS || found?.status || "unknown" })); process.exit(0); }
 console.error("fake aw: unexpected " + s); process.exit(2);
 `);
   chmodSync(join(bin, "aw"), 0o755);

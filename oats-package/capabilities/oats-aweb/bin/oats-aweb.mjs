@@ -263,19 +263,17 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
 /** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
- *  prints progress before it. A top-level object (one opening at column 0) may also be followed
- *  by notes (`aw workspace status` appends its gone-workspace checks); an indented line is never
- *  taken for the start of the answer, since it can be an object nested inside a cut-off one. */
+ *  prints progress before it. Diagnostics such as gone-workspace checks go to stderr;
+ *  trailing stdout text is not a JSON answer. */
 const parseAwJson = (text, what) => {
   const trimmed = String(text ?? "").trim();
   if (!trimmed) throw new Error(`${what} returned no JSON result`);
-  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON or notes after it */ }
+  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON */ }
   const lines = trimmed.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].trimStart().startsWith("{")) continue;
     const rest = lines.slice(i).join("\n");
     try { return JSON.parse(rest); } catch { /* not the whole remainder */ }
-    if (lines[i].startsWith("{")) { try { return leadingJsonObject(rest); } catch { /* keep looking */ } }
   }
   throw new Error(`${what} returned no JSON result`);
 };

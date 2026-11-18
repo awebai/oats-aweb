@@ -1,3 +1,4 @@
+import { fakeAwArgvCheck } from "./aw-argv.mjs";
 // The aw CLI as `oats aweb setup` drives it: init, team join/invite/list, id team
 // create/accept-invite/list, whoami and workspace connect/status/delete, with its
 // state in the .aw under the cwd (or --identity-home). Every call is recorded in
@@ -92,6 +93,7 @@ const calls = ${JSON.stringify(calls)};
 const teamKeys = ${JSON.stringify(join(dir, "team-keys"))};
 if (process.env.AWEB_IDENTITY_HOME) { console.error("unexpected ambient identity home"); process.exit(94); }
 let args = process.argv.slice(2);
+${fakeAwArgvCheck("args")}
 let identityHome = null;
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
 const fakeVersion = () => (process.env.AW_FAKE_VERSION_FILE && fs.existsSync(process.env.AW_FAKE_VERSION_FILE) ? fs.readFileSync(process.env.AW_FAKE_VERSION_FILE, "utf8").trim() : process.env.AW_FAKE_VERSION) || ${JSON.stringify(version)};

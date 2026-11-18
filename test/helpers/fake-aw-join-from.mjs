@@ -1,3 +1,4 @@
+import { awArgvCheckSource, awGrammar } from "./aw-argv.mjs";
 // `aw init --join-from=<root> --join-team=<team> --name=<alias>` as aw runs it
 // (cmd/aw/init.go runInitJoinFrom), in aw 1.36.58's order (awebai/oats-aweb#240):
 //   1. refuse a target home that already holds identity material;
@@ -35,7 +36,7 @@
 //                              what retire's branch for a home with no key covers.
 // FAKE_JOIN_FROM_REPLY (a JSON object) overrides fields of the success reply.
 // A root with no .aw is refused like a non-member root.
-export function joinFromFake(args) {
+function joinFromImplementation(args) {
   const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto");
   const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
   if (args[0] !== "init" || flag("--join-from") === undefined) return false;
@@ -84,7 +85,9 @@ export function joinFromFake(args) {
   const refuse = (text, error) => { console.error(text); console.log(JSON.stringify({ error: { ...error, message: text } })); process.exit(1); };
   if (process.env.FAKE_JOIN_FROM_SELF_CUSTODY) refuse('accept hosted team invite: registry http 403: {"detail":{"code":"self_custody_reinit_unproven","message":"This alias belongs to an agent that holds its own key, and this request does not prove it holds that key. Use a new alias, or ask the team owner to remove the existing agent if a first init left it half-made. TOKEN-SHOULD-NOT-LEAK"}}', { code: "http_error", http_status: 403, reason: "self_custody_reinit_unproven" });
   const held = (readRegistry()[team] || []).some((m) => m.alias === alias && !m.revoked_at);
-  if (process.env.FAKE_JOIN_FROM_CONFLICT || held) refuse("Error: accept invite: 409 conflict: alias " + alias + " already has an active certificate (invite TOKEN-SHOULD-NOT-LEAK)", { code: "alias_conflict", http_status: 409, reason: "alias_active" });
+  // Native hosted acceptance wraps the registry HTTP refusal (aw 1.36.58,
+  // cmd/aw/id_team.go acceptHostedTeamInviteAt; awid error detail alias_active).
+  if (process.env.FAKE_JOIN_FROM_CONFLICT || held) refuse('accept hosted team invite: registry http 409: ' + JSON.stringify({ detail: { code: "alias_active", message: "Alias already active in team" } }), { code: "alias_conflict", http_status: 409, reason: "alias_active" });
   register();
   if (process.env.FAKE_JOIN_FROM_STOP_AFTER === "register") hang();
   // aw saves the certificate after the registration and reports a failure to save it.
@@ -110,7 +113,7 @@ export function joinFromFake(args) {
  *  (see joinFromFake), as aw prints it (cmd/aw/id_team.go teamMembersOutput). It exits
  *  for that command and returns false for anything else. FAKE_MEMBERS_FAIL makes the
  *  read fail as an unreachable registry does. Self-contained, as joinFromFake. */
-export function membersFake(args) {
+function membersImplementation(args) {
   const fs = require("node:fs");
   if (args.slice(0, 3).join(" ") !== "id team members") return false;
   const team = args.find((a) => a.startsWith("--team-id="))?.slice("--team-id=".length) ?? args[args.indexOf("--team-id") + 1];
@@ -123,3 +126,7 @@ export function membersFake(args) {
 /** The recorded `aw init --join-from` calls, and one flag's `--name=value`. */
 export const joinFromCalls = (calls) => calls.filter((c) => c.args[0] === "init" && c.args.some((a) => a.startsWith("--join-from=")));
 export const flagValue = (args, name) => args.find((a) => a.startsWith(name + "="))?.slice(name.length + 1);
+
+export const joinFromFake = new Function("args", `if (args[0] === "init" && args.some(a => a.startsWith("--join-from"))) ${awArgvCheckSource}(args, ${JSON.stringify(awGrammar)}, ${JSON.stringify(process.env.OATS_TEST_AW_ARGV_LOG)}); return (${joinFromImplementation})(args);`);
+
+export const membersFake = new Function("args", `if (args.slice(0, 3).join(" ") === "id team members") ${awArgvCheckSource}(args, ${JSON.stringify(awGrammar)}, ${JSON.stringify(process.env.OATS_TEST_AW_ARGV_LOG)}); return (${membersImplementation})(args);`);

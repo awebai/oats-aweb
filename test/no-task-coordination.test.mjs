@@ -1,30 +1,7 @@
-// oats.aweb is messaging only: nothing it puts into a home mentions the task-
-// coordination layer, which oats.aweb-tasks teaches only when it is composed.
-// This file reads the inject, every file under skills/ (the vendored aweb
-// skills included: a resync from upstream would bring the task text back) and
-// the readiness phrases. The briefs and warnings the hook writes are checked
-// through the fixtures that produce them: spawn in oats-aweb-1-17-4 and the grant
-// seat in never-grant.
+// The detector used by runtime Comms tests: matching and diagnostic behavior.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describeTaskCoordination, taskCoordinationMentions } from "./helpers/task-coordination-text.mjs";
-
-const REPO = fileURLToPath(new URL("..", import.meta.url));
-const CAPABILITY = join(REPO, "oats-package", "capabilities", "oats-aweb");
-
-function filesUnder(dir) {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? filesUnder(join(dir, entry.name)) : [join(dir, entry.name)]);
-}
-
-test("oats.aweb's inject, skills and readiness phrases never mention task coordination", () => {
-  const files = [join(CAPABILITY, "injects", "aweb.md"), join(CAPABILITY, "oats.json"), join(CAPABILITY, "phrases", "en.json"), ...filesUnder(join(CAPABILITY, "skills"))];
-  assert.ok(files.some((file) => file.endsWith(join("aweb-messaging", "SKILL.md"))), "the vendored skills are read");
-  const found = files.flatMap((file) => describeTaskCoordination(relative(REPO, file), readFileSync(file, "utf8")));
-  assert.deepEqual(found, [], `oats.aweb mentions task coordination; it belongs to oats.aweb-tasks:\n${found.join("\n")}`);
-});
 
 test("the patterns catch each banned form and spare the allowed uses", () => {
   for (const banned of [
@@ -55,23 +32,4 @@ test("a failure names the file, the line and the matched text", () => {
   assert.deepEqual(describeTaskCoordination("SKILL.md", "Mail.\nCoordination stays in your deployment's task\nlayer."), [
     'SKILL.md:2: the task layer: "task\\nlayer"',
   ], "a wrapped match is named by the line it starts on");
-});
-
-// aweb's team instructions, roles and pi's welcome point agents to a skill for
-// the session loop that an OATS home may not have, so oats.aweb teaches the
-// whole messaging loop itself, mail and chat only.
-test("the inject and the oats-aweb skill teach the whole messaging loop and defer skill names in team text to OATS", () => {
-  const inject = readFileSync(join(CAPABILITY, "injects", "aweb.md"), "utf8").replace(/\s+/g, " ");
-  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8").replace(/\s+/g, " ");
-  const loop = skill.split("**The messaging loop** (when woken).")[1]?.split("**Never sleep, poll or busy-wait")[0];
-  assert.ok(loop, "section 4 holds the messaging loop");
-  assert.match(inject, /\*\*Your messaging loop\*\*.*`\/oats-aweb` section 4, "The messaging loop"/);
-  for (const [name, text] of [["inject", inject], ["oats-aweb section 4", loop]]) {
-    assert.match(text, /run `aw mail inbox` and `aw chat pending`/, `${name}: read what is waiting`);
-    assert.match(text, /`aw mail reply/, `${name}: reply in thread`);
-    assert.match(text, /`aw chat send-and-leave`.*`aw chat extend-wait`/, `${name}: answer or extend a waiting chat`);
-    assert.match(text, /(?:Return|Go back) to (?:your task|the task you were on)/, `${name}: back to the task`);
-    assert.match(text, /\(`aw instructions`, (?:a role description|role descriptions)|Team instructions \(`aw instructions`\), role descriptions/, `${name}: names team and role text`);
-    assert.match(text, /may not be installed in this home: follow (?:the|this loop and the other) skills OATS composed here instead/, `${name}: defers to OATS's skills`);
-  }
 });

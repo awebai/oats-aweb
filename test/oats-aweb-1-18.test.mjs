@@ -1453,3 +1453,12 @@ test('kernel Claude receipt does not excuse internally contradictory provider mo
   assert.ok(result.problems.some(p=>p.code==='receive-record-unavailable'),JSON.stringify(result));
   assert.deepEqual(fx.fake.readCalls().slice(calls).map(c=>c.args),[['version']]);
 });
+
+test('an unrecognized delivery setting uses the channel route for Claude', t => {
+  const fx = fixture(t, { settings: { delivery: 'unknown' }, runtime: 'claude' });
+  const doc = fx.spawn();
+  assert.equal(doc.meta.delivery, 'channel');
+  assert.equal(doc.env.AWEB_DELIVERY, undefined);
+  assert.equal(doc.launch.claude, DEV_CHANNEL_FLAG);
+  assert.equal(fx.registered(), undefined);
+});

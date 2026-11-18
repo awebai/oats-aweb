@@ -220,3 +220,45 @@ test("the restore command is printed only from values of their own shapes", (t) 
   assert.doesNotMatch(retired.doc.warning, /touch pwned/);
   assert.ok(retired.doc.warning.includes(`run \`aw workspace connect\` with the service, team and role in its workspace.yaml from ${fx.legacyHome}`), retired.doc.warning);
 });
+
+for (const [name, env] of [
+  ['a status pointing elsewhere', { FAKE_RETAINED_STATUS_PATH: '/fixture/elsewhere' }],
+  ['a whoami with another DID', { FAKE_RETAINED_WHOAMI_DID: 'did:key:zSomeoneElse' }],
+  ['wake registration refused after connect', { FAKE_WAKE_REGISTER_FAIL: '1' }],
+]) test(`retained rollback restores source binding and removes copied authority after ${name}`, t => {
+  const fx = fixture(t);
+  const result = runHook(fx, 'spawn', env);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  const calls = readFileSync(join(fx.base, 'aw.log'), 'utf8').trim().split('\n').map(JSON.parse);
+  const connects = calls.filter(c => c.argv.slice(0, 2).join(' ') === 'workspace connect');
+  assert.equal(connects.length, 2, 'initial connect and restoring connect');
+  assert.equal(connects[1].cwd, realpathSync(fx.legacyHome));
+  assert.equal(existsSync(join(fx.home, '.aw')), false);
+  assert.equal(existsSync(fx.lock), false);
+  assert.equal(readFileSync(join(fx.source, 'signing.key'), 'utf8'), 'fixture-signing-key');
+});
+
+test('retained authority closure, copy exclusions, command sequence and lock do not depend on a spawner PID', t => {
+  const fx = fixture(t);
+  const files = { 'team-certs/fixture.pem': 'fixture-cert', 'encryption.yaml': 'fixture-encryption', 'encryption-keys/x25519.key': 'fixture-key' };
+  for (const [file, text] of Object.entries(files)) write(join(fx.source, file), text);
+  write(join(fx.source, 'context', 'private'), 'source-context');
+  write(join(fx.source, 'interaction-log.jsonl'), 'source-log');
+  write(join(fx.source, 'workspace.yaml'), readFileSync(join(fx.source, 'workspace.yaml'), 'utf8') + 'source_only: DO-NOT-COPY\n');
+  const source = Object.fromEntries(['signing.key', 'identity.yaml', 'teams.yaml', ...Object.keys(files)].map(f => [f, readFileSync(join(fx.source, f), 'utf8')]));
+  const result = runHook(fx, 'spawn', { AWEB_API_KEY: 'SYNTHETIC-SECRET-API-KEY' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  for (const [file, text] of Object.entries(source)) assert.equal(readFileSync(join(fx.home, '.aw', file), 'utf8'), text, file);
+  assert.equal(existsSync(join(fx.home, '.aw', 'context')), false);
+  assert.equal(existsSync(join(fx.home, '.aw', 'interaction-log.jsonl')), false);
+  assert.doesNotMatch(readFileSync(join(fx.home, '.aw', 'workspace.yaml'), 'utf8'), /DO-NOT-COPY/);
+  const lock = JSON.parse(readFileSync(fx.lock, 'utf8'));
+  assert.equal(lock.home, fx.home);
+  assert.equal(lock.pid, undefined);
+  const log = readFileSync(join(fx.base, 'aw.log'), 'utf8');
+  assert.doesNotMatch(log, /SYNTHETIC-SECRET-API-KEY/);
+  const sequence = log.trim().split('\n').map(JSON.parse).map(c => c.argv.slice(0, 2).join(' '));
+  const at = sequence.indexOf('workspace connect');
+  assert.deepEqual(sequence.slice(at, at + 5), ['workspace connect', 'check --online', 'heartbeat', 'workspace status', 'whoami --json']);
+  assert.equal(sequence.some(c => c.startsWith('init') || c === 'team invite' || c === 'team join'), false);
+});

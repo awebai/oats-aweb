@@ -812,3 +812,13 @@ test("spawn warns when a team it also joins has a self-hosted root, though its d
   r = fx2.hook("spawn", { FAKE_AW_VERSION: NEWER, OATS_TEAMS: teams, OATS_SETTINGS: JSON.stringify({ root: fx2.ws, roots: { [OTHER]: selfRoot }, delivery: "session" }) });
   assert.doesNotMatch(r.doc?.warning || "", /aw-newer-than-tested/, "a team it doesn't join doesn't count");
 });
+
+test('retire recovers an alias missing from meta from the workspace binding', t => {
+  const fx = fixture(t);
+  assert.equal(fx.hook('spawn').status, 0);
+  writeFileSync(join(fx.home, '.aw', 'workspace.yaml'), `memberships:\n    - team_id: ${TEAM}\n      alias: dev-1\n`);
+  const retired = fx.hook('retire', { OATS_META: JSON.stringify({ team: TEAM }) });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const del = fx.fake.readCalls().find(c => c.args.slice(0, 2).join(' ') === 'workspace delete');
+  assert.deepEqual(del.args, ['workspace', 'delete', 'dev-1', '--json']);
+});

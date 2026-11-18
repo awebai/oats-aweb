@@ -35,7 +35,7 @@ export function createScratchDeployment(options = {}) {
   }
 }
 
-function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome, path, env: extraEnv = {}, teams = "", local = "", kernel }) {
+function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome, path = process.env.OATS_TEST_AW ? dirname(process.env.OATS_TEST_AW) : undefined, env: extraEnv = {}, teams = "", local = "", kernel = process.env.OATS_PREVIEW_KERNEL_ROOT }) {
   const home = givenHome ?? join(root, "home"), ws = join(root, "ws"), deployment = join(root, "dep"), bin = join(root, "bin");
   for (const d of [home, ws, bin]) mkdirSync(d, { recursive: true });
   const gitConfig = join(root, "gitconfig");

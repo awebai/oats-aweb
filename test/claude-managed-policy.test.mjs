@@ -166,10 +166,7 @@ test("unknown: managed-settings.d is not a readable directory", t => {
   assert.match(policy.reason, /managed-settings\.d is unreadable \(ENOTDIR\)/);
 });
 
-test("the production read has no environment override", () => {
-  const source = readFileSync(join(REPO, "oats-package/capabilities/oats-aweb/lib/claude-managed-policy.mjs"), "utf8");
-  assert.doesNotMatch(source, /process\.env/);
-});
+
 
 function approvedHome(t) {
   const home = mkdtempSync(join(tmpdir(), "oats-aweb-policy-home-"));

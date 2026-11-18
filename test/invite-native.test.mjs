@@ -4,7 +4,7 @@ import { verifyPinnedAw } from './helpers/pinned-aw.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign, createHash, randomUUID } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, symlinkSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, symlinkSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,14 +22,25 @@ function key() {
   const publicBytes = pair.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
   return { ...pair, did: 'did:key:z' + b58(Buffer.concat([Buffer.from([0xed, 1]), publicBytes])) };
 }
-function run(args, cwd, env) {
+function hookRun(event, args, cwd, env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [hook, 'invite', ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 });
+    const child = spawn(process.execPath, [hook, event, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 });
     let stdout = '', stderr = '';
     child.stdout.on('data', c => stdout += c); child.stderr.on('data', c => stderr += c);
     child.on('error', reject); child.on('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
   });
 }
+const run = (args, cwd, env) => hookRun('invite', args, cwd, env);
+function nativeRun(binary, args, cwd, env, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', c => stdout += c); child.stderr.on('data', c => stderr += c);
+    child.on('error', reject); child.on('close', code => resolve({ code, stdout, stderr }));
+    child.stdin.end(input);
+  });
+}
+
 function snapshot(dir) {
   return Object.fromEntries(readdirSync(dir, { recursive: true, withFileTypes: true }).filter(e => e.isFile()).map(e => {
     const path = join(e.parentPath, e.name);
@@ -37,11 +48,11 @@ function snapshot(dir) {
   }));
 }
 test('pinned real member invite: selected-root wire, token once, safe status adapter and read-only plan', async t => {
-  if (!process.env.OATS_TEST_AW_1_36_23) {
-    assert.notEqual(process.env.OATS_INVITE_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_23');
-    t.skip('requires explicit pinned real aw 1.36.23 executable'); return;
+  if (!process.env.OATS_TEST_AW) {
+    assert.notEqual(process.env.OATS_INVITE_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW');
+    t.skip('requires explicit pinned real aw at the supported floor or later executable'); return;
   }
-  const binary = realpathSync(process.env.OATS_TEST_AW_1_36_23);
+  const binary = realpathSync(process.env.OATS_TEST_AW);
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'invite-native-')));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const root = join(scratch, 'root'), dep = join(scratch, 'deployment'), home = join(scratch, 'foreign'), bin = join(scratch, 'bin');
@@ -60,12 +71,26 @@ test('pinned real member invite: selected-root wire, token once, safe status ada
   // If inherited HOME were used, this controller key could select local issuance.
   mkdirSync(join(home, '.awid', 'team-keys', 'example.invalid'), { recursive: true });
   writeFileSync(join(home, '.awid', 'team-keys', 'example.invalid', 'fixture.key'), pem, { mode: 0o600 });
-  let mode = 'success'; const calls = [], token = 'aw_inv_SYNTHETIC_NO_VALID_AUTHORITY';
+  let mode = 'success', joinRefusal, token; const calls = [];
   const posts = () => calls.filter(c => c.method === 'POST');
   const server = createServer(async (req, res) => {
     let data = ''; for await (const c of req) data += c;
     calls.push({ method: req.method, path: req.url, body: data ? JSON.parse(data) : null, authorization: !!req.headers.authorization, certificate: !!req.headers['x-awid-team-certificate'] });
     if (req.method === 'GET' && req.url === '/api/v1/discovery') return res.end('{}');
+    if (joinRefusal) {
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/api/v1/spawn/create-invite') return res.end(JSON.stringify({ invite_id: 'synthetic', token }));
+      if (req.url === '/api/v1/spawn/invite-preview') {
+        if (joinRefusal === 'unknown_or_invalid') { res.statusCode = 404; return res.end('{}'); }
+        return res.end(JSON.stringify({ invite_id: '00000000-0000-4000-8000-000000000111', id_tree: null, canonical_team_id: team, identity_scope: 'local', server_url: url, status: 'active' }));
+      }
+      if (req.url === '/api/v1/spawn/accept-invite') {
+        res.statusCode = joinRefusal === 'alias_conflict' ? 409 : 403;
+        return res.end(JSON.stringify({ detail: { code: joinRefusal === 'alias_conflict' ? 'alias_active' : joinRefusal, message: 'controlled refusal' } }));
+      }
+      res.statusCode = 404; return res.end('{}');
+    }
+
     if (mode === 'transport') { req.socket.destroy(); return; }
     res.setHeader('content-type', 'application/json');
     if (mode === 'success') return res.end(JSON.stringify({ invite_id: 'synthetic', token }));
@@ -77,6 +102,7 @@ test('pinned real member invite: selected-root wire, token once, safe status ada
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}`;
+  token = 'aw_inv_v1_' + Buffer.from(JSON.stringify({ v: 1, t: 'aw_inv_' + 'X'.repeat(43), a: url })).toString('base64url');
   const membership = `  - team_id: ${team}\n    alias: ${alias}\n    cert_path: team-certs/fixture__example.invalid.pem\n`;
   writeFileSync(join(root, '.aw', 'teams.yaml'), `active_team: ${team}\nmemberships:\n${membership}    aweb_url: ${url}\n`);
   writeFileSync(join(root, '.aw', 'workspace.yaml'), `aweb_url: ${url}\nmemberships:\n${membership}`);
@@ -110,6 +136,47 @@ test('pinned real member invite: selected-root wire, token once, safe status ada
     assert.equal(posts().length - count, 1, 'never retry issuance');
   }
   assert.deepEqual(snapshot(root), beforeRoot); assert.deepEqual(snapshot(home), beforeHome);
+  // These are real aw init --join-from calls. Only the HTTP boundary is
+  // controlled: no fake CLI invents the native refusal envelope or argv.
+  const floor = version.stdout.startsWith('aw 1.36.33\n');
+  for (const refusal of ['unknown_or_invalid', 'alias_conflict', 'self_custody_reinit_unproven']) {
+    joinRefusal = refusal;
+    const child = join(scratch, 'join-' + refusal), joinHome = join(child, 'home'); mkdirSync(joinHome, { recursive: true });
+
+    const inspected = await nativeRun(binary, ['team', 'invite', 'inspect', '--token-stdin', '--json'], child,
+      { ...isolated, HOME: joinHome, XDG_CONFIG_HOME: join(joinHome, '.config') }, token + '\n');
+    assert.equal(inspected.code, refusal === 'unknown_or_invalid' ? 1 : 0, inspected.stdout + inspected.stderr);
+    const inspection = JSON.parse(inspected.stdout);
+    if (refusal === 'unknown_or_invalid') assert.equal(inspection.error.code, refusal);
+    else assert.equal(inspection.canonical_team_id, team);
+    if (!floor && refusal !== 'unknown_or_invalid') {
+      const nativeHome = join(scratch, 'native-accept-' + refusal); mkdirSync(nativeHome);
+      const rejected = await nativeRun(binary, ['id', 'team', 'accept-invite', '--token-stdin', '--name=native-child', '--local', '--json'], nativeHome,
+        { ...isolated, HOME: joinHome, XDG_CONFIG_HOME: join(joinHome, '.config') }, token + '\n');
+      assert.notEqual(rejected.code, 0, rejected.stdout + rejected.stderr);
+      const error = JSON.parse(rejected.stdout).error;
+      assert.equal(error.code, refusal === 'alias_conflict' ? 'alias_conflict' : 'http_error');
+      assert.equal(error.reason, refusal === 'alias_conflict' ? 'alias_active' : refusal);
+      assert.ok(!rejected.stdout.includes(token) && !rejected.stderr.includes(token));
+    }
+    const priorCalls = calls.length;
+    const result = await hookRun('spawn', [], child, { ...env, HOME: joinHome, XDG_CONFIG_HOME: join(joinHome, '.config'), OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: child, OATS_INSTANCE: 'native-child', OATS_DEFAULT_TEAM_ID: team });
+    assert.equal(result.code, 1, result.stdout + result.stderr);
+    assert.doesNotMatch(result.stdout + result.stderr, new RegExp(token));
+    const doc = JSON.parse(result.stdout);
+    // aw 1.36.33 init --join-from does not carry the structured refusal code.
+    // Remove this legacy diagnostic branch when the floor moves to 1.36.59 final.
+    if (floor) assert.match(doc.warning, /identity minting failed|did not confirm by its code/);
+    else {
+      assert.match(doc.warning, refusal === 'unknown_or_invalid' ? /unknown_or_invalid/ : /already holds a certificate.*no identity could be minted/);
+      assert.equal(doc.meta?.pendingMint, undefined, 'structured native refusal settles the mint intent');
+    }
+    assert.equal(existsSync(join(child, '.aw', 'identity.yaml')), false);
+    assert.equal(doc.meta?.identity, undefined, 'a refused join must not report a minted identity');
+    if (!floor) assert.ok(calls.slice(priorCalls).some(c => c.path === '/api/v1/spawn/invite-preview'), JSON.stringify({ result, calls: calls.slice(priorCalls) }));
+    if (floor || refusal !== 'unknown_or_invalid') assert.ok(calls.slice(priorCalls).some(c => c.path === '/api/v1/spawn/accept-invite'), JSON.stringify({ result, calls: calls.slice(priorCalls) }));
+  }
+  joinRefusal = undefined;
   // Remove routing to model unsupported non-hosted/controller-only issuance.
   // A valid foreign controller key still must not be borrowed or modified.
   writeFileSync(join(root, '.aw', 'teams.yaml'), `active_team: ${team}\nmemberships:\n${membership}`);

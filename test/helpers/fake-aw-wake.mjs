@@ -1,3 +1,4 @@
+import { fakeAwArgvCheck } from "./aw-argv.mjs";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -33,6 +34,7 @@ export function fakeAwWake(t, { daemon = true, version = "1.36.33", daemonVersio
   write(join(bin, "aw"), `#!${process.execPath}
 const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto");
 let args = process.argv.slice(2), identityHome = null;
+${fakeAwArgvCheck("args")}
 if (args[0] === "--identity-home") { identityHome = args[1]; args = args.slice(2); }
 let stdin = "";
 if (args.includes("--registration-json")) { try { stdin = fs.readFileSync(0, "utf8"); } catch {} }

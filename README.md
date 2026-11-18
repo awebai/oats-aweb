@@ -1763,25 +1763,20 @@ the root is absent; to exercise it, provision the same source/dependency and run
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
 
-## aw-verb guard in CI
+## Native aw contracts in CI
 
-`test/oats-aweb.test.mjs` "capability guidance names only real first-level aw
-verbs" runs `aw <verb> --help` for every aw verb the hook, the inject and this
-README name. It needs a real aw 1.36.6 or later on PATH and skips without one.
-CI's validate-and-test installs the aw the provider is tested with (`AW_TESTED`
-from `lib/aw-floor.mjs`, which reads `aw-compat.json`'s `tested`; read in the
-step, never written twice) into an isolated
-prefix on the `npm test` step's PATH, and sets `OATS_AW_VERBS_REQUIRED=1`, so
-the guard fails there instead of skipping.
+CI runs the unit and native CLI group with the floor, tested and pinned next
+versions from `scripts/aw-test-versions.mjs`. The shared recording fakes reject
+unknown flags before acting. After exercising the hook's paths, CI checks every
+recorded full command path and flag against that real aw's help; a parent
+command's successful help does not establish a missing child command.
 
-With that aw on PATH, five more tests run in `npm test` instead of skipping:
-the real-aw tests in `test/oats-aweb-1-14.test.mjs` and
-`test/oats-aweb-1-15.test.mjs` that the resident-journey job already runs
-against this aw. They read aw's help, or act on throwaway identity homes and
-wake state directories: with no credentials, every call that would reach a
-service is refused locally (no identity, or an invalid invite token), and the
-wake calls write only their throwaway state directory. No other test changes
-outcome.
+Every selected CI group runs through `scripts/test-ci.mjs`, which requires
+zero skips. The kernel, native host and real-stack groups have their own
+prerequisites. Version and capability exclusions, and hosted acceptance work,
+are listed in [the test matrix](docs/test-matrix.md). Tests run in disposable
+homes with an empty environment; real-stack captures are sanitized and uploaded
+for author inspection before updating committed fixtures.
 
 ### Labelled join configuration (provider 1.23.1, #78/#82)
 
@@ -1863,7 +1858,7 @@ Unrelated kernel warnings do not block invitation; all failure-severity problems
 and selected-label warnings do. Refusals name only known safe problem codes,
 never arbitrary diagnostic text. Membership reads and issuance both isolate
 native HOME; plans discard temporary state without changing the selected root.
-For pinned aw 1.36.23, only its anchored CLI-generated HTTP 401/403 prefix maps
+Only the anchored CLI-generated HTTP 401/403 prefix maps
 to `E_INVITE_DENIED`; details are statically withheld, never matched as role or
 body prose. Other statuses, transport and unknown native errors are
 `E_INVITE_NATIVE`; without an HTTP status its message names the cause from the
@@ -1892,8 +1887,8 @@ It uses isolated local Git repositories and a fake aw; it does not verify live
 service behavior or perform host onboarding.
 
 The opt-in `test/username-native.test.mjs` checks #66 with an explicitly selected
-real aw 1.36.23 executable (commit `61c38162596d1af9085741d70d15900ff9894257`).
-Run `OATS_TEST_AW_1_36_23=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
+real aw at the supported floor, tested or pinned next version.
+Run `OATS_TEST_AW=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
 node --test test/username-native.test.mjs`. It records the executable path,
 version/build and SHA-256; isolated HOME and loopback service fixtures prevent
 use of ambient accounts. Signup is deliberately refused: the test proves native
@@ -1902,7 +1897,7 @@ not successful hosted bootstrap or live membership.
 
 `test/invite.test.mjs` covers selection and output failures. The opt-in
 `test/invite-native.test.mjs` uses the same pinned executable above; run with
-`OATS_TEST_AW_1_36_23=/absolute/path/to/aw OATS_INVITE_NATIVE_REQUIRED=1
+`OATS_TEST_AW=/absolute/path/to/aw OATS_INVITE_NATIVE_REQUIRED=1
 node --test test/invite-native.test.mjs`. It exercises provider-to-native argv,
 selected-root certificate routing, synthetic loopback success and plain-detail
 HTTP denials, withheld hostile bodies, no-write plan and foreign controller-state
@@ -1954,28 +1949,20 @@ provider's contract; it does not establish live capped-mint acceptance.
 
 Run `node --test test/grant-duration.test.mjs test/oats-aweb-hook-1-13.test.mjs`
 for duration boundaries, mint arguments, default/explicit renewal and retained
-failure/preview controls. With `OATS_TEST_AW_1_36_23` pointing at the pinned
-1.36.23 executable, `test/grant-duration-native.test.mjs` checks version, help
-and duration flag parsing in an isolated home. It always passes `--help`:
-no mint executes, and syntactically valid out-of-range values can pass this
-help check. The 60s..720h range and `never` are separately enforced by provider tests and
-qualified against native source `61c38162596d1af9085741d70d15900ff9894257`
-(`cmd/aw/id_grant.go`). These checks are not live custody, grant or expiry
-acceptance. With `AW_REAL_CLI_BIN` pointing at a real aw 1.36.32 or later,
-native or the npm JS shim, `test/never-grant.test.mjs` checks that it parses
-`--ttl=never` and the durations OATS passes, in an empty directory where aw
-stops before any network call.
+failure/preview controls. With `OATS_TEST_AW` selecting a released executable,
+`test/grant-duration-native.test.mjs` runs the same edge vectors through
+`resolveGrantTTL` and native `--ttl=... --help`. Both grammar and bounds must
+agree. Empty settings separately normalize to `never`; an empty wire `--ttl=`
+is refused. No mint executes in this help test. `AW_REAL_CLI_BIN` enables
+`test/never-grant.test.mjs`'s native no-identity refusal checks.
 
-
-For an isolated build of the exact native source pin, the same opt-in fixtures
-also require `OATS_TEST_AW_SOURCE_RECEIPT=/absolute/path/to/receipt.json`.
-The receipt must identify `kind: "exact-source-build"`, the exact source commit,
-`sourceClean: true`, binary path, SHA256 and matching version output. Only
-`1.36.23-source-fixture` at the pinned commit is accepted in this mode.
-Record the build command/toolchain/platform separately; this is exact-source
-contract evidence, not the historical published binary. Without that receipt,
-the original published-version checks remain mandatory. The receipt validator
-has wrong-version/source/hash/path controls. No fixture authorizes live requests.
+The three native CLI files run at every CI matrix version. The username test's
+signup is deliberately refused on loopback; the member-invite test also reaches
+real `team invite --team-id`, `team invite inspect`, and `init --join-from`
+refusal paths. Synthetic HTTP responses do not establish hosted authority.
+`resident-journey.test.mjs` supplies real service and custody coverage using
+only disposable identities in the OSS stack. A hosted workspace release still
+needs the separate acceptance run in the test matrix.
 
 The root recorder preserves block-style YAML around a replaced scalar, including
 kernel-wrapped quoted paths; ambiguous continuations refuse rather than consuming
@@ -1998,8 +1985,8 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   the kernel-selected node path changes. Their fake aw (`test/helpers/fake-aw-resident.mjs`) replays only
   real captures from `test/fixtures/resident`, and fake launchctl, systemctl and
   loginctl record their calls under a temporary HOME. The prompt tests drive a
-  real pseudo-terminal through `python3`. `test/resident-docs.test.mjs` fails
-  when an envelope in the doc differs from the command's real output.
+  real pseudo-terminal through `python3`. `test/resident-docs.test.mjs` checks runtime JSON envelopes against explicit
+  fixtures; documentation wording is reviewed separately.
 - `test/resident-journey.test.mjs` runs real aw against aweb's local stack. Bring
   the stack up from an aweb checkout at ci.yml's `AWEB_STACK_COMMIT` with
   `docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis
@@ -2016,7 +2003,7 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   grant at the resident's custody, and the retire revokes it. CI's
   `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`, once
   for each of `min` and `tested`. Moving `tested` moves three things together:
-  the matrix (`test/health-aw-floor.test.mjs` fails until it matches), the
+  the matrix (generated from `scripts/aw-test-versions.mjs`), the
   journey test's qualified aw and commit (its first test fails until they
   match), and the stack commit, to aweb's release of that aw (no test checks
   it).
