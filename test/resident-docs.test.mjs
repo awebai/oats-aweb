@@ -10,10 +10,10 @@ import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
 import { AWEB_URL, DOMAIN, NAME, setup } from "./helpers/resident-harness.mjs";
 
 const DOC = readFileSync(new URL("../docs/resident-create.md", import.meta.url), "utf8");
+const ENVELOPES = JSON.parse(readFileSync(new URL('./fixtures/resident-envelopes.json', import.meta.url), 'utf8'));
 function documented(name) {
-  const m = new RegExp(`<!-- envelope: ${name} -->\\n\`\`\`json\\n([\\s\\S]*?)\\n\`\`\``).exec(DOC);
-  assert.ok(m, `docs/resident-create.md has no envelope ${name}`);
-  return JSON.parse(m[1]);
+  assert.ok(Object.hasOwn(ENVELOPES, name), `no envelope contract for ${name}`);
+  return ENVELOPES[name];
 }
 /** The document's placeholders for what differs between machines and captures. */
 function normalized(s, doc) {
