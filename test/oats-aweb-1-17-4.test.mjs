@@ -388,12 +388,13 @@ test("no exit of retire leaves a wake deregistration running", (t) => {
   const fx = fixture(t);
   const spawned = fx.hook("spawn");
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-  // A seat record with no resident: retire takes the grant route, which refuses and exits at once.
+  // A complete seat record whose resident has no custody setting reaches the
+  // grant route, then refuses. Incomplete records now refuse before that route.
   mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true });
-  writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), JSON.stringify({ seat: "0123456789abcdef" }));
+  writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), JSON.stringify({ seat: "0123456789abcdef", instance: "dev-1", resident: "not-configured", team: TEAM }));
   const retired = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_DEREGISTER_MS: "20000", OATS_AWEB_HOOK_BUDGET_MS: "1500" });
   assert.equal(retired.status, 1, retired.stdout + retired.stderr);
-  assert.match(retired.doc.warning, /requires identity\.resident/);
+  assert.match(retired.doc.warning, /resident "not-configured" is not resolvable/);
   assert.equal(deregistrationPids(fx).length, 2, "the background deregistration and the grant route's own");
   assert.deepEqual(stillRunning(deregistrationPids(fx)), [], "no deregistration is running when the hook exits");
 });
