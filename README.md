@@ -52,6 +52,11 @@ refuses start and retire; restore the original readable record to retry cleanup.
 The hook never replaces an unreadable record with a new seat id. Homes created
 before 1.25.0 that have no seat record keep their existing lifecycle path.
 Existing homes receive this change through a provider module upgrade or respawn.
+A selected grant home recording another team refuses start even when the
+configured default matches the seat, including preview and `renew: off`.
+Homes already renewed into another default team under an earlier release refuse
+start too; their retire requires the printed manual revoke followed by
+`oats retire <instance> --force`.
 
 If a mint receipt anomalously reports another team and immediate compensation
 cannot revoke it, retire stays within the recorded team and refuses. Run its

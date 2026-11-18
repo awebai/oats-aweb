@@ -249,7 +249,7 @@ test("readiness: a never seat without the op is the custody problem; with it, or
 
 // --------------------------------------------- revocation is the only end
 
-const STAYS = (id, custody, team = TEAM) => `grant ${id} stays valid until revoked: run \`aw id grant revoke ${id} --team=${team}\` in ${custody}`;
+const STAYS = (id, custody, team = TEAM) => `grant ${id} stays valid until revoked: run \`aw id grant revoke --team=${team} -- ${id}\` in ${custody}`;
 
 test("retire: a never-grant that was not revoked stays valid, says how to revoke it, and a retry can", (t) => {
   const s = seat(t);
@@ -269,7 +269,7 @@ test("retire: a never-grant that was not revoked stays valid, says how to revoke
   const finiteFailed = finite.retire(finiteSpawn.doc.meta, { FAKE_REVOKE_FAIL: "1" });
   assert.equal(finiteFailed.status, 1);
   assert.equal(finiteFailed.doc.meta.reason, "grant-revoke-failed");
-  assert.ok(finiteFailed.doc.warning.endsWith(`grant grant-spawn stays valid until 2026-09-24T07:00:00Z unless revoked: run \`aw id grant revoke grant-spawn --team=${TEAM}\` in ${finite.custody}`), finiteFailed.doc.warning);
+  assert.ok(finiteFailed.doc.warning.endsWith(`grant grant-spawn stays valid until 2026-09-24T07:00:00Z unless revoked: run \`aw id grant revoke --team=${TEAM} -- grant-spawn\` in ${finite.custody}`), finiteFailed.doc.warning);
   assert.deepEqual(finite.retire(finiteFailed.doc.meta).doc.meta, { retired: true, identityRevoked: true, grant: "grant-spawn" });
 });
 
@@ -345,7 +345,7 @@ test("renewal: a previous grant that cannot be revoked does not fail the start; 
     assert.equal(launched.status, 0, launched.stdout + launched.stderr);
     assert.notEqual(launched.doc.meta.identity.grant.id, "grant-spawn", "the seat runs on its new grant");
     const until = identity.ttl ? "until 2026-09-24T07:00:00Z unless revoked" : "until revoked";
-    assert.ok(launched.doc.warning.includes(`grant grant-spawn stays valid ${until}: run \`aw id grant revoke grant-spawn --team=${TEAM}\` in ${s.custody}`), launched.doc.warning);
+    assert.ok(launched.doc.warning.includes(`grant grant-spawn stays valid ${until}: run \`aw id grant revoke --team=${TEAM} -- grant-spawn\` in ${s.custody}`), launched.doc.warning);
     s.record(launched.doc.meta);
     assert.ok(s.readiness(identity).warnings.some(w => w.code === "grant-revoke-pending" && w.message.startsWith(`grant grant-spawn stays valid ${until}`)));
     const next = s.launch(launched.doc.meta, identity);

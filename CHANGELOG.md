@@ -55,6 +55,11 @@
   cleanup, or respawn to choose a new team or resident. Homes from before
   1.25.0 with no seat record keep their existing lifecycle path. Existing
   homes use this behavior only when they receive the new provider module.
+  Start also refuses a selected grant home recording another team, including
+  preview and `renew: off`, even if the configured default matches the seat.
+  Homes already renewed into another default team under an earlier release
+  refuse start too; their retire requires the printed manual revoke followed
+  by `oats retire <instance> --force`.
   If an anomalous mint receipt names another team and immediate compensation
   fails, retire refuses with that team's manual revoke command and the
   subsequent `oats retire <instance> --force` step; it cannot confirm cleanup

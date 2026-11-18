@@ -856,13 +856,14 @@ function launchSeat(meta) {
   let record;
   try { record = recordedSeat(); }
   catch { fatal(`respawn this home; refusing to replace an unreadable or incomplete seat record or mint a new seat: ${seatRecordFile()}`, meta); }
+  const grantTeam = record ? recoverGrantHome(priorGrantHome(meta)).team : undefined;
+  if (record && grantTeam && !sameAwebTeamId(grantTeam, record.team)) fatal(`respawn this home; the selected grant home records a different team from the seat record: ${seatRecordFile()}`, meta);
   if (record && ((identitySettings.resident && identitySettings.resident !== record.resident) || (defaultTeamId() && !sameAwebTeamId(defaultTeamId(), record.team)))) fatal(`respawn this home to change its resident or team; the configured resident or team differs from the seat record: ${seatRecordFile()}`, meta);
   return record;
 }
 /** At every real start: revoke this seat's grants other than the one it runs
  *  on (a mint before a crash, a revoke that failed). A start never fails on it. */
 function sweepAtStart(meta, record) {
-  meta = withRecordedSeat(meta, record);
   const seat = meta.identity?.seat;
   if (!seat) return;
   const custody = residentCustodyOf(String(record?.resident || identitySettings.resident || meta.identity.resident || ""));
@@ -1053,11 +1054,11 @@ function globalGrantRetire(meta, seatRecord) {
   // the list says it is no longer active.
   const listed = swept.grants.find((g) => g.grant_id === id);
   if (id && !(listed && (listed.label === label || listed.status !== "active"))) {
-    // A wrong-team mint receipt is evidence for a manual remedy, not authority
-    // to query or revoke in another team at retire. Only immediate mint
-    // compensation uses that receipt's team automatically.
+    // A grant may name another team after an earlier release renewed there,
+    // or after a wrong-team mint. Neither authorizes cross-team cleanup at
+    // retire; only immediate mint compensation uses receipt authority.
     if (seatRecord && reportedIdentity?.team && !sameAwebTeamId(reportedIdentity.team, team) && !listed) {
-      unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, team: reportedIdentity.team, error: "the mint receipt names another team; automatic cleanup stays in the recorded seat team", manualCleanup: true });
+      unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, team: reportedIdentity.team, error: `the recorded grant names team ${reportedIdentity.team}, not the seat's team ${team}; automatic cleanup stays in the recorded seat team`, manualCleanup: true });
     } else {
       try { revokeGrant(custody, id, team); }
       catch (e) { unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, team, error: String(e.message || e).slice(0, 200) }); }

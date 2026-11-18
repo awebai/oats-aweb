@@ -56,7 +56,7 @@ test('failed revoke remedy names the seat team', t => {
   const s = seat(t), spawned = s.run('spawn'); ok(spawned);
   const retired = s.run('retire', spawned.doc.meta, {FAKE_REVOKE_FAIL:'1'});
   assert.equal(retired.status, 1);
-  assert.ok(retired.doc.warning.includes(`aw id grant revoke ${spawned.doc.meta.identity.grant.id} --team=${TEAM}`), retired.stdout);
+  assert.ok(retired.doc.warning.includes(`aw id grant revoke --team=${TEAM} -- ${spawned.doc.meta.identity.grant.id}`), retired.stdout);
 });
 
 test('renewal refuses changed team or resident settings before minting', t => {
@@ -149,4 +149,33 @@ test('a long home path cannot truncate the respawn remedy from a launch refusal'
   const unreadable = s.run('launch',spawned.doc.meta,{OATS_HOME:longHome});
   assert.equal(unreadable.status,1);
   assert.match(unreadable.doc.warning,/respawn this home/);
+});
+
+test('a seat moved by an earlier renewal reports the recorded grant and seat teams without guessing a cause', t => {
+  const s = seat(t), spawned = s.run('spawn'); ok(spawned);
+  const identity = {...spawned.doc.meta.identity,team:OTHER,grant:{...spawned.doc.meta.identity.grant,id:'grant-y'}};
+  const grantFile = join(identity.grant.home,'grant.yaml');
+  writeFileSync(grantFile,readFileSync(grantFile,'utf8').replace(`grant_id: ${spawned.doc.meta.identity.grant.id}`, 'grant_id: grant-y').replace(`team_id: ${TEAM}`,`team_id: ${OTHER}`));
+  writeFileSync(join(s.base,'grants.json'),JSON.stringify([
+    ...s.grants().map(g=>({...g,status:'revoked'})),
+    {grant_id:'grant-y',team_id:OTHER,label:`oats:probe:${identity.seat}`,status:'active',expires_at:'never'},
+  ]));
+  const meta = {...spawned.doc.meta,identity};
+  const launched = s.run('launch',meta,{OATS_DEFAULT_TEAM_ID:OTHER});
+  assert.equal(launched.status,1);
+  assert.match(launched.doc.warning,/respawn this home/);
+  const calls = s.calls().length;
+  for (const preview of [false,true]) {
+    const restored = s.run('launch',meta,{OATS_SETTINGS:JSON.stringify({...s.settings,identity:{...s.settings.identity,renew:'off'}}),...(preview?{OATS_LAUNCH_PREVIEW:'1'}:{})});
+    assert.equal(restored.status,1, 'restoring the configured team cannot authorize the old grant from another team: '+restored.stdout);
+    assert.match(restored.doc.warning,/respawn this home/);
+    assert.equal(s.calls().length,calls,'the grant-home consistency check precedes any aw call');
+  }
+  const before = s.calls().length;
+  const retired = s.run('retire',meta,{OATS_DEFAULT_TEAM_ID:OTHER});
+  assert.equal(retired.status,1);
+  assert.ok(retired.doc.warning.includes(`the recorded grant names team ${OTHER}, not the seat's team ${TEAM}`),retired.stdout);
+  assert.match(retired.doc.warning,/oats retire probe --force/);
+  assert.doesNotMatch(retired.doc.warning,/mint receipt/);
+  assert.ok(s.calls().slice(before).filter(c=>c.argv.slice(0,2).join(' ')==='id grant').every(c=>c.argv.includes(`--team=${TEAM}`)));
 });
