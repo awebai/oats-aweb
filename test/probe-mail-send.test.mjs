@@ -38,10 +38,12 @@ test('the legacy fresh-thread branch cannot outlive its supported floor', () => 
   assert.ok(!versionAtLeast(AW_MIN, '1.36.53'), 'floor contains 91ea73fe: delete the --new-conversation branch');
 });
 
-test('an incomplete fresh-send qualification cannot send', async t => {
-  const f = fixture(t);
-  f.deps.support = async () => ({cli: true, server: true, awBinary: '/fixture/aw'});
-  const result = await runProbe(f.args, f.deps);
-  assert.equal(result.reason, 'probe-cli-fresh-send-unqualified');
-  assert.equal(f.calls.some(c => c.args.includes('send')), false);
+test('an incomplete or non-boolean fresh-send qualification cannot send', async t => {
+  for (const newConversationFlag of [undefined, 'false', 0, null]) {
+    const f = fixture(t);
+    f.deps.support = async () => ({cli: true, server: true, awBinary: '/fixture/aw', newConversationFlag});
+    const result = await runProbe(f.args, f.deps);
+    assert.equal(result.reason, 'probe-cli-fresh-send-unqualified');
+    assert.equal(f.calls.some(c => c.args.includes('send')), false);
+  }
 });
