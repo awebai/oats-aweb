@@ -40,7 +40,8 @@
 - **Fixed: malformed OATS_SETTINGS refuses instead of using defaults.** One
   parser serves hooks, setup, upgrade plan/apply, resident, wake, invite and
   health. Each command names the variable through its own error envelope and
-  never echoes its input. An empty OATS_SETTINGS is malformed too. Repair the
+  never echoes its input. Settings must be a JSON object; empty input, null,
+  arrays and scalars are malformed too. Repair the
   injected JSON before retrying; upgrade
   planning refuses adoption. Retired-certificate readers accept an optional
   command and ignore it; writers rebuild that compatibility field from validated

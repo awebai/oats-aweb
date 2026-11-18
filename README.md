@@ -1942,8 +1942,9 @@ test variables above; no service install or customer operation is part of testin
 
 ### Settings input validation
 
-Every command that reads `OATS_SETTINGS` uses the shared JSON parser. Malformed
-JSON is an error naming `OATS_SETTINGS`, through that command's usual error
+Every command that reads `OATS_SETTINGS` uses the shared parser and requires a
+JSON object. Null, arrays, scalars and malformed JSON are errors naming
+`OATS_SETTINGS`, through that command's usual error
 format, without echoing the input. Fix the injected JSON and retry. Upgrade
 planning reports `adopt: false`; apply refuses before changing metadata.
 

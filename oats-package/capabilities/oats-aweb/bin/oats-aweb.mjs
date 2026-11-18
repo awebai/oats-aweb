@@ -309,7 +309,7 @@ function upgrade() {
     }
   }
   let settings;
-  try { const parsed = parseProviderSettings(); settings = object(parsed) ? parsed : {}; } catch (error) { reason ||= error.message; }
+  try { settings = parseProviderSettings(); } catch (error) { reason ||= error.message; }
   const phase = process.env.OATS_UPGRADE_PHASE;
   if (phase === "plan") out(reason ? { adopt: false, reason, remedy: `respawn the instance: oats retire ${process.env.OATS_INSTANCE}, then oats spawn` } : { adopt: true });
   if (phase !== "apply") fatal("OATS_UPGRADE_PHASE must be plan or apply");
@@ -375,8 +375,6 @@ catch (error) {
   }
   fatal(error.message);
 }
-// Username setup validates the raw settings document in its typed preflight.
-if (settings === null && event === 'setup' && process.argv.slice(3).some(arg => arg === '--username' || arg.startsWith('--username='))) settings = {};
 // Kernel 0.68.1 lifecycleHookEnv serializes capability.settings verbatim;
 // captured settings can still carry team. The floor does not prove it absent.
 const TEAM_SETTING_MESSAGE = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";

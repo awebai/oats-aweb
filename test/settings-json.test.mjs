@@ -16,6 +16,7 @@ for (const [name, args, extra, code] of [
   ...['roster', 'connect', 'teams', 'join', 'leave'].map(event => [event, [event, '--json'], {}, 'stderr']),
   ['teams operation', ['teams', '--json'], { OATS_OPERATION: 'teams' }, 'E_SETTINGS'],
   ['empty settings', ['spawn'], { OATS_SETTINGS: '' }, null],
+  ...['null', '[]', '3', '"x"'].map(value => [`non-object ${value}`, ['spawn'], { OATS_SETTINGS: value }, null]),
   ['upgrade plan', ['upgrade'], { OATS_UPGRADE_PHASE: 'plan' }, 'plan'],
   ['upgrade apply', ['upgrade'], { OATS_UPGRADE_PHASE: 'apply' }, null],
   ['resident', ['resident', 'create', 'fixture', '--plan', '--json'], {}, 'E_RESIDENT_FAILED'],
@@ -48,6 +49,7 @@ for (const [name, args, extra, code] of [
     return;
   }
   const doc = JSON.parse(result.stdout);
+  if (name.startsWith('non-object')) assert.equal(doc.warning, 'oats-aweb: OATS_SETTINGS must be a JSON object');
   if (code === 'plan') { assert.equal(result.status, 0); assert.equal(doc.adopt, false); }
   else { assert.equal(result.status, 1); if (code) assert.equal(doc.error.code, code); }
 });
