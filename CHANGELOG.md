@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: an empty global grant seat completes retire.** With neither grant
+  nor seat id, retire answers `retired: false, reason: "nothing-to-delete"`
+  instead of `nothing-to-revoke`, so the kernel can remove the completed home.
+  Workspace deletion reads only aw's `alias_released_reason`; an answer with
+  only `reason` now records `unstated`. No deployment migration is required.
+
 ## 1.42.1 — 2026-11-13
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58. A fix so OATS can pin this release: a comment named the kernel's private module, which OATS's mirror check refuses (1.42.0 can't be mirrored). Nothing a deployment must change beyond 1.42.0's steps.

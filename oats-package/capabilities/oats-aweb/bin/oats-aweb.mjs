@@ -1027,7 +1027,7 @@ function globalGrantSpawn() {
     out({ meta: meta || seatMeta(), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
   }
 }
-// OATS's retire hook contract (docs/capabilities.md): only nothing-to-delete
+// OATS's retire hook contract (the kernel's docs/capabilities.md, retire hook rules): only nothing-to-delete
 // completes a no-op cleanup. Other retired:false answers keep the home.
 const kernelRetireIncomplete = (meta) => meta.retired === false && meta.reason !== "nothing-to-delete";
 function globalGrantRetire(meta) {
