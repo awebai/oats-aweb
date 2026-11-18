@@ -11,7 +11,7 @@
   aw floor moves; see docs/aw-error-decisions.md. No migration is required.
 
 - **Fixed: every aw child ignores ambient identity, service, key, role and
-  registry selectors.** One helper strips `AWEB_IDENTITY_HOME`, `AWEB_URL`,
+  registry selectors.** One helper per independently materialized capability strips `AWEB_IDENTITY_HOME`, `AWEB_URL`,
   `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` and `AWID_REGISTRY_URL` unless
   a call deliberately passes one by name. Retire and reads use their selected
   home's service even when the caller exported another URL. Setup's documented

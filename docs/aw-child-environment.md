@@ -52,8 +52,10 @@ join's membership read already removed the key. Invite, resident native reads,
 health and probe already withheld it; resident init and setup API-key init
 deliberately received it. The shared scrub preserves those deliberate init inputs and removes ambient
 inheritance elsewhere. The independently materialized
-oats.aweb-tasks capability is handled separately, with a parity test for the
-same selector list.
+oats.aweb-tasks capability carries its own internal helper with the same
+selector list. A parity test holds the lists equal and imports the tasks
+capability in isolation; no import crosses materialized capabilities. Its
+native wake-status read also removes OATS selectors before the shared scrub.
 
 `test/aw-child-env.test.mjs` runs real provider entrypoints against a recording
 aw double in disposable homes. It covers retire's service, all six selectors,
