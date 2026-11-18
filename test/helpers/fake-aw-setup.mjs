@@ -57,6 +57,8 @@
 //                     AW_SERVER_RECORD_AFTER_REGISTER=<url> another writer publishes
 //                     that record while register runs;
 //                     AW_SET_SERVER_FAIL the registry refuses the publish;
+//                     AW_SET_SERVER_FAIL_CODE the wrapped aweb-client refusal
+//                     `aweb: http 409 (<headers>): {detail:{code,message}}`;
 //                     AW_SET_SERVER_UNSTORED set-server reports published but the
 //                     registry keeps nothing; AW_SHOW_SERVER_DID the team key the
 //                     record verifies against (default did:key:zFixtureTeam)
