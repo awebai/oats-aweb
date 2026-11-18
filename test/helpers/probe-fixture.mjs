@@ -19,7 +19,7 @@ export function encryptedMessage() {
     encrypted_envelope: {message_version: 2, envelope_type: 'aweb.e2ee.message', kind: 'mail', message_id: m.message_id, conversation_id: m.conversation_id, from: {did: TARGET_DID}, recipients: [{did: ROOT_DID}]}});
   return m;
 }
-export function fixture(t, {reply = message(), onCall, delay = 0, readAt = null} = {}) {
+export function fixture(t, {reply = message(), onCall, delay = 0, readAt = null, newConversationFlag = true} = {}) {
   const deployment = realpathSync(mkdtempSync(join(tmpdir(), 'probe-test-')));
   t.after(() => rmSync(deployment, {recursive: true, force: true}));
   const home = join(deployment, 'agents', 'worker', 'instances', 'worker-1'), root = join(deployment, 'root');
@@ -34,7 +34,7 @@ export function fixture(t, {reply = message(), onCall, delay = 0, readAt = null}
   const calls = [], env = {PATH: process.env.PATH, HOME: process.env.HOME, OATS_WORKSPACE: deployment, OATS_CLI_BIN: '/fixture/oats.mjs', AWEB_IDENTITY_HOME: '/wrong', AWEB_API_KEY: 'secret', AWEB_URL: 'https://wrong', OATS_META: 'wrong', OATS_DEFAULT_TEAM_ID: 'wrong'};
   const kernel = result => ({schemaVersion: 1, ok: true, result});
   const deps = {env, now: () => clock, wall: () => new Date(Date.parse(AT) + clock).toISOString(), nonce: () => NONCE,
-    support: async () => ({cli: true, server: true, awBinary: '/fixture/aw'}),
+    support: async () => ({cli: true, server: true, awBinary: '/fixture/aw', newConversationFlag}),
     sleep: async (ms, budget) => { clock += ms; budget.check(); },
     child: async (cmd, args, options) => {
       options.budget.check(); clock += 1;
@@ -66,7 +66,7 @@ export function fixture(t, {reply = message(), onCall, delay = 0, readAt = null}
       }
       assert(isRoot, 'mail must only use root identity');
       if (a[1] === 'send') {
-        assert(a.includes('--new-conversation'));
+        assert.equal(a.includes('--new-conversation'), newConversationFlag);
         const file = a[a.indexOf('--body-file') + 1];
         assert.equal(statSync(file).mode & 0o777, 0o600); assert.equal(statSync(options.cwd).mode & 0o777, 0o700);
         request = message('request-1', ROOT_DID, TARGET_DID, readFileSync(file, 'utf8').trimEnd()); request.read_at = readAt;

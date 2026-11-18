@@ -2099,6 +2099,14 @@ There is no legacy fallback. The
 selected-service guarantee holds modulo redirects issued by the selected origin
 for unauthenticated heartbeat discovery only; signed mail and metadata refuse redirects. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).
 
+The probe checks the selected aw's `mail send --help` contract before any
+send. At the 1.36.33 floor it supplies `--new-conversation`; modern aw starts
+a new thread from recipient plus subject and rejects that removed flag.
+Unknown help refuses before sending. Both routes send once, with no discovery,
+fallback or retry. The transition first shipped in aw 1.36.53, at commit
+`91ea73fee07f39e44f1be8c8d06fee8496b94719`; remove the legacy branch when the
+supported floor contains it.
+
 ### Runtime delivery regression verification
 
 `node --test test/oats-aweb-1-18.test.mjs test/codex-delivery-wire.test.mjs`
