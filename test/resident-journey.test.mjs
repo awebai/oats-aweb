@@ -372,6 +372,7 @@ test("a real grant seat retires in team X while its resident keeps team Y active
   step(["id", "team", "create", "--namespace", ns, "--name", "alpha", "--registry", AWID_URL, "--json"]);
   const cert = JSON.parse(step(["id", "team", "add-member", "--namespace", ns, "--team", "alpha", "--member", `${ns}/resident`, "--json"])).certificate_id;
   step(["id", "team", "fetch-cert", "--namespace", ns, "--team", "alpha", "--cert-id", cert, "--registry", AWID_URL, "--json"]);
+  step(["workspace", "connect", "--team", teamX, "--service", AWEB_URL, "--json"]);
   step(["team", "switch", teamY]);
   const teams = JSON.parse(step(["team", "list", "--json"]));
   assert.equal(teams.active_team, teamY);
