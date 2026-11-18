@@ -748,7 +748,11 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
   registry origin and rebuilt compatibility command, never a secret), matched on team and certificate
   id, never on alias. Stored command fields are ignored by this reader, but writers
-  rebuild them for older homes sharing this record. The roster builds the
+  rebuild them for older homes sharing this record. For an existing entry with
+  no registry field or invalid cleanup inputs, the compatibility field is a
+  fixed `# unavailable: …` shell comment. Upgrade an old home that displays it
+  and use the controller's explicit registry or repair the invalid inputs;
+  every entry stays recorded. The roster builds the
   command from the entry's team, certificate id and registry, each validated,
   as retire does. An entry it can't be built from shows `; its record entry is
   malformed (<why>), so no command to remove it is shown` (and `--json` gives

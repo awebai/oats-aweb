@@ -43,7 +43,7 @@ const validEntry = (e) => !!e && typeof e === "object" && !Array.isArray(e)
   && typeof e.retiredAt === "string" && !Number.isNaN(Date.parse(e.retiredAt))
   && nullableString(e.alias) && nullableString(e.instance);
 const keyOf = (e) => `${e.team}\u0000${e.certificateId}`;
-const recordInputs = (e) => ({ team: e?.team, certificateId: e?.certificateId, alias: e?.alias ?? null, instance: e?.instance ?? null, retiredAt: e?.retiredAt, registry: e?.registry ?? null });
+const recordInputs = (e) => ({ team: e?.team, certificateId: e?.certificateId, alias: e?.alias ?? null, instance: e?.instance ?? null, retiredAt: e?.retiredAt, registry: e?.registry });
 
 // A certificate id as aw issues them (a UUID): letters, digits, `_` and `-`, starting with
 // a letter or digit so it can never read as a flag.
@@ -116,7 +116,7 @@ function takeLock(lock, { waitMs = LOCK_WAIT_MS } = {}) {
 export function recordRetiredCertificates(deployment, entries, { lockWaitMs } = {}) {
   try {
     const fresh = entries
-      .map(recordInputs)
+      .map(e => ({ ...recordInputs(e), registry: e?.registry ?? null }))
       .filter(e => validEntry(e) && !controllerCleanupProblem(e));
     if (!fresh.length) return {};
     return writeRecord(deployment, fresh, { lockWaitMs });
@@ -146,10 +146,12 @@ function writeRecord(deployment, fresh, { lockWaitMs }) {
     } catch (e) { if (e?.code !== "ENOENT") cause = "the previous record was unreadable and was replaced"; }
     const replaced = new Set(fresh.map(keyOf));
     const merged = [...existing.filter((e) => !replaced.has(keyOf(e))), ...fresh].slice(-RETIRED_RECORD_MAX);
-    const compatible = merged.map(e => ({ ...recordInputs(e), command: controllerCleanupCommand(e) }));
-    // Never lose an existing certificate to make the file pass an older reader.
-    // Unusable cleanup inputs need repair; retain the whole record and warn.
-    if (compatible.some(e => !e.command)) return { cause: "an existing record entry has invalid controller cleanup inputs; the record was left unchanged" };
+    // Old readers require a nonempty display command, even for unusable inputs.
+    // Fixed shell comments preserve every entry without becoming executable or
+    // copying old command text. Keep an absent registry absent on later writes.
+    const compatible = merged.map(e => ({ ...recordInputs(e), command: !Object.hasOwn(e, "registry")
+      ? "# unavailable: registry was not recorded"
+      : controllerCleanupCommand(e) ?? "# unavailable: invalid cleanup inputs" }));
     try {
       writeFileSync(tmp, `${JSON.stringify({ version: 1, entries: compatible }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
       chmodSync(tmp, 0o600);

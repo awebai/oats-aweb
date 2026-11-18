@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -39,7 +40,7 @@ test("old and new homes read each other's writes without losing certificates", t
   assert.deepEqual(released.readRetiredRecord(dep).entries.map(e => e.certificateId), ['cert-new', 'cert-old', 'cert-next']);
 });
 
-test('an existing entry with unusable authoritative inputs is kept when compatibility cannot be rebuilt', t => {
+test('an unusable old entry gets a shell-comment placeholder while a fresh certificate is recorded', t => {
   const dep = mkdtempSync(join(tmpdir(), 'retired-invalid-inputs-'));
   t.after(() => rmSync(dep, { recursive: true, force: true }));
   mkdirSync(retiredRecordDir(dep));
@@ -48,7 +49,36 @@ test('an existing entry with unusable authoritative inputs is kept when compatib
   const before = JSON.stringify({ version: 1, entries: [entry] });
   writeFileSync(retiredRecordFile(dep), before);
   const result = recordRetiredCertificates(dep, [{ ...entry, registry: null, certificateId: 'cert-new' }]);
-  assert.match(result.cause, /invalid controller cleanup inputs.*left unchanged/);
-  assert.equal(readFileSync(retiredRecordFile(dep), 'utf8'), before);
-  assert.equal(released.readRetiredRecord(dep).entries[0].certificateId, 'cert-old');
+  assert.deepEqual(result, {});
+  const read = released.readRetiredRecord(dep);
+  assert.equal(read.problem, undefined);
+  assert.deepEqual(read.entries.map(e => e.certificateId), ['cert-old', 'cert-new']);
+  assertComment(read.entries[0].command, '# unavailable: invalid cleanup inputs', dep);
+});
+
+function assertComment(command, expected, cwd) {
+  assert.equal(command, expected);
+  assert.match(command, /^#/);
+  assert.doesNotMatch(command, /[\r\n]/);
+  const run = spawnSync('/bin/sh', ['-c', command], { cwd, env: { PATH: '/usr/bin:/bin', HOME: cwd }, encoding: 'utf8' });
+  assert.equal(run.status, 0); assert.equal(run.stdout + run.stderr, '');
+}
+
+test('a registry absent from an old entry stays absent across writes and never becomes a default-registry command', t => {
+  const dep = mkdtempSync(join(tmpdir(), 'retired-unknown-registry-'));
+  t.after(() => rmSync(dep, { recursive: true, force: true }));
+  mkdirSync(retiredRecordDir(dep));
+  const entry = { team: 'fixture:example.invalid', certificateId: 'cert-old', alias: 'fixture',
+    instance: 'fixture', retiredAt: '2026-11-18T00:00:00Z', command: 'aw id team remove-member --registry https://legacy.example --json' };
+  writeFileSync(retiredRecordFile(dep), JSON.stringify({ version: 1, entries: [entry] }));
+  for (const certificateId of ['cert-new', 'cert-next']) {
+    assert.deepEqual(recordRetiredCertificates(dep, [{ ...entry, certificateId, registry: null }]), {});
+    const read = released.readRetiredRecord(dep);
+    assert.equal(read.problem, undefined);
+    const old = read.entries.find(e => e.certificateId === 'cert-old');
+    assert.equal(Object.hasOwn(old, 'registry'), false);
+    assertComment(old.command, '# unavailable: registry was not recorded', dep);
+    assert.doesNotMatch(readFileSync(retiredRecordFile(dep), 'utf8'), /legacy\.example/);
+  }
+  assert.deepEqual(released.readRetiredRecord(dep).entries.map(e => e.certificateId), ['cert-old', 'cert-new', 'cert-next']);
 });

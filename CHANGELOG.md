@@ -45,6 +45,12 @@
   planning refuses adoption. Retired-certificate readers accept an optional
   command and ignore it; writers rebuild that compatibility field from validated
   inputs so older homes sharing the record keep reading every certificate.
+  When an old entry has no recorded registry or has invalid cleanup inputs,
+  its compatibility display becomes a fixed shell comment (`# unavailable: …`),
+  never a copied old command or a guessed default-registry command. All entries
+  remain recorded. An old home that displays this comment must be upgraded;
+  the controller supplies the correct registry or repairs the invalid inputs
+  before issuing a removal command.
   Hosted-create refusals explain the current provider boundary rather than
   obsolete aw versions. Native contract fixtures now qualify against the
   supported aw 1.36.33 floor, including its pre-help TTL bounds; the stale
