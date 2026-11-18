@@ -64,7 +64,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await
 
 import { execFileSync, spawn } from "node:child_process";
 import { awChildEnv } from "../lib/aw-child-env.mjs";
-import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
@@ -74,7 +74,7 @@ import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
-import { IDENTITY_AUTHORITY, privateAuthorityModes } from "../lib/retained-seat-authority.mjs";
+import { IDENTITY_AUTHORITY, checkAuthorityEntry, privateAuthorityModes } from "../lib/retained-seat-authority.mjs";
 import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
@@ -1344,12 +1344,23 @@ function retainedSeatSpawn(source, takeOver) {
     chmodSync(dest, 0o700);
     for (const name of IDENTITY_AUTHORITY) {
       const from = join(source, name);
-      if (!existsSync(from)) continue; // encryption material may be absent on an identity that never had it
+      let st;
+      try { st = checkAuthorityEntry(from); }
+      catch (error) { if (error.code === 'ENOENT' && error.path === from) continue; throw error; } // optional encryption material may be absent
       const to = join(dest, name);
-      if (statSync(from).isDirectory()) {
-        cpSync(from, to, { recursive: true });
+      if (st.isDirectory()) {
+        cpSync(from, to, { recursive: true, dereference: false });
         privateAuthorityModes(to);
-      } else { copyFileSync(from, to); chmodSync(to, 0o600); }
+      } else {
+        // Refuse a link substituted after the local check, and read only the
+        // opened regular file. A concurrent directory/FIFO is never copied.
+        const fd = openSync(from, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+        try {
+          if (!fstatSync(fd).isFile()) throw new Error(`non-regular authority entry at ${from}`);
+          writeFileSync(to, readFileSync(fd), { mode: 0o600 });
+          chmodSync(to, 0o600);
+        } finally { closeSync(fd); }
+      }
     }
     for (const forbidden of ["workspace.yaml", "context", "interaction-log.jsonl", "channel-delivered-ids.json", "chat-delivered-ids.json"]) {
       if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });

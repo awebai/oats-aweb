@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {fakeAw} from './helpers/fake-aw-grant.mjs';
 import {fakeAwSetupPath} from './helpers/fake-aw-setup.mjs';
 
@@ -66,6 +67,42 @@ test('retained verification uses native status and whoami, never check --online'
   assert.ok(calls.some(c => c.argv.join(' ') === 'workspace status --json'));
   assert.ok(calls.some(c => c.argv.join(' ') === 'whoami --json'));
   assert.equal(calls.some(c => c.argv[0] === 'check'), false);
+});
+
+test('a symlinked identity.source names the real directory remedy before any copy', t => {
+  const f = fixture(t), real = join(f.base, 'real-authority');
+  renameSync(f.source, real); symlinkSync(real, f.source, 'dir');
+  const r = f.run();
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(r.stdout.includes(`identity.source ${f.source} is a symlink`), r.stdout);
+  assert.ok(r.stdout.includes(`set identity.source to the real directory ${realpathSync(real)}`), r.stdout);
+  assert.equal(existsSync(join(f.home, '.aw')), false);
+  assert.equal(lstatSync(f.source).isSymbolicLink(), true);
+  assert.equal(readFileSync(join(real, 'signing.key'), 'utf8'), 'source-key');
+  assert.equal(mode(join(real, 'signing.key')), 0o644);
+});
+
+for (const boundary of ['copy boundary', 'file open']) test(`a file changed to a symlink after preflight is refused at the ${boundary}`, t => {
+  const f = fixture(t), outside = join(f.base, 'outside'), preload = join(f.base, 'race.mjs');
+  f.write(outside, 'outside-private-material');
+  const sourceKey = join(f.source, 'signing.key'), dest = join(f.home, '.aw');
+  writeFileSync(preload, `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+const method = ${JSON.stringify(boundary === 'copy boundary' ? 'mkdirSync' : 'openSync')};
+const original = fs[method]; let raced = false;
+function race() { if (!raced) { raced = true; fs.unlinkSync(${JSON.stringify(sourceKey)}); fs.symlinkSync(${JSON.stringify(outside)}, ${JSON.stringify(sourceKey)}); } }
+fs[method] = function(path, ...args) {
+  if (method === 'openSync' && path === ${JSON.stringify(sourceKey)} && fs.existsSync(${JSON.stringify(dest)})) race();
+  const result = original.call(this, path, ...args);
+  if (method === 'mkdirSync' && path === ${JSON.stringify(dest)}) race();
+  return result;
+}; syncBuiltinESMExports();`);
+  const r = f.run({NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`});
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /symlink|symbolic links/);
+  assert.equal(existsSync(dest), false, 'failed copy is rolled back before connect');
+  assert.equal(lstatSync(sourceKey).isSymbolicLink(), true);
+  assert.equal(mode(outside), 0o644);
+  assert.equal(readFileSync(outside, 'utf8'), 'outside-private-material');
 });
 
 test('soul readiness reports the same authority-symlink refusal as spawn', t => {

@@ -1601,7 +1601,9 @@ its source and removes the copy; if aw refuses that too, as it does for the
 same `teams.yaml`, the spawn keeps the copy and the lock and says how to
 restore them.
 
-Replace an authority symlink with the real file at the source before seating;
+If `identity.source` itself is a symlink, set it to the real directory named
+by the refusal before seating. Replace an authority symlink with the real file
+at the source before seating;
 the refusal names its path and copies nothing. Copied authority directories
 are 0700 and files are 0600 at every depth, regardless of their source modes.
 After connect, the parsed `workspace status` path and `whoami` identity verify
