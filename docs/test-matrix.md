@@ -18,7 +18,8 @@ HOME for every group. Tests never select a person's identity or tmux server.
 The runtime version list comes from `scripts/aw-test-versions.mjs`, which
 imports the supported floor and tested version from `lib/aw-floor.mjs`,
 which reads `aw-compat.json` and pins
-next separately. CI verifies the installed version before running tests.
+next separately. CI verifies the installed version before running tests. The resident baseline
+recapture uses the exported floor value, so a floor bump cannot silently drop it.
 Next remains prerelease qualification, not an increase in the tested window.
 
 ## Explicit capability exclusions
@@ -133,3 +134,9 @@ could pass without exercising their claimed behavior:
 `kernel-module-boundary.test.mjs` remains unchanged: it enforces an actual
 package/kernel import boundary. Native BYOT tests compare consumed fields,
 not every key aw may add to its answer.
+
+The historical `1.36.23-source-fixture` receipt integrity test remains as an
+explicit call to `verifySourceAwFixture`, preserving its exact source/hash
+assertions. It is not native admission: `verifyPinnedAw` always requires the
+current matrix, ignores source-receipt environment variables, and cannot use a
+historical receipt to bypass the supported floor.

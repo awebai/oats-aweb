@@ -3,9 +3,9 @@
 # real aw against aweb's local stack (docker-compose.e2e.yml: postgres, redis,
 # awid, aweb). Usage, with the stack up on its default ports:
 #
-#   test/fixtures/resident/capture.sh <aw binary> <scratch dir>
+#   test/fixtures/resident/capture.sh <aw binary> <scratch dir> [out dir]
 #
-# It writes into this directory. Refresh the fixtures with it whenever aw's
+# The output defaults to this directory. Refresh the fixtures whenever aw's
 # output contract changes, and update README.md (aw version, commit, date).
 set -u
 AW="$1"; S="$2"

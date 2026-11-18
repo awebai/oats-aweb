@@ -8,7 +8,7 @@ import { AW_TEST_VERSIONS } from '../../scripts/aw-test-versions.mjs';
 export function verifySourceAwFixture(binary, version, receiptPath) {
   assert.equal(version.status, 0, version.stderr);
   const sha256 = createHash('sha256').update(readFileSync(binary)).digest('hex');
-  const sourceCommit = '61c38162596d1af9085741d70d15900ff9894257';
+  const sourceCommit = '877bbee94ce45aa1ff103912bc9850556e61dfb4';
   const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
   assert.equal(receipt.kind, 'exact-source-build');
   assert.equal(receipt.sourceCommit, sourceCommit);
@@ -16,17 +16,15 @@ export function verifySourceAwFixture(binary, version, receiptPath) {
   assert.equal(realpathSync(receipt.binary), realpathSync(binary));
   assert.equal(receipt.sha256, sha256);
   assert.equal(receipt.version, version.stdout.trim());
-  assert.match(version.stdout, /^aw 1\.36\.23-source-fixture\n/);
+  assert.match(version.stdout, /^aw 1\.36\.33-source-fixture\n/);
   assert.ok(version.stdout.includes(`commit: ${sourceCommit} (github.com/awebai/aw)`));
   return { kind: receipt.kind, binary, sha256, version: version.stdout.trim(), sourceCommit };
 }
 
-// Preserve explicit historical source-build receipts for the source fixture;
-// CI qualification uses only the released matrix below.
-export function verifyPinnedAw(binary, version, receiptPath = process.env.OATS_TEST_AW_SOURCE_RECEIPT) {
+// Native admission always enforces the current released matrix.
+export function verifyPinnedAw(binary, version) {
   assert.equal(version.status, 0, version.stderr);
   const sha256 = createHash('sha256').update(readFileSync(binary)).digest('hex');
-  if (receiptPath) return verifySourceAwFixture(binary, version, receiptPath);
   const actual = /^aw (\S+)$/m.exec(version.stdout)?.[1];
   const expected = process.env.OATS_TEST_AW_VERSION;
   assert.ok(AW_TEST_VERSIONS.includes(actual), `unqualified aw ${actual}`);
