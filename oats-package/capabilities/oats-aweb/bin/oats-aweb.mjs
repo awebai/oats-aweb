@@ -74,6 +74,7 @@ import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
+import { IDENTITY_AUTHORITY, privateAuthorityModes } from "../lib/retained-seat-authority.mjs";
 import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
@@ -531,7 +532,6 @@ if ((isCommand && !setupHandlesAw) || event === "spawn") {
 // Never copy workspace.yaml, caches or locks; never delete the source; never
 // team-join (that is the mint path, which would try to create the alias
 // again). Retire releases the lock and leaves the identity alone.
-const IDENTITY_AUTHORITY = ["signing.key", "identity.yaml", "teams.yaml", "team-certs", "encryption.yaml", "encryption-keys"];
 /** Both spawn's own start and same-home launch disclose the selected mode's
  * limits. Approved reads the machine policy read-only, as readiness does, and
  * stays silent only when the file admits the plugin. */
