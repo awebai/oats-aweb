@@ -1,0 +1,34 @@
+Answer in the conversation: aw mail reply <message_id>. Start a new thread only for a new topic: aw mail send --to <recipient> --subject <subject>.
+
+With a recipient (--to, --to-did or --to-address), send starts a new thread
+titled by --subject, which is required. With --conversation-id it continues
+that conversation; its title stays the first message's subject, so --subject
+is refused there. JSON returns message_id and conversation_id. A server that
+answers a new thread with another conversation_id fails without retry; the
+message may already have been sent into that conversation.
+
+Usage:
+  aw mail send [flags]
+
+Flags:
+      --body string              Body. Warning: double-quoted shell arguments expand backticks and $(...) before aw runs; use --body-file for Markdown or command examples
+      --body-file string         Read message body from a file; safe for Markdown or command examples
+      --conversation-id string   Existing mail conversation to continue (no recipient or --subject)
+      --e2ee                     Send E2E encrypted mail; fails closed if encryption keys are missing
+  -h, --help                     help for send
+      --plaintext                Send explicit server-readable plaintext mail (currently the default)
+      --priority string          Priority: low|normal|high|urgent (default "normal")
+      --subject string           Title of the new thread (required with a recipient)
+      --to string                Recipient name within the active team, or a routable address
+      --to-address string        Recipient address (domain/name)
+      --to-did string            Recipient stable identity (did:aw:...)
+
+Global Flags:
+      --debug                  Log background errors to stderr
+      --human string           Sign interactively as this locally enrolled human did:aw
+      --human-domain string    Namespace of the selected human ID
+      --identity-home string   Use this absolute credential directory (contains signing.key or grant.yaml; usually <workspace>/.aw, not its parent)
+      --json                   Output as JSON
+      --server-name string     Override the server host or name for this command
+      --team string            Override the selected team_id for this command
+      --trace                  Trace redacted HTTP requests and responses to stderr

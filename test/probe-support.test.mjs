@@ -12,7 +12,7 @@ import {PROBE_RELEASE_SUPPORT, qualifyProbeSupport, observeProbeMetadata, probeA
 const native = readFileSync(new URL('./fixtures/probe/native-workspace-1.36.28.yaml', import.meta.url), 'utf8');
 const url = 'https://app.aweb.ai/api', meta = 'https://app.aweb.ai/meta';
 const metadata = {version: '0.0.1', build: {aweb_version: '1.27.12'}};
-const legacyHelp = '\nUsage:\n  aw mail send [flags]\nFlags:\n      --to string   Recipient\n      --subject string   Subject\n      --body-file string   Body file\n      --new-conversation   Start fresh\n';
+const legacyHelp = readFileSync(new URL('./fixtures/probe/mail-send-help-1.36.33.txt', import.meta.url), 'utf8');
 function configured(t, options = {}, {help = legacyHelp, helpError = false} = {}) {
   const f = fixture(t, options);
   for (const home of [join(f.root, '.aw'), join(f.home, '.aw')]) writeFileSync(join(home, 'workspace.yaml'), native);

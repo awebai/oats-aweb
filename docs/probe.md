@@ -65,6 +65,21 @@ for invalid URLs). A canary send cannot establish support. There is no legacy
 send fallback. Published releases do not establish the current Cloud version:
 this observation is required for each invocation.
 
+After CLI/server admission, the probe reads the same pinned executable's
+`aw mail send --help`. At aw 1.36.33 it selects the explicit
+`--new-conversation` flag because default sends may reuse an existing thread
+([877bbee9 mail.go:417](https://github.com/awebai/aw/blob/877bbee94ce45aa1ff103912bc9850556e61dfb4/cmd/aw/mail.go#L417)).
+Modern aw removed that flag in `91ea73fee07f39e44f1be8c8d06fee8496b94719`;
+recipient plus subject creates a fresh thread before target resolution
+([1.36.58 mail.go:158](https://github.com/awebai/aw/blob/a3223c1d32b8144abfd34d63b521b38d2b227ad5/cmd/aw/mail.go#L158)).
+Both routes send once without prior conversation/inbox discovery or retry.
+Unknown help returns `probe-cli-fresh-send-unsupported`; failed help returns
+`probe-cli-fresh-send-unavailable`; an incomplete qualification answer returns
+`probe-cli-fresh-send-unqualified`. All refuse before sending and expose no raw
+help/errors. Install a supported aw and rerun after correcting that admission
+failure. The compatibility branch goes away when the supported floor contains
+the removal commit.
+
 The accepted attempted-send failure contract is `send-outcome-unknown`, with
 no retry, for every subprocess failure. This includes a server conversation
 mismatch, HTTP 422, timeout or lost response; none proves that no message was

@@ -1,0 +1,38 @@
+{
+  "source": "Published native aw executables, empty disposable HOME; no authority or messages",
+  "captures": [
+    {
+      "file": "mail-send-help-1.36.33.txt",
+      "command": [
+        "mail",
+        "send",
+        "--help"
+      ],
+      "awVersion": "aw 1.36.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4 (github.com/awebai/aw)\n  built:  2026-10-10T13:18:16Z",
+      "helpSha256": "d8e121279e5d2c198d84a2ac56255836e27b6d319f948f4d5bf9285dc61230c2",
+      "binarySha256": "33960943db1e15722854dc38e930fca001896e53ccba8ade8c632f970e82dc9e"
+    },
+    {
+      "file": "mail-send-help-1.36.58.txt",
+      "command": [
+        "mail",
+        "send",
+        "--help"
+      ],
+      "awVersion": "aw 1.36.58\n  commit: a3223c1d32b8144abfd34d63b521b38d2b227ad5 (github.com/awebai/aw)\n  built:  2026-11-11T14:19:43Z",
+      "helpSha256": "713f6f2e4d61fc614b47f17889ac80b211fde92b66e48b6bb5510f7b2b3b640e",
+      "binarySha256": "b03a839458abf3b4103994e155d501048e7a8946115831a9a785cbe3da1f2ad0"
+    },
+    {
+      "file": "mail-send-help-1.36.59-rc.3.txt",
+      "command": [
+        "mail",
+        "send",
+        "--help"
+      ],
+      "awVersion": "aw 1.36.59-rc.3\n  commit: d36bfb9de23a0256c1b8721c009ca2895f985064 (github.com/awebai/aw)\n  built:  2026-11-18T07:05:52Z",
+      "helpSha256": "5287a3fcda8994ee2885f099b39c7dd53161f773861115494edbc9e31280c8d5",
+      "binarySha256": "cd260a586c0e5efa7a151f9ac8258481e9aec20d55e709d853abdc3597b75f29"
+    }
+  ]
+}

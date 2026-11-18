@@ -1,17 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { runProbe } from '../oats-package/capabilities/oats-aweb/lib/probe.mjs';
 import { freshMailSendFlag } from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
 import { fixture } from './helpers/probe-fixture.mjs';
 
-const flags = '\nUsage:\n  aw mail send [flags]\nFlags:\n      --to string   Recipient\n      --subject string   Subject\n      --body-file string   Body file\n';
-const legacy = 'Reuse an existing conversation by default.\n' + flags + '      --new-conversation   Start fresh\n';
-const modern = 'With a recipient (--to, --to-did or --to-address), send starts a new thread\ntitled by --subject, which is required.\n' + flags;
+const captured = version => readFileSync(new URL(`./fixtures/probe/mail-send-help-${version}.txt`, import.meta.url), 'utf8');
 
-test('fresh-send admission distinguishes both native contracts and refuses unknown help', () => {
-  assert.equal(freshMailSendFlag(legacy), true);
-  assert.equal(freshMailSendFlag(modern), false);
-  for (const text of ['', flags, modern.replace('--to string', '--other string'), modern.replace('aw mail send', 'aw mail')]) {
+for (const [version, expected] of [['1.36.33', true], ['1.36.58', false], ['1.36.59-rc.3', false]]) {
+  test(`fresh-send admission matches native aw ${version} help`, () => {
+    assert.equal(freshMailSendFlag(captured(version)), expected);
+  });
+}
+
+test('fresh-send admission refuses unknown or incomplete native help', () => {
+  const modern = captured('1.36.58');
+  for (const text of ['', 'unrecognized contract', modern.replace('--to string', '--other string'), modern.replace('\n  aw mail send [flags]', '\n  aw mail [flags]'), modern.replace('send starts a new thread', 'unknown thread behavior')]) {
+    assert.notEqual(text, modern, 'each refusal vector must change the native help');
     assert.throws(() => freshMailSendFlag(text), e => e.reason === 'probe-cli-fresh-send-unsupported');
   }
 });

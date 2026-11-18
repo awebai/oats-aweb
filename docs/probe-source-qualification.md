@@ -94,6 +94,25 @@ config/executable drift, preflight composition, both floors and metadata
 byte/deadline/cancellation bounds. HTTP transport is faked; no hosted `/meta`
 request is made. These tests do not authorize a live probe.
 
+## Current fresh-thread help contracts
+
+The historical source tests above qualify the explicit legacy flag. Current
+selection additionally follows [the help admission contract](probe.md):
+1.36.33 still needs that flag; 1.36.58 and 1.36.59-rc.3 use recipient plus
+subject. The checked-in `test/fixtures/probe/mail-send-help-*.txt` files are
+verbatim outputs from those three published native binaries, captured in an
+empty disposable HOME. `mail-send-help-provenance.json` records their version,
+commit, executable checksum and output checksum. They contain no identity or
+mail state. `probe-mail-send.test.mjs` checks the detector against each capture,
+unknown/incomplete variants, and exactly one send for either route.
+
+The modern no-discovery contract is in
+[a3223c1d mail.go:158–161](https://github.com/awebai/aw/blob/a3223c1d32b8144abfd34d63b521b38d2b227ad5/cmd/aw/mail.go#L158):
+any recipient target calls `startNewThread` before resolving it. The flag was
+removed in [91ea73fe](https://github.com/awebai/aw/commit/91ea73fee07f39e44f1be8c8d06fee8496b94719).
+These help/source observations establish CLI selection, not hosted delivery.
+P2 PR1 adds the ongoing executions against the installed matrix binaries.
+
 ## Path-recovery boundary and signature preservation
 
 All locations below use public aw commit

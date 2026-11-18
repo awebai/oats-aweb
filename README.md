@@ -2089,14 +2089,6 @@ do not prove live grant or Folio authority.
 
 ## Explicit round-trip probe
 
-The probe checks the selected aw's `mail send --help` contract before any
-send. At the 1.36.33 floor it supplies `--new-conversation`; modern aw starts
-a new thread from recipient plus subject and rejects that removed flag.
-Unknown help refuses before sending. Both routes send once, with no discovery,
-fallback or retry. The transition is aw commit
-`91ea73fee07f39e44f1be8c8d06fee8496b94719`; remove the legacy branch when the
-supported floor contains it.
-
 `oats aweb probe --home /absolute/canonical/home [--timeout 60] [--json]`
 reports a verified nonce round trip when qualified CLI **and** server support
 are available. It is an explicit send action, never a readiness/lifecycle check.
@@ -2106,6 +2098,14 @@ source-qualified at aw 1.36.28) and the exact selected hosted service `/meta`
 There is no legacy fallback. The
 selected-service guarantee holds modulo redirects issued by the selected origin
 for unauthenticated heartbeat discovery only; signed mail and metadata refuse redirects. See [probe proof, JSON, compatibility and acceptance](docs/probe.md).
+
+The probe checks the selected aw's `mail send --help` contract before any
+send. At the 1.36.33 floor it supplies `--new-conversation`; modern aw starts
+a new thread from recipient plus subject and rejects that removed flag.
+Unknown help refuses before sending. Both routes send once, with no discovery,
+fallback or retry. The transition is aw commit
+`91ea73fee07f39e44f1be8c8d06fee8496b94719`; remove the legacy branch when the
+supported floor contains it.
 
 ### Runtime delivery regression verification
 
