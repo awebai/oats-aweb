@@ -7,12 +7,12 @@ import { dirname, join, resolve } from 'node:path';
 const binary = resolve(process.argv[2]);
 const home = mkdtempSync(join(tmpdir(), 'aw-help-capture-'));
 try {
-  const run = (args) => {
-    const r = spawnSync(binary, args, { cwd: home, env: { HOME: home, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AW_NO_UPDATE_CHECK: '1' }, encoding: 'utf8', timeout: 10000 });
+  const run = (args, selected = binary) => {
+    const r = spawnSync(selected, args, { cwd: home, env: { HOME: home, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AW_NO_UPDATE_CHECK: '1' }, encoding: 'utf8', timeout: 10000 });
     assert.equal(r.status, 0, r.stderr);
     return r.stdout;
   };
-  const commands = ['version', 'init', 'whoami', 'check', 'heartbeat', 'doctor identity', 'team list', 'team invite', 'team invite inspect', 'team join', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id cert show', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox'];
+  const commands = ['version', 'init', 'whoami', 'check', 'heartbeat', 'doctor identity', 'doctor registry', 'team list', 'team invite', 'team invite inspect', 'team join', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id cert show', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'status publish'];
   const grammar = Object.fromEntries(commands.map(command => {
     const help = run([...command.split(' '), '--help']);
     assert.ok(help.includes(`aw ${command}`), command);
@@ -20,5 +20,13 @@ try {
     assert.ok(flags['--help'] === false, command);
     return [command, flags];
   }));
-  writeFileSync(new URL('../test/fixtures/aw-argv/grammar.json', import.meta.url), JSON.stringify({ version: run(['version']).trim(), commands: grammar }, null, 2) + '\n');
+  let compatibility;
+  if (process.argv[3]) {
+    const legacy = resolve(process.argv[3]);
+    const help = run(['mail', 'send', '--help'], legacy);
+    assert.match(help, /^\s+--new-conversation\s{2,}/m);
+    grammar['mail send']['--new-conversation'] = false;
+    compatibility = { version: run(['version'], legacy).trim(), command: 'mail send', flag: '--new-conversation' };
+  }
+  writeFileSync(new URL('../test/fixtures/aw-argv/grammar.json', import.meta.url), JSON.stringify({ version: run(['version']).trim(), compatibility, commands: grammar }, null, 2) + '\n');
 } finally { rmSync(home, { recursive: true, force: true }); }

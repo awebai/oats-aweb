@@ -8,7 +8,7 @@ HOME for every group. Tests never select a person's identity or tmux server.
 
 | Group | Versions and prerequisites | What runs |
 | --- | --- | --- |
-| `unit` | aw 1.36.33, 1.36.58, 1.36.59-rc.3; Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing. Every recorded hook command path and flag is then checked against this exact aw's help. |
+| `unit` | aw 1.36.33, 1.36.58, 1.36.59-rc.3; Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
 | `kernel` | OATS v0.68.1 at `13f8f133808f5932bf461108703c1bada4b3f3d3`, tested aw, tmux; isolated local Git repositories | Public hostOnly, roots, disposal, registry, preview, runtime, upgrade, tasks and attention contracts. Only disposable kernel deployments are exercised. |
 | `host` | Same pinned kernel and tested aw, tmux on a private socket directory | Native health commands, scheduler and process observations. Identity reads moved to disposable stack journeys. |
 | `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, roster/count, joined and retained seats, native identity/readiness observations and sanitized capture generation. |
@@ -16,7 +16,8 @@ HOME for every group. Tests never select a person's identity or tmux server.
 | `hosted` (acceptance) | Disposable hosted team, pi extension, dashboard token and status API | `health-live.test.mjs`; no Cloud credentials are available to the OSS CI stack. |
 
 The runtime version list comes from `scripts/aw-test-versions.mjs`, which
-reads the supported floor and tested version from `aw-compat.json` and pins
+imports the supported floor and tested version from `lib/aw-floor.mjs`,
+which reads `aw-compat.json` and pins
 next separately. CI verifies the installed version before running tests.
 Next remains prerelease qualification, not an increase in the tested window.
 
@@ -40,8 +41,8 @@ Next remains prerelease qualification, not an increase in the tested window.
   the exclusion with its version; the supported tasks selection cases still run.
 - Status publishing requires aw >=1.36.38. The floor signing test asserts
   that the command is unsupported; it does not skip.
-- The Linux lingering test runs in Linux CI. A local macOS package run
-  reports that platform exclusion; mode-denial tests also require a non-root
+- The Linux lingering test runs in Linux CI. A local non-Linux package group
+  excludes its exact name because systemd lingering is unavailable; mode-denial tests also require a non-root
   POSIX user, and terminal tests require Python's pty module. CI provides these.
 
 The native join-refusal test has a diagnostic branch for aw 1.36.33:
@@ -49,6 +50,38 @@ The native join-refusal test has a diagnostic branch for aw 1.36.33:
 It must still refuse, bind no identity and expose no token. Tested and next
 must also report the structured diagnosis. Remove the legacy assertion when
 the supported floor moves to 1.36.59 final.
+
+## Native argv coverage
+
+The grant, setup, wake and join-from CLI doubles record the hook's built argv;
+`probe-fixture.mjs` uses the same validator/recorder for the probe's selected
+aw runner. This includes `mail send --new-conversation --to --subject
+--body-file`, both `mail show` selectors and its conversation limit, and
+identity-home/team selection. The real help guard requires witnesses for all
+30 recorded command paths and checks every used flag and flag combination.
+Values are never written to the shared recording log. For mail send, the
+unit vectors cover both qualified contracts. The guard selects the branch
+advertised by this real CLI and requires a recorded send for that branch:
+1.36.33 uses `--new-conversation`; 1.36.58 and next use recipient plus subject
+(the flag was removed in 1.36.53). A regression that always uses one form
+therefore fails the required witness check on the other version.
+
+Other provider/library argv run directly against the real binary instead of
+the recording doubles:
+
+| Provider argv | Named native proof |
+| --- | --- |
+| `init --global`, `doctor identity --offline --json`, `doctor registry --online --json`, `custody serve/status/stop` | `resident-journey.test.mjs` and `test/fixtures/resident/capture.sh` in the disposable stack group. |
+| Probe `mail send` and `mail show`, including leading identity/team selectors | `probe-mail-native.test.mjs` qualifies actual native help, executes the provider's one-send/full-reply proof against controlled external transport, then admits its actual argv with native `--help` at every matrix version. It sends no native mail. |
+| `status publish --print-signed` and publisher flags | `health-status-native.test.mjs`, all vector documents; floor asserts unsupported. |
+| `team invite --member-local` and `team invite inspect` | `invite-native.test.mjs`, generated identities and loopback HTTP. |
+| `mail inbox --count-only --json`, roster members/presence, retained connect/check/heartbeat/status/whoami | `resident-journey.test.mjs`; floor asserts absent count capability, tested/next execute the read. |
+
+Exclusions use Node's `--test-skip-pattern` with exact escaped names, after
+checking that every name is a declared literal test in the selected files.
+Excluded tests are outside the selected group and contribute no skipped count.
+The runner rejects stale exclusions before starting npm test. The literal-name check is test selection validation;
+it makes no claim about provider behavior from source text.
 
 ## Captures and acceptance
 
@@ -86,6 +119,15 @@ could pass without exercising their claimed behavior:
 | CI YAML regex parsing (`health-aw-floor`) | Removed; CI builds its version matrix from the module and enforces zero skips while executing each selected group. |
 | `claim-human-docs`, `pi-mail-recovery-guidance` prose | Removed; prose is reviewed as documentation, not represented as service behavior. |
 | `aweb-tasks-skill` prose and `no-task-coordination` document scans | Removed; argv-checker/detector unit behavior and generated runtime briefs remain. |
+| Roster `1.20.0 documents the roster` | Removed README/CHANGELOG/skill/inject spelling checks; roster rows, completeness and command tuples remain executable tests. |
+| `1-21` documentation sentence test | Removed prose checks; retained the manifest's connect-command contract as `the manifest exposes the connect command`; connect/setup behavior cases remain. |
+| `1-18` delivery/preview/readiness documentation tests | Removed three prose guards; runtime delivery transitions, preview purity, deregistration failures and channel confirmation readiness remain executable cases. |
+| `1-17` team-model documentation test | Removed wording checks; closed-workspace/default-team/join behavior cases remain. |
+| `aw-compat` README JSON-copy test | Removed document duplication check; validated compatibility JSON and runtime version/refusal behavior remain. |
+| Joined-team poll skill text | Removed prose-only readiness wording; poll readiness, stale-runtime and no-install remedies remain executable tests. |
+| BYOT team-key copy advice scan and nested-root migration prose | Removed documentation scans; setup refusal/state preservation and existing-root placement tests remain. |
+| Tasks-team inject/skill hashes and identity-home source scan | Removed text hashes/scans; task-team selection, joined identity resolution and read-only readiness still run against provider operations. |
+| Tasks-skill command count, pi README heading, old changelog sentence | Removed prose-only checks; command checker negative controls, manifest install-entry warning behavior and default-team runtime failures remain. |
 | Resident documentation-envelope matching | All 17 runtime outcome cases remain, compared against explicit JSON envelope fixtures; only the documentation wording guard was removed. |
 
 `kernel-module-boundary.test.mjs` remains unchanged: it enforces an actual

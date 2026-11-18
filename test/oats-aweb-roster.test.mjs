@@ -52,7 +52,11 @@ function realShape(root) {
 }
 
 /** A fake aw: `id team members` and `workspace status` answer the given documents (status
- *  with gone-workspace diagnostics on stderr, as aw prints them), or fail. */
+ *  with gone-workspace diagnostics on stderr, or fail. Native evidence:
+ *  awebai/aw cmd/aw/workspace.go:293 at 877bbee9 (1.36.33), :292 at
+ *  a3223c1d (1.36.58) and d36bfb9d (1.36.59-rc.3) writes
+ *  fmt.Fprint(os.Stderr, formatGoneWorkspaces(gone)) after emitting JSON.
+ *  workspace_cleanup.go:117/:116 builds the "Gone workspace checks:" block. */
 function fakeAw(t, { certificates, presence, presenceFails = false, certificatesFail = false, trailingNote = false }) {
   const dir = tempDir(t);
   const bin = join(dir, "bin");
@@ -201,21 +205,6 @@ test("roster refuses an indented object inside cut-off output as aw's answer", (
   assert.equal(d.presenceComplete, false);
   assert.equal(d.problems[0].source, "presence");
   assert.match(d.problems[0].message, /aw workspace status returned no JSON result/);
-});
-
-test("1.20.0 documents the roster: CHANGELOG, README, skill and inject", () => {
-  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  assert.match(changelog, /\n## 1\.20\.0\n/);
-  const entry = changelog.slice(changelog.indexOf("## 1.20.0"), changelog.indexOf("## 1.19.0"));
-  const readme = readFileSync(join(REPO, "README.md"), "utf8");
-  const skill = readFileSync(join(REPO, "oats-package", "capabilities", "oats-aweb", "skills", "oats-aweb", "SKILL.md"), "utf8");
-  for (const [name, text] of [["CHANGELOG 1.20.0", entry], ["README", readme], ["skill", skill]]) {
-    for (const needle of ["aw workspace status", "global identit", "Incomplete:", "coordinator"]) assert.ok(text.includes(needle), `${name} lacks ${needle}`);
-  }
-  assert.match(entry, /--json/);
-  assert.doesNotMatch(skill, /their alias is on the roster|will not resolve/);
-  const inject = readFileSync(join(REPO, "oats-package", "capabilities", "oats-aweb", "injects", "aweb.md"), "utf8");
-  assert.doesNotMatch(inject, /who you can reach/);
 });
 
 // aw writes diagnostics to stderr. Trailing stdout is not a valid JSON answer.

@@ -106,7 +106,6 @@ test('the fake\'s team-server record has real aw\'s shapes: none, published, ver
     const r = aw(['id', 'team', ...args, '--json']), shape = JSON.parse(derived(name).stdout);
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-
     for (const k of ['status', 'team_id', 'server_url', 'audience']) assert.equal(out[k], shape[k], `${name} ${k}`);
   }
 });
@@ -121,7 +120,6 @@ test('real aw: the offline answers still have the captured shapes', { skip: !rea
   const invite = runAw(realAw, home, cwd, ['id', 'team', 'invite', '--team=eng', `--namespace=${NS}`, '--json']);
   assert.equal(invite.status, 0, invite.stderr);
   const minted = JSON.parse(invite.stdout);
-
   assert.equal(typeof minted.token, 'string');
   assert.ok(minted.token.length > 0);
   assert.equal(invite.stderr, '');

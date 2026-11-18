@@ -1,5 +1,10 @@
 {
   "version": "aw 1.36.58\n  commit: a3223c1d32b8144abfd34d63b521b38d2b227ad5 (github.com/awebai/aw)\n  built:  2026-11-11T14:19:43Z",
+  "compatibility": {
+    "version": "aw 1.36.33\n  commit: 877bbee94ce45aa1ff103912bc9850556e61dfb4 (github.com/awebai/aw)\n  built:  2026-10-10T13:18:16Z",
+    "command": "mail send",
+    "flag": "--new-conversation"
+  },
   "commands": {
     "version": {
       "--help": false,
@@ -90,6 +95,20 @@
       "--trace": false
     },
     "doctor identity": {
+      "--help": false,
+      "--debug": false,
+      "--human": true,
+      "--human-domain": true,
+      "--identity-home": true,
+      "--json": false,
+      "--offline": false,
+      "--online": false,
+      "--server-name": true,
+      "--team": true,
+      "--trace": false,
+      "--verbose": false
+    },
+    "doctor registry": {
       "--help": false,
       "--debug": false,
       "--human": true,
@@ -439,6 +458,55 @@
       "--json": false,
       "--server-name": true,
       "--team": true,
+      "--trace": false
+    },
+    "mail send": {
+      "--body": true,
+      "--body-file": true,
+      "--conversation-id": true,
+      "--e2ee": false,
+      "--help": false,
+      "--plaintext": false,
+      "--priority": true,
+      "--subject": true,
+      "--to": true,
+      "--to-address": true,
+      "--to-did": true,
+      "--debug": false,
+      "--human": true,
+      "--human-domain": true,
+      "--identity-home": true,
+      "--json": false,
+      "--server-name": true,
+      "--team": true,
+      "--trace": false,
+      "--new-conversation": false
+    },
+    "mail show": {
+      "--conversation-id": true,
+      "--help": false,
+      "--limit": true,
+      "--message-id": true,
+      "--debug": false,
+      "--human": true,
+      "--human-domain": true,
+      "--identity-home": true,
+      "--json": false,
+      "--server-name": true,
+      "--team": true,
+      "--trace": false
+    },
+    "status publish": {
+      "--alias": true,
+      "--document": true,
+      "--help": false,
+      "--print-signed": false,
+      "--debug": false,
+      "--human": true,
+      "--human-domain": true,
+      "--identity-home": true,
+      "--json": false,
+      "--server-name": true,
       "--trace": false
     }
   }

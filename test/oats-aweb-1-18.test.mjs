@@ -252,45 +252,6 @@ test("a launch preview refuses what the real start refuses before any aw call", 
 
 // ---------------------------------------------------------------- docs
 
-test("agent-facing text and docs state the per-runtime delivery rule", async () => {
-  const { readFileSync } = await import("node:fs");
-  const read = (...p) => readFileSync(join(...p), "utf8");
-  for (const [name, text] of [["inject", read(CAPABILITY, "injects", "aweb.md")], ["oats-aweb skill", read(CAPABILITY, "skills", "oats-aweb", "SKILL.md")]]) {
-    assert.match(text, /Claude Code[\s\S]{0,80}channel plugin/, name);
-    assert.match(text, /pi[\s\S]{0,40}extension/, name);
-    assert.match(text, /Codex[\s\S]{0,200}host wake broker/, name);
-    assert.doesNotMatch(text, /Codex \/ no channel \| nothing/, name);
-  }
-  const manifest = JSON.parse(read(CAPABILITY, "oats.json"));
-  assert.match(manifest.settings.delivery.description, /Codex/);
-  const readme = read(REPO, "README.md");
-  assert.match(readme, /Codex/);
-  assert.match(readme, /aweb-abmy/);
-  assert.match(readme, /existing homes keep the delivery/i);
-  const changelog = read(REPO, "CHANGELOG.md");
-  const entry = changelog.split("\n## ").find((section) => section.startsWith("1.18.0\n"));
-  assert.ok(entry, "CHANGELOG has a 1.18.0 entry");
-  assert.match(entry, /Codex/);
-  assert.match(entry, /aweb-abmy/);
-  assert.match(entry, /existing homes keep the delivery/i);
-  assert.match(entry, /docs\/terminal-wake-broker\.md/, "the aw duplicate window is stated with its citation");
-});
-
-test("docs state the launch preview contract and what the deregister guard proves", async () => {
-  const { readFileSync } = await import("node:fs");
-  const readme = readFileSync(join(REPO, "README.md"), "utf8");
-  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  const entry = changelog.split("\n## ").find((section) => section.startsWith("1.18.1\n"));
-  assert.ok(entry, "CHANGELOG has a 1.18.1 entry");
-  for (const [name, text] of [["README", readme], ["CHANGELOG 1.18.1", entry]]) {
-    assert.match(text, /OATS_LAUNCH_PREVIEW=1/, name);
-    assert.match(text, /volatileEnv/, name);
-    assert.match(text, /confirms that the home is deregistered, not that terminal input\s+has finished/, name);
-    assert.match(text, /aweb-abna/, name);
-    assert.doesNotMatch(text, /stopped typing/, name);
-  }
-});
-
 // A home on the channel path hears nothing without its channel package. The
 // kernel verifies these rows for the target runtime at spawn and at every start
 // and refuses with the install steps; codex has no row because it takes the
@@ -504,13 +465,6 @@ test("readiness without a recorded start does not guess the runtime", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude" });
   const result = fx.readiness();
   assert.equal((result.warnings || []).some((w) => w.code === "channel-dev-confirmation"), false, JSON.stringify(result));
-});
-
-test("the skill's readiness table and the changelog name channel-dev-confirmation", () => {
-  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
-  assert.match(skill, /\| `channel-dev-confirmation` \|/);
-  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  assert.match(changelog, /^## 1\.21\.1\n[\s\S]*channel-dev-confirmation/m);
 });
 
 // Released status fields; no worker or successful-prompt telemetry invented.

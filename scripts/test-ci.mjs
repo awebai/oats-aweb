@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readdirSync } from 'node:fs';
+import { exclusionArgs } from './ci-exclusions.mjs';
 
 const groups = {
   kernel: ['claude-channel-host-only', 'public-kernel-team-roots', 'public-kernel-disposable-home', 'public-kernel-seat-registry', 'public-kernel-launch-preview', 'public-kernel-codex-delivery', 'public-kernel-upgrade', 'aweb-tasks-kernel', 'aweb-tasks-team-kernel', 'unread-attention-native'],
@@ -21,12 +22,15 @@ const files = group === 'unit'
   ? readdirSync('test').filter(f => f.endsWith('.test.mjs') && !other.has(f.slice(0, -9))).map(f => `test/${f}`)
   : groups[group].map(f => `test/${f}.test.mjs`);
 const exclusions = [];
+if (group === 'unit' && process.platform !== 'linux') {
+  exclusions.push('Linux without systemd lingering stops before any init with the exact admin command');
+}
 if (group === 'unit' && process.env.OATS_TEST_AW_VERSION === '1.36.33') {
   // BYOT create's controller-key behavior was added in aw 1.36.56. The fake
   // tests still run at the floor; the three real cases run at tested and next.
   // P1's two tested-only native cases additionally need set/show-server (>=.44)
   // and count-only (absent at .33); the other four now run at every version.
-  exclusions.push('real aw prose: missing team-server record and name conflicts are classified', 'real aw prose: version and count-only help match the feature readers', 'real aw: the offline answers still have the captured shapes', 'real aw: setup --create with no namespace controller key', 'real aw: setup --create on a fresh deployment without --name');
+  exclusions.push('real aw prose: missing team-server record and name conflicts are classified', 'real aw prose: version and count-only help match the feature readers', 'real aw: the offline answers still have the captured shapes', 'real aw: setup --create with no namespace controller key names it and creates nothing', 'real aw: setup --create on a fresh deployment without --name stops before create, naming --name <alias>');
 }
 if (group === 'stack' && process.env.AW_VERSION !== '1.36.33') {
   // aw >=1.36.53 refuses this API key before writing a partial; there can be
@@ -45,8 +49,7 @@ if (group === 'kernel') {
     console.log(`Capability exclusion: OATS ${doc.version} lacks settings-committed-only: ${name}`);
   }
 }
-const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const args = ['test', '--', '--test-concurrency=1', '--test-reporter=tap', ...(exclusions.length ? ['--test-name-pattern=^(?!.*(?:' + exclusions.map(escape).join('|') + ')).*$'] : []), ...files];
+const args = ['test', '--', '--test-concurrency=1', '--test-reporter=tap', ...exclusionArgs(exclusions, files), ...files];
 const result = await new Promise((resolve, reject) => {
   const child = spawn('npm', args, { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';

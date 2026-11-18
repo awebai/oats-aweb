@@ -259,6 +259,8 @@ test('retained authority closure, copy exclusions, command sequence and lock do 
   assert.doesNotMatch(log, /SYNTHETIC-SECRET-API-KEY/);
   const sequence = log.trim().split('\n').map(JSON.parse).map(c => c.argv.slice(0, 2).join(' '));
   const at = sequence.indexOf('workspace connect');
-  assert.deepEqual(sequence.slice(at, at + 5), ['workspace connect', 'check --online', 'heartbeat', 'workspace status', 'whoami --json']);
+  // P1 PR5 (#276) replaced the non-verifying check with native status/whoami.
+  assert.deepEqual(sequence.slice(at, at + 5), ['workspace connect', 'workspace status', 'heartbeat', 'whoami --json', 'wake register']);
+  assert.equal(sequence.some(c => c.startsWith('check ')), false);
   assert.equal(sequence.some(c => c.startsWith('init') || c === 'team invite' || c === 'team join'), false);
 });

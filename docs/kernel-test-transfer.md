@@ -8,9 +8,9 @@ replacement independently of line shifts.
 
 The kernel suites must remain until the tests are merged, released and
 present in the kernel's pinned mirror, and K1's kernel retire-hook contract
-has merged. K2 owns that gate. Key modes are owned by P1 PR5, including nested
-encryption keys, seat.json and pending-mint; this PR does not duplicate that
-fix or imply it has landed.
+has merged. K2 owns that gate. Key modes landed with P1 PR5 in oats-aweb#276 (861370b3), including nested
+encryption keys, seat.json and pending-mint. This PR keeps those tests and
+does not duplicate the fix.
 
 ## hook-1-10: 17 source tests
 
@@ -28,7 +28,7 @@ fix or imply it has landed.
 | 317 | Already covered by 1-17-4 `a retire whose alias stays held names the remedy plainly, and so does its retry` and `retire retry after successful self-delete does not call the revoked certificate again`. The old arbitrary fake reason wording is superseded by current native reason handling. |
 | 341 | Already covered by 1-17-4 `an alias that still holds a certificate names the remedy, with no meta and no output leak` and killed-mint-240 refusal intent cleanup. |
 | 356 | Already covered by oats-aweb `spawn accepts a 64-character alias and rejects 65 before aw` and 1-17-4 single-init argv test. |
-| 389 | Transferred non-mode assertions to retained-seat-killed-spawn-228 `retained authority closure, copy exclusions, command sequence and lock do not depend on a spawner PID`. Ownership/takeover/source-preserving retire already covered by retained-seat-lock-227/-236 and restart-226. Copied-key modes remain P1 PR5's required transfer. Workspace.yaml is freshly written by real connect, so the current assertion proves the old binding's source-only content was not copied. |
+| 389 | Transferred non-mode assertions to retained-seat-killed-spawn-228 `retained authority closure, copy exclusions, command sequence and lock do not depend on a spawner PID`. Ownership/takeover/source-preserving retire already covered by retained-seat-lock-227/-236 and restart-226. Copied-key modes are covered by P1 PR5 (#276), retained-seat-modes `all copied authority depths have private modes without changing the source`. The old `check --online` tuple is superseded by #276's native status/whoami verification, which this transfer now asserts in sequence. Workspace.yaml is freshly written by real connect, so the current assertion proves the old binding's source-only content was not copied. |
 | 439 | Transferred to retained-seat-killed-spawn-228 `retained rollback restores source binding and removes copied authority after a status pointing elsewhere`. |
 | 457 | Transferred to the same suite's `...after a whoami with another DID`. |
 | 469 | Already covered by retained-seat-restart-226 `a retained seat's spawn records its identity as local, and every start answers its identity home`, plus 1-14 retained retirement. |

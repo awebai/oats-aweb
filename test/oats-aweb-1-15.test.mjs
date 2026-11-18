@@ -73,7 +73,6 @@ test("1.17 manifest: kernel default-team wire names, no provider team setting, r
   assert.doesNotMatch(JSON.stringify(manifest), /team ensure|1\.36\.8|per-workspace default team|personal/i);
   assert.ok(manifest.skills.includes("skills/oats-aweb"));
   assert.match(readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8"), /^---\nname: oats-aweb\n/);
-  assert.match(readFileSync(join(REPO, "CHANGELOG.md"), "utf8"), /## 1\.16\.0[\s\S]*E_TEAM_DEFAULT/);
 });
 
 

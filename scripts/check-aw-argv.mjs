@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from '../oats-package/capabilities/oats-aweb/lib/byot-create.mjs';
+import { freshMailSendFlag } from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
 import { pathToFileURL } from 'node:url';
 
 export function checkRecordedAwArgv(binary, records, { version } = {}) {
@@ -59,12 +60,26 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const records = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   // Coverage witnesses: the suite must execute each hook path against its
   // recording fake, rather than passing on a small accidental subset.
-  const required = ['version', 'init', 'whoami', 'check', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox'];
-  const seen = new Set(records.map(r => r.command));
-  for (const command of required) assert.ok(seen.has(command), `hook path was not recorded: ${command}`);
-  const detected = spawnSync(resolve(binary), ['version'], { encoding: 'utf8' });
-  assert.equal(detected.status, 0, detected.stderr);
-  const version = /^aw (\S+)$/m.exec(detected.stdout)?.[1];
-  const commands = checkRecordedAwArgv(resolve(binary), records, { version });
+  const required = ['version', 'init', 'whoami', 'check', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show'];
+  const observationHome = mkdtempSync(join(tmpdir(), 'aw-capability-'));
+  let version, legacyFlag;
+  try {
+    const options = { cwd: observationHome, encoding: 'utf8', timeout: 10000,
+      env: { HOME: observationHome, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AW_NO_UPDATE_CHECK: '1' } };
+    const detected = spawnSync(resolve(binary), ['version'], options);
+    assert.equal(detected.status, 0, detected.stderr);
+    version = /^aw (\S+)$/m.exec(detected.stdout)?.[1];
+    const help = spawnSync(resolve(binary), ['mail', 'send', '--help'], options);
+    assert.equal(help.status, 0, help.stderr);
+    legacyFlag = freshMailSendFlag(help.stdout);
+  } finally { rmSync(observationHome, { recursive: true, force: true }); }
+  // Unit vectors intentionally exercise both contracts. Admit only the branch
+  // this real CLI qualifies, and require a runtime witness for that branch. An
+  // always-legacy send regression therefore loses the modern required witness.
+  const applicable = records.filter(r => r.command !== 'mail send' || r.flags.includes('--new-conversation') === legacyFlag);
+  console.log(`Capability selection: aw ${version} fresh mail uses ${legacyFlag ? '--new-conversation' : 'recipient plus subject'}`);
+  const seen = new Set(applicable.map(r => r.command));
+  for (const command of required) assert.ok(seen.has(command), `hook path was not recorded for this CLI capability: ${command}`);
+  const commands = checkRecordedAwArgv(resolve(binary), applicable, { version });
   console.log(`real aw accepted flags for ${commands.length} recorded full command paths: ${commands.join(', ')}`);
 }

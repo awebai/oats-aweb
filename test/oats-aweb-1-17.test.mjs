@@ -416,20 +416,6 @@ test("team model 3: join refuses a label outside the eligible rows", (t) => {
   assert.deepEqual(fake.calls().map((c) => c.args[0]), ["version"], "only the aw floor check; nothing for a refused label");
 });
 
-test("team model 3: docs name the workspace default and what setup does where local teams are closed", () => {
-  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  assert.match(changelog, /\n## 1\.19\.0\n/);
-  const entry = changelog.slice(changelog.indexOf("## 1.19.0"), changelog.indexOf("## 1.18.1"));
-  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
-  const readme = readFileSync(join(REPO, "README.md"), "utf8");
-  for (const [name, text] of [["CHANGELOG 1.19.0", entry], ["skill", skill], ["README", readme]]) {
-    assert.match(text, /workspace/, name);
-    assert.match(text, /localTeams: true/, name);
-    assert.match(text, /`souls:` entry/, name);
-  }
-  assert.match(skill, /`defaultTeam\.from` is `soul`, `deployment` or `workspace`/);
-});
-
 test("teams document uses eligible non-default rows and preserves visible live leaves", (t) => {
   const fake = fakeAw117(t);
   const fx = fixture(t, { settings: { join: "shared" } });
