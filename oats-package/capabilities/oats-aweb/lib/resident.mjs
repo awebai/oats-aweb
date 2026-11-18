@@ -329,7 +329,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
 
     // Every aw child but init runs with PATH and HOME, and the init's registry
     // when one is set: no key, no identity selector.
-    const readEnv = awChildEnv({ PATH: env.PATH || "", HOME: env.HOME || "" }, { ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) });
+    const readEnv = awChildEnv({ PATH: env.PATH || "", HOME: env.HOME || "" }, env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {});
     const floor = await awFloorMessage({ env: readEnv });
     if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
     const aw = onPath("aw", env);

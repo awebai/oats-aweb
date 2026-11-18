@@ -15,10 +15,13 @@
   `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` and `AWID_REGISTRY_URL` unless
   a call deliberately passes one by name. Retire and reads use their selected
   home's service even when the caller exported another URL. Setup's documented
-  URL and API key still reach its init; a resident's documented inputs retain
+  URL, API key and registry still reach its init; username signup explicitly
+  receives its URL and registry. A resident's documented inputs retain
   their existing explicit treatment. A deployment that depended on exporting
   selectors for ordinary lifecycle commands records the service and registry
-  in the selected aw home instead. See docs/aw-child-environment.md.
+  in the selected aw home instead. Controller-cleanup commands use that same
+  recorded/default registry, ignoring the caller's ambient registry. See
+  docs/aw-child-environment.md.
 
 - **Fixed: an empty global grant seat completes retire.** With neither grant
   nor seat id, retire answers `retired: false, reason: "nothing-to-delete"`

@@ -256,7 +256,7 @@ async function readinessDetails(settings,{deployment,env=process.env,retainedSea
   return {team,candidate,awVersion:aw.version,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
-  // An inherited AWEB_IDENTITY_HOME is the caller's identity, never this check's.
+  // The shared selector list applies to every readiness child.
   const env=awChildEnv();for(const name of unsetEnv) delete env[name];
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} ${childOutcome(e,timeout)}`);}

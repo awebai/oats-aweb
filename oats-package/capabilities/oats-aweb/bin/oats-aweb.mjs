@@ -681,13 +681,13 @@ function resolveResidentCustody(name) {
   return custody;
 }
 function grantShow(custody, grantId) {
-  const raw = run(["aw", "id", "grant", "show", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+  const raw = run(["aw", "id", "grant", "show", grantId, "--json"], custody, 60000);
   return parseAwJson(raw, "aw id grant show");
 }
 const revokeMaybeApplied = (error) => /may have applied|context deadline exceeded|timed out|timeout/i.test(String(error?.message || error));
 function revokeGrant(custody, grantId) {
   try {
-    const raw = run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+    const raw = run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000);
     return parseAwJson(raw, "aw id grant revoke");
   } catch (e) {
     if (revokeMaybeApplied(e)) {
@@ -815,7 +815,7 @@ function revokeOrNote(custody, grant) {
  *  waits at most aw's own 10 s client timeout for it, so an outage delays a start
  *  by no more than that before it says it could not check; a retire waits longer. */
 const START_GRANT_LIST_TIMEOUT_MS = 10000, RETIRE_GRANT_LIST_TIMEOUT_MS = 30000;
-const grantLister = (custody, timeout) => (argv) => run(argv, custody, timeout, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+const grantLister = (custody, timeout) => (argv) => run(argv, custody, timeout);
 /** The resident's custody root, or undefined when it cannot be resolved. */
 function residentCustodyOf(name) {
   const residents = settings.residents && typeof settings.residents === "object" && !Array.isArray(settings.residents) ? settings.residents : {};
@@ -913,7 +913,7 @@ function globalGrantRenew(oldMeta) {
   if (seatRecord?.seat !== seat) persistSeat({ seat, instance, resident, team });
   let raw, parsed;
   // A failed mint call printed no receipt, so there is no grant to revoke.
-  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
+  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000); }
   catch (e) { keepPrevious(`renewal mint failed (${e.message || e})`); }
   try { parsed = parseMintedGrant(raw, grantHome, ttl); }
   catch (e) {
@@ -968,7 +968,7 @@ function globalGrantSpawn() {
   persistSeat({ seat, instance, resident, team });
   // A failed mint call printed no receipt, so there is no grant to revoke.
   let raw;
-  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
+  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000); }
   catch (e) { cleanup(); fatal(`identity grant minting failed: ${e.message || e}`, seatMeta()); }
   try {
     let minted;
@@ -2046,13 +2046,12 @@ function registryOriginFromJoinedState(row, match, listed) {
   const fromJson = registryOrigin(match?.registry_origin || match?.registry_url || match?.registry || match?.awid_registry_url || listed?.registry_origin || listed?.registry_url || listed?.registry || listed?.awid_registry_url);
   if (fromJson) return { registry: fromJson };
   // Then aw's order (see membershipRegistry): the membership's own registry_url, else
-  // discovery from its aweb_url, else aw's default, which AWID_REGISTRY_URL sets. A
+  // discovery from its aweb_url, else aw's built-in default. The ambient registry
+  // is stripped from every child, so it cannot choose a cleanup destination. A
   // registry anywhere else in the home is one aw does not use for this team.
   const membership = membershipRegistry(join(row.identityHome, "teams.yaml"), row.team, "the membership's service");
   if (membership.kind === "registry") return { registry: membership.registry };
   if (membership.kind === "not-plain" || membership.kind === "discovered") return { registry: null, registryError: membership.registryError };
-  const fromEnv = registryOrigin(process.env.AWID_REGISTRY_URL);
-  if (fromEnv) return { registry: fromEnv };
   return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };
 }
 function certificateIdFromJoinedCertificateFile(row) {
@@ -3467,7 +3466,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
-        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY } });
+        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY, AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } });
       }
       teams = readTeams();
     }

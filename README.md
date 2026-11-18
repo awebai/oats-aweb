@@ -743,7 +743,8 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   for it or that the identity's `teams.yaml` records for it. When the
   membership records only its `aweb_url`, aw discovers the registry from that
   service, so the command has no `--registry` and says so. With neither, aw
-  uses its default: the registry `AWID_REGISTRY_URL` sets, else none. Retire records them in
+  uses its built-in default; the cleanup command omits `--registry`. An
+  ambient `AWID_REGISTRY_URL` does not choose the cleanup destination. Retire records them in
   `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
   registry origin and command, never a secret), matched on team and certificate
   id, never on alias. The roster never prints the stored command: it builds the
