@@ -202,7 +202,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
         throw setupFailure('E_SETUP_MEMBERSHIP', 'selected root has no readable identity directory; root retained, no repeated signup');
       }
       let doc;
-      try { doc = JSON.parse(run(['aw', 'team', 'list', '--json'], root, 45000, { secretSafe: true, unsetEnv: ['AWEB_API_KEY', 'AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'] })); } catch {
+      try { doc = JSON.parse(run(['aw', 'team', 'list', '--json'], root, 45000, { secretSafe: true, unsetEnv: ['AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'] })); } catch {
         throw setupFailure('E_SETUP_MEMBERSHIP', 'selected root membership is unavailable or malformed; root retained, no repeated signup');
       }
       if (!Array.isArray(doc?.memberships) || doc.memberships.length !== 1) throw setupFailure('E_SETUP_MEMBERSHIP', 'expected exactly one LOCAL root membership; root retained, no repeated signup');
@@ -222,7 +222,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
       mkdirSync(root, { recursive: true });
       try {
         run(['aw', 'init', '--new-account', '--username', username, '--name', name, '--do-not-touch-agents-md'], root, 120000, {
-          secretSafe: true, secrets: [username], unsetEnv: ['AWEB_API_KEY', 'AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'],
+          secretSafe: true, secrets: [username], env: {AWEB_URL: env.AWEB_URL, AWID_REGISTRY_URL: env.AWID_REGISTRY_URL}, unsetEnv: ['AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'],
         });
       } catch (error) {
         steps.push({ step: 'bootstrap', status: 'unconfirmed' });

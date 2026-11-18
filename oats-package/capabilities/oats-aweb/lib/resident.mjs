@@ -1,3 +1,4 @@
+import { awChildEnv } from './aw-child-env.mjs';
 // `oats aweb resident create <name>`: provisions a GLOBAL resident identity in
 // an existing hosted team from the dashboard's API key, serves it with a
 // per-user custody unit, and records it as settings.oats.aweb.residents.<name>.
@@ -328,7 +329,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
 
     // Every aw child but init runs with PATH and HOME, and the init's registry
     // when one is set: no key, no identity selector.
-    const readEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
+    const readEnv = awChildEnv({ PATH: env.PATH || "", HOME: env.HOME || "" }, env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {});
     const floor = await awFloorMessage({ env: readEnv });
     if (floor) throw failure("E_RESIDENT_AW_FLOOR", "aw", floor);
     const aw = onPath("aw", env);
@@ -421,7 +422,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     if (needsInit(state)) {
       let key = await readKey({ env, stdin, stderr, name });
       let scrub = scrubber([key, env.AWEB_API_KEY]);
-      const childEnv = { PATH: env.PATH || "", HOME: env.HOME || "", AWEB_URL: env.AWEB_URL, AWEB_API_KEY: key, AW_NO_UPDATE_CHECK: "1", ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) };
+      const childEnv = awChildEnv({ PATH: env.PATH || "", HOME: env.HOME || "" }, { AWEB_URL: env.AWEB_URL, AWEB_API_KEY: key, ...(env.AWID_REGISTRY_URL ? { AWID_REGISTRY_URL: env.AWID_REGISTRY_URL } : {}) });
       mkdirSync(root, { recursive: true, mode: 0o700 });
       const r = spawnSync(aw, INIT_ARGS(name), { cwd: root, env: childEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: INIT_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 });
       // The key is held for this child only: aw's streams are scrubbed of it

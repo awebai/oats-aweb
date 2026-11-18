@@ -105,3 +105,13 @@ test('username setup on a closed workspace whose committed default already names
  assert.equal(f.kernel.read().lastMutation,undefined);
  assert.equal(r.label,'alice');
 });
+
+
+test('username signup gets only its named URL and registry, without redirecting later reads', t => {
+ const f=fixture(t), routing={AWEB_URL:'http://127.0.0.1:9/api',AWID_REGISTRY_URL:'http://127.0.0.1:9'};
+ answer(f.run([], routing));
+ const calls=f.aw.readCalls(), init=calls.find(c=>c.args[0]==='init');
+ assert.ok(init);assert.deepEqual(init.routingEnv,routing);assert.equal(init.hasApiKey,false);
+ assert.ok(calls.some(c=>c.args[0]==='team'),'post-signup membership is read');
+ for(const c of calls.filter(c=>c!==init)){assert.deepEqual(c.routingEnv,{});assert.equal(c.hasApiKey,false);}
+});

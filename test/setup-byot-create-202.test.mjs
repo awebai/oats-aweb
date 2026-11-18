@@ -38,6 +38,18 @@ function fixture(t) {
 }
 const named = (calls, prefix) => calls.filter((c) => c.startsWith(prefix));
 
+test('BYOT create gives only its named registry to admin children and scrubs later reads', t => {
+  const f=fixture(t), registry='https://operator-registry.example.invalid';
+  const r=f.run({AWID_REGISTRY_URL:registry,AWEB_API_KEY:'caller-key'});
+  assert.equal(r.status,0,r.stdout+r.stderr);
+  const calls=f.fake.readCalls(), commands=['create','show-server','register','set-server','invite'];
+  const admin=c=>c.args[0]==='id'&&c.args[1]==='team'&&commands.includes(c.args[2]);
+  for(const command of commands)assert.ok(calls.some(c=>admin(c)&&c.args[2]===command),command);
+  for(const c of calls){assert.deepEqual(c.routingEnv,admin(c)?{AWID_REGISTRY_URL:registry}:{});assert.equal(c.hasApiKey,false);}
+  const lastAdmin=calls.findLastIndex(admin);
+  assert.ok(lastAdmin>=0&&calls.length>lastAdmin+1,'later native children are exercised');
+});
+
 test('a BYOT create registers the team, mints a local invite and accepts it; the token is in no argv and no output', (t) => {
   const f = fixture(t), r = f.run();
   assert.equal(r.status, 0, r.stderr);

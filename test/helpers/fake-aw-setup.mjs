@@ -100,7 +100,7 @@ const awDir = identityHome || path.join(process.cwd(), ".aw");
 const deleting = args[0] === "workspace" && args[1] === "delete";
 const readsStdin = (args[0] === "team" && args[1] === "invite" && args[2] === "inspect") || (args[0] === "id" && args[1] === "team" && args[2] === "accept-invite" && args.includes("--token-stdin"));
 const stdinToken = readsStdin ? fs.readFileSync(0, "utf8").trim() : undefined;
-fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY, ...(deleting ? { signingKey: fs.existsSync(path.join(awDir, "signing.key")) } : {}), ...(readsStdin ? { stdin: !!stdinToken, stdinSha256: stdinToken ? require("node:crypto").createHash("sha256").update(stdinToken).digest("hex") : null } : {}) }) + "\\n");
+fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY, routingEnv: { AWEB_URL: process.env.AWEB_URL, AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL }, ...(deleting ? { signingKey: fs.existsSync(path.join(awDir, "signing.key")) } : {}), ...(readsStdin ? { stdin: !!stdinToken, stdinSha256: stdinToken ? require("node:crypto").createHash("sha256").update(stdinToken).digest("hex") : null } : {}) }) + "\\n");
 const writeKeys = (dir) => { if (!process.env.AW_FAKE_KEYS) return; fs.mkdirSync(path.join(dir, "encryption-keys"), { recursive: true }); fs.writeFileSync(path.join(dir, "signing.key"), "FIXTURE-PRIVATE-SIGNING-KEY\\n"); fs.writeFileSync(path.join(dir, "encryption-keys", "fixture.x25519.key"), "FIXTURE-PRIVATE-X25519-KEY\\n"); };
 if (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) process.on("exit", (code) => { if (code === 0) writeKeys(awDir); });
 (${joinFromFake})(args);

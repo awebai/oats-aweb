@@ -23,7 +23,7 @@ const BINDING_WIRE = new URL("../oats-package/capabilities/oats-aweb/lib/binding
 const TEAM = "default:example.test";
 /** The spawn refusal for an alias another agent's certificate holds, as the hook prints it. */
 const ALIAS_CONFLICT = (alias, team) => `oats-aweb: alias "${alias}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
-const ENV_SEEN = ["AW_NO_UPDATE_CHECK", "AWEB_URL", "AWEB_API_KEY", "AWEB_ROLE_NAME", "AWEB_ROLE", "AWEB_IDENTITY_HOME"];
+const ENV_SEEN = ["AW_NO_UPDATE_CHECK", "AWEB_URL", "AWEB_API_KEY", "AWEB_ROLE_NAME", "AWEB_ROLE", "AWEB_IDENTITY_HOME", "AWID_REGISTRY_URL"];
 
 function tempDir(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-1174-")));
@@ -116,7 +116,7 @@ const workspaceId = (home) => (readFileSync(join(home, ".aw", "workspace.yaml"),
 // ---------------------------------------------------------------- 1, 2, 5: mint
 
 test("spawn mints with exactly one aw init --join-from from the home, then registers the wake", (t) => {
-  const fx = fixture(t, { extraEnv: { AWEB_URL: "https://ambient.example.invalid/api", AWEB_API_KEY: "ambient-key", AWEB_ROLE_NAME: "ambient-role", AWEB_ROLE: "ambient-role", AWEB_IDENTITY_HOME: "/caller/.aw" } });
+  const fx = fixture(t, { extraEnv: { AWEB_URL: "https://ambient.example.invalid/api", AWEB_API_KEY: "ambient-key", AWEB_ROLE_NAME: "ambient-role", AWEB_ROLE: "ambient-role", AWEB_IDENTITY_HOME: "/caller/.aw", AWID_REGISTRY_URL: "https://ambient-registry.invalid" } });
   const r = fx.hook("spawn");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const calls = fx.fake.readCalls();
@@ -127,8 +127,7 @@ test("spawn mints with exactly one aw init --join-from from the home, then regis
   assert.deepEqual(mints[0].env, { AW_NO_UPDATE_CHECK: "1" }, "the mint takes no ambient locator, key, role or identity home");
   assert.deepEqual(calls.map((c) => c.args.slice(0, 2).join(" ")), ["version", "wake status", `init --join-from=${fx.ws}`, "wake register"]);
   for (const c of calls) assert.equal(c.env.AW_NO_UPDATE_CHECK, "1", `aw ${c.args.join(" ")} runs with AW_NO_UPDATE_CHECK=1`);
-  const wake = calls.find((c) => c.args[0] === "wake");
-  assert.equal(wake.env.AWEB_URL, "https://ambient.example.invalid/api", "only the mint drops AWEB_URL");
+  for (const c of calls) assert.deepEqual(c.env, { AW_NO_UPDATE_CHECK: "1" }, "every aw child drops ambient selectors");
   assert.deepEqual(fx.fake.registrations()[fx.home], { identity_home: join(fx.home, ".aw"), delivery: "session" });
 });
 

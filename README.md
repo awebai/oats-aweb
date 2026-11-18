@@ -743,7 +743,8 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   for it or that the identity's `teams.yaml` records for it. When the
   membership records only its `aweb_url`, aw discovers the registry from that
   service, so the command has no `--registry` and says so. With neither, aw
-  uses its default: the registry `AWID_REGISTRY_URL` sets, else none. Retire records them in
+  uses its built-in default; the cleanup command omits `--registry`. An
+  ambient `AWID_REGISTRY_URL` does not choose the cleanup destination. Retire records them in
   `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
   registry origin and command, never a secret), matched on team and certificate
   id, never on alias. The roster never prints the stored command: it builds the
@@ -1280,7 +1281,9 @@ Supported acts:
   1.36.53 (this host has <version>): upgrade with npm install -g
   @awebai/aw@<tested>; nothing was created", `<tested>` being aw-compat.json's
   `tested`. With `--install-aw` it installs that tested aw. It normalizes `<label>` to aweb's team-name
-  rule and, before any aw call, resolves the aweb service: `AWEB_URL` (the
+  rule. `AWID_REGISTRY_URL` selects the registry for create, show-server,
+  register, set-server and invite; when unset, aw uses `https://api.awid.ai`.
+  Before any aw call, it resolves the aweb service: `AWEB_URL` (the
   server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
   `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
   neither, it refuses and nothing is created. The per-team root's identity
@@ -1464,8 +1467,11 @@ A local spawn mints the default-team identity with one command in the instance
 home: `aw init --join-from=<root> --join-team=<team> --name=<instance> --json
 --do-not-touch-agents-md`. aw creates the invite from the root, accepts it and
 connects the workspace, so the invite token never reaches the hook. The mint
-runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` or
-`AWEB_IDENTITY_HOME`, so the service comes from the invite. On the broker
+runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE`,
+`AWEB_IDENTITY_HOME` or `AWID_REGISTRY_URL`, so the service comes from the invite.
+Every aw child uses the same ambient-selector removal list; documented setup
+inputs and other deliberate overrides are passed explicitly at their call sites.
+See [the environment and call inventory](docs/aw-child-environment.md). On the broker
 delivery path the hook then runs `aw wake register`. The recorded alias is always
 the requested one: if aw reports another, the hook keeps the instance name and
 adds a warning that quotes nothing from aw's reply. Joined teams still use

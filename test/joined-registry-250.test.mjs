@@ -47,6 +47,8 @@ if (args[0] === "wake") { console.log("ok"); process.exit(0); }
 console.error("fake aw: unexpected " + args.join(" ")); process.exit(93);
 `);
   chmodSync(join(bin, "aw"), 0o755);
+  write(join(bin, "oats"), `#!${process.execPath}\nconsole.log(JSON.stringify({features: []}));\n`);
+  chmodSync(join(bin, "oats"), 0o755);
   return `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`;
 }
 
@@ -70,10 +72,10 @@ function fixture(t, { registry = true } = {}) {
     OATS_SETTINGS: JSON.stringify({ roots: { [DEFAULT]: root } }),
   };
   const hook = (event, args = [], extra = {}) => spawnSync(process.execPath, [HOOK, event, ...args], { cwd: home, env: { ...env, OATS_EVENT: event, ...extra }, encoding: "utf8", timeout: 30000 });
-  const retire = () => {
+  const retire = (extra = {}) => {
     // A fresh retire of the same identities: the default-retire marker would skip the self-delete.
     rmSync(join(home, ".oats-aweb", "default-retire.json"), { force: true });
-    const r = hook("retire", [], { OATS_META: JSON.stringify(meta) });
+    const r = hook("retire", [], { OATS_META: JSON.stringify(meta), ...extra });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     return JSON.parse(r.stdout);
   };
@@ -149,4 +151,14 @@ test("7. a membership with no registry and no service never takes a registry fro
   assert.doesNotMatch(JSON.stringify(doc), /unrelated/);
   assert.equal(sharedPending(doc).command, SHARED_NO_REGISTRY);
   assert.equal(sharedEntry(fx).registry, null);
+});
+
+
+test("a missing recorded registry never takes the caller's ambient AWID origin", t => {
+  const fx=fixture(t,{registry:false});
+  write(join(fx.sharedHome,"teams.yaml"),teamsYaml(membership(SHARED,{})));
+  const doc=fx.retire({AWID_REGISTRY_URL:"https://caller-registry.example.invalid"});
+  assert.equal(sharedPending(doc).command,SHARED_NO_REGISTRY);
+  assert.equal(sharedEntry(fx).registry,null);
+  assert.doesNotMatch(JSON.stringify(doc),/caller-registry/);
 });

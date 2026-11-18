@@ -63,6 +63,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await w
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
+import { awChildEnv } from "../lib/aw-child-env.mjs";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
@@ -99,14 +100,7 @@ import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsP
  * This hook is a REQUIRED spawn hook, so it gates every spawn, which is reason
  * enough not to rely on quoting. */
 const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
-  // An inherited AWEB_IDENTITY_HOME (every aweb instance session carries its
-  // own) is never this hook's identity: aw would act as the CALLER — refusing
-  // cwd-rooted commands such as team invite/list, or deleting the caller's
-  // workspace when a lead retires a worker. Only an explicit env sets one.
-  // AW_NO_UPDATE_CHECK: no aw child of a hook spends a GitHub round trip on
-  // an upgrade hint nobody reads.
-  const childEnv = { ...process.env, AW_NO_UPDATE_CHECK: "1", ...(extraEnv || {}) };
-  if (!extraEnv || !Object.hasOwn(extraEnv, "AWEB_IDENTITY_HOME")) delete childEnv.AWEB_IDENTITY_HOME;
+  const childEnv = awChildEnv(process.env, extraEnv);
   for (const name of unsetEnv) delete childEnv[name];
   return childEnv;
 };
@@ -687,13 +681,13 @@ function resolveResidentCustody(name) {
   return custody;
 }
 function grantShow(custody, grantId) {
-  const raw = run(["aw", "id", "grant", "show", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+  const raw = run(["aw", "id", "grant", "show", grantId, "--json"], custody, 60000);
   return parseAwJson(raw, "aw id grant show");
 }
 const revokeMaybeApplied = (error) => /may have applied|context deadline exceeded|timed out|timeout/i.test(String(error?.message || error));
 function revokeGrant(custody, grantId) {
   try {
-    const raw = run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+    const raw = run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000);
     return parseAwJson(raw, "aw id grant revoke");
   } catch (e) {
     if (revokeMaybeApplied(e)) {
@@ -821,7 +815,7 @@ function revokeOrNote(custody, grant) {
  *  waits at most aw's own 10 s client timeout for it, so an outage delays a start
  *  by no more than that before it says it could not check; a retire waits longer. */
 const START_GRANT_LIST_TIMEOUT_MS = 10000, RETIRE_GRANT_LIST_TIMEOUT_MS = 30000;
-const grantLister = (custody, timeout) => (argv) => run(argv, custody, timeout, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+const grantLister = (custody, timeout) => (argv) => run(argv, custody, timeout);
 /** The resident's custody root, or undefined when it cannot be resolved. */
 function residentCustodyOf(name) {
   const residents = settings.residents && typeof settings.residents === "object" && !Array.isArray(settings.residents) ? settings.residents : {};
@@ -919,7 +913,7 @@ function globalGrantRenew(oldMeta) {
   if (seatRecord?.seat !== seat) persistSeat({ seat, instance, resident, team });
   let raw, parsed;
   // A failed mint call printed no receipt, so there is no grant to revoke.
-  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
+  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000); }
   catch (e) { keepPrevious(`renewal mint failed (${e.message || e})`); }
   try { parsed = parseMintedGrant(raw, grantHome, ttl); }
   catch (e) {
@@ -974,7 +968,7 @@ function globalGrantSpawn() {
   persistSeat({ seat, instance, resident, team });
   // A failed mint call printed no receipt, so there is no grant to revoke.
   let raw;
-  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
+  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000); }
   catch (e) { cleanup(); fatal(`identity grant minting failed: ${e.message || e}`, seatMeta()); }
   try {
     let minted;
@@ -1137,9 +1131,6 @@ function membershipRegistry(teamsFile, team, service) {
  *  timeout) may still have completed server-side: the home then holds a
  *  signing key, a team certificate and a workspace binding. */
 const joinedLate = (homeDir) => existsSync(join(homeDir, ".aw", "signing.key")) && existsSync(join(homeDir, ".aw", "team-certs")) && !!workspaceAliasOf(homeDir);
-// Ambient locators, keys and role hints a caller's session may carry; the
-// minting command must not act on them.
-const MINT_UNSET_ENV = ["AWEB_URL", "AWEB_API_KEY", "AWEB_ROLE_NAME", "AWEB_ROLE"];
 const JOIN_TIMEOUT_MS = Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) > 0 ? Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) : 120000;
 const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
@@ -2055,13 +2046,12 @@ function registryOriginFromJoinedState(row, match, listed) {
   const fromJson = registryOrigin(match?.registry_origin || match?.registry_url || match?.registry || match?.awid_registry_url || listed?.registry_origin || listed?.registry_url || listed?.registry || listed?.awid_registry_url);
   if (fromJson) return { registry: fromJson };
   // Then aw's order (see membershipRegistry): the membership's own registry_url, else
-  // discovery from its aweb_url, else aw's default, which AWID_REGISTRY_URL sets. A
+  // discovery from its aweb_url, else aw's built-in default. The ambient registry
+  // is stripped from every child, so it cannot choose a cleanup destination. A
   // registry anywhere else in the home is one aw does not use for this team.
   const membership = membershipRegistry(join(row.identityHome, "teams.yaml"), row.team, "the membership's service");
   if (membership.kind === "registry") return { registry: membership.registry };
   if (membership.kind === "not-plain" || membership.kind === "discovered") return { registry: null, registryError: membership.registryError };
-  const fromEnv = registryOrigin(process.env.AWID_REGISTRY_URL);
-  if (fromEnv) return { registry: fromEnv };
   return { registry: null, registryError: "registry origin could not be determined from the joined identity; command omits --registry and aw will use its default" };
 }
 function certificateIdFromJoinedCertificateFile(row) {
@@ -2346,7 +2336,7 @@ if (event === "launch") {
       // reaches the new identity.
       // 120 s: a mint on a slow or flapping link is slow, not broken; a killed
       // mint that completed server-side is caught below.
-      raw = parseSecretJson(run(["aw", "init", flagEq("--join-from", root), flagEq("--join-team", team), flagEq("--name", instance), "--json", "--do-not-touch-agents-md"], home, JOIN_TIMEOUT_MS, { secretSafe: true, unsetEnv: MINT_UNSET_ENV }), "aw init --join-from");
+      raw = parseSecretJson(run(["aw", "init", flagEq("--join-from", root), flagEq("--join-team", team), flagEq("--name", instance), "--json", "--do-not-touch-agents-md"], home, JOIN_TIMEOUT_MS, { secretSafe: true }), "aw init --join-from");
     } catch (e) {
       // The mint may have completed after the CLI was killed or reported a
       // failure: if the home now holds a bound identity, that identity EXISTS
@@ -3246,7 +3236,7 @@ ${JSON.stringify(problem.details || {})}`);
     const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
     let created;
     try {
-      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
+      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team create");
     } catch (e) {
       if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
       if (teamNameTaken(e.stdout, createNamespace, name)) throw new Error(`team ${candidateTeamId(name)} already exists in the registry, and its team key is not on this machine; choose another label (--create <label>), or run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key; nothing was created`);
@@ -3262,7 +3252,7 @@ ${JSON.stringify(problem.details || {})}`);
     // newer record, so it is read first: a record setup finds naming another URL is not replaced.
     const serverTarget = [flagEq("--team", name), flagEq("--namespace", createNamespace)];
     const readServerRecord = () => {
-      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team show-server"); }
+      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team show-server"); }
       catch (e) {
         if (teamServerRecordMissing(e.stdout, team)) return undefined;
         throw new Error(`reading the AWID team-server record for ${team} failed: ${e.message}${after(e)}`);
@@ -3287,11 +3277,11 @@ ${JSON.stringify(problem.details || {})}`);
     // no publish-if-absent: a record published between that read and set-server is replaced, and the
     // verify after it, which reads setup's own record, does not notice.
     const published = checkedServerRecord();
-    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }); }
     catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
     const publishedNow = !published && !checkedServerRecord();
     if (publishedNow) {
-      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }); }
       catch (e) { throw new Error(`publishing the AWID team-server record for ${team} (${service}) failed: ${e.message}${after(e)}`); }
       if (!recordVerifies(readServerRecord())) throw new Error(notVerified);
     }
@@ -3299,7 +3289,7 @@ ${JSON.stringify(problem.details || {})}`);
     let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
     if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
       let minted;
-      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
+      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team invite"); }
       catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
       token = minted?.token;
       if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);
@@ -3476,7 +3466,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
-        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true });
+        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY, AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } });
       }
       teams = readTeams();
     }

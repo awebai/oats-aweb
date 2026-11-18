@@ -1,3 +1,4 @@
+import { awChildEnv } from './aw-child-env.mjs';
 // `oats aweb wake install | status | uninstall`: the per-user service that
 // keeps the host wake broker (`aw wake run`) running, a launchd agent on macOS
 // and a systemd --user unit on Linux, labelled ai.aweb.wake. aw has no install
@@ -289,8 +290,8 @@ export function foreignWakeMessage(units, where, verb) {
 /** `aw wake status --json` with aw's default state directory (the one the unit
  *  uses), or undefined when it cannot be read. */
 export function readWakeStatus(aw, env, home) {
-  const childEnv = { ...env, AW_NO_UPDATE_CHECK: "1" };
-  delete childEnv.AWEB_IDENTITY_HOME; delete childEnv.AW_WAKE_STATE_DIR;
+  const childEnv = awChildEnv(env);
+  delete childEnv.AW_WAKE_STATE_DIR;
   try {
     const doc = JSON.parse(execFileSync(aw, ["wake", "status", "--json"], { cwd: home, env: childEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: STATUS_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 }));
     return object(doc) ? doc : undefined;
