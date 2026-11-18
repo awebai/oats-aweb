@@ -1,5 +1,5 @@
 import { verifyPinnedAw } from './helpers/pinned-aw.mjs';
-// Opt-in real aw 1.36.33 contract check. No hosted account is created: every
+// Opt-in real aw at the supported floor or later contract check. No hosted account is created: every
 // endpoint is loopback and signup is deliberately refused before credentials
 // or certificates are issued. This proves argv/wire acceptance, not live setup.
 import assert from 'node:assert/strict';
@@ -25,11 +25,11 @@ function run(command, args, options) {
   });
 }
 test('pinned real aw username contract accepts explicit root name and preserves no-root on refused signup', async t => {
-  if (!process.env.OATS_TEST_AW_1_36_33) {
-    assert.notEqual(process.env.OATS_USERNAME_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_33 to the pinned executable');
-    t.skip('requires explicit pinned real aw 1.36.33 executable'); return;
+  if (!process.env.OATS_TEST_AW) {
+    assert.notEqual(process.env.OATS_USERNAME_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW to the pinned executable');
+    t.skip('requires explicit pinned real aw at the supported floor or later executable'); return;
   }
-  const binary = realpathSync(resolve(process.env.OATS_TEST_AW_1_36_33));
+  const binary = realpathSync(resolve(process.env.OATS_TEST_AW));
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'oats-username-native-')));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const home = join(scratch, 'home'), bin = join(scratch, 'bin');
@@ -72,13 +72,18 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   assert.equal(result.code, 1, result.stderr); assert.equal(result.signal, null);
   assert.match(result.stderr, /output withheld/);
   assert.doesNotMatch(result.stdout + result.stderr, /SYNTHETIC-SECRET|missing required flag/);
-  assert.deepEqual(calls.map(c => [c.method, c.path]), [
+  assert.deepEqual(calls.filter(c => c.path !== '/health').map(c => [c.method, c.path]), [
     ['GET', '/api/v1/discovery'], ['POST', '/api/v1/onboarding/check-username'], ['POST', '/api/v1/onboarding/cli-signup'],
   ]);
-  assert.equal(calls[1].body.username, 'fixture-user');
-  assert.equal(calls[2].body.username, 'fixture-user');
-  assert.equal(calls[2].body.alias, 'fixture-root');
+  const signupCalls = calls.filter(c => c.method === 'POST');
+  assert.equal(signupCalls[0].body.username, 'fixture-user');
+  assert.equal(signupCalls[1].body.username, 'fixture-user');
+  assert.equal(signupCalls[1].body.alias, 'fixture-root');
   assert.equal(existsSync(join(root, '.aw')), false);
+  // aw 1.36.58 awid/request_compression.go:242 probes GET /health for request
+  // compression support; this read carries no body and performs no signup.
+  for (const c of calls.filter(c => c.path === '/health')) assert.deepEqual(c, { method: 'GET', path: '/health', body: null });
+  const afterSignup = structuredClone(calls);
   // A generated retained membership exercises real native JSON scope/alias
   // evidence and resume, without a successful signup or usable hosted account.
   const retained = join(scratch, 'retained'); mkdirSync(join(retained, '.aw', 'team-certs'), { recursive: true });
@@ -98,6 +103,7 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   const cert = { version: 1, certificate_id: randomUUID(), team_id: team, team_did_key: signer.did, member_did_key: member.did, alias: 'fixture-root', identity_scope: 'local', issued_at: new Date().toISOString().replace(/\.\d+Z$/, 'Z') };
   cert.signature = sign(null, Buffer.from(JSON.stringify(Object.fromEntries(Object.keys(cert).sort().map(k => [k, cert[k]])))), signer.privateKey).toString('base64').replace(/=+$/, '');
   writeFileSync(join(retained, '.aw', 'team-certs', 'default__fixture-user.aweb.ai.pem'), JSON.stringify(cert), { mode: 0o600 });
+  writeFileSync(join(retained, '.aw', 'signing.key'), '-----BEGIN ED25519 PRIVATE KEY-----\n' + member.privateKey.export({ format: 'der', type: 'pkcs8' }).subarray(-32).toString('base64') + '\n-----END ED25519 PRIVATE KEY-----\n', { mode: 0o600 });
   writeFileSync(join(retained, '.aw', 'identity.yaml'), `did: ${member.did}\ncustody: self\nidentity_scope: local\n`);
   writeFileSync(join(retained, '.aw', 'teams.yaml'), `active_team: ${team}\nmemberships:\n  - team_id: ${team}\n    alias: fixture-root\n    cert_path: team-certs/default__fixture-user.aweb.ai.pem\n    aweb_url: ${endpoint}\n`);
   const retainedKernel = fakeKernelTeamConfig(join(scratch, 'retained-kernel'), retained);
@@ -110,7 +116,7 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   const resumed = await run(process.execPath, retainedArgs, { env: retainedEnv, cwd: retained });
   assert.equal(resumed.code, 0, resumed.stdout + resumed.stderr); assert.equal(JSON.parse(resumed.stdout).result.team, team);
   assert.equal(retainedKernel.read().defaultTeam.label, 'fixture-user');
-  assert.equal(calls.length, 3, 'plan and resume never perform another signup or service call');
+  assert.deepEqual(calls, afterSignup, 'plan and resume never perform another signup or service call');
   assert.equal(readFileSync(join(retained, '.aw', 'team-certs', 'default__fixture-user.aweb.ai.pem'), 'utf8'), originalCert);
   // #78 uses the same native certificate reader for an admitted, connected
   // root whose label has not yet been recorded. No invite is redeemed here.
@@ -131,7 +137,7 @@ test('pinned real aw username contract accepts explicit root name and preserves 
     assert.equal(JSON.parse(result.stdout).result.team, team);
   }
   assert.equal(joinKernel.read().defaultTeam.label, 'joined');
-  assert.equal(calls.length, 3, 'native joined membership resume has no service or redemption calls');
+  assert.deepEqual(calls, afterSignup, 'native joined membership resume has no service or redemption calls');
   assert.equal(readFileSync(join(joinRoot, '.aw', 'team-certs', 'default__fixture-user.aweb.ai.pem'), 'utf8'), originalCert);
   t.diagnostic('Generated admitted root: actual native LOCAL membership resumes labelled join and mapping/default without invite redemption; not live acceptance.');
   t.diagnostic('Generated retained LOCAL certificate: actual native membership alias/scope verified; plan no mutations and resume mapped/defaulted through fixture public kernel without another signup. Not a live hosted account.');

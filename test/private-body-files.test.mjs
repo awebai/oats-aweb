@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 // Agents copy these examples literally: a fixed /tmp body file on a shared host
@@ -33,12 +35,23 @@ test('no shipped skill, inject or README example writes a message or task body t
   }
 });
 
-test('the oats-aweb draft recipe makes a unique owner-only file in a home entry retirement drops', () => {
+test('the documented draft recipe creates distinct owner-only disposable files', t => {
+  const home = mkdtempSync(join(tmpdir(), 'aweb-draft-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
   const skill = readFileSync(join(capabilities, 'oats-aweb/skills/oats-aweb/SKILL.md'), 'utf8');
-  const recipe = skill.match(/^\(umask 077; mkdir -p "\$\{OATS_INSTANCE_HOME:\?\}\/([^/"]+)\/drafts" && mktemp "\$OATS_INSTANCE_HOME\/\1\/drafts\/(X+)"\)$/m);
-  assert.ok(recipe, 'section 3 carries the draft recipe');
-  assert.ok(recipe[2].length >= 6, 'enough random characters, and the X run ends the template (BSD mktemp)');
+  const recipe = skill.split('\n').find(line => line.startsWith('(umask 077;'));
+  assert.ok(recipe, 'the executable recipe is present');
+  const run = () => {
+    const r = spawnSync('/bin/sh', ['-c', recipe], { env: { PATH: '/usr/bin:/bin', OATS_INSTANCE_HOME: home }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  const first = run(), second = run();
+  assert.notEqual(first, second);
   const manifest = JSON.parse(readFileSync(join(capabilities, 'oats-aweb/oats.json'), 'utf8'));
-  assert.ok(manifest.retirement.disposable.home.includes(recipe[1]), `${recipe[1]} is declared disposable, so retirement neither fingerprints nor copies drafts`);
-  for (const example of skill.matchAll(/--body-file(?:\s+|=)(\S+)/g)) assert.equal(example[1], '<body-file>');
+  for (const file of [first, second]) {
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.ok(file.startsWith(home + '/'));
+    assert.ok(manifest.retirement.disposable.home.includes(file.slice(home.length + 1).split('/')[0]));
+  }
 });

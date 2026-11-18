@@ -1,25 +1,30 @@
-// Opt-in contract fixtures accept the distributed pin or an explicitly receipted
-// exact-source build. A source build is never reported as the published binary.
+// Explicitly selected released aw, checked against the CI matrix entry.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
+import { AW_TEST_VERSIONS } from '../../scripts/aw-test-versions.mjs';
 
-const commit = '877bbee94ce45aa1ff103912bc9850556e61dfb4';
+// Preserve explicit historical source-build receipts for the source fixture;
+// CI qualification uses only the released matrix below.
 export function verifyPinnedAw(binary, version, receiptPath = process.env.OATS_TEST_AW_SOURCE_RECEIPT) {
-  assert.equal(version.status, 0);
+  assert.equal(version.status, 0, version.stderr);
   const sha256 = createHash('sha256').update(readFileSync(binary)).digest('hex');
-  assert.match(version.stdout, new RegExp('commit: ' + commit + ' \\(github.com/awebai/aw\\)'));
-  if (!receiptPath) {
-    assert.match(version.stdout, /^aw 1\.36\.33\n/);
-    return { kind: 'distributed-binary', binary, sha256, version: version.stdout.trim() };
+  if (receiptPath) {
+    const sourceCommit = '61c38162596d1af9085741d70d15900ff9894257';
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    assert.equal(receipt.kind, 'exact-source-build');
+    assert.equal(receipt.sourceCommit, sourceCommit);
+    assert.equal(receipt.sourceClean, true);
+    assert.equal(realpathSync(receipt.binary), realpathSync(binary));
+    assert.equal(receipt.sha256, sha256);
+    assert.equal(receipt.version, version.stdout.trim());
+    assert.match(version.stdout, /^aw 1\.36\.23-source-fixture\n/);
+    assert.ok(version.stdout.includes(`commit: ${sourceCommit} (github.com/awebai/aw)`));
+    return { kind: receipt.kind, binary, sha256, version: version.stdout.trim(), sourceCommit };
   }
-  const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
-  assert.equal(receipt.kind, 'exact-source-build');
-  assert.equal(receipt.sourceCommit, commit);
-  assert.equal(receipt.sourceClean, true);
-  assert.equal(realpathSync(receipt.binary), realpathSync(binary));
-  assert.equal(receipt.sha256, sha256);
-  assert.equal(receipt.version, version.stdout.trim());
-  assert.match(version.stdout, /^aw 1\.36\.33-source-fixture\n/);
-  return { kind: receipt.kind, binary, sha256, version: version.stdout.trim(), sourceCommit: commit };
+  const actual = /^aw (\S+)$/m.exec(version.stdout)?.[1];
+  const expected = process.env.OATS_TEST_AW_VERSION;
+  assert.ok(AW_TEST_VERSIONS.includes(actual), `unqualified aw ${actual}`);
+  if (expected) assert.equal(actual, expected, 'the installed binary must be the selected CI matrix version');
+  return { kind: 'distributed-binary', binary, sha256, version: version.stdout.trim() };
 }

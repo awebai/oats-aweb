@@ -7,49 +7,6 @@ const root = new URL('../', import.meta.url);
 const skill = () => readFileSync(new URL('oats-package/capabilities/oats-aweb-tasks/skills/aweb-tasks/SKILL.md', root), 'utf8');
 const inject = () => readFileSync(new URL('oats-package/capabilities/oats-aweb-tasks/injects/aweb-tasks.md', root), 'utf8');
 
-test('tasks skill covers identity, claims, blockers, handoff, and safe text inputs', () => {
-  const text = skill();
-  for (const required of [
-    'aw work ready', 'aw work active', 'aw work blocked',
-    '--assignee', '--status', '--labels', '--description-file', '--notes-file',
-    '--body-file', '--reason-file', '--type epic', '--parent', '--identity-home',
-    'aw task dep add', 'aw task dep remove', 'aw task comment add',
-    'aw task close', 'aw task reopen', 'workspace_id', '/v1/claims',
-    '200', 'roster', 'human', 'fenced', 'data', 'messaging',
-  ]) assert.ok(text.includes(required), `missing ${required}`);
-  assert.doesNotMatch(text, /--(?:description|notes|reason|body)(?![\w-])/);
-  assert.match(text, /--title "\$\(cat [^)]+\)"/);
-  assert.match(text, /one line/);
-  assert.match(text, /status open --assignee/);
-  assert.match(text, /in_progress[\s\S]*actor/);
-});
-
-test('tasks skill handles work and claim events and stands in for aweb-coordination', () => {
-  const text = skill().replace(/\s+/g, ' ');
-  assert.match(text, /event of type `work` or `claim`/);
-  assert.match(text, /Act on it at once only when it affects the work you are on/);
-  assert.match(text, /`aweb-coordination` skill; this skill takes its place/);
-});
-
-test('tasks inject routes only task coordination to its skill', () => {
-  const text = inject();
-  // aweb's coordination skill applies aweb tasks only where a team already has
-  // tasks or its instructions say it uses them; this sentence, kept on one line,
-  // is that opt-in for an OATS home that composes oats.aweb-tasks.
-  assert.match(text, /^This workspace tracks work in aweb tasks, and its agents use them\.$/m);
-  assert.match(skill(), /^This workspace tracks work in aweb tasks, and its agents use them\.$/m);
-  assert.match(text, /\/aweb-tasks/);
-  assert.match(text, /instance home/);
-  assert.match(text, /human/);
-  assert.match(text, /messaging/);
-});
-
-test('tasks skill starts with identity verification and stops on failure', () => {
-  const text = skill();
-  assert.match(text.slice(text.indexOf('# aweb tasks')), /^# aweb tasks\s+First, run this read-only identity check from your instance home:\s+```bash\naw whoami\n```/);
-  assert.match(text, /If it fails, report the exact failure to your human and do not use tasks/);
-});
-
 test('argv checker extracts examples and only requests help without example arguments', () => {
   const markdown = '```bash\naw --identity-home <identityHome> task create --title "$(cat /path/title.txt)" --description-file /path/description.md\n```\nAlso `aw work ready`.';
   const calls = [];

@@ -52,13 +52,13 @@ function realShape(root) {
 }
 
 /** A fake aw: `id team members` and `workspace status` answer the given documents (status
- *  followed by aw's "Gone workspace checks" text, as the real command prints it), or fail. */
-function fakeAw(t, { certificates, presence, presenceFails = false, certificatesFail = false }) {
+ *  with gone-workspace diagnostics on stderr, as aw prints them), or fail. */
+function fakeAw(t, { certificates, presence, presenceFails = false, certificatesFail = false, trailingNote = false }) {
   const dir = tempDir(t);
   const bin = join(dir, "bin");
   mkdirSync(bin);
   writeFileSync(join(dir, "certs.json"), JSON.stringify(certificates));
-  writeFileSync(join(dir, "presence.json"), JSON.stringify(presence, null, 2) + "\nGone workspace checks:\n  old-one (~/x) — gone_local_path_only, left workspace record intact\n");
+  writeFileSync(join(dir, "presence.json"), JSON.stringify(presence, null, 2) + (trailingNote ? "\ntrailing note\n" : "\n"));
   writeFileSync(join(bin, "aw"), `#!${process.execPath}
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -69,6 +69,7 @@ if (args.slice(0, 3).join(" ") === "id team members") {
   fs.writeSync(1, fs.readFileSync(${JSON.stringify(join(dir, "certs.json"))}, "utf8")); process.exit(0); }
 if (args.slice(0, 2).join(" ") === "workspace status") {
   if (${JSON.stringify(presenceFails)}) { console.error("aweb: http 503"); process.exit(1); }
+  console.error("Gone workspace checks: old-one — gone_local_path_only");
   fs.writeSync(1, fs.readFileSync(${JSON.stringify(join(dir, "presence.json"))}, "utf8")); process.exit(0);
 }
 console.error("fake aw: unexpected " + args.join(" ")); process.exit(93);
@@ -215,4 +216,13 @@ test("1.20.0 documents the roster: CHANGELOG, README, skill and inject", () => {
   assert.doesNotMatch(skill, /their alias is on the roster|will not resolve/);
   const inject = readFileSync(join(REPO, "oats-package", "capabilities", "oats-aweb", "injects", "aweb.md"), "utf8");
   assert.doesNotMatch(inject, /who you can reach/);
+});
+
+// aw writes diagnostics to stderr. Trailing stdout is not a valid JSON answer.
+test("roster refuses a presence answer with trailing stdout text", t => {
+  const shape = realShape('/fixture/root');
+  const fx = fixture(t, { ...shape, trailingNote: true });
+  const d = doc(fx.roster(['--json']));
+  assert.equal(d.presenceComplete, false);
+  assert.ok(d.problems.length > 0);
 });
