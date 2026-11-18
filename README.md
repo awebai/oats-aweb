@@ -1548,6 +1548,11 @@ time as the delete. Before that, retire leaves each joined team and releases eac
 unfinished join. While a release that needs the member key fails (anything but
 `team_not_hosted`), retire keeps the key and the record and exits nonzero.
 
+A grant seat with no grant or seat id answers `retired: false` with
+`reason: "nothing-to-delete"`, the kernel's completed no-op vocabulary.
+Workspace deletion reads the native `alias_released_reason` field only;
+an answer without it records `unstated` (or `no JSON answer` when unreadable).
+
 ### A retained seat on a server other than aweb Cloud
 
 On an aweb server other than aweb Cloud, an agent's identity is a retained
