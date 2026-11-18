@@ -161,6 +161,15 @@ jobs:
           OATS_AWEB_TEST_AW="$RUNNER_TEMP/aw/node_modules/.bin/aw" node --test --test-concurrency=1 --test-reporter=tap test/aw-error-prose-native.test.mjs | tee "$RUNNER_TEMP/aw-error-prose.tap"
           grep -q '^# skipped 0$' "$RUNNER_TEMP/aw-error-prose.tap"
           test "$(grep -c '^ok [0-9]* - real aw prose: ' "$RUNNER_TEMP/aw-error-prose.tap")" -eq 6
+      - name: Real-aw retire environment isolation at the tested aw
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          tested="$(node --input-type=module -e "import {AW_TESTED} from './oats-package/capabilities/oats-aweb/lib/aw-floor.mjs'; console.log(AW_TESTED)")"
+          if [ "$AW_VERSION" != "$tested" ]; then exit 0; fi
+          OATS_AWEB_TEST_AW="$RUNNER_TEMP/aw/node_modules/.bin/aw" node --test --test-concurrency=1 --test-reporter=tap test/aw-child-env-native.test.mjs | tee "$RUNNER_TEMP/aw-child-env.tap"
+          grep -q '^# skipped 0$' "$RUNNER_TEMP/aw-child-env.tap"
+          test "$(grep -c '^ok [0-9]* - real aw: retire ' "$RUNNER_TEMP/aw-child-env.tap")" -eq 1
       - name: Give the runner a systemd user manager
         if: ${{ !cancelled() }}
         shell: bash

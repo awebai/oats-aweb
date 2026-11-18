@@ -92,5 +92,6 @@ test('setup passes its documented key and service only to the explicit init', t 
   const calls = f.calls(), init = calls.find(c => c.args[0] === 'init');
   assert.ok(init, r.stdout + r.stderr);
   assert.deepEqual(init.env, {AWEB_URL: f.env.AWEB_URL, AWEB_API_KEY: f.env.AWEB_API_KEY, AWID_REGISTRY_URL: f.env.AWID_REGISTRY_URL});
+  assert.ok(calls.indexOf(init) < calls.length - 1, 'a native child runs after init');
   for (const c of calls.filter(c => c !== init)) assert.deepEqual(c.env, {});
 });

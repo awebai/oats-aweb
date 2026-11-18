@@ -255,9 +255,9 @@ async function readinessDetails(settings,{deployment,env=process.env,retainedSea
   if(!retainedSeat && needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,awVersion:aw.version,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
-function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
+function runAw(argv,cwd,{timeout=60000}={}) {
   // The shared selector list applies to every readiness child.
-  const env=awChildEnv();for(const name of unsetEnv) delete env[name];
+  const env=awChildEnv();
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} ${childOutcome(e,timeout)}`);}
 }

@@ -3236,7 +3236,7 @@ ${JSON.stringify(problem.details || {})}`);
     const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
     let created;
     try {
-      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
+      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team create");
     } catch (e) {
       if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
       if (teamNameTaken(e.stdout, createNamespace, name)) throw new Error(`team ${candidateTeamId(name)} already exists in the registry, and its team key is not on this machine; choose another label (--create <label>), or run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key; nothing was created`);
@@ -3252,7 +3252,7 @@ ${JSON.stringify(problem.details || {})}`);
     // newer record, so it is read first: a record setup finds naming another URL is not replaced.
     const serverTarget = [flagEq("--team", name), flagEq("--namespace", createNamespace)];
     const readServerRecord = () => {
-      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team show-server"); }
+      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team show-server"); }
       catch (e) {
         if (teamServerRecordMissing(e.stdout, team)) return undefined;
         throw new Error(`reading the AWID team-server record for ${team} failed: ${e.message}${after(e)}`);
@@ -3277,11 +3277,11 @@ ${JSON.stringify(problem.details || {})}`);
     // no publish-if-absent: a record published between that read and set-server is replaced, and the
     // verify after it, which reads setup's own record, does not notice.
     const published = checkedServerRecord();
-    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }); }
     catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
     const publishedNow = !published && !checkedServerRecord();
     if (publishedNow) {
-      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }); }
       catch (e) { throw new Error(`publishing the AWID team-server record for ${team} (${service}) failed: ${e.message}${after(e)}`); }
       if (!recordVerifies(readServerRecord())) throw new Error(notVerified);
     }
@@ -3289,7 +3289,7 @@ ${JSON.stringify(problem.details || {})}`);
     let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
     if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
       let minted;
-      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
+      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team invite"); }
       catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
       token = minted?.token;
       if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);

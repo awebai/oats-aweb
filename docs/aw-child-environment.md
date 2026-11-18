@@ -23,6 +23,10 @@ Deliberate inputs:
   Setup create/join still reads the documented
   `AWEB_URL` to choose its explicit `--service`/`--url` arguments. The
   messages asking for the server's public URL still apply.
+- BYOT `setup --create --namespace` explicitly passes `AWID_REGISTRY_URL`
+  to each `id team create/show-server/register/set-server/invite` admin call.
+  Other selectors stay scrubbed; subsequent native reads also scrub the
+  registry. With that operator input absent, aw uses its built-in registry.
 - Resident create keeps its PATH/HOME-only base. Its init explicitly passes
   `AWEB_URL`, `AWEB_API_KEY` and optional `AWID_REGISTRY_URL`; its subsequent
   native reads explicitly retain that registry, without URL or key.
@@ -63,3 +67,10 @@ binding's version and readiness children, health, wake status and setup's
 explicit inputs. No live deployment or tmux server is used. Real-service
 journeys remain CI's responsibility; this double records process environment,
 not remote service behavior.
+
+`test/aw-child-env-native.test.mjs` runs the real retire hook and an explicitly
+selected real aw against two loopback origins. With all six ambient selectors
+exported, only the home's origin receives the signed DELETE; it returns a
+fixture failure so no real service state is deleted. CI requires this test
+on the tested-aw leg without skips. The real-stack journey must also pass
+before merge to prove registry discovery for spawned/joined homes.
