@@ -5,6 +5,8 @@ uses `awChildEnv`: it copies its base environment, removes
 `AWEB_IDENTITY_HOME`, `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE`
 and `AWID_REGISTRY_URL`, then applies only the call's named explicit inputs.
 It sets `AW_NO_UPDATE_CHECK=1`. An existing stricter base stays stricter.
+An explicit input unset in the caller is passed as `undefined`, which Node's
+spawn drops; an absent operator input therefore means aw's own default.
 
 An ordinary spawn, launch, retire, roster or readiness read takes identity
 and service from its selected aw home or explicit argv. Exporting a selector
