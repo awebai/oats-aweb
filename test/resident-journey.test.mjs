@@ -354,6 +354,64 @@ test("printed steps, the derived label already maps to the resident's team and i
   printedStepsJourney(t, { teams: (team) => `teams:\n  default: { team: '${team}' }\n`, defaultTeam: "default", expectStatus: "reused", expectDefault: "already" });
 });
 
+test("a real grant seat retires in team X while its resident keeps team Y active, and show confirms an uncertain revoke", (t) => {
+  if (!configured(t)) return;
+  if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
+  const j = journey(t), ns = `grant-team-${randomBytes(4).toString("hex")}.test`;
+  const teamX = `alpha:${ns}`, teamY = `default:${ns}`;
+  j.env.TMUX_TMPDIR = join(j.base,"tmux");
+  mkdirSync(j.env.TMUX_TMPDIR);
+  j.workspace({teams:`teams:\n  x: { team: '${teamX}' }\n`, defaultTeam:"x"});
+  const root = join(j.base, "resident");
+  globalIdentity(j, root, "resident", ns);
+  const step = args => {
+    const r = j.aw(root, args, {AWID_SKIP_DNS_VERIFY:"1"});
+    assert.equal(r.status, 0, `aw ${args.join(" ")}: ${r.stdout}${r.stderr}`);
+    return r.stdout;
+  };
+  step(["id", "team", "create", "--namespace", ns, "--name", "alpha", "--registry", AWID_URL, "--json"]);
+  const cert = JSON.parse(step(["id", "team", "add-member", "--namespace", ns, "--team", "alpha", "--member", `${ns}/resident`, "--json"])).certificate_id;
+  step(["id", "team", "fetch-cert", "--namespace", ns, "--team", "alpha", "--cert-id", cert, "--registry", AWID_URL, "--json"]);
+  step(["team", "switch", teamY]);
+  const teams = JSON.parse(step(["team", "list", "--json"]));
+  assert.equal(teams.active_team, teamY);
+  assert.ok(teams.memberships.some(row=>row.team_id===teamX));
+  const adopted = j.run(["create", "resident", "--root", root, "--json"], {AWEB_URL, AWID_REGISTRY_URL:AWID_URL});
+  assert.equal(adopted.status, 0, adopted.stdout + adopted.stderr);
+  Object.assign(j.env, {AWEB_URL, AWID_REGISTRY_URL:AWID_URL});
+  const spawned = j.shell("oats spawn probe --name grant-seat --provider oats.aweb identity.mode=global identity.resident=resident --no-launch --json");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const {home, instance} = spawned.doc.result;
+  const identity = JSON.parse(readFileSync(join(home,"instance.json"),"utf8")).capabilityMeta["oats.aweb"].identity;
+  assert.equal(identity.team, teamX);
+
+  // This wrapper forwards every operation to the real aw and service. Only
+  // after a successful real revoke does it simulate a lost client response,
+  // forcing the hook to confirm with a real show. It never fakes grant state.
+  const log = join(j.base,"grant-calls.jsonl"), realAw = realpathSync(AW);
+  rmSync(join(j.bin,"aw"));
+  writeFileSync(join(j.bin,"aw"), `#!${process.execPath}
+const {spawnSync}=require('node:child_process');
+const {appendFileSync}=require('node:fs');
+const args=process.argv.slice(2);
+const r=spawnSync(${JSON.stringify(realAw)},args,{env:process.env,encoding:'utf8'});
+if(args[0]==='id' && args[1]==='grant' && ['revoke','show'].includes(args[2])) appendFileSync(${JSON.stringify(log)},JSON.stringify({args,status:r.status})+'\\n');
+process.stdout.write(r.stdout||''); process.stderr.write(r.stderr||'');
+if(args[0]==='id' && args[1]==='grant' && args[2]==='revoke' && r.status===0) {process.stderr.write('revoke may have applied: context deadline exceeded\\n'); process.exit(1);}
+process.exit(r.status ?? 1);
+`, {mode:0o755});
+  const retired = j.shell(`oats retire ${instance} --json`);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const calls = readFileSync(log,"utf8").trim().split("\n").map(JSON.parse);
+  assert.deepEqual(calls.map(c=>c.args[2]), ["revoke","show"]);
+  for (const call of calls) {
+    assert.ok(call.args.includes(`--team=${teamX}`), JSON.stringify(call));
+    assert.equal(call.status, 0, "the real aw operation succeeded at the service");
+  }
+  assert.equal(JSON.parse(step(["id","grant","show",identity.grant.id,`--team=${teamX}`,"--json"])).status,"revoked");
+  assert.equal(JSON.parse(step(["team","list","--json"])).active_team,teamY);
+});
+
 test("a real joined-team spawn: invite, accept, connect and register on this aw, and a retire leaves nothing", (t) => {
   if (!configured(t)) return;
   if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }

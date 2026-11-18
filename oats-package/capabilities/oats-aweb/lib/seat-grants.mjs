@@ -29,9 +29,9 @@ export const strayGrants = (grants, label, keep) =>
 
 /** How long a grant that could not be revoked stays valid, and how to revoke
  *  it: a never-grant ends only when revoked. */
-export function unrevokedGrant({grant, expiresAt, custody}) {
+export function unrevokedGrant({grant, expiresAt, custody, team}) {
   const until = expiresAt === 'never' ? 'until revoked' : `until ${expiresAt || 'its TTL'} unless revoked`;
-  return `grant ${grant} stays valid ${until}: run \`aw id grant revoke ${grant}\` in ${custody}`;
+  return `grant ${grant} stays valid ${until}: run \`aw id grant revoke ${grant} --team=${team}\` in ${custody}`;
 }
 
 /** Revoke this seat's stray grants. Returns {checked, revoked, remaining,
@@ -43,7 +43,7 @@ export function sweepSeatGrants({list, revoke, custody, team, label, keep}) {
   const revoked = [], remaining = [];
   for (const stray of strayGrants(grants, label, keep)) {
     try { revoke(stray.grant); revoked.push(stray); }
-    catch (error) { remaining.push({...stray, custody, error: String(error?.message || error).slice(0, 200)}); }
+    catch (error) { remaining.push({...stray, custody, team, error: String(error?.message || error).slice(0, 200)}); }
   }
   return {checked: true, revoked, remaining, grants};
 }

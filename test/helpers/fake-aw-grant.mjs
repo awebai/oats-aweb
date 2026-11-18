@@ -152,9 +152,12 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "mint") {
   process.exit(0);
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "revoke") {
+  const team = val("--team") || process.env.FAKE_ACTIVE_TEAM || "t:example.test";
+  if (!grants().some(g => g.grant_id === a[3] && g.team_id === team)) { console.error("grant not found in team " + team); process.exit(1); }
   // FAKE_REVOKE_FAIL: "1" fails every revoke, a grant id fails only that grant's.
   if (process.env.FAKE_REVOKE_FAIL && (process.env.FAKE_REVOKE_FAIL === "1" || process.env.FAKE_REVOKE_FAIL.split(",").includes(a[3]))) { console.error("revoke unavailable"); process.exit(1); }
-  saveGrants(grants().map(g => g.grant_id === a[3] ? { ...g, status: "revoked" } : g));
+  saveGrants(grants().map(g => g.grant_id === a[3] && g.team_id === team ? { ...g, status: "revoked" } : g));
+  if (process.env.FAKE_REVOKE_APPLIED_TIMEOUT) { console.error("revoke may have applied: context deadline exceeded"); process.exit(1); }
   console.log(j({ grant_id: a[3], status: "revoked" })); process.exit(0);
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "list") {
@@ -163,7 +166,12 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "list") {
   const team = val("--team");
   console.log(j({ grants: grants().filter(g => !team || g.team_id === team) })); process.exit(0);
 }
-if (a[0] === "id" && a[1] === "grant" && a[2] === "show") { console.log(j({ grant_id: a[3], status: "revoked" })); process.exit(0); }
+if (a[0] === "id" && a[1] === "grant" && a[2] === "show") {
+  const team = val("--team") || process.env.FAKE_ACTIVE_TEAM || "t:example.test";
+  const grant = grants().find(g => g.grant_id === a[3] && g.team_id === team);
+  if (!grant) { console.error("identity grant not found"); process.exit(1); }
+  console.log(j(grant)); process.exit(0);
+}
 console.error("fake aw: unexpected " + s); process.exit(2);
 `);
   chmodSync(join(bin, "aw"), 0o755);

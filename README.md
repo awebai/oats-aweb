@@ -38,6 +38,28 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## Unreleased — grant seats keep their recorded team and resident
+
+Grant show and revoke explicitly select the grant's team, including the show
+that confirms an uncertain revoke. The recovery command includes
+`--team=<team>` too, so a resident's active team cannot redirect cleanup.
+
+When `.oats-aweb/seat.json` exists, it owns this home's seat id, resident and
+team for renewal, sweep and retire. Changing the configured resident or default
+team refuses the start with a respawn remedy before host effects. Respawn the
+home to choose another team or resident. An unreadable or incomplete record
+refuses start and retire; restore the original readable record to retry cleanup.
+The hook never replaces an unreadable record with a new seat id. Homes created
+before 1.25.0 that have no seat record keep their existing lifecycle path.
+Existing homes receive this change through a provider module upgrade or respawn.
+
+If a mint receipt anomalously reports another team and immediate compensation
+cannot revoke it, retire stays within the recorded team and refuses. Run its
+printed revoke command with that other team's `--team` in the resident's
+custody directory, then run the printed `oats retire <instance> --force`.
+Ordinary retire cannot confirm cleanup in another team, even after that manual
+revoke. The fake exercises this compensation boundary.
+
 ## 1.42.1 — the release OATS pins for 1.42
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is

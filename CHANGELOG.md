@@ -42,6 +42,23 @@
   instead of `nothing-to-revoke`, so the kernel can remove the completed home.
   Workspace deletion reads only aw's `alias_released_reason`; an answer with
   only `reason` now records `unstated`. No deployment migration is required.
+- **Fixed: grant show, revoke and printed revoke commands name the grant's
+  team explicitly.** A resident whose custody selects another team can now
+  renew, sweep and retire a seat's grants. An uncertain revoke is checked with
+  show in the same team. Failed-mint cleanup uses the team in the mint receipt.
+- **Changed: a present `.oats-aweb/seat.json` owns the seat id, resident and
+  team for start and retire.** Current settings or metadata cannot move the
+  seat. A start with a different configured resident or default team refuses
+  before host effects and asks for a respawn. An unreadable or incomplete
+  record refuses start and retire even when metadata carries a seat; it is
+  never replaced with a new id. Restore the original readable record to retry
+  cleanup, or respawn to choose a new team or resident. Homes from before
+  1.25.0 with no seat record keep their existing lifecycle path. Existing
+  homes use this behavior only when they receive the new provider module.
+  If an anomalous mint receipt names another team and immediate compensation
+  fails, retire refuses with that team's manual revoke command and the
+  subsequent `oats retire <instance> --force` step; it cannot confirm cleanup
+  outside the recorded team.
 
 ## 1.42.1 — 2026-11-13
 
