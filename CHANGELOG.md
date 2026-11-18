@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Fixed: setup shows the native register refusal's server code.** aw
+  unwraps the server's `detail` and prints `service register: http 422:
+  {"code":...}`, so setup now reads that top-level code through its existing
+  bounded code validator. It never relays the body message. The fake uses
+  the same native shape, and CI requires real-aw prose and register tests
+  against loopback services. Existing old-floor decisions remain until the
+  aw floor moves; see docs/aw-error-decisions.md. No migration is required.
+
 - **Fixed: an empty global grant seat completes retire.** With neither grant
   nor seat id, retire answers `retired: false, reason: "nothing-to-delete"`
   instead of `nothing-to-revoke`, so the kernel can remove the completed home.

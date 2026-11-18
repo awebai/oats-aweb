@@ -42,8 +42,8 @@
 //                     registry-409 (create-team-registry-409)
 //   id team register  needs the team key; prints created, then synced. With
 //                     AW_REGISTER_FAIL_CODE it is refused as aw reports a server
-//                     refusal: `aweb: http <AW_REGISTER_FAIL_STATUS, 422> (...): <body>`
-//                     whose detail is {code: <that code>, message: RAW-AW-SENTINEL}
+//                     refusal: `service register: http <AW_REGISTER_FAIL_STATUS, 422>: <body>`
+//                     with {code: <that code>, message: RAW-AW-SENTINEL}
 //   id team invite    needs the team key ("no team key for D/N"); prints a local
 //                     invite as aw 1.36.56 does ({invite_id, status, token},
 //                     test/fixtures/byot-create/invite-team-key.stdout) whose
@@ -141,7 +141,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
 } else if (args[0] === "id" && args[1] === "team" && args[2] === "register") {
   const team = flag("--team"), [name, namespace] = team.split(":");
   if (!fs.existsSync(path.join(teamKeys, namespace, name + ".key"))) { const m = "local team controller key for " + team + " was not found: open " + path.join(teamKeys, namespace, name + ".key") + ": no such file or directory RAW-AW-SENTINEL"; console.error(m); console.log(JSON.stringify({ error: { code: "error", message: m } })); process.exit(1); }
-  if (process.env.AW_REGISTER_FAIL_CODE !== undefined) { console.error("aweb: http " + (process.env.AW_REGISTER_FAIL_STATUS || "422") + " (Content-Type: application/json; X-Fixture: RAW-AW-SENTINEL): " + JSON.stringify({ detail: { code: process.env.AW_REGISTER_FAIL_CODE, message: "RAW-AW-SENTINEL " + flag("--service") } })); process.exit(1); }
+  if (process.env.AW_REGISTER_FAIL_CODE !== undefined) { console.error("service register: http " + (process.env.AW_REGISTER_FAIL_STATUS || "422") + ": " + JSON.stringify({ code: process.env.AW_REGISTER_FAIL_CODE, message: "RAW-AW-SENTINEL " + flag("--service") })); process.exit(1); }
   const registered = path.join(teamKeys, namespace, name + ".registered");
   const status = fs.existsSync(registered) ? "synced" : "created";
   fs.writeFileSync(registered, flag("--service"));
