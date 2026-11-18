@@ -135,3 +135,18 @@ test('a dangling seat record is unreadable, never treated as an absent legacy re
     assert.equal(s.grants()[0].status, 'active');
   }
 });
+
+test('a long home path cannot truncate the respawn remedy from a launch refusal', t => {
+  const s = seat(t), spawned = s.run('spawn'); ok(spawned);
+  const longHome = join(s.home,'a'.repeat(150),'b'.repeat(150));
+  const record = join(longHome,'.oats-aweb','seat.json');
+  mkdirSync(dirname(record),{recursive:true});
+  writeFileSync(record,readFileSync(s.recordPath));
+  const r = s.run('launch',spawned.doc.meta,{OATS_HOME:longHome,OATS_DEFAULT_TEAM_ID:OTHER});
+  assert.equal(r.status,1);
+  assert.match(r.doc.warning,/respawn this home/);
+  writeFileSync(record,'{truncated');
+  const unreadable = s.run('launch',spawned.doc.meta,{OATS_HOME:longHome});
+  assert.equal(unreadable.status,1);
+  assert.match(unreadable.doc.warning,/respawn this home/);
+});

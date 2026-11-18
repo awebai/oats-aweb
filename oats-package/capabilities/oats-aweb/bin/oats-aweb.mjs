@@ -855,8 +855,8 @@ function withRecordedSeat(meta, record) {
 function launchSeat(meta) {
   let record;
   try { record = recordedSeat(); }
-  catch { fatal(`the seat record ${seatRecordFile()} is unreadable or incomplete; refusing to replace it or mint a new seat; respawn this home`, meta); }
-  if (record && ((identitySettings.resident && identitySettings.resident !== record.resident) || (defaultTeamId() && !sameAwebTeamId(defaultTeamId(), record.team)))) fatal(`the configured resident or team differs from the seat record ${seatRecordFile()}; a home moves only when it is respawned; respawn this home to change its resident or team`, meta);
+  catch { fatal(`respawn this home; refusing to replace an unreadable or incomplete seat record or mint a new seat: ${seatRecordFile()}`, meta); }
+  if (record && ((identitySettings.resident && identitySettings.resident !== record.resident) || (defaultTeamId() && !sameAwebTeamId(defaultTeamId(), record.team)))) fatal(`respawn this home to change its resident or team; the configured resident or team differs from the seat record: ${seatRecordFile()}`, meta);
   return record;
 }
 /** At every real start: revoke this seat's grants other than the one it runs
