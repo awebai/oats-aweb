@@ -2,16 +2,16 @@
 
 The provider supports aw 1.36.33. That floor has no `--json` error envelope;
 aw 1.36.52-rc.3 introduced it. Code-only replacements wait for the agreed
-1.36.59 final floor (P1 PR2 and PR4b). Working old-floor decisions remain
+1.36.59 final floor. Working old-floor decisions remain
 in place until that change; no version branch is added here.
 
-Inventory for second systemic review 13.9 and the corresponding aw request:
+The current decisions and structured signals needed from aw:
 
 | Decision | Current native signal | Evidence and follow-up |
 | --- | --- | --- |
-| Joined cleanup may release its key | `team_not_hosted` exact stderr on the old floor; native code at newer aw | Code-only change held as PR2. CI's real joined-team journey is its service proof. |
+| Joined cleanup may release its key | `team_not_hosted` exact stderr on the old floor; native code at newer aw | Code-only cleanup waits for that floor. CI's real joined-team journey is its service proof. |
 | Failed default mint created no invite | `; alternatively use --admission-team-id ` suffix | Real-aw failed join-from invite test. Ask aw for an explicit no-mint outcome instead of the suffix. |
-| Alias conflict remedy | Broad `already/exists/conflict/422/active certificate/self_custody_reinit_unproven` legacy match, plus native alias refusal fields where available | Code-only replacement held as PR4b. The legacy match can classify unrelated text; no new reliance on it is introduced here. |
+| Alias conflict remedy | Broad `already/exists/conflict/422/active certificate/self_custody_reinit_unproven` legacy match, plus native alias refusal fields where available | Code-only alias classification waits for that floor. The legacy match can classify unrelated text; no new reliance on it is introduced here. |
 | Failed revoke needs a readback | `may have applied`, timeout/deadline text | Real-aw heartbeat mutation timeout pins the shared HTTP client's ambiguous-outcome text. This is a native client wording check, not a grant-revoke journey. Ask aw for an explicit uncertain-outcome signal. |
 | Missing namespace controller key | `no local controller key for`, `load controller key for` | Real-aw missing/corrupt controller tests. Ask aw for a distinct missing-controller code. |
 | Missing team key | `no team key for`, `local team controller key for ... was not found` | Real-aw invite and register tests. Ask aw for a distinct missing-team-key code. |
@@ -19,7 +19,7 @@ Inventory for second systemic review 13.9 and the corresponding aw request:
 | No published team-server record | Generic `error` with exact `no team server record is published for ...` | Real-aw loopback 404 test. Ask aw for a distinct missing-record code. |
 | Withheld HTTP failure class | `http <status>` then safe `detail`/`detail.code`; register prints the unwrapped `code` | Real-aw register test. Keep HTTP status and bounded code, discard arbitrary body messages. Ask aw for structured server status/code fields on register failures. |
 | Unread count feature | `--count-only` in `mail inbox --help` | Real-aw help test. Ask aw for machine-readable command/feature capabilities. |
-| Version gates | `aw <version>` first line | Real-aw version test. Ask aw for a JSON version answer. |
+| Version gates | `aw <version>` first line | Real-aw version test runs both binding and probe version readers. Ask aw for a JSON version answer. |
 
 The hook's calls affected by these decisions are `init --join-from`,
 `workspace delete`, `id grant revoke/show`, and setup's `id team

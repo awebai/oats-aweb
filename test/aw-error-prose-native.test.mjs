@@ -10,6 +10,8 @@ import {dirname, join} from 'node:path';
 import {createServer} from 'node:http';
 import {didKeyOfSigningKey} from '../oats-package/capabilities/oats-aweb/lib/member-key.mjs';
 import {NAMESPACE_CONTROLLER_KEY_MISSING, TEAM_KEY_MISSING, teamNameTaken, teamServerRecordMissing, withheldFailureCause} from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
+import {readAwVersion} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
+import {probeAwVersion} from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
 
 const binary = process.env.OATS_AWEB_TEST_AW;
 const options = {skip: !binary && 'set OATS_AWEB_TEST_AW to the CI tested aw'};
@@ -113,7 +115,10 @@ test('real aw prose: missing team-server record and name conflicts are classifie
 
 test('real aw prose: version and count-only help match the feature readers', options, async t => {
   const f = fixture(t), version = await f.run(['version']), help = await f.run(['mail', 'inbox', '--help']);
-  assert.equal(version.status, 0); assert.match(version.stdout, /^aw (\S+)$/m);
+  assert.equal(version.status, 0);
+  const matched = /^aw (\S+)$/m.exec(version.stdout); assert.ok(matched);
+  assert.equal(probeAwVersion(version.stdout), matched[1]);
+  assert.equal(await readAwVersion({env: {HOME: f.home, PATH: `${dirname(binary)}:${dirname(process.execPath)}:/usr/bin:/bin`}}), matched[1]);
   assert.equal(help.status, 0); assert.ok(help.stdout.includes('--count-only'));
 });
 

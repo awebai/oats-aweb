@@ -162,6 +162,13 @@ test('a missing namespace controller key gets the fixed cause and remedy, never 
   assert.deepEqual(f.calls(), ['whoami --json', `id team create --name=eng --namespace=${NS} --json`]);
 });
 
+test('a wrapped client refusal still names detail.code without relaying the message', t => {
+  const f = fixture(t), r = f.run({AW_SET_SERVER_FAIL_CODE: 'service_url_mismatch'});
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /http 409, detail\.code: service_url_mismatch/);
+  assert.doesNotMatch(r.stdout + r.stderr, /RAW-AW-SENTINEL|Content-Type/);
+});
+
 test('a register refusal names the HTTP status and the known code, and nothing else of the body', (t) => {
   const f = fixture(t), r = f.run({ AW_REGISTER_FAIL_CODE: 'service_url_mismatch' });
   assert.equal(r.status, 1);
