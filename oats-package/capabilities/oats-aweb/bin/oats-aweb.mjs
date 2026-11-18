@@ -984,7 +984,7 @@ function globalGrantSpawn() {
       if (recovered.grantId) {
         const grant = { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown" };
         meta = startedMeta({ identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, seat, grant: { ...grant, scopes, home: grantHome } }) });
-        try { revokeGrant(custody, recovered.grantId, recovered.team || team); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
+        try { revokeGrant(custody, recovered.grantId, recovered.team || team); meta = seatMeta(); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
         catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml`, unrevokedNote(custody, grant, revokeError, recovered.team || team)); }
       }
       cleanup();
@@ -996,12 +996,12 @@ function globalGrantSpawn() {
     const alias = recovered.subjectAlias || mintedAlias || resident;
     meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, seat, grant: { id: grantId, expiresAt, ttl, ...recordedRenew(), scopes, home: grantHome, ...grantAppInventory(minted) } }) });
     if (!sameAwebTeamId(mintedTeam, team)) {
-      try { revokeGrant(custody, grantId, mintedTeam); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
+      try { revokeGrant(custody, grantId, mintedTeam); meta = seatMeta(); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
       catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}`, unrevokedNote(custody, meta.identity.grant, e, mintedTeam)); }
     }
     try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias, team: mintedTeam }); }
     catch (e) {
-      try { revokeGrant(custody, grantId, mintedTeam); failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; the grant was revoked and nothing was kept`); }
+      try { revokeGrant(custody, grantId, mintedTeam); meta = seatMeta(); failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; the grant was revoked and nothing was kept`); }
       catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError, mintedTeam)); }
     }
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
@@ -1010,7 +1010,7 @@ function globalGrantSpawn() {
     if (broker) {
       try { wakeRegister(home, grantHome); }
       catch (e) {
-        try { revokeGrant(custody, grantId, mintedTeam); failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; grant revoked and grant home removed`); }
+        try { revokeGrant(custody, grantId, mintedTeam); meta = seatMeta(); failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; grant revoked and grant home removed`); }
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError, mintedTeam)); }
       }
     }
@@ -1026,6 +1026,7 @@ function globalGrantSpawn() {
   } catch (e) {
     // The returned meta lets retire's compensation revoke a grant that survives.
     const survives = meta?.identity?.grant?.id ? revokeOrNote(custody, meta.identity.grant, meta.identity.team || team) : "";
+    if (!survives) meta = seatMeta(); // confirmed revocation leaves only the seat to sweep
     cleanup();
     out({ meta: meta || seatMeta(), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
   }

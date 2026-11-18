@@ -492,6 +492,22 @@ test("spawn: a never-grant whose attachment or wake registration fails and canno
 // CLI propagates a nonempty response team (cli/go/cmd/aw/id_grant.go:430), so
 // a broken server response can contradict --team; this fake injects that anomaly.
 test("an anomalous wrong-team mint names manual cleanup; retire never queries another team", (t) => {
+  for (const env of [
+    { FAKE_GRANT_TEAM: "other:example.test" },
+    { FAKE_GRANT_TEAM: "other:example.test", FAKE_MINT_EXPIRES: "invalid-expiry" },
+  ]) {
+    const compensated = seat(t);
+    const spawned = compensated.spawn({}, env);
+    assert.equal(spawned.status, 1, "the wrong-team receipt refuses spawn");
+    assert.deepEqual(active(compensated), [], "immediate compensation revoked the grant");
+    const before = compensated.calls().length;
+    const rollback = compensated.retire(spawned.doc.meta);
+    assert.equal(rollback.status, 0, rollback.stdout + rollback.stderr);
+    assert.equal(spawned.doc.meta.identity.grant, undefined, "a revoked grant is not returned as cleanup still owed");
+    assert.equal(spawned.doc.meta.identity.team, TEAM);
+    assert.doesNotMatch(rollback.doc.warning || "", /stays valid|--force/);
+    assert.ok(compensated.calls().slice(before).filter(a => a.slice(0,2).join(" ") === "id grant").every(a => a.includes(`--team=${TEAM}`)));
+  }
   const s = seat(t), other = "other:example.test";
   const r = s.spawn({}, { FAKE_GRANT_TEAM: other, FAKE_REVOKE_FAIL: "1" });
   assert.notEqual(r.status, 0);

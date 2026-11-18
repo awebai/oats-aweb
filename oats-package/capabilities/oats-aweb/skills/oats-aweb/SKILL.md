@@ -800,6 +800,14 @@ resident's custody directory; readiness warns `grant-revoke-pending`, or
 previous grant and starts on it; only a failed first mint at spawn fails. A
 retire exits nonzero while a grant stays unrevoked or the list is unread.
 
+A present `seat.json` owns this home's seat id, resident and team. A different
+configured resident or default team refuses start with a respawn remedy; an
+unreadable or incomplete record refuses both start and retire. If immediate
+compensation cannot revoke an anomalous wrong-team mint, follow retire's printed
+manual revoke command with its `--team`, then the operator's
+`oats retire <instance> --force`: ordinary retire cannot confirm cleanup outside
+the recorded team.
+
 `oats readiness --home H --json` reads the grant recorded at the seat's last
 mint, asking neither aw nor custody. A never-grant gets no lifetime diagnostic
 (the agent's brief says it never expires); for any finite recorded expiry,
