@@ -1027,10 +1027,13 @@ function globalGrantSpawn() {
     out({ meta: meta || seatMeta(), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
   }
 }
+// OATS's retire hook contract (docs/capabilities.md): only nothing-to-delete
+// completes a no-op cleanup. Other retired:false answers keep the home.
+const kernelRetireIncomplete = (meta) => meta.retired === false && meta.reason !== "nothing-to-delete";
 function globalGrantRetire(meta) {
   if (brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
   const id = meta.identity?.grant?.id, seat = meta.identity?.seat;
-  if (!id && !seat) out({ meta: { retired: false, reason: "nothing-to-revoke" } });
+  if (!id && !seat) out({ meta: { retired: false, reason: "nothing-to-delete" } });
   const custody = resolveResidentCustody(meta.identity?.resident);
   const team = meta.identity?.team || defaultTeamId();
   // Every active grant of this seat goes, the current one included; the
@@ -2513,7 +2516,7 @@ if (event === "launch") {
     try { recordControllerCleanup(); }
     catch { outNotes.push("could not record the controller cleanup on this host: the record could not be written"); }
     if (failedLeaves.length) {
-      const incomplete = o.meta.retired === false && o.meta.reason !== "nothing-to-delete";
+      const incomplete = kernelRetireIncomplete(o.meta);
       o = { ...o, meta: { ...o.meta, ...(incomplete ? {} : { retired: false, reason: "joined-team-leave-failed" }), failedLeaves } };
       code = 1;
     }
@@ -2721,7 +2724,7 @@ if (event === "launch") {
     const raw = run(["aw", "workspace", "delete", workspaceId || meta.alias, "--json"], home);
     let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
     const released = doc?.alias_released === true;
-    const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
+    const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : (doc ? "unstated" : "no JSON answer");
     if (!released && reason === "team_not_hosted") {
       const failed = failedLeaveDisposition({ label: "default", team: meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId(), alias: meta.alias, identityHome: join(home, ".aw") }, reason);
       retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
