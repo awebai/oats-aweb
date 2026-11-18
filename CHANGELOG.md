@@ -10,6 +10,16 @@
   against loopback services. Existing old-floor decisions remain until the
   aw floor moves; see docs/aw-error-decisions.md. No migration is required.
 
+- **Fixed: every aw child ignores ambient identity, service, key, role and
+  registry selectors.** One helper strips `AWEB_IDENTITY_HOME`, `AWEB_URL`,
+  `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` and `AWID_REGISTRY_URL` unless
+  a call deliberately passes one by name. Retire and reads use their selected
+  home's service even when the caller exported another URL. Setup's documented
+  URL and API key still reach its init; a resident's documented inputs retain
+  their existing explicit treatment. A deployment that depended on exporting
+  selectors for ordinary lifecycle commands records the service and registry
+  in the selected aw home instead. See docs/aw-child-environment.md.
+
 - **Fixed: an empty global grant seat completes retire.** With neither grant
   nor seat id, retire answers `retired: false, reason: "nothing-to-delete"`
   instead of `nothing-to-revoke`, so the kernel can remove the completed home.

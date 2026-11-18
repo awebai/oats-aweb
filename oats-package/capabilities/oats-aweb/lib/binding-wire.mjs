@@ -1,3 +1,4 @@
+import {awChildEnv} from './aw-child-env.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
@@ -141,7 +142,7 @@ const versionToken=(re,text) => {const m=re.exec(text);return m && (parseVersion
  *  promise settles only after the child has exited, so no aw is left behind. */
 export function readAwVersion({timeout=10000,env=process.env}={}) {
   return new Promise((settle) => {
-    const childEnv={...env,AW_NO_UPDATE_CHECK:'1'};delete childEnv.AWEB_IDENTITY_HOME;
+    const childEnv=awChildEnv(env);
     if(!(timeout>0)){settle(undefined);return;} // no time left to ask: unreadable, nothing started
     let child,text='',answer,decided=false,exited=false,timer;
     // 'exit' can precede the last stdout chunk, so only 'close' judges the
@@ -256,7 +257,7 @@ async function readinessDetails(settings,{deployment,env=process.env,retainedSea
 }
 function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   // An inherited AWEB_IDENTITY_HOME is the caller's identity, never this check's.
-  const env={...process.env,AW_NO_UPDATE_CHECK:'1'};delete env.AWEB_IDENTITY_HOME;for(const name of unsetEnv) delete env[name];
+  const env=awChildEnv();for(const name of unsetEnv) delete env[name];
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} ${childOutcome(e,timeout)}`);}
 }

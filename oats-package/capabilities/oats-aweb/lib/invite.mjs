@@ -1,3 +1,4 @@
+import { awChildEnv } from './aw-child-env.mjs';
 // Selected-deployment member invitation. Native/server issuance decides authority;
 // membership and a plan never claim an owner/admin role or permission to mint.
 import { execFileSync } from 'node:child_process';
@@ -39,7 +40,7 @@ function options(argv) {
 // Deliberate allowlist: do not inherit routing, credential, controller, proxy,
 // instance or principal selectors. All native identity/service facts come from cwd.
 function nativeEnv(env, home) {
-  return { PATH: env.PATH || '', ...(env.SystemRoot ? { SystemRoot: env.SystemRoot } : {}), HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home,'.config'), XDG_CACHE_HOME: join(home,'.cache'), AW_NO_UPDATE_CHECK: '1' };
+  return awChildEnv({ PATH: env.PATH || '', ...(env.SystemRoot ? { SystemRoot: env.SystemRoot } : {}), HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home,'.config'), XDG_CACHE_HOME: join(home,'.cache') });
 }
 function native(args, root, env, issuance) {
   try { return execFileSync('aw', args, { cwd: root, env, encoding: 'utf8', stdio: ['ignore','pipe','pipe'], timeout: 45000, maxBuffer: 1024 * 1024 }); }

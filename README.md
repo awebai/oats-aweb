@@ -1464,8 +1464,11 @@ A local spawn mints the default-team identity with one command in the instance
 home: `aw init --join-from=<root> --join-team=<team> --name=<instance> --json
 --do-not-touch-agents-md`. aw creates the invite from the root, accepts it and
 connects the workspace, so the invite token never reaches the hook. The mint
-runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE` or
-`AWEB_IDENTITY_HOME`, so the service comes from the invite. On the broker
+runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE`,
+`AWEB_IDENTITY_HOME` or `AWID_REGISTRY_URL`, so the service comes from the invite.
+Every aw child uses the same ambient-selector removal list; documented setup
+inputs and other deliberate overrides are passed explicitly at their call sites.
+See [the environment and call inventory](docs/aw-child-environment.md). On the broker
 delivery path the hook then runs `aw wake register`. The recorded alias is always
 the requested one: if aw reports another, the hook keeps the instance name and
 adds a warning that quotes nothing from aw's reply. Joined teams still use

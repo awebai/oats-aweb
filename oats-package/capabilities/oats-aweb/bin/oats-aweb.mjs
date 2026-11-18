@@ -63,6 +63,7 @@ if ((process.env.OATS_EVENT || process.argv[2]) === 'wake') process.exit(await w
 if ((process.env.OATS_EVENT || process.argv[2]) === 'health') process.exit(await (await import('../lib/health.mjs')).healthMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
+import { awChildEnv } from "../lib/aw-child-env.mjs";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
@@ -99,14 +100,7 @@ import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsP
  * This hook is a REQUIRED spawn hook, so it gates every spawn, which is reason
  * enough not to rely on quoting. */
 const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
-  // An inherited AWEB_IDENTITY_HOME (every aweb instance session carries its
-  // own) is never this hook's identity: aw would act as the CALLER — refusing
-  // cwd-rooted commands such as team invite/list, or deleting the caller's
-  // workspace when a lead retires a worker. Only an explicit env sets one.
-  // AW_NO_UPDATE_CHECK: no aw child of a hook spends a GitHub round trip on
-  // an upgrade hint nobody reads.
-  const childEnv = { ...process.env, AW_NO_UPDATE_CHECK: "1", ...(extraEnv || {}) };
-  if (!extraEnv || !Object.hasOwn(extraEnv, "AWEB_IDENTITY_HOME")) delete childEnv.AWEB_IDENTITY_HOME;
+  const childEnv = awChildEnv(process.env, extraEnv);
   for (const name of unsetEnv) delete childEnv[name];
   return childEnv;
 };
@@ -1137,9 +1131,6 @@ function membershipRegistry(teamsFile, team, service) {
  *  timeout) may still have completed server-side: the home then holds a
  *  signing key, a team certificate and a workspace binding. */
 const joinedLate = (homeDir) => existsSync(join(homeDir, ".aw", "signing.key")) && existsSync(join(homeDir, ".aw", "team-certs")) && !!workspaceAliasOf(homeDir);
-// Ambient locators, keys and role hints a caller's session may carry; the
-// minting command must not act on them.
-const MINT_UNSET_ENV = ["AWEB_URL", "AWEB_API_KEY", "AWEB_ROLE_NAME", "AWEB_ROLE"];
 const JOIN_TIMEOUT_MS = Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) > 0 ? Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) : 120000;
 const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
@@ -2346,7 +2337,7 @@ if (event === "launch") {
       // reaches the new identity.
       // 120 s: a mint on a slow or flapping link is slow, not broken; a killed
       // mint that completed server-side is caught below.
-      raw = parseSecretJson(run(["aw", "init", flagEq("--join-from", root), flagEq("--join-team", team), flagEq("--name", instance), "--json", "--do-not-touch-agents-md"], home, JOIN_TIMEOUT_MS, { secretSafe: true, unsetEnv: MINT_UNSET_ENV }), "aw init --join-from");
+      raw = parseSecretJson(run(["aw", "init", flagEq("--join-from", root), flagEq("--join-team", team), flagEq("--name", instance), "--json", "--do-not-touch-agents-md"], home, JOIN_TIMEOUT_MS, { secretSafe: true }), "aw init --join-from");
     } catch (e) {
       // The mint may have completed after the CLI was killed or reported a
       // failure: if the home now holds a bound identity, that identity EXISTS
@@ -3476,7 +3467,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
-        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true });
+        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY } });
       }
       teams = readTeams();
     }
