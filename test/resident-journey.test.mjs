@@ -27,7 +27,7 @@
 // customer-held team's refusal are proven only by the joint E2E against the
 // local aweb Cloud.
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
@@ -43,6 +43,7 @@ import { AW_MIN, versionAtLeast } from "../oats-package/capabilities/oats-aweb/l
 const HOOK = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url));
 import { nativeCapture } from './helpers/native-capture.mjs';
 import { healthHost } from '../oats-package/capabilities/oats-aweb/lib/health-host.mjs';
+import { observePrivateRegistryAw } from './helpers/observe-private-registry.mjs';
 const CAPABILITY = fileURLToPath(new URL("../oats-package/capabilities/oats-aweb", import.meta.url));
 const AW = process.env.OATS_RESIDENT_JOURNEY_AW, AWEB_URL = process.env.OATS_RESIDENT_JOURNEY_AWEB_URL, AWID_URL = process.env.OATS_RESIDENT_JOURNEY_AWID_URL;
 const KERNEL = process.env.OATS_RESIDENT_JOURNEY_KERNEL;
@@ -94,7 +95,16 @@ function journey(t) {
   const features = JSON.parse(spawnSync(process.execPath, [OATS, "--version", "--json"], { encoding: "utf8", env }).stdout).features;
   assert.ok(features.includes("teams-conditional-default"), "the journeys need a kernel with teams-conditional-default");
   const cleanups = [];
-  t.after(() => { for (const c of cleanups.reverse()) { try { c(); } catch { /* best effort */ } } rmSync(tmuxDir, { recursive: true, force: true }); rmSync(base, { recursive: true, force: true }); });
+  const joinObservation = process.env.OATS_AWEB_CAPTURE_DIR ? observePrivateRegistryAw(bin, realpathSync(AW)) : undefined;
+  t.after(() => {
+    if (joinObservation && existsSync(joinObservation)) {
+      const observations = readFileSync(joinObservation, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+      const id = createHash('sha256').update(t.name).digest('hex').slice(0, 12);
+      nativeCapture('join-private-registry-' + id, observations, { version: awVersion, commit: awCommit });
+    }
+    for (const c of cleanups.reverse()) { try { c(); } catch { /* best effort */ } }
+    rmSync(tmuxDir, { recursive: true, force: true }); rmSync(base, { recursive: true, force: true });
+  });
   const parsed = (r) => { let doc; try { doc = JSON.parse(r.stdout.trim().split("\n").at(-1)); } catch { doc = undefined; } return { ...r, doc }; };
   const run = (args, extra = {}) => parsed(spawnSync(process.execPath, [HOOK, "resident", ...args], { env: { ...env, ...extra }, cwd: deployment, encoding: "utf8", input: "", timeout: 180000 }));
   /** A command line as an operator types it in the deployment, `oats` being the kernel. */
@@ -301,6 +311,7 @@ async function printedStepsJourney(t, { teams, defaultTeam, expectStatus, expect
   const root = join(j.deployment, ".aweb-residents", "carol");
   globalIdentity(j, root, "carol", ns);
 
+  Object.assign(j.env, { AWID_REGISTRY_URL: AWID_URL });
   const created = j.shell("oats aweb resident create carol");
   assert.equal(created.status, 0, created.stdout + created.stderr);
   const steps = printedSteps(created.stdout);
