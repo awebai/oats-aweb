@@ -128,6 +128,13 @@ function releaseOut(fd, path) {
   try { closeSync(fd); } catch { /* already closed */ }
   rmSync(path, { force: true });
 }
+/** The refusal when the token was minted under --out but could not be written: the
+ *  invite is live and its token is not printed, so the answer names its invite_id (not
+ *  a secret) for revoking it, but only in a plain identifier's form: it is remote text. */
+export function unwrittenInviteMessage(out, code, inviteId) {
+  const id = typeof inviteId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(inviteId) ? `invite_id ${inviteId}` : 'its invite_id withheld: aw gave it in an unexpected form';
+  return `the invite was minted (${id}) but could not be written to ${out} (${typeof code === 'string' && /^E[A-Z0-9]{1,15}$/.test(code) ? code : 'write failed'}); it is not printed, and that invite stays live until it is revoked: mint another with a new --out`;
+}
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
   const out = opts.out === undefined ? undefined : outFile(opts.out, process.cwd());
@@ -179,7 +186,7 @@ export function issueInvite(argv, env = process.env) {
   // With --out the token goes to the file and the answer names the file in its place (#285).
   if (out) {
     try { writeSync(fd, `${minted.token}\n`); closeSync(fd); }
-    catch (e) { releaseOut(fd, out); fail('E_INVITE_OUT', `the invite was minted but could not be written to ${out} (${e.code || 'write failed'}); it is not printed: mint another with a new --out`); }
+    catch (e) { releaseOut(fd, out); fail('E_INVITE_OUT', unwrittenInviteMessage(out, e.code, minted.invite_id)); }
     return { ...result, issuedAt: new Date().toISOString(), tokenFile: out, joinCommand };
   }
   return { ...result, issuedAt: new Date().toISOString(), token: minted.token, joinCommand };

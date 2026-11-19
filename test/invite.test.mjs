@@ -1,6 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync,renameSync,statSync,symlinkSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,dirname} from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
+import {unwrittenInviteMessage} from '../oats-package/capabilities/oats-aweb/lib/invite.mjs';
 const cap=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb',import.meta.url)),hook=join(cap,'bin/oats-aweb.mjs');
 function fixture(t,{native='success',member='team:fixture.aweb.ai',team='team:fixture.aweb.ai',settings,query='ok',problems=[]}={}){
  const dir=realpathSync(mkdtempSync(join(tmpdir(),'invite-test-')));t.after(()=>rmSync(dir,{recursive:true,force:true}));
@@ -190,6 +191,14 @@ test('invite --out refuses a path it cannot create before minting: too long a na
   const r=f.run(['--out',target,'--json']);assert.equal(r.status,1);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_OUT');assert.match(e.message,/cannot be (checked|created)/);assert.doesNotMatch(e.message,/minted but/);
  }
  assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false,'nothing was minted');assert.deepEqual(readdirSync(locked),[]);
+});
+// #285 second read: a token minted but not written is live and unprinted, so the refusal names
+// its invite_id (not a secret) for revoking it, only when it is a plain identifier.
+test('a token minted but not written names its invite_id, and withholds one in an odd form',()=>{
+ const m=unwrittenInviteMessage('/x/tok','ENOSPC','inv_0f3a-9b');
+ assert.equal(m,'the invite was minted (invite_id inv_0f3a-9b) but could not be written to /x/tok (ENOSPC); it is not printed, and that invite stays live until it is revoked: mint another with a new --out');
+ for(const odd of ['','has space','aw_inv_\nSECRET','-lead','x'.repeat(129),undefined,{}]){const o=unwrittenInviteMessage('/x/tok','EIO',odd);assert.match(o,/\(its invite_id withheld: aw gave it in an unexpected form\)/);assert.doesNotMatch(o,/SECRET|has space/);}
+ assert.match(unwrittenInviteMessage('/x/tok',undefined,'i1'),/\(write failed\)/);assert.match(unwrittenInviteMessage('/x/tok','odd code','i1'),/\(write failed\)/);
 });
 test('a failed mint under --out leaves no file behind',t=>{
  for(const native of ['500','malformed']){const f=fixture(t,{native}),file=join(f.dir,'tok'),r=f.run(['--out',file,'--json']);assert.equal(r.status,1);assert.notEqual(JSON.parse(r.stdout).error.code,'E_INVITE_OUT');assert.equal(existsSync(file),false,native);}

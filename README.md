@@ -1969,7 +1969,8 @@ stdin, then deletes it. With `--json`, the answer carries `result.tokenFile`
 (the file's absolute path) in place of `result.token`; `--plan` names the
 `tokenFile` it would write. A relative path resolves from where the command
 runs. If the token cannot be written after the mint, `E_INVITE_OUT` says the
-invite was minted and that the token is not printed. Without `--out`, the
+invite was minted, names its `invite_id` (not a secret) so its owner can
+revoke it, and says that the token is not printed. Without `--out`, the
 answer is unchanged: one token on stdout, or one `result.token`.
 
 The service URL is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
