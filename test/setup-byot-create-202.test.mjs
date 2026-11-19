@@ -62,7 +62,6 @@ test('a BYOT create registers the team, mints a local invite and accepts it; the
     `id team invite --team=eng --namespace=${NS} --json`,
     'id team accept-invite --token-stdin --name=fixture --local --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
-    'team list --json',
   ]);
   const accept = f.fake.readCalls().find((c) => c.args[2] === 'accept-invite');
   assert.equal(accept.stdinSha256, createHash('sha256').update(TOKEN).digest('hex'), 'the minted token reaches accept on stdin');
@@ -158,7 +157,6 @@ test('a create that dies after the accept resumes on re-run without minting anot
     `id team register --service=${SERVICE} --team=${TEAM} --json`,
     'id team list --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
-    'team list --json',
   ]);
   assert.equal(named(f.calls(), 'id team invite').length, 1, 'only the first run minted');
   assert.equal(named(f.calls(), 'id team accept-invite').length, 1);
@@ -221,7 +219,6 @@ test('a retry whose only service is the retained root it connected resumes there
     SHOW,
     `id team register --service=${service} --team=${TEAM} --json`,
     'id team list --json',
-    'team list --json',
   ]);
   assert.match(r.stdout, new RegExp(`registered with ${service}`));
   assert.deepEqual(f.kernel().filter((a) => a[1] === 'add'), Array(2).fill(['teams', 'add', 'eng', `--team=${TEAM}`]));
@@ -261,7 +258,6 @@ test('--create takes --name: the team root accepts the invite under that alias, 
     `id team invite --team=eng --namespace=${NS} --json`,
     'id team accept-invite --token-stdin --name=lab2-root --local --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
-    'team list --json',
   ]);
   assert.match(readFileSync(join(f.root, 'oats-local.yaml'), 'utf8'), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/);
 });
@@ -292,7 +288,6 @@ test('the lab\'s partial create (team key kept, no root) resumes with --name: on
     `id team invite --team=eng --namespace=${NS} --json`,
     'id team accept-invite --token-stdin --name=lab2-root --local --json',
     `workspace connect --service=${SERVICE} --team=${TEAM} --json`,
-    'team list --json',
   ]);
   assert.equal(readFileSync(key, 'utf8'), 'FIXTURE-LAB-TEAM-KEY\n', 'the kept key, not a new one');
   assert.ok(r.stdout.includes(`  team key: ${key} (user-wide`), r.stdout);
