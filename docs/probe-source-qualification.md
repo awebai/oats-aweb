@@ -66,15 +66,18 @@ into `awconfig/` in the exact public aw source above. Run from that source root
 with an absolute output path:
 
 ```sh
-PROBE57_NATIVE_WORKSPACE=/absolute/provider/test/fixtures/probe/native-workspace-1.36.28.yaml \
+PROBE57_NATIVE_WORKSPACE=/absolute/scratch/native-workspace.yaml \
   go test ./awconfig -run '^TestProbe57' -count=1 -v
 go test ./cmd/aw -run '^(TestAwMailSendNewConversation|TestVersionReportNamesTheRepositoryTheCommitResolvesIn|TestVersionReportClaimsNoOriginWhenItWasNotGivenOne)$' -count=1 -v
 ```
 
 Observed: both `TestProbe57` tests PASS (0.186s package time); native mail/version
 tests PASS (3.233s package time), including all 11 mail subcases. The
-[native-generated YAML](../test/fixtures/probe/native-workspace-1.36.28.yaml)
-is serialized and decoded by released `WorktreeWorkspace` code. The second
+original native-generated YAML was serialized and decoded by released
+`WorktreeWorkspace` code. That historical 1.36.28 sample has since been replaced
+by the [current native workspace capture](../test/fixtures/probe/README.md)
+from the passing 1.36.58 disposable CI run; the historical Go observation above
+was not rerun against the refreshed fixture. The second
 fixture proves explicit-root service/team selection, environment URL override
 precedence (which the provider removes), and missing-root refusal. Names,
 memberships and paths are synthetic; no live identity is read.

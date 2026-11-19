@@ -52,13 +52,17 @@ function realShape(root) {
 }
 
 /** A fake aw: `id team members` and `workspace status` answer the given documents (status
- *  followed by aw's "Gone workspace checks" text, as the real command prints it), or fail. */
-function fakeAw(t, { certificates, presence, presenceFails = false, certificatesFail = false }) {
+ *  with gone-workspace diagnostics on stderr, or fail. Native evidence:
+ *  awebai/aw cmd/aw/workspace.go:293 at 877bbee9 (1.36.33), :292 at
+ *  a3223c1d (1.36.58) and d36bfb9d (1.36.59-rc.3) writes
+ *  fmt.Fprint(os.Stderr, formatGoneWorkspaces(gone)) after emitting JSON.
+ *  workspace_cleanup.go:117/:116 builds the "Gone workspace checks:" block. */
+function fakeAw(t, { certificates, presence, presenceFails = false, certificatesFail = false, trailingNote = false }) {
   const dir = tempDir(t);
   const bin = join(dir, "bin");
   mkdirSync(bin);
   writeFileSync(join(dir, "certs.json"), JSON.stringify(certificates));
-  writeFileSync(join(dir, "presence.json"), JSON.stringify(presence, null, 2) + "\nGone workspace checks:\n  old-one (~/x) — gone_local_path_only, left workspace record intact\n");
+  writeFileSync(join(dir, "presence.json"), JSON.stringify(presence, null, 2) + (trailingNote ? "\ntrailing note\n" : "\n"));
   writeFileSync(join(bin, "aw"), `#!${process.execPath}
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -69,6 +73,7 @@ if (args.slice(0, 3).join(" ") === "id team members") {
   fs.writeSync(1, fs.readFileSync(${JSON.stringify(join(dir, "certs.json"))}, "utf8")); process.exit(0); }
 if (args.slice(0, 2).join(" ") === "workspace status") {
   if (${JSON.stringify(presenceFails)}) { console.error("aweb: http 503"); process.exit(1); }
+  console.error("Gone workspace checks: old-one — gone_local_path_only");
   fs.writeSync(1, fs.readFileSync(${JSON.stringify(join(dir, "presence.json"))}, "utf8")); process.exit(0);
 }
 console.error("fake aw: unexpected " + args.join(" ")); process.exit(93);
@@ -202,17 +207,11 @@ test("roster refuses an indented object inside cut-off output as aw's answer", (
   assert.match(d.problems[0].message, /aw workspace status returned no JSON result/);
 });
 
-test("1.20.0 documents the roster: CHANGELOG, README, skill and inject", () => {
-  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  assert.match(changelog, /\n## 1\.20\.0\n/);
-  const entry = changelog.slice(changelog.indexOf("## 1.20.0"), changelog.indexOf("## 1.19.0"));
-  const readme = readFileSync(join(REPO, "README.md"), "utf8");
-  const skill = readFileSync(join(REPO, "oats-package", "capabilities", "oats-aweb", "skills", "oats-aweb", "SKILL.md"), "utf8");
-  for (const [name, text] of [["CHANGELOG 1.20.0", entry], ["README", readme], ["skill", skill]]) {
-    for (const needle of ["aw workspace status", "global identit", "Incomplete:", "coordinator"]) assert.ok(text.includes(needle), `${name} lacks ${needle}`);
-  }
-  assert.match(entry, /--json/);
-  assert.doesNotMatch(skill, /their alias is on the roster|will not resolve/);
-  const inject = readFileSync(join(REPO, "oats-package", "capabilities", "oats-aweb", "injects", "aweb.md"), "utf8");
-  assert.doesNotMatch(inject, /who you can reach/);
+// aw writes diagnostics to stderr. Trailing stdout is not a valid JSON answer.
+test("roster refuses a presence answer with trailing stdout text", t => {
+  const shape = realShape('/fixture/root');
+  const fx = fixture(t, { ...shape, trailingNote: true });
+  const d = doc(fx.roster(['--json']));
+  assert.equal(d.presenceComplete, false);
+  assert.ok(d.problems.length > 0);
 });

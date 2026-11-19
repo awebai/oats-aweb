@@ -1,25 +1,20 @@
 // The publisher's host calls against the real binaries: the kernel on PATH in
 // a scratch deployment it runs itself (helpers/scratch-deployment.mjs), and
-// the real aw. Opt in with OATS_AWEB_HEALTH_NATIVE=1 (needs oats, tmux and aw
-// on PATH). The aw identity reads also need a real identity home and resident
-// custody root, given read-only as OATS_AWEB_HEALTH_IDENTITY_HOME and
-// OATS_AWEB_HEALTH_RESIDENT_ROOT; nothing here writes to them. The vector
-// signing test runs OATS_AWEB_HEALTH_AW, an absolute path to an aw build,
-// when given (else aw on PATH), offline under a scratch HOME.
+// the real aw. Opt in with OATS_AWEB_HEALTH_NATIVE=1 and the pinned kernel
+// and aw paths CI supplies. Identity observations live in the disposable
+// real-stack journeys; signing vectors live in health-status-native.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AW_STATUS_MIN, healthHost, statusPublishArgs } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
+import { AW_STATUS_MIN, healthHost } from "../oats-package/capabilities/oats-aweb/lib/health-host.mjs";
 import { versionAtLeast } from "../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs";
 import { createScratchDeployment } from "./helpers/scratch-deployment.mjs";
 
 const NATIVE = process.env.OATS_AWEB_HEALTH_NATIVE === "1";
 const skip = NATIVE ? false : "set OATS_AWEB_HEALTH_NATIVE=1 to run against the real oats, tmux and aw";
-const awJson = (args, cwd) => JSON.parse(spawnSync("aw", args, { cwd, encoding: "utf8", env: { PATH: process.env.PATH, HOME: process.env.HOME, AW_NO_UPDATE_CHECK: "1" } }).stdout);
-
 test("kernel surfaces in a scratch deployment", { skip }, async (t) => {
   const scratch = createScratchDeployment();
   t.after(() => scratch.dispose());
@@ -52,28 +47,8 @@ test("kernel surfaces in a scratch deployment", { skip }, async (t) => {
   });
 });
 
-test("readiness relays the oats.aweb provider result of a real home", { skip: skip || (!process.env.OATS_AWEB_HEALTH_IDENTITY_HOME && "set OATS_AWEB_HEALTH_IDENTITY_HOME to a real <home>/.aw") }, async () => {
-  const home = join(process.env.OATS_AWEB_HEALTH_IDENTITY_HOME, "..");
-  const result = await healthHost({ deployment: home, env: { PATH: process.env.PATH, HOME: process.env.HOME } }).readiness(home);
-  assert.ok(["ready", "needs-configuration", "authorization-required", "unavailable"].includes(result.status), JSON.stringify(result));
-  assert.ok(Array.isArray(result.problems) && Array.isArray(result.warnings));
-});
-
-test("identityOf reads a local identity's did:key offline, the same did aw whoami reports", { skip: skip || (!process.env.OATS_AWEB_HEALTH_IDENTITY_HOME && "set OATS_AWEB_HEALTH_IDENTITY_HOME to a real <home>/.aw") }, async () => {
-  const identityHome = process.env.OATS_AWEB_HEALTH_IDENTITY_HOME;
-  const ids = await healthHost({ deployment: tmpdir(), env: { PATH: process.env.PATH, HOME: process.env.HOME } }).identityOf({ identityHome });
-  assert.equal(ids.did, awJson(["--identity-home", identityHome, "whoami", "--json"], tmpdir()).did);
-  assert.match(ids.did, /^did:key:z/);
-  assert.equal(ids.stable_id, undefined);
-});
-
-test("identityOf reads a resident's did:key and did:aw offline from its custody root", { skip: skip || (!process.env.OATS_AWEB_HEALTH_RESIDENT_ROOT && "set OATS_AWEB_HEALTH_RESIDENT_ROOT to a real resident custody root") }, async () => {
-  const cwd = process.env.OATS_AWEB_HEALTH_RESIDENT_ROOT;
-  const ids = await healthHost({ deployment: tmpdir(), env: { PATH: process.env.PATH, HOME: process.env.HOME } }).identityOf({ cwd });
-  const who = awJson(["whoami", "--json"], cwd);
-  assert.deepEqual(ids, { did: who.did, stable_id: who.stable_id });
-  assert.match(ids.stable_id, /^did:aw:/);
-});
+// Real local/global identity and provider-readiness checks use the disposable
+// homes minted by resident-journey.test.mjs, never external live paths.
 
 test("identityOf answers null for a directory that holds no identity", { skip }, async () => {
   const empty = mkdtempSync(join(tmpdir(), "aweb-health-empty-"));
@@ -156,19 +131,5 @@ test("receipt reads <identity dir>/receive/stream.json, null when absent or unre
     assert.equal(host.pidAlive(process.pid), true);
     const gone = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout;
     assert.equal(host.pidAlive(Number(gone)), false);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("the real aw signs every valid vector document, sent as the publisher sends it, to the vector's exact bytes and signature", { skip }, (t) => {
-  const aw = process.env.OATS_AWEB_HEALTH_AW ?? "aw";
-  if (spawnSync(aw, ["status", "publish", "--help"], { encoding: "utf8" }).status !== 0) return t.skip(`${aw} has no status publish; set OATS_AWEB_HEALTH_AW to an aw >= ${AW_STATUS_MIN}`);
-  const vector = JSON.parse(readFileSync(new URL("./fixtures/agent-status-v1.json", import.meta.url), "utf8"));
-  const dir = mkdtempSync(join(tmpdir(), "aweb-health-sign-"));
-  try {
-    for (const c of vector.valid) {
-      const out = spawnSync(aw, [...statusPublishArgs("alice"), "--print-signed"], { cwd: dir, input: JSON.stringify(c.document), encoding: "utf8", env: { PATH: process.env.PATH, HOME: dir, AW_NO_UPDATE_CHECK: "1", AW_AGENT_STATUS_TEST_SEED_HEX: vector.signing_seed_hex } });
-      assert.equal(out.status, 0, `${c.name}: ${out.stderr}`);
-      assert.deepEqual(JSON.parse(out.stdout), { signed_payload: c.signed_payload, signature: c.signature }, c.name);
-    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

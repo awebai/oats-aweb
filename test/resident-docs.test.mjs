@@ -1,7 +1,4 @@
-// docs/resident-create.md shows one --json envelope per outcome. Each is the
-// real command's output for that outcome (aw answers replayed from the real
-// captures), with machine-specific paths and the captured namespace replaced
-// by the placeholders the document uses. A change to any envelope fails here.
+// Runtime JSON envelope contracts, independent of documentation wording.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,11 +6,10 @@ import test from "node:test";
 import { CAPTURED, fixture } from "./helpers/fake-aw-resident.mjs";
 import { AWEB_URL, DOMAIN, NAME, setup } from "./helpers/resident-harness.mjs";
 
-const DOC = readFileSync(new URL("../docs/resident-create.md", import.meta.url), "utf8");
-function documented(name) {
-  const m = new RegExp(`<!-- envelope: ${name} -->\\n\`\`\`json\\n([\\s\\S]*?)\\n\`\`\``).exec(DOC);
-  assert.ok(m, `docs/resident-create.md has no envelope ${name}`);
-  return JSON.parse(m[1]);
+const ENVELOPES = JSON.parse(readFileSync(new URL('./fixtures/resident-envelopes.json', import.meta.url), 'utf8'));
+function expectedEnvelope(name) {
+  assert.ok(Object.hasOwn(ENVELOPES, name), `no envelope contract for ${name}`);
+  return ENVELOPES[name];
 }
 /** The document's placeholders for what differs between machines and captures. */
 function normalized(s, doc) {
@@ -68,7 +64,8 @@ const cases = {
   custody: { fake: { custody: "missing-ops" }, run: (s) => s.run(["create", NAME, "--json"]) },
   "custody-running": { fake: { custody: "elsewhere" }, prepare: complete, run: (s) => s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }) },
   "default-kept": {
-    setup: { kernel: { teams: [{ label: "core", team: "core:fixture-6400.test", from: "shared" }], defaultTeam: { label: "core", team: "core:fixture-6400.test", from: "workspace" } } },
+    // Keep the other default in the captured namespace so normalized() maps both teams.
+    setup: { kernel: { teams: [{ label: "core", team: `core:${DOMAIN}`, from: "shared" }], defaultTeam: { label: "core", team: `core:${DOMAIN}`, from: "workspace" } } },
     run: (s) => s.run(["create", NAME, "--json"]),
   },
   "team-label-taken": {
@@ -78,18 +75,11 @@ const cases = {
 };
 
 for (const [name, c] of Object.entries(cases)) {
-  test(`docs/resident-create.md shows the real ${name} envelope`, (t) => {
+  test(`resident create emits the expected ${name} envelope`, (t) => {
     const s = setup(t, c.fake, c.setup);
     c.prepare?.(s);
     const r = c.run(s);
     assert.ok(r.doc, r.stdout + r.stderr);
-    assert.deepEqual(normalized(s, c.normalize ? c.normalize(s, r.doc) : r.doc), documented(name));
+    assert.deepEqual(normalized(s, c.normalize ? c.normalize(s, r.doc) : r.doc), expectedEnvelope(name));
   });
 }
-
-test("the doc and the skill say what `oats teams default` does to the deployment, and that it is the operator's decision", () => {
-  const skill = readFileSync(new URL("../oats-package/capabilities/oats-aweb/skills/oats-aweb/SKILL.md", import.meta.url), "utf8");
-  assert.ok(DOC.includes("Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (default:acme.aweb.ai)"));
-  assert.ok(DOC.includes("That\n  step is the operator's decision; the command never runs it."));
-  assert.ok(skill.includes("so it is the operator's decision: an agent prints it and asks, and never runs it on its own."));
-});

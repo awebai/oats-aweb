@@ -339,7 +339,6 @@ test("recordedPiAgentDir reads the legacy runtime and needs an absolute HOME for
 
 test("both pi install texts install the extension, then name the filtered settings entry the warning accepts", (t) => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
-  const readme = readFileSync(join(REPO, "README.md"), "utf8");
   const rows = manifest.requires.filter((r) => r.runtime === "pi");
   assert.deepEqual(rows.map((r) => r.when.delivery).sort(), ["channel", "session"]);
   const dir = mkdtempSync(join(tmpdir(), "oats-aweb-pi-manifest-"));
@@ -357,7 +356,6 @@ test("both pi install texts install the extension, then name the filtered settin
     assert.equal(piExtensionSkillsWarning(dir), undefined, `${row.when.delivery}: what pi install alone writes is quiet from 0.5.0`);
     rmSync(join(dir, "npm"), { recursive: true });
   }
-  assert.match(readme, /^#{2,4} The pi extension without its skills$/m, "the README section the install text names");
 });
 
 // --------------------------------------------------------- vendored skill text

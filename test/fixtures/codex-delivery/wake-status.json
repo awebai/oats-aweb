@@ -1,37 +1,38 @@
 {
+  "daemon_commit": "a3223c1d32b8144abfd34d63b521b38d2b227ad5",
+  "daemon_pid": 9053,
   "daemon_running": true,
-  "daemon_version": "1.36.37",
+  "daemon_version": "1.36.58",
   "daemon_version_state": "reported",
-  "updated_at": "2026-10-17T06:09:33.478439Z",
   "instances": [
     {
       "channel_core": {
         "ambient_dropped": 0,
         "ambient_queued": 0,
-        "bundle_path": "/fixture/wake/channel-core/runner.mjs",
+        "bundle_path": "/fixture/journey/home/.config/aw/wake/channel-core/runner.mjs",
         "evicted_events": 0,
-        "last_input_at": "2026-10-17T06:05:05.668Z",
-        "last_run_at": "2026-10-17T05:08:25.404908Z",
-        "last_success_at": "2026-10-17T06:05:05.668Z",
+        "last_input_at": "2026-11-19T01:47:48.831Z",
+        "last_run_at": "2026-11-19T01:47:46.363062945Z",
+        "last_success_at": "2026-11-19T01:47:48.831Z",
         "next_retry_at": "0001-01-01T00:00:00Z",
-        "node_path": "/opt/homebrew/bin/node",
+        "node_path": "/opt/hostedtoolcache/node/22.23.4/x64/bin/node",
         "readiness_state": "unknown",
         "readiness_waiting": "inspect_done",
         "restart_count": 0,
         "running": true,
-        "trace_binding_id": "/fixture/codex/.aw|fixture:example.invalid",
-        "trace_message_id": "fixture-message",
+        "trace_binding_id": "/fixture/codex/.aw|default:retained-be42697a.test",
+        "trace_message_id": "090a5561-c307-4a8f-b788-dcca4ab61c3d",
         "trace_stage": "lane_job_completed"
       },
       "delivery": "session",
       "evicted_events": 0,
       "home": "/fixture/codex",
       "identity_home": "/fixture/codex/.aw",
-      "last_inspect_at": "2026-10-17T06:05:04.541985Z",
+      "last_inspect_at": "2026-11-19T01:47:47.486937807Z",
       "last_state": "unknown",
       "managed_receiver": {
         "generation": 0,
-        "owner_id": "fixture-owner",
+        "owner_id": "3NQHYBE3DVIHSCWSCTGID25P3L",
         "registration": {
           "delivery": "session",
           "home": "/fixture/codex",
@@ -41,10 +42,10 @@
               "controls": true,
               "delivery_owner": "session-hints",
               "identity_home": "/fixture/codex/.aw",
-              "team_id": "fixture:example.invalid"
+              "team_id": "default:retained-be42697a.test"
             }
           ],
-          "registered_at": "2026-10-17T05:08:25.342415Z",
+          "registered_at": "2026-11-19T01:47:46.358339467Z",
           "runtime_delivery": "external-session"
         }
       },
@@ -52,19 +53,32 @@
       "phase": "active",
       "receive_identities": [
         {
-          "connected_at": "2026-10-17T05:08:25.610478Z",
+          "connected_at": "2026-11-19T01:47:46.41693521Z",
           "controls": true,
           "delivery_owner": "session-hints",
           "identity_home": "/fixture/codex/.aw",
           "stream_admitted": true,
           "stream_phase": "streaming",
-          "team_id": "fixture:example.invalid",
+          "team_id": "default:retained-be42697a.test",
           "unread_count": 1
         }
       ],
-      "registered_at": "2026-10-17T05:08:25.342415Z",
+      "registered_at": "2026-11-19T01:47:46.358339467Z",
       "runtime_delivery": "external-session",
       "stream_admitted": true
     }
-  ]
+  ],
+  "max_streams": 128,
+  "state_dir": "/fixture/journey/home/.config/aw/wake",
+  "streams": [
+    {
+      "admitted": true,
+      "connected_at": "2026-11-19T01:47:46.41693521Z",
+      "identity_home": "/fixture/codex/.aw",
+      "phase": "streaming",
+      "team_id": "default:retained-be42697a.test",
+      "unread_count": 1
+    }
+  ],
+  "updated_at": "2026-11-19T01:47:48.869240489Z"
 }

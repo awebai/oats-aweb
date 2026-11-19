@@ -1,3 +1,4 @@
+import {recordAwArgv} from './aw-argv.mjs';
 import {mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync, readFileSync, statSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -39,6 +40,7 @@ export function fixture(t, {reply = message(), onCall, delay = 0, readAt = null,
     child: async (cmd, args, options) => {
       options.budget.check(); clock += 1;
       calls.push({cmd, args, options});
+      if (cmd !== process.execPath) recordAwArgv(args);
       const custom = await onCall?.({cmd, args, options, calls, doc, save, setClock: v => { clock = v; }});
       if (custom !== undefined) return Buffer.isBuffer(custom) ? custom : Buffer.from(JSON.stringify(custom));
       assert.equal(options.env.AWEB_IDENTITY_HOME, undefined); assert.equal(options.env.AWEB_API_KEY, undefined); assert.equal(options.env.AWEB_URL, undefined); assert.equal(options.env.OATS_META, undefined);

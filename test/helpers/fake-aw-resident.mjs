@@ -1,5 +1,5 @@
 // A fake `aw` (and fake launchctl/systemctl/loginctl) for `oats aweb resident
-// create` unit tests. Every aw answer is a verbatim capture of real aw 1.36.33
+// create` unit tests. Every aw answer replays sanitized output of real aw 1.36.33
 // from test/fixtures/resident (see its README); the fake picks which capture
 // to replay and creates the files a finished aw run leaves in its directory.
 // Those files are empty markers: the provider only checks that they exist.

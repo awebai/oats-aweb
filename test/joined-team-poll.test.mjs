@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixture } from "./helpers/delivery-fixture.mjs";
 import { joinedTeamsPolled } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
@@ -104,10 +103,4 @@ test("a stale expected poll doesn't excuse a home that now needs the broker", (t
   const result = fx.readiness();
   assert.notEqual(result.status, "ready", JSON.stringify(result));
   assert.equal(warningCodes(result).includes("joined-team-polled"), false);
-});
-
-test("the skill tells nobody to start the broker for a poll", () => {
-  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
-  assert.match(skill, /\| `joined-team-polled` \|.*nobody: expected\. Don't install or start the broker for this \|/);
-  assert.match(skill.replace(/\s+/g, " "), /Nothing wakes an idle Claude home for joined-team mail\. .* use one only where `oats session inspect --json` shows `wakeHold: on-claims`\./);
 });

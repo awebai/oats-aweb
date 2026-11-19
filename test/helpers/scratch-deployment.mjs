@@ -35,12 +35,13 @@ export function createScratchDeployment(options = {}) {
   }
 }
 
-function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome, path, env: extraEnv = {}, teams = "", local = "", kernel }) {
+function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome, path = process.env.OATS_TEST_AW ? dirname(process.env.OATS_TEST_AW) : undefined, env: extraEnv = {}, teams = "", local = "", kernel = process.env.OATS_PREVIEW_KERNEL_ROOT }) {
   const home = givenHome ?? join(root, "home"), ws = join(root, "ws"), deployment = join(root, "dep"), bin = join(root, "bin");
   for (const d of [home, ws, bin]) mkdirSync(d, { recursive: true });
   const gitConfig = join(root, "gitconfig");
   writeFileSync(gitConfig, "");
-  const env = { ...extraEnv, PATH: `${path ? `${path}:` : ""}${dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1" };
+  const env = { ...extraEnv, PATH: `${path ? `${path}:` : ""}${dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1",
+    ...(kernel ? { OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: join(kernel, "bin/oats.mjs") } : {}) };
   const write = (path, text) => { mkdirSync(dirname(join(ws, path)), { recursive: true }); writeFileSync(join(ws, path), text); };
   write("oats-workspace.yaml", `schemaVersion: 2\nname: scratch\nmembers: [${WORKSPACE}]\n${teams}`);
   write("oats-membership.yaml", `schemaVersion: 2\nworkspace: ${WORKSPACE}\n`);
@@ -71,7 +72,7 @@ function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome,
   return {
     root, deployment, workspace: ws, bin, env, homeOf, oats, json,
     spawn(name, { launch = true } = {}) {
-      const r = json(["spawn", "plain", "--name", name, ...(launch ? ["--launch-config", "fake"] : ["--no-launch"])]);
+      const r = json(["spawn", "plain", "--name", name, "--launch-config", "fake", ...(!launch ? ["--no-launch"] : [])]);
       if (!r.ok) throw new Error(`spawn ${name}: ${JSON.stringify(r.error)}`);
       return homeOf(name);
     },

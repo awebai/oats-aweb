@@ -23,8 +23,8 @@
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
+        "display": "/fixture/capture/resident-capture/complete/.aw/identity.yaml",
+        "id": "/fixture/capture/resident-capture/complete/.aw/identity.yaml",
         "type": "local_path"
       }
     },
@@ -39,7 +39,7 @@
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
+        "id": "did:aw:2Aus3FfCmb5pXED8fw4E9cyR5U2A",
         "type": "did"
       }
     },
@@ -47,14 +47,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6"
+        "did_key": "did:key:z6MktPj1RmA7jQepoAnTNZwKbLKCYczzxUSHSdgbaY7Araae"
       },
       "id": "identity.local.did_key_format",
       "message": "Identity did:key is syntactically valid.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
+        "id": "did:aw:2Aus3FfCmb5pXED8fw4E9cyR5U2A",
         "type": "did"
       }
     },
@@ -62,14 +62,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6"
+        "did_key": "did:key:z6MktPj1RmA7jQepoAnTNZwKbLKCYczzxUSHSdgbaY7Araae"
       },
       "id": "identity.local.signing_key_matches_did",
       "message": "Local signing key matches identity did.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6",
+        "id": "did:key:z6MktPj1RmA7jQepoAnTNZwKbLKCYczzxUSHSdgbaY7Araae",
         "type": "did"
       }
     },
@@ -77,15 +77,15 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE"
+        "encryption_key_id": "sha256:Yy6FBy+6w164BWYq5SLoUgUESYPrk1jIZ4kC4u6ruOk"
       },
       "id": "identity.e2ee.encryption_state",
       "message": "Local E2E encryption key state has an active key.",
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
+        "display": "/fixture/capture/resident-capture/complete/.aw/encryption.yaml",
+        "id": "/fixture/capture/resident-capture/complete/.aw/encryption.yaml",
         "type": "local_path"
       }
     },
@@ -93,15 +93,15 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE"
+        "encryption_key_id": "sha256:Yy6FBy+6w164BWYq5SLoUgUESYPrk1jIZ4kC4u6ruOk"
       },
       "id": "identity.e2ee.private_key",
       "message": "Local E2E encryption private key matches the active key id.",
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.x25519.key",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.x25519.key",
+        "display": "/fixture/capture/resident-capture/complete/.aw/encryption-keys/sha256-Yy6FBy_6w164BWYq5SLoUgUESYPrk1jIZ4kC4u6ruOk.x25519.key",
+        "id": "/fixture/capture/resident-capture/complete/.aw/encryption-keys/sha256-Yy6FBy_6w164BWYq5SLoUgUESYPrk1jIZ4kC4u6ruOk.x25519.key",
         "type": "local_path"
       }
     },
@@ -109,15 +109,15 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE"
+        "encryption_key_id": "sha256:Yy6FBy+6w164BWYq5SLoUgUESYPrk1jIZ4kC4u6ruOk"
       },
       "id": "identity.e2ee.assertion",
       "message": "Local E2E encryption-key assertion verifies under the identity signing key.",
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.assertion.json",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption-keys/sha256-XceGnVY2d7E2IUZJH_Jx6FpTyXbrpeA4UOucqx79hCE.assertion.json",
+        "display": "/fixture/capture/resident-capture/complete/.aw/encryption-keys/sha256-Yy6FBy_6w164BWYq5SLoUgUESYPrk1jIZ4kC4u6ruOk.assertion.json",
+        "id": "/fixture/capture/resident-capture/complete/.aw/encryption-keys/sha256-Yy6FBy_6w164BWYq5SLoUgUESYPrk1jIZ4kC4u6ruOk.assertion.json",
         "type": "local_path"
       }
     },
@@ -125,7 +125,7 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "published_at": "2026-10-10T16:44:14Z"
+        "published_at": "2026-11-19T01:47:57Z"
       },
       "id": "identity.e2ee.assertion_published",
       "message": "Local E2E encryption-key assertion was recorded as published.",
@@ -133,8 +133,8 @@
       "source": "local",
       "status": "ok",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
-        "id": "/private/tmp/oats-resident-capture/complete/.aw/encryption.yaml",
+        "display": "/fixture/capture/resident-capture/complete/.aw/encryption.yaml",
+        "id": "/fixture/capture/resident-capture/complete/.aw/encryption.yaml",
         "type": "local_path"
       }
     },
@@ -142,14 +142,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "stable_id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY"
+        "stable_id": "did:aw:2Aus3FfCmb5pXED8fw4E9cyR5U2A"
       },
       "id": "identity.local.stable_id_expected",
       "message": "Global identity stable_id is present.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
+        "id": "did:aw:2Aus3FfCmb5pXED8fw4E9cyR5U2A",
         "type": "did"
       }
     },
@@ -157,14 +157,14 @@
       "authoritative": true,
       "authority": "caller",
       "detail": {
-        "address": "fixture-6400.test/carol"
+        "address": "fixture-25651.test/carol"
       },
       "id": "identity.local.address_expected",
       "message": "Global identity address is present.",
       "source": "local",
       "status": "ok",
       "target": {
-        "id": "fixture-6400.test/carol",
+        "id": "fixture-25651.test/carol",
         "type": "address"
       }
     },
@@ -181,7 +181,7 @@
       "status": "ok"
     }
   ],
-  "generated_at": "2026-10-10T16:44:14Z",
+  "generated_at": "2026-11-19T01:47:57Z",
   "mode": "offline",
   "redactions": [
     {
@@ -201,12 +201,12 @@
   "subject": {
     "alias": "carol",
     "aweb_url": "http://127.0.0.1:18000",
-    "identity_path": "/private/tmp/oats-resident-capture/complete/.aw/identity.yaml",
+    "identity_path": "/fixture/capture/resident-capture/complete/.aw/identity.yaml",
     "identity_scope": "global",
     "name": "carol",
-    "team_id": "default:fixture-6400.test",
-    "working_dir": "/private/tmp/oats-resident-capture/complete",
-    "workspace_id": "f6dd8eda-443a-4ce0-b647-40b2620dfa61"
+    "team_id": "default:fixture-25651.test",
+    "working_dir": "/fixture/capture/resident-capture/complete",
+    "workspace_id": "062e2540-7cfe-4ed0-8b44-d013518e29dd"
   },
   "version": "doctor.v1"
 }

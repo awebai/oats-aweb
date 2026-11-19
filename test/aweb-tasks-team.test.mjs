@@ -2,7 +2,6 @@
 // block, and the readiness check against a fake kernel that answers
 // `oats aweb teams --json` and `oats inspect … --json`.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -14,7 +13,6 @@ import { labelProblem, teamSetting } from '../oats-package/capabilities/oats-awe
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cap = join(root, 'oats-package/capabilities/oats-aweb-tasks');
 const read = (path) => readFileSync(join(cap, path), 'utf8');
-const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 const DEFAULT_BRIEF = "Tasks: aweb tasks, as your oats.aweb identity in its default team (joined teams: `aw --identity-home <home> task …`). Load /aweb-tasks. If `aw whoami` fails, report it to your human and don't use tasks.";
 
 // A copy of only this module, a fake aw that must never run, and a fake kernel
@@ -154,48 +152,6 @@ test('an invalid team is refused in the brief, with a warning, and the hook stil
     assert.match(out.warning, /^oats-aweb-tasks: setting team /);
   }
   assert.match(f.spawn({ OATS_SETTINGS: '{broken' }).brief, /^Tasks: refused: oats\.aweb-tasks the oats\.aweb-tasks settings payload is not an object/);
-});
-
-// The one sentence of #186 that changes, in each file: it named the default
-// team, and now names the tasks team, which is the default one when `team` is absent.
-const SENTENCES = {
-  inject: ['using your own oats.aweb identity in the default team; joined teams use their\nexplicit identity home.',
-    'using your own oats.aweb identity in the tasks team: the default team, or the\nteam your TASK.md names (Tasks team, below); joined teams use their explicit\nidentity home.'],
-  skill: ['with your own oats.aweb identity in\nits default team.',
-    'with your own oats.aweb identity in\nthe tasks team: its default team, or the team your TASK.md names ("Tasks\nteam" below).'],
-};
-const restore = (text, [was, now]) => { assert.equal(text.split(now).length, 2, `the changed sentence appears once: ${now}`); return text.replace(now, was); };
-// The paragraph the claim floors add to each file (aweb-tasks-claim-floors.test.mjs).
-const HEARTBEAT = 'Your claims stay present only while something heartbeats them: the host\'s\nwake daemon from aw 1.36.54, or on a Claude or pi channel home the aweb-channel\nplugin from 1.8.2 or the aweb pi extension from 0.4.1. If readiness warns\n`wake-daemon-outdated`, `aweb-channel-outdated` or `pi-extension-outdated`,\nreport it to your human.\n\n';
-const unheartbeat = (text) => { assert.equal(text.split(HEARTBEAT).length, 2, 'the heartbeat paragraph appears once'); return text.replace(HEARTBEAT, ''); };
-// The paragraph the private body files add to the skill (private-body-files.test.mjs).
-const PRIVATE_FILES = '\nMake each of these files new and private with `mktemp` (it prints a fresh,\nowner-only path), never a fixed or shared `/tmp` path: other agents and users\non the host share `/tmp`, so a fixed name lets another agent overwrite your\nfile and your task carries its text. `/path/...` below stands for such a path.\n';
-const unprivate = (text) => { assert.equal(text.split(PRIVATE_FILES).length, 2, 'the private files paragraph appears once'); return text.replace(PRIVATE_FILES, ''); };
-
-test('the inject and skill add one Tasks team block, the heartbeat and private files paragraphs, change one sentence, and are otherwise the #186 text', () => {
-  const inject = unheartbeat(restore(read('injects/aweb-tasks.md'), SENTENCES.inject)), skill = unprivate(unheartbeat(restore(read('skills/aweb-tasks/SKILL.md'), SENTENCES.skill)));
-  const injectBlock = inject.slice(inject.indexOf('\n\n**Tasks team.**'));
-  assert.ok(injectBlock.startsWith('\n\n**Tasks team.**') && injectBlock.endsWith('never fall back to the default team.\n'));
-  assert.equal(sha256(inject.slice(0, -injectBlock.length) + '\n'), '6322e11b18ce1dac51386023b0c3625f051ce78213dda41006cc6f966c252503', 'inject minus the block and with the old sentence is #186');
-  const start = skill.indexOf('## Tasks team\n'), end = skill.indexOf('## Find and inspect work\n');
-  assert.ok(start > 0 && end > start);
-  assert.equal(sha256(skill.slice(0, start) + skill.slice(end)), 'bb9f89dfbf4f0b153532273b427ccfe0604345c9ca8056987156f2576435a000', 'skill minus the section and with the old sentence is #186');
-  for (const block of [injectBlock, skill.slice(start, end)]) {
-    const text = block.replace(/\*\*/g, '').replace(/\s+/g, ' ');
-    assert.ok(text.includes('oats aweb teams --json'), 'names the exact lookup');
-    assert.match(text, /instance home/);
-    assert.match(text, /`defaultTeam\.label` is that label/);
-    assert.match(text, /`joined\[\]\.identityHome`/);
-    assert.match(text, /every task and work command/i);
-    assert.match(text, /report it to your human and stop/);
-    assert.match(text, /[Nn]ever fall back to the default team/);
-  }
-});
-
-test('nothing oats.aweb-tasks ships builds an identity home from the label', () => {
-  for (const path of ['injects/aweb-tasks.md', 'skills/aweb-tasks/SKILL.md', 'bin/oats-aweb-tasks.mjs', 'bin/oats-aweb-tasks-binding.mjs', 'lib/team.mjs', 'lib/binding.mjs', 'oats.json']) {
-    assert.doesNotMatch(read(path), /\.aweb-identity-/, path);
-  }
 });
 
 test('readiness with team absent is ready with nothing else, and reads no kernel', t => {

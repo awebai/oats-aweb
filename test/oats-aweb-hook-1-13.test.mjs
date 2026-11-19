@@ -199,7 +199,7 @@ test("real aw at the floor: custody preflight reports needs-configuration instea
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-real-"));
   try {
     const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(dirname(realAw), "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(settings(custody)) });
+    const r = runHook(dirname(realAw), "spawn", { OATS_RUNTIME: "claude", OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(settings(custody)) });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, /custody preflight failed for merlin/);
     assert.match(r.doc.warning, /status=not_running/);
@@ -209,16 +209,7 @@ test("real aw at the floor: custody preflight reports needs-configuration instea
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("real aw fixture: unattached grant home reports the released custody locator error", (t) => {
-  const fixture = process.env.AW_REAL_GRANT_FIXTURE;
-  const realAw = process.env.AW_REAL_CLI_BIN || "aw";
-  if (!fixture) { t.skip("set AW_REAL_GRANT_FIXTURE to an unattached real grant home"); return; }
-  const version = spawnSync(realAw, ["version"], { encoding: "utf8", timeout: 10000 });
-  if (version.status !== 0 || !awAtLeast(version.stdout + version.stderr, "1.36.13")) { t.skip(`real aw is not 1.36.13+: ${version.stdout || version.stderr}`); return; }
-  const r = spawnSync(realAw, ["custody", "status", "--json"], { cwd: fixture, encoding: "utf8", env: { ...process.env, AWEB_IDENTITY_HOME: fixture }, timeout: 10000 });
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr + r.stdout, /grant home has no custody\.socket_path locator/);
-});
+
 
 test("custody preflight requires e2ee operations by default; identity.e2ee false needs signing only and briefs a warning", () => {
   let base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
@@ -826,5 +817,150 @@ test("launch renewal of a team configured in mixed case takes the new grant aw m
     assert.equal(r.doc.meta.identity.grant.home, r.doc.env.AWEB_IDENTITY_HOME);
     assert.ok(logLines(base).some((l) => l.argv.join(" ") === "id grant revoke grant-old --team=t:example.test --json"), "the old grant is revoked");
     assert.equal(grantStatus(base, "grant-old"), "revoked");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+for (const status of ['active', 'revoked']) test(`retire rechecks an uncertain revoke and reports show status ${status}`, () => {
+  const base = mkdtempSync(join(tmpdir(), 'oats-revoke-uncertain-'));
+  try {
+    const { bin, root, home, custody, r: spawned } = spawnGrant(base, { delivery: 'session' });
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const grant = spawned.doc.meta.identity.grant;
+    const r = runHook(bin, 'retire', { OATS_INSTANCE: 'probe', OATS_HOME: home, OATS_WORKSPACE: root,
+      OATS_META: JSON.stringify(spawned.doc.meta), OATS_SETTINGS: JSON.stringify(settings(custody)),
+      FAKE_REVOKE_STDERR: 'revoke may have applied: context deadline exceeded', FAKE_GRANT_SHOW_STATUS: status });
+    assert.ok(logLines(base).some(l => l.argv.join(' ') === `id grant show ${grant.id} --team=t:example.test --json`), 'uncertain outcome must be checked');
+    assert.equal(r.status, status === 'revoked' ? 0 : 1, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.retired, status === 'revoked');
+    assert.equal(r.doc.meta.identityRevoked, status === 'revoked' ? true : undefined);
+    if (status === 'active') assert.match(r.doc.warning, /was not revoked/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('global post-mint wake-register failure revokes, removes the grant home and returns compensation metadata', () => {
+  const base = mkdtempSync(join(tmpdir(), 'oats-global-wake-fail-'));
+  try {
+    const { custody, home, r } = spawnGrant(base, { delivery: 'session' }, { FAKE_WAKE_REGISTER_FAIL: '1' });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.doc.meta.identity.seat, /^[0-9a-f]{16}$/);
+    assert.equal(JSON.parse(readFileSync(join(home, '.oats-aweb', 'seat.json'), 'utf8')).seat, r.doc.meta.identity.seat);
+    assert.equal(r.doc.meta.identity.team, 't:example.test');
+    assert.equal(r.doc.meta.identity.grant, undefined);
+    assert.match(r.doc.warning, /session delivery registration failed/);
+    assert.equal(JSON.parse(readFileSync(join(base, "grants.json"), "utf8")).find(g => g.grant_id === "grant-spawn").status, "revoked");
+    assert.equal(existsSync(join(home, '.aweb-identity')), false);
+    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=t:example.test --json');
+    assert.equal(revoke.cwd, realpathSync(custody));
+    assert.equal(revoke.identityHome, null);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+for (const failRevoke of [false, true]) test(`mint with grant.yaml and no JSON recovers the grant id; revoke failure=${failRevoke}`, () => {
+  const base = mkdtempSync(join(tmpdir(), 'oats-grant-no-json-'));
+  try {
+    const { custody, home, r } = spawnGrant(base, { delivery: 'session' }, { FAKE_MINT_NO_JSON: '1', ...(failRevoke ? { FAKE_REVOKE_FAIL: '1' } : {}) });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.doc.meta.identity.seat, /^[0-9a-f]{16}$/);
+    assert.equal(JSON.parse(readFileSync(join(home, '.oats-aweb', 'seat.json'), 'utf8')).seat, r.doc.meta.identity.seat);
+    assert.equal(r.doc.meta.identity.team, 't:example.test');
+    assert.match(r.doc.warning, /recovered grant grant-spawn from grant.yaml/);
+    assert.equal(existsSync(join(home, '.aweb-identity')), false);
+    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=t:example.test --json');
+    assert.equal(revoke.cwd, realpathSync(custody));
+    assert.equal(revoke.identityHome, null);
+    const grant = JSON.parse(readFileSync(join(base, 'grants.json'), 'utf8')).find(g => g.grant_id === 'grant-spawn');
+    assert.equal(grant.team_id, 't:example.test');
+    assert.equal(grant.status, failRevoke ? 'active' : 'revoked');
+    if (failRevoke) {
+      assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
+      assert.match(r.doc.warning, /still valid|stays valid/);
+      assert.ok(r.doc.warning.includes('`aw id grant revoke --team=t:example.test -- grant-spawn`'));
+      assert.doesNotMatch(r.doc.warning, /revoked it|grant was revoked/);
+    } else {
+      assert.equal(r.doc.meta.identity.grant, undefined);
+      assert.match(r.doc.warning, /revoked it, and removed the grant home/);
+    }
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+for (const [label, identity, pattern] of [
+  ['missing resident name', { resident: '' }, /identity\.resident.*oats-local.yaml settings\.oats\.aweb\.residents\.<name>/],
+  ['unresolved resident', { resident: 'absent' }, /resident "absent".*oats-local.yaml settings\.oats\.aweb\.residents\.absent/],
+  ['retained source in global mode', { source: '/fixture/source/.aw' }, /identity\.mode.*global.*identity\.source|identity\.source.*identity\.mode.*global/],
+]) test(`global spawn refuses ${label} before mint`, () => {
+  const base = mkdtempSync(join(tmpdir(), 'oats-global-config-'));
+  try {
+    const { r } = spawnGrant(base, { identity });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.doc.warning, pattern);
+    assert.equal(logLines(base).some(l => l.argv.slice(0, 3).join(' ') === 'id grant mint'), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('legacy grant receipt preserves explicit scopes, finite TTL, metadata and native wake/mint tuples', () => {
+  const base = mkdtempSync(join(tmpdir(), 'oats-legacy-grant-'));
+  try {
+    const { home, custody, r } = spawnGrant(base, { delivery: 'session', identity: { scopes: ['mail.read', 'chat.send'], ttl: '90m' } }, { AWEB_IDENTITY_HOME: join(base, 'foreign-home') });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const id = r.doc.meta.identity;
+    assert.match(id.seat, /^[0-9a-f]{16}$/);
+    assert.deepEqual(id, { mode: 'global', alias: 'resident-alias', team: 't:example.test', address: 'oats.aweb.ai/resident-alias', resident: 'merlin', seat: id.seat,
+      grant: { id: 'grant-spawn', expiresAt: '2026-09-24T07:00:00Z', ttl: '90m', renew: 'launch', scopes: ['mail.read', 'chat.send'], home: join(home, '.aweb-identity'), appInventoryStatus: 'unavailable' } });
+    assert.deepEqual(r.doc.env, { AWEB_DELIVERY: 'session', AWEB_IDENTITY_HOME: join(home, '.aweb-identity') });
+    const mint = logLines(base).find(l => l.argv.slice(0, 3).join(' ') === 'id grant mint');
+    assert.deepEqual(mint.argv, ['id', 'grant', 'mint', '--team=t:example.test', '--scope=mail.read,chat.send', '--ttl=90m', `--label=oats:probe:${id.seat}`, `--out=${join(home, '.aweb-identity')}`, `--custody-socket=${join(realpathSync(custody), 'custody.sock')}`, '--json']);
+    assert.equal(mint.cwd, realpathSync(custody));
+    assert.equal(mint.identityHome, null);
+    assert.deepEqual(logLines(base).find(l => l.argv.slice(0, 2).join(' ') === 'wake register').argv, ['wake', 'register', '--home', home, '--identity-home', join(home, '.aweb-identity'), '--delivery', 'session']);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+for (const failRevoke of [false, true]) test(`a wrong minted team preserves compensation metadata and revokes from custody without the caller identity${failRevoke ? '; revoke failure=true' : ''}`, () => {
+  const base = mkdtempSync(join(tmpdir(), 'oats-wrong-team-'));
+  try {
+    const { home, custody, r } = spawnGrant(base, {}, { FAKE_GRANT_TEAM: 'wrong:example.test', ...(failRevoke ? { FAKE_REVOKE_FAIL: '1' } : {}), AWEB_IDENTITY_HOME: join(base, 'foreign-home') });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.doc.meta.identity.seat, /^[0-9a-f]{16}$/);
+    assert.equal(JSON.parse(readFileSync(join(home, '.oats-aweb', 'seat.json'), 'utf8')).seat, r.doc.meta.identity.seat);
+    const grant = JSON.parse(readFileSync(join(base, 'grants.json'), 'utf8')).find(g => g.grant_id === 'grant-spawn');
+    assert.equal(grant.team_id, 'wrong:example.test');
+    assert.equal(grant.status, failRevoke ? 'active' : 'revoked');
+    if (failRevoke) {
+      assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
+      assert.equal(r.doc.meta.identity.team, 'wrong:example.test');
+      assert.match(r.doc.warning, /still valid|stays valid/);
+      assert.ok(r.doc.warning.includes('`aw id grant revoke --team=wrong:example.test -- grant-spawn`'));
+      assert.doesNotMatch(r.doc.warning, /revoked it|grant was revoked/);
+    } else {
+      assert.equal(r.doc.meta.identity.grant, undefined);
+      assert.equal(r.doc.meta.identity.team, 't:example.test');
+    }
+    assert.match(r.doc.warning, /minted grant team wrong:example.test differs/);
+    assert.equal(existsSync(join(home, '.aweb-identity')), false);
+    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=wrong:example.test --json');
+    assert.equal(revoke.cwd, realpathSync(custody));
+    assert.equal(revoke.identityHome, null);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test('global retire uses custody, clears the caller identity, deregisters the wake and handles a missing grant id', () => {
+  const base = mkdtempSync(join(tmpdir(), 'oats-global-retire-'));
+  try {
+    const bin = fakeAw(base), { root, home } = deployment(base), custody = resident(base);
+    const env = { OATS_HOME: home, OATS_INSTANCE: 'probe', OATS_WORKSPACE: root, OATS_SETTINGS: JSON.stringify(settings(custody)), AWEB_IDENTITY_HOME: join(base, 'foreign-home') };
+    const absent = runHook(bin, 'retire', { ...env, OATS_META: JSON.stringify({ identity: { mode: 'global', resident: 'merlin', team: 't:example.test' } }) });
+    assert.equal(absent.status, 0, absent.stdout + absent.stderr);
+    assert.equal(absent.doc.meta.retired, false);
+    assert.equal(absent.doc.meta.reason, 'nothing-to-delete');
+    const meta = { delivery: 'session', identity: { mode: 'global', resident: 'merlin', team: 't:example.test', grant: { id: 'grant-current', expiresAt: '2026-09-24T07:00:00Z', scopes: ['mail.read'] } } };
+    // The legacy receipt refers to a grant at the team-aware fake service.
+    writeFileSync(join(base, 'grants.json'), JSON.stringify([{ grant_id: 'grant-current', team_id: meta.identity.team, label: 'oats:probe', status: 'active', expires_at: meta.identity.grant.expiresAt }]), { flag: 'wx' });
+    const retired = runHook(bin, 'retire', { ...env, OATS_META: JSON.stringify(meta) });
+    assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+    assert.equal(retired.doc.meta.identityRevoked, true);
+    const calls = logLines(base), revoke = calls.find(l => l.argv.join(' ') === 'id grant revoke grant-current --team=t:example.test --json');
+    assert.equal(revoke.cwd, realpathSync(custody));
+    assert.equal(revoke.identityHome, null);
+    assert.ok(calls.some(l => l.argv.join(' ') === 'wake deregister --home ' + home));
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

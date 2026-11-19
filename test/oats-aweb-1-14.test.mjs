@@ -548,6 +548,7 @@ test("real aw 1.36 identity-home policy admits provider subcommands and pins cur
     if (row.name.startsWith("wake-")) assert.ok(row.args.includes("--state-dir") && row.args.includes(wakeState), `${row.name} must isolate aw wake state`);
     const result = spawnSync("aw", ["--identity-home", identityHome, ...row.args], { cwd: home, encoding: "utf8", timeout: 10000 });
     const output = `${result.stdout}${result.stderr}`;
+    assert.doesNotMatch(output, /unknown command|unknown flag|flag provided but not defined/i, row.name);
     assert.doesNotMatch(output, new RegExp(IDENTITY_HOME_POLICY), `${row.name} hit the identity-home policy refusal: ${output}`);
     if (!row.allowZero) assert.notEqual(result.status, 0, `${row.name} unexpectedly succeeded`);
     assert.match(output, row.expect, `${row.name} failed for an unexpected reason: ${output}`);

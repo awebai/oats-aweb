@@ -9,8 +9,11 @@ import {runProbe} from '../oats-package/capabilities/oats-aweb/lib/probe.mjs';
 import {ProbeBudget} from '../oats-package/capabilities/oats-aweb/lib/probe-runtime.mjs';
 import {projectWorkspaceService, readWorkspaceService} from '../oats-package/capabilities/oats-aweb/lib/probe-service.mjs';
 import {PROBE_RELEASE_SUPPORT, qualifyProbeSupport, observeProbeMetadata, probeAwVersion, resolveProbeAw} from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
-const native = readFileSync(new URL('./fixtures/probe/native-workspace-1.36.28.yaml', import.meta.url), 'utf8');
+const capturedWorkspace = readFileSync(new URL('./fixtures/probe/native-workspace.yaml', import.meta.url), 'utf8');
 const url = 'https://app.aweb.ai/api', meta = 'https://app.aweb.ai/meta';
+// Admission vectors deliberately change only the disposable OSS origin to Cloud.
+// This exercises admission offline; the unmodified capture is not Cloud acceptance.
+const native = capturedWorkspace.replace(/^aweb_url:.*$/m, `aweb_url: ${url}`);
 const metadata = {version: '0.0.1', build: {aweb_version: '1.27.12'}};
 const legacyHelp = readFileSync(new URL('./fixtures/probe/mail-send-help-1.36.33.txt', import.meta.url), 'utf8');
 function configured(t, options = {}, {help = legacyHelp, helpError = false, version = '1.36.33'} = {}) {
@@ -23,10 +26,11 @@ function configured(t, options = {}, {help = legacyHelp, helpError = false, vers
 }
 test('released floors: probe-only origins and server floor, and the provider aw floor', () => assert.deepEqual(PROBE_RELEASE_SUPPORT, {origins:['https://app.aweb.ai'],cliFloor:'1.36.33',serverFloor:'1.27.12'}));
 test('native-generated service projection and qualified scalar variants', () => {
+  assert.equal(projectWorkspaceService(capturedWorkspace), 'http://127.0.0.1:18000');
   assert.equal(projectWorkspaceService(native), url);
   for (const v of [url, `"${url}"`, `'${url}'`]) assert.equal(projectWorkspaceService(native.replace(url,v)),url);
 });
-for (const [name, text] of Object.entries({missing:native.replace(/^aweb_url:.*\n/,''), duplicate:`${native}aweb_url: ${url}\n`, quotedKey:native.replace('aweb_url:', '"aweb_url":'), alias:native.replace(url,'*url'), tag:native.replace(url,`!!str ${url}`), folded:native.replace(url,`>\n  ${url}`), literal:native.replace(url,`|\n  ${url}`), merge:`<<: *defaults\n${native}`, document:`---\n${native}`, continuation:native.replace(url,`${url}\n  hidden`), tab:native.replace('    -','\t-'), duplicateMember:native.replace('      alias: worker-1','      alias: worker-1\n      alias: other'), flow:`{aweb_url: "${url}"}`, multiline:`human_name: "unfinished\naweb_url: ${url}\n"`, oversized:'x'.repeat(65537)})) test(`ambiguous/unsupported config refuses ${name}`, () => assert.throws(()=>projectWorkspaceService(text),e=>e.reason==='selected-service-config-unavailable'));
+for (const [name, text] of Object.entries({missing:native.replace(/^aweb_url:.*\n/,''), duplicate:`${native}aweb_url: ${url}\n`, quotedKey:native.replace('aweb_url:', '"aweb_url":'), alias:native.replace(url,'*url'), tag:native.replace(url,`!!str ${url}`), folded:native.replace(url,`>\n  ${url}`), literal:native.replace(url,`|\n  ${url}`), merge:`<<: *defaults\n${native}`, document:`---\n${native}`, continuation:native.replace(url,`${url}\n  hidden`), tab:native.replace('    -','\t-'), duplicateMember:native.replace(/^(      alias:.*)$/m,'$1\n      alias: other'), flow:`{aweb_url: "${url}"}`, multiline:`human_name: "unfinished\naweb_url: ${url}\n"`, oversized:'x'.repeat(65537)})) test(`ambiguous/unsupported config refuses ${name}`, () => assert.throws(()=>projectWorkspaceService(text),e=>e.reason==='selected-service-config-unavailable'));
 test('workspace reader rejects symlink and directories without fallback', t => {
   const f=configured(t), file=join(f.root,'.aw','workspace.yaml');
   unlinkSync(file);symlinkSync(join(f.home,'.aw','workspace.yaml'),file);

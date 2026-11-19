@@ -559,14 +559,7 @@ test("connect prints its steps for a human without --json", async (t) => {
   assert.match(result.stdout, /^ready: yes$/m);
 });
 
-test("1.21.0 is documented: CHANGELOG, README and the oats-aweb skill name connect, --invite-stdin, --install-aw and the token rule", () => {
-  const changelog = readFileSync(join(REPO, "CHANGELOG.md"), "utf8");
-  const entry = changelog.slice(changelog.indexOf("## 1.21.0"), changelog.indexOf("## 1.20.0"));
-  const readme = readFileSync(join(REPO, "README.md"), "utf8");
-  const skill = readFileSync(join(CAPABILITY, "skills", "oats-aweb", "SKILL.md"), "utf8");
-  for (const [name, text] of [["CHANGELOG 1.21.0", entry], ["README", readme], ["skill", skill]]) {
-    for (const needle of ["oats aweb connect <server-id>", "--invite-stdin", "--install-aw", "--check-only", "process list"]) assert.ok(text.includes(needle), `${name} lacks ${needle}`);
-  }
+test("the manifest exposes the connect command", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   assert.equal(manifest.commands.connect, "bin/oats-aweb.mjs connect");
 });

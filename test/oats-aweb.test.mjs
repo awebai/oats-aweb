@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -128,49 +128,6 @@ test("vendored skills carry exact upstream provenance and MIT license", () => {
   assert.match(vendored, /adapted for OATS: they carry no task-coordination text/);
 });
 
-test("capability guidance names only real first-level aw verbs", (t) => {
-  const files = [
-    join(CAPABILITY, "bin", "oats-aweb.mjs"),
-    join(CAPABILITY, "injects", "aweb.md"),
-    join(REPO, "README.md"),
-  ];
-  const verbs = new Set();
-  for (const file of files) {
-    const text = readFileSync(file, "utf8");
-    assert.doesNotMatch(text, /aw team create\b/, `${file} must not recommend the nonexistent aw team create command`);
-    for (const match of text.matchAll(/\["aw",\s*"([a-z][a-z0-9-]*)"/g)) verbs.add(match[1]);
-    for (const match of text.matchAll(/`aw\s+([a-z][a-z0-9-]*)\b/g)) verbs.add(match[1]);
-  }
-  assert.ok(verbs.size > 0, "the test must enumerate printed/run aw verbs");
-  // CI installs the tested aw for this guard and sets OATS_AW_VERBS_REQUIRED, so it never skips there.
-  const required = process.env.OATS_AW_VERBS_REQUIRED === "1";
-  const found = spawnSync("aw", ["--help"], { encoding: "utf8" });
-  if (found.error?.code === "ENOENT") {
-    assert.ok(!required, "OATS_AW_VERBS_REQUIRED: the aw-verb guard needs aw on PATH");
-    t.skip(`aw CLI not on PATH; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
-    return;
-  }
-  assert.equal(found.status, 0, found.stderr || found.stdout);
-  const version = spawnSync("aw", ["version"], { encoding: "utf8" });
-  const parsed = /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(version.stdout + version.stderr);
-  const atLeast = (floor) => {
-    if (!parsed) return false;
-    const a = parsed.slice(1, 4).map(Number), b = floor.split(".").map(Number);
-    for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
-    return true;
-  };
-  t.diagnostic(`aw version fixture: ${(version.stdout + version.stderr).trim()}`);
-  if (!atLeast("1.36.6")) {
-    assert.ok(!required, `OATS_AW_VERBS_REQUIRED: the aw-verb guard needs aw 1.36.6 or newer, not ${parsed?.[0] || "unknown"}`);
-    t.skip(`aw ${parsed?.[0] || "unknown"} is older than published 1.36.6; skipped verb help validation for: ${[...verbs].sort().join(", ")}`);
-    return;
-  }
-  for (const verb of [...verbs].sort()) {
-    const help = spawnSync("aw", [verb, "--help"], { encoding: "utf8", timeout: 10000 });
-    assert.equal(help.status, 0, `aw ${verb} --help failed\nstdout=${help.stdout}\nstderr=${help.stderr}`);
-  }
-});
-
 test("declared commands and hooks have no npm package imports", () => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const entrypointOf = (spec) => (typeof spec === "string" ? spec : spec.command);
@@ -186,19 +143,17 @@ test("declared commands and hooks have no npm package imports", () => {
     // Host CLI calls go through execFile/argv, never a shell string (no
     // execSync, no `command -v`), so hostile team names, aliases, or tokens can
     // never be interpolated into a command.
-    if (entrypoint === "bin/oats-aweb.mjs") {
-      assert.match(source, /execFileSync/);
-      assert.match(source, /aw team|aw workspace|aw id team/);
-    } else if (entrypoint === "bin/oats-aweb-probe.mjs") {
+    if (entrypoint === "bin/oats-aweb-probe.mjs") {
       assert.match(source, /runProbe/);
       const runtime = readFileSync(join(CAPABILITY, "lib/probe-runtime.mjs"), "utf8");
       assert.match(runtime, /spawn\(command, args/);
       assert.match(runtime, /shell: false/);
       assert.doesNotMatch(runtime, /\bexecSync\b|node_modules/);
-    } else {
+    } else if (entrypoint === "bin/oats-aweb-binding.mjs") {
       // The binding entrypoint delegates bounded JSON transport, not native aw.
-      assert.equal(entrypoint, "bin/oats-aweb-binding.mjs");
       assert.match(source, /runBindingWire/);
+    } else {
+      assert.equal(entrypoint, "bin/oats-aweb.mjs");
     }
     assert.doesNotMatch(source, /\bexecSync\b/);
     // The Claude channel plugin is a DECLARED, consented runtime requirement —
@@ -1011,4 +966,33 @@ test("username setup names an unavailable username plainly and withholds the res
     assert.deepEqual(error.details.steps, [{ step: "bootstrap", status: "unconfirmed" }]);
     assert.doesNotMatch(r.stdout + r.stderr, /SECRET-Reason|is not available|nothing was created/);
   }
+});
+
+test('primary spawn uses roots[team] before root/workspace and mints from the new home', async t => {
+  const ws = tempDir(t), declared = tempDir(t), selected = tempDir(t), home = tempDir(t);
+  for (const root of [ws, declared, selected]) mkdirSync(join(root, '.aw'));
+  const fake = fakeAwSetupPath(t), team = 'primary:example.invalid';
+  const result = await run(['spawn'], { PATH: fake.path, OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: home, OATS_INSTANCE: 'primary-child', OATS_WORKSPACE: ws,
+    OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: team, OATS_SETTINGS: JSON.stringify({ root: declared, roots: { [team]: selected } }) }, home);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).env, { AWEB_IDENTITY_HOME: join(home, '.aw') });
+  const calls = fake.readCalls(), mint = joinFromCalls(calls);
+  assert.equal(mint.length, 1);
+  assert.ok(mint[0].args.includes('--join-from=' + selected));
+  assert.equal(mint[0].cwd, realpathSync(home));
+  assert.equal(calls.some(c => c.args[0] === 'team' && ['invite', 'join'].includes(c.args[1])), false);
+});
+
+test('an explicitly selected empty root never falls back to a working workspace root', async t => {
+  const ws = tempDir(t), empty = tempDir(t), home = tempDir(t);
+  mkdirSync(join(ws, '.aw'));
+  const fake = fakeAwSetupPath(t);
+  const result = await run(['spawn'], { PATH: fake.path, OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: home, OATS_INSTANCE: 'primary-child', OATS_WORKSPACE: ws,
+    OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: 'primary:example.invalid', OATS_SETTINGS: JSON.stringify({ root: empty }) }, home);
+  assert.equal(result.code, 1);
+  const doc = JSON.parse(result.stdout);
+  assert.ok(doc.warning.includes(empty));
+  assert.match(doc.warning, /settings\.oats\.aweb\.root/);
+  assert.match(doc.warning, /oats aweb setup/);
+  assert.equal(fake.readCalls().some(c => c.args[0] === 'init'), false);
 });

@@ -1,0 +1,6 @@
+# Pinned AWID verifies covering controller signatures against this explicit
+# client-facing origin (awid_service/main.py and awid/controller_request.py).
+services:
+  awid:
+    environment:
+      AWID_PUBLIC_ORIGINS: http://127.0.0.1:18010

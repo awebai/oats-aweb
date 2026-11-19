@@ -1,0 +1,406 @@
+{
+  "created": {
+    "schemaVersion": 1,
+    "ok": true,
+    "result": {
+      "outcome": "created",
+      "name": "carol",
+      "root": "/srv/deploy/.aweb-residents/carol",
+      "address": "acme.aweb.ai/carol",
+      "team": "default:acme.aweb.ai",
+      "stableId": "did:aw:<stable id>",
+      "custody": {
+        "status": "running",
+        "manager": "<launchd or systemd>",
+        "label": "ai.aweb.custody.acme.aweb.ai.carol",
+        "path": "<unit path>"
+      },
+      "recorded": {
+        "file": "/srv/deploy/oats-local.yaml",
+        "setting": "settings.oats.aweb.residents.carol"
+      },
+      "teamLabel": {
+        "label": "default",
+        "team": "default:acme.aweb.ai",
+        "status": "added",
+        "derived": true,
+        "default": "set"
+      },
+      "warnings": [
+        "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
+      ],
+      "captures": [
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+      ],
+      "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+      "steps": [
+        "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+      ]
+    }
+  },
+  "resumed": {
+    "schemaVersion": 1,
+    "ok": true,
+    "result": {
+      "outcome": "resumed",
+      "name": "carol",
+      "root": "/srv/deploy/.aweb-residents/carol",
+      "address": "acme.aweb.ai/carol",
+      "team": "default:acme.aweb.ai",
+      "stableId": "did:aw:<stable id>",
+      "custody": {
+        "status": "running",
+        "manager": "<launchd or systemd>",
+        "label": "ai.aweb.custody.acme.aweb.ai.carol",
+        "path": "<unit path>"
+      },
+      "recorded": {
+        "file": "/srv/deploy/oats-local.yaml",
+        "setting": "settings.oats.aweb.residents.carol"
+      },
+      "teamLabel": {
+        "label": "default",
+        "team": "default:acme.aweb.ai",
+        "status": "added",
+        "derived": true,
+        "default": "set"
+      },
+      "warnings": [
+        "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
+      ],
+      "captures": [
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+      ],
+      "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+      "steps": [
+        "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+      ]
+    }
+  },
+  "adopted": {
+    "schemaVersion": 1,
+    "ok": true,
+    "result": {
+      "outcome": "adopted",
+      "name": "carol",
+      "root": "/srv/deploy/.aweb-residents/carol",
+      "address": "acme.aweb.ai/carol",
+      "team": "default:acme.aweb.ai",
+      "stableId": "did:aw:<stable id>",
+      "custody": {
+        "status": "running",
+        "manager": "<launchd or systemd>",
+        "label": "ai.aweb.custody.acme.aweb.ai.carol",
+        "path": "<unit path>"
+      },
+      "recorded": {
+        "file": "/srv/deploy/oats-local.yaml",
+        "setting": "settings.oats.aweb.residents.carol"
+      },
+      "teamLabel": {
+        "label": "default",
+        "team": "default:acme.aweb.ai",
+        "status": "added",
+        "derived": true,
+        "default": "set"
+      },
+      "warnings": [
+        "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
+      ],
+      "captures": [],
+      "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+      "steps": [
+        "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+      ]
+    }
+  },
+  "already-exists": {
+    "schemaVersion": 1,
+    "ok": true,
+    "result": {
+      "outcome": "already-exists",
+      "name": "carol",
+      "root": "/srv/deploy/.aweb-residents/carol",
+      "address": "acme.aweb.ai/carol",
+      "team": "default:acme.aweb.ai",
+      "stableId": "did:aw:<stable id>",
+      "custody": {
+        "status": "running",
+        "manager": "<launchd or systemd>",
+        "label": "ai.aweb.custody.acme.aweb.ai.carol",
+        "path": "<unit path>"
+      },
+      "recorded": {
+        "file": "/srv/deploy/oats-local.yaml",
+        "setting": "settings.oats.aweb.residents.carol"
+      },
+      "teamLabel": {
+        "label": "default",
+        "team": "default:acme.aweb.ai",
+        "status": "added",
+        "derived": true,
+        "default": "set"
+      },
+      "warnings": [
+        "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
+      ],
+      "captures": [],
+      "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+      "steps": [
+        "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+      ]
+    }
+  },
+  "plan": {
+    "schemaVersion": 1,
+    "ok": true,
+    "result": {
+      "outcome": "plan",
+      "name": "carol",
+      "root": "/srv/deploy/.aweb-residents/carol",
+      "state": "create",
+      "init": {
+        "argv": [
+          "aw",
+          "init",
+          "--global",
+          "--name",
+          "carol",
+          "--do-not-touch-agents-md",
+          "--json"
+        ],
+        "cwd": "/srv/deploy/.aweb-residents/carol",
+        "awebUrl": "<AWEB_URL>",
+        "env": [
+          "PATH",
+          "HOME",
+          "AWEB_URL",
+          "AWEB_API_KEY",
+          "AW_NO_UPDATE_CHECK"
+        ]
+      },
+      "verify": [
+        "aw whoami --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+        "aw doctor identity --offline --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)",
+        "aw doctor registry --online --json (in /srv/deploy/.aweb-residents/carol, environment PATH and HOME only)"
+      ],
+      "custody": {
+        "manager": "<launchd or systemd>",
+        "label": "ai.aweb.custody.<domain of the returned address>.carol",
+        "path": "<unit path>",
+        "runs": "/usr/local/bin/aw custody serve",
+        "workingDirectory": "/srv/deploy/.aweb-residents/carol",
+        "env": [
+          "PATH",
+          "HOME"
+        ]
+      },
+      "record": "settings.oats.aweb.residents.carol: /srv/deploy/.aweb-residents/carol in /srv/deploy/oats-local.yaml",
+      "teamLabel": "derived from the returned team's name after aw init, mapped with oats teams add --no-default where the workspace allows local teams, and the default team only where there is none; if that label already maps to another team, the run stops there, after aw init, with the identity, its custody and the residents setting in place, and names the --team-label rerun"
+    }
+  },
+  "init-partial": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_INIT",
+      "message": "workspace init target was not found or the team was deleted (404): category=hosted_http_failure status=404 error_code=unknown request_id=unknown (response body omitted; remote effects unknown)\nrerun the same command in this directory; do not delete .aw/partial-init.yaml",
+      "details": {
+        "stage": "init",
+        "root": "/srv/deploy/.aweb-residents/carol",
+        "captures": [
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+        ],
+        "partial": "/srv/deploy/.aweb-residents/carol/.aw/partial-init.yaml"
+      }
+    }
+  },
+  "init-quarantined": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_INIT",
+      "message": "partial_init_reconciliation_required: rejected signing material at /srv/deploy/.aweb-residents/carol/.aw/partial-init.yaml.20261010T000000.000000000Z.1.rejected; use a different directory for a new identity or obtain operator reconciliation; rejected material is never restored automatically",
+      "details": {
+        "stage": "init",
+        "root": "/srv/deploy/.aweb-residents/carol",
+        "captures": [
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+        ],
+        "partial": null
+      }
+    }
+  },
+  "nothing-to-continue": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_NOTHING_TO_CONTINUE",
+      "message": "AWID_REGISTRY_URL=local is not supported by `aw init`; use an explicit localhost URL such as http://localhost:8010\nnothing was created; fix what aw reports above, then rerun the same command (aw's output is kept in /srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr)",
+      "details": {
+        "stage": "init",
+        "root": "/srv/deploy/.aweb-residents/carol",
+        "captures": [
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+        ],
+        "partial": null
+      }
+    }
+  },
+  "key": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_KEY",
+      "message": "no AWEB_API_KEY in the environment and no terminal to ask for it on: run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create carol",
+      "details": {
+        "stage": "key",
+        "root": "/srv/deploy/.aweb-residents/carol"
+      }
+    }
+  },
+  "root": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_ROOT",
+      "message": "/srv/deploy/.aweb-residents/carol is neither empty, a partial aw init nor a complete global identity: it contains notes.txt; never init into it: choose another --root or empty it yourself",
+      "details": {
+        "stage": "preflight",
+        "root": "/srv/deploy/.aweb-residents/carol"
+      }
+    }
+  },
+  "unit-conflict": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_UNIT_CONFLICT",
+      "message": "custody unit <other unit path> already serves /srv/other, not /srv/deploy/.aweb-residents/carol; remove that unit or choose another name",
+      "details": {
+        "stage": "preflight",
+        "root": "/srv/deploy/.aweb-residents/carol"
+      }
+    }
+  },
+  "verify": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_VERIFY",
+      "message": "aw doctor identity --offline: identity.local.context is info, not ok (No identity.yaml was found.); identity.local.identity_scope is info, not ok (Identity class is unavailable because no identity context was found.); identity.local.did_key_format is info, not ok (Identity did:key is unavailable because no identity context was found.); identity.local.signing_key_matches_did is info, not ok (Signing key comparison is unavailable because no identity context was found.); identity.local.stable_id_expected is info, not ok (Stable ID expectation is unavailable because no identity context was found.); identity.local.address_expected is info, not ok (Address expectation is unavailable because no identity context was found.); identity.local.registry_url_source is info, not ok (Registry URL source is unavailable because no identity context was found.)",
+      "details": {
+        "stage": "verify",
+        "root": "/srv/deploy/.aweb-residents/carol",
+        "captures": [
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+        ]
+      }
+    }
+  },
+  "custody-running": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_CUSTODY_RUNNING",
+      "message": "custody for carol is already running in /srv/deploy/.aweb-residents/carol, and not from this command's unit ai.aweb.custody.acme.aweb.ai.carol: no recognised unit was found; find and stop any supervisor outside the recognised units: run `aw custody stop` in /srv/deploy/.aweb-residents/carol (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it",
+      "details": {
+        "stage": "preflight",
+        "root": "/srv/deploy/.aweb-residents/carol"
+      }
+    }
+  },
+  "custody": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_CUSTODY",
+      "message": "custody preflight failed for carol: status=running; required custody operations are missing: mail_reply_continuation.v1, grant_never_ttl.v1; restart the custody on aw 1.36.33 or later (upgrade aw, restart the custody service and the wake daemon, then oats sync)",
+      "details": {
+        "stage": "custody",
+        "root": "/srv/deploy/.aweb-residents/carol",
+        "captures": [
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+        ]
+      }
+    }
+  },
+  "default-kept": {
+    "schemaVersion": 1,
+    "ok": true,
+    "result": {
+      "outcome": "created",
+      "name": "carol",
+      "root": "/srv/deploy/.aweb-residents/carol",
+      "address": "acme.aweb.ai/carol",
+      "team": "default:acme.aweb.ai",
+      "stableId": "did:aw:<stable id>",
+      "custody": {
+        "status": "running",
+        "manager": "<launchd or systemd>",
+        "label": "ai.aweb.custody.acme.aweb.ai.carol",
+        "path": "<unit path>"
+      },
+      "recorded": {
+        "file": "/srv/deploy/oats-local.yaml",
+        "setting": "settings.oats.aweb.residents.carol"
+      },
+      "teamLabel": {
+        "label": "default",
+        "team": "default:acme.aweb.ai",
+        "status": "added",
+        "derived": true,
+        "default": "kept"
+      },
+      "warnings": [
+        "aw doctor registry --online: awid.address.delivery_origin is warn (this can be publication lag)"
+      ],
+      "captures": [
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+        "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+      ],
+      "next": "spawn a seat on this resident: oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol",
+      "steps": [
+        "oats teams default default",
+        "oats spawn <soul> --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=carol"
+      ],
+      "stepsReason": "a seat's grant is minted in the deployment's default team, which is core (core:acme.aweb.ai), not default. Running oats teams default default moves the default team of the whole deployment: every later spawn of a soul without a default team of its own goes to default (default:acme.aweb.ai)",
+      "defaultTeam": {
+        "label": "core",
+        "team": "core:acme.aweb.ai"
+      }
+    }
+  },
+  "team-label-taken": {
+    "schemaVersion": 1,
+    "ok": false,
+    "error": {
+      "code": "E_RESIDENT_TEAM_LABEL",
+      "message": "the team label default, derived from the name of team default:acme.aweb.ai, already maps to default:other.example. This check runs after aw init and before the label is written. Already in place: the resident's identity in /srv/deploy/.aweb-residents/carol, its custody unit ai.aweb.custody.acme.aweb.ai.carol (<unit path>), and settings.oats.aweb.residents.carol in /srv/deploy/oats-local.yaml; only the team mapping is missing. Rerun with another label: oats aweb resident create carol --team-label <other>. That rerun needs no API key: it verifies the resident and adds the mapping; it is not a second create",
+      "details": {
+        "stage": "record",
+        "root": "/srv/deploy/.aweb-residents/carol",
+        "captures": [
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stdout",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.stderr",
+          "/srv/deploy/.aweb-residents/carol/.oats-resident/init-20261010T120000Z.exit"
+        ]
+      }
+    }
+  }
+}

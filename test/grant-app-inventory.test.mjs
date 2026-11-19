@@ -82,3 +82,12 @@ test('instruction-shaped tool is rejected as a whole optional pair, while plain 
  assert.doesNotMatch(grantInventoryAdvisory({id:'g',...p}),/PRIVATE_PROMPT|Ignore previous/);
  r.apps[0].tools=['Create_2','read-many','0read'];assert.deepEqual(grantAppInventory(r).apps[0].tools,r.apps[0].tools);
 });
+
+test('real aw 1.36.58 minted receipt projects the disposable OSS inventory',()=>{
+ const receipt=fixture('native');
+ assert.equal(typeof receipt.grant_id,'string');
+ assert.equal(receipt.team_id,'default:res-602fcbed.test');
+ assert.deepEqual(grantAppInventory(receipt),{appInventoryStatus:'known',apps:[],skipped_apps:[]});
+ const out=grantInventoryAdvisory({id:receipt.grant_id,...grantAppInventory(receipt)});
+ assert.ok(!out.includes(receipt.out)); assert.ok(!out.includes(receipt.custody_socket_path));
+});
