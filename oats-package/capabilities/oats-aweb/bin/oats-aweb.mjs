@@ -2730,10 +2730,11 @@ if (event === "launch") {
   const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
   const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
-    const root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team);
+    let root, doc, why, registry = null, registryError;
+    try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }
+    catch (e) { why = e.message; }
     const where = root ? ` in ${lockField(root) || "the team's root"}` : " in a root that is a member of the team";
-    let doc, why, registry = null, registryError;
-    if (!root) why = "no root that holds the team is on this host";
+    if (!root) why ||= "no root that holds the team is on this host";
     else ({ registry = null, registryError } = mintRegistryForTeam(root, team));
     if (root) {
       try {

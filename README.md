@@ -1251,9 +1251,12 @@ team, setup creates a real per-team root such as
 team `T` uses `roots[T]` when present, otherwise `root`. For a team other than
 the default, a spawn-time join (`join`) and `oats aweb roster --label` accept
 that root only when `aw team list --json` run in it lists `T`; the cwd,
-`OATS_WORKSPACE` and the instance home's own `.aw` are never tried. Otherwise
-they refuse, naming the team, the root tried and the remedy (`oats aweb setup
---join <label> --invite-stdin` in the deployment, then a respawn).
+`OATS_WORKSPACE` and the instance home's own `.aw` are never tried. A missing
+or confirmed non-member root refuses, naming the team, the root tried and the
+remedy (`oats aweb setup --join <label> --invite-stdin` in the deployment, then
+a respawn). An unreadable `aw team list` refuses with "could not check
+membership …" (`E_SETUP_MEMBERSHIP` for explicit joins and plans). Run
+`aw team list --json` in the named root, repair that read and retry.
 
 Wherever the provider matches a team id it was given (a setting, a record, the
 kernel's environment) against one aw reports, it compares them as aw spells

@@ -84,6 +84,31 @@ for(const labelled of [false,true]) test(`roster prints a normal membership refu
   assert.ok(f.fake.readCalls().every(c=>c.args[0]==='team'&&c.args[1]==='list'));
 });
 
+for(const onDisk of [false,true]) test(`pending mint from ${onDisk?'disk':'metadata'} keeps its outcome when the fallback root is unreadable`,t=>{
+  const f=fixture(t),intent={team:OTHER,alias:'probe',root:join(f.base,'gone-root')};
+  mkdirSync(join(f.home,'.aw'));writeFileSync(join(f.home,'.aw','signing.key'),'fixture-key-kept');
+  const marker=join(f.home,'.oats-aweb','pending-mint.json');
+  const recorded=JSON.stringify({schemaVersion:1,...intent});
+  if(onDisk) {mkdirSync(join(f.home,'.oats-aweb'));writeFileSync(marker,recorded);}
+  writeFileSync(f.file,'not-json');
+  const r=f.run(['retire'],{
+    OATS_SETTINGS:JSON.stringify({root:f.root,roots:{[OTHER]:f.root}}),
+    OATS_META:JSON.stringify(onDisk?{}:{pendingMint:intent}),
+  });
+  assert.equal(r.status,1,r.stdout+r.stderr);
+  assert.ok(r.doc,'retire must return metadata even when root selection fails: '+r.stderr);
+  assert.equal(r.doc.meta.retired,false);
+  assert.equal(r.doc.meta.reason,'mint-outcome-unknown');
+  assert.deepEqual(r.doc.meta.pendingMint,intent);
+  assert.match(r.doc.warning,/could not check membership/);
+  assert.ok(r.doc.warning.includes(`aw id team members --team-id=${OTHER} --json`));
+  assert.match(r.doc.warning,/home and its record of the mint are kept/);
+  assert.doesNotMatch(r.stderr,/file:\/\/|^\s+at |^Error:/m);
+  assert.equal(readFileSync(join(f.home,'.aw','signing.key'),'utf8'),'fixture-key-kept');
+  if(onDisk) assert.equal(readFileSync(marker,'utf8'),recorded);
+  assert.ok(f.fake.readCalls().every(c=>c.args[0]==='wake'||(c.args[0]==='team'&&c.args[1]==='list')));
+});
+
 for(const action of ['create','join']) test(`setup ${action} refuses an unreadable default root before any effect`,t=>{
   const f=fixture(t),before=readFileSync(join(f.base,'oats-local.yaml'),'utf8');
   const env=joinKernelEnvironment(f.env,f.base);
