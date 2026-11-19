@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { assertAwebSettingRecordable, recordAwebSetting } from "../oats-package/capabilities/oats-aweb/lib/local-settings.mjs";
+import { assertAwebSettingRecordable, recordAwebSetting, recordAwebScalar } from "../oats-package/capabilities/oats-aweb/lib/local-settings.mjs";
 
 function deployment(t, text) {
   const dir = mkdtempSync(join(tmpdir(), "oats-local-settings-"));
@@ -56,4 +56,27 @@ test("the health map takes a boolean as a YAML boolean, beside quoted strings, a
   assert.equal(read(dir), 'schemaVersion: 2\nworkspace: local\nsettings:\n  oats.aweb:\n    root: "/roots/default"\n    health:\n      "publish": true\n      "operator": "Nactiva\'s operator"\n');
   recordAwebSetting("health", "publish", false, { start: dir });
   assert.match(read(dir), /\n {6}"publish": false\n {6}"operator"/);
+});
+
+
+test("scalar and map writers refuse the same unsupported block headers without writing", t => {
+  for (const text of ["settings: # unsupported header\n  oats.aweb:\n", "settings:\n  oats.aweb: # unsupported header\n", "settings:\n oats.aweb:\n", "settings:\n  oats.aweb:\nsettings:\n"]) {
+    const dir = deployment(t, text);
+    for (const update of [() => recordAwebScalar("registry", "http://127.0.0.1:18010", {start:dir}), () => recordAwebSetting("residents", "alice", "/resident", {start:dir})]) {
+      assert.throws(update, /cannot safely update/);
+      assert.equal(read(dir), text);
+    }
+  }
+});
+
+
+test("scalar and map updates share wrapped quote and comment preservation", t => {
+  for (const [text, update, expected] of [
+    ['settings:\n  oats.aweb:\n    registry: "http://old.\n      invalid" # keep\n    root: /keep\n', dir => recordAwebScalar("registry", "https://new.invalid", {start:dir}), '    registry: "https://new.invalid" # keep\n    root: /keep\n'],
+    ['settings:\n  oats.aweb:\n    residents:\n      alice: "old\n        path" # keep\n      bob: /keep\n', dir => recordAwebSetting("residents", "alice", "/new", {start:dir}), '      "alice": "/new" # keep\n      bob: /keep\n']
+  ]) {
+    const dir = deployment(t, text);
+    update(dir);
+    assert.ok(read(dir).endsWith(expected), read(dir));
+  }
 });

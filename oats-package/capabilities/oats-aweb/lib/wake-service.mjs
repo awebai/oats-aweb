@@ -350,7 +350,7 @@ async function prepareInstall(opts, ctx) {
     const raw = platform === "darwin" ? /<key>AWID_REGISTRY_URL<\/key>\s*<string>([^<]*)<\/string>/.exec(ours.text)?.[1] : /"AWID_REGISTRY_URL=([^"\s]+)"/.exec(ours.text)?.[1];
     let previous;
     try {previous=raw===undefined?undefined:registryOrigin({registry:unXml(raw)});} catch {fail("E_WAKE_REGISTRY_CONFLICT","the existing wake unit has an unreadable registry pin; keep one registry for this host user's daemon, or move the other deployment to another host user; to replace the pin, first aw wake deregister --home <other-home> for the other registrations, then oats aweb wake uninstall and oats aweb wake install in the operator shell");}
-    if(previous!==registry) fail("E_WAKE_REGISTRY_CONFLICT","the wake unit has a conflicting registry pin; keep one registry for this host user's daemon, or move the other deployment to another host user; to replace the pin, first aw wake deregister --home <other-home> for the other registrations, then oats aweb wake uninstall and oats aweb wake install in the operator shell");
+    if(previous!==registry) fail("E_WAKE_REGISTRY_CONFLICT",`${previous === undefined ? "the wake daemon is currently unpinned; adding a pin changes it for every registration on this host user" : "the wake unit has a conflicting registry pin"}; keep one registry for this host user's daemon, or move the other deployment to another host user; to replace the pin, first aw wake deregister --home <other-home> for the other registrations, then oats aweb wake uninstall and oats aweb wake install in the operator shell`);
   }
   const warnings = [];
   const tmux = onPath("tmux", env);

@@ -55,23 +55,29 @@ export function registryShellValue(origin) {
 export function registryShellAssignment(origin) {
   return `AWID_REGISTRY_URL=${registryShellValue(origin)}`;
 }
-export function registryMigration(settings,env=process.env,{custody}={}) {
-  if(registryOrigin(settings)) return undefined;
-  if(Object.hasOwn(env,'AWID_REGISTRY_URL')) return REGISTRY_MIGRATION;
-  if(custody) {
+// Detection only: recognize the public default equally in ambient input and
+// saved YAML. This comparison never returns a URL for admission to a child.
+function publicRegistryLocator(value) {
+  try {
+    const url = new URL(value);
+    if (url.hostname.endsWith('.')) url.hostname = url.hostname.slice(0, -1);
+    return url.origin === 'https://api.awid.ai' && !url.username && !url.password && !url.search && !url.hash && ['/', '/api', '/api/'].includes(url.pathname);
+  } catch { return false; }
+}
+export function registryMigration(settings, env = process.env, {custody} = {}) {
+  if (registryOrigin(settings)) return undefined;
+  if (Object.hasOwn(env, 'AWID_REGISTRY_URL') && !publicRegistryLocator(env.AWID_REGISTRY_URL)) return REGISTRY_MIGRATION;
+  if (custody) {
     let text;
-    try {text=readFileSync(join(custody,'.aw','identity.yaml'),'utf8');} catch {return undefined;}
-    // Detection only: never turn a saved URL into an environment or a command.
-    const raw=/^registry_url:[ \t]*(.*)$/m.exec(text)?.[1]?.trim();
-    if(raw) {
-      let url;
+    try { text = readFileSync(join(custody, '.aw', 'identity.yaml'), 'utf8'); } catch { return undefined; }
+    const raw = /^registry_url:[ \t]*(.*)$/m.exec(text)?.[1]?.trim();
+    if (raw) {
+      let locator;
       try {
-        const scalar=raw.replace(/\s+#.*$/, '');
-        const locator=scalar.startsWith('"')?JSON.parse(scalar):scalar.replace(/^'|'$/g,'');
-        url=new URL(locator);
-        if(url.hostname.endsWith('.')) url.hostname=url.hostname.slice(0,-1);
-      } catch {return REGISTRY_MIGRATION;}
-      if(url.origin!=='https://api.awid.ai'||url.username||url.password||url.search||url.hash||!['/','/api','/api/'].includes(url.pathname)) return REGISTRY_MIGRATION;
+        const scalar = raw.replace(/\s+#.*$/, '');
+        locator = scalar.startsWith('"') ? JSON.parse(scalar) : scalar.replace(/^'|'$/g, '');
+      } catch { return REGISTRY_MIGRATION; }
+      if (!publicRegistryLocator(locator)) return REGISTRY_MIGRATION;
     }
   }
   return undefined;

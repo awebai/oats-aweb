@@ -149,3 +149,25 @@ for(const platform of ['darwin','linux'])test(`${platform} wake reinstall refuse
   assert.match(output,/one registry/);assert.match(output,/another host user/);assert.match(output,/deregister/);
   assert.doesNotMatch(output,/delivery: session/);assert.equal(readFileSync(file,'utf8'),before);assert.deepEqual(host.changes(),[]);
 });
+
+
+test('public ambient registry aliases remain harmless while private or malformed ambient values require migration', async () => {
+  const {registryMigration, REGISTRY_MIGRATION} = await import('../oats-package/capabilities/oats-aweb/lib/registry-setting.mjs');
+  for (const value of ['https://api.awid.ai', 'https://api.awid.ai/api', 'HTTPS://API.AWID.AI.:443/api/']) {
+    assert.equal(registryMigration({}, {AWID_REGISTRY_URL:value}), undefined, value);
+  }
+  for (const value of ['http://127.0.0.1:18010', 'https://private.invalid', '', 'not-a-url', 'https://api.awid.ai/other']) {
+    assert.equal(registryMigration({}, {AWID_REGISTRY_URL:value}), REGISTRY_MIGRATION, value);
+  }
+});
+
+for(const platform of ['darwin','linux'])test(`${platform} adding a pin names the effect on an unpinned wake daemon`,async t=>{
+  const host=fakeWakeHost(t),file=wakeUnitPath({platform,home:host.home,xdgConfigHome:host.env.XDG_CONFIG_HOME});
+  mkdirSync(dirname(file),{recursive:true});
+  const before=renderWakeUnit({platform,aw:join(host.bin,'aw'),oats:join(host.bin,'oats'),path:host.env.PATH,home:host.home});
+  writeFileSync(file,before);
+  let output='';const code=await wakeMain(['install','--plan','--json'],{platform,env:{...host.env,OATS_SETTINGS:JSON.stringify({registry:'http://127.0.0.1:18010'})},print:(_fd,s)=>output+=s,uid:501,user:'alice'});
+  assert.equal(code,1,output);assert.match(output,/currently unpinned/);assert.match(output,/every registration/);
+  assert.match(output,/another host user/);assert.match(output,/deregister/);
+  assert.equal(readFileSync(file,'utf8'),before);assert.deepEqual(host.changes(),[]);
+});
