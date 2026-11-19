@@ -3127,7 +3127,13 @@ if (event === "launch") {
       } else {
         console.log(`✓ verified ${result.team} at ${result.root}; mapping and deployment default ${result.label} read back successfully.`);
         console.log(JSON.stringify({ steps: result.steps, observed: result.observed }));
-        console.log('Next: use /oats-onboarding for staffing and receive verification; configuration success is not live receive readiness.');
+        // The account has no person on it, so the first next step is attaching one (/oats-aweb, "attach yourself to the account").
+        const identityHome = `${result.root}/.aw`;
+        const quotedHome = /^[A-Za-z0-9_./:-]+$/.test(identityHome) ? identityHome : `'${identityHome.replaceAll("'", "'\\''")}'`;
+        console.log(`Next: attach its person to the account. It has no person on it yet, and ${identityHome}/signing.key is its only recovery. With the email address its person gives:`);
+        console.log(`  aw --identity-home ${quotedHome} claim-human --email <their email>`);
+        console.log('The account is theirs once they click the link aw mails them (/oats-aweb, "attach yourself to the account").');
+        console.log('Then: /oats-onboarding for staffing and receive verification; configuration success is not live receive readiness.');
       }
       process.exit(0);
     } catch (error) {

@@ -16,7 +16,8 @@ function fixture(t, state={}) {
  const env={...process.env,PATH:aw.path,OATS_EVENT:'setup',OATS_TEAM_SCOPE:dep,OATS_WORKSPACE:dep,OATS_WORKSPACE_NAME:'fixture',OATS_SETTINGS:JSON.stringify({root}),OATS_CLI_BIN:kernel.cli,AWEB_API_KEY:'',OATS_AGENT:'poison',OATS_HOME:'/foreign/home',AWEB_IDENTITY_HOME:'/foreign/identity'};
  const run=(args=[],extra={})=>spawnSync(process.execPath,[hook,'setup','--username','alice','--name','root-1','--json',...args],{cwd:dep,env:{...env,...extra},encoding:'utf8'});
  const member=facts=>{mkdirSync(join(root,'.aw'),{recursive:true});writeFileSync(join(root,'.aw','teams.json'),JSON.stringify({memberships:facts}));writeFileSync(join(root,'.aw','sentinel'),'preserve');};
- return {dir,dep,root,kernel,aw,run,member,installs};
+ const text=(args=[],extra={})=>spawnSync(process.execPath,[hook,'setup','--username','alice','--name','root-1',...args],{cwd:dep,env:{...env,...extra},encoding:'utf8'});
+ return {dir,dep,root,kernel,aw,run,text,member,installs};
 }
 const row={team_id:'default:alice.aweb.ai',alias:'root-1',identity_scope:'local'};
 const answer=r=>{assert.equal(r.status,0,r.stdout+r.stderr);return JSON.parse(r.stdout).result;};
@@ -114,4 +115,16 @@ test('username signup gets only its named URL and registry, without redirecting 
  assert.ok(init);assert.deepEqual(init.routingEnv,routing);assert.equal(init.hasApiKey,false);
  assert.ok(calls.some(c=>c.args[0]==='team'),'post-signup membership is read');
  for(const c of calls.filter(c=>c!==init)){assert.deepEqual(c.routingEnv,{});assert.equal(c.hasApiKey,false);}
+});
+test('the success text names claim-human against the setup root before onboarding (#285)',t=>{
+ const f=fixture(t),r=f.text();assert.equal(r.status,0,r.stdout+r.stderr);
+ const lines=r.stdout.trim().split('\n');
+ assert.match(lines[0],/^✓ verified default:alice\.aweb\.ai at /);
+ assert.equal(lines[2],`Next: attach its person to the account. It has no person on it yet, and ${f.root}/.aw/signing.key is its only recovery. With the email address its person gives:`);
+ assert.equal(lines[3],`  aw --identity-home ${f.root}/.aw claim-human --email <their email>`);
+ assert.match(lines[4],/the link aw mails them \(\/oats-aweb, "attach yourself to the account"\)/);
+ assert.match(lines[5],/^Then: \/oats-onboarding /);
+ // A root whose path the shell would split is quoted.
+ const g=fixture(t),spaced=join(g.dir,"a b's root"),q=g.text([],{OATS_SETTINGS:JSON.stringify({root:spaced})});assert.equal(q.status,0,q.stdout+q.stderr);
+ assert.ok(q.stdout.includes(`  aw --identity-home '${join(g.dir,"a b'\\''s root")}/.aw' claim-human --email <their email>`),q.stdout);
 });

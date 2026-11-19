@@ -654,7 +654,9 @@ aweb lead.
 
 An aweb account that `oats aweb setup --username` created has no person on it:
 nobody can sign in to its dashboard, and the root's `.aw/signing.key` is its
-only recovery. The person it belongs to attaches their email to it: ask the
+only recovery. Setup's success text says so and prints the command below with
+the root filled in; no readiness item can, because no aw read shows whether a
+person is attached (below). The person it belongs to attaches their email to it: ask the
 person for their email address and run the command with exactly that address,
 never a guessed or inferred one.
 
