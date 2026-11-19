@@ -16,13 +16,14 @@ The current decisions and structured signals needed from aw:
 | Missing namespace controller key | `no local controller key for`, `load controller key for` | Real-aw missing/corrupt controller tests. Ask aw for a distinct missing-controller code. |
 | Missing team key | `no team key for`, `local team controller key for ... was not found` | Real-aw invite and register tests. Ask aw for a distinct missing-team-key code. |
 | Team name held by another key | Exact team pin prose, or generic `http_error`/409 plus `create team at registry: ` | Real-aw loopback registry tests for both branches. Ask aw for a distinct team-name conflict code. |
+| Unavailable username at signup | Exact `username "<u>" is not available (<reason>)` on stderr (aw prints it with no terminal, from the 1.36.33 floor to 1.36.58); the reason is named only as one short snake_case word | Real-aw loopback tests for a refused availability check and a signup conflict. Ask aw for a distinct `username_taken` code. |
 | No published team-server record | Generic `error` with exact `no team server record is published for ...` | Real-aw loopback 404 test. Ask aw for a distinct missing-record code. |
 | Withheld HTTP failure class | `http <status>` then safe `detail`/`detail.code`; register prints the unwrapped `code` | Real-aw register test. Keep HTTP status and bounded code, discard arbitrary body messages. Ask aw for structured server status/code fields on register failures. |
 | Unread count feature | `--count-only` in `mail inbox --help` | Real-aw help test. Ask aw for machine-readable command/feature capabilities. |
 | Version gates | `aw <version>` first line | Real-aw version test runs both binding and probe version readers. Ask aw for a JSON version answer. |
 
 The hook's calls affected by these decisions are `init --join-from`,
-`workspace delete`, `id grant revoke/show`, and setup's `id team
+`workspace delete`, `id grant revoke/show`, and setup's `init --new-account` and `id team
 create/invite/register/show-server`; health and binding read `version` and
 `mail inbox --help`. The code that consumes the signals is in
 `bin/oats-aweb.mjs`, `lib/aw-failure-cause.mjs`, `lib/health-host.mjs` and
@@ -30,7 +31,7 @@ create/invite/register/show-server`; health and binding read `version` and
 
 `test/aw-error-prose-native.test.mjs` uses an explicitly selected binary,
 a fresh HOME, generated throwaway keys and loopback-only HTTP services.
-CI requires all six native tests on the tested-aw resident-journey leg,
+CI requires all seven native tests on the tested-aw resident-journey leg,
 without skips. These fixtures pin native formatting and classification;
 they grant no real service authority. `test/setup-byot-create-202.test.mjs`
 checks the provider's real setup path against the same register-output shape,

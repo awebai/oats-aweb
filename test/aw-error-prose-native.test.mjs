@@ -4,12 +4,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {generateKeyPairSync, randomBytes, randomUUID, sign} from 'node:crypto';
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {createServer} from 'node:http';
 import {didKeyOfSigningKey} from '../oats-package/capabilities/oats-aweb/lib/member-key.mjs';
-import {NAMESPACE_CONTROLLER_KEY_MISSING, TEAM_KEY_MISSING, teamNameTaken, teamServerRecordMissing, withheldFailureCause} from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
+import {NAMESPACE_CONTROLLER_KEY_MISSING, TEAM_KEY_MISSING, teamNameTaken, teamServerRecordMissing, usernameUnavailable, withheldFailureCause} from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
 import {readAwVersion} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 import {probeAwVersion} from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
 
@@ -140,4 +140,26 @@ test('real aw prose: a native mutating timeout names the uncertain outcome', opt
   assert.notEqual(r.status, 0);
   assert.ok(s.requests.some(q => q.method === 'POST'), r.stderr);
   assert.match(r.stderr, /Request timed out before a response was received; it may have applied\./);
+});
+
+// #285: setup names an unavailable username, from aw's one sentence for it with no
+// terminal, both when the availability check refuses and when signup conflicts.
+test('real aw prose: an unavailable username is one fixed sentence with its reason', options, async t => {
+  for (const [check, signup, reason] of [[{available: false, reason: 'reserved'}, null, 'reserved'], [{available: true}, 409, 'taken']]) {
+    const f = fixture(t);
+    const s = await service(t, (req, res) => {
+      if (req.method === 'GET' && req.url === '/api/v1/discovery') res.end(JSON.stringify({onboarding_url: s.url, aweb_url: `${s.url}/api`, registry_url: s.url}));
+      else if (req.method === 'POST' && req.url === '/api/v1/onboarding/check-username') res.end(JSON.stringify(check));
+      else if (req.method === 'POST' && req.url === '/api/v1/onboarding/cli-signup' && signup) {res.statusCode = signup; res.end(JSON.stringify({detail: 'NATIVE-BODY-SENTINEL'}));}
+      else {res.statusCode = 503; res.end('{}');}
+    });
+    const r = await f.run(['init', '--new-account', '--username', 'fixture-user', '--name', 'fixture-root', '--do-not-touch-agents-md'], s.url, {AWEB_URL: s.url});
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /^username "fixture-user" is not available \(([a-z_]+)\)$/m);
+    assert.equal(usernameUnavailable(r.stderr.split('fixture-user').join('<redacted>')), reason);
+    const paths = s.requests.map(q => q.path);
+    assert.ok(paths.includes('/api/v1/onboarding/check-username'), paths.join(' '));
+    assert.equal(paths.includes('/api/v1/onboarding/cli-signup'), !!signup, paths.join(' '));
+    assert.equal(existsSync(join(f.cwd, '.aw')), false, 'aw creates nothing before it refuses the username');
+  }
 });

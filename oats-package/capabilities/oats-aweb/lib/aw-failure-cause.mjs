@@ -89,6 +89,32 @@ export function withheldFailureCause({ stderr, stdout }) {
   return "no HTTP status, aw error code or network failure in its output";
 }
 
+/** Why aw refused a hosted username, as a plain sentence for the person who
+ *  chose it, by aw's reason word (the service's check-username `reason`). */
+export const USERNAME_UNAVAILABLE_CAUSES = {
+  taken: "that username is taken: choose another",
+  reserved: "that username is reserved: choose another",
+  invalid_format: "aweb does not accept that username's format (lowercase letters, numbers and hyphens): choose another",
+};
+/** Whether `aw init --new-account --username <u>` was refused because the
+ *  username is unavailable, and why: aw's reason word, or undefined. Read from
+ *  stderr in the one shape aw prints with no terminal to prompt on, from the
+ *  1.36.33 floor to the tested 1.36.58 (cmd/aw/onboarding_wizard.go
+ *  resolveGuidedHostedUsername, and a signup conflict as `(taken)`):
+ *  `username "<u>" is not available (<reason>)`. Setup scrubs the username,
+ *  so it reads `"<redacted>"`. The reason is a short snake_case word, the shape
+ *  SERVICE_DETAIL_CODE_RE admits; anything else is not this refusal. aw has no
+ *  code for it yet (docs/aw-error-decisions.md). */
+export function usernameUnavailable(stderr) {
+  const match = /\busername "<redacted>" is not available \(([^()\s]*)\)/.exec(String(stderr ?? ""));
+  return match && SERVICE_DETAIL_CODE_RE.test(match[1]) ? match[1] : undefined;
+}
+/** The plain sentence for aw's reason word: a fixed one for the reasons aw 1.36.58
+ *  words itself, else the word named as the service gave it. */
+export function usernameUnavailableCause(reason) {
+  return USERNAME_UNAVAILABLE_CAUSES[reason] ?? `aweb reports that username unavailable (${reason}): choose another`;
+}
+
 /** A namespace domain as aw normalizes it before it uses or prints one
  *  (awconfig.NormalizeDomain): trimmed, lowercased, without one trailing dot. */
 export function normalizeAwDomain(domain) {
