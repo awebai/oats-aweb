@@ -128,7 +128,9 @@ including their resident-map and alternate-registry overrides. Direct `healthHos
 fixtures also pass the resolved `settings.registry` argument, as `healthMain` does;
 the adapter does not load operator settings from disk. This fixture
 preparation requires the registry-setting provider change; the CLI floor stays
-unchanged.
+unchanged. Printed controller cleanup commands run as complete shell lines in
+the fixture's isolated operator environment, preserving any explicit registry
+prefix; the journey then checks the certificate is absent at the service.
 
 The retained journey separately records the real kernel's post-start session
 inspection and the broker's pre-event status. Pending aw request m, a healthy idle
