@@ -4,13 +4,13 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 
-const commit = '61c38162596d1af9085741d70d15900ff9894257';
+const commit = '877bbee94ce45aa1ff103912bc9850556e61dfb4';
 export function verifyPinnedAw(binary, version, receiptPath = process.env.OATS_TEST_AW_SOURCE_RECEIPT) {
   assert.equal(version.status, 0);
   const sha256 = createHash('sha256').update(readFileSync(binary)).digest('hex');
   assert.match(version.stdout, new RegExp('commit: ' + commit + ' \\(github.com/awebai/aw\\)'));
   if (!receiptPath) {
-    assert.match(version.stdout, /^aw 1\.36\.23\n/);
+    assert.match(version.stdout, /^aw 1\.36\.33\n/);
     return { kind: 'distributed-binary', binary, sha256, version: version.stdout.trim() };
   }
   const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
@@ -20,6 +20,6 @@ export function verifyPinnedAw(binary, version, receiptPath = process.env.OATS_T
   assert.equal(realpathSync(receipt.binary), realpathSync(binary));
   assert.equal(receipt.sha256, sha256);
   assert.equal(receipt.version, version.stdout.trim());
-  assert.match(version.stdout, /^aw 1\.36\.23-source-fixture\n/);
+  assert.match(version.stdout, /^aw 1\.36\.33-source-fixture\n/);
   return { kind: receipt.kind, binary, sha256, version: version.stdout.trim(), sourceCommit: commit };
 }

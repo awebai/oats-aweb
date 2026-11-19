@@ -697,7 +697,7 @@ The join half works on its own when someone else mints the invite:
 - `oats aweb setup --check-only --json` answers, as one line:
 
 ```json
-{"aw": {"status": "ok", "version": "1.36.23"},
+{"aw": {"status": "ok", "version": "1.36.33"},
  "defaultTeam": {"label": "aweb", "team": "aweb:example.aweb.ai"},
  "member": true, "root": "/Users/pat/Agents/aweb/.aweb-roots/aweb"}
 ```
@@ -746,8 +746,13 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   uses its built-in default; the cleanup command omits `--registry`. An
   ambient `AWID_REGISTRY_URL` does not choose the cleanup destination. Retire records them in
   `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
-  registry origin and command, never a secret), matched on team and certificate
-  id, never on alias. The roster never prints the stored command: it builds the
+  registry origin and rebuilt compatibility command, never a secret), matched on team and certificate
+  id, never on alias. Stored command fields are ignored by this reader, but writers
+  rebuild them for older homes sharing this record. For an existing entry with
+  no registry field or invalid cleanup inputs, the compatibility field is a
+  fixed `# unavailable: …` shell comment. Upgrade an old home that displays it
+  and use the controller's explicit registry or repair the invalid inputs;
+  every entry stays recorded. The roster builds the
   command from the entry's team, certificate id and registry, each validated,
   as retire does. An entry it can't be built from shows `; its record entry is
   malformed (<why>), so no command to remove it is shown` (and `--json` gives
@@ -1322,9 +1327,9 @@ Supported acts:
   and the `localTeams: true` alternative. A kernel without `localTeams` (OATS
   0.36) takes the local mapping. If the kernel cannot answer, setup refuses
   before creating anything. Without `--namespace`, setup refuses hosted
-  additional-team creation: the provider has no wrapper. Native aw 1.36.24
-  supports `id team create --hosted`; aw 1.36.23 does not. Native JSON
-  contains an invite token and must be captured privately. Operator notes:
+  additional-team creation: the provider implements controller-owned namespace
+  creation only. Follow the version-matched native owner procedure and capture
+  any invite/private output privately, then use provider `setup --join`. Operator notes:
   - **One trust boundary.** The namespace controller key
     (`~/.awid/controllers/<domain>.key`) and each team key
     (`~/.awid/team-keys/<domain>/<team>.key`) are user-wide on the deployment
@@ -1863,7 +1868,7 @@ Unrelated kernel warnings do not block invitation; all failure-severity problems
 and selected-label warnings do. Refusals name only known safe problem codes,
 never arbitrary diagnostic text. Membership reads and issuance both isolate
 native HOME; plans discard temporary state without changing the selected root.
-For pinned aw 1.36.23, only its anchored CLI-generated HTTP 401/403 prefix maps
+For pinned aw 1.36.33, only its anchored CLI-generated HTTP 401/403 prefix maps
 to `E_INVITE_DENIED`; details are statically withheld, never matched as role or
 body prose. Other statuses, transport and unknown native errors are
 `E_INVITE_NATIVE`; without an HTTP status its message names the cause from the
@@ -1892,8 +1897,8 @@ It uses isolated local Git repositories and a fake aw; it does not verify live
 service behavior or perform host onboarding.
 
 The opt-in `test/username-native.test.mjs` checks #66 with an explicitly selected
-real aw 1.36.23 executable (commit `61c38162596d1af9085741d70d15900ff9894257`).
-Run `OATS_TEST_AW_1_36_23=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
+real aw 1.36.33 executable (commit `877bbee94ce45aa1ff103912bc9850556e61dfb4`).
+Run `OATS_TEST_AW_1_36_33=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
 node --test test/username-native.test.mjs`. It records the executable path,
 version/build and SHA-256; isolated HOME and loopback service fixtures prevent
 use of ambient accounts. Signup is deliberately refused: the test proves native
@@ -1902,7 +1907,7 @@ not successful hosted bootstrap or live membership.
 
 `test/invite.test.mjs` covers selection and output failures. The opt-in
 `test/invite-native.test.mjs` uses the same pinned executable above; run with
-`OATS_TEST_AW_1_36_23=/absolute/path/to/aw OATS_INVITE_NATIVE_REQUIRED=1
+`OATS_TEST_AW_1_36_33=/absolute/path/to/aw OATS_INVITE_NATIVE_REQUIRED=1
 node --test test/invite-native.test.mjs`. It exercises provider-to-native argv,
 selected-root certificate routing, synthetic loopback success and plain-detail
 HTTP denials, withheld hostile bodies, no-write plan and foreign controller-state
@@ -1935,6 +1940,14 @@ does not prove successful hosted account creation. Neither fixture is a timed
 M3 operator journey. Run the existing full suite with the explicit public/native
 test variables above; no service install or customer operation is part of testing.
 
+### Settings input validation
+
+Every command that reads `OATS_SETTINGS` uses the shared parser and requires a
+JSON object. Null, arrays, scalars and malformed JSON are errors naming
+`OATS_SETTINGS`, through that command's usual error
+format, without echoing the input. Fix the injected JSON and retry. Upgrade
+planning reports `adopt: false`; apply refuses before changing metadata.
+
 ### Grant duration and renewal verification
 
 GLOBAL spawn and launch use the shared `lib/grant-duration.mjs` resolver.
@@ -1954,12 +1967,12 @@ provider's contract; it does not establish live capped-mint acceptance.
 
 Run `node --test test/grant-duration.test.mjs test/oats-aweb-hook-1-13.test.mjs`
 for duration boundaries, mint arguments, default/explicit renewal and retained
-failure/preview controls. With `OATS_TEST_AW_1_36_23` pointing at the pinned
-1.36.23 executable, `test/grant-duration-native.test.mjs` checks version, help
+failure/preview controls. With `OATS_TEST_AW_1_36_33` pointing at the pinned
+1.36.33 executable, `test/grant-duration-native.test.mjs` checks version, help
 and duration flag parsing in an isolated home. It always passes `--help`:
-no mint executes, and syntactically valid out-of-range values can pass this
-help check. The 60s..720h range and `never` are separately enforced by provider tests and
-qualified against native source `61c38162596d1af9085741d70d15900ff9894257`
+no mint executes. The floor validates grammar, the 60s..720h range and `never`
+before showing help, and this fixture checks those decisions against the provider
+parser. The same range is qualified against native source `877bbee94ce45aa1ff103912bc9850556e61dfb4`
 (`cmd/aw/id_grant.go`). These checks are not live custody, grant or expiry
 acceptance. With `AW_REAL_CLI_BIN` pointing at a real aw 1.36.32 or later,
 native or the npm JS shim, `test/never-grant.test.mjs` checks that it parses
@@ -1971,7 +1984,7 @@ For an isolated build of the exact native source pin, the same opt-in fixtures
 also require `OATS_TEST_AW_SOURCE_RECEIPT=/absolute/path/to/receipt.json`.
 The receipt must identify `kind: "exact-source-build"`, the exact source commit,
 `sourceClean: true`, binary path, SHA256 and matching version output. Only
-`1.36.23-source-fixture` at the pinned commit is accepted in this mode.
+`1.36.33-source-fixture` at the pinned commit is accepted in this mode.
 Record the build command/toolchain/platform separately; this is exact-source
 contract evidence, not the historical published binary. Without that receipt,
 the original published-version checks remain mandatory. The receipt validator

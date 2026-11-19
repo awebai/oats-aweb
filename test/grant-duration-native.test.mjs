@@ -9,11 +9,11 @@ import { join } from 'node:path';
 import { durationNanoseconds } from '../oats-package/capabilities/oats-aweb/lib/grant-duration.mjs';
 
 test('pinned real aw duration flag grammar and stated grant limits (help only)', t => {
-  if (!process.env.OATS_TEST_AW_1_36_23) {
-    assert.notEqual(process.env.OATS_GRANT_DURATION_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_23');
-    t.skip('requires explicit pinned real aw 1.36.23 executable'); return;
+  if (!process.env.OATS_TEST_AW_1_36_33) {
+    assert.notEqual(process.env.OATS_GRANT_DURATION_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_33');
+    t.skip('requires explicit pinned real aw 1.36.33 executable'); return;
   }
-  const binary = realpathSync(process.env.OATS_TEST_AW_1_36_23);
+  const binary = realpathSync(process.env.OATS_TEST_AW_1_36_33);
   const home = mkdtempSync(join(tmpdir(), 'oats-duration-help-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const env = { HOME: home, XDG_CONFIG_HOME: join(home, 'config'), XDG_CACHE_HOME: join(home, 'cache'),
@@ -21,16 +21,20 @@ test('pinned real aw duration flag grammar and stated grant limits (help only)',
   const run = args => spawnSync(binary, args, { cwd: home, env, encoding: 'utf8', timeout: 10000 });
   const version = run(['version']);
   t.diagnostic(JSON.stringify(verifyPinnedAw(binary, version)));
-  const cases = ['720h', '+720h', '720.h', '719h60m', '2592000000000µs', '2592000000000μs',
+  const cases = ['never', '60s', '59.999999999s', '720h', '+720h', '720.h', '719h60m', '2592000000000µs', '2592000000000μs',
     '720h0.1ns', '720h1ns', '2592000.000000001s', '0.000000000000000000001h', '-60s',
     '-9223372036854775808ns', '9223372036854775808ns', '1h-1s', '1e3s', '30d', '.s', '60', ''];
   for (const value of cases) {
-    // --help prevents command execution even for syntactically valid out-of-range
-    // durations; the native min/max is separately source-qualified.
+    // The floor's grantTTLFlag.Set validates grammar and bounds before help;
+    // --help prevents mint execution for every accepted flag value.
     const result = run(['id', 'grant', 'mint', '--ttl=' + value, '--help']);
-    let parsed = true; try { durationNanoseconds(value); } catch { parsed = false; }
-    assert.equal(result.status === 0, parsed, value + ': native/parser grammar disagreement');
-    if (parsed) assert.match(result.stdout, /60s to 720h/);
+    let accepted = value === 'never';
+    if (!accepted) try {
+      const nanos = durationNanoseconds(value);
+      accepted = nanos >= 60000000000n && nanos <= 2592000000000000n;
+    } catch { accepted = false; }
+    assert.equal(result.status === 0, accepted, value + ': native/parser grammar or bounds disagreement');
+    if (accepted) assert.match(result.stdout, /60s to 720h/);
   }
   assert.deepEqual(readdirSync(home), [], 'help must leave isolated home unchanged');
 });

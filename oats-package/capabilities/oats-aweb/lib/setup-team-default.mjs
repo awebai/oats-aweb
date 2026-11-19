@@ -1,3 +1,4 @@
+import { parseProviderSettings } from './provider-settings.mjs';
 // Public-kernel team configuration for hosted username setup. No private kernel
 // imports or file edits: each mutation is followed by an authoritative read.
 import { execFileSync } from 'node:child_process';
@@ -180,10 +181,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     try { deployment = selectedDeployment(env, dir); } catch {
       throw setupFailure('E_SETUP_DEPLOYMENT', 'selected deployment is missing, unreadable or inconsistent');
     }
-    let settings;
-    try { settings = JSON.parse(env.OATS_SETTINGS || '{}'); } catch {
-      throw setupFailure('E_SETUP_ROOT', 'selected provider settings are malformed');
-    }
+    const settings = parseProviderSettings(env);
     if (!object(settings) || (Object.hasOwn(settings, 'identity') && !object(settings.identity)) || (Object.hasOwn(settings, 'roots') && !object(settings.roots))) throw setupFailure('E_SETUP_ROOT', 'selected provider root settings are invalid');
     if (settings.identity?.mode && settings.identity.mode !== 'local') throw setupFailure('E_SETUP_ARGUMENT', 'username account setup requires LOCAL identity mode');
     const rootsKey = teamKeyIn(settings.roots, predictedTeam);

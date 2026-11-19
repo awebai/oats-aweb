@@ -1,4 +1,6 @@
 import { awChildEnv } from './aw-child-env.mjs';
+
+import { parseProviderSettings } from './provider-settings.mjs';
 // `oats aweb wake install | status | uninstall`: the per-user service that
 // keeps the host wake broker (`aw wake run`) running, a launchd agent on macOS
 // and a systemd --user unit on Linux, labelled ai.aweb.wake. aw has no install
@@ -502,8 +504,7 @@ export async function wakeMain(argv, { env = process.env, platform = process.pla
   let opts;
   try {
     opts = parseWakeArgs(argv);
-    let settings = {};
-    try { settings = JSON.parse(env.OATS_SETTINGS || "{}"); } catch { /* status falls back to channel */ }
+    const settings = parseProviderSettings(env);
     const ctx = { env, platform, uid: process.getuid?.(), user: (() => { try { return userInfo().username; } catch { return env.USER || "<user>"; } })(), home: env.HOME || homedir(), xdgConfigHome: env.XDG_CONFIG_HOME || undefined, settings, ...rest };
     const result = opts.verb === "install" ? await installWake(opts, ctx) : opts.verb === "uninstall" ? uninstallWake(opts, ctx) : await wakeStatus(opts, ctx);
     print(1, json ? JSON.stringify(result) + "\n" : renderText(result, opts.verb));

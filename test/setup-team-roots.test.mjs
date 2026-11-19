@@ -74,8 +74,8 @@ test('actual verdict remedy is parsed into join; a token without --join needs aw
  const refused=f.run(['setup','--invite-stdin'],{},'SECRET\n');assert.equal(refused.status,1);assert.match(refused.stderr,/E_SETUP_AW_VERSION: .*aw 1\.36\.53 or later/);assert.doesNotMatch(refused.stdout+refused.stderr,/SECRET/);
  assert.ok(!f.fake.readCalls().some(c=>c.args.includes('accept-invite')||c.args.includes('inspect')),'nothing inspected or redeemed');
 });
-test('hosted create diagnostic distinguishes native 1.36.24 from unsupported wrapper and 1.36.23',t=>{
- const f=fixture(t),r=f.run(['setup','--create','sibling']);assert.equal(r.status,1);assert.match(r.stderr,/provider setup --create without --namespace is not supported/);assert.match(r.stderr,/native aw 1\.36\.24 supports id team create --hosted/);assert.match(r.stderr,/not available in aw 1\.36\.23/);assert.doesNotMatch(r.stderr,/not yet released/);assert.ok(!f.fake.readCalls().some(c=>c.args.includes('create')));
+test('hosted create diagnostic states the current provider boundary',t=>{
+ const f=fixture(t),r=f.run(['setup','--create','sibling']);assert.equal(r.status,1);assert.match(r.stderr,/provider setup --create without --namespace is not supported/);assert.match(r.stderr,/this provider implements controller-owned namespace creation only/);assert.match(r.stderr,/version-matched native owner procedure/);assert.doesNotMatch(r.stderr,/not yet released/);assert.ok(!f.fake.readCalls().some(c=>c.args.includes('create')));
 });
 function joinFixture(t,{settings,change=''}={}) {
  const f=fixture(t),current=join(f.base,'current-root');mkdirSync(join(current,'.aw'),{recursive:true});writeFileSync(join(current,'.aw','teams.json'),JSON.stringify({memberships:[{team_id:TEAM,alias:"host",identity_scope:"local"}]}));

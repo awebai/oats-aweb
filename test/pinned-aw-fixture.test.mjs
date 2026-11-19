@@ -11,8 +11,8 @@ test('native source fixture requires exact source, version, clean receipt and bi
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const binary = join(dir, 'aw'), receiptPath = join(dir, 'receipt.json');
   writeFileSync(binary, 'non-executable receipt validation fixture');
-  const sourceCommit = '61c38162596d1af9085741d70d15900ff9894257';
-  const version = { status: 0, stdout: 'aw 1.36.23-source-fixture\n  commit: ' + sourceCommit + ' (github.com/awebai/aw)\n' };
+  const sourceCommit = '877bbee94ce45aa1ff103912bc9850556e61dfb4';
+  const version = { status: 0, stdout: 'aw 1.36.33-source-fixture\n  commit: ' + sourceCommit + ' (github.com/awebai/aw)\n' };
   const receipt = { kind: 'exact-source-build', binary, sourceCommit, sourceClean: true,
     sha256: createHash('sha256').update('non-executable receipt validation fixture').digest('hex'), version: version.stdout.trim() };
   const save = delta => writeFileSync(receiptPath, JSON.stringify({ ...receipt, ...delta }));
@@ -24,7 +24,7 @@ test('native source fixture requires exact source, version, clean receipt and bi
     save(delta); assert.throws(() => verifyPinnedAw(binary, version, receiptPath));
   }
   save({});
-  assert.throws(() => verifyPinnedAw(binary, { ...version, stdout: version.stdout.replace('1.36.23-source-fixture', '1.36.26') }, receiptPath));
+  assert.throws(() => verifyPinnedAw(binary, { ...version, stdout: version.stdout.replace('1.36.33-source-fixture', '1.36.26') }, receiptPath));
   assert.throws(() => verifyPinnedAw(binary, { ...version, stdout: version.stdout.replace(sourceCommit, 'bad') }, receiptPath));
   assert.throws(() => verifyPinnedAw(binary, version, join(dir, 'absent')));
 });
