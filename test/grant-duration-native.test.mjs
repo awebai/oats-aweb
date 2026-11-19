@@ -21,7 +21,7 @@ test('pinned real aw duration flag grammar and stated grant limits (help only)',
   const run = args => spawnSync(binary, args, { cwd: home, env, encoding: 'utf8', timeout: 10000 });
   const version = run(['version']);
   t.diagnostic(JSON.stringify(verifyPinnedAw(binary, version)));
-  const cases = ['never', '720h', '+720h', '720.h', '719h60m', '2592000000000µs', '2592000000000μs',
+  const cases = ['never', '60s', '59.999999999s', '720h', '+720h', '720.h', '719h60m', '2592000000000µs', '2592000000000μs',
     '720h0.1ns', '720h1ns', '2592000.000000001s', '0.000000000000000000001h', '-60s',
     '-9223372036854775808ns', '9223372036854775808ns', '1h-1s', '1e3s', '30d', '.s', '60', ''];
   assert.equal(resolveGrantTTL(''), 'never', 'empty settings use the documented default');
