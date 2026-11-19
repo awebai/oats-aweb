@@ -118,6 +118,16 @@ Decoded JSON strings are checked recursively for YAML credential fields, includi
 the workspace-record string; malformed `.json` captures also refuse without echoing
 their contents.
 
+Private-registry journeys explicitly record the operator's registry with
+`oats aweb setup --registry <origin> --soul probe --json` after workspace and
+controller preparation. This record-only step creates no root, account or team.
+The LOCAL joined-spawn and killed-join acceptance assertions then run unchanged;
+ambient AWID variables and native aw records alone are not registry admission.
+Direct resident-hook fixtures receive the same explicit `OATS_SETTINGS.registry`,
+including their resident-map and alternate-registry overrides. This fixture
+preparation requires the registry-setting provider change; the CLI floor stays
+unchanged.
+
 The retained journey separately records the real kernel's post-start session
 inspection and the broker's pre-event status. Pending aw request m, a healthy idle
 seat may still carry the initial `pending` / `not-launched` observation; this is
