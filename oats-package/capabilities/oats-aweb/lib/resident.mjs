@@ -25,6 +25,7 @@ import { assertAwebSettingRecordable, recordAwebSetting } from "./local-settings
 import { querySelectedKernel } from "./session-readiness.mjs";
 import { sameAwebTeamId } from "./aweb-team-id.mjs";
 import { selectedTeamKernel } from "./setup-team-default.mjs";
+import { promptHidden } from "./hidden-prompt.mjs";
 import { normalizeAwebTeamName, selectedDeployment } from "./team-roots.mjs";
 import { conflictMessage, custodyLabel, ensureCustodyUnit, foreignUnitMessage, handStep, lingerProblem, ownUnitServes, residentUnits, retireUnitStep, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
 
@@ -109,40 +110,11 @@ const needsInit = (state) => state === "create" || state === "continue" || state
 /** The key, from AWEB_API_KEY or a prompt that does not echo. */
 async function readKey({ env, stdin, stderr, name }) {
   const fromEnv = typeof env.AWEB_API_KEY === "string" ? env.AWEB_API_KEY.trim() : "";
-  const key = fromEnv || (stdin.isTTY && stderr.isTTY ? await promptHidden(stdin, stderr) : undefined);
+  const key = fromEnv || (stdin.isTTY && stderr.isTTY ? await promptHidden(stdin, stderr, { prompt: "aweb API key (input hidden): ", cancelled: () => failure("E_RESIDENT_KEY", "key", "cancelled"), empty: () => failure("E_RESIDENT_KEY", "key", "no API key was entered") }) : undefined);
   if (key === undefined) throw failure("E_RESIDENT_KEY", "key", `no AWEB_API_KEY in the environment and no terminal to ask for it on: run AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create ${name}`);
   if (!key) throw failure("E_RESIDENT_KEY", "key", "no API key was entered");
   if (key.length > MAX_KEY_LENGTH || /[\x00-\x1f\x7f]/.test(key)) throw failure("E_RESIDENT_KEY", "key", `the API key must be one line of at most ${MAX_KEY_LENGTH} characters`);
   return key;
-}
-/** Reads one line from the terminal in raw mode, echoing nothing. */
-function promptHidden(stdin, stderr) {
-  return new Promise((done, reject) => {
-    let value = "";
-    const finish = (error) => {
-      stdin.removeListener("data", onData);
-      stdin.setRawMode(false);
-      stdin.pause();
-      stderr.write("\n");
-      // Terminals in bracketed-paste mode wrap a paste in these markers.
-      if (error) reject(error); else done(value.replace(/\x1b\[20[01]~/g, "").trim());
-    };
-    const onData = (chunk) => {
-      for (const ch of String(chunk)) {
-        if (ch === "\r" || ch === "\n") return finish();
-        if (ch === "\u0003") return finish(failure("E_RESIDENT_KEY", "key", "cancelled"));
-        if (ch === "\u0004") { if (!value) return finish(failure("E_RESIDENT_KEY", "key", "no API key was entered")); continue; }
-        if (ch === "\u007f" || ch === "\b") { value = value.slice(0, -1); continue; }
-        value += ch;
-      }
-    };
-    // Echo goes off before the prompt shows, so nothing typed after it is echoed.
-    stdin.setEncoding("utf8");
-    stdin.setRawMode(true);
-    stdin.on("data", onData);
-    stdin.resume();
-    stderr.write("aweb API key (input hidden): ");
-  });
 }
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
