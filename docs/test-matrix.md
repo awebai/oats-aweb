@@ -20,6 +20,10 @@ override to configure `AWID_PUBLIC_ORIGINS=http://127.0.0.1:18010` for native
 covering controller signatures. The pinned service code and authentication
 checks stay unchanged. Scratch host readers receive the selected
 `OATS_NODE_BIN` / `OATS_CLI_BIN` pair instead of relying on an installed oats.
+Printed-step journeys explicitly name that private registry through
+`AWID_REGISTRY_URL`. While diagnosing joined-spawn failures, the CI-only
+observer forwards native argv, environment and output unchanged and captures
+only booleans for the known private-registry refusal, never command output.
 
 The runtime version list comes from `scripts/aw-test-versions.mjs`, which
 imports the supported floor and tested version from `lib/aw-floor.mjs`,
