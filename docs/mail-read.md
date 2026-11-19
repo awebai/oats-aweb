@@ -27,11 +27,14 @@ acknowledges the message it answers. The read runs only:
 | `aw --identity-home <h> mail threads --limit 50 [--cursor C] --json` | the identity's threads, newest activity first ("Listing marks nothing read") | `GET /v1/conversations` |
 | `aw --identity-home <h> mail show --conversation-id <id> --limit 500 --json` | one conversation's messages | `GET /v1/messages/conversations/<id>` |
 | `aw --identity-home <h> mail show --message-id <id> --json` | a legacy thread, which has one message and no conversation | `GET /v1/messages/<id>` |
-| `aw --identity-home <h> mail inbox --count-only --json` | admitted, never needed by the read; the tests use it to compare unread counts | counts |
 
-`assertReadOnlyAwArgv` refuses every other argv (`mail inbox` without
-`--count-only`, `ack`, `reply`, `send`, `log`, `chat`, a `--team` override)
-before anything runs, and every call goes through it. Pinned by:
+`assertReadOnlyAwArgv` refuses every other argv (`mail inbox` in any form,
+`ack`, `reply`, `send`, `log`, `chat`, a `--team` override) before anything
+runs, and every call goes through it. This is the contract's (v2) list made
+narrower, with one addition: `aw version`, which reads nothing from the
+server and answers `E_AW_TOO_OLD`; and without `mail inbox --count-only`,
+which the read never needs (no field holds a count): the tests call it
+directly against aw to compare unread counts. Pinned by:
 
 - `test/mail-read.test.mjs`: the guard, and every scripted read passes it;
 - `test/mail-operation.test.mjs`: the command as the kernel runs it, with a

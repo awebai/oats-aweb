@@ -42,7 +42,7 @@ test('real aw: every argv messaging:mail runs exists with these flags, and nothi
     '--identity-home mail threads --limit --json',
     '--identity-home whoami --json',
   ]);
-  for (const argv of [...forms.values(), ['version'], ['mail', 'inbox', '--count-only', '--json']]) assert.doesNotThrow(() => assertReadOnlyAwArgv(argv));
+  for (const argv of [...forms.values(), ['version']]) assert.doesNotThrow(() => assertReadOnlyAwArgv(argv));
 
   const usage = (command) => { const r = native([...command.split(' '), '--help']); assert.equal(r.status, 0, r.stderr); return r.stdout; };
   const hasCommand = (command) => { const out = usage(command); return out.includes(`\n  aw ${command} `) || out.includes(`\n  aw ${command}\n`); };
@@ -59,7 +59,6 @@ test('real aw: every argv messaging:mail runs exists with these flags, and nothi
     }
     // Read-only by aw's own words.
     assert.match(usage('mail threads'), /Listing marks nothing read/);
-    assert.match(usage('mail inbox'), /--count-only\s+Count all unread mail without acknowledging/);
   }
   assert.deepEqual(readdirSync(home), [], 'help leaves its disposable HOME empty');
 });

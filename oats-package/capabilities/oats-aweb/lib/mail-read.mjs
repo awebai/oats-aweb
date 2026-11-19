@@ -3,9 +3,11 @@
 // (the primary one and each joined team's). It NEVER acknowledges or marks
 // anything read: the only aw commands it may run are the ones
 // assertReadOnlyAwArgv admits (`version`, `whoami`, `mail threads`,
-// `mail show`, `mail inbox --count-only`), each a server GET or a local read.
-// `mail inbox` without --count-only, `mail ack`, `mail reply` and `mail send`
-// acknowledge or write, and are refused here before anything runs.
+// `mail show`), each a server GET or a local read. Every other command is
+// refused here before it runs: `mail inbox` acknowledges what it shows, and
+// `mail ack`, `mail reply` and `mail send` acknowledge or write. (Contract v2
+// listed `mail inbox --count-only` too; the read needs no count, so it is
+// out, and the tests call it directly to compare unread counts.)
 //
 // The answer is the messaging layer's contract (docs in the OATS kernel's
 // docs/desktop-cli-api.md, "Mail (mailApi 1)"): a view's `documents` plus one
@@ -70,7 +72,7 @@ export function assertReadOnlyAwArgv(args) {
     if (!FLAG_VALUE(rest[1])) throw fail('E_MAIL_ARGV', '--identity-home needs a directory');
     rest = rest.slice(2);
   }
-  const refuse = () => { throw fail('E_MAIL_ARGV', `messaging:mail never runs aw ${rest.join(' ')}: it may run only version, whoami, mail threads, mail show and mail inbox --count-only`); };
+  const refuse = () => { throw fail('E_MAIL_ARGV', `messaging:mail never runs aw ${rest.join(' ')}: it may run only version, whoami, mail threads and mail show`); };
   const flags = (from, allowed) => {
     const seen = new Set();
     for (let i = from; i < rest.length; i++) {
@@ -89,11 +91,6 @@ export function assertReadOnlyAwArgv(args) {
   if (b === 'show') {
     const seen = flags(2, { '--conversation-id': FLAG_VALUE, '--message-id': FLAG_VALUE, '--limit': POSITIVE_INT, '--json': null });
     if (seen.has('--conversation-id') === seen.has('--message-id')) refuse();
-    return;
-  }
-  if (b === 'inbox') {
-    const seen = flags(2, { '--count-only': null, '--json': null });
-    if (!seen.has('--count-only')) refuse();
     return;
   }
   refuse();

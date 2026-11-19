@@ -66,11 +66,11 @@ const read = (script, options = {}) => {
   return readMail({ identities, aw: s.aw, now: () => new Date('2026-11-19T12:00:00Z'), ...options }).then((result) => ({ result, ...s }));
 };
 
-test('the argv guard admits only version, whoami, mail threads, mail show and mail inbox --count-only', () => {
+test('the argv guard admits only version, whoami, mail threads and mail show', () => {
   for (const args of [['version'], ['whoami', '--json'], ['mail', 'threads', '--limit', '50', '--json'], ['mail', 'threads', '--limit', '50', '--cursor', 'abc', '--json'],
     ['mail', 'show', '--conversation-id', 'c1', '--limit', '500', '--json'], ['mail', 'show', '--message-id', 'm1', '--json'],
-    ['mail', 'inbox', '--count-only', '--json'], ['--identity-home', '/h/.aw', 'mail', 'threads', '--json']]) assert.doesNotThrow(() => assertReadOnlyAwArgv(args), args.join(' '));
-  for (const args of [['mail', 'inbox'], ['mail', 'inbox', '--json'], ['mail', 'inbox', '--show-all', '--json'], ['mail', 'inbox', '--count-only', '--show-all'],
+    ['--identity-home', '/h/.aw', 'mail', 'threads', '--json']]) assert.doesNotThrow(() => assertReadOnlyAwArgv(args), args.join(' '));
+  for (const args of [['mail', 'inbox'], ['mail', 'inbox', '--json'], ['mail', 'inbox', '--count-only', '--json'], ['mail', 'inbox', '--show-all', '--json'], ['mail', 'inbox', '--count-only', '--show-all'],
     ['mail', 'ack', 'm1'], ['mail', 'reply', 'm1', '--body-file', 'f'], ['mail', 'send', '--to', 'x'], ['log'], ['log', '--json'], ['chat', 'pending'],
     ['mail', 'show', '--json'], ['mail', 'show', '--conversation-id', 'c', '--message-id', 'm'], ['mail', 'show', '--conversation-id', '--json'],
     ['mail', 'threads', '--team', 'x'], ['whoami', '--json', '--json'], ['--identity-home', '/h', '--team', 't', 'whoami'], ['mail', 'inbox', '--count-only', '--cursor', 'x']]) {

@@ -44,9 +44,33 @@ change to a field is release-noted.
 from a home) answers the messaging layer's `mail` answer, `mailApi: 1`: the
 instance's received and sent mail, newest first, across all its identities.
 It never acknowledges or marks anything read, and needs aw >= 1.36.53
-(`E_AW_TOO_OLD` below). The OATS Desktop's mail sheet reads it. How it is
-read, its bounds and its errors: [docs/mail-read.md](docs/mail-read.md); the
-answer itself: the OATS kernel's `docs/desktop-cli-api.md`.
+(`E_AW_TOO_OLD` below). The OATS Desktop's mail sheet reads it. The answer
+itself is the OATS kernel's (`docs/desktop-cli-api.md`, "Mail, `mailApi:
+1`"); oats.aweb fills it in this way:
+
+- **It runs only** `aw version`, `whoami`, `mail threads` and `mail show`,
+  each argv checked before it runs: narrower than the contract's (v2) list,
+  which also named `mail inbox --count-only`, with `aw version` added for the
+  floor.
+- **One conversation that can't be read** (a `mail show` failure, an
+  end-to-end encrypted body that won't decrypt) leaves its messages out, shows
+  the rest, and sets that identity's `error` to `conversation-unreadable`. An
+  identity's `error` therefore means something of it is missing, not that
+  nothing was read.
+- **The closed sets from aw's values.** `verification`: `verified`,
+  `verified_legacy` and `verified_custodial` are `verified`; `unverified` is
+  `unverified`; `failed` and `identity_mismatch` are `failed`; anything else
+  (`verification_stale` too) is `unknown`. `priority`: `low` and `normal` are
+  `normal`; `high` and `urgent` are `high`; anything else is `unknown`.
+- **Paging.** Messages are newest first over the merged stream of every
+  identity; `nextCursor` (opaque) encodes the last message's time, id and
+  team. Each page re-lists the threads newest activity first and stops reading
+  conversations once it has `limit` messages newer than every thread not yet
+  read; at its budget (300 conversation reads, 150 s) it answers only messages
+  it can prove are the newest. `limit` outside 1 to 200, or a cursor no answer
+  gave, is `E_BAD_ARGS`.
+
+How it is read, its bounds and every error: [docs/mail-read.md](docs/mail-read.md).
 
 ## 1.43.0 — explicit registry admission, grant seats in their team, membership reads that fail closed
 

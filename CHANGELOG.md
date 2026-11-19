@@ -9,9 +9,8 @@
   labelled by team, with bounded bodies (16 KiB) and answers (256 KiB),
   paging by an opaque cursor, and long conversations marked
   `partial: "oldest-first-only"`. It runs only `aw version`, `whoami`,
-  `mail threads` and `mail show` (and admits `mail inbox --count-only`),
-  pinned against the real aw and, on the real stack, by unchanged unread
-  counts and `read_at`. It needs aw >= 1.36.53 and answers `E_AW_TOO_OLD`
+  `mail threads` and `mail show`, pinned against the real aw and, on the
+  real stack, by unchanged unread counts and `read_at`. It needs aw >= 1.36.53 and answers `E_AW_TOO_OLD`
   below it; the provider's aw floor is unchanged. Additive: a home gets it
   with `oats instance upgrade` or a new spawn. See `docs/mail-read.md`.
 
