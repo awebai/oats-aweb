@@ -10,6 +10,50 @@ import { dirname, join } from "node:path";
 const ENTRY_NOUN = { roots: "root", residents: "resident", health: "health setting" };
 
 export const yamlQuote = (value) => JSON.stringify(String(value));
+
+/** Build a scalar update before any native effect. Refuse unsupported YAML;
+ * never replace a mapping, alias, duplicate key or multiline value by guess. */
+export function awebScalarText(key,value,{start=process.env.OATS_WORKSPACE||process.cwd()}={}) {
+  const file=join(start,'oats-local.yaml');
+  const lines=existsSync(file)?readFileSync(file,'utf8').split(/\r?\n/):['schemaVersion: 2','workspace: local'];
+  while(lines.at(-1)==='') lines.pop();
+  const refuse=()=>{throw new Error(`${file}: cannot safely update settings.oats.aweb.${key} automatically; add ${key}: ${yamlQuote(value)} by hand under block-style settings.oats.aweb`);};
+  const block=(start,end,indent,names)=>{
+    const found=[];
+    for(let i=start;i<end;i++) {
+      const row=lines[i];
+      if(!row.trim()||row.trimStart().startsWith('#')) continue;
+      for(const name of names) if(row.startsWith(' '.repeat(indent)+name+':')) found.push(i);
+    }
+    if(found.length>1) refuse();
+    if(found.length && !names.some(name=>lines[found[0]].trimEnd()===' '.repeat(indent)+name+':')) refuse();
+    return found[0];
+  };
+  let settings=block(0,lines.length,0,['settings']);
+  if(settings===undefined){lines.push('settings:');settings=lines.length-1;}
+  let end=blockEnd(lines,settings,0);
+  let aweb=block(settings+1,end,2,['oats.aweb','"oats.aweb"',"'oats.aweb'"]);
+  if(aweb===undefined){lines.splice(end,0,'  oats.aweb:');aweb=end;}
+  end=blockEnd(lines,aweb,2);
+  const found=[];
+  for(let i=aweb+1;i<end;i++) if([key,JSON.stringify(key),`'${key}'`].some(k=>lines[i].startsWith(`    ${k}:`))) found.push(i);
+  if(found.length>1) refuse();
+  const row=`    ${key}: ${yamlQuote(value)}`;
+  if(found.length) {
+    const at=found[0],tail=lines[at].slice(lines[at].indexOf(':')+1);
+    if(!tail.startsWith(' ') || !tail.trim() || /^[|>&*!{[\s#]/.test(tail.trim()) || (at+1<end&&/^     \S|^      /.test(lines[at+1]))) refuse();
+    // Quoted scalars must end on this line, with an optional comment.
+    const scalar=tail.trim();
+    if(scalar.startsWith('"')) {try {const match=/^("(?:[^"\\]|\\.)*")(?:\s+#.*)?$/.exec(scalar);if(!match)refuse();JSON.parse(match[1]);}catch{refuse();}}
+    if(scalar.startsWith("'")&&!/^'(?:[^']|'')*'(?:\s+#.*)?$/.test(scalar)) refuse();
+    lines[at]=row;
+  } else lines.splice(end,0,row);
+  return {file,text:lines.join('\n')+'\n'};
+}
+export function recordAwebScalar(key,value,options) {
+  const {file,text}=awebScalarText(key,value,options);
+  atomicWrite(file,text);
+}
 /** A setting's YAML scalar: a boolean as itself, anything else quoted. */
 const yamlScalar = (value) => (typeof value === "boolean" ? String(value) : yamlQuote(value));
 function blockEnd(lines, start, indent) {

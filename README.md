@@ -551,8 +551,8 @@ Older kernels stay on oats.aweb 1.26.2.
   the command prints `oats teams default <label>` as the first step instead.
   It needs OATS 0.48.0 or later and refuses an older kernel before any effect.
 - **A seat verifies at its resident's registry.** A grant seat gets
-  `AWID_REGISTRY_URL` from the resident's `.aw/identity.yaml` when that
-  registry is not aw's default.
+  `AWID_REGISTRY_URL` only from the explicit operator setting
+  `settings.oats.aweb.registry`; saved identity URLs grant no network admission.
 - Details: [docs/resident-create.md](docs/resident-create.md).
 
 ## 1.26.0 — one command for a GLOBAL resident
@@ -574,7 +574,7 @@ Older kernels stay on oats.aweb 1.26.2.
   environment, from a terminal prompt that does not echo. With neither, the
   command refuses at once. It is in the environment of the init run only (built
   from nothing: `PATH`, `HOME`, `AWEB_URL`, the key, `AW_NO_UPDATE_CHECK`, and
-  `AWID_REGISTRY_URL` when set), and in no argv, unit, setting, capture or
+  `AWID_REGISTRY_URL` from the registry setting when configured), and in no argv, unit, setting, capture or
   output. No flag takes a key.
 - **Re-runs.** After a failure, a rerun continues aw's own partial init, so the
   DID is the same. After success, a rerun only verifies. A quarantined partial
@@ -776,23 +776,21 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   is held by people (retire answered `team_not_hosted`) is marked: its line ends
   `; retired by OATS on this host <YYYY-MM-DD>; the team controller removes it
   with: <command>`, and the footer counts those certificates. Only the team's
-  controller can remove them, with the printed command. Its `--registry` is
-  the one aw uses for that membership: the plain `registry_url` that aw reports
-  for it or that the identity's `teams.yaml` records for it. When the
-  membership records only its `aweb_url`, aw discovers the registry from that
-  service, so the command has no `--registry` and says so. With neither, aw
-  uses its built-in default; the cleanup command omits `--registry`. An
-  ambient `AWID_REGISTRY_URL` does not choose the cleanup destination. Retire records them in
-  `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
-  registry origin and rebuilt compatibility command, never a secret), matched on team and certificate
-  id, never on alias. Stored command fields are ignored by this reader, but writers
-  rebuild them for older homes sharing this record. For an existing entry with
-  no registry field or invalid cleanup inputs, the compatibility field is a
-  fixed `# unavailable: …` shell comment. Upgrade an old home that displays it
-  and use the controller's explicit registry or repair the invalid inputs;
-  every entry stays recorded. The roster builds the
-  command from the entry's team, certificate id and registry, each validated,
-  as retire does. An entry it can't be built from shows `; its record entry is
+  controller can remove them, with the printed command. The command's admission
+  pin comes only from the current `settings.oats.aweb.registry`, safely quoted
+  as AWID_REGISTRY_URL. The membership's saved registry_url stays a locator;
+  it is never promoted to a native admission flag or environment. Retire records
+  entries in `<deployment>/.oats-aweb/retired-certificates.json` (team,
+  certificate id, registry locator and rebuilt compatibility command, never
+  a secret), matched on team and certificate id, never on alias. Stored command
+  fields are ignored by this reader, but writers rebuild them for older homes
+  sharing this record. An existing entry with no registry field or invalid
+  cleanup inputs gets a fixed `# unavailable: …` shell comment. Upgrade an
+  old home that displays it and use the controller's explicit registry or
+  repair the invalid inputs; every entry stays recorded. The current roster
+  builds its displayed
+  command from the entry's validated team/certificate and the operator's current
+  admission setting, as retire does. An entry it can't be built from shows `; its record entry is
   malformed (<why>), so no command to remove it is shown` (and `--json` gives
   `command: null`, with a `retired-record` problem); one recorded with no
   registry adds `(the registry was not recorded; the command omits --registry)` to
@@ -1316,6 +1314,44 @@ Supported acts:
   join and `--create`, and required for `--username`. Neither flag extends the
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
+- `oats aweb setup --registry <origin>`: record the operator's explicit registry
+  admission in this deployment's `oats-local.yaml`, under
+  `settings.oats.aweb.registry` (host-only). Alone, this command only records
+  configuration: it creates no root, account, team or default, even if an API
+  key is exported. `--plan` and `--check-only` preview without writing. It can
+  also accompany an onboarding form; configuration is kept if bootstrap later
+  fails. Restart resident custody by rerunning `oats aweb resident create
+  <name>` and restart the user's wake daemon with `oats aweb wake install`,
+  from the operator's own shell. Existing homes need a new start to receive
+  the updated session pin. The registry setting is never taken from ambient
+  `AWID_REGISTRY_URL`, `identity.yaml`, `teams.yaml` or a saved receipt.
+
+  A private-address registry requires this explicit administrative pin on
+  every invocation. OATS passes it by name as `AWID_REGISTRY_URL` to registry
+  calls, LOCAL and GLOBAL sessions, custody serve and wake run. Saved URLs
+  choose destinations under aw's public-address policy; they never grant
+  private-network access. Existing ambient-only deployments receive
+  `registry-setting-required` at spawn/join and readiness, with the setup and
+  restart steps. GLOBAL homes with a recorded non-default registry also get
+  that migration instead of silently losing messaging verification.
+
+  Use an absolute HTTP/HTTPS origin (scheme, hostname or bracketed IPv6,
+  optional port); default ports and a root slash are canonicalized. Every
+  non-root path is refused. For `/api`, give the bare origin: aw treats these
+  as equivalent. Queries and fragments, including empty delimiters, and
+  userinfo are unsupported and are never echoed in an error.
+
+  A registry behind a path-prefix reverse proxy is unsupported; put the
+  registry on its own hostname. Registry URLs must contain no credentials.
+  Authentication to a private registry's front door is a separate question
+  and not part of `settings.oats.aweb.registry`.
+
+  The wake daemon is shared by this host user. Reinstall refuses a different
+  pin. Keep one registry for that user's daemon, move the other deployment
+  to another host user, or first remove its registrations with `aw wake
+  deregister --home <other-home>`, then run `oats aweb wake uninstall` and
+  install again. `delivery: session` uses that same daemon.
+
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
   a customer-controlled namespace. It needs aw 1.36.53 or later: `aw id team
   set-server`/`show-server` first ship in aw 1.36.44, and the `--json` error
@@ -1324,8 +1360,10 @@ Supported acts:
   1.36.53 (this host has <version>): upgrade with npm install -g
   @awebai/aw@<tested>; nothing was created", `<tested>` being aw-compat.json's
   `tested`. With `--install-aw` it installs that tested aw. It normalizes `<label>` to aweb's team-name
-  rule. `AWID_REGISTRY_URL` selects the registry for create, show-server,
-  register, set-server and invite; when unset, aw uses `https://api.awid.ai`.
+  rule. The operator setting `settings.oats.aweb.registry` selects and explicitly
+  pins the registry for create, show-server, register, set-server and invite;
+  configure it with `oats aweb setup --registry <origin>`. With no setting, aw
+  uses its own registry selection and public-address policy.
   Before any aw call, it resolves the aweb service: `AWEB_URL` (the
   server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
   `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
@@ -1511,7 +1549,8 @@ home: `aw init --join-from=<root> --join-team=<team> --name=<instance> --json
 --do-not-touch-agents-md`. aw creates the invite from the root, accepts it and
 connects the workspace, so the invite token never reaches the hook. The mint
 runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE`,
-`AWEB_IDENTITY_HOME` or `AWID_REGISTRY_URL`, so the service comes from the invite.
+`AWEB_IDENTITY_HOME`; only the explicit registry setting is passed as
+`AWID_REGISTRY_URL`. The service comes from the invite.
 Every aw child uses the same ambient-selector removal list; documented setup
 inputs and other deliberate overrides are passed explicitly at their call sites.
 See [the environment and call inventory](docs/aw-child-environment.md). On the broker
@@ -1548,18 +1587,15 @@ Retire acts on an intent, from the home or from that meta, only when the home
 holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
 self-deleted as usual. Otherwise retire reads `aw id team members
 --team-id=<team> --json` from the recorded root (team ids compared as aw
-spells them: name and domain lowercased). Retire never decides a registry aw
-would decide differently: it passes a registry the root records, or none.
+spells them: name and domain lowercased). Retire never promotes the root's recorded registry to an admission flag. It
+passes only the operator setting as `AWID_REGISTRY_URL`; otherwise aw applies
+its own destination selection and public-address policy.
 
-- When the team's membership in the root's `.aw/teams.yaml` records a plain
-  `registry_url`, the read gets `--registry`, and the command and the record
-  name it.
-- Otherwise the read gets no `--registry`, and aw resolves the registry itself,
-  as for any read from that root (from the membership's `aweb_url` when it has
-  one). The record stores no registry, and the command omits `--registry` and
-  says so: `the team's registry is not recorded here; aw discovers it from
-  <aweb_url>: the controller adds --registry <that registry> if it is not aw's
-  default`.
+The record keeps a plain registry_url from the exact team's membership as a
+locator, or records none when aw discovers it from the membership's service.
+Neither value is promoted to --registry or AWID_REGISTRY_URL. The controller's
+printed command carries the current configured pin, safely quoted, or no pin
+when none is configured.
 
 It never runs `aw workspace
 connect` to finish a half-done mint, and never retries the mint. A certificate
@@ -1567,8 +1603,8 @@ is this mint's only when its `member_did_key` is the did:key of the home's
 `signing.key`:
 
 - **This mint's certificate:** retire records it in the retired-certificates
-  record, with the controller's `aw id team remove-member` command (its
-  `--registry` is the registry the read used), and says
+  record, with the controller's `aw id team remove-member` command (the
+  pin comes only from the current registry setting), and says
   the identity was registered but could not be released. It exits 0, because
   the home's key can't release it.
 - **No key in the home:** aw writes the key before it registers, so the

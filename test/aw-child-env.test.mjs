@@ -78,7 +78,7 @@ test('binding version and health aw children use the same isolated environment',
 test('binding readiness strips selectors from its native wake read', t => {
   const f = fixture(t);
   const input = {schemaVersion: 1, phase: 'check', slot: 'messaging', capability: 'oats.aweb',
-    settings: {root: f.home, delivery: 'session'}, input: {action: {kind: 'readiness'}, context: {kind: 'workspace', workspace: 'fixture', deployment: f.home, home: null, soul: 'probe'}}};
+    settings: {root: f.home, delivery: 'session', registry:'https://registry.example.invalid'}, input: {action: {kind: 'readiness'}, context: {kind: 'workspace', workspace: 'fixture', deployment: f.home, home: null, soul: 'probe'}}};
   const r = spawnSync(process.execPath, [BINDING, 'check'], {input: JSON.stringify(input), env: f.env, encoding: 'utf8'});
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(f.calls().some(c => c.args[0] === 'wake'), 'readiness asks for broker status');
@@ -86,12 +86,12 @@ test('binding readiness strips selectors from its native wake read', t => {
 });
 
 test('setup passes its documented key and service only to the explicit init', t => {
-  const f = fixture(t), r = f.hook('setup');
+  const f = fixture(t);f.env.OATS_SETTINGS=JSON.stringify({root:f.home,registry:'https://registry.example.invalid'});const r=f.hook('setup');
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /readiness: ready/);
   const calls = f.calls(), init = calls.find(c => c.args[0] === 'init');
   assert.ok(init, r.stdout + r.stderr);
-  assert.deepEqual(init.env, {AWEB_URL: f.env.AWEB_URL, AWEB_API_KEY: f.env.AWEB_API_KEY, AWID_REGISTRY_URL: f.env.AWID_REGISTRY_URL});
+  assert.deepEqual(init.env, {AWEB_URL: f.env.AWEB_URL, AWEB_API_KEY: f.env.AWEB_API_KEY, AWID_REGISTRY_URL: 'https://registry.example.invalid'});
   assert.ok(calls.indexOf(init) < calls.length - 1, 'a native child runs after init');
   for (const c of calls.filter(c => c !== init)) assert.deepEqual(c.env, {});
 });

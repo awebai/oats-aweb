@@ -69,7 +69,7 @@ import { appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync, fs
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
-import { controllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
+import { controllerCleanupCommand as recordedControllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
@@ -83,7 +83,7 @@ import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, aw
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
-import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
+import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting, awebScalarText, recordAwebScalar } from "../lib/local-settings.mjs";
 import { AW_TESTED, versionAtLeast } from "../lib/aw-floor.mjs";
 import { AW_MIN, CAPTURED_UNSUPPORTED, NO_TEAMS_MESSAGE, awFloorMessage, awFloorObservation, awTestedWarning, grantYamlCustodySocket, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
@@ -92,7 +92,7 @@ import { mintedExpiryProblem } from "../lib/grant-expiry.mjs";
 import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
-import { residentRegistryEnv } from "../lib/resident-registry.mjs";
+import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigration, registryShellAssignment } from "../lib/registry-setting.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -101,8 +101,8 @@ import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsP
  * property of one helper staying correct forever, while argv removes the class.
  * This hook is a REQUIRED spawn hook, so it gates every spawn, which is reason
  * enough not to rely on quoting. */
-const childEnvFor = ({ env: extraEnv, unsetEnv = [] } = {}) => {
-  const childEnv = awChildEnv(process.env, extraEnv);
+const childEnvFor = ({ env: extraEnv, unsetEnv = [], argv = [] } = {}) => {
+  const childEnv = awChildEnv(process.env, { ...registryEnv(settings, argv), ...extraEnv });
   for (const name of unsetEnv) delete childEnv[name];
   return childEnv;
 };
@@ -158,7 +158,7 @@ const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, f
   const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
-    const childEnv = childEnvFor({ env: extraEnv, unsetEnv });
+    const childEnv = childEnvFor({ env: extraEnv, unsetEnv, argv });
     return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, killSignal: timeoutSignal, env: childEnv }).trim();
   } catch (e) {
     // execFileSync puts the WHOLE ARGV in e.message ("Command failed: aw team
@@ -380,6 +380,17 @@ catch (error) {
 const TEAM_SETTING_MESSAGE = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
 const hasStaleTeamSetting = settings && typeof settings === "object" && !Array.isArray(settings) && Object.hasOwn(settings, "team");
 if (hasStaleTeamSetting && ["spawn", "launch", "setup", "connect", "teams", "join", "leave", "roster"].includes(event)) fatal(TEAM_SETTING_MESSAGE);
+if (event !== "setup") {
+  try {
+    configuredRegistryOrigin(settings);
+    const resident = settings.identity?.mode === "global" ? settings.residents?.[settings.identity.resident] : undefined;
+    const problem = ["spawn", "launch", "join"].includes(event) ? registryMigration(settings, process.env, {custody: resident}) : undefined;
+    if (problem) throw new Error(problem);
+  } catch (error) {
+    if (["spawn", "launch", "retire"].includes(event)) fatal(error.message);
+    console.error(`oats aweb ${event}: ${error.message}`); process.exit(1);
+  }
+}
 const deliveryMode = configuredDelivery(settings);
 // Reject explicit bad values before any mint, membership or broker operation,
 // including launch preview. Retirement must still clean up captured effects.
@@ -520,7 +531,7 @@ if (invalidConfiguredTeamId && (isCommand || ["spawn", "launch"].includes(event)
 }
 // `setup --install-aw` and `setup --check-only` handle a missing or old aw
 // themselves (installing it, or reporting it in the check document).
-const setupHandlesAw = event === "setup" && process.argv.slice(3).some((arg) => arg === "--install-aw" || arg === "--check-only" || arg === "--plan" || arg === "--username" || arg.startsWith("--username="));
+const setupHandlesAw = event === "setup" && process.argv.slice(3).some((arg) => arg === "--install-aw" || arg === "--registry" || arg.startsWith("--registry=") || arg === "--check-only" || arg === "--plan" || arg === "--username" || arg.startsWith("--username="));
 if (!onPath("aw") && !setupHandlesAw) {
   if (isCommand) { console.error(`oats aweb ${event}: aw CLI not on PATH — ${AW_INSTALL}`); process.exit(1); }
   if (event === "spawn") fatal(`aw CLI not on PATH, so no identity could be minted and this instance would have no messaging — ${AW_INSTALL}`);
@@ -783,11 +794,15 @@ function newestGrantHome() {
 }
 const priorGrantHome = (meta = {}) => typeof meta.identity?.grant?.home === "string" && meta.identity.grant.home ? meta.identity.grant.home : newestGrantHome();
 const localIdentityHome = () => join(home, ".aw");
-/** A grant seat's registry, from its resident's identity through the residents
- *  setting; nothing when the resident does not resolve, which readiness reports. */
-function seatRegistryEnv(resident) {
-  const custody = settings.residents && typeof settings.residents === "object" ? settings.residents[resident] : undefined;
-  return typeof custody === "string" && isAbsolute(custody) ? residentRegistryEnv(custody).env : {};
+/** Session admission comes only from the explicit operator setting. */
+function seatRegistryEnv() { return registryEnv(settings); }
+/** A locator in a cleanup receipt never becomes an admission flag. The
+ * operator's current configuration is the sole pin in a printed command. */
+function controllerCleanupCommand(entry) {
+  const command=recordedControllerCleanupCommand({...entry,registry:null});
+  if(!command) return undefined;
+  const origin=configuredRegistryOrigin(settings);
+  return origin ? `${registryShellAssignment(origin)} ${command}` : command;
 }
 /** A retained seat holds its identity in the home's .aw: a local identity. Providers
  *  before awebai/oats-aweb#226 recorded it as mode "global" with no grant, which no
@@ -799,8 +814,8 @@ function retainedSeatAsLocal(meta) {
 }
 function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
   const { env: deliveryEnv, launch } = deliveryFor();
-  const env = { ...deliveryEnv };
-  if (meta.identity?.mode === "global" && meta.identity?.grant?.id) Object.assign(env, { AWEB_IDENTITY_HOME: identityHome }, seatRegistryEnv(meta.identity.resident));
+  const env = { ...deliveryEnv, ...registryEnv(settings) };
+  if (meta.identity?.mode === "global" && meta.identity?.grant?.id) Object.assign(env, { AWEB_IDENTITY_HOME: identityHome }, seatRegistryEnv());
   else if ((meta.identity?.mode || identityMode) === "local") env.AWEB_IDENTITY_HOME = localIdentityHome();
   return { ...(Object.keys(env).length ? { env } : {}), ...(launch ? { launch } : {}) };
 }
@@ -1029,8 +1044,7 @@ function globalGrantSpawn() {
       catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError, mintedTeam)); }
     }
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
-    const registry = residentRegistryEnv(custody);
-    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: grantHome, ...registry.env };
+    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: grantHome, ...registryEnv(settings) };
     if (broker) {
       try { wakeRegister(home, grantHome); }
       catch (e) {
@@ -1038,7 +1052,7 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError, mintedTeam)); }
       }
     }
-    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : []), ...(registry.problem ? [`oats-aweb: ${registry.problem}`] : [])];
+    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     out({
       meta,
@@ -1450,7 +1464,7 @@ function retainedSeatSpawn(source, takeOver) {
     // Holder-neutral: the exit names only the holder of the rollback's last guarded read.
     if (!seated.done) throw new Error(`the retained identity's lock ${lockPath} ${!seated.captured.present ? "was removed" : seated.captured.text === null ? `could not be read (${seated.captured.readError || "error"})` : "was taken by another seat"} during this spawn; the seat is not briefed`);
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
-    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
+    const env = { ...deliveryEnv, ...registryEnv(settings), AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) { wakeRegistering = true; wakeRegister(home, dest, seatRun); }
     // The last aw call is done: a take-over that landed while it ran wins, and this
     // seat is not briefed.
@@ -2472,7 +2486,7 @@ if (event === "launch") {
     // Broker delivery: no channel flag, AWEB_DELIVERY=session in the launch
     // environment (declared in the manifest), and the truth about waking.
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
-    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: localIdentityHome() };
+    const env = { ...deliveryEnv, ...registryEnv(settings), AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) wakeRegister(home, join(home, ".aw"));
     let meta = startedMeta({ team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: identityMeta({ mode: "local", alias, team: joined.team_id }) });
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
@@ -2504,9 +2518,9 @@ if (event === "launch") {
   // or inherited instance selectors. Clear even on an incomplete retirement.
   try {
     const {healthHost} = await import('../lib/health-host.mjs');
-    const probe = healthHost({deployment: home, env: process.env});
+    const probe = healthHost({deployment: home, env: process.env, settings});
     if (await probe.supportsWaiting()) {
-      const host = healthHost({deployment: selectedDeployment(process.env), env: process.env});
+      const host = healthHost({deployment: selectedDeployment(process.env), env: process.env, settings});
       await host.waiting(home, null);
     }
   } catch { retireWarnings.push('oats.aweb attention claim could not be cleared'); }
@@ -2712,7 +2726,7 @@ if (event === "launch") {
     else ({ registry = null, registryError } = mintRegistryForTeam(root, team));
     if (root) {
       try {
-        doc = parseAwJson(run(["aw", "id", "team", "members", flagEq("--team-id", team), ...(registry ? [flagEq("--registry", registry)] : []), "--json"], root, 60000), "aw id team members");
+        doc = parseAwJson(run(["aw", "id", "team", "members", flagEq("--team-id", team), "--json"], root, 60000), "aw id team members");
         if (!Array.isArray(doc?.members)) { doc = undefined; why = "aw id team members returned JSON without a members list"; }
       } catch (e) { why = String(e.message || e).replace(/\s+/g, " ").trim().slice(0, 200); }
     }
@@ -3002,14 +3016,16 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
-  const usage = "usage: oats aweb setup [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] [--name <alias>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
-  let setupDir, setupLabel, setupPlan = false;
+  const usage = "usage: oats aweb setup [--registry <origin>] [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] [--name <alias>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
+  let setupDir, setupLabel, setupRegistry, setupPlan = false;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--dir" && args[i + 1]) { setupDir = resolve(args[++i]); continue; }
     if (arg.startsWith("--dir=") && arg.length > 6) { setupDir = resolve(arg.slice(6)); continue; }
     if (arg === "--plan") { setupPlan = true; continue; }
+    if (arg === "--registry" && args[i + 1]) { if(setupRegistry!==undefined) { console.error("oats aweb setup: duplicate --registry"); process.exit(2); } setupRegistry = args[++i]; continue; }
+    if (arg.startsWith("--registry=")) { if(setupRegistry!==undefined) { console.error("oats aweb setup: duplicate --registry"); process.exit(2); } setupRegistry = arg.slice(11); continue; }
     if (arg === "--label" && args[i + 1]) { setupLabel = args[++i]; continue; }
     if (arg.startsWith("--label=") && arg.length > 8) { setupLabel = arg.slice(8); continue; }
     if (arg === "--username" && args[i + 1]) { username = args[++i]; continue; }
@@ -3034,7 +3050,7 @@ if (event === "launch") {
     console.error(`oats aweb setup: ${usage}`);
     process.exit(2);
   }
-  if ((setupLabel !== undefined || setupPlan) && !username) { console.error(`oats aweb setup: --label/--plan require --username\n${usage}`); process.exit(2); }
+  if ((setupLabel !== undefined || (setupPlan && setupRegistry === undefined)) && !username) { console.error(`oats aweb setup: --label/--plan require --username\n${usage}`); process.exit(2); }
   if (createNamespace && !createLabel) { console.error(`oats aweb setup: --namespace requires --create\n${usage}`); process.exit(2); }
   if (invite && inviteStdin) { console.error(`oats aweb setup: --invite and --invite-stdin cannot be combined\n${usage}`); process.exit(2); }
   // --invite / --invite-stdin without --join (#56): the label comes from the invite.
@@ -3059,6 +3075,27 @@ if (event === "launch") {
   const apiKey = !!process.env.AWEB_API_KEY;
   const actions = [username ? "--username" : null, joinLabel || inviteForm ? "--join" : null, createLabel ? "--create" : null, apiKey && !createLabel ? "AWEB_API_KEY" : null].filter(Boolean);
   if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
+
+  try {
+    const effective = setupRegistry === undefined ? configuredRegistryOrigin(settings) : configuredRegistryOrigin({registry:setupRegistry});
+    const migration = effective ? undefined : registryMigration(settings);
+    if(migration) throw new Error(migration);
+    if(setupRegistry !== undefined) {
+      const selected = selectedDeployment(process.env, setupDir);
+      awebScalarText("registry", effective, {start:selected});
+      if(!setupPlan && !checkOnly) recordAwebScalar("registry", effective, {start:selected});
+      settings = {...settings, registry:effective};
+      if(!username && !createLabel && !joinLabel && !inviteForm && !installAw) {
+        const result = {registry:effective, plan:setupPlan || checkOnly, next:["Restart resident serve: oats aweb resident create <name>", "Restart wake: oats aweb wake install (operator shell)"]};
+        console.log(json ? JSON.stringify({schemaVersion:1,ok:true,result}) : JSON.stringify(result));
+        process.exit(0);
+      }
+    }
+  } catch(error) {
+    if(json) console.log(JSON.stringify({schemaVersion:1,ok:false,error:{code:"E_SETUP_REGISTRY",message:error.message}}));
+    else console.error(`oats aweb setup: E_SETUP_REGISTRY: ${error.message}`);
+    process.exit(1);
+  }
 
   if (username) {
     const json = process.argv.includes('--json');
@@ -3287,7 +3324,7 @@ ${JSON.stringify(problem.details || {})}`);
     const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
     let created;
     try {
-      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team create");
+      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }), "aw id team create");
     } catch (e) {
       if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
       if (teamNameTaken(e.stdout, createNamespace, name)) throw new Error(`team ${candidateTeamId(name)} already exists in the registry, and its team key is not on this machine; choose another label (--create <label>), or run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key; nothing was created`);
@@ -3303,7 +3340,7 @@ ${JSON.stringify(problem.details || {})}`);
     // newer record, so it is read first: a record setup finds naming another URL is not replaced.
     const serverTarget = [flagEq("--team", name), flagEq("--namespace", createNamespace)];
     const readServerRecord = () => {
-      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team show-server"); }
+      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }), "aw id team show-server"); }
       catch (e) {
         if (teamServerRecordMissing(e.stdout, team)) return undefined;
         throw new Error(`reading the AWID team-server record for ${team} failed: ${e.message}${after(e)}`);
@@ -3328,11 +3365,11 @@ ${JSON.stringify(problem.details || {})}`);
     // no publish-if-absent: a record published between that read and set-server is replaced, and the
     // verify after it, which reads setup's own record, does not notice.
     const published = checkedServerRecord();
-    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }); }
+    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }); }
     catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
     const publishedNow = !published && !checkedServerRecord();
     if (publishedNow) {
-      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }); }
+      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }); }
       catch (e) { throw new Error(`publishing the AWID team-server record for ${team} (${service}) failed: ${e.message}${after(e)}`); }
       if (!recordVerifies(readServerRecord())) throw new Error(notVerified);
     }
@@ -3340,7 +3377,7 @@ ${JSON.stringify(problem.details || {})}`);
     let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
     if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
       let minted;
-      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true, env: { AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } }), "aw id team invite"); }
+      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }), "aw id team invite"); }
       catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
       token = minted?.token;
       if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);
@@ -3517,7 +3554,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
-        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY, AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL } });
+        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY, ...registryEnv(settings) } });
       }
       teams = readTeams();
     }

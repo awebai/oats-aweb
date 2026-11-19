@@ -1,3 +1,4 @@
+import {registryEnv, registryMigration} from './registry-setting.mjs';
 import { awChildEnv } from './aw-child-env.mjs';
 
 import { parseProviderSettings } from './provider-settings.mjs';
@@ -41,8 +42,8 @@ function options(argv) {
 }
 // Deliberate allowlist: do not inherit routing, credential, controller, proxy,
 // instance or principal selectors. All native identity/service facts come from cwd.
-function nativeEnv(env, home) {
-  return awChildEnv({ PATH: env.PATH || '', ...(env.SystemRoot ? { SystemRoot: env.SystemRoot } : {}), HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home,'.config'), XDG_CACHE_HOME: join(home,'.cache') });
+function nativeEnv(env, home, settings, args) {
+  return awChildEnv({ PATH: env.PATH || '', ...(env.SystemRoot ? { SystemRoot: env.SystemRoot } : {}), HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home,'.config'), XDG_CACHE_HOME: join(home,'.cache') },registryEnv(settings,args));
 }
 function native(args, root, env, issuance) {
   try { return execFileSync('aw', args, { cwd: root, env, encoding: 'utf8', stdio: ['ignore','pipe','pipe'], timeout: 45000, maxBuffer: 1024 * 1024 }); }
@@ -62,9 +63,9 @@ function native(args, root, env, issuance) {
 // Read-only native calls also get disposable user state: cwd supplies the
 // selected identity, HOME must never expose root-adjacent controller/config state.
 /** `issuance` is false for a read, or `{ source }`, the setting that chose the issuing root. */
-function isolatedNative(args, root, env, issuance = false) {
+function isolatedNative(args, root, env, issuance = false, settings={}) {
   const home = mkdtempSync(join(tmpdir(), 'oats-invite-'));
-  try { return native(args, root, nativeEnv(env, home), issuance); }
+  try { return native(args, root, nativeEnv(env, home, settings, args), issuance); }
   finally { rmSync(home, { recursive: true, force: true }); }
 }
 const safeProblemCodes = new Set(['team-label-collision', 'team-unmapped', 'team-soul-unknown', 'E_TEAM_UNKNOWN', 'E_TEAM_UNCONFIGURED', 'E_WORKSPACE_SCHEMA']);
@@ -124,6 +125,7 @@ export function issueInvite(argv, env = process.env) {
   if (!opts.label && env.OATS_DEFAULT_TEAM_ID !== team) fail('E_INVITE_TEAM', 'selected default team does not match current kernel declarations');
   // With no root declared, the team's root is the deployment's own, as setup creates it and spawn
   // reads it. A declared root, even an invalid one, is never replaced.
+  const migration=registryMigration(settings,env);if(migration) fail('E_INVITE_ROOT',migration);
   const rootsKey = teamKeyIn(settings.roots, team);
   const declared = rootsKey !== undefined || Object.hasOwn(settings,'root');
   const source = rootsKey !== undefined ? 'roots[team]' : declared ? 'root' : 'the deployment directory';
@@ -131,14 +133,14 @@ export function issueInvite(argv, env = process.env) {
   let root;
   try { if (typeof raw !== 'string' || !isAbsolute(raw)) throw new Error(); root = realpathSync(raw); if (!statSync(join(root,'.aw')).isDirectory()) throw new Error(); } catch { fail('E_INVITE_ROOT', declared ? 'selected team root is missing, invalid or unreadable; repair its explicit root setting' : 'no team root is set and the deployment has no .aw root; run setup, or set settings.oats.aweb.root'); }
   let membership;
-  try { membership = JSON.parse(isolatedNative(['team','list','--json'], root, env)); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
+  try { membership = JSON.parse(isolatedNative(['team','list','--json'], root, env, false, settings)); } catch (e) { if (e.code?.startsWith('E_INVITE_')) throw e; fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership'); }
   if (!Array.isArray(membership?.memberships)) fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership');
   if (membership.memberships.filter(m => object(m) && sameAwebTeamId(m.team_id, team)).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
   const result = { label, team, root, awebUrl: rootAwebUrl(root), authority: 'native/server decides at issuance' };
   if (opts.plan) return { ...result, plan: true, command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
   // Fresh native user state prevents an invoking-home BYOT controller key or
   // cached principal from silently replacing selected-root hosted authority.
-  const rawResult = isolatedNative(['team','invite','--team-id',team,'--member-local','--json'], root, env, { source });
+  const rawResult = isolatedNative(['team','invite','--team-id',team,'--member-local','--json'], root, env, { source }, settings);
   let minted;
   try { minted = JSON.parse(rawResult); } catch { fail('E_INVITE_OUTPUT', 'aw returned malformed invite output; issuance may have occurred; do not automatically retry'); }
   if (!object(minted) || minted.status !== 'created' || typeof minted.invite_id !== 'string' || !minted.invite_id.trim() || typeof minted.token !== 'string' || !/^aw_inv_[^\s\x00-\x1f\x7f]+$/.test(minted.token)) fail('E_INVITE_OUTPUT', 'aw returned an unsupported or malformed hosted invite; issuance may have occurred; do not automatically retry');

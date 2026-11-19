@@ -128,6 +128,10 @@
       "default": "development",
       "description": "Host-selected Claude/channel request, only in oats-local.yaml. Development is the default for new compositions: development passes --dangerously-load-development-channels, and OATS confirms Claude's development-channel prompt at launch. Approved (the recommended unattended route) passes --channels and, with the machine's managed policy, avoids the prompt: Claude admits the plugin when that policy sets channelsEnabled and lists aweb-channel@awebai-marketplace in allowedChannelPlugins (see the oats-aweb skill, section 4). No automatic fallback, migration or flip-back; a future default change requires an explicit reviewed release. Pi, Codex and session routes are unchanged."
     },
+    "registry": {
+      "hostOnly": true,
+      "description": "Explicit operator registry admission origin (http/https, no path, credentials, query or fragment). Recorded only in oats-local.yaml by oats aweb setup --registry <origin>. Passed as AWID_REGISTRY_URL to registry-dependent calls, sessions and service units; saved aw registry URLs grant no private-network access."
+    },
     "root": {
       "hostOnly": true,
       "description": "Host-owned absolute directory whose .aw is the aweb minting root. Put this only in oats-local.yaml settings.oats.aweb.root; use oats aweb setup to initialize it."
