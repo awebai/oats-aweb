@@ -390,14 +390,16 @@ if (event !== "setup") {
     const problem = ["spawn", "launch", "join"].includes(event) ? registryMigration(settings, process.env, {custody: resident}) : undefined;
     if (problem) throw new Error(problem);
   } catch (error) {
-    if (["spawn", "launch", "retire"].includes(event)) fatal(error.message);
+    if (event === "retire") fatal(`nothing was cleaned; fix settings.oats.aweb.registry with \`oats aweb setup --registry <origin>\`, then retry retire (${error.message})`);
+    if (["spawn", "launch"].includes(event)) fatal(error.message);
     if(operation) operationFail("E_SETTINGS",error.message);
     console.error(`oats aweb ${event}: ${error.message}`); process.exit(1);
   }
 }
 const deliveryMode = configuredDelivery(settings);
 // Reject explicit bad values before any mint, membership or broker operation,
-// including launch preview. Retirement must still clean up captured effects.
+// including launch preview. Retirement must still clean up captured effects for
+// these launch-only options; invalid registry admission blocks cleanup above.
 let claudeChannel;
 if (["spawn", "launch"].includes(event)) {
   try { claudeChannel = selectClaudeChannel(settings.claudeChannelMode); }
@@ -1151,15 +1153,10 @@ function membershipRows(text) {
   }
   return rows;
 }
-/** The registry retire names for `team`'s certificates at `root`: only one the root
- *  records. Retire never decides a registry aw would decide differently: it passes the
- *  registry_url of the team's membership in the root's .aw/teams.yaml (aw
- *  awconfig/team_state.go) when that is a plain origin, or none, and aw then resolves
- *  the registry itself, as for any read from that root (cmd/aw/id_team.go:1643-1656,
- *  which discovers it from the membership's aweb_url). There is no copy of aw's
- *  discovery here.
- *  → `{ registry }`, or `{ registry: null, registryError }`: the fixed text that says the
- *  registry is not recorded here and what the controller adds. */
+/** The root's recorded registry locator for a cleanup audit receipt, not an
+ *  admission input. Keep a plain registry_url for the exact membership, or null
+ *  and a diagnostic; aw performs discovery itself. Reads and displayed commands
+ *  use only the current operator setting for registry admission. */
 function mintRegistryForTeam(root, team) {
   const teamsFile = join(root, ".aw", "teams.yaml");
   const found = membershipRegistry(teamsFile, team, "the root's service");
@@ -2730,16 +2727,16 @@ if (event === "launch") {
   // add a remote effect): it reads the team's members from the root the spawn minted
   // from, and a certificate is this mint's only when its member_did_key is the home
   // key's did:key.
-  // The read a person runs at the root: aw there resolves the same registry the hook passed.
+  // The read a person runs at the root: aw selects its destination there, with
+  // admission only from the current operator setting.
   const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
   const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
-    let root, doc, why, registry = null, registryError;
+    let root, doc, why;
     try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }
     catch (e) { why = e.message; }
     const where = root ? ` in ${lockField(root) || "the team's root"}` : " in a root that is a member of the team";
     if (!root) why ||= "no root that holds the team is on this host";
-    else ({ registry = null, registryError } = mintRegistryForTeam(root, team));
     if (root) {
       try {
         doc = parseAwJson(run(["aw", "id", "team", "members", flagEq("--team-id", team), "--json"], root, 60000), "aw id team members");
@@ -2756,17 +2753,20 @@ if (event === "launch") {
     const ours = did ? held.find((m) => m.member_did_key === did) : undefined;
     if (did && !ours) await nothing("the alias's certificate is held by another key, not this home's");
     const cert = ours || held[0];
-    const cleanup = { team, certificateId: cert.certificate_id, registry };
+    // The recorded locator is audit provenance for the receipt, never admission
+    // for the members read above or the displayed controller command.
+    const recordedLocator = mintRegistryForTeam(root, team);
+    const cleanup = { team, certificateId: cert.certificate_id, registry: recordedLocator.registry };
     const problem = controllerCleanupProblem(cleanup);
     const command = problem ? undefined : controllerCleanupCommand(cleanup);
     const named = problem ? "" : ` (certificate ${cert.certificate_id})`;
-    const removal = command ? `the team's controller removes it with: ${command}${registryError ? ` (${registryError})` : ""}` : `the team's controller removes it, but no command is shown: the certificate read for it is unusable (${problem})`;
+    const removal = command ? `the team's controller removes it with: ${command}${recordedLocator.registryError ? ` (${recordedLocator.registryError})` : ""}` : `the team's controller removes it, but no command is shown: the certificate read for it is unusable (${problem})`;
     // The intent stays: a retire killed before this answer, or before the record below
     // is written, leaves the home and its intent, and the next retire hands the
     // certificate over again. The answer exits 0, so the kernel removes the home with it.
     if (ours) {
       // The home's own registration, which only the controller can now remove.
-      rememberControllerCleanup({ cleanup: "controller", label: "default", team, alias, certificateId: cert.certificate_id, ...(command ? { command } : {}), registry });
+      rememberControllerCleanup({ cleanup: "controller", label: "default", team, alias, certificateId: cert.certificate_id, ...(command ? { command } : {}), registry: recordedLocator.registry });
       await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint registered alias "${alias}" in team ${team}${named} but could not be released: this home holds its key and no workspace binding, and retire never finishes a half-done mint; ${removal}`) });
     }
     // No key to compare. aw writes the key before it registers, so the certificate is most

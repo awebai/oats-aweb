@@ -171,3 +171,29 @@ for(const platform of ['darwin','linux'])test(`${platform} adding a pin names th
   assert.match(output,/another host user/);assert.match(output,/deregister/);
   assert.equal(readFileSync(file,'utf8'),before);assert.deepEqual(host.changes(),[]);
 });
+
+
+test('a value-less or unknown leading global flag fails toward registry pinning', async () => {
+  const {registryEnv} = await import('../oats-package/capabilities/oats-aweb/lib/registry-setting.mjs');
+  const settings = {registry:'http://127.0.0.1:18010'};
+  for (const args of [['aw','--json','id','team','members'], ['-q','id','team','members'], ['--future-global','version'], ['--future-global=value','version'], ['--identity-home']]) {
+    assert.deepEqual(registryEnv(settings,args), {AWID_REGISTRY_URL:settings.registry}, JSON.stringify(args));
+  }
+  for (const args of [['--identity-home','/fixture/.aw','version'], ['--identity-home=/fixture/.aw','version']]) {
+    assert.deepEqual(registryEnv(settings,args), {}, JSON.stringify(args));
+  }
+});
+
+test('retire with an invalid registry reports no cleanup and the repair before any child or key removal', t => {
+  const f = fixture(t), key = join(f.home,'.aw','signing.key');
+  writeFileSync(key,'fixture authority retained');
+  const r = f.run('retire',[],{OATS_SETTINGS:JSON.stringify({registry:'https://user:SECRET@registry.invalid'})});
+  assert.equal(r.status,1,r.stdout+r.stderr);
+  assert.match(r.stdout,/nothing was cleaned/);
+  assert.match(r.stdout,/settings\.oats\.aweb\.registry/);
+  assert.match(r.stdout,/oats aweb setup --registry <origin>/);
+  assert.match(r.stdout,/retry retire/);
+  assert.doesNotMatch(r.stdout+r.stderr,/SECRET|user@|registry\.invalid/);
+  assert.equal(readFileSync(key,'utf8'),'fixture authority retained');
+  assert.deepEqual(f.calls(),[]);
+});

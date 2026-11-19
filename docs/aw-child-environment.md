@@ -15,10 +15,16 @@ host-only `settings.oats.aweb.registry`, recorded by `oats aweb setup
 promoted to admission. Absent configuration means aw's own default/recorded
 selection and public-address policy.
 
+Retirement must still clean up captured effects when a launch-only
+`claudeChannelMode` value is invalid. Registry admission is validated before
+retire cleanup: an invalid setting means nothing is cleaned. Fix the origin
+with `oats aweb setup --registry <origin>`, then retry `oats retire <instance>`.
+
 `registry-setting.mjs` validates this one origin and identifies registry-capable
-commands. The hook, binding, invite, health, resident and qualified probe use
-it. Version/help, recorded team lists, custody status and wake control receive
-no pin. `doctor identity --offline` does receive it: rc.3 assesses the current
+commands. Only the known value-taking global `--identity-home` is skipped; an
+unknown leading flag retains the pin rather than hiding the command. The hook,
+binding, invite, health, resident and qualified probe use it. Known version/help
+invocations, recorded team lists, custody status and wake control receive no pin. `doctor identity --offline` does receive it: rc.3 assesses the current
 private-registry admission from that environment without using the network. Init/mint, joins/connect and rollback, cleanup, grants,
 registry member reads, messaging and health online reads receive the explicit
 `AWID_REGISTRY_URL`. LOCAL and GLOBAL session contributions use that same
