@@ -83,7 +83,7 @@ test('pinned real member invite: selected-root wire, token once, safe status ada
   writeFileSync(join(dep, 'oats-local.yaml'), 'schemaVersion: 2\nworkspace: local\n');
   const kernel = join(bin, 'kernel.mjs');
   writeFileSync(kernel, `console.log(JSON.stringify(${JSON.stringify({ schemaVersion: 1, ok: true, result: { teamsApi: 2, deployment: dep, teams: [{ label: 'default', team }], problems: [] } })}));`);
-  const env = { ...isolated, OATS_CLI_BIN: kernel, OATS_EVENT: 'invite', OATS_TEAM_SCOPE: dep, OATS_WORKSPACE: dep, OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: team, OATS_SETTINGS: JSON.stringify({ root }), AWEB_IDENTITY_HOME: home, AWEB_URL: 'http://127.0.0.1:1', AWEB_API_KEY: 'SYNTHETIC_SECRET', AWEB_TEAM_ID: 'foreign:invalid', AWID_REGISTRY_URL: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1' };
+  const env = { ...isolated, OATS_CLI_BIN: kernel, OATS_EVENT: 'invite', OATS_TEAM_SCOPE: dep, OATS_WORKSPACE: dep, OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: team, OATS_SETTINGS: JSON.stringify({ root, registry: url }), AWEB_IDENTITY_HOME: home, AWEB_URL: 'http://127.0.0.1:1', AWEB_API_KEY: 'SYNTHETIC_SECRET', AWEB_TEAM_ID: 'foreign:invalid', AWID_REGISTRY_URL: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1' };
   const beforeRoot = snapshot(root), beforeHome = snapshot(home);
   const plan = await run(['--plan', '--json'], dep, env);
   assert.equal(plan.code, 0, plan.stdout + plan.stderr); assert.equal(JSON.parse(plan.stdout).result.token, undefined);

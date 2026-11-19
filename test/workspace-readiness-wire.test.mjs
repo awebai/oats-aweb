@@ -10,6 +10,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {REGISTRY_MIGRATION} from '../oats-package/capabilities/oats-aweb/lib/registry-setting.mjs';
 import {parseBindingJson} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),cap=join(root,'oats-package/capabilities/oats-aweb');
 const declaredReasons=new Set(JSON.parse(fs.readFileSync(join(cap,'oats.json'))).binding.reasons);
@@ -70,10 +71,12 @@ test('in a deployment with no .aw, a global seat with a resident needs no mintin
  const capturedTeam='default:fixture-6400.test',env={OATS_DEFAULT_TEAM_ID:capturedTeam,OATS_TEAMS:JSON.stringify([{label:'private',team:capturedTeam,default:true,from:'local'}])};
  const noRoot={code:'needs-configuration',message:`no messaging root at ${deployment}: run oats aweb setup there or set settings.oats.aweb.root`};
  const noResident={code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'};
- const global={delivery:'session',identity:{mode:'global',resident:'merlin'},residents:{merlin:custody}},local={delivery:'session',residents:{merlin:custody}},residentless={delivery:'session',identity:{mode:'global'},residents:{merlin:custody}};
+ const global={delivery:'session',registry:'http://127.0.0.1:18010',identity:{mode:'global',resident:'merlin'},residents:{merlin:custody}},local={delivery:'session',residents:{merlin:custody}},residentless={delivery:'session',identity:{mode:'global'},residents:{merlin:custody}};
  // The workspace readiness phase, as `oats readiness` asks it for the deployment.
  const workspace=settings=>invoke(f,'check',request('check',{context:{kind:'workspace',workspace:'fixture-workspace',deployment,soul:'example',team:null,instance:null,home:null},action:{kind:'readiness'}},settings),env).value.result;
  assert.deepEqual(workspace(global),{status:'ready',problems:[],warnings:[]});
+ const {registry,...unconfiguredGlobal}=global;
+ assert.deepEqual(workspace(unconfiguredGlobal),{status:'needs-configuration',problems:[{code:'registry-setting-required',message:REGISTRY_MIGRATION}],warnings:[]});
  assert.deepEqual(workspace(local),{status:'needs-configuration',problems:[noRoot],warnings:[]});
  assert.deepEqual(workspace(residentless),{status:'needs-configuration',problems:[noRoot,noResident],warnings:[]});
 });
@@ -90,9 +93,10 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  const {keys,reasons,...phases}=m.binding;
  assert.deepEqual(phases,{version:1,normalize:'binding-normalize',bind:'binding-bind',check:'binding-check'});
  assert.deepEqual(keys,['responsibleHuman','privateTeam','wider']);
- assert.equal(reasons.length,6);assert.equal(new Set(reasons).size,6);assert.ok(reasons.every(reason=>typeof reason==='string'&&reason.length>0));
+ assert.ok(reasons.includes(REGISTRY_MIGRATION), 'manifest and helper migration reason stay equal');
+ assert.equal(reasons.length,7);assert.equal(new Set(reasons).size,7);assert.ok(reasons.every(reason=>typeof reason==='string'&&reason.length>0));
  assert.equal(m.compatibility.oats,'>=0.68.0');
- for(const key of ['root','roots','residents'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
+ for(const key of ['root','roots','residents','registry'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
  assert.equal(Object.hasOwn(m,'helperInjection'),false);
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
  assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.42.1');

@@ -190,11 +190,11 @@ test("retire reports controller cleanup for joined BYOT teams", (t) => {
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   const doc = JSON.parse(retired.stdout);
   assert.match(doc.warning, /joined team shared cleanup failed: team_not_hosted/);
-  assert.match(doc.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --registry https:\/\/api\.awid\.ai --json/);
+  assert.match(doc.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --json/);
   assert.doesNotMatch(doc.warning, /kept .* retry/);
   assert.equal(doc.meta.retired, true, "controller cleanup needs no member key: the home may go");
   assert.equal(doc.meta.failedLeaves, undefined);
-  assert.deepEqual(doc.meta.pendingControllerCleanup, [{ label: "shared", team: "shared:example.test", alias: "dev-1", certificateId: "cert-shared-123", command: "aw id team remove-member --namespace example.test --team shared --cert-id cert-shared-123 --registry https://api.awid.ai --json" }]);
+  assert.deepEqual(doc.meta.pendingControllerCleanup, [{ label: "shared", team: "shared:example.test", alias: "dev-1", certificateId: "cert-shared-123", command: "aw id team remove-member --namespace example.test --team shared --cert-id cert-shared-123 --json" }]);
 });
 
 // Amendment 1 to the disposable-home fix: .aweb-identity-<label> is never
@@ -318,8 +318,8 @@ test("retire reports controller cleanup for a BYOT default identity", (t) => {
   assert.equal(doc.meta.aliasReusable, false);
   assert.equal(doc.meta.aliasReason, "team_not_hosted");
   assert.match(doc.warning, /default identity cleanup failed: team_not_hosted/);
-  assert.match(doc.warning, /aw id team remove-member --namespace example\.test --team default --cert-id cert-default-123 --registry https:\/\/api\.awid\.ai --json/);
-  assert.deepEqual(doc.meta.pendingControllerCleanup, [{ label: "default", team: "default:example.test", alias: "dev-1", certificateId: "cert-default-123", command: "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --registry https://api.awid.ai --json" }]);
+  assert.match(doc.warning, /aw id team remove-member --namespace example\.test --team default --cert-id cert-default-123 --json/);
+  assert.deepEqual(doc.meta.pendingControllerCleanup, [{ label: "default", team: "default:example.test", alias: "dev-1", certificateId: "cert-default-123", command: "aw id team remove-member --namespace example.test --team default --cert-id cert-default-123 --json" }]);
 });
 
 test("retire of a hosted identity has no controller cleanup disposition", (t) => {
@@ -501,7 +501,7 @@ test("failed lost-team leave appends a durable event and keeps the team joined",
   const launched = JSON.parse(launch.stdout);
   assert.match(launched.warning, /joined team shared cleanup failed/);
   assert.match(launched.warning, /team_not_hosted/);
-  assert.match(launched.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --registry https:\/\/api\.awid\.ai --json/);
+  assert.match(launched.warning, /aw id team remove-member --namespace example\.test --team shared --cert-id cert-shared-123 --json/);
   assert.deepEqual(launched.meta.joinedTeams.map((j) => j.label), ["shared"], "failed leave keeps the still-member team recorded as joined");
   assert.deepEqual(launched.meta.left, [], "failed leave does not add a visible successful leave");
   const teams = JSON.parse(runHook("teams", { cwd: fx.home, env: { ...envAfterLoss, OATS_META: JSON.stringify(launched.meta), FAKE_DELETE_FAIL_FOR: undefined }, args: ["--json"] }).stdout);

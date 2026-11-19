@@ -123,7 +123,7 @@ export async function healthMain(argv, {env = process.env, stdout = process.stdo
     const {action, options} = parse(argv);
     const deployment = selectedDeployment(env);
     const settings = parseProviderSettings(env);
-    const host = healthHost({deployment, env});
+    const host = healthHost({deployment, env, settings});
     const result = action === 'enable' ? await enable(options, {deployment, host, settings})
       : action === 'disable' ? await disable({deployment, host, settings})
       : action === 'status' ? await report(healthSettings(settings), {deployment, host})

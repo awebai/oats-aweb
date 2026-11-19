@@ -1,3 +1,4 @@
+import {registryOrigin, registryMigration} from './registry-setting.mjs';
 import { awChildEnv } from './aw-child-env.mjs';
 
 import { parseProviderSettings } from './provider-settings.mjs';
@@ -82,10 +83,11 @@ export function wakeSearchPath({ aw, oats, tmux }, env = process.env) {
 
 /** The unit's text: `aw wake run` with PATH and AW_WAKE_OATS_BIN only, and
  *  aw's default state directory (no --state-dir). */
-export function renderWakeUnit({ platform, aw, oats, path, home }) {
+export function renderWakeUnit({ platform, aw, oats, path, home, registry }) {
   for (const [what, value] of Object.entries({ aw, oats, path, home })) {
     if (typeof value !== "string" || !value || /[\x00-\x1f\x7f]/.test(value)) fail("E_WAKE_UNIT", `the wake unit's ${what} is empty or contains a control character`);
   }
+  if(registry!==undefined) registry=registryOrigin({registry});
   if (platform === "darwin") return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- ${MARKER_LINE} -->
@@ -104,7 +106,9 @@ export function renderWakeUnit({ platform, aw, oats, path, home }) {
     <key>PATH</key>
     <string>${xml(path)}</string>
     <key>AW_WAKE_OATS_BIN</key>
-    <string>${xml(oats)}</string>
+    <string>${xml(oats)}</string>${registry ? `
+    <key>AWID_REGISTRY_URL</key>
+    <string>${xml(registry)}</string>` : ""}
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -123,7 +127,7 @@ Description=aweb host wake broker
 
 [Service]
 Type=simple
-Environment=${systemdQuoted(`PATH=${path}`)} ${systemdQuoted(`AW_WAKE_OATS_BIN=${oats}`)}
+Environment=${systemdQuoted(`PATH=${path}`)} ${systemdQuoted(`AW_WAKE_OATS_BIN=${oats}`)}${registry ? ` ${systemdQuoted(`AWID_REGISTRY_URL=${registry}`)}` : ""}
 ExecStart=${systemdQuoted(aw).split("$").join("$$")} wake run
 Restart=always
 RestartSec=10
@@ -339,6 +343,15 @@ async function prepareInstall(opts, ctx) {
   const path = wakeUnitPath(where);
   const { ours, foreign } = wakeUnits(where);
   if (foreign.length) fail("E_WAKE_UNIT_CONFLICT", foreignWakeMessage(foreign, where, "install"));
+  const registry=registryOrigin(ctx.settings);
+  const migration=registryMigration(ctx.settings,env);
+  if(migration) fail("E_WAKE_REGISTRY",migration);
+  if(ours) {
+    const raw = platform === "darwin" ? /<key>AWID_REGISTRY_URL<\/key>\s*<string>([^<]*)<\/string>/.exec(ours.text)?.[1] : /"AWID_REGISTRY_URL=([^"\s]+)"/.exec(ours.text)?.[1];
+    let previous;
+    try {previous=raw===undefined?undefined:registryOrigin({registry:unXml(raw)});} catch {fail("E_WAKE_REGISTRY_CONFLICT","the existing wake unit has an unreadable registry pin; keep one registry for this host user's daemon, or move the other deployment to another host user; to replace the pin, first aw wake deregister --home <other-home> for the other registrations, then oats aweb wake uninstall and oats aweb wake install in the operator shell");}
+    if(previous!==registry) fail("E_WAKE_REGISTRY_CONFLICT",`${previous === undefined ? "the wake daemon is currently unpinned; adding a pin changes it for every registration on this host user" : "the wake unit has a conflicting registry pin"}; keep one registry for this host user's daemon, or move the other deployment to another host user; to replace the pin, first aw wake deregister --home <other-home> for the other registrations, then oats aweb wake uninstall and oats aweb wake install in the operator shell`);
+  }
   const warnings = [];
   const tmux = onPath("tmux", env);
   // Not a refusal: a deployment may use another session backend.
@@ -351,7 +364,7 @@ async function prepareInstall(opts, ctx) {
   if (before.running && !supervisedBy(ours ? runningPid(manager, env, uid, WAKE_LABEL) : undefined, before.pid, env)) {
     fail("E_WAKE_RUNNING_UNSUPERVISED", `a wake broker is already running (daemon_pid ${before.pid ?? "unknown"}) outside ${ours ? "this command's unit" : "any recognised unit"}, started by hand or by another supervisor; stop it (\`kill ${before.pid ?? "<daemon_pid>"}\`, or stop whatever supervises it), then rerun`);
   }
-  const text = renderWakeUnit({ platform, aw, oats, path: wakeSearchPath({ aw, oats, tmux }, env), home });
+  const text = renderWakeUnit({ platform, aw, oats, path: wakeSearchPath({ aw, oats, tmux }, env), home, registry });
   const changed = ours?.text !== text;
   const actions = [];
   const run = (cmd, args) => actions.push({ display: describe(cmd, args), run: () => managed(env, cmd, args, CODES) });

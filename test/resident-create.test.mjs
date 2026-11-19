@@ -141,7 +141,7 @@ test("AWEB_URL is required for an init", (t) => {
 
 test("the init child gets exactly the env built from nothing, and the key is in no argv and no other child", (t) => {
   const s = setup(t);
-  const r = s.run(["create", NAME], { AWEB_IDENTITY_HOME: "/elsewhere/.aw", AWEB_TEAM_ID: "x", AW_DEBUG: "1", AWID_REGISTRY_URL: "http://127.0.0.1:18010", SECRET_TOKEN: "s" });
+  const r = s.run(["create", NAME], { AWEB_IDENTITY_HOME: "/elsewhere/.aw", AWEB_TEAM_ID: "x", AW_DEBUG: "1", AWID_REGISTRY_URL: "http://poison.invalid", OATS_SETTINGS: JSON.stringify({registry:"http://127.0.0.1:18010"}), SECRET_TOKEN: "s" });
   assert.equal(r.status, 0, r.stderr);
   const [init, ...more] = initCalls(s.fake);
   assert.equal(more.length, 0, "one run, no retry");
@@ -162,17 +162,16 @@ test("AWID_REGISTRY_URL reaches the init child only when it is set", (t) => {
 });
 
 test("aw's reads in R run with PATH and HOME, and the init's AWID_REGISTRY_URL when it is set", (t) => {
-  // A global identity also persists its registry in .aw/identity.yaml (real
-  // doctor identity --offline answers the same with and without the variable);
-  // the reads still use the registry the init used.
+  // rc3 doctor identity --offline checks private-registry admission from
+  // the current invocation even though it performs no network request.
   for (const registry of [undefined, "http://127.0.0.1:18010"]) {
     const s = setup(t);
-    assert.equal(s.run(["create", NAME], registry ? { AWID_REGISTRY_URL: registry } : {}).status, 0);
+    assert.equal(s.run(["create", NAME], registry ? { OATS_SETTINGS:JSON.stringify({registry}) } : {}).status, 0);
     const reads = s.fake.calls().filter((c) => c.cmd === "aw" && ["whoami", "doctor", "custody"].includes(c.argv[0]));
     assert.ok(reads.length >= 3);
     for (const call of reads) {
-      assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["AW_NO_UPDATE_CHECK", "HOME", "PATH", ...(registry ? ["AWID_REGISTRY_URL"] : [])].sort(), call.argv.join(" "));
-      if (registry) assert.equal(call.env.AWID_REGISTRY_URL, registry);
+      assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["AW_NO_UPDATE_CHECK", "HOME", "PATH", ...(registry && call.argv[0]!=="custody" ? ["AWID_REGISTRY_URL"] : [])].sort(), call.argv.join(" "));
+      if (registry && call.argv[0]!=="custody") assert.equal(call.env.AWID_REGISTRY_URL, registry);
     }
   }
 });
@@ -263,7 +262,7 @@ test("aw's registry-context refusal passes through unchanged, with no rerun advi
   const s = setup(t, { init: "mismatch" });
   mkdirSync(join(s.root, ".aw"), { recursive: true });
   writeFileSync(join(s.root, ".aw", "partial-init.yaml"), "");
-  const r = s.run(["create", NAME, "--json"], { AWID_REGISTRY_URL: "http://localhost:18010" });
+  const r = s.run(["create", NAME, "--json"], { OATS_SETTINGS:JSON.stringify({registry:"http://localhost:18010"}) });
   assert.equal(r.status, 1);
   assert.equal(r.doc.error.message, fixture("init-apikey-registry-mismatch").stderr.trim());
   assert.equal(r.doc.error.details.partial, join(s.root, ".aw", "partial-init.yaml"), "the partial is a fact; what to do is aw's text");
@@ -476,7 +475,7 @@ test("custody without the floor ops fails at the custody stage, naming them", (t
 
 test("--team-label maps the label to the returned team where local teams are allowed; the kernel child gets no aweb variables", (t) => {
   const s = setup(t);
-  const r = s.run(["create", NAME, "--team-label", "residents", "--json"], { AWID_REGISTRY_URL: "http://127.0.0.1:18010" });
+  const r = s.run(["create", NAME, "--team-label", "residents", "--json"], { OATS_SETTINGS:JSON.stringify({registry:"http://127.0.0.1:18010"}) });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.doc.result.teamLabel, { label: "residents", team: CAPTURED.team, status: "added", derived: false, default: "set" });
   assert.deepEqual(s.kernel.read().teams.find((row) => row.label === "residents"), { label: "residents", team: CAPTURED.team, from: "local" });

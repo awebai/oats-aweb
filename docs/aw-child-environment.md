@@ -8,32 +8,39 @@ It sets `AW_NO_UPDATE_CHECK=1`. An existing stricter base stays stricter.
 An explicit input unset in the caller is passed as `undefined`, which Node's
 spawn drops; an absent operator input therefore means aw's own default.
 
-An ordinary spawn, launch, retire, roster or readiness read takes identity
-and service from its selected aw home or explicit argv. Exporting a selector
-does not redirect it. Record a service with the native `aw workspace
-connect` procedure in that home; record a registry through aw's identity/team
-setup. These commands never infer a new destination from the caller's key.
+An ordinary command takes its identity and service from the selected aw home
+or explicit argv. The only registry admission source is the operator's
+host-only `settings.oats.aweb.registry`, recorded by `oats aweb setup
+--registry <origin>`. Neither an ambient registry nor a saved aw URL is
+promoted to admission. Absent configuration means aw's own default/recorded
+selection and public-address policy.
 
-Deliberate inputs:
+`registry-setting.mjs` validates this one origin and identifies registry-capable
+commands. The hook, binding, invite, health, resident and qualified probe use
+it. Version/help, recorded team lists, custody status and wake control receive
+no pin. `doctor identity --offline` does receive it: rc.3 assesses the current
+private-registry admission from that environment without using the network. Init/mint, joins/connect and rollback, cleanup, grants,
+registry member reads, messaging and health online reads receive the explicit
+`AWID_REGISTRY_URL`. LOCAL and GLOBAL session contributions use that same
+setting. Custody and wake service units receive it for their own invocation;
+changing configuration requires their documented restart procedures.
 
-- The hook's custody verification passes the grant home as
-  `AWEB_IDENTITY_HOME` explicitly.
-- Setup's API-key `aw init --do-not-touch-agents-md` passes `AWEB_URL` and
-  `AWEB_API_KEY` and `AWID_REGISTRY_URL` by name. Username signup
-  passes `AWEB_URL` and `AWID_REGISTRY_URL` explicitly, never an API key.
-  Each input reaches that init only; later membership reads use the shared scrub.
-  Setup create/join still reads the documented
-  `AWEB_URL` to choose its explicit `--service`/`--url` arguments. The
-  messages asking for the server's public URL still apply.
-- BYOT `setup --create --namespace` explicitly passes `AWID_REGISTRY_URL`
-  to each `id team create/show-server/register/set-server/invite` admin call.
-  Other selectors stay scrubbed; subsequent native reads also scrub the
-  registry. With that operator input absent, aw uses its built-in registry.
-- Resident create keeps its PATH/HOME-only base. Its init explicitly passes
-  `AWEB_URL`, `AWEB_API_KEY` and optional `AWID_REGISTRY_URL`; its subsequent
-  native reads explicitly retain that registry, without URL or key.
-- Invite keeps disposable HOME/XDG directories and its existing allowlist.
-  Probe keeps its stricter removal of agent, kernel and aw variables.
+Setup still supplies the documented AWEB_URL and API key to init only;
+username signup receives its URL but no key. All registry inputs, including
+BYOT create's admin calls and subsequent online calls, come from the setting.
+Resident init keeps its PATH/HOME-only base plus its named URL/key and the
+configured pin. Offline identity diagnosis retains the stricter base plus that same explicit
+pin; local custody status and version retain it without the pin.
+Invite keeps disposable HOME/XDG directories; the probe keeps its stricter
+scrub and existing service qualification. Custody attachment verification
+alone names its grant home as AWEB_IDENTITY_HOME.
+
+The self-hosting setup card in README documents accepted forms, private
+registry admission, migration errors, service restarts and wake conflicts.
+The rc.3 audit found init preserved arbitrary prefixes while reads accepted
+only origins and /api aliases. OATS deliberately accepts origins only and
+explicitly refuses /api with the remedy to supply its equivalent bare origin.
+No URL containing credentials is echoed.
 
 # AWEB_API_KEY inheritance inventory for oats.aweb 1.42.1
 

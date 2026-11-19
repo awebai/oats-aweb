@@ -374,7 +374,7 @@ console.log(JSON.stringify({ ok: false, error: { message: "fake oats: unsupporte
     OATS_HOME: home, OATS_INSTANCE: INSTANCE, OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: "local/e2e-delivery-switch", OATS_WORKSPACE_NAME: "e2e",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: team, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team, default: true, from: "local" }]), OATS_TEAMS_SOURCE: "live",
-    OATS_SETTINGS: JSON.stringify({ root: alice, delivery: "channel" }),
+    OATS_SETTINGS: JSON.stringify({ root: alice, delivery: "channel", registry: awidURL }),
   };
   facts.home = redact(home);
 
@@ -384,7 +384,8 @@ console.log(JSON.stringify({ ok: false, error: { message: "fake oats: unsupporte
   s1.statuses["before spawn"] = trimStatus(await wakeStatus());
   const spawned = await hook("spawn", "codex");
   s1.spawn = hookSummary(spawned);
-  check("s1: codex spawn exits 0", spawned.code === 0, spawned.stderr && redact(spawned.stderr));
+  check("s1: codex spawn exits 0", spawned.code === 0, redact(spawned.doc?.warning || spawned.stderr || ""));
+  if (spawned.code !== 0) throw new Error(`spawn refused: ${redact(spawned.doc?.warning || spawned.stderr || "no hook answer")}`);
   check("s1: codex spawn sets AWEB_DELIVERY=session and no channel flag", spawned.doc?.env?.AWEB_DELIVERY === "session" && !spawned.doc?.launch);
   const identityHome = spawned.doc?.env?.AWEB_IDENTITY_HOME || join(home, ".aw");
   await waitFor(async () => { const s = await wakeStatus({ quiet: true }); return (s.instances || []).some((i) => i.home === home && (i.receive_identities || []).every((r) => r.stream_phase === "streaming")); }, 30_000, "s1: broker streams for the codex home");

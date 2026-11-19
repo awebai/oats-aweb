@@ -1,4 +1,5 @@
-// awebai/oats-aweb#250: the joined-team release's controller command names the registry aw
+// Registry locators are retained for audit; current commands only admit the configured pin.
+// Original awebai/oats-aweb#250 registry-selection cases: the registry aw
 // would use for that membership, by #248's rule: the registry_url of the team's membership
 // in the joined identity's teams.yaml when it is a plain origin, or none. With only the
 // membership's aweb_url, aw discovers the registry from that service, so the command omits
@@ -96,16 +97,26 @@ test("1. a joined membership that records only its service: the command omits --
   assert.equal(sharedEntry(fx).command, SHARED_NO_REGISTRY);
 });
 
-test("2. a joined membership that records a plain registry_url: the command, the record and the meta carry it", (t) => {
+test("2. a joined membership that records a plain registry_url: the record keeps the locator but the command grants no admission", (t) => {
   const fx = fixture(t, { registry: false });
   write(join(fx.sharedHome, "teams.yaml"), teamsYaml(
     membership("other:example.test", { registry_url: "https://other-registry.example.test" }),
     membership(SHARED, { registry_url: "https://registry.example.test", aweb_url: SERVICE })));
   const doc = fx.retire();
-  const command = "aw id team remove-member --namespace example.test --team shared --cert-id cert-shared-123 --registry https://registry.example.test --json";
+  const command = SHARED_NO_REGISTRY;
   assert.ok(doc.warning.includes(`joined team shared cleanup failed: team_not_hosted; controller cleanup: ${command}`), doc.warning);
   assert.equal(sharedPending(doc).command, command);
   assert.equal(sharedEntry(fx).registry, "https://registry.example.test");
+});
+
+test('a controller retry uses the current configured IPv6 pin, never its saved locator or ambient value',t=>{
+  const fx=fixture(t,{registry:false});
+  write(join(fx.sharedHome,'teams.yaml'),teamsYaml(membership(SHARED,{registry_url:'https://stored-registry.example.test'})));
+  const doc=fx.retire({OATS_SETTINGS:JSON.stringify({registry:'http://[::1]:18010'}),AWID_REGISTRY_URL:'https://poison.invalid'});
+  const command=SHARED_NO_REGISTRY.replace(" --json", " --registry 'http://[::1]:18010' --json");
+  assert.equal(sharedPending(doc).command,command);assert.ok(doc.warning.includes(command));
+  assert.equal(sharedEntry(fx).registry,'https://stored-registry.example.test');
+  assert.doesNotMatch(command,/stored-registry|poison/);
 });
 
 test("3. a recorded service that is not a plain service URL is not printed, and no registry is claimed", (t) => {
