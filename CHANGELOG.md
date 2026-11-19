@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 1.44.0 — 2026-11-19
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.
+
+Setup now works in the root it was asked to work in: `setup --create` and `setup --join` without a token check and report their own per-team root, not the default root (#291). Registry admission stays explicit through command formatting and retire cleanup (#288). The provider's native aw contracts are checked against real aw at the floor, the tested release and the next release. The provider's regressions carried by the kernel's version-named hook suites now live here, and aw JSON answers with trailing stdout text are refused (#281). The member-invitation reference is fixed (#289).
+
+**What a deployment must change:**
+- **`setup --install-aw` installs the tested aw (1.36.58) by default,** where it installed the newest aw 1.x (`^1.36.33`). Pass `--aw-version <v>` to keep another.
+- **Bare API-key setup refuses before `aw init`** in an existing root that belongs to another team, or that lists memberships while no team is configured. Point `settings.oats.aweb.roots[<team>]` at the intended team's root, or at a fresh `.aweb-roots/<label>` directory, or configure the team first; then retry. A root with confirmed empty membership still bootstraps.
+- **`setup --create` and `setup --join` without a token no longer need the default root's membership to be readable.** This reverses 1.43.0's interim refusal for those two acts. They now refuse when their own selected root's membership is unreadable or belongs to another team. Invited `setup --join` keeps the default-root read.
 
 - `setup --install-aw` now installs the tested aw version by default; pass
   `--aw-version` to choose another.
