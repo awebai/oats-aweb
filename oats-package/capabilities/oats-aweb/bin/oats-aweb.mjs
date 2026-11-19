@@ -1880,7 +1880,10 @@ function joinPlan(rows, meta) {
   return rows.map((row) => {
     if (joinedTeamsOf(meta).some((j) => j.label === row.label)) return { label: row.label, team: row.team, joined: true };
     try { return { label: row.label, team: row.team, ...currentJoinRootChoice(row.team, home, { membership: rootListsTeam, label: row.label }), member: true }; }
-    catch (e) { return { label: row.label, team: row.team, root: null, source: null, member: false, problem: e.message || String(e) }; }
+    catch (e) {
+      if (e.code === "E_SETUP_MEMBERSHIP") throw e;
+      return { label: row.label, team: row.team, root: null, source: null, member: false, problem: e.message || String(e) };
+    }
   });
 }
 function outputJoinPlan(plan, json) {
@@ -1925,7 +1928,7 @@ function joinedTeamRootProblem(team, declared = declaredRootCandidate(team)) {
   const canonical = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
   if (canonical(root) === canonical(home) || (existsSync(join(home, ".aw")) && canonical(join(root, ".aw")) === canonical(join(home, ".aw")))) return tried("the instance home's own identity");
   if (!existsSync(join(root, ".aw"))) return tried("no .aw");
-  if (!teamIdsOf(readTeamsAt(root)).map(String).some((id) => sameAwebTeamId(id, team))) return tried(`aw team list there: not a member of ${team}`);
+  if (!rootListsTeam(root, team)) return tried(`aw team list there: not a member of ${team}`);
   return undefined;
 }
 function joinedTeamRootRefusal(team, label) {
@@ -2055,20 +2058,27 @@ function deploymentMemberRoot(team) {
     .filter((root) => typeof root === "string" && root.trim() && isAbsolute(root.trim())).map((root) => resolve(root.trim()));
   for (const root of [...new Set(candidates)]) {
     if (!existsSync(join(root, ".aw"))) continue;
-    let listed;
-    try { listed = parseAwJson(run(["aw", "team", "list", "--json"], root), "aw team list"); }
-    catch { listed = undefined; }
-    if (!Array.isArray(listed?.memberships || listed?.teams)) {
-      throw Object.assign(new Error(`membership at ${root} could not be read; nothing redeemed`), { code: "E_SETUP_MEMBERSHIP" });
-    }
-    if (teamIdsOf(listed).map(String).some((id) => sameAwebTeamId(id, team))) return root;
+    let member;
+    try { member = rootListsTeam(root, team); }
+    catch (e) { e.message += "; nothing redeemed"; throw e; }
+    if (member) return root;
   }
   return undefined;
 }
-/** `aw team list --json` at a root; no memberships when aw cannot answer there. */
+/** The single root membership reader: an unavailable or malformed answer is
+ *  unknown, never an empty membership list. Native diagnostics stay withheld. */
 function readTeamsAt(rootDir) {
-  try { return parseAwJson(run(["aw", "team", "list", "--json"], rootDir), "aw team list"); }
-  catch { return { memberships: [] }; }
+  const refuse = (cause) => {
+    throw Object.assign(new Error(`could not check membership at ${rootDir} (${cause}); run \`aw team list --json\` there and retry`), { code: "E_SETUP_MEMBERSHIP" });
+  };
+  let raw, listed;
+  try { raw = run(["aw", "team", "list", "--json"], rootDir, 45000, { withhold: "membership read failed" }); }
+  catch (e) { refuse(`${e.outcome}; ${failureClass(e)}`); }
+  try { listed = parseAwJson(raw, "aw team list"); }
+  catch { refuse("aw team list returned no JSON result"); }
+  const memberships = listed?.memberships || listed?.teams;
+  if (!Array.isArray(memberships) || memberships.some((m) => !validAwebTeamId(m?.team_id || m?.id || m))) refuse("aw team list returned no usable memberships list");
+  return listed;
 }
 let forwardedSoulArg;
 function stripForwardedSoul(argv = process.argv.slice(3)) {
@@ -2720,10 +2730,11 @@ if (event === "launch") {
   const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
   const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
-    const root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team);
+    let root, doc, why, registry = null, registryError;
+    try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }
+    catch (e) { why = e.message; }
     const where = root ? ` in ${lockField(root) || "the team's root"}` : " in a root that is a member of the team";
-    let doc, why, registry = null, registryError;
-    if (!root) why = "no root that holds the team is on this host";
+    if (!root) why ||= "no root that holds the team is on this host";
     else ({ registry = null, registryError } = mintRegistryForTeam(root, team));
     if (root) {
       try {
@@ -2817,16 +2828,18 @@ if (event === "launch") {
   const label = labelAt >= 0 ? argv[labelAt + 1] : (argv.find((a) => a.startsWith("--label=")) || "").slice("--label=".length) || undefined;
   const meta = readCapabilityMeta();
   let team, root;
-  if (label) {
-    const row = eligibleTeams().find((t) => t.label === label);
-    if (!row) { console.error(`E_TEAM_NOT_ELIGIBLE: ${label} is not an eligible team label for this instance (eligible: ${eligibleTeams().map((t) => t.label).join(", ") || "(none)"})`); process.exit(1); }
-    team = row.team; root = awebRootForTeam(team);
-    if (!root) { console.error(`oats aweb roster: ${joinedTeamRootRefusal(team, label)}, so the roster of ${label} cannot be read from this host`); process.exit(1); }
-  } else {
-    team = meta.defaultTeam?.team || meta.identity?.team || meta.team || defaultTeamId();
-    root = awebRootForTeam(team);
-    if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate(team))}`); process.exit(1); }
-  }
+  try {
+    if (label) {
+      const row = eligibleTeams().find((t) => t.label === label);
+      if (!row) { console.error(`E_TEAM_NOT_ELIGIBLE: ${label} is not an eligible team label for this instance (eligible: ${eligibleTeams().map((t) => t.label).join(", ") || "(none)"})`); process.exit(1); }
+      team = row.team; root = awebRootForTeam(team);
+      if (!root) { console.error(`oats aweb roster: ${joinedTeamRootRefusal(team, label)}, so the roster of ${label} cannot be read from this host`); process.exit(1); }
+    } else {
+      team = meta.defaultTeam?.team || meta.identity?.team || meta.team || defaultTeamId();
+      root = awebRootForTeam(team);
+      if (!root) { console.error(`oats aweb roster: ${awebRootProblem(rootSettingCandidate(team))}`); process.exit(1); }
+    }
+  } catch (e) { console.error(`oats aweb roster: ${e.message}`); process.exit(1); }
   if (!team) { console.error(`oats aweb roster: ${teamConfigRemedy()}`); process.exit(1); }
   const teamFlag = [flagEq(team.includes(":") ? "--team-id" : "--team", team)];
   // Each source is read on its own: an unreadable one is reported, never a silent partial union.
@@ -2946,6 +2959,7 @@ if (event === "launch") {
     try { doc = JSON.parse(String(text || "").trim().split("\n").pop()); } catch { /* no answer */ }
     if (doc?.ok === false && doc.error) return { failure: { code: doc.error.code || "E_ROUTE", detail: oneLine(doc.error.message) } };
     if (!doc?.aw) return { failure: { code: "E_ROUTE", detail: `oats aweb setup --check-only on ${serverId} gave no answer${why ? `: ${oneLine(why)}` : ""}` } };
+    if (doc.member === null && ["ok", "done"].includes(doc.aw.status)) return { failure: { code: "E_SETUP_MEMBERSHIP", detail: `could not check membership on ${serverId}${why ? `: ${oneLine(why)}` : "; retry setup --check-only there"}` } };
     return { doc };
   };
 
@@ -2972,8 +2986,12 @@ if (event === "launch") {
     answer();
   }
 
-  const localRoot = awebRootForTeam(team.team);
-  if (!localRoot || !teamIdsOf(readTeamsAt(localRoot)).map(String).some((id) => sameAwebTeamId(id, team.team))) {
+  let localRoot, localMember;
+  try {
+    localRoot = awebRootForTeam(team.team);
+    localMember = !!localRoot && rootListsTeam(localRoot, team.team);
+  } catch (e) { fail("invite", e.code || "E_SETUP_MEMBERSHIP", e.message); }
+  if (!localMember) {
     fail("invite", "E_TEAM_NOT_MEMBER", `this deployment is not a member of ${team.team}${localRoot ? ` (its root ${localRoot} holds no membership)` : " (it has no root for that team)"}, so it cannot invite ${serverId}`,
       `join ${team.label} here first (${remedyCommand(["setup", "--join", team.label, "--invite-stdin"])}, with an invite from a member on stdin), or ask a member to connect ${serverId}`);
   }
@@ -3200,10 +3218,13 @@ ${JSON.stringify(problem.details || {})}`);
       // minting for that team is a member of it (null when aw cannot be asked).
       const team = defaultTeamId() || null, label = defaultTeamLabel() || null;
       const awUsable = aw.status === "ok" || aw.status === "done";
-      const teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
-      const member = awUsable ? !!teamRoot && teamIdsOf(readTeamsAt(teamRoot)).map(String).some((id) => sameAwebTeamId(id, team)) : null;
+      let teamRoot = null, member = awUsable ? false : null, membershipError;
+      try {
+        teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
+        if (awUsable) member = !!teamRoot && rootListsTeam(teamRoot, team);
+      } catch (e) { member = null; membershipError = e; console.error(`oats aweb setup: ${e.message}`); }
       console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot }));
-      process.exit(aw.status === "failed" ? 1 : 0);
+      process.exit(membershipError || aw.status === "failed" ? 1 : 0);
     }
     if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }
     if (aw.status === "done") console.log(`✓ ${aw.detail}`);
@@ -3220,6 +3241,7 @@ ${JSON.stringify(problem.details || {})}`);
   }
 
   const want = teamId || teamName;
+  const defaultRootHasIdentity = () => existsSync(join(scope, ".aw"));
   const readTeams = () => readTeamsAt(scope);
   const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => sameAwebTeamId(String(tid), want) || String(tid).toLowerCase().startsWith(`${String(want).trim().toLowerCase()}:`)) : undefined;
   const rootAlias = () => {
@@ -3426,8 +3448,7 @@ ${JSON.stringify(problem.details || {})}`);
     if (t.from !== "shared" || !t.label || !t.team) return false;
     const teamRoot = awebRootForTeam(t.team);
     if (!teamRoot) return true;
-    const ids = teamIdsOf(readTeamsAt(teamRoot)).map(String);
-    return !ids.some((id) => sameAwebTeamId(id, t.team));
+    return !rootListsTeam(teamRoot, t.team);
   });
   const printSharedMissing = (rows) => {
     for (const row of rows) console.log(`team ${row.label} (${row.team}) is shared: ask its owner for an appropriate invite, then run \`${setupInviteCommand(row.label)}\``);
@@ -3458,8 +3479,15 @@ ${JSON.stringify(problem.details || {})}`);
   try {
     if (createLabel && !createNamespace) throw new Error(hostedCreateUnavailable());
     if (joinLabel || createLabel) deployment = selectedDeployment(process.env, setupDir);
-    const hasRoot = existsSync(join(scope, ".aw"));
-    let teams = hasRoot ? readTeams() : { memberships: [] };
+    const hasRoot = defaultRootHasIdentity();
+    let teams = { memberships: [] };
+    if (hasRoot) {
+      try { teams = readTeams(); }
+      catch (e) {
+        if (createLabel || joinLabel) e.message += "; the configured default root must be readable first: make that root's membership readable, or choose another default with `oats teams default <label>`; nothing was created or redeemed";
+        throw e;
+      }
+    }
     const unmappedDefault = !actions.length && defaultTeamLabel() && !defaultTeamId();
     if (unmappedDefault) {
       console.log(`team ${defaultTeamLabel()} has no provider id yet: ask its owner to run \`oats aweb setup --create ${defaultTeamLabel()} --namespace <domain>\` and commit the id, or ask the owner for an invite and run \`oats aweb setup --join ${defaultTeamLabel()} --invite <token>\`.`);
@@ -3496,7 +3524,7 @@ ${JSON.stringify(problem.details || {})}`);
       mkdirSync(scope, { recursive: true });
       console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root, registered with ${service}.`);
       const created = createTeam(label, service);
-      teams = readTeams();
+      // Record and report the completed create before the fallible default-root verdict read.
       const done = `✓ created ${created.team}, accepted it into ${created.teamRoot}, recorded roots[${created.team}]`;
       if (localTeams.closed) {
         console.log(`${done}.`);
@@ -3507,6 +3535,7 @@ ${JSON.stringify(problem.details || {})}`);
       }
       if (created.teamKeyPath) console.log(`  team key: ${created.teamKeyPath} (user-wide: every process this user runs can read it; never share it)`);
       console.log(`  team server: ${created.teamServer.url} (${created.teamServer.publishedNow ? "published at AWID and verified" : "already published at AWID; verified"} against the team key)`);
+      teams = defaultRootHasIdentity() ? readTeams() : { memberships: [] };
       printVerdict(teams);
       process.exit(0);
     }

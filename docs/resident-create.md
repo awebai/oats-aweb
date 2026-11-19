@@ -66,6 +66,12 @@ decides from what R holds:
 | a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
 
+For an adopted identity, preflight must read `aw custody status --json` before
+changing a supervisor. A failed or malformed read refuses with
+`E_RESIDENT_VERIFY` at preflight and a safe cause; it never means custody is
+not running. Run that read in R, repair the reported problem and retry. Plan
+uses the same refusal and writes no unit.
+
 **Verify** fails unless aw init's answer shows `status: connected`,
 `identity_scope: global`, the alias `<name>`, a canonical `<name>:<namespace>`
 team id, a `did:aw` stable id and the `<namespace>/<name>` address. When

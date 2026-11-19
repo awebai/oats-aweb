@@ -101,6 +101,9 @@ if (argv[0] === "whoami") replay(f["whoami"]);
 if (argv[0] === "doctor" && argv[1] === "identity") replay(f["doctor-identity-offline"]);
 if (argv[0] === "doctor" && argv[1] === "registry") replay(f["doctor-registry-online"]);
 if (argv[0] === "custody" && argv[1] === "status") {
+  if (state.custody === "unreadable") { console.error("dial tcp: connection refused SECRET-CUSTODY-OUTPUT"); process.exit(1); }
+  if (state.custody === "malformed") { console.log("SECRET-CUSTODY-OUTPUT"); process.exit(0); }
+  if (state.custody === "missing-status") { console.log("{}"); process.exit(0); }
   if (state.custody === "elsewhere" || state.custody === "crashloop") replay(f["custody-status-running"]);
   if (state.custody === "takeover" && flag("unit-loaded")) replay(f["custody-status-running"]);
   if (!flag("unit-loaded") || state.custody === "never") replay(f["custody-status-not-running"]);

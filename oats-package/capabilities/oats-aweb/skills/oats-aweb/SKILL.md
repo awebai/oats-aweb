@@ -387,8 +387,8 @@ minting authority for its canonical T. Run from H, not the caller's worktree.
 | Act | Command | Writes / success / one next step | Error → remedy |
 |---|---|---|---|
 | Inspect | `oats aweb teams --json` | Read-only default/eligible/joined/left facts; success: intended target is identified. Next: selected authorized join or leave. | Unknown label → `/oats-teams` resolves policy, never a guessed team. |
-| Plan a join | `oats aweb join --labels L --plan [--json]` | Read-only: per label, team, root, the setting that chose it (`roots[team]` or `root`) and whether membership was confirmed; no invite or state. Next: the join below. | `refused: …` names why the join would refuse → section 8 LOCAL join. |
-| Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; `cannot join team …: the deployment's live settings could not be read (…); nothing was minted` → run the `oats inspect … --json` it names and fix what it reports; `cannot join team …: <no or non-member root>; nothing was minted` → section 8 LOCAL join; `aw team invite failed … nothing was joined; … root R (from S)` → the cause in the parentheses, then `--plan`. |
+| Plan a join | `oats aweb join --labels L --plan [--json]` | Read-only: per label, team, root, the setting that chose it (`roots[team]` or `root`) and whether membership was confirmed; no invite or state. Next: the join below. | `E_SETUP_MEMBERSHIP: could not check membership …` → run `aw team list --json` in the named root, repair the read and retry; `refused: …` names another reason the join would refuse → section 8 LOCAL join. |
+| Join | `oats aweb join --labels L` | Mints separate per-team identity and receive registration; success: `joined` readback has intended T/home/receive. Next: section 4 receive verification. | `E_TEAM_NOT_ELIGIBLE` → correct declaration with `/oats-teams`; `cannot join team …: the deployment's live settings could not be read (…); nothing was minted` → run the `oats inspect … --json` it names and fix what it reports; `E_SETUP_MEMBERSHIP: could not check membership …` → run `aw team list --json` in the named root, repair the read and retry; `cannot join team …: <no or non-member root>; nothing was minted` → section 8 LOCAL join; `aw team invite failed … nothing was joined; … root R (from S)` → the cause in the parentheses, then `--plan`. |
 | Leave | `oats aweb leave --labels L` | Releases membership/receive registration; success: joined entry is absent after confirmed release. Next: `oats aweb teams --json` readback. | `E_TEAM_DEFAULT: <label> is the default team and cannot be left` → stop; policy change does not migrate this identity. |
 | Finish or release an unfinished join | `oats aweb join --labels L`, or `oats aweb leave --labels L` | A start warned `unfinished join of team L …`: a join was killed after aw accepted its invite, before the home recorded it. The join adopts it (connects and records it, no second invite); the leave adopts it and releases it. Success: as for Join or Leave. | `… could not be checked: aw id team list failed …; kept it and its identity home` → rerun once aw answers; `hosted accept interrupted: the server may hold the membership; …` → a person reruns the same `aw id team accept-invite` with the original invite, or the team's controller removes the member and the marker is deleted; then the leave; `failed to leave team L; kept …` → as for a failed leave. |
 
@@ -956,6 +956,19 @@ printed connect retry with `--install-aw`, retaining selected `--name`/`--soul`.
 An unmapped host default reports `E_TEAM_UNMAPPED`: correct its team declaration
 before retry. Route/join failures retain their step and error; reconcile the
 remote root before retry rather than assuming rollback.
+
+An unreadable local or host membership stops connect before an invite is
+minted. `setup --check-only --json` returns `member:null`, a safe "could not
+check" cause on stderr and a nonzero exit; a confirmed absence is
+`member:false` with exit 0. Repair `aw team list --json` in the named root and
+retry. `join --plan` uses `E_SETUP_MEMBERSHIP` for an unreadable root instead of
+a false membership row; scripts must handle that command error.
+
+`setup --create` and tokenless `setup --join` also require readable membership from an
+existing configured default root, even when the target is a separate per-team
+root. On that refusal nothing was created or redeemed: repair the named root's
+membership, or choose another default with `oats teams default <label>`, then
+retry.
 
 The invite token is never in argv, a file, a log or output **on this side**;
 it stays in memory and the routed join's stdin. On the host, native

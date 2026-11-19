@@ -38,7 +38,7 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
-## Unreleased — grant seats keep their recorded team and resident
+## Unreleased — grant seats and membership reads
 
 Grant show and revoke explicitly select the grant's team, including the show
 that confirms an uncertain revoke. The recovery command includes
@@ -75,6 +75,23 @@ printed revoke command with that other team's `--team` in the resident's
 custody directory, then run the printed `oats retire <instance> --force`.
 Ordinary retire cannot confirm cleanup in another team, even after that manual
 revoke. The fake exercises this compensation boundary.
+
+Membership reads also fail closed. An unavailable or malformed `aw team list`
+answer reports "could not check" with a safe failure cause; setup and connect
+stop before init or invite effects. `setup --check-only --json` keeps its keys:
+a confirmed absence is `member:false` with exit 0; an unreadable membership is
+`member:null`, a cause on stderr and a nonzero exit. A `join --plan` that used
+to emit `member:false` for an unreadable root now fails with the existing
+`E_SETUP_MEMBERSHIP` error. Scripts must handle that error and retry the read.
+Resident adoption and plan refuse an unreadable custody status before changing
+a supervisor. Repair `aw team list --json` or `aw custody status --json` in the
+named root and retry.
+
+`setup --create` and tokenless `setup --join` now also require readable membership from
+an existing configured default root, even for a separate per-team root. Earlier
+releases proceeded when that read failed. A refusal names the root and confirms
+that nothing was created or redeemed. Make that root's membership readable, or
+choose another default with `oats teams default <label>`, then retry.
 
 ## 1.42.1 — the release OATS pins for 1.42
 
@@ -742,8 +759,10 @@ The join half works on its own when someone else mints the invite:
 
   `aw.status` is `ok`, `done` (installed now: `detail` says from what),
   `needs-human` (`detail`, `remedy`) or `failed` (`code`, `detail`; exit 1).
-  `member` is `null` when aw cannot be asked, and `root` is the root that mints
-  for the default team (`roots[team]`, else `root`) when one exists.
+  `member` is `null` when aw cannot be asked, or, with exit 1 and a cause on
+  stderr, when the root's membership cannot be read. `false` is a confirmed
+  absence. `root` is the root that mints for the default team (`roots[team]`,
+  else `root`) when one exists.
 
 **The invite token** exists only in connect's memory and on the routed join's
 stdin. It never appears in oats argv, a file, a log, the result or an error
@@ -1232,9 +1251,12 @@ team, setup creates a real per-team root such as
 team `T` uses `roots[T]` when present, otherwise `root`. For a team other than
 the default, a spawn-time join (`join`) and `oats aweb roster --label` accept
 that root only when `aw team list --json` run in it lists `T`; the cwd,
-`OATS_WORKSPACE` and the instance home's own `.aw` are never tried. Otherwise
-they refuse, naming the team, the root tried and the remedy (`oats aweb setup
---join <label> --invite-stdin` in the deployment, then a respawn).
+`OATS_WORKSPACE` and the instance home's own `.aw` are never tried. A missing
+or confirmed non-member root refuses, naming the team, the root tried and the
+remedy (`oats aweb setup --join <label> --invite-stdin` in the deployment, then
+a respawn). An unreadable `aw team list` refuses with "could not check
+membership …" (`E_SETUP_MEMBERSHIP` for explicit joins and plans). Run
+`aw team list --json` in the named root, repair that read and retry.
 
 Wherever the provider matches a team id it was given (a setting, a record, the
 kernel's environment) against one aw reports, it compares them as aw spells
