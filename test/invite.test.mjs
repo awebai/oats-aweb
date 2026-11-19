@@ -1,14 +1,15 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync,renameSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync,renameSync,statSync,symlinkSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,dirname} from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
+import {unwrittenInviteMessage} from '../oats-package/capabilities/oats-aweb/lib/invite.mjs';
 const cap=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb',import.meta.url)),hook=join(cap,'bin/oats-aweb.mjs');
-function fixture(t,{native='success',member='team:fixture.aweb.ai',team='team:fixture.aweb.ai',settings,query='ok',problems=[]}={}){
- const dir=realpathSync(mkdtempSync(join(tmpdir(),'invite-test-')));t.after(()=>rmSync(dir,{recursive:true,force:true}));
- const dep=join(dir,'dep'),root=join(dir,'root'),foreign=join(dir,'foreign'),bin=join(dir,'bin'),calls=join(dir,'calls');for(const p of [dep,join(root,'.aw'),foreign,bin])mkdirSync(p,{recursive:true});writeFileSync(join(dep,'oats-local.yaml'),'schemaVersion: 2\nworkspace: local\n');writeFileSync(join(foreign,'sentinel'),'untouched');
- const kernel=join(bin,'kernel');writeFileSync(kernel,`#!${process.execPath}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({kind:'kernel',args:process.argv.slice(2),cwd:process.cwd()})+'\\n');console.log(JSON.stringify(${JSON.stringify({schemaVersion:1,ok:true,result:{teamsApi:2,deployment:query==='wrong'?root:dep,teams:[{label:'default',team},{label:'other',team:'other:fixture.aweb.ai'}],problems}})}));`,{mode:0o755});
- writeFileSync(join(bin,'aw'),`#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({kind:'aw',args,cwd:process.cwd(),env:process.env})+'\\n');if(args[1]==='list'){if(${JSON.stringify(native)}==='vanish')fs.renameSync(process.argv[1],process.argv[1]+'.gone');console.log(JSON.stringify({memberships:[{team_id:${JSON.stringify(member)}}]}));process.exit(0);}const mode=${JSON.stringify(native)};if(mode==='success')console.log(JSON.stringify({status:'created',invite_id:'synthetic',token:'aw_inv_SYNTHETIC'}));else if(mode==='malformed')console.log('aw_inv_SECRET_NOT_JSON');else if(mode==='byot')console.log(JSON.stringify({status:'created',invite_id:'x',token:'LOCAL_SECRET'}));else if(mode==='network'){console.error('Error: Post "https://aweb.example.invalid/v1/teams/invite": dial tcp: lookup aweb.example.invalid: no such host aw_inv_SECRET');process.exit(1);}else if(mode==='awcode'){console.log(JSON.stringify({error:{code:'unknown_or_invalid',message:'odd aw_inv_SECRET'}}));process.exit(1);}else if(mode==='odd'){console.error('something odd aw_inv_SECRET');process.exit(1);}else if(mode==='awcode-notes'){console.log(JSON.stringify({error:{code:'unknown_or_invalid',message:'odd aw_inv_SECRET'}})+'\\nnote: odd aw_inv_SECRET');process.exit(1);}else if(mode==='signal'){process.kill(process.pid,'SIGKILL');}else{console.error(mode==='lookalike'?'arbitrary body create hosted team invite: aweb: http 403: SECRET':mode==='transport'?'connect refused SECRET':'create hosted team invite: aweb: http '+mode+': SECRET');process.exit(1);}`,{mode:0o755});
+function fixture(t,{native='success',member='team:fixture.aweb.ai',team='team:fixture.aweb.ai',settings,query='ok',problems=[],noLog=false,lockOut=false}={}){
+ const dir=realpathSync(mkdtempSync(join(tmpdir(),'invite-test-')));t.after(()=>{if(lockOut)chmodSync(join(dir,'out'),0o700);rmSync(dir,{recursive:true,force:true});});
+ const dep=join(dir,'dep'),root=join(dir,'root'),foreign=join(dir,'foreign'),bin=join(dir,'bin'),calls=join(dir,'calls'),outDir=join(dir,'out');mkdirSync(outDir);for(const p of [dep,join(root,'.aw'),foreign,bin])mkdirSync(p,{recursive:true});writeFileSync(join(dep,'oats-local.yaml'),'schemaVersion: 2\nworkspace: local\n');writeFileSync(join(foreign,'sentinel'),'untouched');
+ const kernel=join(bin,'kernel');writeFileSync(kernel,`#!${process.execPath}\nconst fs=require('node:fs');if(!${noLog})fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({kind:'kernel',args:process.argv.slice(2),cwd:process.cwd()})+'\\n');console.log(JSON.stringify(${JSON.stringify({schemaVersion:1,ok:true,result:{teamsApi:2,deployment:query==='wrong'?root:dep,teams:[{label:'default',team},{label:'other',team:'other:fixture.aweb.ai'}],problems}})}));`,{mode:0o755});
+ writeFileSync(join(bin,'aw'),`#!${process.execPath}\nconst fs=require('node:fs');const args=process.argv.slice(2);if(!${noLog})fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({kind:'aw',args,cwd:process.cwd(),env:process.env})+'\\n');if(args[1]==='list'){if(${JSON.stringify(native)}==='vanish')fs.renameSync(process.argv[1],process.argv[1]+'.gone');console.log(JSON.stringify({memberships:[{team_id:${JSON.stringify(member)}}]}));process.exit(0);}if(${lockOut})fs.chmodSync(${JSON.stringify(outDir)},0o500);const mode=${JSON.stringify(native)};if(mode==='success')console.log(JSON.stringify({status:'created',invite_id:'synthetic',token:'aw_inv_SYNTHETIC'}));else if(mode==='malformed')console.log('aw_inv_SECRET_NOT_JSON');else if(mode==='byot')console.log(JSON.stringify({status:'created',invite_id:'x',token:'LOCAL_SECRET'}));else if(mode==='network'){console.error('Error: Post "https://aweb.example.invalid/v1/teams/invite": dial tcp: lookup aweb.example.invalid: no such host aw_inv_SECRET');process.exit(1);}else if(mode==='awcode'){console.log(JSON.stringify({error:{code:'unknown_or_invalid',message:'odd aw_inv_SECRET'}}));process.exit(1);}else if(mode==='odd'){console.error('something odd aw_inv_SECRET');process.exit(1);}else if(mode==='awcode-notes'){console.log(JSON.stringify({error:{code:'unknown_or_invalid',message:'odd aw_inv_SECRET'}})+'\\nnote: odd aw_inv_SECRET');process.exit(1);}else if(mode==='signal'){process.kill(process.pid,'SIGKILL');}else{console.error(mode==='lookalike'?'arbitrary body create hosted team invite: aweb: http 403: SECRET':mode==='transport'?'connect refused SECRET':'create hosted team invite: aweb: http '+mode+': SECRET');process.exit(1);}`,{mode:0o755});
  const env={...process.env,PATH:bin,OATS_EVENT:'invite',OATS_CLI_BIN:kernel,OATS_TEAM_SCOPE:dep,OATS_WORKSPACE:dep,OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:team,OATS_SETTINGS:JSON.stringify(settings||{root}),AWEB_IDENTITY_HOME:foreign,AWEB_URL:'https://poison.invalid',AWEB_API_KEY:'FOREIGN_SECRET',AWID_REGISTRY_URL:'https://poison.invalid',AWEB_TEAM_ID:'poison',HOME:foreign,HTTP_PROXY:'http://poison.invalid'};
- return {dir,dep,root,foreign,env,read:()=>existsSync(calls)?readFileSync(calls,'utf8').trim().split('\n').map(JSON.parse):[],run:(args=[],extra={})=>spawnSync(process.execPath,[hook,'invite',...args],{cwd:dep,env:{...env,...extra},encoding:'utf8'})};
+ return {dir,dep,root,foreign,env,outDir,read:()=>existsSync(calls)?readFileSync(calls,'utf8').trim().split('\n').map(JSON.parse):[],run:(args=[],extra={})=>spawnSync(process.execPath,[hook,'invite',...args],{cwd:dep,env:{...env,...extra},encoding:'utf8'})};
 }
 test('invite selects explicit team/root and emits token once with isolated native authority',t=>{
  const f=fixture(t),r=f.run(['--json']);assert.equal(r.status,0,r.stderr);const d=JSON.parse(r.stdout);assert.equal(d.schemaVersion,1);assert.equal(d.ok,true);assert.equal(d.result.team,'team:fixture.aweb.ai');assert.equal(r.stdout.split('aw_inv_SYNTHETIC').length-1,1);assert.equal(r.stderr,'');
@@ -151,4 +152,79 @@ test('invite gives only its configured registry to issuance, with no pin on the 
  const calls=f.read().filter(c=>c.kind==='aw');
  assert.equal(calls.find(c=>c.args[1]==='invite').env.AWID_REGISTRY_URL,registry);
  assert.equal(calls.find(c=>c.args[1]==='list').env.AWID_REGISTRY_URL,undefined);
+});
+
+// #285: --out writes the token to a new owner-only file, and the answer names the file instead.
+test('invite --out writes the token to a new 0600 file and prints only where it is',t=>{
+ const f=fixture(t),file=join(f.dir,'invite-token');
+ const r=f.run(['--out',file,'--soul','dev']);assert.equal(r.status,0,r.stderr);
+ assert.equal(readFileSync(file,'utf8'),'aw_inv_SYNTHETIC\n');assert.equal(statSync(file).mode&0o777,0o600);
+ assert.equal(r.stdout,`Invite token written to ${file} (owner-only); it is not printed.\n`);
+ assert.match(r.stderr,/hand that file to the joiner privately; they run `oats aweb setup --soul dev --invite-stdin --name <alias> < <the file>`/);
+ assert.doesNotMatch(r.stdout+r.stderr,/aw_inv_/);
+});
+test('invite --out --json carries tokenFile in place of token; without --out the answer keeps exactly one token',t=>{
+ const f=fixture(t),file=join(f.dir,'tok');
+ const r=f.run(['--out',file,'--json']);assert.equal(r.status,0,r.stderr);
+ const d=JSON.parse(r.stdout).result;assert.equal(d.tokenFile,file);assert.equal(Object.hasOwn(d,'token'),false);assert.match(d.joinCommand,/--invite-stdin/);assert.doesNotMatch(r.stdout,/aw_inv_/);
+ const plain=JSON.parse(f.run(['--json']).stdout).result;assert.equal(plain.token,'aw_inv_SYNTHETIC');assert.equal(Object.hasOwn(plain,'tokenFile'),false);
+});
+test('a relative --out resolves from where the command runs, and the plan names it without writing',t=>{
+ const f=fixture(t),r=f.run(['--out=invite-token','--plan','--json']);assert.equal(r.status,0,r.stderr);
+ assert.equal(JSON.parse(r.stdout).result.tokenFile,join(f.dep,'invite-token'));assert.equal(existsSync(join(f.dep,'invite-token')),false);
+ assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false);
+});
+test('invite --out refuses an existing file, a link or a missing directory before minting',t=>{
+ const f=fixture(t),existing=join(f.dir,'existing'),link=join(f.dir,'link');writeFileSync(existing,'keep');symlinkSync(join(f.dir,'nowhere'),link);
+ for(const target of [existing,link,join(f.dir,'missing','tok'),f.dir]){
+  const r=f.run(['--out',target,'--json']);assert.equal(r.status,1);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_OUT');assert.ok(e.message.includes(target),e.message);
+ }
+ assert.equal(readFileSync(existing,'utf8'),'keep');assert.equal(existsSync(join(f.dir,'nowhere')),false);
+ assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false,'nothing was minted');
+});
+test('invite --out refuses a path it cannot create before minting: too long a name, or a directory it cannot write',t=>{
+ const f=fixture(t),locked=join(f.dir,'locked');mkdirSync(locked);chmodSync(locked,0o500);t.after(()=>{try{chmodSync(locked,0o700);}catch{/* the fixture already removed it */}});
+ const targets=[join(f.dir,'x'.repeat(256))];
+ // root can write a 0500 directory, so that case proves nothing there.
+ if(process.getuid?.()!==0)targets.push(join(locked,'tok'));
+ for(const target of targets){
+  const r=f.run(['--out',target,'--json']);assert.equal(r.status,1);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_OUT');assert.match(e.message,/cannot be (checked|created)/);assert.doesNotMatch(e.message,/minted but/);
+ }
+ assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false,'nothing was minted');assert.deepEqual(readdirSync(locked),[]);
+});
+// #285 second read: a token minted but not written is live and unprinted, so the refusal names
+// its invite_id (not a secret) for revoking it, only when it is a plain identifier.
+test('a token minted but not written names its invite_id, and withholds one in an odd form',()=>{
+ const m=unwrittenInviteMessage('/x/tok','ENOSPC','inv_0f3a-9b');
+ assert.equal(m,'the invite was minted (invite_id inv_0f3a-9b) but could not be written to /x/tok (ENOSPC); it is not printed, and that invite stays live until it is revoked: mint another with a new --out');
+ for(const odd of ['','has space','aw_inv_\nSECRET','-lead','x'.repeat(129),undefined,{}]){const o=unwrittenInviteMessage('/x/tok','EIO',odd);assert.match(o,/\(its invite_id withheld: aw gave it in an unexpected form\)/);assert.doesNotMatch(o,/SECRET|has space/);}
+ assert.match(unwrittenInviteMessage('/x/tok',undefined,'i1'),/\(write failed\)/);assert.match(unwrittenInviteMessage('/x/tok','odd code','i1'),/\(write failed\)/);
+});
+// Round 3: the post-mint write and its cleanup, under real filesystem failures. A file-size
+// limit (RLIMIT_FSIZE, with SIGXFSZ ignored so a write fails instead of killing the process)
+// makes the token's write short or refused; a directory the issuer makes read-only while
+// minting makes the cleanup's unlink fail.
+const python3=(process.env.PATH||'').split(':').map(d=>join(d,'python3')).find(p=>existsSync(p));
+function limitedRun(f,args,bytes){
+ return spawnSync(python3,['-c','import os,resource,signal,sys; signal.signal(signal.SIGXFSZ,signal.SIG_IGN); resource.setrlimit(resource.RLIMIT_FSIZE,(int(sys.argv[1]),int(sys.argv[1]))); os.execv(sys.argv[2],sys.argv[2:])',String(bytes),process.execPath,hook,'invite',...args],{cwd:f.dep,env:f.env,encoding:'utf8'});
+}
+test('a short write of the token is never success: the answer says the invite is live and names its invite_id',{skip:!python3&&'needs python3'},t=>{
+ const f=fixture(t,{noLog:true}),file=join(f.dir,'tok'),r=limitedRun(f,['--out',file,'--json'],8);
+ assert.equal(r.status,1,r.stdout+r.stderr);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_OUT');
+ assert.match(e.message,/minted \(invite_id synthetic\) but could not be written/);assert.match(e.message,/\(EFBIG\)/);assert.match(e.message,/stays live/);assert.doesNotMatch(e.message,/could not be removed/);
+ assert.doesNotMatch(r.stdout+r.stderr,/aw_inv_/);assert.equal(existsSync(file),false);
+});
+test('a cleanup that fails keeps the live-invite answer, and says the file is left',{skip:(!python3&&'needs python3')||(process.getuid?.()===0&&'root can unlink in a 0500 directory')},t=>{
+ const f=fixture(t,{noLog:true,lockOut:true}),file=join(f.outDir,'tok'),r=limitedRun(f,['--out',file,'--json'],0);
+ assert.equal(r.status,1,r.stdout+r.stderr);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_OUT');
+ assert.match(e.message,/minted \(invite_id synthetic\)/);assert.match(e.message,/stays live/);assert.ok(e.message.includes(`${file} could not be removed and may hold part of the token: delete it`),e.message);
+ assert.doesNotMatch(r.stdout+r.stderr,/aw_inv_/);assert.equal(existsSync(file),true);
+});
+test('a failed mint whose reserved file cannot be removed keeps its own error and says the file is left',{skip:process.getuid?.()===0&&'root can unlink in a 0500 directory'},t=>{
+ const f=fixture(t,{native:'500',lockOut:true}),file=join(f.outDir,'tok'),r=f.run(['--out',file,'--json']);
+ assert.equal(r.status,1,r.stdout+r.stderr);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_NATIVE');
+ assert.ok(e.message.endsWith(`; the empty file reserved at ${file} could not be removed: delete it`),e.message);assert.doesNotMatch(r.stdout+r.stderr,/SECRET|aw_inv_/);
+});
+test('a failed mint under --out leaves no file behind',t=>{
+ for(const native of ['500','malformed']){const f=fixture(t,{native}),file=join(f.dir,'tok'),r=f.run(['--out',file,'--json']);assert.equal(r.status,1);assert.notEqual(JSON.parse(r.stdout).error.code,'E_INVITE_OUT');assert.equal(existsSync(file),false,native);}
 });

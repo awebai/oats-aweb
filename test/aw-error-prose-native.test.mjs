@@ -4,12 +4,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {generateKeyPairSync, randomBytes, randomUUID, sign} from 'node:crypto';
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {createServer} from 'node:http';
 import {didKeyOfSigningKey} from '../oats-package/capabilities/oats-aweb/lib/member-key.mjs';
-import {NAMESPACE_CONTROLLER_KEY_MISSING, TEAM_KEY_MISSING, teamNameTaken, teamServerRecordMissing, withheldFailureCause} from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
+import {NAMESPACE_CONTROLLER_KEY_MISSING, TEAM_KEY_MISSING, teamNameTaken, teamServerRecordMissing, usernameUnavailable, withheldFailureCause} from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
 import {readAwVersion} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 import {probeAwVersion} from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
 
@@ -140,4 +140,58 @@ test('real aw prose: a native mutating timeout names the uncertain outcome', opt
   assert.notEqual(r.status, 0);
   assert.ok(s.requests.some(q => q.method === 'POST'), r.stderr);
   assert.match(r.stderr, /Request timed out before a response was received; it may have applied\./);
+});
+
+// #285: setup names an unavailable username, from aw's one sentence for it with no
+// terminal, both when the availability check refuses and when signup conflicts. A
+// username inside aw's own words still classifies; the same words in a wrapped HTTP
+// error body do not.
+test('real aw prose: an unavailable username is one fixed sentence with its reason', options, async t => {
+  const signupWith = async (username, check, signup) => {
+    const f = fixture(t);
+    const s = await service(t, (req, res) => {
+      if (req.method === 'GET' && req.url === '/api/v1/discovery') res.end(JSON.stringify({onboarding_url: s.url, aweb_url: `${s.url}/api`, registry_url: s.url}));
+      else if (req.method === 'POST' && req.url === '/api/v1/onboarding/check-username') res.end(JSON.stringify(check));
+      else if (req.method === 'POST' && req.url === '/api/v1/onboarding/cli-signup' && signup) {res.statusCode = signup.status; res.end(signup.body);}
+      else {res.statusCode = 503; res.end('{}');}
+    });
+    const r = await f.run(['init', '--new-account', '--username', username, '--name', 'fixture-root', '--do-not-touch-agents-md'], s.url, {AWEB_URL: s.url});
+    const paths = s.requests.map(q => q.path);
+    assert.ok(paths.includes('/api/v1/onboarding/check-username'), paths.join(' '));
+    assert.equal(paths.includes('/api/v1/onboarding/cli-signup'), !!signup, paths.join(' '));
+    assert.equal(existsSync(join(f.cwd, '.aw')), false, 'aw creates nothing before it refuses');
+    return r;
+  };
+  for (const username of ['fixture-user', 'user', 'taken', 'ken']) {
+    for (const [check, signup, reason] of [[{available: false, reason: 'reserved'}, null, 'reserved'], [{available: true}, {status: 409, body: JSON.stringify({detail: 'NATIVE-BODY-SENTINEL'})}, 'taken']]) {
+      const r = await signupWith(username, check, signup);
+      assert.equal(r.status, 2, r.stderr);
+      assert.ok(r.stderr.split('\n').includes(`username "${username}" is not available (${reason})`), r.stderr);
+      assert.equal(usernameUnavailable(r, username), reason, `${username} ${reason}`);
+    }
+  }
+  // aw quotes the name with Go's %q: an invisible character a paste can carry comes back escaped.
+  for (const username of ['a\u200bb', 'a\u00a0b']) {
+    const r = await signupWith(username, {available: false, reason: 'invalid_format'}, null);
+    assert.equal(r.status, 2, r.stderr);
+    assert.ok(!r.stderr.includes(username), 'aw escapes the invisible character');
+    assert.equal(usernameUnavailable(r, username), 'invalid_format', r.stderr);
+  }
+  const wrapped = await signupWith('fixture-user', {available: true}, {status: 500, body: 'username "fixture-user" is not available (taken)'});
+  assert.notEqual(wrapped.status, 2, wrapped.stderr);
+  assert.match(wrapped.stderr, /username "fixture-user" is not available \(taken\)/);
+  assert.equal(usernameUnavailable(wrapped, 'fixture-user'), undefined);
+});
+
+// The Go-quoted name is read back exactly, as strconv.Quote writes it; no aw needed.
+test('a Go-quoted username is read back exactly, and nothing else matches', () => {
+  const line = (q, reason = 'taken') => ({stderr: `username ${q} is not available (${reason})`, status: 2});
+  for (const [quoted, username] of [['"user"', 'user'], ['"a\\u200bb"', 'a\u200bb'], ['"a\\u00a0b"', 'a\u00a0b'], ['"u\\"q"', 'u"q'], ['"b\\\\s"', 'b\\s'], ['"x\\tq"', 'x\tq'], ['"\\xc3\\xa9"', '\u00e9'], ['"\\U0001f600"', '\u{1f600}'], ['"\u00e9"', '\u00e9']]) {
+    assert.equal(usernameUnavailable(line(quoted), username), 'taken', quoted);
+  }
+  for (const [quoted, username] of [['"user"', 'usr'], ['"a\\u200bb"', 'ab'], ['"\\xff"', '\ufffd'], ['"\\ud800"', '\ud800'], ['"\\q"', '\\q'], ['"user', 'user'], ['"us\ner"', 'us\ner']]) {
+    assert.equal(usernameUnavailable(line(quoted), username), undefined, quoted);
+  }
+  assert.equal(usernameUnavailable({stderr: 'username "user"  is not available (taken)', status: 2}, 'user'), undefined);
+  assert.equal(usernameUnavailable({...line('"user"'), status: 1}, 'user'), undefined);
 });

@@ -7,6 +7,7 @@ import { realpathSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import { selectedDeployment } from './team-roots.mjs';
 import { kernelQueryEnvironment } from './session-readiness.mjs';
 import { sameAwebTeamId, teamKeyIn } from "./aweb-team-id.mjs";
+import { usernameUnavailable, usernameUnavailableCause } from './aw-failure-cause.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function setupFailure(code, message, details = {}) {
@@ -221,8 +222,17 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
       try {
         run(['aw', 'init', '--new-account', '--username', username, '--name', name, '--do-not-touch-agents-md'], root, 120000, {
           secretSafe: true, secrets: [username], env: {AWEB_URL: env.AWEB_URL}, unsetEnv: ['AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'],
+          classify: raw => usernameUnavailable(raw, username),
         });
       } catch (error) {
+        // aw refuses an unavailable username before it creates anything (it checks
+        // availability first, and a signup conflict creates no account), so this
+        // one cause is named, and the rest of aw's output stays withheld.
+        const reason = error.classified;
+        if (reason) {
+          steps.push({ step: 'bootstrap', status: 'refused', reason });
+          throw setupFailure('E_SETUP_USERNAME_UNAVAILABLE', `${usernameUnavailableCause(reason)}; nothing was created: re-run setup with another --username`);
+        }
         steps.push({ step: 'bootstrap', status: 'unconfirmed' });
         throw setupFailure('E_SETUP_NATIVE', `aw init failed${Number.isInteger(error.status) ? ` (exit ${error.status})` : ''}; output withheld because it handles credentials; root retained`);
       }

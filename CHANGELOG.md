@@ -51,6 +51,36 @@
   decision on `oats teams default`. The first-account card describes today's
   setup. Section numbers and the headings other skills cite are unchanged.
 
+- **Fixed: `oats aweb setup --username` says why a username is unavailable
+  (#285).** aw's refusal of a taken, reserved or malformed username failed as
+  `E_SETUP_NATIVE` with aw's output withheld. Setup now answers
+  `E_SETUP_USERNAME_UNAVAILABLE`, for example `that username is taken: choose
+  another; nothing was created: re-run setup with another --username`. It reads
+  the one sentence aw prints for it with no terminal, from the 1.36.33 floor to
+  the tested 1.36.58 (`username "<u>" is not available (<reason>)`), names only
+  the reason word and withholds the rest; any other output keeps
+  `E_SETUP_NATIVE`. docs/aw-error-decisions.md records it, and real-aw tests pin
+  the sentence. No migration is required.
+
+- **Changed: setup's `--username` success text names `claim-human` (#285).**
+  The account has no person on it, and its root's `.aw/signing.key` is its only
+  recovery, so the first next step is now the `aw --identity-home <root>/.aw
+  claim-human --email <their email>` command, with the root filled in, then
+  `/oats-onboarding`. The `--json` answer is unchanged.
+
+- **Changed: on a terminal, `--invite-stdin` reads the invite token without
+  echo (#285).** It asks `Invite token (input hidden): `; Ctrl-C or an empty
+  line redeems nothing. Piped stdin is read as before. Setup's usage, remedies
+  and first-setup menu lead with `--invite-stdin`; `--invite <token>` is still
+  parsed.
+
+- **Added: `oats aweb invite --out <file>` (#285).** It writes the token to a
+  new owner-only (0600) file, created exclusively before anything is minted
+  (an existing path, a link or a path it cannot create refuses with nothing
+  minted; a failed mint removes it), and the answer names the file: `result.tokenFile` with
+  `--json`, in place of `result.token`. Without `--out` the answer is
+  unchanged.
+
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:
   {"code":...}`, so setup now reads that top-level code through its existing

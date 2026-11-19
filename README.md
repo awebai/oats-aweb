@@ -1474,7 +1474,7 @@ Supported acts:
     root already uses, which may be hosted aweb. To create on a self-hosted
     server, set `AWEB_URL` first. Setup names the service
     before it creates anything.
-- `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
+- `oats aweb setup --join <label> --invite-stdin` (or `--invite <token>`): accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
   never accepts into the existing default root. With aw 1.36.53 or later, a
   label already mapped to a team must be the invite's team: otherwise
@@ -1501,10 +1501,12 @@ Supported acts:
   making the label eligible in the workspace's `souls:` (a shared-file change,
   `/oats-teams`). When the soul's teams cannot be read, it keeps the spawn and
   says it assumes eligibility (`result.nextNote`). A kept deployment default,
-  and moving it, are in the note. The dashboard's
-  `--invite <token>` one-liner works; `printf '%s\n' "$TOKEN" | oats aweb setup
-  --soul <soul> --invite-stdin --name <alias>` keeps the token out of shell
-  history. A deployment with no root identity needs `--name <alias>`. To resume
+  and moving it, are in the note. Lead with `--invite-stdin`: it keeps the
+  token out of argv and shell history. On a terminal it asks `Invite token
+  (input hidden): ` and reads the token without echo, so it never shows on the
+  screen or in scrollback; piped (`printf '%s\n' "$TOKEN" | oats aweb setup
+  --soul <soul> --invite-stdin --name <alias>`) it reads the first line, as
+  before. The dashboard's `--invite <token>` one-liner still works. A deployment with no root identity needs `--name <alias>`. To resume
   an admitted but unconnected join, run the printed `--join <label> --service
   <service>` command without the token; an expired, exhausted or revoked invite
   that aw reports with its team names that exact command too, with the label
@@ -1540,7 +1542,7 @@ Supported acts:
 
 For a committed/shared team whose provider id exists but whose root is not a
 member, setup/readiness tells the operator it is shared: ask the owner for an
-invite, then run `oats aweb setup --join <label> --invite <token>` (or use
+invite, then run `oats aweb setup --join <label> --invite-stdin` (or use
 `--create` if this host is the owner creating it). When a joined team is removed
 from the live team set, hosted teams are left automatically; on a namespace team
 you control (BYOT), a failed leave is reported as an instance event and the team
@@ -1925,7 +1927,7 @@ metadata remain unchanged. This corrects a pre-existing omission, not a new
 ### Member invitation (provider 1.23.0, #71)
 
 From the selected deployment, `oats aweb invite --soul S [--label L]
-[--plan] [--json]` selects a declared label (or the selected soul's default),
+[--out <file>] [--plan] [--json]` selects a declared label (or the selected soul's default),
 checks its canonical team and root membership, then asks native/server authority
 to issue a LOCAL hosted member invitation. There is no recipient argument:
 the accepting side chooses its own alias. This is not a dashboard human invite,
@@ -1953,8 +1955,28 @@ also answer `result.awebUrl`: the service the issuing root names (its
 default. Only a plain service URL is handed on: http(s), a host, an optional
 port and a path of `/` or `/api` at most. A root that names none, or a URL
 that could carry a credential (userinfo, a query, any other path), answers
-`null`. It
-is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
+`null`.
+
+`--out <file>` keeps the token out of the terminal and an agent's transcript
+(#285): it writes the token, and a newline, to a new file only its owner can
+read (mode 0600). Nothing may already be at the path, a link included, and its
+directory must exist. The file is created, exclusively and owner-only, before
+anything is minted, so the token never replaces a file or follows a link, and
+a path that cannot be created (too long a name, a directory it cannot write)
+refuses with nothing minted. A failed mint removes the file. Plain stdout then says where the token is, and stderr says to hand that
+file to the joiner privately, who runs the joiner's command with the file on
+stdin, then deletes it. With `--json`, the answer carries `result.tokenFile`
+(the file's absolute path) in place of `result.token`; `--plan` names the
+`tokenFile` it would write. A relative path resolves from where the command
+runs. If the token cannot be written after the mint, `E_INVITE_OUT` says the
+invite was minted and that the token is not printed, and names its
+`invite_id` (not a secret) so its owner can revoke it: only when aw gave it as
+a plain identifier, else it says the id is withheld. A short write counts as
+a failure. If the file cannot be removed after a failure, the answer says so
+and names it: delete it, since after a mint it may hold part of the token. Without `--out`, the
+answer is unchanged: one token on stdout, or one `result.token`.
+
+The service URL is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
 only to the intended accepting operator's labelled `setup --invite-stdin`
 procedure in `/oats-aweb` §8, **Invitations and certificate ownership**. Never
 log, echo, put in argv/history, or send it as ordinary mail. Setup hands it to

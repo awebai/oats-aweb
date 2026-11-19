@@ -160,7 +160,7 @@ jobs:
           if [ "$AW_VERSION" != "$tested" ]; then exit 0; fi
           OATS_AWEB_TEST_AW="$RUNNER_TEMP/aw/node_modules/.bin/aw" node --test --test-concurrency=1 --test-reporter=tap test/aw-error-prose-native.test.mjs | tee "$RUNNER_TEMP/aw-error-prose.tap"
           grep -q '^# skipped 0$' "$RUNNER_TEMP/aw-error-prose.tap"
-          test "$(grep -c '^ok [0-9]* - real aw prose: ' "$RUNNER_TEMP/aw-error-prose.tap")" -eq 6
+          test "$(grep -c '^ok [0-9]* - real aw prose: ' "$RUNNER_TEMP/aw-error-prose.tap")" -eq 7
       - name: Real-aw retire environment isolation at the tested aw
         if: ${{ !cancelled() }}
         shell: bash

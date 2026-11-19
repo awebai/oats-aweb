@@ -63,6 +63,11 @@
 //                     AW_SET_SERVER_UNSTORED set-server reports published but the
 //                     registry keeps nothing; AW_SHOW_SERVER_DID the team key the
 //                     record verifies against (default did:key:zFixtureTeam)
+//   AW_SIGNUP_UNAVAILABLE=<reason> init --new-account refuses the username as aw
+//                     1.36.33 to 1.36.58 do with no terminal: `username "<u>" is not
+//                     available (<reason>)` on stderr, exit 2, nothing written;
+//                     with AW_SIGNUP_WRAPPED the same words inside a registry
+//                     HTTP 500 error, exit 1, as aw prints a server body
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
 //                     (default "403 forbidden") on stderr and AW_INVITE_FAIL_STDOUT,
 //                     when set, on stdout (aw's --json error envelope)
@@ -115,6 +120,7 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   else console.log(JSON.stringify({ memberships: [] }));
 } else if (args[0] === "init") {
   if (args.includes("--new-account") && !flag("--name")) { console.error("missing required flag: --name"); process.exit(2); }
+  if (args.includes("--new-account") && process.env.AW_SIGNUP_UNAVAILABLE) { console.log("RAW-AW-SENTINEL"); console.error(\`\${process.env.AW_SIGNUP_WRAPPED ? "registry http 500: " : ""}username \${JSON.stringify(flag("--username"))} is not available (\${process.env.AW_SIGNUP_UNAVAILABLE})\`); process.exit(process.env.AW_SIGNUP_WRAPPED ? 1 : 2); }
   if (args.includes("--new-account") && process.env.AW_SIGNUP_FAIL) { console.error("fixture signup failure SECRET-SIGNUP-CREDENTIAL"); process.exit(19); }
   if (args.includes("--do-not-touch-agents-md") && fs.existsSync(path.join(awDir, "identity.yaml"))) { console.log("initialized"); process.exit(0); }
   if (fs.existsSync(path.join(awDir, "identity.yaml"))) { console.error("already holds a bound identity"); process.exit(7); }

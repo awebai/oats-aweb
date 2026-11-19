@@ -93,6 +93,7 @@ import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
 import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigration, registryShellAssignment, registryShellValue } from "../lib/registry-setting.mjs";
+import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -154,7 +155,7 @@ const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EV
  *  started. Every aw child of the hook takes its timeout from here. */
 const hookTimeout = (requested) => boundedByHook ? Math.min(requested, Math.floor(HOOK_STARTED_AT + HOOK_BUDGET_MS - performance.now())) : requested;
 const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
-const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input } = {}) => {
+const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input, classify } = {}) => {
   const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
@@ -196,6 +197,10 @@ const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, f
     // it writes or registers anything (aw cmd/aw/init.go runInitJoinFrom).
     err.inviteNotCreated = /; alternatively use --admission-team-id /.test(String(e.stderr ?? ""));
     err.awErrorCode = awErrorCode(e.stdout);
+    // classify: the caller's own reading of the RAW output, before secrets are
+    // scrubbed (a scrub can rewrite the text it reads). Only its answer is kept,
+    // and the caller answers only from a fixed vocabulary.
+    if (classify) err.classified = classify({ stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? ""), status: e.status });
     throw err;
   }
 };
@@ -3035,7 +3040,7 @@ if (event === "launch") {
   // existing aw primitive when the operator supplies the needed authority.
   const json = process.argv.includes("--json");
   const args = stripForwardedSoul(process.argv.slice(3)).filter((arg) => arg !== "--json");
-  const usage = "usage: oats aweb setup [--registry <origin>] [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] [--name <alias>] | --join <label> [--invite <token> | --invite-stdin] [--service <url>] [--name <alias>] | --invite <token> | --invite-stdin [--name <alias>] [--service <url>]]";
+  const usage = "usage: oats aweb setup [--registry <origin>] [--install-aw [--aw-version <v>]] [--check-only | --username <hosted-user> --name <alias> [--label <label>] [--plan] | --create <label> [--namespace <domain>] [--name <alias>] | --join <label> [--invite-stdin | --invite <token>] [--service <url>] [--name <alias>] | --invite-stdin | --invite <token> [--name <alias>] [--service <url>]] (--invite-stdin keeps the token out of argv and shell history; on a terminal it reads it without echo)";
   let setupDir, setupLabel, setupRegistry, setupPlan = false;
   let username, invite, inviteStdin = false, createLabel, createNamespace, joinLabel, joinService, joinName, installAw = false, awVersion, checkOnly = false;
   for (let i = 0; i < args.length; i++) {
@@ -3078,9 +3083,18 @@ if (event === "launch") {
   if (awVersion && !installAw) { console.error(`oats aweb setup: --aw-version requires --install-aw\n${usage}`); process.exit(2); }
   if (awVersion && !AW_VERSION_SPEC_RE.test(awVersion)) { console.error(`oats aweb setup: --aw-version must be a version such as ${AW_MIN}, ^${AW_MIN} or ~${AW_MIN}\n${usage}`); process.exit(2); }
   // The token is read into memory only: never argv, a file or any output.
+  // On a terminal it is read with echo off, so it never shows on the screen or in
+  // a terminal's scrollback (#285); piped stdin is read as before.
   if (inviteStdin) {
-    try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }
-    if (!invite) { console.error("oats aweb setup: --invite-stdin read no invite token from stdin"); process.exit(1); }
+    if (process.stdin.isTTY) {
+      const refused = (why) => Object.assign(new Error(why), { code: "E_SETUP_INVITE_PROMPT" });
+      try { invite = await promptHidden(process.stdin, process.stderr, { prompt: "Invite token (input hidden): ", cancelled: () => refused("cancelled"), empty: () => refused("no invite token was entered") }); }
+      catch (e) { console.error(`oats aweb setup: --invite-stdin: ${e.code === "E_SETUP_INVITE_PROMPT" ? e.message : "the terminal could not be read"}`); process.exit(1); }
+      if (!invite) { console.error("oats aweb setup: --invite-stdin: no invite token was entered"); process.exit(1); }
+    } else {
+      try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }
+      if (!invite) { console.error("oats aweb setup: --invite-stdin read no invite token from stdin"); process.exit(1); }
+    }
   }
   if ((joinService || (joinName && !username && !createLabel)) && !joinLabel && !inviteForm) { console.error(`oats aweb setup: --service/--name require --join <label> or an invite\n${usage}`); process.exit(2); }
   // New hosted accounts have no recorded root alias to reuse. Require the
@@ -3127,7 +3141,13 @@ if (event === "launch") {
       } else {
         console.log(`✓ verified ${result.team} at ${result.root}; mapping and deployment default ${result.label} read back successfully.`);
         console.log(JSON.stringify({ steps: result.steps, observed: result.observed }));
-        console.log('Next: use /oats-onboarding for staffing and receive verification; configuration success is not live receive readiness.');
+        // The account has no person on it, so the first next step is attaching one (/oats-aweb, "attach yourself to the account").
+        const identityHome = `${result.root}/.aw`;
+        const quotedHome = /^[A-Za-z0-9_./:-]+$/.test(identityHome) ? identityHome : `'${identityHome.replaceAll("'", "'\\''")}'`;
+        console.log(`Next: attach its person to the account. It has no person on it yet, and ${identityHome}/signing.key is its only recovery. With the email address its person gives:`);
+        console.log(`  aw --identity-home ${quotedHome} claim-human --email <their email>`);
+        console.log('The account is theirs once they click the link aw mails them (/oats-aweb, "attach yourself to the account").');
+        console.log('Then: /oats-onboarding for staffing and receive verification; configuration success is not live receive readiness.');
       }
       process.exit(0);
     } catch (error) {
@@ -3303,7 +3323,7 @@ ${JSON.stringify(problem.details || {})}`);
       }
       joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, resumeCommand });
     } else {
-      if (!token || typeof token !== "string") throw new Error(`--join ${label} needs --invite <token> unless ${teamRoot} already holds an accepted unconnected identity to resume`);
+      if (!token || typeof token !== "string") throw new Error(`--join ${label} needs an invite (--invite-stdin) unless ${teamRoot} already holds an accepted unconnected identity to resume`);
       const alias = setupAlias();
       mkdirSync(dirname(teamRoot), { recursive: true });
       let createdRoot = false;
@@ -3490,7 +3510,7 @@ ${JSON.stringify(problem.details || {})}`);
     }
     const unmappedDefault = !actions.length && defaultTeamLabel() && !defaultTeamId();
     if (unmappedDefault) {
-      console.log(`team ${defaultTeamLabel()} has no provider id yet: ask its owner to run \`oats aweb setup --create ${defaultTeamLabel()} --namespace <domain>\` and commit the id, or ask the owner for an invite and run \`oats aweb setup --join ${defaultTeamLabel()} --invite <token>\`.`);
+      console.log(`team ${defaultTeamLabel()} has no provider id yet: ask its owner to run \`oats aweb setup --create ${defaultTeamLabel()} --namespace <domain>\` and commit the id, or ask the owner for an invite and run \`oats aweb setup --join ${defaultTeamLabel()} --invite-stdin\`, which reads it without echo.`);
       process.exit(1);
     }
     const missingShared = !actions.length ? missingSharedRows() : [];
@@ -3501,7 +3521,7 @@ ${JSON.stringify(problem.details || {})}`);
       console.log("  Choose one guided setup path:");
       console.log("    oats aweb setup --username <u> --name <alias>     # runs `aw init --new-account --username <u> --name <alias> --do-not-touch-agents-md` and creates default:<u>.aweb.ai");
       console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init --do-not-touch-agents-md` for the hosted team behind the key");
-      console.log("    oats aweb setup --join <label> --invite <token>    # accepts into a new per-team root");
+      console.log("    oats aweb setup --join <label> --invite-stdin      # reads the invite without echo, accepts into a new per-team root");
       console.log("  Or set settings.oats.aweb.root to an absolute directory whose .aw is the aweb minting root, then re-run setup.");
       console.log("  Own your domain? Use the aweb-team-membership skill for BYOT flows.");
       process.exit(0);

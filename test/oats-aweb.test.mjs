@@ -969,3 +969,46 @@ test("username setup with explicit alias withholds credential-bearing native fai
   assert.equal(existsSync(join(root, ".aw")), false);
   assert.deepEqual(fake.readCalls().map(c => c.args), [["init", "--new-account", "--username", "alice", "--name", "root-1", "--do-not-touch-agents-md"]]);
 });
+
+test("username setup names an unavailable username plainly and withholds the rest of aw's output (#285)", async (t) => {
+  const setup = (t, extra) => {
+    const root = tempDir(t), fake = fakeAwSetupPath(t);
+    writeFileSync(join(root, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+    const kernel = fakeKernelTeamConfig(join(tempDir(t), "kernel"), root);
+    return { root, kernel, env: { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "setup", OATS_WORKSPACE: root, OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }), ...extra } };
+  };
+  for (const [reason, sentence] of [
+    ["taken", "that username is taken: choose another"],
+    ["reserved", "that username is reserved: choose another"],
+    ["invalid_format", "aweb does not accept that username's format (lowercase letters, numbers and hyphens): choose another"],
+    ["held_for_review", "aweb reports that username unavailable (held_for_review): choose another"],
+    ["constructor", "aweb reports that username unavailable (constructor): choose another"],
+  ]) {
+    // A username that is part of aw's own words (`user` of `username`, `taken` and `ken` of the reason) still classifies.
+    for (const username of ["alice", "user", "taken", "ken"]) {
+      const { root, kernel, env } = setup(t, { AW_SIGNUP_UNAVAILABLE: reason });
+      const text = await run(["setup", "--username", username, "--name", "root-1"], env, root);
+      assert.equal(text.code, 1);
+      assert.match(text.stderr, new RegExp(`^oats aweb setup: E_SETUP_USERNAME_UNAVAILABLE: ${sentence.replace(/[()]/g, "\\$&")}; nothing was created: re-run setup with another --username\\n`), `${username} ${reason}`);
+      assert.doesNotMatch(text.stdout + text.stderr, /RAW-AW-SENTINEL|is not available/);
+      const json = await run(["setup", "--username", username, "--name", "root-1", "--json"], env, root);
+      const error = JSON.parse(json.stdout).error;
+      assert.equal(error.code, "E_SETUP_USERNAME_UNAVAILABLE");
+      assert.deepEqual(error.details.steps, [{ step: "bootstrap", status: "refused", reason }]);
+      assert.doesNotMatch(json.stdout + json.stderr, /RAW-AW-SENTINEL/);
+      assert.equal(existsSync(join(root, ".aw")), false);
+      assert.equal(kernel.calls().some(c => ["add", "default"].includes(c.args[1])), false);
+    }
+  }
+  // Not this refusal, so today's withheld failure: a reason that is not one short
+  // snake_case word, and the same words inside a wrapped HTTP error (which is no
+  // evidence that nothing was created).
+  for (const extra of [{ AW_SIGNUP_UNAVAILABLE: "SECRET-Reason with spaces" }, { AW_SIGNUP_UNAVAILABLE: "taken", AW_SIGNUP_WRAPPED: "1" }]) {
+    const { root, env } = setup(t, extra);
+    const r = await run(["setup", "--username", "alice", "--name", "root-1", "--json"], env, root);
+    const error = JSON.parse(r.stdout).error;
+    assert.equal(error.code, "E_SETUP_NATIVE", JSON.stringify(extra));
+    assert.deepEqual(error.details.steps, [{ step: "bootstrap", status: "unconfirmed" }]);
+    assert.doesNotMatch(r.stdout + r.stderr, /SECRET-Reason|is not available|nothing was created/);
+  }
+});

@@ -654,7 +654,9 @@ aweb lead.
 
 An aweb account that `oats aweb setup --username` created has no person on it:
 nobody can sign in to its dashboard, and the root's `.aw/signing.key` is its
-only recovery. The person it belongs to attaches their email to it: ask the
+only recovery. Setup's success text says so and prints the command below with
+the root filled in; no readiness item can, because no aw read shows whether a
+person is attached (below). The person it belongs to attaches their email to it: ask the
 person for their email address and run the command with exactly that address,
 never a guessed or inferred one.
 
@@ -714,7 +716,9 @@ appropriate member invite, root alias/service and required team policy from inta
 | Check selected default after mapping | `oats aweb setup --soul S --check-only --json` | Read-only `{aw, defaultTeam, member, root}`; success requires usable aw, intended default and `member: true` at intended root. Next: onboarding's staffing/completion stage. | `member: false` is a result, not an error code → reconcile selected root/team via the join card. |
 
 `--invite <token>` is still parsed, but stdin keeps the token off provider argv;
-never paste it in history, logs or messages. Setup passes it to native accept on
+never paste it in history, logs or messages. On a terminal, `--invite-stdin`
+asks `Invite token (input hidden): ` and reads it without echo; piped, it reads
+the first line. Setup passes it to native accept on
 stdin (`--token-stdin`, aw 1.36.33), never in argv. `--invite` and `--invite-stdin` cannot combine.
 Without `--join`, an invite needs aw 1.36.53 or later (the "Join from the invite
 alone" card); with `--join L` and aw 1.36.53, a mapped L that is not the
