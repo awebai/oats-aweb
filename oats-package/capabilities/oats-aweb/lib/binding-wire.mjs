@@ -345,7 +345,7 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
           if(seat) {
             try {
               const label=seatGrantLabel(ctx.instance||basename(ctx.home),seat);
-              for(const g of strayGrants(teamGrants(argv=>localAw(argv,custody),details.team),label,recorded?.id)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant({...g,custody})}; the next start or retire revokes it`});
+              for(const g of strayGrants(teamGrants(argv=>localAw(argv,custody),details.team),label,recorded?.id)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant({...g,custody,team:details.team})}; the next start or retire revokes it`});
             }
             catch(e) {warnings.push({code:'grant-revoke-unchecked',message:`could not check for orphaned grants (${String(e.message||e).slice(0,200)}); this seat may hold grants that stay valid`});}
           }
