@@ -550,7 +550,9 @@ if ((isCommand && !setupHandlesAw) || event === "spawn") {
   const floor = await awFloorObservation({ timeout: hookTimeout(10000) });
   const floorProblem = floor.message;
   spawnAwVersion = floor.version;
-  if (floorProblem) {
+  // mail refuses every aw below its own, higher floor with E_AW_TOO_OLD
+  // (runMailCommand), the provider's floor included, when the version reads.
+  if (floorProblem && !(event === "mail" && floor.version)) {
     if (isCommand) { console.error(`oats aweb ${event}: ${floorProblem}`); process.exit(1); }
     fatal(`${floorProblem}, so no identity could be minted and this instance would not meet the messaging contract`);
   }
@@ -2250,6 +2252,9 @@ function awMailRead(identityHome, args) {
     try { child = spawn("aw", argv, { cwd: home, env: childEnvFor({ argv }), stdio: ["ignore", "pipe", "pipe"], timeout: MAIL_AW_TIMEOUT_MS }); }
     catch (e) { settle({ status: null, stdout: "", stderr: String(e.message || e) }); return; }
     let stdout = "", stderr = "";
+    // Decode as one stream: a UTF-8 character may cross a pipe chunk.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (d) => { stdout += d; });
     child.stderr.on("data", (d) => { stderr += d; });
     child.on("error", (e) => settle({ status: null, stdout, stderr: String(e.message || e) }));

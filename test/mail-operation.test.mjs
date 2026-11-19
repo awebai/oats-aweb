@@ -36,18 +36,24 @@ ${fakeAwArgvCheck('args')}
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
 let identityHome = null;
 if (args[0] === '--identity-home') { identityHome = args[1]; args = args.slice(2); }
-const emit = (o) => { console.log(JSON.stringify(o)); process.exit(0); };
+// SPLIT_UTF8: write the answer in two chunks, cut inside its first multibyte character.
+const emit = (o) => {
+  const bytes = Buffer.from(JSON.stringify(o) + '\\n');
+  const at = process.env.SPLIT_UTF8 ? bytes.findIndex((b) => b >= 0xc0) + 1 : 0;
+  if (at <= 0) { process.stdout.write(bytes, () => process.exit(0)); return; }
+  process.stdout.write(bytes.subarray(0, at), () => setTimeout(() => process.stdout.write(bytes.subarray(at), () => process.exit(0)), 100));
+};
 if (args[0] === 'version') { console.log('aw ${version}\\n  commit: 0000000000000000000000000000000000000000 (github.com/awebai/aw)'); process.exit(0); }
 const s = JSON.parse(fs.readFileSync(${JSON.stringify(join(base, 'script.json'))}, 'utf8'))[identityHome] || {};
 const flag = (n) => args.includes(n) ? args[args.indexOf(n) + 1] : undefined;
 if (args[0] === 'whoami' && s.whoami) emit(s.whoami);
-if (args[0] === 'mail' && args[1] === 'threads' && s.threads) emit({ conversations: s.threads });
-if (args[0] === 'mail' && args[1] === 'show' && s.conversations && s.conversations[flag('--conversation-id')]) emit({ messages: s.conversations[flag('--conversation-id')] });
-console.error('mail conversation not found'); process.exit(1);
+else if (args[0] === 'mail' && args[1] === 'threads' && s.threads) emit({ conversations: s.threads });
+else if (args[0] === 'mail' && args[1] === 'show' && s.conversations && s.conversations[flag('--conversation-id')]) emit({ messages: s.conversations[flag('--conversation-id')] });
+else { console.error('mail conversation not found'); process.exit(1); }
 `, { mode: 0o755 });
   const env = { PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: join(base, 'user'), AW_NO_UPDATE_CHECK: '1',
     OATS_SETTINGS: '{}', OATS_DEFAULT_TEAM: 'acme', OATS_DEFAULT_TEAM_ID: 'default:acme.test', OATS_INSTANCE: 'dev-1', OATS_INSTANCE_HOME: home, OATS_HOME: home };
-  const operation = (args = []) => spawnSync(process.execPath, [HOOK, 'mail', ...args, '--json'], { cwd: home, env: { ...env, OATS_OPERATION: 'messaging:mail' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
+  const operation = (args = [], extra = {}) => spawnSync(process.execPath, [HOOK, 'mail', ...args, '--json'], { cwd: home, env: { ...env, ...extra, OATS_OPERATION: 'messaging:mail' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
   const readCalls = () => { try { return readFileSync(calls, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse); } catch { return []; } };
   return { home, joined, env, operation, readCalls };
 }
@@ -90,13 +96,27 @@ test('messaging:mail passes limit, cursor and conversation, and refuses a bad li
   assert.equal(v.code, 'E_BAD_ARGS');
 });
 
-test('an aw older than 1.36.53 answers E_AW_TOO_OLD with the version it needs, before any mail call', (t) => {
-  const f = fixture(t, { version: '1.36.40', script: {} });
-  const v = assertKernelOperationAnswer(f.operation(), { ok: false, label: 'old aw' });
-  assert.equal(v.code, 'E_AW_TOO_OLD');
-  assert.match(v.message, /aw 1\.36\.40 .*needs aw >= 1\.36\.53/);
-  assert.deepEqual(v.envelope.error.details, { version: '1.36.40', needs: '1.36.53' });
-  assert.deepEqual(f.readCalls().map((a) => a[0]), ['version']);
+for (const version of ['1.36.40', '1.36.32']) {
+  test(`aw ${version}, below 1.36.53${version === '1.36.32' ? ' and the provider\'s own floor' : ''}, answers E_AW_TOO_OLD with the version it needs, before any mail call`, (t) => {
+    const f = fixture(t, { version, script: {} });
+    const v = assertKernelOperationAnswer(f.operation(), { ok: false, label: 'old aw' });
+    assert.equal(v.code, 'E_AW_TOO_OLD');
+    assert.match(v.message, new RegExp(`aw ${version.replace(/\./g, '\\.')} .*needs aw >= 1\\.36\\.53`));
+    assert.deepEqual(v.envelope.error.details, { version, needs: '1.36.53' });
+    assert.deepEqual(f.readCalls().map((a) => a[0]), ['version']);
+  });
+}
+
+test('a UTF-8 character split across aw\'s output chunks reaches the answer whole', (t) => {
+  const body = 'café 😀 ünïcödé';
+  const f = fixture(t, { script: ({ primary }) => ({ [primary]: { whoami: { did: 'did:key:z6Mkdév1', alias: 'dév-1' }, threads: [],
+    conversations: { c1: [message('m1', 1, 'did:key:z6Mkpeer', 'did:key:z6Mkdév1', { subject: 'ça va', body })] } } }) });
+  const v = assertKernelOperationAnswer(f.operation(['--conversation', 'c1'], { SPLIT_UTF8: '1' }), { ok: true, label: 'split utf-8' });
+  const [m] = v.result.mail.messages;
+  assert.equal(m.body, body);
+  assert.equal(m.subject, 'ça va');
+  assert.equal(v.result.mail.identities[0].alias, 'dév-1');
+  assert.equal(m.direction, 'received');
 });
 
 test('no identity readable fails whole with E_MAIL_UNREADABLE and each identity\'s error', (t) => {

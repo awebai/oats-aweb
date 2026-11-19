@@ -52,7 +52,8 @@ directly against aw to compare unread counts. Pinned by:
 ## The aw it needs
 
 `mail threads` came in aw 1.36.53, above the provider's aw floor
-(`aw-compat.json` `min`). Below 1.36.53 the read answers `ok: false`,
+(`aw-compat.json` `min`). Below 1.36.53 (the provider's own floor included, when aw's version
+reads) the read answers `ok: false`,
 `E_AW_TOO_OLD`, with `details: {version, needs: "1.36.53"}`, before any mail
 call. Every other oats.aweb path keeps the floor it has.
 
