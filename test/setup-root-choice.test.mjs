@@ -109,6 +109,17 @@ test('bare API-key setup refuses another team root and names both explicit desti
   assert.doesNotMatch(r.stdout+r.stderr,/SECRET-KEY/);
 });
 
+for(const label of ['', 'unmapped']) test(`bare API-key setup without a configured team gives the ${label?'unmapped-label':'no-team'} remedy`,t=>{
+  const f=fixture(t);
+  const r=f.run(['setup'],{AWEB_API_KEY:'SECRET-KEY',OATS_DEFAULT_TEAM:label,OATS_DEFAULT_TEAM_ID:'',OATS_DEFAULT_TEAM_FROM:'',OATS_WORKSPACE_NAME:'fixture'});
+  assert.equal(r.status,1,r.stdout+r.stderr);
+  assert.match(r.stderr,/no team is configured/);
+  assert.ok(r.stderr.includes(`${f.root} (from root)`),r.stderr);
+  assert.match(r.stderr,label?/default team unmapped has no provider id yet/:/no teams configured: run `oats aweb setup`/);
+  assert.ok(!f.fake.readCalls().some(mutation));
+  assert.doesNotMatch(r.stdout+r.stderr,/does not normalize|SECRET-KEY/);
+});
+
 test('bare API-key setup keeps bootstrap for a root with confirmed empty membership',t=>{
   const f=fixture(t);rmSync(join(f.root,'.aw','identity.yaml'));
   writeFileSync(join(f.root,'.aw','teams.json'),JSON.stringify({memberships:[]}));

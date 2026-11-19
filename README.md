@@ -47,7 +47,9 @@ wrong-team membership refuses before effects. Explicit `--name` and `AWEB_URL`
 avoid default-root locator reads; omitted values keep the existing alias and
 service fallbacks. If a needed value is unavailable, supply the named explicit
 input and retry. Bare API-key setup refuses before init in an existing root
-for another team and names the explicit destination choices. Setup human output
+for another team and names the explicit destination choices. If that root lists
+memberships but no team is configured, setup names the root/source and teaches
+configuring the intended team first. Setup human output
 and existing missing-root diagnostics name the root source. An absent default
 root is described as having no identity yet.
 
@@ -622,7 +624,7 @@ Older kernels stay on oats.aweb 1.26.2.
   is refused with aw's own message, and R is never deleted.
 - **Customer-held (BYOT) teams** are aw's to refuse: its message passes through.
 - **One client floor, 1.36.33** (`AW_MIN`). `setup --install-aw` installs
-  the exact tested version from `aw-compat.json` by default.
+  `^1.36.33` by default.
 - The whole contract, every `--json` envelope, the custody unit's controls and
   what CI proves against what only the joint E2E proves:
   [docs/resident-create.md](docs/resident-create.md).
@@ -771,7 +773,7 @@ The join half works on its own when someone else mints the invite:
   (the first line, trimmed) and behaves exactly as `--invite <token>`. The two
   flags cannot be combined.
 - `oats aweb setup --install-aw [--aw-version <v>]` runs
-  `npm install -g @awebai/aw@<v>` (default: `aw-compat.json`'s exact tested version)
+  `npm install -g @awebai/aw@<v>` (default `^<aw floor>`, today `^1.36.33`)
   where aw is missing or below the floor, re-checks the floor, then continues.
 - `oats aweb setup --check-only --json` answers, as one line:
 

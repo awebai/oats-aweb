@@ -12,7 +12,9 @@
   values retain their existing alias/service fallback and refuse with the
   explicit input remedy when unavailable. Bare API-key setup refuses to init
   an existing root in another team, naming the intended team, root/source and
-  explicit destination choices. Setup success and existing missing-root
+  explicit destination choices. When that root lists memberships but no team
+  is configured, it refuses with the team-configuration remedy before init.
+  Setup success and existing missing-root
   diagnostics name their root source. An absent default root is described as
   having no identity yet. JSON and binding wire shapes are unchanged.
 

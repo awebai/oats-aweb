@@ -3255,7 +3255,7 @@ ${JSON.stringify(problem.details || {})}`);
   const scope = candidate?.root ? resolve(candidate.root) : process.cwd();
   const independentTarget = !!createLabel || (!!joinLabel && !invite);
   const printSetupRoot = (root, team, source) => { if (!json) console.log(`aweb onboarding — messaging root: ${root} (from ${source})${team ? `, team: ${team}` : ""}\n`); };
-  if (!independentTarget && !joinLabel) printSetupRoot(scope, teamName, rootSourceOf(teamName));
+  if (!createLabel && !joinLabel) printSetupRoot(scope, teamName, rootSourceOf(teamName));
   if (!isAbsolute(scope)) {
     console.log(`${candidate?.key || "settings.oats.aweb.root"} must be an absolute directory whose .aw is the aweb minting root.`);
     process.exit(0);
@@ -3511,7 +3511,7 @@ ${JSON.stringify(problem.details || {})}`);
     if (createLabel && !createNamespace) throw new Error(hostedCreateUnavailable());
     if (joinLabel || createLabel) deployment = selectedDeployment(process.env, setupDir);
     let target;
-    if (independentTarget || joinLabel) {
+    if (createLabel || joinLabel) {
       const team = createLabel ? candidateTeamId(normalizeAwebTeamName(createLabel)) : joinConfiguration.expectedTeam;
       target = teamRootFor(createLabel || joinLabel, team);
       printSetupRoot(target.teamRoot, team, target.source);
@@ -3526,7 +3526,7 @@ ${JSON.stringify(problem.details || {})}`);
       try { teams = readTeams(); }
       catch (e) {
         e.message += `; root chosen from ${rootSourceOf(want)}`;
-        if (createLabel || joinLabel) e.message += "; the configured default root must be readable first: make that root's membership readable, or choose another default with `oats teams default <label>`; nothing was created or redeemed";
+        if (joinLabel) e.message += "; the configured default root must be readable first: make that root's membership readable, or choose another default with `oats teams default <label>`; nothing was created or redeemed";
         throw e;
       }
     }
@@ -3623,8 +3623,10 @@ ${JSON.stringify(problem.details || {})}`);
     }
     if (hasRoot && !matchingTeam(teams) && !actions.length) { printVerdict(teams); process.exit(0); }
     if (apiKey && hasRoot && teamIdsOf(teams).length && !matchingTeam(teams)) {
-      const fresh = perTeamRoot(process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || process.cwd(), defaultTeamLabel() || "<label>");
-      throw new Error(`wanted team ${want || "<team>"}, but selected root ${scope} (from ${rootSourceOf(want)}) is not a member; set settings.oats.aweb.roots[${JSON.stringify(want || "<team>")}] to the intended team's root, or choose a fresh root at ${fresh} and record that setting before retrying; aw init was not run`);
+      if (!want) throw new Error(`no team is configured for selected root ${scope} (from ${rootSourceOf(want)}); choose the intended team first: ${teamConfigRemedy()}; aw init was not run`);
+      const scopeBase = process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || process.cwd();
+      const fresh = defaultTeamLabel() ? perTeamRoot(scopeBase, defaultTeamLabel()) : join(resolve(scopeBase), ".aweb-roots", "<label>");
+      throw new Error(`wanted team ${want}, but selected root ${scope} (from ${rootSourceOf(want)}) is not a member; set settings.oats.aweb.roots[${JSON.stringify(want)}] to the intended team's root, or choose a fresh root at ${fresh} and record that setting before retrying; aw init was not run`);
     }
     if (!hasRoot || !matchingTeam(teams)) {
       if (actions.length) mkdirSync(scope, { recursive: true });
