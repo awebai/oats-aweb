@@ -106,7 +106,7 @@ function journey(t) {
     rmSync(tmuxDir, { recursive: true, force: true }); rmSync(base, { recursive: true, force: true });
   });
   const parsed = (r) => { let doc; try { doc = JSON.parse(r.stdout.trim().split("\n").at(-1)); } catch { doc = undefined; } return { ...r, doc }; };
-  const run = (args, extra = {}) => parsed(spawnSync(process.execPath, [HOOK, "resident", ...args], { env: { ...env, ...extra }, cwd: deployment, encoding: "utf8", input: "", timeout: 180000 }));
+  const run = (args, extra = {}) => parsed(spawnSync(process.execPath, [HOOK, "resident", ...args], { env: { ...env, OATS_SETTINGS: JSON.stringify({ registry: AWID_URL }), ...extra }, cwd: deployment, encoding: "utf8", input: "", timeout: 180000 }));
   /** A command line as an operator types it in the deployment, `oats` being the kernel. */
   const shell = (line) => parsed(spawnSync("/bin/sh", ["-c", line], { env, cwd: deployment, encoding: "utf8", input: "", timeout: 300000 }));
   const aw = (cwd, args, extra = {}) => spawnSync(join(bin, "aw"), args, { cwd, encoding: "utf8", env: { PATH: env.PATH, HOME: home, AWEB_URL, AWID_REGISTRY_URL: AWID_URL, AW_NO_UPDATE_CHECK: "1", NO_COLOR: "1", ...extra } });
@@ -157,6 +157,14 @@ function globalIdentity(j, root, name, ns) {
   j.cleanups.push(() => j.aw(root, ["custody", "stop"]));
   if (process.platform === "darwin") j.cleanups.push(() => spawnSync("launchctl", ["bootout", `gui/${userInfo().uid}/${label}`]));
   else j.cleanups.push(() => spawnSync("systemctl", ["--user", "disable", "--now", `${label}.service`], { env: j.env }));
+  // Explicit operator admission for this disposable private registry. This
+  // record-only command changes no root, account, team or default. Kernel
+  // spawn/join hooks must read the persisted setting, not the ambient AWID URL.
+  const optedIn = j.shell(`oats aweb setup --registry ${JSON.stringify(AWID_URL)} --soul probe --json`);
+  assert.equal(optedIn.status, 0, optedIn.stdout + optedIn.stderr);
+  assert.equal(optedIn.doc.schemaVersion, 1);
+  assert.equal(optedIn.doc.ok, true);
+  assert.equal(optedIn.doc.result.registry, AWID_URL);
   return label;
 }
 const yamlField = (text, key) => new RegExp(`^${key}:\\s*"?([^"\\n]+)"?\\s*$`, "m").exec(text)?.[1];
@@ -231,7 +239,7 @@ test("a rerun with another registry gets aw's own refusal, unchanged (aw 1.36.33
   if (j.teamReadFirst) { t.skip("from aw 1.36.53, aw refuses before writing a partial on this server, so no rerun carries a registry; the previous journey covers its refusal"); return; }
   assert.equal(j.run(["create", "alice"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: AWID_URL }).status, 1);
   const other = AWID_URL.replace("127.0.0.1", "localhost");
-  const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: other });
+  const r = j.run(["create", "alice", "--json"], { AWEB_API_KEY: key, AWEB_URL, AWID_REGISTRY_URL: other, OATS_SETTINGS: JSON.stringify({ registry: other }) });
   assert.equal(r.doc.error.code, "E_RESIDENT_INIT");
   const partialFile = join(j.deployment, ".aweb-residents", "alice", ".aw", "partial-init.yaml");
   assert.equal(r.doc.error.message, `partial API-key init state at ${partialFile} was created for a different bootstrap context (registry_url ${JSON.stringify(AWID_URL)} != ${JSON.stringify(other)}); retry the original command or remove the file explicitly`);
@@ -263,7 +271,7 @@ test("a complete global identity is adopted: verified, served by a real per-user
   assert.ok(status.ops.includes("mail_reply_continuation.v1") && status.ops.includes("grant_never_ttl.v1"));
   assert.match(readFileSync(join(j.deployment, "oats-local.yaml"), "utf8"), new RegExp(`"carol": ${JSON.stringify(root).replace(/[.]/g, "\\.")}`));
 
-  const again = j.run(["create", "carol", "--root", root, "--json"], { ...withKey, OATS_SETTINGS: JSON.stringify({ residents: { carol: root } }) });
+  const again = j.run(["create", "carol", "--root", root, "--json"], { ...withKey, OATS_SETTINGS: JSON.stringify({ registry: AWID_URL, residents: { carol: root } }) });
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.equal(again.doc.result.outcome, "already-exists");
 
@@ -349,7 +357,7 @@ async function printedStepsJourney(t, { teams, defaultTeam, expectStatus, expect
   assert.equal(identity.resident, "carol");
   assert.equal(identity.team, team);
   assert.match(identity.grant.id, /\S/);
-  // The seat verifies at the resident's registry, from its identity.yaml.
+  // The seat verifies at the explicitly configured registry matching this resident.
   assert.equal(record.launch.hooks.env.AWID_REGISTRY_URL, AWID_URL);
   // Health observes only this journey's disposable resident and scaffold.
   const health = healthHost({ deployment: j.deployment, env: j.env });
