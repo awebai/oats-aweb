@@ -64,7 +64,8 @@ const cases = {
   custody: { fake: { custody: "missing-ops" }, run: (s) => s.run(["create", NAME, "--json"]) },
   "custody-running": { fake: { custody: "elsewhere" }, prepare: complete, run: (s) => s.run(["create", NAME, "--json"], {}, { unset: ["AWEB_API_KEY", "AWEB_URL"] }) },
   "default-kept": {
-    setup: { kernel: { teams: [{ label: "core", team: "core:fixture-6400.test", from: "shared" }], defaultTeam: { label: "core", team: "core:fixture-6400.test", from: "workspace" } } },
+    // Keep the other default in the captured namespace so normalized() maps both teams.
+    setup: { kernel: { teams: [{ label: "core", team: `core:${DOMAIN}`, from: "shared" }], defaultTeam: { label: "core", team: `core:${DOMAIN}`, from: "workspace" } } },
     run: (s) => s.run(["create", NAME, "--json"]),
   },
   "team-label-taken": {
