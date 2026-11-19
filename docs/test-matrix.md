@@ -124,7 +124,9 @@ controller preparation. This record-only step creates no root, account or team.
 The LOCAL joined-spawn and killed-join acceptance assertions then run unchanged;
 ambient AWID variables and native aw records alone are not registry admission.
 Direct resident-hook fixtures receive the same explicit `OATS_SETTINGS.registry`,
-including their resident-map and alternate-registry overrides. This fixture
+including their resident-map and alternate-registry overrides. Direct `healthHost`
+fixtures also pass the resolved `settings.registry` argument, as `healthMain` does;
+the adapter does not load operator settings from disk. This fixture
 preparation requires the registry-setting provider change; the CLI floor stays
 unchanged.
 

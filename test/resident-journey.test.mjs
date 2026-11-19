@@ -364,7 +364,7 @@ async function printedStepsJourney(t, { teams, defaultTeam, expectStatus, expect
   // The seat verifies at the explicitly configured registry matching this resident.
   assert.equal(record.launch.hooks.env.AWID_REGISTRY_URL, AWID_URL);
   // Health observes only this journey's disposable resident and scaffold.
-  const health = healthHost({ deployment: j.deployment, env: j.env });
+  const health = healthHost({ deployment: j.deployment, env: j.env, settings: { registry: AWID_URL } });
   const who = JSON.parse(j.aw(root, ['whoami', '--json']).stdout);
   assert.deepEqual(await health.identityOf({ cwd: root }), { did: who.did, stable_id: who.stable_id });
   assert.match(who.stable_id, /^did:aw:/);
@@ -507,11 +507,11 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
 
   const who = j.aw(home, ['whoami', '--json']);
   assert.equal(who.status, 0, who.stderr);
-  const ids = await healthHost({ deployment: j.deployment, env: j.env }).identityOf({ identityHome: join(home, '.aw') });
+  const ids = await healthHost({ deployment: j.deployment, env: j.env, settings: { registry: AWID_URL } }).identityOf({ identityHome: join(home, '.aw') });
   assert.equal(ids.did, JSON.parse(who.stdout).did);
   assert.match(ids.did, /^did:key:z/);
   assert.equal(ids.stable_id, undefined);
-  const host = healthHost({ deployment: j.deployment, env: j.env });
+  const host = healthHost({ deployment: j.deployment, env: j.env, settings: { registry: AWID_URL } });
   for (const args of [['id', 'team', 'members', '--team-id', team, '--registry', AWID_URL, '--json'], ['workspace', 'status', '--limit=200', '--json'], ['mail', 'inbox', '--count-only', '--json']]) {
     const r = j.aw(home, args);
     if (args.includes('--count-only') && j.awVersion === '1.36.33') {
