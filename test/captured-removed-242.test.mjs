@@ -35,9 +35,8 @@ function wire(phase, body, env = {}) {
 }
 const refusal = (phase) => ({ schemaVersion: 1, phase, slot: "messaging", capability: "oats.aweb", ok: false, error: { code: "provider-not-qualified", message: FIXED } });
 
-// Pinned acceptance: readiness through the real kernel-shaped request (workspace context,
-// readiness action) answers as on main. The two answers below are main's (f6fc5508), recorded
-// from this fixture before the removal.
+// Pinned acceptance: the kernel-shaped workspace readiness request keeps its
+// envelope and status. The missing-root message names where the root came from.
 function readinessFixture(t, { root = true } = {}) {
   const base = tempDir(t);
   const dir = join(base, "root"); mkdirSync(root ? join(dir, ".aw") : dir, { recursive: true });
@@ -56,7 +55,7 @@ test("readiness for the kernel's workspace request answers as on main: a root wi
   const r = wire("check", kernelRequest(fx), { PATH: `${fx.bin}:${process.env.PATH}`, ...teamEnv });
   assert.equal(r.status, 0);
   assert.deepEqual(r.doc, { schemaVersion: 1, phase: "check", slot: "messaging", capability: "oats.aweb", ok: true,
-    result: { status: "needs-configuration", problems: [{ code: "needs-configuration", message: `no messaging root at ${fx.root}: run oats aweb setup there or set settings.oats.aweb.root` }], warnings: [] } });
+    result: { status: "needs-configuration", problems: [{ code: "needs-configuration", message: `no messaging root at ${fx.root} (from settings.oats.aweb.root): run oats aweb setup there or set settings.oats.aweb.root` }], warnings: [] } });
 });
 
 // Pinned acceptance: check with a `binding` input, normalize and bind each answer the fixed reason.

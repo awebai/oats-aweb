@@ -38,6 +38,24 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## Unreleased — setup root choice and install version
+
+`setup --create` and tokenless `setup --join` check their selected per-team root,
+and report that root's readiness. An unrelated default root's membership no
+longer blocks these acts. An existing selected root with unreadable or
+wrong-team membership refuses before effects. Explicit `--name` and `AWEB_URL`
+avoid default-root locator reads; omitted values keep the existing alias and
+service fallbacks. If a needed value is unavailable, supply the named explicit
+input and retry. Bare API-key setup refuses before init in an existing root
+for another team and names the explicit destination choices. If that root lists
+memberships but no team is configured, setup names the root/source and teaches
+configuring the intended team first. Setup human output
+and existing missing-root diagnostics name the root source. An absent default
+root is described as having no identity yet.
+
+`setup --install-aw` installs `aw-compat.json`'s exact tested version by default.
+Pass `--aw-version` to choose another; each setup route still checks its own floor.
+
 ## 1.43.0 — explicit registry admission, grant seats in their team, membership reads that fail closed
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
@@ -1370,6 +1388,10 @@ Supported acts:
   join and `--create`, and required for `--username`. Neither flag extends the
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
+  If the selected root already belongs to another team, setup refuses before
+  init. Configure `settings.oats.aweb.roots[<intended team id>]` to that team's
+  root, or a fresh `<deployment>/.aweb-roots/<label>` directory, then retry.
+  Unreadable membership is also a refusal; the key reaches only the init call.
 - `oats aweb setup --registry <origin>`: record the operator's explicit registry
   admission in this deployment's `oats-local.yaml`, under
   `settings.oats.aweb.registry` (host-only). Alone, this command only records

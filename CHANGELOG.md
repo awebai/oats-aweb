@@ -18,6 +18,22 @@
   soul that runs on a session provider sets `delivery: session` (README,
   "Provider settings").
 
+- `setup --install-aw` now installs the tested aw version by default; pass
+  `--aw-version` to choose another.
+
+- **Changed: setup checks the root selected for its act.** Create and tokenless
+  join verify their per-team target before effects and report that target's
+  readiness. An unreadable unrelated default root no longer blocks them.
+  Explicit alias and service values avoid default-root locator reads; omitted
+  values retain their existing alias/service fallback and refuse with the
+  explicit input remedy when unavailable. Bare API-key setup refuses to init
+  an existing root in another team, naming the intended team, root/source and
+  explicit destination choices. When that root lists memberships but no team
+  is configured, it refuses with the team-configuration remedy before init.
+  Setup success and existing missing-root
+  diagnostics name their root source. An absent default root is described as
+  having no identity yet. JSON and binding wire shapes are unchanged.
+
 - **Fixed: registry admission stays explicit through command formatting.**
   Unknown leading aw flags retain the configured pin, and controller cleanup
   commands place it through validated arguments without relying on a JSON

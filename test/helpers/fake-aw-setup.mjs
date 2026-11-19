@@ -11,6 +11,7 @@ import { fakeAwArgvCheck } from "./aw-argv.mjs";
 // Opt-in behaviour, selected by env:
 //   AW_LIST_ERROR     team list fails with this stderr; AW_LIST_ERROR_AFTER=N
 //                     lets the first N list calls in each cwd succeed
+//                     AW_LIST_ERROR_CWD restricts the failure to that cwd
 //   AW_FAKE_KEYS      every identity it writes holds the private key files real
 //                     aw writes (signing.key, encryption-keys/<id>.x25519.key)
 //   AW_DELETE_FAIL    workspace delete is refused before it touches anything, as
@@ -116,7 +117,7 @@ const teamsFile = path.join(awDir, "teams.json");
 const writeTeams = (team, facts = {}) => { fs.mkdirSync(awDir, { recursive: true }); writeKeys(awDir); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team, ...facts }] })); };
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
-  if (process.env.AW_LIST_ERROR && fs.readFileSync(calls, "utf8").trim().split("\\n").map(JSON.parse).filter(c => c.cwd === process.cwd() && c.args[0] === "team" && c.args[1] === "list").length > Number(process.env.AW_LIST_ERROR_AFTER || 0)) { console.error(process.env.AW_LIST_ERROR); process.exit(1); }
+  if (process.env.AW_LIST_ERROR && (!process.env.AW_LIST_ERROR_CWD || process.env.AW_LIST_ERROR_CWD === process.cwd()) && fs.readFileSync(calls, "utf8").trim().split("\\n").map(JSON.parse).filter(c => c.cwd === process.cwd() && c.args[0] === "team" && c.args[1] === "list").length > Number(process.env.AW_LIST_ERROR_AFTER || 0)) { console.error(process.env.AW_LIST_ERROR); process.exit(1); }
   if (process.env.AW_LIST_TEAMS) console.log(process.env.AW_LIST_TEAMS);
   else if (fs.existsSync(teamsFile)) console.log(fs.readFileSync(teamsFile, "utf8"));
   else console.log(JSON.stringify({ memberships: [] }));
