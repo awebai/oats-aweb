@@ -957,14 +957,18 @@ and where to set it. The provider settings are:
   `backend` in `instance.json`; the health publisher reads the meta alone. A
   start on `tmux` records none.
 
-  Set `delivery: session` for a soul that runs on a session provider. The
-  kernel checks this capability's packages (`requires` in `oats.json`) by the
-  `delivery` setting alone, since a requirement cannot name a backend. Under
-  `delivery: channel` it therefore asks a provider launch for the channel
-  package it never uses, and does not apply the floors that make an installed
-  one honour `AWEB_DELIVERY=session` (`aweb-channel` 1.7.9, `@awebai/pi`
-  0.3.10): an older ambient plugin or extension would open its own stream
-  beside the broker. Under `delivery: session` the checks match the path.
+  A known gap: the kernel checks this capability's packages (`requires` in
+  `oats.json`) by the `delivery` setting alone, since a requirement cannot
+  name a backend yet. Under `delivery: channel` it therefore asks a provider
+  launch for the channel package it never uses, and does not apply the floors
+  that make an installed one honour `AWEB_DELIVERY=session` (`aweb-channel`
+  1.7.9, `@awebai/pi` 0.3.10): an older ambient plugin or extension would
+  open its own stream beside the broker. So, until a requirement can name the
+  backend, keep any installed `aweb-channel` and `@awebai/pi` at or above
+  those versions on a host that runs provider launches. The backend is chosen
+  per spawn, not per soul: setting `delivery: session` on a soul would make
+  the checks match its provider launches, and would also take that soul's
+  `tmux` launches off their channel.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
