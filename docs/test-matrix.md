@@ -130,7 +130,10 @@ the adapter does not load operator settings from disk. This fixture
 preparation requires the registry-setting provider change; the CLI floor stays
 unchanged. Printed controller cleanup commands run as complete shell lines in
 the fixture's isolated operator environment, preserving any explicit registry
-prefix; the journey then checks the certificate is absent at the service.
+prefix; the journey then checks the certificate is absent at the service. The
+loaded custody unit must carry exactly the configured `AWID_REGISTRY_URL`, no
+other `AWID_` names, and no `AWEB_` variables; key/ownership/process and
+certificate checks stay in place.
 
 The retained journey separately records the real kernel's post-start session
 inspection and the broker's pre-event status. Pending aw request m, a healthy idle
