@@ -126,7 +126,7 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/aweb" rev-parse HEAD)" = "$AWEB_STACK_COMMIT"
       - name: Start postgres, redis, awid and aweb
         working-directory: ${{ runner.temp }}/aweb
-        run: docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis awid aweb
+        run: docker compose -f docker-compose.e2e.yml -f "$GITHUB_WORKSPACE/test/fixtures/stack/awid-public-origin.yaml" up -d --build --wait postgres redis awid aweb
       - name: Provision pinned kernel and exact aw
         run: |
           git clone --no-checkout https://github.com/awebai/oats.git "$RUNNER_TEMP/kernel"
