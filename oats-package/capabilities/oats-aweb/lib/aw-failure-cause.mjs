@@ -120,7 +120,8 @@ export function usernameUnavailable({ stderr, status }, username) {
 /** The plain sentence for aw's reason word: a fixed one for the reasons aw 1.36.58
  *  words itself, else the word named as the service gave it. */
 export function usernameUnavailableCause(reason) {
-  return USERNAME_UNAVAILABLE_CAUSES[reason] ?? `aweb reports that username unavailable (${reason}): choose another`;
+  // An own property only: a reason word such as `constructor` must not select one of Object's.
+  return Object.hasOwn(USERNAME_UNAVAILABLE_CAUSES, reason) ? USERNAME_UNAVAILABLE_CAUSES[reason] : `aweb reports that username unavailable (${reason}): choose another`;
 }
 
 /** A namespace domain as aw normalizes it before it uses or prints one

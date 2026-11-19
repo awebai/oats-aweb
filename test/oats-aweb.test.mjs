@@ -982,6 +982,7 @@ test("username setup names an unavailable username plainly and withholds the res
     ["reserved", "that username is reserved: choose another"],
     ["invalid_format", "aweb does not accept that username's format (lowercase letters, numbers and hyphens): choose another"],
     ["held_for_review", "aweb reports that username unavailable (held_for_review): choose another"],
+    ["constructor", "aweb reports that username unavailable (constructor): choose another"],
   ]) {
     // A username that is part of aw's own words (`user` of `username`, `taken` and `ken` of the reason) still classifies.
     for (const username of ["alice", "user", "taken", "ken"]) {
