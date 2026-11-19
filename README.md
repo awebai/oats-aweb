@@ -38,7 +38,10 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
-## Unreleased — setup root choice and install version
+## 1.44.0 — setup works in the root it was asked to work in
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
+1.36.58. The CHANGELOG's 1.44.0 entry lists everything a deployment must change.
 
 `setup --create` and tokenless `setup --join` check their selected per-team root,
 and report that root's readiness. An unrelated default root's membership no
