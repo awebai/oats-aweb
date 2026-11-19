@@ -696,19 +696,19 @@ function resolveResidentCustody(name) {
   }
   return custody;
 }
-function grantShow(custody, grantId) {
-  const raw = run(["aw", "id", "grant", "show", grantId, "--json"], custody, 60000);
+function grantShow(custody, grantId, team) {
+  const raw = run(["aw", "id", "grant", "show", grantId, flagEq("--team", team), "--json"], custody, 60000);
   return parseAwJson(raw, "aw id grant show");
 }
 const revokeMaybeApplied = (error) => /may have applied|context deadline exceeded|timed out|timeout/i.test(String(error?.message || error));
-function revokeGrant(custody, grantId) {
+function revokeGrant(custody, grantId, team) {
   try {
-    const raw = run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000);
+    const raw = run(["aw", "id", "grant", "revoke", grantId, flagEq("--team", team), "--json"], custody, 60000);
     return parseAwJson(raw, "aw id grant revoke");
   } catch (e) {
     if (revokeMaybeApplied(e)) {
       try {
-        const shown = grantShow(custody, grantId);
+        const shown = grantShow(custody, grantId, team);
         const status = String(shown.status || shown.grant?.status || "").toLowerCase();
         if (status === "revoked" || shown.revoked === true) return { grant_id: grantId, status: "revoked", verifiedByShow: true };
       } catch { /* fall through to original revoke error */ }
@@ -820,12 +820,13 @@ function validateMintedGrant(minted, grantHome, ttl) {
 }
 function parseMintedGrant(raw, grantHome, ttl) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome, ttl); }
 /** What to say about a grant whose revoke failed: how long it stays valid and
- *  how to revoke it. The next start or retire finds it in the custody's list. */
-const unrevokedNote = (custody, grant, error) => `; revoke failed (${String(error?.message || error).slice(0, 200)}), so ${unrevokedGrant({ grant: grant.id, expiresAt: grant.expiresAt, custody })}`;
+ *  how to revoke it. Grants in the seat's team are found by the next sweep;
+ *  an anomalous wrong-team mint needs the printed manual cleanup. */
+const unrevokedNote = (custody, grant, error, team) => `; revoke failed (${String(error?.message || error).slice(0, 200)}), so ${unrevokedGrant({ grant: grant.id, expiresAt: grant.expiresAt, custody, team })}`;
 /** Revoke a grant this hook will not keep: "" when it is gone, else unrevokedNote. */
-function revokeOrNote(custody, grant) {
-  try { revokeGrant(custody, grant.id); return ""; }
-  catch (e) { return unrevokedNote(custody, grant, e); }
+function revokeOrNote(custody, grant, team) {
+  try { revokeGrant(custody, grant.id, team); return ""; }
+  catch (e) { return unrevokedNote(custody, grant, e, team); }
 }
 /** `aw id grant list` for the sweep, run in the resident's custody root. A start
  *  waits at most aw's own 10 s client timeout for it, so an outage delays a start
@@ -854,29 +855,41 @@ function persistSeat(record) {
 /** The recorded seat, undefined when there is none; an unreadable record
  *  throws, so a retire says so instead of passing over a grant it may hide. */
 function recordedSeat() {
-  if (!existsSync(seatRecordFile())) return undefined;
+  try { lstatSync(seatRecordFile()); }
+  catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
   const record = JSON.parse(readFileSync(seatRecordFile(), "utf8"));
-  if (!record || typeof record.seat !== "string" || !/^[0-9a-f]{16}$/.test(record.seat)) throw new Error(`${seatRecordFile()} is malformed`);
+  if (!record || typeof record.seat !== "string" || !/^[0-9a-f]{16}$/.test(record.seat) || record.instance !== instance || typeof record.resident !== "string" || !record.resident.trim() || !validAwebTeamId(record.team)) throw new Error(`${seatRecordFile()} is malformed or incomplete`);
   return record;
 }
-/** The meta with the recorded seat filled in where it carries none. */
+/** A present seat record owns the seat, resident and team, even if meta differs.
+ *  Missing records retain the legacy path pending an approved migration. */
 function withRecordedSeat(meta, record) {
-  if (!record || meta.identity?.seat) return meta;
+  if (!record) return meta;
   const identity = meta.identity || {};
-  return { ...meta, identity: { ...identity, mode: "global", seat: record.seat, resident: identity.resident || record.resident, team: identity.team || record.team } };
+  return { ...meta, identity: { ...identity, mode: "global", seat: record.seat, resident: record.resident, team: record.team } };
+}
+function launchSeat(meta) {
+  let record;
+  try { record = recordedSeat(); }
+  catch { fatal(`respawn this home; refusing to replace an unreadable or incomplete seat record or mint a new seat: ${seatRecordFile()}`, meta); }
+  const grantTeam = record ? recoverGrantHome(priorGrantHome(meta)).team : undefined;
+  if (record && grantTeam && !sameAwebTeamId(grantTeam, record.team)) fatal(`respawn this home; the selected grant home records a different team from the seat record: ${seatRecordFile()}`, meta);
+  // Do not erase the only evidence needed for manual cleanup of a grant in
+  // another team. A readable local grant in the seat's team can corroborate
+  // a metadata repair; a missing or unreadable grant home cannot.
+  if (record && meta.identity?.grant?.id && meta.identity.team && !sameAwebTeamId(meta.identity.team, record.team) && !sameAwebTeamId(grantTeam, record.team)) fatal(`respawn this home; the recorded grant names another team and its selected grant home cannot confirm the seat's team: ${seatRecordFile()}`, meta);
+  if (record && ((identitySettings.resident && identitySettings.resident !== record.resident) || (defaultTeamId() && !sameAwebTeamId(defaultTeamId(), record.team)))) fatal(`respawn this home to change its resident or team; the configured resident or team differs from the seat record: ${seatRecordFile()}`, meta);
+  return record;
 }
 /** At every real start: revoke this seat's grants other than the one it runs
  *  on (a mint before a crash, a revoke that failed). A start never fails on it. */
-function sweepAtStart(meta) {
-  let record;
-  try { record = recordedSeat(); } catch (e) { outNotes.push(`could not check for orphaned grants: the seat record is unreadable (${String(e.message || e).slice(0, 200)})`); }
-  meta = withRecordedSeat(meta, record);
+function sweepAtStart(meta, record) {
   const seat = meta.identity?.seat;
   if (!seat) return;
-  const custody = residentCustodyOf(String(identitySettings.resident || meta.identity.resident || ""));
+  const custody = residentCustodyOf(String(record?.resident || identitySettings.resident || meta.identity.resident || ""));
   const team = meta.identity.team || defaultTeamId();
   if (!custody || !team) { outNotes.push("could not check for orphaned grants: the resident's custody or the team is not resolvable; this seat may hold grants that stay valid"); return; }
-  const swept = sweepSeatGrants({ list: grantLister(custody, START_GRANT_LIST_TIMEOUT_MS), revoke: (id) => revokeGrant(custody, id), custody, team, label: seatGrantLabel(instance, seat), keep: meta.identity.grant?.id });
+  const swept = sweepSeatGrants({ list: grantLister(custody, START_GRANT_LIST_TIMEOUT_MS), revoke: (id) => revokeGrant(custody, id, team), custody, team, label: seatGrantLabel(instance, seat), keep: meta.identity.grant?.id });
   if (!swept.checked) { outNotes.push(`could not check for orphaned grants (${swept.error}); this seat may hold grants that stay valid`); return; }
   for (const g of swept.revoked) outNotes.push(`revoked orphaned grant ${g.grant}`);
   for (const g of swept.remaining) outNotes.push(`orphaned grant ${g.grant} was not revoked (${g.error}), so ${unrevokedGrant(g)}`);
@@ -891,24 +904,25 @@ function checkedRenewMode() {
   if (mode !== "off" && mode !== "launch") fatal(`identity.renew must be "off" or "launch" (got ${JSON.stringify(identitySettings.renew)})`);
   return mode;
 }
-function globalGrantRenew(oldMeta) {
+function globalGrantRenew(oldMeta, seatRecord) {
   if (identityMode === "global" || oldMeta.identity?.mode === "global") checkedGrantTTL();
   // Every real start revokes what an earlier start or spawn left of this seat.
-  if (oldMeta.identity?.mode === "global") sweepAtStart(oldMeta);
+  if (oldMeta.identity?.mode === "global") sweepAtStart(oldMeta, seatRecord);
   if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), ...(oldMeta.identity?.mode === "global" ? { warning: grantInventoryAdvisory(oldMeta.identity.grant, { retained: true }) } : {}) });
   if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
-  const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
+  const resident = String(seatRecord?.resident || identitySettings.resident || oldMeta.identity.resident || "");
   const custody = resolveResidentCustody(resident);
-  const team = defaultTeamId() || oldMeta.identity.team;
+  const team = seatRecord?.team || defaultTeamId() || oldMeta.identity.team;
   if (!team) fatal(teamConfigRemedy());
+  // A pre-seat home can mint in a changed default team. Its previous grant
+  // still belongs to the team recorded with that grant, not the new mint.
+  const oldGrantTeam = seatRecord ? team : (oldMeta.identity.team || team);
   const scopes = grantScopes();
   // A renewal keeps the seat's duration; only a new spawn defaults to never.
   const ttl = renewalGrantTTL(identitySettings.ttl, oldMeta.identity.grant.ttl);
   // A seat keeps its id; one whose meta predates seat ids gets one now, kept
   // in every meta this start returns, so its new grants can be found.
-  let seatRecord;
-  try { seatRecord = recordedSeat(); } catch { /* an unreadable record is replaced below */ }
-  const seat = oldMeta.identity.seat || seatRecord?.seat || newSeatId();
+  const seat = seatRecord?.seat || oldMeta.identity.seat || newSeatId();
   if (!oldMeta.identity.seat) oldMeta = { ...oldMeta, identity: { ...oldMeta.identity, seat } };
   const oldHome = priorGrantHome(oldMeta);
   let preflight;
@@ -934,26 +948,26 @@ function globalGrantRenew(oldMeta) {
   try { parsed = parseMintedGrant(raw, grantHome, ttl); }
   catch (e) {
     const recovered = recoverGrantHome(grantHome);
-    keepPrevious(`renewal mint failed (${e.message || e})`, recovered.grantId ? revokeOrNote(custody, { id: recovered.grantId, expiresAt: recovered.expiresAt }) : "");
+    keepPrevious(`renewal mint failed (${e.message || e})`, recovered.grantId ? revokeOrNote(custody, { id: recovered.grantId, expiresAt: recovered.expiresAt }, recovered.team || team) : "");
   }
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
   const recovered = recoverGrantHome(grantHome);
   const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
   const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, seat, grant: { id: grantId, expiresAt, ttl, renew: "launch", scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
   const newGrant = newMeta.identity.grant;
-  if (!sameAwebTeamId(mintedTeam, team)) keepPrevious(`renewal minted grant team ${mintedTeam} differs from ${team}`, revokeOrNote(custody, newGrant));
+  if (!sameAwebTeamId(mintedTeam, team)) keepPrevious(`renewal minted grant team ${mintedTeam} differs from ${team}`, revokeOrNote(custody, newGrant, mintedTeam));
   try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias: newMeta.identity.alias, team: mintedTeam }); }
-  catch (e) { keepPrevious(`renewal grant ${grantId} custody attachment failed (${e.message || e})`, revokeOrNote(custody, newGrant)); }
+  catch (e) { keepPrevious(`renewal grant ${grantId} custody attachment failed (${e.message || e})`, revokeOrNote(custody, newGrant, mintedTeam)); }
   // The start already registered the previous grant home; the new one replaces it.
   if (deliveryFor().broker) {
     try { wakeRegister(home, grantHome); }
-    catch (e) { keepPrevious(`renewal session delivery registration failed for new grant ${grantId} (${e.message || e})`, revokeOrNote(custody, newGrant)); }
+    catch (e) { keepPrevious(`renewal session delivery registration failed for new grant ${grantId} (${e.message || e})`, revokeOrNote(custody, newGrant, mintedTeam)); }
   }
   let warning;
-  try { revokeGrant(custody, oldMeta.identity.grant.id); }
-  // The seat has a working new grant: the start proceeds, and the next start
-  // or retire finds the previous one in the custody's list.
-  catch (e) { warning = `oats-aweb: new grant ${grantId} is kept; previous grant ${oldMeta.identity.grant.id} was not revoked${unrevokedNote(custody, oldMeta.identity.grant, e)}`; }
+  try { revokeGrant(custody, oldMeta.identity.grant.id, oldGrantTeam); }
+  // The seat has a working new grant, so start proceeds. A later sweep retries
+  // grants with this seat's label; a legacy bare label needs the printed cleanup.
+  catch (e) { warning = `oats-aweb: new grant ${grantId} is kept; previous grant ${oldMeta.identity.grant.id} was not revoked${unrevokedNote(custody, oldMeta.identity.grant, e, oldGrantTeam)}`; }
   out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
 /** The renew mode a spawned grant records, when it is one launch accepts;
@@ -994,8 +1008,8 @@ function globalGrantSpawn() {
       if (recovered.grantId) {
         const grant = { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown" };
         meta = startedMeta({ identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, seat, grant: { ...grant, scopes, home: grantHome } }) });
-        try { revokeGrant(custody, recovered.grantId); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
-        catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml`, unrevokedNote(custody, grant, revokeError)); }
+        try { revokeGrant(custody, recovered.grantId, recovered.team || team); meta = seatMeta(); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
+        catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml`, unrevokedNote(custody, grant, revokeError, recovered.team || team)); }
       }
       cleanup();
       meta = seatMeta();
@@ -1006,13 +1020,13 @@ function globalGrantSpawn() {
     const alias = recovered.subjectAlias || mintedAlias || resident;
     meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, seat, grant: { id: grantId, expiresAt, ttl, ...recordedRenew(), scopes, home: grantHome, ...grantAppInventory(minted) } }) });
     if (!sameAwebTeamId(mintedTeam, team)) {
-      try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
-      catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}`, unrevokedNote(custody, meta.identity.grant, e)); }
+      try { revokeGrant(custody, grantId, mintedTeam); meta = seatMeta(); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
+      catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}`, unrevokedNote(custody, meta.identity.grant, e, mintedTeam)); }
     }
     try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias, team: mintedTeam }); }
     catch (e) {
-      try { revokeGrant(custody, grantId); failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; the grant was revoked and nothing was kept`); }
-      catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError)); }
+      try { revokeGrant(custody, grantId, mintedTeam); meta = seatMeta(); failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; the grant was revoked and nothing was kept`); }
+      catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError, mintedTeam)); }
     }
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
     const registry = residentRegistryEnv(custody);
@@ -1020,8 +1034,8 @@ function globalGrantSpawn() {
     if (broker) {
       try { wakeRegister(home, grantHome); }
       catch (e) {
-        try { revokeGrant(custody, grantId); failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; grant revoked and grant home removed`); }
-        catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError)); }
+        try { revokeGrant(custody, grantId, mintedTeam); meta = seatMeta(); failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; grant revoked and grant home removed`); }
+        catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError, mintedTeam)); }
       }
     }
     const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : []), ...(registry.problem ? [`oats-aweb: ${registry.problem}`] : [])];
@@ -1035,7 +1049,8 @@ function globalGrantSpawn() {
     });
   } catch (e) {
     // The returned meta lets retire's compensation revoke a grant that survives.
-    const survives = meta?.identity?.grant?.id ? revokeOrNote(custody, meta.identity.grant) : "";
+    const survives = meta?.identity?.grant?.id ? revokeOrNote(custody, meta.identity.grant, meta.identity.team || team) : "";
+    if (!survives) meta = seatMeta(); // confirmed revocation leaves only the seat to sweep
     cleanup();
     out({ meta: meta || seatMeta(), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
   }
@@ -1043,16 +1058,19 @@ function globalGrantSpawn() {
 // OATS's retire hook contract (the kernel's docs/capabilities.md, retire hook rules): only nothing-to-delete
 // completes a no-op cleanup. Other retired:false answers keep the home.
 const kernelRetireIncomplete = (meta) => meta.retired === false && meta.reason !== "nothing-to-delete";
-function globalGrantRetire(meta) {
-  if (brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
+function globalGrantRetire(meta, seatRecord) {
+  const reportedIdentity = meta.identity;
+  meta = withRecordedSeat(meta, seatRecord);
   const id = meta.identity?.grant?.id, seat = meta.identity?.seat;
+  const team = meta.identity?.team || defaultTeamId();
+  if ((id || seat) && !team) fatal(teamConfigRemedy(), meta);
+  if (brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
   if (!id && !seat) out({ meta: { retired: false, reason: "nothing-to-delete" } });
   const custody = resolveResidentCustody(meta.identity?.resident);
-  const team = meta.identity?.team || defaultTeamId();
   // Every active grant of this seat goes, the current one included; the
   // custody's list also finds a grant minted before a crash.
   const label = seat ? seatGrantLabel(instance, seat) : undefined;
-  const swept = seat ? sweepSeatGrants({ list: grantLister(custody, RETIRE_GRANT_LIST_TIMEOUT_MS), revoke: (grant) => revokeGrant(custody, grant), custody, team, label })
+  const swept = seat ? sweepSeatGrants({ list: grantLister(custody, RETIRE_GRANT_LIST_TIMEOUT_MS), revoke: (grant) => revokeGrant(custody, grant, team), custody, team, label })
     : { checked: false, revoked: [], remaining: [], grants: [], error: "this seat records no seat id" };
   const unrevoked = [...swept.remaining];
   // The sweep covers a current grant that carries this seat's label. One from
@@ -1060,15 +1078,22 @@ function globalGrantRetire(meta) {
   // the list says it is no longer active.
   const listed = swept.grants.find((g) => g.grant_id === id);
   if (id && !(listed && (listed.label === label || listed.status !== "active"))) {
-    try { revokeGrant(custody, id); }
-    catch (e) { unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, error: String(e.message || e).slice(0, 200) }); }
+    // A grant may name another team after an earlier release renewed there,
+    // or after a wrong-team mint. Neither authorizes cross-team cleanup at
+    // retire; only immediate mint compensation uses receipt authority.
+    if (seatRecord && reportedIdentity?.team && !sameAwebTeamId(reportedIdentity.team, team) && !listed) {
+      unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, team: reportedIdentity.team, error: `the recorded grant names team ${reportedIdentity.team}, not the seat's team ${team}; automatic cleanup stays in the recorded seat team`, manualCleanup: true });
+    } else {
+      try { revokeGrant(custody, id, team); }
+      catch (e) { unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, team, error: String(e.message || e).slice(0, 200) }); }
+    }
   }
   removeGrantHomes();
   // A grant that survives a retire is a live credential, and an unread list
   // may hide one: the retire fails, and the kernel keeps the home and this meta
   // for the retry. Under --force each grant and its revoke command is printed.
-  const notes = [...unrevoked.map((g) => `grant ${g.grant} was not revoked (${g.error}), so ${unrevokedGrant(g)}`), ...(seat && !swept.checked ? [`could not check for orphaned grants (${swept.error}); this seat may hold grants that stay valid`] : [])];
-  if (notes.length) out({ meta: { retired: false, reason: unrevoked.length ? "grant-revoke-failed" : "grant-list-failed", ...(id ? { grant: id } : {}), identity: meta.identity }, warning: notes.map((n) => `oats-aweb: ${n}`).join(" | ") }, 1);
+  const notes = [...unrevoked.map((g) => `grant ${g.grant} was not revoked (${g.error}), so ${unrevokedGrant(g)}${g.manualCleanup ? `; after that manual cleanup, run \`oats retire ${instance} --force\`: retire cannot confirm cleanup outside the recorded team` : ""}`), ...(seat && !swept.checked ? [`could not check for orphaned grants (${swept.error}); this seat may hold grants that stay valid`] : [])];
+  if (notes.length) out({ meta: { retired: false, reason: unrevoked.length ? "grant-revoke-failed" : "grant-list-failed", ...(id ? { grant: id } : {}), identity: reportedIdentity || meta.identity }, warning: notes.map((n) => `oats-aweb: ${n}`).join(" | ") }, 1);
   out({ meta: { retired: true, identityRevoked: true, grant: id } });
 }
 const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json");
@@ -2247,11 +2272,12 @@ if (event === "launch") {
   // The delivery path is decided afresh at every start: the runtime may have
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
   // over what the meta recorded.
-  const started = retainedSeatAsLocal(startedMeta(JSON.parse(process.env.OATS_META || "{}")));
+  let started = retainedSeatAsLocal(startedMeta(JSON.parse(process.env.OATS_META || "{}")));
   // Only GLOBAL grants get the new default; ordinary LOCAL launch/join sync
   // must not enter the renewal helper's retained-grant early return.
   const globalLaunch = identityMode === "global" || started.identity?.mode === "global";
-  if (globalLaunch) checkedGrantTTL(); // before preview, broker writes or retained returns
+  let seatRecord;
+  if (globalLaunch) { seatRecord = launchSeat(started); started = withRecordedSeat(started, seatRecord); checkedGrantTTL(); } // before preview, broker writes or retained returns
   // Under OATS_LAUNCH_PREVIEW=1 (the kernel's first pass of every start, and
   // `oats launch-config preview`) the hook changes nothing: no broker
   // registration, no renewal, no joined-team sync, no meta. It answers with
@@ -2274,7 +2300,7 @@ if (event === "launch") {
   for (const p of pendingJoinsOf(withProviderTeams(started))) outNotes.push(`unfinished join of team ${p.label} (${p.team}) since ${p.at || "an earlier run"}: its membership may exist in ${p.identityHome} but this home has not recorded it; ${unfinishedJoinFix(p.label)}`);
   requireWakeBroker();
   syncPrimaryDelivery(primaryIdentityHomeOf(started), { retained: started.retained === true });
-  if (globalLaunch) globalGrantRenew(started);
+  if (globalLaunch) globalGrantRenew(started, seatRecord);
   let oldMeta = withProviderTeams(started);
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
@@ -2549,12 +2575,9 @@ if (event === "launch") {
     let seatRecord;
     try { seatRecord = recordedSeat(); }
     catch (e) {
-      const why = String(e.message || e).slice(0, 200);
-      // With no seat in the meta either, nothing names this seat's grants.
-      if (!meta.identity?.seat) await finish({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${why}); this seat may hold grants that stay valid` }, 1);
-      outNotes.push(`the seat record is unreadable (${why}); retired from the seat in the meta`);
+      await finish({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record ${seatRecordFile()} is unreadable or incomplete; this seat may hold grants that stay valid; respawn this home` }, 1);
     }
-    if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
+    if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(meta, seatRecord);
   }
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }

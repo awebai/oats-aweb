@@ -13,6 +13,19 @@ const j = (obj) => JSON.stringify(obj, null, 2);
 function versionTuple(v) { return String(v || "0.0.0").replace(/^aw\\s+v?/, "").replace(/^v/, "").split(".").slice(0, 3).map(n => Number(n) || 0); }
 function atLeast(v, f) { const A = versionTuple(v), B = versionTuple(f); for (let i = 0; i < 3; i++) if (A[i] !== B[i]) return A[i] > B[i]; return true; }
 function val(flag) { const eq = a.find((x) => x.startsWith(flag + "=")); if (eq) return eq.slice(flag.length + 1); const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
+// Grant show/revoke accept flags before or after the id, and -- ends flags,
+// as the real aw does. In particular execute the printed recovery command.
+function grantId() {
+  const ids = [];
+  for (let i = 3; i < a.length; i++) {
+    if (a[i] === "--") { ids.push(...a.slice(i + 1)); break; }
+    if (a[i] === "--team") { i++; continue; }
+    if (a[i].startsWith("--team=") || a[i] === "--json") continue;
+    ids.push(a[i]);
+  }
+  if (ids.length !== 1) { console.error("expected one grant id"); process.exit(2); }
+  return ids[0];
+}
 // The resident's grants, as the server keeps them: every grant ever minted, newest
 // first, with label, status and expiry (aw id grant list --json, aw 1.36.32).
 const registry = ${JSON.stringify(join(base, "grants.json"))};
@@ -152,10 +165,14 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "mint") {
   process.exit(0);
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "revoke") {
+  const id = grantId();
+  const team = val("--team") || process.env.FAKE_ACTIVE_TEAM || "t:example.test";
+  if (!grants().some(g => g.grant_id === id && g.team_id === team)) { console.error("grant not found in team " + team); process.exit(1); }
   // FAKE_REVOKE_FAIL: "1" fails every revoke, a grant id fails only that grant's.
-  if (process.env.FAKE_REVOKE_FAIL && (process.env.FAKE_REVOKE_FAIL === "1" || process.env.FAKE_REVOKE_FAIL.split(",").includes(a[3]))) { console.error("revoke unavailable"); process.exit(1); }
-  saveGrants(grants().map(g => g.grant_id === a[3] ? { ...g, status: "revoked" } : g));
-  console.log(j({ grant_id: a[3], status: "revoked" })); process.exit(0);
+  if (process.env.FAKE_REVOKE_FAIL && (process.env.FAKE_REVOKE_FAIL === "1" || process.env.FAKE_REVOKE_FAIL.split(",").includes(id))) { console.error("revoke unavailable"); process.exit(1); }
+  saveGrants(grants().map(g => g.grant_id === id && g.team_id === team ? { ...g, status: "revoked" } : g));
+  if (process.env.FAKE_REVOKE_APPLIED_TIMEOUT) { console.error("revoke may have applied: context deadline exceeded"); process.exit(1); }
+  console.log(j({ grant_id: id, status: "revoked" })); process.exit(0);
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "list") {
   if (process.env.FAKE_GRANT_LIST_FAIL) { console.error(process.env.FAKE_GRANT_LIST_FAIL); process.exit(1); }
@@ -163,7 +180,13 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "list") {
   const team = val("--team");
   console.log(j({ grants: grants().filter(g => !team || g.team_id === team) })); process.exit(0);
 }
-if (a[0] === "id" && a[1] === "grant" && a[2] === "show") { console.log(j({ grant_id: a[3], status: "revoked" })); process.exit(0); }
+if (a[0] === "id" && a[1] === "grant" && a[2] === "show") {
+  const id = grantId();
+  const team = val("--team") || process.env.FAKE_ACTIVE_TEAM || "t:example.test";
+  const grant = grants().find(g => g.grant_id === id && g.team_id === team);
+  if (!grant) { console.error("identity grant not found"); process.exit(1); }
+  console.log(j(grant)); process.exit(0);
+}
 console.error("fake aw: unexpected " + s); process.exit(2);
 `);
   chmodSync(join(bin, "aw"), 0o755);

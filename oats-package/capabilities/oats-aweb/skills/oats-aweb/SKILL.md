@@ -458,7 +458,7 @@ oats readiness --home "$PWD" --json   # the provider's readiness answer for this
 | `grant-expiring` (warning, grant seats with a finite expiry) | the grant recorded at the seat's last mint expires within 7 days; the message names the instant as recorded | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which requests another captured `identity.ttl` duration, subject to team or certificate limits (removing identity.ttl and respawning requests never; a team or certificate cap can still impose an expiry); a capped never seat restarts for renewal up to the team's limit; respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
 | `grant-expired` (grant seats with a finite expiry) | that grant's recorded expiry has passed: messaging is unavailable (aw reports `grant_expired`) | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which requests another captured `identity.ttl` duration, subject to team or certificate limits (removing identity.ttl and respawning requests never; a team or certificate cap can still impose an expiry); a capped never seat restarts for renewal up to the team's limit; respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
 | `grant-expiry-unknown` (warning, grant seats) | the recorded grant has no readable expiry; readiness does not guess one | human: the message names this seat's remedy: restart the seat to renew it (`oats session restart --home <home>`), which requests another captured `identity.ttl` duration, subject to team or certificate limits (removing identity.ttl and respawning requests never; a team or certificate cap can still impose an expiry); a capped never seat restarts for renewal up to the team's limit; respawn it when its grant was minted under `renew: off` (section 8, "GLOBAL residents and grant seats") |
-| `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
+| `grant-revoke-pending` (warning, grant seats) | the custody's grant list shows an active grant of this seat other than the current one (a failed revoke, or a mint before a crash); it stays valid until revoked, or until its expiry; the message names it and the revoke command | human: run the named `aw id grant revoke --team=<team> -- <id>` in the resident's custody directory, or restart the seat: every start and retire revokes it |
 | `grant-revoke-unchecked` (warning, grant seats) | the custody's grant list could not be read, so readiness cannot tell whether this seat holds grants that stay valid | human: check the resident's custody and its aweb service; a retire fails until the list can be read |
 | `teams-unverified` (launch) | live team data was unavailable; memberships were kept | nobody |
 | `channel-not-connected` (Claude channel homes) | Claude's MCP log for the home's project has no `Channel notifications registered` line since the home's last start, and that start is more than 2 minutes old: the session is not on the aweb channel and hears no mail, even though it shows the channel banner. Usually Claude skipped the plugin because a recent failure was cached in `<CLAUDE_CONFIG_DIR>/mcp-needs-auth-cache.json` (one failed start anywhere on the account makes every Claude launched in the next 15 minutes skip it), or the plugin failed to start | operator: restart the session (`oats session restart --home <home>`) |
@@ -794,11 +794,31 @@ custody's grant list is the source of
 truth: every real start and retire revokes this seat's other active grants (at
 retire, all of them), including one minted before a crash; other labels are never
 touched. A failed revoke names how long the grant stays valid ("until revoked"
-for a never-grant) and the exact command, `aw id grant revoke <id>` run in the
+for a never-grant) and the exact command, `aw id grant revoke --team=<team> -- <id>` run in the
 resident's custody directory; readiness warns `grant-revoke-pending`, or
 `grant-revoke-unchecked` when the list cannot be read. A failed renewal keeps the
 previous grant and starts on it; only a failed first mint at spawn fails. A
 retire exits nonzero while a grant stays unrevoked or the list is unread.
+
+A present `seat.json` owns this home's seat id, resident and team. A different
+configured resident or default team refuses start with a respawn remedy; an
+unreadable or incomplete record refuses both start and retire. A selected grant
+home recording another team also refuses start, preview and `renew: off` included.
+Metadata naming a grant in another team refuses start unless the selected readable
+grant file confirms the seat's team; missing grant homes cannot erase cleanup
+evidence. Retire with no resolvable team refuses with a configuration remedy and
+keeps the metadata and credential.
+When a recorded grant names another team, including a home renewed there by an
+earlier release, follow retire's printed manual revoke command with its `--team`, then the operator's
+`oats retire <instance> --force`: ordinary retire cannot confirm cleanup outside
+the recorded team.
+
+A pre-1.25.0 home renewing into a changed default team revokes its previous
+grant in that grant's recorded team. A failed renewal keeps the previous
+grant and the newly written seat record. If they name different teams, the
+next start refuses until the home is respawned; follow retire's printed
+cleanup steps. Do not rewrite the record: it keeps a grant minted before a
+crash discoverable.
 
 `oats readiness --home H --json` reads the grant recorded at the seat's last
 mint, asking neither aw nor custody. A never-grant gets no lifetime diagnostic
