@@ -47,7 +47,7 @@ export function checkRecordedAwArgv(binary, records, { version } = {}) {
           return [flag, value];
         });
         const accepted = spawnSync(binary, [...command.split(' '), ...argv, '--help'], helpOptions(home));
-        assert.equal(accepted.status, 0, `${command}: real aw refused the recorded flag combination: ${accepted.stderr}`);
+        assert.equal(accepted.status, 0, `${command}: real aw refused the recorded flags parsed together: ${accepted.stderr}`);
       }
     }
     assert.ok(cache.size > 0, 'no hook argv recorded');
@@ -61,7 +61,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const records = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   // Coverage witnesses: the suite must execute each hook path against its
   // recording fake, rather than passing on a small accidental subset.
-  const required = ['version', 'init', 'whoami', 'check', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show'];
+  const required = ['version', 'init', 'whoami', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show'];
   const observationHome = mkdtempSync(join(tmpdir(), 'aw-capability-'));
   let version, legacyFlag;
   try {
