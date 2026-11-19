@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -212,4 +213,57 @@ test('docs say nested roots are not migrated and ship no move procedure', () => 
   assert.match(flat,/Existing nested roots keep working and are not migrated; to move one, ask your aweb lead\./,name);
   assert.doesNotMatch(flat,/aw workspace connect --team <(?:team id|T)>/,`${name} ships no move steps`);
  }
+});
+
+// #285: on a terminal, --invite-stdin reads the token with echo off. Runs setup on
+// a real pseudo-terminal, types after the prompt, and returns what the terminal showed.
+const PTY_DRIVER = `
+import base64, os, pty, select, sys, time
+argv, typed = sys.argv[2:], sys.argv[1].encode()
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(argv[0], argv)
+shown, sent, deadline = b"", False, time.time() + 30
+while time.time() < deadline:
+    r, _, _ = select.select([fd], [], [], 0.2)
+    if fd in r:
+        try: chunk = os.read(fd, 4096)
+        except OSError: break
+        if not chunk: break
+        shown += chunk
+    if not sent and b"(input hidden): " in shown:
+        os.write(fd, typed); sent = True
+_, status = os.waitpid(pid, 0)
+print(base64.b64encode(shown).decode()); print(os.waitstatus_to_exitcode(status))
+`;
+function onTerminal(f, args, typed) {
+  // The fixture's PATH holds only the fake aw, so python3 is found on the caller's.
+  const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim();
+  const r = spawnSync(python, ['-I', '-c', PTY_DRIVER, typed, process.execPath, hook, ...args], { cwd: f.deployment, env: f.env, encoding: 'utf8', timeout: 60000 });
+  assert.equal(r.status, 0, String(r.stderr ?? r.error));
+  const [shown, code] = r.stdout.trim().split('\n');
+  return { shown: Buffer.from(shown, 'base64').toString('utf8'), code: Number(code) };
+}
+const joinArgs = ['setup', '--join', 'joined', '--invite-stdin', '--name', 'host', '--service', 'https://service.invalid'];
+test('on a terminal, --invite-stdin reads the token without echo and accepts it on stdin (#285)', t => {
+  if (spawnSync('python3', ['-c', 'import pty']).status !== 0) { t.skip('python3 with pty is required to drive a terminal'); return; }
+  const f = fixture(t), token = 'PTY-SECRET-INVITE-TOKEN';
+  const { shown, code } = onTerminal(f, joinArgs, `${token}\r`);
+  assert.equal(code, 0, shown);
+  assert.match(shown, /Invite token \(input hidden\): /);
+  assert.ok(!shown.includes(token), shown);
+  const accept = f.fake.readCalls().find(c => c.args.includes('accept-invite'));
+  assert.equal(accept.stdin, true);
+  assert.equal(accept.stdinSha256, createHash('sha256').update(token).digest('hex'));
+  assert.ok(existsSync(join(f.deployment, '.aweb-roots', 'joined', '.aw', 'workspace.yaml')));
+});
+test('on a terminal, Ctrl-C or an empty line at the invite prompt redeems nothing (#285)', t => {
+  if (spawnSync('python3', ['-c', 'import pty']).status !== 0) { t.skip('python3 with pty is required to drive a terminal'); return; }
+  for (const [typed, said] of [['PARTIAL\u0003', 'cancelled'], ['\r', 'no invite token was entered']]) {
+    const f = fixture(t), { shown, code } = onTerminal(f, joinArgs, typed);
+    assert.equal(code, 1, shown);
+    assert.match(shown, new RegExp(`oats aweb setup: --invite-stdin: ${said}`));
+    assert.ok(!shown.includes('PARTIAL'), shown);
+    assert.deepEqual(f.fake.readCalls(), []);
+  }
 });

@@ -1474,7 +1474,7 @@ Supported acts:
     root already uses, which may be hosted aweb. To create on a self-hosted
     server, set `AWEB_URL` first. Setup names the service
     before it creates anything.
-- `oats aweb setup --join <label> --invite <token>`: accepts an existing/shared
+- `oats aweb setup --join <label> --invite-stdin` (or `--invite <token>`): accepts an existing/shared
   team's invite into a new per-team root and records `roots[<team id>]`. It
   never accepts into the existing default root. With aw 1.36.53 or later, a
   label already mapped to a team must be the invite's team: otherwise
@@ -1501,10 +1501,12 @@ Supported acts:
   making the label eligible in the workspace's `souls:` (a shared-file change,
   `/oats-teams`). When the soul's teams cannot be read, it keeps the spawn and
   says it assumes eligibility (`result.nextNote`). A kept deployment default,
-  and moving it, are in the note. The dashboard's
-  `--invite <token>` one-liner works; `printf '%s\n' "$TOKEN" | oats aweb setup
-  --soul <soul> --invite-stdin --name <alias>` keeps the token out of shell
-  history. A deployment with no root identity needs `--name <alias>`. To resume
+  and moving it, are in the note. Lead with `--invite-stdin`: it keeps the
+  token out of argv and shell history. On a terminal it asks `Invite token
+  (input hidden): ` and reads the token without echo, so it never shows on the
+  screen or in scrollback; piped (`printf '%s\n' "$TOKEN" | oats aweb setup
+  --soul <soul> --invite-stdin --name <alias>`) it reads the first line, as
+  before. The dashboard's `--invite <token>` one-liner still works. A deployment with no root identity needs `--name <alias>`. To resume
   an admitted but unconnected join, run the printed `--join <label> --service
   <service>` command without the token; an expired, exhausted or revoked invite
   that aw reports with its team names that exact command too, with the label
@@ -1540,7 +1542,7 @@ Supported acts:
 
 For a committed/shared team whose provider id exists but whose root is not a
 member, setup/readiness tells the operator it is shared: ask the owner for an
-invite, then run `oats aweb setup --join <label> --invite <token>` (or use
+invite, then run `oats aweb setup --join <label> --invite-stdin` (or use
 `--create` if this host is the owner creating it). When a joined team is removed
 from the live team set, hosted teams are left automatically; on a namespace team
 you control (BYOT), a failed leave is reported as an instance event and the team
