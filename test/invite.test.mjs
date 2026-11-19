@@ -143,3 +143,12 @@ test('invite answers the joiner\'s one-line command beside the token, never insi
  }
  const p=f.run(['--plan','--json']);assert.equal(JSON.parse(p.stdout).result.joinCommand,undefined,'a plan mints no token to join with');
 });
+
+test('invite gives only its configured registry to issuance, with no pin on the offline membership read',t=>{
+ const f=fixture(t),registry='http://[::1]:18010';
+ const r=f.run(['--json'],{OATS_SETTINGS:JSON.stringify({root:f.root,registry})});
+ assert.equal(r.status,0,r.stdout+r.stderr);
+ const calls=f.read().filter(c=>c.kind==='aw');
+ assert.equal(calls.find(c=>c.args[1]==='invite').env.AWID_REGISTRY_URL,registry);
+ assert.equal(calls.find(c=>c.args[1]==='list').env.AWID_REGISTRY_URL,undefined);
+});
