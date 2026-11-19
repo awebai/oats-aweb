@@ -829,7 +829,7 @@ for (const status of ['active', 'revoked']) test(`retire rechecks an uncertain r
     const r = runHook(bin, 'retire', { OATS_INSTANCE: 'probe', OATS_HOME: home, OATS_WORKSPACE: root,
       OATS_META: JSON.stringify(spawned.doc.meta), OATS_SETTINGS: JSON.stringify(settings(custody)),
       FAKE_REVOKE_STDERR: 'revoke may have applied: context deadline exceeded', FAKE_GRANT_SHOW_STATUS: status });
-    assert.ok(logLines(base).some(l => l.argv.join(' ') === `id grant show ${grant.id} --json`), 'uncertain outcome must be checked');
+    assert.ok(logLines(base).some(l => l.argv.join(' ') === `id grant show ${grant.id} --team=t:example.test --json`), 'uncertain outcome must be checked');
     assert.equal(r.status, status === 'revoked' ? 0 : 1, r.stdout + r.stderr);
     assert.equal(r.doc.meta.retired, status === 'revoked');
     assert.equal(r.doc.meta.identityRevoked, status === 'revoked' ? true : undefined);
@@ -846,7 +846,7 @@ test('global post-mint wake-register failure revokes, removes the grant home and
     assert.match(r.doc.warning, /session delivery registration failed/);
     assert.equal(JSON.parse(readFileSync(join(base, "grants.json"), "utf8")).find(g => g.grant_id === "grant-spawn").status, "revoked");
     assert.equal(existsSync(join(home, '.aweb-identity')), false);
-    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --json');
+    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=t:example.test --json');
     assert.equal(revoke.cwd, realpathSync(custody));
     assert.equal(revoke.identityHome, null);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -860,7 +860,7 @@ for (const failRevoke of [false, true]) test(`mint with grant.yaml and no JSON r
     assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
     assert.match(r.doc.warning, /recovered grant grant-spawn from grant.yaml/);
     assert.equal(existsSync(join(home, '.aweb-identity')), false);
-    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --json');
+    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=t:example.test --json');
     assert.equal(revoke.cwd, realpathSync(custody));
     assert.equal(revoke.identityHome, null);
     if (failRevoke) {
@@ -911,7 +911,7 @@ test('a wrong minted team preserves compensation metadata and revokes from custo
     assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
     assert.match(r.doc.warning, /minted grant team wrong:example.test differs/);
     assert.equal(existsSync(join(home, '.aweb-identity')), false);
-    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --json');
+    const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=wrong:example.test --json');
     assert.equal(revoke.cwd, realpathSync(custody));
     assert.equal(revoke.identityHome, null);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -927,10 +927,12 @@ test('global retire uses custody, clears the caller identity, deregisters the wa
     assert.equal(absent.doc.meta.retired, false);
     assert.equal(absent.doc.meta.reason, 'nothing-to-delete');
     const meta = { delivery: 'session', identity: { mode: 'global', resident: 'merlin', team: 't:example.test', grant: { id: 'grant-current', expiresAt: '2026-09-24T07:00:00Z', scopes: ['mail.read'] } } };
+    // The legacy receipt refers to a grant at the team-aware fake service.
+    writeFileSync(join(base, 'grants.json'), JSON.stringify([{ grant_id: 'grant-current', team_id: meta.identity.team, label: 'oats:probe', status: 'active', expires_at: meta.identity.grant.expiresAt }]), { flag: 'wx' });
     const retired = runHook(bin, 'retire', { ...env, OATS_META: JSON.stringify(meta) });
     assert.equal(retired.status, 0, retired.stdout + retired.stderr);
     assert.equal(retired.doc.meta.identityRevoked, true);
-    const calls = logLines(base), revoke = calls.find(l => l.argv.join(' ') === 'id grant revoke grant-current --json');
+    const calls = logLines(base), revoke = calls.find(l => l.argv.join(' ') === 'id grant revoke grant-current --team=t:example.test --json');
     assert.equal(revoke.cwd, realpathSync(custody));
     assert.equal(revoke.identityHome, null);
     assert.ok(calls.some(l => l.argv.join(' ') === 'wake deregister --home ' + home));

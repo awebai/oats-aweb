@@ -66,7 +66,7 @@ function publicRegistryLocator(value) {
 }
 export function registryMigration(settings, env = process.env, {custody} = {}) {
   if (registryOrigin(settings)) return undefined;
-  if (Object.hasOwn(env, 'AWID_REGISTRY_URL') && !publicRegistryLocator(env.AWID_REGISTRY_URL)) return REGISTRY_MIGRATION;
+  if (Object.hasOwn(env, 'AWID_REGISTRY_URL') && env.AWID_REGISTRY_URL !== '' && !publicRegistryLocator(env.AWID_REGISTRY_URL)) return REGISTRY_MIGRATION;
   if (custody) {
     let text;
     try { text = readFileSync(join(custody, '.aw', 'identity.yaml'), 'utf8'); } catch { return undefined; }
