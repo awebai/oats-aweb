@@ -37,7 +37,7 @@ export function sessionProviderBackend(backend) {
  *  only its own terminal backends there (a status label, which no delivery
  *  decision reads), so a session provider's name is never passed. */
 export function wakeBackendHint(backend) {
-  return backend && !sessionProviderBackend(backend) ? backend : undefined;
+  return backend === 'tmux' ? 'tmux' : undefined;
 }
 
 /** Whether the host wake broker delivers the home's primary identity:

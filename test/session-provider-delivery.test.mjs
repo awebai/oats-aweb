@@ -8,6 +8,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fixture } from "./helpers/delivery-fixture.mjs";
+import { fixture as probeFixture } from "./helpers/probe-fixture.mjs";
+import { loadProbeTarget } from "../oats-package/capabilities/oats-aweb/lib/probe-target.mjs";
 import { brokerDelivers, joinedTeamsPolled, recordedBackend, runtimeDeliveryFor, sessionProviderBackend, wakeBackendHint, wakeRegistration } from "../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs";
 
 const CHANNEL_ARGUMENT = /plugin:aweb-channel@awebai-marketplace/;
@@ -196,6 +198,24 @@ test("a session provider's Claude home receives its joined teams through the bro
   for (const argv of registers(fx)) assert.equal(argv.includes("--backend"), false, argv.join(" "));
 });
 
+test("leaving the last joined team re-registers a session provider's home from its record, not the caller's environment", (t) => {
+  for (const kernelOnly of [false, true]) {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { join: "alpha" } });
+    const spawned = fx.hook("spawn", BB);
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const { backend, ...rest } = spawned.doc.meta;
+    const meta = kernelOnly ? rest : spawned.doc.meta;
+    writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ harness: "claude", launch: { harness: "claude" }, ...(kernelOnly ? { backend } : {}), capabilityMeta: { "oats.aweb": meta } }));
+    const before = registers(fx).length;
+    // Another agent runs the leave: a pi session on tmux.
+    const r = fx.command("leave", ["--labels", "alpha", "--json"], { OATS_META: JSON.stringify(meta), OATS_RUNTIME: "pi", OATS_BACKEND: "tmux" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(registers(fx).slice(before), [["wake", "register", "--home", fx.home, "--identity-home", join(fx.home, ".aw"), "--delivery", "session"]], `kernelOnly ${kernelOnly}`);
+    assert.deepEqual(fx.registered(), { home: fx.home, identity_home: join(fx.home, ".aw"), delivery: "session" });
+    assert.equal(fx.wakeCalls().includes("deregister"), false, "the broker stays this home's one path");
+  }
+});
+
 // ---------------------------------------------------------------- retire
 
 test("retire reads the recorded backend: it deregisters a session provider's Claude home under no OATS_BACKEND of its own", (t) => {
@@ -265,4 +285,21 @@ test("readiness refuses a record whose backend is not a name, or that pairs a pr
     const result = fx.readiness();
     assert.ok(result.problems.some((p) => p.code === "receive-record-unavailable"), JSON.stringify(result));
   }
+});
+
+// ---------------------------------------------------------------- probe
+
+test("the round-trip probe classes a session provider's Claude home as broker-delivered", (t) => {
+  const target = (change) => {
+    const f = probeFixture(t);
+    Object.assign(f.doc, { harness: "claude", launch: { ...f.doc.launch, harness: "claude" } });
+    f.doc.capabilityMeta["oats.aweb"].runtime = "claude";
+    change(f.doc);
+    f.save();
+    return loadProbeTarget(f.home, f.deployment).delivery;
+  };
+  assert.equal(target(() => {}), "channel");
+  assert.equal(target((doc) => { doc.backend = "tmux"; }), "channel");
+  assert.equal(target((doc) => { doc.capabilityMeta["oats.aweb"].backend = "bb"; }), "broker");
+  assert.equal(target((doc) => { doc.backend = "bb"; }), "broker");
 });

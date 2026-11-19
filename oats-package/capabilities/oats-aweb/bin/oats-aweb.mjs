@@ -620,7 +620,7 @@ function wakeRegister(instanceHome, identityHome, runner = run, sessionBackend =
   try {
     runner(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
-    throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
+    throw new Error(`the host wake broker delivers to this home (delivery: session, a runtime with no aweb channel, or a session provider) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
   }
 }
 function wakeDeregister(instanceHome) {

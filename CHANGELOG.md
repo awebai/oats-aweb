@@ -10,10 +10,13 @@
   and joined teams registered with the broker. It is registered with
   `aw wake register --delivery session` and no `--backend`, which takes only
   aw's own terminal backends. The start records the provider as `backend` in
-  the home's `oats.aweb` meta; retire, join, leave, readiness, the health
-  publisher and the round-trip probe read it, or the kernel's `backend` in
-  `instance.json`. No new setting, and no migration: `OATS_BACKEND=tmux` and
-  an unset one behave as before, and record no `backend`.
+  the home's `oats.aweb` meta. Retire, join, leave, readiness and the
+  round-trip probe read it, or the kernel's `backend` in `instance.json`; the
+  health publisher reads the meta alone. No new setting, and no migration:
+  `OATS_BACKEND=tmux` and an unset one behave as before, and record no
+  `backend`. The kernel's package checks still follow `delivery` alone, so a
+  soul that runs on a session provider sets `delivery: session` (README,
+  "Provider settings").
 
 - **Fixed: registry admission stays explicit through command formatting.**
   Unknown leading aw flags retain the configured pin, and controller cleanup

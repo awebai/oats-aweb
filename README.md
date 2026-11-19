@@ -936,7 +936,17 @@ and where to set it. The provider settings are:
   records the provider's name as `backend` in the home's `oats.aweb` meta, so
   a later retire, join or leave, which run under no `OATS_BACKEND` of their
   own, and readiness decide the same path; they fall back to the kernel's
-  `backend` in `instance.json`. A start on `tmux` records none.
+  `backend` in `instance.json`; the health publisher reads the meta alone. A
+  start on `tmux` records none.
+
+  Set `delivery: session` for a soul that runs on a session provider. The
+  kernel checks this capability's packages (`requires` in `oats.json`) by the
+  `delivery` setting alone, since a requirement cannot name a backend. Under
+  `delivery: channel` it therefore asks a provider launch for the channel
+  package it never uses, and does not apply the floors that make an installed
+  one honour `AWEB_DELIVERY=session` (`aweb-channel` 1.7.9, `@awebai/pi`
+  0.3.10): an older ambient plugin or extension would open its own stream
+  beside the broker. Under `delivery: session` the checks match the path.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
@@ -999,9 +1009,9 @@ and where to set it. The provider settings are:
   [cjr adoption #673](https://github.com/awebai/oats/issues/673) is separate.
 
   A home is on exactly one path. Every start decides the path afresh from the
-  setting and the kernel-selected target runtime (`OATS_RUNTIME`, the
+  setting, the kernel-selected target runtime (`OATS_RUNTIME`, the
   compatibility alias of `OATS_HARNESS`; a home can restart under another
-  harness), regardless of a retained launch configuration's name: the broker
+  harness) and the session backend (`OATS_BACKEND`), regardless of a retained launch configuration's name: the broker
   path registers the home, the channel path runs `aw wake deregister` and confirms with `aw wake status --json` that the home is no
   longer listed. If either step fails the start is refused, since a home on both
   paths would get every wake twice and a home on neither hears nothing. The
