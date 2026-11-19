@@ -107,6 +107,7 @@ const teamsFile = path.join(awDir, "teams.json");
 const writeTeams = (team, facts = {}) => { fs.mkdirSync(awDir, { recursive: true }); writeKeys(awDir); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team, ...facts }] })); };
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
+  if (process.env.AW_LIST_ERROR) { console.error(process.env.AW_LIST_ERROR); process.exit(1); }
   if (process.env.AW_LIST_TEAMS) console.log(process.env.AW_LIST_TEAMS);
   else if (fs.existsSync(teamsFile)) console.log(fs.readFileSync(teamsFile, "utf8"));
   else console.log(JSON.stringify({ memberships: [] }));

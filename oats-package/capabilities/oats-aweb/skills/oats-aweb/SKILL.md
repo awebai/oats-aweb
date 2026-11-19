@@ -957,6 +957,13 @@ An unmapped host default reports `E_TEAM_UNMAPPED`: correct its team declaration
 before retry. Route/join failures retain their step and error; reconcile the
 remote root before retry rather than assuming rollback.
 
+An unreadable local or host membership stops connect before an invite is
+minted. `setup --check-only --json` returns `member:null`, a safe "could not
+check" cause on stderr and a nonzero exit; a confirmed absence is
+`member:false` with exit 0. Repair `aw team list --json` in the named root and
+retry. `join --plan` uses `E_SETUP_MEMBERSHIP` for an unreadable root instead of
+a false membership row; scripts must handle that command error.
+
 The invite token is never in argv, a file, a log or output **on this side**;
 it stays in memory and the routed join's stdin. On the host, native
 `aw id team accept-invite` exposes the token in its process list while the call

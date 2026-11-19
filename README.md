@@ -76,6 +76,17 @@ custody directory, then run the printed `oats retire <instance> --force`.
 Ordinary retire cannot confirm cleanup in another team, even after that manual
 revoke. The fake exercises this compensation boundary.
 
+Membership reads also fail closed. An unavailable or malformed `aw team list`
+answer reports "could not check" with a safe failure cause; setup and connect
+stop before init or invite effects. `setup --check-only --json` keeps its keys:
+a confirmed absence is `member:false` with exit 0; an unreadable membership is
+`member:null`, a cause on stderr and a nonzero exit. A `join --plan` that used
+to emit `member:false` for an unreadable root now fails with the existing
+`E_SETUP_MEMBERSHIP` error. Scripts must handle that error and retry the read.
+Resident adoption and plan refuse an unreadable custody status before changing
+a supervisor. Repair `aw team list --json` or `aw custody status --json` in the
+named root and retry.
+
 ## 1.42.1 — the release OATS pins for 1.42
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is

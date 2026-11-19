@@ -56,6 +56,12 @@ Init is skipped when R already holds a complete global identity: the command
 then verifies it, ensures its custody and records it (adopt). The preflight
 decides from what R holds:
 
+For an adopted identity, preflight must read `aw custody status --json` before
+changing a supervisor. A failed or malformed read refuses with
+`E_RESIDENT_VERIFY` at preflight and a safe cause; it never means custody is
+not running. Run that read in R, repair the reported problem and retry. Plan
+uses the same refusal and writes no unit.
+
 | R holds | Then |
 | --- | --- |
 | nothing, or does not exist | init creates the resident |

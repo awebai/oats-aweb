@@ -1,5 +1,7 @@
 import {registryEnv, registryOrigin, registryMigration} from './registry-setting.mjs';
 import { awChildEnv } from './aw-child-env.mjs';
+import { withheldFailureCause } from './aw-failure-cause.mjs';
+import { childOutcome } from './child-outcome.mjs';
 
 import { parseProviderSettings } from './provider-settings.mjs';
 // `oats aweb resident create <name>`: provisions a GLOBAL resident identity in
@@ -341,7 +343,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     if (!aw) throw failure("E_RESIDENT_AW_FLOOR", "aw", "aw is not on PATH");
     const read = (args) => {
       const r = spawnSync(aw, args, { cwd: root, env: {...readEnv,...registryEnv(settings,args)}, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
-      if (r.status !== 0) throw new Error(`aw ${args.slice(0, 2).join(" ")} ${r.error ? `failed: ${r.error.code}` : `exited ${r.status}`}${r.stderr ? `: ${String(r.stderr).trim().slice(0, 300)}` : ""}`);
+      if (r.status !== 0) throw Object.assign(new Error(`aw ${args.slice(0, 2).join(" ")} ${r.error ? `failed: ${r.error.code}` : `exited ${r.status}`}${r.stderr ? `: ${String(r.stderr).trim().slice(0, 300)}` : ""}`), {stderr:r.stderr,stdout:r.stdout,outcome:childOutcome({...r,...r.error},60000)});
       return r.stdout;
     };
     const readJson = (args, what, stage = "verify") => {
@@ -390,7 +392,13 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     if (known && manager) {
       const label = custodyLabel(known.address, name);
       let status;
-      try { status = parseAwJson(read(["custody", "status", "--json"]), "aw custody status"); } catch { /* unreadable is not running here */ }
+      try {
+        status = parseAwJson(read(["custody", "status", "--json"]), "aw custody status");
+        if (!['running','not_running'].includes(status?.status)) throw new Error('unusable status');
+      } catch (e) {
+        const cause = e.outcome ? `${e.outcome}; ${withheldFailureCause(e)}` : 'aw custody status returned no usable status result';
+        throw failure('E_RESIDENT_VERIFY','preflight',`could not check custody status (${cause}); run \`aw custody status --json\` in ${root} and retry before installing a custody unit`);
+      }
       if (status?.status === "running") {
         const problem = await notOurCustody(label, status);
         if (problem) throw failure("E_RESIDENT_CUSTODY_RUNNING", "preflight", problem);

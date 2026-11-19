@@ -86,7 +86,11 @@ export function currentJoinRootChoice(team, home, { env = process.env, query = q
     if (!statSync(join(selectedRoot, '.aw')).isDirectory()) throw new Error();
   } catch { noRoot(`the live ${source} root is missing, not absolute or has no readable .aw`); }
   let member = false;
-  try { member = membership(selectedRoot, team) === true; } catch { /* no native output in the error */ }
+  try { member = membership(selectedRoot, team) === true; }
+  catch (e) {
+    if (e.code === 'E_SETUP_MEMBERSHIP') throw e; // the root reader already withheld native output
+    throw Object.assign(new Error(`could not check membership at ${selectedRoot}; aw team list is unavailable; retry the read before joining`), {code:'E_SETUP_MEMBERSHIP'});
+  }
   if (!member) noRoot(`current root ${selectedRoot} cannot prove membership in this exact team`);
   return { root: selectedRoot, source };
 }

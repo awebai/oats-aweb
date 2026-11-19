@@ -184,6 +184,12 @@ jobs:
           XDG_RUNTIME_DIR="/run/user/$(id -u)" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" systemctl --user show-environment >/dev/null || { echo "systemctl --user cannot reach the user manager"; exit 1; }
           echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - name: Native membership read failures at this aw
+        if: ${{ !cancelled() }}
+        env:
+          OATS_MEMBERSHIP_NATIVE_REQUIRED: '1'
+          OATS_AWEB_TEST_AW: ${{ runner.temp }}/aw/node_modules/.bin/aw
+        run: node --test test/membership-read-native.test.mjs
       - name: Make lsof available, so the journeys prove the socket-owner check
         if: ${{ !cancelled() }}
         shell: bash

@@ -267,7 +267,7 @@ test('a shared root whose membership cannot be read refuses before redeeming (E_
   const { member, extra } = sharedRoot(f, { list: 'not-json' });
   const r = f.run(['--invite-stdin', '--name', 'host', '--json'], extra);
   const error = refused(f, r, 'E_SETUP_MEMBERSHIP');
-  assert.equal(error.message, `membership at ${member} could not be read; nothing redeemed`);
+  assert.equal(error.message, `could not check membership at ${member} (aw team list returned no JSON result); run \`aw team list --json\` there and retry; nothing redeemed`);
   assert.doesNotMatch(readFileSync(join(f.dep, 'oats-local.yaml'), 'utf8'), /roots/, 'roots is unchanged');
 });
 

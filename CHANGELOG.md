@@ -23,6 +23,20 @@
   ambient registry variable selects nothing and is treated as unset. See
   README's self-hosting setup card before upgrading.
 
+- **Fixed: an unreadable membership is unknown, never "not a member".** One
+  strict `aw team list` reader serves root selection, setup, connect and join.
+  Read failures include aw's safe failure class and refuse before init or invite
+  effects. `setup --check-only --json` keeps its keys: a confirmed absence is
+  `member:false` with exit 0; an unreadable membership is `member:null`, a
+  "could not check" cause on stderr and a nonzero exit. Connect stops on it.
+  `join --plan` now fails with the existing `E_SETUP_MEMBERSHIP` error instead
+  of a `member:false` row for an unreadable root; scripts consuming that row
+  must handle the command error and retry the read. Resident adoption and plan
+  likewise refuse an unreadable custody status before changing any supervisor.
+  Run `aw team list --json` or `aw custody status --json` in the named root,
+  repair the read, then retry; do not initialize, join or start another custody
+  based on an unknown result.
+
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:
   {"code":...}`, so setup now reads that top-level code through its existing
