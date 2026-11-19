@@ -913,6 +913,7 @@ and where to set it. The provider settings are:
   | Claude Code | the `aweb-channel` plugin (launch flag) | host wake broker |
   | pi | the `@awebai/pi` extension, without its skills ([below](#the-pi-extension-without-its-skills)) | host wake broker |
   | Codex, or any runtime without an aweb channel | host wake broker | host wake broker |
+  | any runtime a session provider launches (`OATS_BACKEND` is neither `tmux` nor unset) | host wake broker | host wake broker |
 
   The channel packages push events into the session. The host wake broker
   presents them by typing into the session's terminal pane, and in Claude Code
@@ -921,6 +922,21 @@ and where to set it. The provider settings are:
   runtimes that have none. The broker path sets `AWEB_DELIVERY=session` (which
   also keeps any ambient channel package silent) and registers the home with
   `aw wake register`.
+
+  A session provider is a session backend that a capability supplies, where
+  `tmux` is the kernel's own. The kernel names the backend of every spawn and
+  start in `OATS_BACKEND`. A provider starts the session itself, so no channel
+  launch argument reaches it, and this is not a setting: such a launch is on
+  the broker path whatever `delivery` and the runtime say, Claude Code and pi
+  included. It gets no `--channels` argument and no Claude channel mode, its
+  joined teams are registered with the broker like any broker-delivered home's
+  (never polled), and the broker delivers through `oats session input`. The
+  registration carries no `--backend`, since `aw wake register` takes only its
+  own terminal backends there (`tmux`, `herdr`) as a status label. The start
+  records the provider's name as `backend` in the home's `oats.aweb` meta, so
+  a later retire, join or leave, which run under no `OATS_BACKEND` of their
+  own, and readiness decide the same path; they fall back to the kernel's
+  `backend` in `instance.json`. A start on `tmux` records none.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.

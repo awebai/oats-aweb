@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Added: a session provider's launch is delivered by the host wake broker.**
+  A spawn or a start whose `OATS_BACKEND` names a session provider (anything
+  but `tmux` or unset) is on the broker path whatever `delivery` and the
+  runtime say, Claude Code and pi included: no `--channels` argument and no
+  Claude channel mode, `AWEB_DELIVERY=session`, the session-delivery brief,
+  and joined teams registered with the broker. It is registered with
+  `aw wake register --delivery session` and no `--backend`, which takes only
+  aw's own terminal backends. The start records the provider as `backend` in
+  the home's `oats.aweb` meta; retire, join, leave, readiness, the health
+  publisher and the round-trip probe read it, or the kernel's `backend` in
+  `instance.json`. No new setting, and no migration: `OATS_BACKEND=tmux` and
+  an unset one behave as before, and record no `backend`.
+
 - **Fixed: registry admission stays explicit through command formatting.**
   Unknown leading aw flags retain the configured pin, and controller cleanup
   commands place it through validated arguments without relying on a JSON
