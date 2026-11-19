@@ -15,6 +15,12 @@ HOME for every group. Tests never select a person's identity or tmux server.
 | `historical` (manual) | OATS `bb2ba8c9a254edb745913b9c5a9d9b833fda932d` and `e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b` | The retained 0.42/0.47 inventory projection comparison. Those kernels are below the package's supported 0.68 floor, so current CI does not provision them. |
 | `hosted` (acceptance) | Disposable hosted team, pi extension, dashboard token and status API | `health-live.test.mjs`; no Cloud credentials are available to the OSS CI stack. |
 
+The stack uses the CI-only `test/fixtures/stack/awid-public-origin.yaml`
+override to configure `AWID_PUBLIC_ORIGINS=http://127.0.0.1:18010` for native
+covering controller signatures. The pinned service code and authentication
+checks stay unchanged. Scratch host readers receive the selected
+`OATS_NODE_BIN` / `OATS_CLI_BIN` pair instead of relying on an installed oats.
+
 The runtime version list comes from `scripts/aw-test-versions.mjs`, which
 imports the supported floor and tested version from `lib/aw-floor.mjs`,
 which reads `aw-compat.json` and pins

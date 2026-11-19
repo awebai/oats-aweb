@@ -40,7 +40,8 @@ function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome,
   for (const d of [home, ws, bin]) mkdirSync(d, { recursive: true });
   const gitConfig = join(root, "gitconfig");
   writeFileSync(gitConfig, "");
-  const env = { ...extraEnv, PATH: `${path ? `${path}:` : ""}${dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1" };
+  const env = { ...extraEnv, PATH: `${path ? `${path}:` : ""}${dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`, HOME: home, TMUX_TMPDIR: tmux, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1",
+    ...(kernel ? { OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: join(kernel, "bin/oats.mjs") } : {}) };
   const write = (path, text) => { mkdirSync(dirname(join(ws, path)), { recursive: true }); writeFileSync(join(ws, path), text); };
   write("oats-workspace.yaml", `schemaVersion: 2\nname: scratch\nmembers: [${WORKSPACE}]\n${teams}`);
   write("oats-membership.yaml", `schemaVersion: 2\nworkspace: ${WORKSPACE}\n`);
