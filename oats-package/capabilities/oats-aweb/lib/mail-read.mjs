@@ -139,7 +139,8 @@ export function decodeCursor(text, conversation = null) {
     if (!/^[A-Za-z0-9_-]{1,2000}$/.test(text)) throw new Error('shape');
     doc = JSON.parse(Buffer.from(text, 'base64url').toString('utf8'));
   } catch { throw fail('E_BAD_ARGS', 'cursor is not a nextCursor from a previous answer'); }
-  if (!doc || doc.v !== CURSOR_VERSION || typeof doc.at !== 'string' || typeof doc.id !== 'string' || typeof doc.team !== 'string') throw fail('E_BAD_ARGS', 'cursor is not a nextCursor from a previous answer');
+  const key = (v) => typeof v === 'string' && v.length > 0 && v.length <= 500;
+  if (!doc || doc.v !== CURSOR_VERSION || !key(doc.at) || !Number.isFinite(Date.parse(doc.at)) || !key(doc.id) || !key(doc.team)) throw fail('E_BAD_ARGS', 'cursor is not a nextCursor from a previous answer');
   if ((doc.c ?? null) !== (conversation ?? null)) throw fail('E_BAD_ARGS', 'cursor belongs to another read: pass the same conversation (or none) as the answer that gave it');
   return { createdAt: doc.at, id: doc.id, team: doc.team, ms: timeOf(doc.at) };
 }
@@ -283,7 +284,9 @@ export async function readMail({
     assertReadOnlyAwArgv(argv);
     return aw(state.row.identityHome, args);
   };
-  const states = identities.map((row) => ({ row, self: null, error: null, readable: false, queue: [], threadsCursor: null, threadsDone: false }));
+  // `listedUntil`: the activity of the last thread listed so far. Threads come
+  // newest activity first, so a page not yet listed holds nothing newer.
+  const states = identities.map((row) => ({ row, self: null, error: null, readable: false, queue: [], threadsCursor: null, threadsDone: false, listedUntil: Infinity }));
   const setError = (state, code) => { if (!state.error) state.error = code; };
   const conversations = new Map();
   const collected = [];
@@ -311,7 +314,9 @@ export async function readMail({
     const doc = r.status === 0 ? parseJson(r.stdout) : undefined;
     if (!doc || !Array.isArray(doc.messages)) {
       if (conversation && notFound(r)) return;
-      setError(state, forbidden(r) ? MAIL_IDENTITY_ERRORS.noMailRead : MAIL_IDENTITY_ERRORS.conversation);
+      // One conversation's failure, a refusal included, is that conversation's:
+      // the identity's other conversations are still read.
+      setError(state, MAIL_IDENTITY_ERRORS.conversation);
       return;
     }
     state.readable = true;
@@ -341,16 +346,21 @@ export async function readMail({
       }
       state.readable = true;
       state.queue.push(...doc.conversations.filter((t) => t && typeof t === 'object' && (str(t.conversation_id) || str(t.legacy_message_id)) && (!t.conversation_type || t.conversation_type === 'mail')));
+      const listed = doc.conversations.filter((t) => t && typeof t === 'object').map(activity);
+      if (listed.length) state.listedUntil = Math.min(state.listedUntil, ...listed);
       state.threadsCursor = str(doc.next_cursor) || null;
       if (!state.threadsCursor || !doc.conversations.length) state.threadsDone = true;
     };
     const activity = (thread) => { const t = Date.parse(str(thread.last_message_at)); return Number.isFinite(t) ? t : Infinity; };
-    const head = (state) => (state.queue.length ? activity(state.queue[0]) : -Infinity);
+    /** The newest activity this identity may still hold unread: its next
+     *  queued thread, else (a page not listed yet) the last listed activity,
+     *  else nothing. */
+    const head = (state) => (state.queue.length ? activity(state.queue[0]) : !state.threadsDone ? state.listedUntil : -Infinity);
     let reads = 0;
     for (;;) {
       if (outOfTime()) { capped = true; }
       else await Promise.all(live().map(fill));
-      const heads = live().filter((s) => s.queue.length);
+      const heads = live().filter((s) => head(s) > -Infinity);
       frontier = heads.length ? Math.max(...heads.map(head)) : -Infinity;
       if (!heads.length || capped) break;
       const certain = collected.filter((m) => m.ms > frontier).length;
@@ -401,7 +411,9 @@ function boundedResult({ page, hasMore, states, conversations, observedAt, conve
       mailApi: MAIL_API, acknowledges: false, observedAt,
       identities: identityRows(states),
       messages: messages.map(publicMessage),
-      conversations: [...conversations].filter(([key]) => used.has(key)).map(([, c]) => c),
+      // A partial conversation is listed even when none of its (old) messages
+      // made this page: a client must still say its newest can't be read.
+      conversations: [...conversations].filter(([key, c]) => used.has(key) || c.partial).map(([, c]) => c),
       hasMore: more,
       nextCursor: more && messages.length ? encodeCursor(messages.at(-1), conversation) : null,
     };

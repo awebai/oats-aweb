@@ -244,3 +244,48 @@ test('sender text cannot add markdown structure to the plain rendering', async (
   assert.ok(!/^## two/m.test(text) && !/^# boom/m.test(text) && !text.includes('<script>'), text);
   assert.match(text, /^> \\#\\# two$/m);
 });
+
+test('a budget that runs out at a thread page boundary keeps the next page\'s frontier: nothing older is passed off as newest', async () => {
+  let now = 0;
+  const script = { [H1]: { whoami: ME, threads: [[thread('old-in-active', 59)], [thread('later', 50)]], conversations: {
+    'old-in-active': [msg('m-old', 1, { conversation: 'old-in-active' })], later: [msg('m-50', 50, { conversation: 'later' })] } } };
+  const s = scriptedAw(script);
+  const aw = async (home, args) => { const r = await s.aw(home, args); if (args[1] === 'show') now = 1e9; return r; };
+  const result = await readMail({ identities: [{ team: 'acme', identityHome: H1, primary: true }], aw, clock: () => now, budgetMs: 1000 });
+  assert.deepEqual(result.mail.messages, [], 'm-old is older than what the unlisted page may hold');
+  assert.equal(result.mail.identities[0].error, MAIL_IDENTITY_ERRORS.tooMany);
+  // With time, the next page is listed and the order is right.
+  const full = await readMail({ identities: [{ team: 'acme', identityHome: H1, primary: true }], aw: scriptedAw(script).aw });
+  assert.deepEqual(full.mail.messages.map((m) => m.id), ['m-50', 'm-old']);
+  assert.equal(full.mail.hasMore, false);
+});
+
+test('a partial conversation is listed even when none of its old messages make the page, or the size cut drops them', async () => {
+  const long = Array.from({ length: MAIL_SHOW_LIMIT }, (_, i) => msg(`l${i}`, 0, { conversation: 'long', created_at: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(), body: '' }));
+  const script = { [H1]: { whoami: ME, threads: [[thread('long', 59), thread('short', 30)]], conversations: { long, short: [msg('s1', 30, { conversation: 'short' })] } } };
+  const { result } = await read(script, { limit: 1 });
+  assert.deepEqual(result.mail.messages.map((m) => m.id), ['s1']);
+  assert.deepEqual(result.mail.conversations, [{ id: 'long', partial: 'oldest-first-only' }, { id: 'short', partial: null }]);
+  assert.match(result.documents[0].text, /newest messages can't be read yet/);
+  const cut = (await read(script, { limit: 50, resultMaxBytes: 20 * 1024 })).result;
+  assert.ok(cut.mail.messages.length < 50 && cut.mail.hasMore);
+  assert.ok(cut.mail.conversations.some((c) => c.id === 'long' && c.partial === 'oldest-first-only'));
+  assert.ok(Buffer.byteLength(JSON.stringify(cut)) <= 20 * 1024);
+});
+
+test('a refused conversation is that conversation\'s: the identity\'s other conversations, past the first batch, are still read', async () => {
+  const threads = Array.from({ length: 7 }, (_, i) => thread(`c${i}`, 59 - i));
+  const conversations = Object.fromEntries(threads.map((t, i) => [t.conversation_id, [msg(`m${i}`, 59 - i, { conversation: t.conversation_id })]]));
+  const s = scriptedAw({ [H1]: { whoami: ME, threads: [threads], conversations } });
+  const aw = async (home, args) => (args[1] === 'show' && args.includes('c0') ? { status: 1, stdout: '', stderr: 'aweb: http 403 Forbidden' } : s.aw(home, args));
+  const result = await readMail({ identities: [{ team: 'acme', identityHome: H1, primary: true }], aw, limit: 10 });
+  assert.deepEqual(result.mail.messages.map((m) => m.id), ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']);
+  assert.equal(result.mail.identities[0].error, MAIL_IDENTITY_ERRORS.conversation);
+});
+
+test('a cursor whose fields are not a time, an id and a team is E_BAD_ARGS', () => {
+  const raw = (doc) => Buffer.from(JSON.stringify(doc)).toString('base64url');
+  for (const doc of [{ v: 1, at: 'not-a-date', id: 'm1', team: 'acme' }, { v: 1, at: iso(1), id: '', team: 'acme' }, { v: 1, at: iso(1), id: 'm1', team: '' }, { v: 1, at: iso(1), id: 7, team: 'acme' }]) {
+    assert.throws(() => parseMailArgs(['--cursor', raw(doc)]), { code: 'E_BAD_ARGS' }, JSON.stringify(doc));
+  }
+});

@@ -69,7 +69,8 @@ messages from its OLDEST end. The read walks the threads of every identity in
 activity order, a few at a time (6 aw calls at once), and merges their
 messages, newest first by `createdAt`, then message id, then team. A message
 is certain once it is newer than the latest activity of every thread not yet
-read: no unread thread can hold a newer one. The page is the newest `limit`
+read: no unread thread can hold a newer one. A page of threads not yet listed
+counts at the activity of the last thread listed before it. The page is the newest `limit`
 certain messages, and the read stops as soon as it has them, so a page of 50
 reads about 50 conversations at most on a first page.
 
@@ -97,7 +98,9 @@ reads about 50 conversations at most on a first page.
   may be longer, and its newest messages are the missing ones. It is listed in
   `conversations` with `partial: "oldest-first-only"`. When aw sends
   `order=desc` on `mail show` (asked of the aw maintainers), the read takes
-  the newest end and `partial` goes `null`.
+  the newest end and `partial` goes `null`. A partial conversation the read
+  met is listed even when none of its old messages made the page, so the
+  warning is never lost.
 - `documents` holds a plain rendering for a generic view reader: each
   message's header and the first 500 characters of its body. Sender text is
   escaped so it adds no markdown structure, and quoted.
@@ -124,9 +127,9 @@ be read.
 | --- | --- |
 | `identity-missing` | its identity home is not there |
 | `identity-unreadable` | `aw whoami` failed |
-| `no-mail-read` | a grant without the `mail.read` scope, or the server refused the read |
+| `no-mail-read` | a grant without the `mail.read` scope, or the server refused the identity's thread list |
 | `threads-unreadable` | `aw mail threads` failed: nothing of this identity was read |
-| `conversation-unreadable` | one conversation could not be read (an E2EE body that won't decrypt, a server error): its messages are missing, the rest are shown |
+| `conversation-unreadable` | one conversation could not be read (an E2EE body that won't decrypt, a server error or refusal): its messages are missing, the rest are shown |
 | `too-many-threads` | the budget ran out before anything could be ordered (above) |
 
 A home whose oats.aweb copy predates the operation answers the kernel's
