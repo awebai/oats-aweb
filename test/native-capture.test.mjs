@@ -29,7 +29,7 @@ test('capture removes credentials, scrubs paths and tokens, and writes only owne
 });
 
 test('artifact sanitizer refuses private material without reflecting it in the error', t => {
-  for (const [name, text] of [['key.stdout', '-----BEGIN ED25519 PRIVATE KEY-----\nSYNTHETIC-PRIVATE-MATERIAL'], ['secret.json', '{"token":"SYNTHETIC-PRIVATE-MATERIAL"}'], ['secret.yaml', 'api_key: SYNTHETIC-PRIVATE-MATERIAL\n']]) {
+  for (const [name, text] of [['key.stdout', '-----BEGIN ED25519 PRIVATE KEY-----\nSYNTHETIC-PRIVATE-MATERIAL'], ['secret.json', '{"token":"SYNTHETIC-PRIVATE-MATERIAL"}'], ['secret.yaml', 'api_key: SYNTHETIC-PRIVATE-MATERIAL\n'], ['encoded.stdout', JSON.stringify({ record: ['api_key: SYNTHETIC-PRIVATE-MATERIAL\n'] })]]) {
     const dir = directory(t);
     writeFileSync(join(dir, name), text);
     assert.throws(() => sanitizeCaptures(dir), error => {
@@ -41,4 +41,35 @@ test('artifact sanitizer refuses private material without reflecting it in the e
   writeFileSync(file, '/runner/tmp/root aw_inv_SYNTHETIC\n');
   sanitizeCaptures(dir, { RUNNER_TEMP: '/runner/tmp' });
   assert.equal(readFileSync(file, 'utf8'), '/fixture/capture/root <redacted>\n');
+});
+
+test('artifact sanitizer refuses YAML credential fields inside captured JSON strings at every depth', t => {
+  const previous = process.env.OATS_AWEB_CAPTURE_DIR;
+  t.after(() => { if (previous === undefined) delete process.env.OATS_AWEB_CAPTURE_DIR; else process.env.OATS_AWEB_CAPTURE_DIR = previous; });
+  for (const key of ['api_key', 'private_key', 'secret', 'token']) {
+    const yaml = `aweb_url: http://example.invalid\n${key}: SYNTHETIC-PRIVATE-MATERIAL\n`;
+    for (const value of [yaml, { records: [{ workspace: yaml }] }]) {
+      const dir = directory(t);
+      process.env.OATS_AWEB_CAPTURE_DIR = dir;
+      nativeCapture('workspace-record', value, { version: '1.36.58' });
+      assert.throws(() => sanitizeCaptures(dir), error => {
+        assert.ok(!error.message.includes('SYNTHETIC-PRIVATE-MATERIAL'));
+        return /credential/.test(error.message);
+      });
+    }
+  }
+  const dir = directory(t), publicYaml = 'aweb_url: http://example.invalid\nworkspace_id: public-id\n';
+  process.env.OATS_AWEB_CAPTURE_DIR = dir;
+  nativeCapture('workspace-record', publicYaml, { version: '1.36.58' });
+  sanitizeCaptures(dir);
+  assert.equal(JSON.parse(readFileSync(join(dir, 'workspace-record.json'), 'utf8')), publicYaml);
+});
+
+test('artifact sanitizer refuses malformed JSON without reflecting its contents', t => {
+  const dir = directory(t);
+  writeFileSync(join(dir, 'broken.json'), '{SYNTHETIC-PRIVATE-MATERIAL');
+  assert.throws(() => sanitizeCaptures(dir), error => {
+    assert.ok(!error.message.includes('SYNTHETIC-PRIVATE-MATERIAL'));
+    return /JSON/.test(error.message);
+  });
 });

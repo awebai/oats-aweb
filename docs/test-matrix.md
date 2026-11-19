@@ -78,7 +78,7 @@ the recording doubles:
 | Probe `mail send` and `mail show`, including leading identity/team selectors | `probe-mail-native.test.mjs` qualifies actual native help, executes the provider's one-send/full-reply proof against controlled external transport, then admits its actual argv with native `--help` at every matrix version. It sends no native mail. |
 | `status publish --print-signed` and publisher flags | `health-status-native.test.mjs`, all vector documents; floor asserts unsupported. |
 | `team invite --member-local` and `team invite inspect` | `invite-native.test.mjs`, generated identities and loopback HTTP. |
-| `mail inbox --count-only --json`, roster members/presence, retained connect/status/heartbeat/whoami | `resident-journey.test.mjs`; floor asserts absent count capability, tested/next execute the read. |
+| `mail inbox --count-only --json`, roster members/presence, retained connect/status/heartbeat/whoami | `resident-journey.test.mjs` runs the provider roster and requires the joined seat's certificate and presence sources with complete presence at all three versions. Tested/next compare the provider's unread count with native `unread_count`; floor asserts absent count capability. |
 
 Exclusions use Node's `--test-skip-pattern` with exact escaped names, after
 checking that every name is a declared literal test in the selected files.
@@ -96,6 +96,9 @@ is recaptured with the still-supported floor CLI. Before artifact upload,
 without reflecting their values in logs, redacts token patterns and normalizes
 runner paths. Upload depends on successful sanitization. The author inspects
 all artifact files before committing them and records their provenance.
+Decoded JSON strings are checked recursively for YAML credential fields, including
+the workspace-record string; malformed `.json` captures also refuse without echoing
+their contents.
 
 The OSS stack cannot establish `workspace delete` returning
 `alias_released:true` for a hosted self-release. Before claiming hosted
@@ -122,6 +125,7 @@ could pass without exercising their claimed behavior:
 | CI YAML regex parsing (`health-aw-floor`) | Removed; CI builds its version matrix from the module and enforces zero skips while executing each selected group. |
 | `claim-human-docs`, `pi-mail-recovery-guidance` prose | Removed; prose is reviewed as documentation, not represented as service behavior. |
 | `aweb-tasks-skill` prose and `no-task-coordination` document scans | Removed; argv-checker/detector unit behavior and generated runtime briefs remain. |
+| `aweb-tasks` inject wording about task state, locks and roles | Removed the whole-file prose regex; task wiring/validation, command admission and task-team behavior remain executable tests. |
 | Roster `1.20.0 documents the roster` | Removed README/CHANGELOG/skill/inject spelling checks; roster rows, completeness and command tuples remain executable tests. |
 | `1-21` documentation sentence test | Removed prose checks; retained the manifest's connect-command contract as `the manifest exposes the connect command`; connect/setup behavior cases remain. |
 | `1-18` delivery/preview/readiness documentation tests | Removed three prose guards; runtime delivery transitions, preview purity, deregistration failures and channel confirmation readiness remain executable cases. |

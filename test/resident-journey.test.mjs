@@ -429,19 +429,33 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   assert.equal(ids.did, JSON.parse(who.stdout).did);
   assert.match(ids.did, /^did:key:z/);
   assert.equal(ids.stable_id, undefined);
+  const host = healthHost({ deployment: j.deployment, env: j.env });
   for (const args of [['id', 'team', 'members', '--team-id', team, '--registry', AWID_URL, '--json'], ['workspace', 'status', '--limit=200', '--json'], ['mail', 'inbox', '--count-only', '--json']]) {
     const r = j.aw(home, args);
     if (args.includes('--count-only') && j.awVersion === '1.36.33') {
       assert.notEqual(r.status, 0, 'the floor must refuse unsupported count-only');
       assert.match(r.stderr, /unknown flag: --count-only/);
-      assert.equal(await healthHost({ deployment: j.deployment, env: j.env }).supportsUnreadCount(), false);
+      assert.equal(await host.supportsUnreadCount(), false);
       continue;
     }
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const doc = JSON.parse(r.stdout);
     assert.ok(doc, 'real roster/count response is JSON');
+    if (args.includes('--count-only')) {
+      const count = await host.unreadCount(join(home, '.aw'));
+      assert.ok(Number.isSafeInteger(count) && count >= 0, 'the provider reads a nonnegative native unread_count');
+      assert.equal(count, doc.unread_count);
+    }
     nativeCapture(args[0] === 'id' ? 'roster-members' : args[0] === 'workspace' ? 'roster-presence' : 'mail-inbox-count', doc, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
   }
+  const listedRoster = j.shell('oats aweb roster --soul probe --json');
+  assert.equal(listedRoster.status, 0, listedRoster.stdout + listedRoster.stderr);
+  const roster = JSON.parse(listedRoster.stdout);
+  assert.equal(roster.certificatesComplete, true);
+  assert.equal(roster.presenceComplete, true);
+  const seat = roster.members.find(member => member.alias === spawned.doc.result.instance);
+  assert.ok(seat, 'the provider roster contains the joined seat');
+  assert.deepEqual(seat.sources, ['certificate', 'presence']);
   const retired = j.shell("oats retire joined-seat --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false);
