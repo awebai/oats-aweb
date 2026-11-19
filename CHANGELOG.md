@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: the round-trip probe sends on the tested aw (1.36.58).** It checks
+  the selected native mail-send help, retains the explicit fresh-thread flag
+  needed by aw 1.36.33, and omits the flag removed in aw 1.36.53. Unknown or
+  unavailable qualification refuses before sending; both routes keep one
+  send with no discovery, fallback or retry. This records the fix merged in
+  #277; no migration is required.
+
 ## 1.43.0 — 2026-11-19
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.
@@ -108,13 +117,6 @@ Membership and custody reads now fail closed (#283). Retained seating verifies s
   minted; a failed mint removes it), and the answer names the file: `result.tokenFile` with
   `--json`, in place of `result.token`. Without `--out` the answer is
   unchanged.
-
-- **Fixed: the round-trip probe sends on the tested aw (1.36.58).** It checks
-  the selected native mail-send help, retains the explicit fresh-thread flag
-  needed by aw 1.36.33, and omits the flag removed in aw 1.36.53. Unknown or
-  unavailable qualification refuses before sending; both routes keep one
-  send with no discovery, fallback or retry. This records the fix merged in
-  #277; no migration is required.
 
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:
