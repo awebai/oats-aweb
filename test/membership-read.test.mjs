@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fakeAwSetupPath} from './helpers/fake-aw-setup.mjs';
 import {currentRootQuery} from './helpers/current-root-query.mjs';
-import {joinKernelEnvironment} from './helpers/fake-kernel-team-config.mjs';
+import {fakeKernelTeamConfig,joinKernelEnvironment} from './helpers/fake-kernel-team-config.mjs';
 
 const HOOK=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs',import.meta.url));
 const TEAM='t:example.test',OTHER='wider:example.test';
@@ -123,6 +123,32 @@ for(const action of ['create','join']) test(`setup ${action} refuses an unreadab
   assert.match(output,/nothing was created or redeemed/);
   assert.deepEqual(f.fake.readCalls().map(c=>c.args),[['team','list','--json']]);
   assert.equal(readFileSync(join(f.base,'oats-local.yaml'),'utf8'),before);
+});
+
+for(const closed of [false,true]) test(`create reports completed work before an unreadable verdict with local teams ${closed?'closed':'allowed'}`,t=>{
+  const f=fixture(t),created='created:example.test',target=join(f.base,'.aweb-roots','created');
+  const kernel=fakeKernelTeamConfig(join(f.base,'create-kernel'),f.base,{
+    localTeams:!closed,teams:[{label:'default',team:TEAM,from:'local'}],defaultTeam:{label:'default',team:TEAM,from:'deployment'},
+  });
+  const cli=join(f.base,'create-kernel.mjs');
+  writeFileSync(cli,`#!${process.execPath}\nimport ${JSON.stringify(kernel.cli)};`,{mode:0o755});
+  const r=f.run(['setup','--create','created','--namespace','example.test','--name','host'],{
+    OATS_CLI_BIN:cli,AW_FAKE_TEAM:created,AW_FAKE_VERSION:'1.36.56',AWEB_URL:'https://service.example.test',
+    AW_LIST_ERROR:'connection refused SECRET-POST-CREATE',AW_LIST_ERROR_AFTER:'1',
+  });
+  assert.equal(r.status,1,r.stdout+r.stderr);
+  assert.ok(r.stdout.includes(`✓ created ${created}, accepted it into ${target}, recorded roots[${created}]`),r.stdout+r.stderr);
+  assert.match(r.stderr,/could not check membership.*network or TLS failure/);
+  assert.doesNotMatch(r.stdout+r.stderr,/SECRET-/);
+  assert.match(readFileSync(join(f.base,'oats-local.yaml'),'utf8'),/created:example\.test/);
+  assert.ok(readFileSync(join(target,'.aw','workspace.yaml'),'utf8').includes('https://service.example.test'));
+  if(closed) {
+    assert.match(r.stdout,/commit the team in oats-workspace.yaml/);
+    assert.ok(!kernel.calls().some(c=>c.args[1]==='add'));
+  } else {
+    assert.ok(kernel.read().teams.some(row=>row.label==='created'&&row.team===created));
+    assert.match(r.stdout,/recorded local team created/);
+  }
 });
 
 for(const plan of [false,true]) test(`current-root membership read failure refuses ${plan?'plan without a false row':'join before mint'}`,t=>{

@@ -56,12 +56,6 @@ Init is skipped when R already holds a complete global identity: the command
 then verifies it, ensures its custody and records it (adopt). The preflight
 decides from what R holds:
 
-For an adopted identity, preflight must read `aw custody status --json` before
-changing a supervisor. A failed or malformed read refuses with
-`E_RESIDENT_VERIFY` at preflight and a safe cause; it never means custody is
-not running. Run that read in R, repair the reported problem and retry. Plan
-uses the same refusal and writes no unit.
-
 | R holds | Then |
 | --- | --- |
 | nothing, or does not exist | init creates the resident |
@@ -71,6 +65,12 @@ uses the same refusal and writes no unit.
 | a complete global identity (`.aw/identity.yaml`, `signing.key`, `workspace.yaml`) | no init: verify, custody and record (adopted), or verification and unit refresh when it is already recorded |
 | a complete global identity whose custody already runs, not from this command's unit | refused before any effect (`E_RESIDENT_CUSTODY_RUNNING`): stop that custody, then rerun |
 | anything else | refused, naming what is there; R is never deleted and init never runs into it |
+
+For an adopted identity, preflight must read `aw custody status --json` before
+changing a supervisor. A failed or malformed read refuses with
+`E_RESIDENT_VERIFY` at preflight and a safe cause; it never means custody is
+not running. Run that read in R, repair the reported problem and retry. Plan
+uses the same refusal and writes no unit.
 
 **Verify** fails unless aw init's answer shows `status: connected`,
 `identity_scope: global`, the alias `<name>`, a canonical `<name>:<namespace>`

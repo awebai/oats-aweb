@@ -3523,7 +3523,7 @@ ${JSON.stringify(problem.details || {})}`);
       mkdirSync(scope, { recursive: true });
       console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root, registered with ${service}.`);
       const created = createTeam(label, service);
-      teams = readTeams();
+      // Record and report the completed create before the fallible default-root verdict read.
       const done = `✓ created ${created.team}, accepted it into ${created.teamRoot}, recorded roots[${created.team}]`;
       if (localTeams.closed) {
         console.log(`${done}.`);
@@ -3534,6 +3534,7 @@ ${JSON.stringify(problem.details || {})}`);
       }
       if (created.teamKeyPath) console.log(`  team key: ${created.teamKeyPath} (user-wide: every process this user runs can read it; never share it)`);
       console.log(`  team server: ${created.teamServer.url} (${created.teamServer.publishedNow ? "published at AWID and verified" : "already published at AWID; verified"} against the team key)`);
+      teams = readTeams();
       printVerdict(teams);
       process.exit(0);
     }
