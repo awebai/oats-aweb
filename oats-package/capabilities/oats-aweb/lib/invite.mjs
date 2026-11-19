@@ -5,9 +5,9 @@ import { parseProviderSettings } from './provider-settings.mjs';
 // Selected-deployment member invitation. Native/server issuance decides authority;
 // membership and a plan never claim an owner/admin role or permission to mint.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, realpathSync, statSync, rmSync } from 'node:fs';
+import { closeSync, lstatSync, mkdtempSync, openSync, readFileSync, realpathSync, statSync, rmSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { selectedDeployment } from './team-roots.mjs';
 import { querySelectedKernel } from './session-readiness.mjs';
 import { yamlScalar } from './binding-wire.mjs';
@@ -22,12 +22,12 @@ function validTeam(value) {
   const match = typeof value === 'string' && /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(value);
   return !!match && match[2].length <= 253 && match[2].split('.').every(label => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label));
 }
-const usage = 'usage: oats aweb invite [--label <label>] [--plan] [--json] (no recipient argument)';
+const usage = 'usage: oats aweb invite [--label <label>] [--out <file>] [--plan] [--json] (no recipient argument)';
 function options(argv) {
   const out = { plan: false, json: false }, seen = new Set();
   for (let i = 0; i < argv.length; i++) {
     const [flag, ...parts] = argv[i].split('=');
-    if (!['--label', '--plan', '--json', '--soul', '--dir'].includes(flag) || seen.has(flag)) fail('E_INVITE_ARGUMENT', usage);
+    if (!['--label', '--out', '--plan', '--json', '--soul', '--dir'].includes(flag) || seen.has(flag)) fail('E_INVITE_ARGUMENT', usage);
     seen.add(flag);
     if (flag === '--plan' || flag === '--json') {
       if (parts.length) fail('E_INVITE_ARGUMENT', usage);
@@ -101,8 +101,32 @@ export function rootAwebUrl(root) {
   try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
   return plainServiceUrl(raw) ?? null;
 }
+/** The file `--out` names, checked before anything is minted (#285): a new path in an
+ *  existing directory. Nothing may be at the path, not even a link, so the token never
+ *  replaces a file or follows a link to one. */
+function outFile(raw, cwd) {
+  const path = resolve(cwd, raw);
+  let taken = false;
+  try { lstatSync(path); taken = true; } catch { /* nothing there, as required */ }
+  if (taken) fail('E_INVITE_OUT', `--out ${path}: something is already there; name a new file`);
+  try { if (!statSync(dirname(path)).isDirectory()) throw new Error(); } catch { fail('E_INVITE_OUT', `--out ${path}: its directory does not exist`); }
+  return path;
+}
+/** Writes the token to a new file only its owner can read: O_EXCL refuses a file or a
+ *  link that appeared since outFile checked. The invite is already minted here, so a
+ *  failure says so; the token is never printed in its place. */
+function writeToken(path, token) {
+  let fd;
+  try { fd = openSync(path, 'wx', 0o600); writeSync(fd, `${token}\n`); closeSync(fd); }
+  catch (e) {
+    // A file this call created but could not finish holds part of a token: remove it.
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } rmSync(path, { force: true }); }
+    fail('E_INVITE_OUT', `the invite was minted but could not be written to ${path} (${e.code || 'write failed'}); it is not printed: mint another with a new --out`);
+  }
+}
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
+  const out = opts.out === undefined ? undefined : outFile(opts.out, process.cwd());
   let deployment;
   try { deployment = selectedDeployment(env, opts.dir); } catch { fail('E_INVITE_DEPLOYMENT', 'selected deployment is missing, unreadable or inconsistent'); }
   let settings;
@@ -136,7 +160,7 @@ export function issueInvite(argv, env = process.env) {
   if (!Array.isArray(membership?.memberships)) fail('E_INVITE_MEMBERSHIP', 'selected root returned malformed membership');
   if (membership.memberships.filter(m => object(m) && sameAwebTeamId(m.team_id, team)).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
   const result = { label, team, root, awebUrl: rootAwebUrl(root), authority: 'native/server decides at issuance' };
-  if (opts.plan) return { ...result, plan: true, command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
+  if (opts.plan) return { ...result, plan: true, ...(out ? { tokenFile: out } : {}), command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
   // Fresh native user state prevents an invoking-home BYOT controller key or
   // cached principal from silently replacing selected-root hosted authority.
   const rawResult = isolatedNative(['team','invite','--team-id',team,'--member-local','--json'], root, env, { source }, settings);
@@ -144,7 +168,10 @@ export function issueInvite(argv, env = process.env) {
   try { minted = JSON.parse(rawResult); } catch { fail('E_INVITE_OUTPUT', 'aw returned malformed invite output; issuance may have occurred; do not automatically retry'); }
   if (!object(minted) || minted.status !== 'created' || typeof minted.invite_id !== 'string' || !minted.invite_id.trim() || typeof minted.token !== 'string' || !/^aw_inv_[^\s\x00-\x1f\x7f]+$/.test(minted.token)) fail('E_INVITE_OUTPUT', 'aw returned an unsupported or malformed hosted invite; issuance may have occurred; do not automatically retry');
   // The joiner's one-line command (#56): it reads the token on stdin, so the token is never in it.
-  return { ...result, issuedAt: new Date().toISOString(), token: minted.token, joinCommand: `oats aweb setup --soul ${/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(opts.soul || '') ? opts.soul : '<soul>'} --invite-stdin --name <alias>` };
+  const joinCommand = `oats aweb setup --soul ${/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(opts.soul || '') ? opts.soul : '<soul>'} --invite-stdin --name <alias>`;
+  // With --out the token goes to the file and the answer names the file in its place (#285).
+  if (out) { writeToken(out, minted.token); return { ...result, issuedAt: new Date().toISOString(), tokenFile: out, joinCommand }; }
+  return { ...result, issuedAt: new Date().toISOString(), token: minted.token, joinCommand };
 }
 export function inviteMain(argv, env = process.env) {
   const json = argv.includes('--json') || !!env.OATS_OPERATION;
@@ -152,6 +179,7 @@ export function inviteMain(argv, env = process.env) {
     const result = issueInvite(argv,env);
     if (json) process.stdout.write(JSON.stringify({schemaVersion:1,ok:true,result})+'\n');
     else if (result.plan) process.stdout.write(`Plan: ask ${result.root} to issue a LOCAL member invite for ${result.team}; native/server decides authority. No invite minted.\n`);
+    else if (result.tokenFile) { process.stdout.write(`Invite token written to ${result.tokenFile} (owner-only); it is not printed.\n`); process.stderr.write(`Joiner: hand that file to the joiner privately; they run \`${result.joinCommand} < <the file>\` in their deployment (<alias> is the joining root's name), then delete it.\n`); }
     else { process.stdout.write(result.token+'\n'); process.stderr.write(`Joiner: pipe this token to \`${result.joinCommand}\` in their deployment (it reads the token on stdin; <alias> is the joining root's name).\n`); }
     return 0;
   } catch (e) {

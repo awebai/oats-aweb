@@ -1927,7 +1927,7 @@ metadata remain unchanged. This corrects a pre-existing omission, not a new
 ### Member invitation (provider 1.23.0, #71)
 
 From the selected deployment, `oats aweb invite --soul S [--label L]
-[--plan] [--json]` selects a declared label (or the selected soul's default),
+[--out <file>] [--plan] [--json]` selects a declared label (or the selected soul's default),
 checks its canonical team and root membership, then asks native/server authority
 to issue a LOCAL hosted member invitation. There is no recipient argument:
 the accepting side chooses its own alias. This is not a dashboard human invite,
@@ -1955,8 +1955,23 @@ also answer `result.awebUrl`: the service the issuing root names (its
 default. Only a plain service URL is handed on: http(s), a host, an optional
 port and a path of `/` or `/api` at most. A root that names none, or a URL
 that could carry a credential (userinfo, a query, any other path), answers
-`null`. It
-is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
+`null`.
+
+`--out <file>` keeps the token out of the terminal and an agent's transcript
+(#285): it writes the token, and a newline, to a new file only its owner can
+read (mode 0600). Nothing may already be at the path, a link included, and its
+directory must exist; both are checked before anything is minted, and the
+file is opened exclusively, so the token never replaces a file or follows a
+link. Plain stdout then says where the token is, and stderr says to hand that
+file to the joiner privately, who runs the joiner's command with the file on
+stdin, then deletes it. With `--json`, the answer carries `result.tokenFile`
+(the file's absolute path) in place of `result.token`; `--plan` names the
+`tokenFile` it would write. A relative path resolves from where the command
+runs. If the file cannot be written after the mint, `E_INVITE_OUT` says the
+invite was minted and that the token is not printed. Without `--out`, the
+answer is unchanged: one token on stdout, or one `result.token`.
+
+The service URL is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass
 only to the intended accepting operator's labelled `setup --invite-stdin`
 procedure in `/oats-aweb` §8, **Invitations and certificate ownership**. Never
 log, echo, put in argv/history, or send it as ordinary mail. Setup hands it to

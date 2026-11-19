@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync,renameSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync,renameSync,statSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,dirname} from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 const cap=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb',import.meta.url)),hook=join(cap,'bin/oats-aweb.mjs');
 function fixture(t,{native='success',member='team:fixture.aweb.ai',team='team:fixture.aweb.ai',settings,query='ok',problems=[]}={}){
@@ -151,4 +151,33 @@ test('invite gives only its configured registry to issuance, with no pin on the 
  const calls=f.read().filter(c=>c.kind==='aw');
  assert.equal(calls.find(c=>c.args[1]==='invite').env.AWID_REGISTRY_URL,registry);
  assert.equal(calls.find(c=>c.args[1]==='list').env.AWID_REGISTRY_URL,undefined);
+});
+
+// #285: --out writes the token to a new owner-only file, and the answer names the file instead.
+test('invite --out writes the token to a new 0600 file and prints only where it is',t=>{
+ const f=fixture(t),file=join(f.dir,'invite-token');
+ const r=f.run(['--out',file,'--soul','dev']);assert.equal(r.status,0,r.stderr);
+ assert.equal(readFileSync(file,'utf8'),'aw_inv_SYNTHETIC\n');assert.equal(statSync(file).mode&0o777,0o600);
+ assert.equal(r.stdout,`Invite token written to ${file} (owner-only); it is not printed.\n`);
+ assert.match(r.stderr,/hand that file to the joiner privately; they run `oats aweb setup --soul dev --invite-stdin --name <alias> < <the file>`/);
+ assert.doesNotMatch(r.stdout+r.stderr,/aw_inv_/);
+});
+test('invite --out --json carries tokenFile in place of token; without --out the answer keeps exactly one token',t=>{
+ const f=fixture(t),file=join(f.dir,'tok');
+ const r=f.run(['--out',file,'--json']);assert.equal(r.status,0,r.stderr);
+ const d=JSON.parse(r.stdout).result;assert.equal(d.tokenFile,file);assert.equal(Object.hasOwn(d,'token'),false);assert.match(d.joinCommand,/--invite-stdin/);assert.doesNotMatch(r.stdout,/aw_inv_/);
+ const plain=JSON.parse(f.run(['--json']).stdout).result;assert.equal(plain.token,'aw_inv_SYNTHETIC');assert.equal(Object.hasOwn(plain,'tokenFile'),false);
+});
+test('a relative --out resolves from where the command runs, and the plan names it without writing',t=>{
+ const f=fixture(t),r=f.run(['--out=invite-token','--plan','--json']);assert.equal(r.status,0,r.stderr);
+ assert.equal(JSON.parse(r.stdout).result.tokenFile,join(f.dep,'invite-token'));assert.equal(existsSync(join(f.dep,'invite-token')),false);
+ assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false);
+});
+test('invite --out refuses an existing file, a link or a missing directory before minting',t=>{
+ const f=fixture(t),existing=join(f.dir,'existing'),link=join(f.dir,'link');writeFileSync(existing,'keep');symlinkSync(join(f.dir,'nowhere'),link);
+ for(const target of [existing,link,join(f.dir,'missing','tok'),f.dir]){
+  const r=f.run(['--out',target,'--json']);assert.equal(r.status,1);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_OUT');assert.ok(e.message.includes(target),e.message);
+ }
+ assert.equal(readFileSync(existing,'utf8'),'keep');assert.equal(existsSync(join(f.dir,'nowhere')),false);
+ assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false,'nothing was minted');
 });
