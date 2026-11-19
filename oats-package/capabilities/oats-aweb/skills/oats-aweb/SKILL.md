@@ -964,6 +964,12 @@ check" cause on stderr and a nonzero exit; a confirmed absence is
 retry. `join --plan` uses `E_SETUP_MEMBERSHIP` for an unreadable root instead of
 a false membership row; scripts must handle that command error.
 
+`setup --create` and tokenless `setup --join` also require readable membership from an
+existing configured default root, even when the target is a separate per-team
+root. On that refusal nothing was created or redeemed: repair the named root's
+membership, or choose another default with `oats teams default <label>`, then
+retry.
+
 The invite token is never in argv, a file, a log or output **on this side**;
 it stays in memory and the routed join's stdin. On the host, native
 `aw id team accept-invite` exposes the token in its process list while the call

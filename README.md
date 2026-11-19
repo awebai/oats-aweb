@@ -38,7 +38,7 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
-## Unreleased — grant seats keep their recorded team and resident
+## Unreleased — grant seats and membership reads
 
 Grant show and revoke explicitly select the grant's team, including the show
 that confirms an uncertain revoke. The recovery command includes
@@ -86,6 +86,12 @@ to emit `member:false` for an unreadable root now fails with the existing
 Resident adoption and plan refuse an unreadable custody status before changing
 a supervisor. Repair `aw team list --json` or `aw custody status --json` in the
 named root and retry.
+
+`setup --create` and tokenless `setup --join` now also require readable membership from
+an existing configured default root, even for a separate per-team root. Earlier
+releases proceeded when that read failed. A refusal names the root and confirms
+that nothing was created or redeemed. Make that root's membership readable, or
+choose another default with `oats teams default <label>`, then retry.
 
 ## 1.42.1 — the release OATS pins for 1.42
 
@@ -753,8 +759,10 @@ The join half works on its own when someone else mints the invite:
 
   `aw.status` is `ok`, `done` (installed now: `detail` says from what),
   `needs-human` (`detail`, `remedy`) or `failed` (`code`, `detail`; exit 1).
-  `member` is `null` when aw cannot be asked, and `root` is the root that mints
-  for the default team (`roots[team]`, else `root`) when one exists.
+  `member` is `null` when aw cannot be asked, or, with exit 1 and a cause on
+  stderr, when the root's membership cannot be read. `false` is a confirmed
+  absence. `root` is the root that mints for the default team (`roots[team]`,
+  else `root`) when one exists.
 
 **The invite token** exists only in connect's memory and on the routed join's
 stdin. It never appears in oats argv, a file, a log, the result or an error

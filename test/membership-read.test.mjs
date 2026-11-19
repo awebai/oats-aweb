@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fakeAwSetupPath} from './helpers/fake-aw-setup.mjs';
 import {currentRootQuery} from './helpers/current-root-query.mjs';
+import {joinKernelEnvironment} from './helpers/fake-kernel-team-config.mjs';
 
 const HOOK=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs',import.meta.url));
 const TEAM='t:example.test',OTHER='wider:example.test';
@@ -35,6 +36,8 @@ const failureModes=[
   {AW_LIST_TEAMS:'SECRET-NATIVE-OUTPUT'},
   {AW_LIST_TEAMS:'{}'},
   {AW_LIST_TEAMS:'{"memberships":{}}'},
+  {AW_LIST_TEAMS:'{"memberships":[{"team_id":null}]}'},
+  {AW_LIST_TEAMS:'{"memberships":[{"team_id":"bogus"}]}'},
 ];
 for (const [i,mode] of failureModes.entries()) test(`setup membership read failure ${i} refuses before init or invite`,t=>{
   const f=fixture(t),before=readFileSync(f.file,'utf8');
@@ -65,6 +68,36 @@ test('a shared-root read failure is never an invitation remedy',t=>{
   assert.equal(r.status,1);assert.match(r.stderr,/could not check membership/);
   assert.doesNotMatch(r.stdout+r.stderr,/not a member|ask its owner|--invite/);
   assert.ok(!f.fake.readCalls().some(c=>c.args[0]==='init'||c.args[1]==='invite'));
+});
+
+for(const labelled of [false,true]) test(`roster prints a normal membership refusal for ${labelled?'labelled':'recorded'} team`,t=>{
+  const f=fixture(t);
+  writeFileSync(f.file,'not-json');
+  const r=f.run(['roster',...(labelled?['--label','wider']:[])],{
+    OATS_SETTINGS:JSON.stringify({root:f.root,roots:{[OTHER]:f.root}}),
+    OATS_META:JSON.stringify({defaultTeam:{label:'wider',team:OTHER}}),
+  });
+  assert.equal(r.status,1);
+  assert.equal(r.stdout,'');
+  assert.match(r.stderr,/^oats aweb roster: could not check membership/);
+  assert.doesNotMatch(r.stderr,/file:\/\/|^\s+at |^Error:/m);
+  assert.ok(f.fake.readCalls().every(c=>c.args[0]==='team'&&c.args[1]==='list'));
+});
+
+for(const action of ['create','join']) test(`setup ${action} refuses an unreadable default root before any effect`,t=>{
+  const f=fixture(t),before=readFileSync(join(f.base,'oats-local.yaml'),'utf8');
+  const env=joinKernelEnvironment(f.env,f.base);
+  const args=action==='create'?['--create','wider','--namespace','example.test']:['--join','wider','--service','https://service.example.test/api'];
+  const r=f.run(['setup',...args,'--json'],{...env,AW_FAKE_VERSION:'1.36.56',AW_LIST_TEAMS:'{}'});
+  const output=r.stdout+r.stderr;
+  assert.equal(r.status,1,output);
+  assert.match(output,/configured default root/);
+  assert.ok(output.includes(f.root));
+  assert.match(output,/make that root's membership readable/);
+  assert.ok(output.includes('oats teams default <label>'));
+  assert.match(output,/nothing was created or redeemed/);
+  assert.deepEqual(f.fake.readCalls().map(c=>c.args),[['team','list','--json']]);
+  assert.equal(readFileSync(join(f.base,'oats-local.yaml'),'utf8'),before);
 });
 
 for(const plan of [false,true]) test(`current-root membership read failure refuses ${plan?'plan without a false row':'join before mint'}`,t=>{

@@ -36,6 +36,11 @@
   Run `aw team list --json` or `aw custody status --json` in the named root,
   repair the read, then retry; do not initialize, join or start another custody
   based on an unknown result.
+  This also makes `setup --create` and tokenless `setup --join` require readable
+  membership from an existing configured default root before proceeding to a
+  separate per-team root; earlier releases did not require it. The refusal
+  names that root, says nothing was created or redeemed, and teaches repairing
+  its membership or choosing another default with `oats teams default <label>`.
 
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:
