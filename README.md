@@ -21,7 +21,7 @@ this oats.aweb supports, in two fields:
   hooks, the probe and a grant seat's custody refuse an older aw ("aw floor"
   below).
 - **`tested`** is the highest aw the CI journeys pass on. CI's resident-journey
-  matrix runs exactly `min` and `tested`, each checked to be the aw it
+  matrix runs the floor, tested and pinned next from `scripts/aw-test-versions.mjs`, each checked to be the aw it
   installed. Above `tested`, on a server other than the aweb Cloud, readiness
   and spawn warn `aw-newer-than-tested`.
 
@@ -1770,6 +1770,9 @@ versions from `scripts/aw-test-versions.mjs`. The shared recording fakes reject
 unknown flags before acting. After exercising the hook's paths, CI checks every
 recorded full command path and flag against that real aw's help; a parent
 command's successful help does not establish a missing child command.
+Every used flag is parsed together with the others. Appending `--help` proves
+parse acceptance; required-together or mutually exclusive flag groups and
+command-level value validation need the named native behaviour tests.
 
 Every selected CI group runs through `scripts/test-ci.mjs`, which requires
 zero skips. The kernel, native host and real-stack groups have their own
@@ -1991,7 +1994,7 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   the stack up from an aweb checkout at ci.yml's `AWEB_STACK_COMMIT` with
   `docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis
   awid aweb`, then set `OATS_RESIDENT_JOURNEY_AW` (an aw executable of
-  `aw-compat.json`'s `min` or `tested`, at the commit the test qualifies it on),
+  the floor, tested or pinned next from `scripts/aw-test-versions.mjs`, at the commit the test qualifies it on),
   `OATS_RESIDENT_JOURNEY_AWEB_URL=http://127.0.0.1:18000` and
   `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`, and
   `OATS_RESIDENT_JOURNEY_KERNEL` (a checkout of an OATS kernel with
@@ -2002,7 +2005,7 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   next steps through that kernel in a fixture workspace: the spawn mints a real
   grant at the resident's custody, and the retire revokes it. CI's
   `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`, once
-  for each of `min` and `tested`. Moving `tested` moves three things together:
+  for the floor, tested and pinned next from `scripts/aw-test-versions.mjs`. Moving `tested` moves three things together:
   the matrix (generated from `scripts/aw-test-versions.mjs`), the
   journey test's qualified aw and commit (its first test fails until they
   match), and the stack commit, to aweb's release of that aw (no test checks

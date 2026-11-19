@@ -59,7 +59,9 @@ The grant, setup, wake and join-from CLI doubles record the hook's built argv;
 aw runner. This includes `mail send --new-conversation --to --subject
 --body-file`, both `mail show` selectors and its conversation limit, and
 identity-home/team selection. The real help guard requires witnesses for all
-30 recorded command paths and checks every used flag and flag combination.
+29 recorded command paths and checks every used flag, parsed together.
+Appending `--help` proves parse acceptance; it does not exercise required-together
+or mutually exclusive flag groups, or value validation performed by the command.
 Values are never written to the shared recording log. For mail send, the
 unit vectors cover both qualified contracts. The guard selects the branch
 advertised by this real CLI and requires a recorded send for that branch:
@@ -76,7 +78,7 @@ the recording doubles:
 | Probe `mail send` and `mail show`, including leading identity/team selectors | `probe-mail-native.test.mjs` qualifies actual native help, executes the provider's one-send/full-reply proof against controlled external transport, then admits its actual argv with native `--help` at every matrix version. It sends no native mail. |
 | `status publish --print-signed` and publisher flags | `health-status-native.test.mjs`, all vector documents; floor asserts unsupported. |
 | `team invite --member-local` and `team invite inspect` | `invite-native.test.mjs`, generated identities and loopback HTTP. |
-| `mail inbox --count-only --json`, roster members/presence, retained connect/check/heartbeat/status/whoami | `resident-journey.test.mjs`; floor asserts absent count capability, tested/next execute the read. |
+| `mail inbox --count-only --json`, roster members/presence, retained connect/status/heartbeat/whoami | `resident-journey.test.mjs`; floor asserts absent count capability, tested/next execute the read. |
 
 Exclusions use Node's `--test-skip-pattern` with exact escaped names, after
 checking that every name is a declared literal test in the selected files.

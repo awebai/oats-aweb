@@ -102,7 +102,8 @@ test('pinned real member invite: selected-root wire, token once, safe status ada
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}`;
-  token = 'aw_inv_v1_' + Buffer.from(JSON.stringify({ v: 1, t: 'aw_inv_' + 'X'.repeat(43), a: url })).toString('base64url');
+  const innerToken = 'aw_inv_' + 'X'.repeat(43);
+  token = 'aw_inv_v1_' + Buffer.from(JSON.stringify({ v: 1, t: innerToken, a: url })).toString('base64url');
   const membership = `  - team_id: ${team}\n    alias: ${alias}\n    cert_path: team-certs/fixture__example.invalid.pem\n`;
   writeFileSync(join(root, '.aw', 'teams.yaml'), `active_team: ${team}\nmemberships:\n${membership}    aweb_url: ${url}\n`);
   writeFileSync(join(root, '.aw', 'workspace.yaml'), `aweb_url: ${url}\nmemberships:\n${membership}`);
@@ -158,11 +159,13 @@ test('pinned real member invite: selected-root wire, token once, safe status ada
       assert.equal(error.code, refusal === 'alias_conflict' ? 'alias_conflict' : 'http_error');
       assert.equal(error.reason, refusal === 'alias_conflict' ? 'alias_active' : refusal);
       assert.ok(!rejected.stdout.includes(token) && !rejected.stderr.includes(token));
+      assert.ok(!(rejected.stdout + rejected.stderr).includes(innerToken));
     }
     const priorCalls = calls.length;
     const result = await hookRun('spawn', [], child, { ...env, HOME: joinHome, XDG_CONFIG_HOME: join(joinHome, '.config'), OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: child, OATS_INSTANCE: 'native-child', OATS_DEFAULT_TEAM_ID: team });
     assert.equal(result.code, 1, result.stdout + result.stderr);
     assert.doesNotMatch(result.stdout + result.stderr, new RegExp(token));
+    assert.ok(!(result.stdout + result.stderr).includes(innerToken));
     const doc = JSON.parse(result.stdout);
     // aw 1.36.33 init --join-from does not carry the structured refusal code.
     // Remove this legacy diagnostic branch when the floor moves to 1.36.59 final.
