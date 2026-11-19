@@ -18,7 +18,10 @@
   Origins accept IPv6 and canonicalize default ports; paths, userinfo, queries
   and fragments are explicitly unsupported (give the bare origin for /api).
   A shared wake unit refuses a changed pin and names the supported migration
-  choices. See README's self-hosting setup card before upgrading.
+  choices. The shared settings writer refuses mis-indented blocks it previously
+  corrupted; a single leading YAML document marker remains supported. An empty
+  ambient registry variable selects nothing and is treated as unset. See
+  README's self-hosting setup card before upgrading.
 
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:

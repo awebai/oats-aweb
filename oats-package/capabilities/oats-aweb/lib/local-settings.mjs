@@ -47,7 +47,16 @@ function childIndent(lines, start, end, expected, refuse) {
   if (indents.length && Math.min(...indents) !== expected) refuse("unsupported block indentation");
 }
 function awebBlock(lines, refuse) {
-  if (lines.some(row => /^\s*\t/.test(row) || ["---", "..."].includes(row.trim()))) refuse("tabs or multiple YAML documents are unsupported");
+  if (lines.some(row => /^\s*\t/.test(row))) refuse("tabs are unsupported");
+  const content = lines.filter(row => row.trim() && !row.trimStart().startsWith("#"));
+  for (let i = 0; i < content.length; i++) {
+    // YAML document markers are at column zero; indented text may belong
+    // to a wrapped quoted scalar handled by the shared entry parser.
+    const marker = /^(---|\.\.\.)(?:\s+#.*)?$/.exec(content[i].trimEnd());
+    if (marker && (i !== 0 || marker[1] !== "---")) {
+      refuse("multiple YAML documents or explicit document ends are unsupported");
+    }
+  }
   let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings", '"settings"', "'settings'"]);
   if (typeof settings === "object") refuse(`line ${settings.unsupported + 1} is not a block-style settings: mapping`);
   if (settings < 0) { lines.push("settings:"); settings = lines.length - 1; }

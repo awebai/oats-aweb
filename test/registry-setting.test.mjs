@@ -153,10 +153,10 @@ for(const platform of ['darwin','linux'])test(`${platform} wake reinstall refuse
 
 test('public ambient registry aliases remain harmless while private or malformed ambient values require migration', async () => {
   const {registryMigration, REGISTRY_MIGRATION} = await import('../oats-package/capabilities/oats-aweb/lib/registry-setting.mjs');
-  for (const value of ['https://api.awid.ai', 'https://api.awid.ai/api', 'HTTPS://API.AWID.AI.:443/api/']) {
+  for (const value of ['', 'https://api.awid.ai', 'https://api.awid.ai/api', 'HTTPS://API.AWID.AI.:443/api/']) {
     assert.equal(registryMigration({}, {AWID_REGISTRY_URL:value}), undefined, value);
   }
-  for (const value of ['http://127.0.0.1:18010', 'https://private.invalid', '', 'not-a-url', 'https://api.awid.ai/other']) {
+  for (const value of ['http://127.0.0.1:18010', 'https://private.invalid', 'not-a-url', 'https://api.awid.ai/other']) {
     assert.equal(registryMigration({}, {AWID_REGISTRY_URL:value}), REGISTRY_MIGRATION, value);
   }
 });

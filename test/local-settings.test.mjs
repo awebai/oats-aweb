@@ -80,3 +80,24 @@ test("scalar and map updates share wrapped quote and comment preservation", t =>
     assert.ok(read(dir).endsWith(expected), read(dir));
   }
 });
+
+
+test("scalar and map writers preserve a single leading YAML document marker", t => {
+  for (const update of [dir => recordAwebScalar("registry", "http://127.0.0.1:18010", {start:dir}), dir => recordAwebSetting("residents", "alice", "/resident", {start:dir})]) {
+    const dir = deployment(t, "# operator config\n\n---\nsettings:\n  unrelated: true\n");
+    update(dir);
+    assert.ok(read(dir).startsWith("# operator config\n\n---\n"), read(dir));
+    assert.match(read(dir), /unrelated: true/);
+    assert.match(read(dir), /oats\.aweb:/);
+  }
+});
+
+test("scalar and map writers refuse a second YAML document marker and explicit document ends", t => {
+  for (const text of ["---\nsettings:\n  unrelated: true\n---\n", "---\nsettings:\n  unrelated: true\n...\n", "settings:\n  unrelated: true\n---\n"]) {
+    for (const update of [dir => recordAwebScalar("registry", "http://127.0.0.1:18010", {start:dir}), dir => recordAwebSetting("residents", "alice", "/resident", {start:dir})]) {
+      const dir = deployment(t, text);
+      assert.throws(() => update(dir), /cannot safely update/);
+      assert.equal(read(dir), text);
+    }
+  }
+});
