@@ -810,6 +810,9 @@ resident's custody directory; readiness warns `grant-revoke-pending`, or
 `grant-revoke-unchecked` when the list cannot be read. A failed renewal keeps the
 previous grant and starts on it; only a failed first mint at spawn fails. A
 retire exits nonzero while a grant stays unrevoked or the list is unread.
+A start waits at most 10 s for the custody's grant list. An aw call that ends
+without an answer is reported by how it ended (timed out, an error code or a
+signal), never as done.
 
 A present `seat.json` owns this home's seat id, resident and team. A different
 configured resident or default team refuses start with a respawn remedy; an
