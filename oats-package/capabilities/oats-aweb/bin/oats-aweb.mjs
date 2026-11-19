@@ -155,7 +155,7 @@ const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EV
  *  started. Every aw child of the hook takes its timeout from here. */
 const hookTimeout = (requested) => boundedByHook ? Math.min(requested, Math.floor(HOOK_STARTED_AT + HOOK_BUDGET_MS - performance.now())) : requested;
 const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
-const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input } = {}) => {
+const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input, classify } = {}) => {
   const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
@@ -197,6 +197,10 @@ const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, f
     // it writes or registers anything (aw cmd/aw/init.go runInitJoinFrom).
     err.inviteNotCreated = /; alternatively use --admission-team-id /.test(String(e.stderr ?? ""));
     err.awErrorCode = awErrorCode(e.stdout);
+    // classify: the caller's own reading of the RAW output, before secrets are
+    // scrubbed (a scrub can rewrite the text it reads). Only its answer is kept,
+    // and the caller answers only from a fixed vocabulary.
+    if (classify) err.classified = classify({ stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? ""), status: e.status });
     throw err;
   }
 };

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync,renameSync,statSync,symlinkSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,readdirSync,realpathSync,renameSync,statSync,symlinkSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,dirname} from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 const cap=fileURLToPath(new URL('../oats-package/capabilities/oats-aweb',import.meta.url)),hook=join(cap,'bin/oats-aweb.mjs');
 function fixture(t,{native='success',member='team:fixture.aweb.ai',team='team:fixture.aweb.ai',settings,query='ok',problems=[]}={}){
@@ -180,4 +180,17 @@ test('invite --out refuses an existing file, a link or a missing directory befor
  }
  assert.equal(readFileSync(existing,'utf8'),'keep');assert.equal(existsSync(join(f.dir,'nowhere')),false);
  assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false,'nothing was minted');
+});
+test('invite --out refuses a path it cannot create before minting: too long a name, or a directory it cannot write',t=>{
+ const f=fixture(t),locked=join(f.dir,'locked');mkdirSync(locked);chmodSync(locked,0o500);t.after(()=>{try{chmodSync(locked,0o700);}catch{/* the fixture already removed it */}});
+ const targets=[join(f.dir,'x'.repeat(256))];
+ // root can write a 0500 directory, so that case proves nothing there.
+ if(process.getuid?.()!==0)targets.push(join(locked,'tok'));
+ for(const target of targets){
+  const r=f.run(['--out',target,'--json']);assert.equal(r.status,1);const e=JSON.parse(r.stdout).error;assert.equal(e.code,'E_INVITE_OUT');assert.match(e.message,/cannot be (checked|created)/);assert.doesNotMatch(e.message,/minted but/);
+ }
+ assert.equal(f.read().some(c=>c.kind==='aw'&&c.args[1]==='invite'),false,'nothing was minted');assert.deepEqual(readdirSync(locked),[]);
+});
+test('a failed mint under --out leaves no file behind',t=>{
+ for(const native of ['500','malformed']){const f=fixture(t,{native}),file=join(f.dir,'tok'),r=f.run(['--out',file,'--json']);assert.equal(r.status,1);assert.notEqual(JSON.parse(r.stdout).error.code,'E_INVITE_OUT');assert.equal(existsSync(file),false,native);}
 });

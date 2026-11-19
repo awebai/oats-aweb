@@ -101,28 +101,32 @@ export function rootAwebUrl(root) {
   try { raw = yamlScalar(readFileSync(join(root,'.aw','workspace.yaml'),'utf8'),'aweb_url'); } catch { return null; }
   return plainServiceUrl(raw) ?? null;
 }
-/** The file `--out` names, checked before anything is minted (#285): a new path in an
- *  existing directory. Nothing may be at the path, not even a link, so the token never
- *  replaces a file or follows a link to one. */
+/** The file `--out` names, checked first (#285): a new path in an existing
+ *  directory. Nothing may be at the path, not even a link, so the token never
+ *  replaces a file or follows a link to one. Only ENOENT is absence: any other
+ *  lstat failure (a name too long, a directory it cannot search) refuses. */
 function outFile(raw, cwd) {
   const path = resolve(cwd, raw);
-  let taken = false;
-  try { lstatSync(path); taken = true; } catch { /* nothing there, as required */ }
-  if (taken) fail('E_INVITE_OUT', `--out ${path}: something is already there; name a new file`);
+  let missing = false;
+  try { lstatSync(path); } catch (e) {
+    if (e.code !== 'ENOENT') fail('E_INVITE_OUT', `--out ${path}: cannot be checked (${e.code || 'lstat failed'}); name another file`);
+    missing = true;
+  }
+  if (!missing) fail('E_INVITE_OUT', `--out ${path}: something is already there; name a new file`);
   try { if (!statSync(dirname(path)).isDirectory()) throw new Error(); } catch { fail('E_INVITE_OUT', `--out ${path}: its directory does not exist`); }
   return path;
 }
-/** Writes the token to a new file only its owner can read: O_EXCL refuses a file or a
- *  link that appeared since outFile checked. The invite is already minted here, so a
- *  failure says so; the token is never printed in its place. */
-function writeToken(path, token) {
-  let fd;
-  try { fd = openSync(path, 'wx', 0o600); writeSync(fd, `${token}\n`); closeSync(fd); }
-  catch (e) {
-    // A file this call created but could not finish holds part of a token: remove it.
-    if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } rmSync(path, { force: true }); }
-    fail('E_INVITE_OUT', `the invite was minted but could not be written to ${path} (${e.code || 'write failed'}); it is not printed: mint another with a new --out`);
-  }
+/** Creates the --out file before the mint, exclusively (O_EXCL refuses a file or a
+ *  link that appeared since outFile) and only its owner can read it, so a path that
+ *  cannot be written refuses with nothing minted. The caller holds the descriptor
+ *  until the token is written, or removes the file. */
+function reserveOut(path) {
+  try { return openSync(path, 'wx', 0o600); }
+  catch (e) { fail('E_INVITE_OUT', `--out ${path}: cannot be created (${e.code || 'open failed'}); nothing was minted`); }
+}
+function releaseOut(fd, path) {
+  try { closeSync(fd); } catch { /* already closed */ }
+  rmSync(path, { force: true });
 }
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
@@ -161,16 +165,23 @@ export function issueInvite(argv, env = process.env) {
   if (membership.memberships.filter(m => object(m) && sameAwebTeamId(m.team_id, team)).length !== 1) fail('E_INVITE_MEMBERSHIP', 'selected root cannot prove membership in the requested team');
   const result = { label, team, root, awebUrl: rootAwebUrl(root), authority: 'native/server decides at issuance' };
   if (opts.plan) return { ...result, plan: true, ...(out ? { tokenFile: out } : {}), command: ['aw','team','invite','--team-id',team,'--member-local','--json'] };
-  // Fresh native user state prevents an invoking-home BYOT controller key or
-  // cached principal from silently replacing selected-root hosted authority.
-  const rawResult = isolatedNative(['team','invite','--team-id',team,'--member-local','--json'], root, env, { source }, settings);
+  const fd = out ? reserveOut(out) : undefined;
   let minted;
-  try { minted = JSON.parse(rawResult); } catch { fail('E_INVITE_OUTPUT', 'aw returned malformed invite output; issuance may have occurred; do not automatically retry'); }
-  if (!object(minted) || minted.status !== 'created' || typeof minted.invite_id !== 'string' || !minted.invite_id.trim() || typeof minted.token !== 'string' || !/^aw_inv_[^\s\x00-\x1f\x7f]+$/.test(minted.token)) fail('E_INVITE_OUTPUT', 'aw returned an unsupported or malformed hosted invite; issuance may have occurred; do not automatically retry');
+  try {
+    // Fresh native user state prevents an invoking-home BYOT controller key or
+    // cached principal from silently replacing selected-root hosted authority.
+    const rawResult = isolatedNative(['team','invite','--team-id',team,'--member-local','--json'], root, env, { source }, settings);
+    try { minted = JSON.parse(rawResult); } catch { fail('E_INVITE_OUTPUT', 'aw returned malformed invite output; issuance may have occurred; do not automatically retry'); }
+    if (!object(minted) || minted.status !== 'created' || typeof minted.invite_id !== 'string' || !minted.invite_id.trim() || typeof minted.token !== 'string' || !/^aw_inv_[^\s\x00-\x1f\x7f]+$/.test(minted.token)) fail('E_INVITE_OUTPUT', 'aw returned an unsupported or malformed hosted invite; issuance may have occurred; do not automatically retry');
+  } catch (e) { if (fd !== undefined) releaseOut(fd, out); throw e; }
   // The joiner's one-line command (#56): it reads the token on stdin, so the token is never in it.
   const joinCommand = `oats aweb setup --soul ${/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(opts.soul || '') ? opts.soul : '<soul>'} --invite-stdin --name <alias>`;
   // With --out the token goes to the file and the answer names the file in its place (#285).
-  if (out) { writeToken(out, minted.token); return { ...result, issuedAt: new Date().toISOString(), tokenFile: out, joinCommand }; }
+  if (out) {
+    try { writeSync(fd, `${minted.token}\n`); closeSync(fd); }
+    catch (e) { releaseOut(fd, out); fail('E_INVITE_OUT', `the invite was minted but could not be written to ${out} (${e.code || 'write failed'}); it is not printed: mint another with a new --out`); }
+    return { ...result, issuedAt: new Date().toISOString(), tokenFile: out, joinCommand };
+  }
   return { ...result, issuedAt: new Date().toISOString(), token: minted.token, joinCommand };
 }
 export function inviteMain(argv, env = process.env) {

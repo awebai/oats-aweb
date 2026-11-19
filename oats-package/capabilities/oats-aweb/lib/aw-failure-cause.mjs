@@ -98,16 +98,24 @@ export const USERNAME_UNAVAILABLE_CAUSES = {
 };
 /** Whether `aw init --new-account --username <u>` was refused because the
  *  username is unavailable, and why: aw's reason word, or undefined. Read from
- *  stderr in the one shape aw prints with no terminal to prompt on, from the
- *  1.36.33 floor to the tested 1.36.58 (cmd/aw/onboarding_wizard.go
- *  resolveGuidedHostedUsername, and a signup conflict as `(taken)`):
- *  `username "<u>" is not available (<reason>)`. Setup scrubs the username,
- *  so it reads `"<redacted>"`. The reason is a short snake_case word, the shape
- *  SERVICE_DETAIL_CODE_RE admits; anything else is not this refusal. aw has no
- *  code for it yet (docs/aw-error-decisions.md). */
-export function usernameUnavailable(stderr) {
-  const match = /\busername "<redacted>" is not available \(([^()\s]*)\)/.exec(String(stderr ?? ""));
-  return match && SERVICE_DETAIL_CODE_RE.test(match[1]) ? match[1] : undefined;
+ *  the RAW output (before any scrub, which could rewrite it) in the one shape aw
+ *  prints with no terminal to prompt on, from the 1.36.33 floor to the tested
+ *  1.36.58 (cmd/aw/onboarding_wizard.go resolveGuidedHostedUsername, and a
+ *  signup conflict as `(taken)`): its usage error, exit status 2, with a whole
+ *  stderr line `username "<u>" is not available (<reason>)` naming exactly this
+ *  username. The same words inside another error (a wrapped HTTP body) are not
+ *  this refusal. The reason is a short snake_case word, the shape
+ *  SERVICE_DETAIL_CODE_RE admits. aw has no code for it yet
+ *  (docs/aw-error-decisions.md). */
+export function usernameUnavailable({ stderr, status }, username) {
+  if (status !== 2 || typeof username !== "string") return undefined;
+  const prefix = `username ${JSON.stringify(username)} is not available (`;
+  for (const line of String(stderr ?? "").split(/\r?\n/)) {
+    if (!line.startsWith(prefix) || !line.endsWith(")")) continue;
+    const reason = line.slice(prefix.length, -1);
+    if (SERVICE_DETAIL_CODE_RE.test(reason)) return reason;
+  }
+  return undefined;
 }
 /** The plain sentence for aw's reason word: a fixed one for the reasons aw 1.36.58
  *  words itself, else the word named as the service gave it. */

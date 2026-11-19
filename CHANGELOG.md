@@ -75,8 +75,9 @@
   parsed.
 
 - **Added: `oats aweb invite --out <file>` (#285).** It writes the token to a
-  new owner-only (0600) file, refusing an existing path or a link before
-  anything is minted, and the answer names the file: `result.tokenFile` with
+  new owner-only (0600) file, created exclusively before anything is minted
+  (an existing path, a link or a path it cannot create refuses with nothing
+  minted; a failed mint removes it), and the answer names the file: `result.tokenFile` with
   `--json`, in place of `result.token`. Without `--out` the answer is
   unchanged.
 

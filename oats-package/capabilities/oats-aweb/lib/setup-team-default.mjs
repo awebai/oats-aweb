@@ -222,12 +222,13 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
       try {
         run(['aw', 'init', '--new-account', '--username', username, '--name', name, '--do-not-touch-agents-md'], root, 120000, {
           secretSafe: true, secrets: [username], env: {AWEB_URL: env.AWEB_URL}, unsetEnv: ['AWEB_TEAM_ID', 'AWEB_WORKSPACE_ID'],
+          classify: raw => usernameUnavailable(raw, username),
         });
       } catch (error) {
         // aw refuses an unavailable username before it creates anything (it checks
         // availability first, and a signup conflict creates no account), so this
         // one cause is named, and the rest of aw's output stays withheld.
-        const reason = usernameUnavailable(error.stderr);
+        const reason = error.classified;
         if (reason) {
           steps.push({ step: 'bootstrap', status: 'refused', reason });
           throw setupFailure('E_SETUP_USERNAME_UNAVAILABLE', `${usernameUnavailableCause(reason)}; nothing was created: re-run setup with another --username`);

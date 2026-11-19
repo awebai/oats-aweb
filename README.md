@@ -1960,14 +1960,15 @@ that could carry a credential (userinfo, a query, any other path), answers
 `--out <file>` keeps the token out of the terminal and an agent's transcript
 (#285): it writes the token, and a newline, to a new file only its owner can
 read (mode 0600). Nothing may already be at the path, a link included, and its
-directory must exist; both are checked before anything is minted, and the
-file is opened exclusively, so the token never replaces a file or follows a
-link. Plain stdout then says where the token is, and stderr says to hand that
+directory must exist. The file is created, exclusively and owner-only, before
+anything is minted, so the token never replaces a file or follows a link, and
+a path that cannot be created (too long a name, a directory it cannot write)
+refuses with nothing minted. A failed mint removes the file. Plain stdout then says where the token is, and stderr says to hand that
 file to the joiner privately, who runs the joiner's command with the file on
 stdin, then deletes it. With `--json`, the answer carries `result.tokenFile`
 (the file's absolute path) in place of `result.token`; `--plan` names the
 `tokenFile` it would write. A relative path resolves from where the command
-runs. If the file cannot be written after the mint, `E_INVITE_OUT` says the
+runs. If the token cannot be written after the mint, `E_INVITE_OUT` says the
 invite was minted and that the token is not printed. Without `--out`, the
 answer is unchanged: one token on stdout, or one `result.token`.
 
