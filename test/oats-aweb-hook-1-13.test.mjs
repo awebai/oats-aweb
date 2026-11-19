@@ -842,7 +842,10 @@ test('global post-mint wake-register failure revokes, removes the grant home and
   try {
     const { custody, home, r } = spawnGrant(base, { delivery: 'session' }, { FAKE_WAKE_REGISTER_FAIL: '1' });
     assert.equal(r.status, 1, r.stdout + r.stderr);
-    assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
+    assert.match(r.doc.meta.identity.seat, /^[0-9a-f]{16}$/);
+    assert.equal(JSON.parse(readFileSync(join(home, '.oats-aweb', 'seat.json'), 'utf8')).seat, r.doc.meta.identity.seat);
+    assert.equal(r.doc.meta.identity.team, 't:example.test');
+    assert.equal(r.doc.meta.identity.grant, undefined);
     assert.match(r.doc.warning, /session delivery registration failed/);
     assert.equal(JSON.parse(readFileSync(join(base, "grants.json"), "utf8")).find(g => g.grant_id === "grant-spawn").status, "revoked");
     assert.equal(existsSync(join(home, '.aweb-identity')), false);
@@ -857,17 +860,26 @@ for (const failRevoke of [false, true]) test(`mint with grant.yaml and no JSON r
   try {
     const { custody, home, r } = spawnGrant(base, { delivery: 'session' }, { FAKE_MINT_NO_JSON: '1', ...(failRevoke ? { FAKE_REVOKE_FAIL: '1' } : {}) });
     assert.equal(r.status, 1, r.stdout + r.stderr);
-    assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
+    assert.match(r.doc.meta.identity.seat, /^[0-9a-f]{16}$/);
+    assert.equal(JSON.parse(readFileSync(join(home, '.oats-aweb', 'seat.json'), 'utf8')).seat, r.doc.meta.identity.seat);
+    assert.equal(r.doc.meta.identity.team, 't:example.test');
     assert.match(r.doc.warning, /recovered grant grant-spawn from grant.yaml/);
     assert.equal(existsSync(join(home, '.aweb-identity')), false);
     const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=t:example.test --json');
     assert.equal(revoke.cwd, realpathSync(custody));
     assert.equal(revoke.identityHome, null);
+    const grant = JSON.parse(readFileSync(join(base, 'grants.json'), 'utf8')).find(g => g.grant_id === 'grant-spawn');
+    assert.equal(grant.team_id, 't:example.test');
+    assert.equal(grant.status, failRevoke ? 'active' : 'revoked');
     if (failRevoke) {
+      assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
       assert.match(r.doc.warning, /still valid|stays valid/);
-      assert.match(r.doc.warning, /aw id grant revoke grant-spawn/);
+      assert.ok(r.doc.warning.includes('`aw id grant revoke --team=t:example.test -- grant-spawn`'));
       assert.doesNotMatch(r.doc.warning, /revoked it|grant was revoked/);
-    } else assert.match(r.doc.warning, /revoked it, and removed the grant home/);
+    } else {
+      assert.equal(r.doc.meta.identity.grant, undefined);
+      assert.match(r.doc.warning, /revoked it, and removed the grant home/);
+    }
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -903,12 +915,26 @@ test('legacy grant receipt preserves explicit scopes, finite TTL, metadata and n
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test('a wrong minted team preserves compensation metadata and revokes from custody without the caller identity', () => {
+for (const failRevoke of [false, true]) test(`a wrong minted team preserves compensation metadata and revokes from custody without the caller identity${failRevoke ? '; revoke failure=true' : ''}`, () => {
   const base = mkdtempSync(join(tmpdir(), 'oats-wrong-team-'));
   try {
-    const { home, custody, r } = spawnGrant(base, {}, { FAKE_GRANT_TEAM: 'wrong:example.test', AWEB_IDENTITY_HOME: join(base, 'foreign-home') });
+    const { home, custody, r } = spawnGrant(base, {}, { FAKE_GRANT_TEAM: 'wrong:example.test', ...(failRevoke ? { FAKE_REVOKE_FAIL: '1' } : {}), AWEB_IDENTITY_HOME: join(base, 'foreign-home') });
     assert.equal(r.status, 1, r.stdout + r.stderr);
-    assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
+    assert.match(r.doc.meta.identity.seat, /^[0-9a-f]{16}$/);
+    assert.equal(JSON.parse(readFileSync(join(home, '.oats-aweb', 'seat.json'), 'utf8')).seat, r.doc.meta.identity.seat);
+    const grant = JSON.parse(readFileSync(join(base, 'grants.json'), 'utf8')).find(g => g.grant_id === 'grant-spawn');
+    assert.equal(grant.team_id, 'wrong:example.test');
+    assert.equal(grant.status, failRevoke ? 'active' : 'revoked');
+    if (failRevoke) {
+      assert.equal(r.doc.meta.identity.grant.id, 'grant-spawn');
+      assert.equal(r.doc.meta.identity.team, 'wrong:example.test');
+      assert.match(r.doc.warning, /still valid|stays valid/);
+      assert.ok(r.doc.warning.includes('`aw id grant revoke --team=wrong:example.test -- grant-spawn`'));
+      assert.doesNotMatch(r.doc.warning, /revoked it|grant was revoked/);
+    } else {
+      assert.equal(r.doc.meta.identity.grant, undefined);
+      assert.equal(r.doc.meta.identity.team, 't:example.test');
+    }
     assert.match(r.doc.warning, /minted grant team wrong:example.test differs/);
     assert.equal(existsSync(join(home, '.aweb-identity')), false);
     const revoke = logLines(base).find(l => l.argv.join(' ') === 'id grant revoke grant-spawn --team=wrong:example.test --json');

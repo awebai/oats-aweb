@@ -42,8 +42,8 @@ does not duplicate the fix.
 | 141 | Transferred to hook-1-13 `global spawn refuses missing resident name before mint` and `global spawn refuses unresolved resident before mint`. |
 | 156 | Transferred to hook-1-13 `global spawn refuses retained source in global mode before mint`. |
 | 167 | Transferred to hook-1-13 `legacy grant receipt preserves explicit scopes, finite TTL, metadata and native wake/mint tuples`. |
-| 193 | Transferred the additional metadata/cwd/env assertions to hook-1-13 `a wrong minted team preserves compensation metadata and revokes from custody without the caller identity`. |
-| 209 | Transferred to hook-1-13 `global post-mint wake-register failure revokes, removes the grant home and returns compensation metadata`. It also checks the fake server's actual revoked state. |
+| 193 | Transferred the additional metadata/cwd/env assertions to hook-1-13 `a wrong minted team preserves compensation metadata and revokes from custody without the caller identity`. Its additional `; revoke failure=true` vector preserves the surviving wrong-team receipt; both vectors check service state and team-qualified revocation. |
+| 209 | Transferred to hook-1-13 `global post-mint wake-register failure revokes, removes the grant home and returns compensation metadata`. It also checks the fake server's actual revoked state, absent grant metadata and retained seat. |
 | 223 | Transferred to hook-1-13 `mint with grant.yaml and no JSON recovers the grant id; revoke failure=false`. |
 | 237 | Transferred to the same suite's `...revoke failure=true`, preserving compensation metadata, the current removal policy and the truthful live-grant remedy. This test does not introduce a new removal policy. |
 | 250 | Transferred to hook-1-13 `global retire uses custody, clears the caller identity, deregisters the wake and handles a missing grant id`. |
