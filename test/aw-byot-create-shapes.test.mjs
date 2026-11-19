@@ -142,7 +142,7 @@ function realSetupCreate(t, more = []) {
   const cli = join(dir, 'oats');
   const teams = { teamsApi: 1, deployment, defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
   writeFileSync(cli, `#!${process.execPath}\nif (process.argv[2] === "teams" && process.argv[3] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
-  const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, AWID_REGISTRY_URL: 'http://127.0.0.1:9', AWEB_URL: 'http://127.0.0.1:9/api', OATS_EVENT: 'setup', OATS_WORKSPACE: deployment, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root: deployment }) };
+  const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, AWID_REGISTRY_URL: 'http://127.0.0.1:9', AWEB_URL: 'http://127.0.0.1:9/api', OATS_EVENT: 'setup', OATS_WORKSPACE: deployment, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root: deployment, registry:'http://127.0.0.1:9' }) };
   const r = spawnSync(process.execPath, [hook, 'setup', '--create', 'eng', '--namespace', NS, ...more], { cwd: deployment, env, encoding: 'utf8', timeout: 60000 });
   return { r, home, deployment };
 }

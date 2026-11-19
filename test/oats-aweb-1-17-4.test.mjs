@@ -117,6 +117,7 @@ const workspaceId = (home) => (readFileSync(join(home, ".aw", "workspace.yaml"),
 
 test("spawn mints with exactly one aw init --join-from from the home, then registers the wake", (t) => {
   const fx = fixture(t, { extraEnv: { AWEB_URL: "https://ambient.example.invalid/api", AWEB_API_KEY: "ambient-key", AWEB_ROLE_NAME: "ambient-role", AWEB_ROLE: "ambient-role", AWEB_IDENTITY_HOME: "/caller/.aw", AWID_REGISTRY_URL: "https://ambient-registry.invalid" } });
+  fx.env.OATS_SETTINGS=JSON.stringify({root:fx.ws,delivery:"session",registry:"https://configured-registry.invalid"});
   const r = fx.hook("spawn");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const calls = fx.fake.readCalls();
@@ -124,10 +125,10 @@ test("spawn mints with exactly one aw init --join-from from the home, then regis
   assert.equal(mints.length, 1);
   assert.deepEqual(mints[0].args, ["init", `--join-from=${fx.ws}`, `--join-team=${TEAM}`, "--name=dev-1", "--json", "--do-not-touch-agents-md"]);
   assert.equal(mints[0].cwd, fx.home);
-  assert.deepEqual(mints[0].env, { AW_NO_UPDATE_CHECK: "1" }, "the mint takes no ambient locator, key, role or identity home");
+  assert.deepEqual(mints[0].env, { AW_NO_UPDATE_CHECK: "1", AWID_REGISTRY_URL:"https://configured-registry.invalid" }, "the mint takes only its configured pin and no ambient selector");
   assert.deepEqual(calls.map((c) => c.args.slice(0, 2).join(" ")), ["version", "wake status", `init --join-from=${fx.ws}`, "wake register"]);
   for (const c of calls) assert.equal(c.env.AW_NO_UPDATE_CHECK, "1", `aw ${c.args.join(" ")} runs with AW_NO_UPDATE_CHECK=1`);
-  for (const c of calls) assert.deepEqual(c.env, { AW_NO_UPDATE_CHECK: "1" }, "every aw child drops ambient selectors");
+  for (const c of calls) assert.deepEqual(c.env, c===mints[0] ? {AW_NO_UPDATE_CHECK:"1",AWID_REGISTRY_URL:"https://configured-registry.invalid"} : { AW_NO_UPDATE_CHECK: "1" }, "online mint gets the explicit pin; offline control drops ambient selectors");
   assert.deepEqual(fx.fake.registrations()[fx.home], { identity_home: join(fx.home, ".aw"), delivery: "session" });
 });
 

@@ -18,15 +18,14 @@ import { fakeAwArgvCheck } from "./aw-argv.mjs";
 //                     .aweb-identity-<label>
 //   AW_DELETE_FAIL_SUFFIX text appended to that refusal's diagnostic
 //   AW_INSPECT_*      `team invite inspect --json` (the token read from stdin, never
-//                     argv; refused below AW_FAKE_VERSION 1.36.28 as aw has no such
-//                     command): AW_INSPECT_KIND (hosted), AW_INSPECT_TEAM
+//                     argv): AW_INSPECT_KIND (hosted), AW_INSPECT_TEAM
 //                     (AW_FAKE_TEAM), AW_INSPECT_SERVICE (https://app.aweb.ai/api),
 //                     AW_INSPECT_SCOPE (local), AW_INSPECT_STATUS (active); or
 //                     AW_INSPECT_FAIL=<code>, aw's --json error envelope on stdout
 //                     whose message echoes the token, exit 1, with aw's `invite`
 //                     (canonical_team_id, server_url) when AW_INSPECT_FAIL_INVITE is set
 //   AW_FAKE_VERSION   the version `aw version` reports; default: the `version` option (1.36.33)
-//   AW_FAKE_VERSION_FILE when it exists, `aw version` (and the inspect gate) read
+//   AW_FAKE_VERSION_FILE when it exists, `aw version` reads
 //                     the version from it, so a fake npm can upgrade aw
 //   accept-invite --token-stdin reads the token from stdin; the call records
 //                     `stdin: true` and the token's sha256, never the token
@@ -127,8 +126,6 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   writeTeams(process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)});
   console.log(JSON.stringify({ team_id: process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)} }));
 } else if (args[0] === "team" && args[1] === "invite" && args[2] === "inspect") {
-  const v = fakeVersion().split(/[.-]/).map(Number);
-  if (v[0] === 1 && v[1] === 36 && v[2] < 28) { console.error("unknown command 'inspect' for 'aw team invite'"); process.exit(1); }
   if (process.env.AW_INSPECT_FAIL) { console.log(JSON.stringify({ error: { code: process.env.AW_INSPECT_FAIL, message: "refused " + stdinToken }, ...(process.env.AW_INSPECT_FAIL_INVITE ? { invite: { kind: "hosted", canonical_team_id: process.env.AW_INSPECT_TEAM || process.env.AW_FAKE_TEAM, identity_scope: "local", server_url: process.env.AW_INSPECT_SERVICE ?? "https://app.aweb.ai/api", expires_at: null, status: process.env.AW_INSPECT_FAIL } } : {}) })); process.exit(1); }
   const kind = process.env.AW_INSPECT_KIND || "hosted";
   console.log(JSON.stringify({ kind, canonical_team_id: process.env.AW_INSPECT_TEAM || process.env.AW_FAKE_TEAM || ${JSON.stringify(activeTeam)}, identity_scope: kind === "hosted" ? (process.env.AW_INSPECT_SCOPE || "local") : "unknown", server_url: process.env.AW_INSPECT_SERVICE ?? "https://app.aweb.ai/api", ...(kind === "hosted" ? { expires_at: null } : {}), status: kind === "hosted" ? (process.env.AW_INSPECT_STATUS || "active") : "unverified" }));

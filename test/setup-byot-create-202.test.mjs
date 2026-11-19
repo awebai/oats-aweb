@@ -38,14 +38,14 @@ function fixture(t) {
 }
 const named = (calls, prefix) => calls.filter((c) => c.startsWith(prefix));
 
-test('BYOT create gives only its named registry to admin children and scrubs later reads', t => {
+test('BYOT create uses the configured pin at registry calls and scrubs later offline reads', t => {
   const f=fixture(t), registry='https://operator-registry.example.invalid';
-  const r=f.run({AWID_REGISTRY_URL:registry,AWEB_API_KEY:'caller-key'});
+  const r=f.run({AWID_REGISTRY_URL:'https://poison.invalid',AWEB_API_KEY:'caller-key',OATS_SETTINGS:JSON.stringify({root:f.root,registry})});
   assert.equal(r.status,0,r.stdout+r.stderr);
   const calls=f.fake.readCalls(), commands=['create','show-server','register','set-server','invite'];
   const admin=c=>c.args[0]==='id'&&c.args[1]==='team'&&commands.includes(c.args[2]);
   for(const command of commands)assert.ok(calls.some(c=>admin(c)&&c.args[2]===command),command);
-  for(const c of calls){assert.deepEqual(c.routingEnv,admin(c)?{AWID_REGISTRY_URL:registry}:{});assert.equal(c.hasApiKey,false);}
+  for(const c of calls){assert.deepEqual(c.routingEnv,(admin(c)||(c.args[0]==='id'&&c.args[1]==='team'&&c.args[2]==='accept-invite')||c.args[0]==='whoami'||c.args[0]==='workspace')?{AWID_REGISTRY_URL:registry}: {},c.args.join(' '));assert.equal(c.hasApiKey,false);}
   const lastAdmin=calls.findLastIndex(admin);
   assert.ok(lastAdmin>=0&&calls.length>lastAdmin+1,'later native children are exercised');
 });

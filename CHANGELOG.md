@@ -2,12 +2,21 @@
 
 ## Unreleased
 
-- **Fixed: the round-trip probe sends on the tested aw (1.36.58).** It checks
-  the selected native mail-send help, retains the explicit fresh-thread flag
-  needed by aw 1.36.33, and omits the flag removed in aw 1.36.53. Unknown or
-  unavailable qualification refuses before sending; both routes keep one
-  send with no discovery, fallback or retry. This records the fix merged in
-  #277; no migration is required.
+- **Changed: private registry admission is explicit host configuration.**
+  `oats aweb setup --registry <origin>` records host-only
+  `settings.oats.aweb.registry` in oats-local.yaml. Only that setting reaches
+  registry-dependent children, LOCAL/GLOBAL sessions, custody serve and wake
+  run as AWID_REGISTRY_URL. Saved aw URLs are locators and never grant private
+  network access. GLOBAL sessions no longer promote identity.yaml's registry.
+  Ambient-only spawn/join and readiness, and GLOBAL homes with a non-default
+  saved registry but no setting, name `registry-setting-required` and the
+  complete setup, custody and wake restart remedy. Setup/resident no longer
+  take an ambient registry as an operator input (including BYOT admin calls).
+  Printed cleanup commands use the current configured pin, not a saved URL.
+  Origins accept IPv6 and canonicalize default ports; paths, userinfo, queries
+  and fragments are explicitly unsupported (give the bare origin for /api).
+  A shared wake unit refuses a changed pin and names the supported migration
+  choices. See README's self-hosting setup card before upgrading.
 
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:
@@ -43,6 +52,27 @@
   following links, so a link substituted after preflight is refused too.
   Readiness uses the same refusal. Seat and pending-mint records remain 0600.
   Retained-seat test fixtures use canonical temporary paths on macOS and Linux.
+
+- **Fixed: malformed OATS_SETTINGS refuses instead of using defaults.** One
+  parser serves hooks, setup, upgrade plan/apply, resident, wake, invite and
+  health. Each command names the variable through its own error envelope and
+  never echoes its input. Settings must be a JSON object; empty input, null,
+  arrays and scalars are malformed too. Repair the
+  injected JSON before retrying; upgrade
+  planning refuses adoption. Retired-certificate readers accept an optional
+  command and ignore it; writers rebuild that compatibility field from validated
+  inputs so older homes sharing the record keep reading every certificate.
+  When an old entry has no recorded registry or has invalid cleanup inputs,
+  its compatibility display becomes a fixed shell comment (`# unavailable: …`),
+  never a copied old command or a guessed default-registry command. All entries
+  remain recorded. An old home that displays this comment must be upgraded;
+  the controller supplies the correct registry or repairs the invalid inputs
+  before issuing a removal command.
+  Hosted-create refusals explain the current provider boundary rather than
+  obsolete aw versions. Native contract fixtures now qualify against the
+  supported aw 1.36.33 floor, including its pre-help TTL bounds; the stale
+  aw 1.36.23 delivery-switch PASS receipt is removed. Legacy workspace/team
+  guards remain because the kernel floor does not prove them unreachable.
 
 - **Fixed: an empty global grant seat completes retire.** With neither grant
   nor seat id, retire answers `retired: false, reason: "nothing-to-delete"`

@@ -20,7 +20,7 @@ const identity = fileURLToPath(new URL('./fixtures/resident/identity-global.yaml
 const kernel = process.env.OATS_HOST_ONLY_KERNEL_ROOT;
 const OPS = 'status.v1,sign_plain_message.v1,sign_app_request.v1,grant_never_ttl.v1,create_e2ee_envelope.v1,unwrap_e2ee_message.v1,mail_reply_continuation.v1';
 
-test('the pinned kernel admits the AWID_ namespace and a grant seat that carries its resident\'s registry', { timeout: 180000 }, (t) => {
+test('the pinned kernel admits the AWID_ namespace and a grant seat that carries its configured registry', { timeout: 180000 }, (t) => {
   if (!kernel) { if (process.env.OATS_HOST_ONLY_REQUIRED === '1') assert.fail('pinned kernel required'); t.skip('requires pinned upgrade-contract public kernel checkout'); return; }
   assert.equal(execFileSync('git', ['-C', kernel, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), PINNED);
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'public-seat-registry-')));
@@ -40,7 +40,7 @@ test('the pinned kernel admits the AWID_ namespace and a grant seat that carries
   cpSync(capability, join(host, 'capabilities', 'oats-aweb'), { recursive: true });
   const git = (...args) => execFileSync('git', ['-C', host, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], { env, encoding: 'utf8' });
   git('init', '-q'); git('add', '.'); git('commit', '-qm', 'isolated fixture');
-  writeFileSync(join(dep, 'oats-local.yaml'), `schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    delivery: session\n    residents:\n      merlin: ${custody}\n`);
+  writeFileSync(join(dep, 'oats-local.yaml'), `schemaVersion: 2\nworkspace: ${ref}\nsettings:\n  oats.aweb:\n    delivery: session\n    registry: http://127.0.0.1:18010\n    residents:\n      merlin: ${custody}\n`);
   const oats = (args) => {
     const r = spawnSync(process.execPath, [join(kernel, 'bin/oats.mjs'), ...args, '--dir', dep, '--json'], { cwd: dep, env, encoding: 'utf8', timeout: 60000 });
     assert.equal(r.status, 0, `oats ${args.join(' ')}: ${r.stdout}${r.stderr}`);

@@ -5,7 +5,7 @@ messaging soul S, explicit account username and root alias. Selected kernel must
 supply deployment scope and public `teams --dir D --json` (`teamsApi: 2`), add,
 default and readback. Verified public source is OATS 0.42 at `bb2ba8c9`; this is
 not an earliest-release claim or installation proof. Native argument/membership
-contract is exercised with aw 1.36.23. No live account or timed M3 claim follows.
+contract is exercised with aw 1.36.33 (commit `877bbee94ce45aa1ff103912bc9850556e61dfb4`). No live account or timed M3 claim follows.
 
 | Act / context | Exact command in D | Writes / success / one next step | Error → remedy |
 |---|---|---|---|

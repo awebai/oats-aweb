@@ -67,7 +67,7 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   writeFileSync(join(root, 'oats-local.yaml'), 'schemaVersion: 2\nworkspace: fixture\n');
   const kernel = fakeKernelTeamConfig(join(scratch, 'kernel'), root);
   const result = await run(process.execPath, [hook, 'setup', '--username', 'fixture-user', '--name', 'fixture-root'], {
-    cwd: root, env: { ...env, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root }) },
+    cwd: root, env: { ...env, OATS_EVENT: 'setup', OATS_WORKSPACE: root, OATS_CLI_BIN: kernel.cli, OATS_SETTINGS: JSON.stringify({ root, registry:endpoint }) },
   });
   assert.equal(result.code, 1, result.stderr); assert.equal(result.signal, null);
   assert.match(result.stderr, /output withheld/);
@@ -107,7 +107,7 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   writeFileSync(join(retained, '.aw', 'identity.yaml'), `did: ${member.did}\ncustody: self\nidentity_scope: local\n`);
   writeFileSync(join(retained, '.aw', 'teams.yaml'), `active_team: ${team}\nmemberships:\n  - team_id: ${team}\n    alias: fixture-root\n    cert_path: team-certs/default__fixture-user.aweb.ai.pem\n    aweb_url: ${endpoint}\n`);
   const retainedKernel = fakeKernelTeamConfig(join(scratch, 'retained-kernel'), retained);
-  const retainedEnv = { ...env, OATS_EVENT: 'setup', OATS_WORKSPACE: retained, OATS_CLI_BIN: retainedKernel.cli, OATS_SETTINGS: JSON.stringify({ root: retained }) };
+  const retainedEnv = { ...env, OATS_EVENT: 'setup', OATS_WORKSPACE: retained, OATS_CLI_BIN: retainedKernel.cli, OATS_SETTINGS: JSON.stringify({ root: retained, registry:endpoint }) };
   const retainedArgs = [hook, 'setup', '--username', 'fixture-user', '--name', 'fixture-root', '--json'];
   const originalCert = readFileSync(join(retained, '.aw', 'team-certs', 'default__fixture-user.aweb.ai.pem'), 'utf8');
   const plan = await run(process.execPath, [...retainedArgs, '--plan'], { env: retainedEnv, cwd: retained });
@@ -127,7 +127,7 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   writeFileSync(join(joinRoot, '.aw', 'workspace.yaml'), `alias: fixture-root\naweb_url: ${endpoint}\n`);
   const joinKernel = fakeKernelTeamConfig(join(scratch, 'join-kernel'), joinDeployment);
   const joinEnv = { ...env, OATS_EVENT: 'setup', OATS_TEAM_SCOPE: joinDeployment, OATS_WORKSPACE: joinDeployment,
-    OATS_CLI_BIN: joinKernel.cli, OATS_WORKSPACE_NAME: 'fixture', OATS_SETTINGS: '{}', OATS_TEAMS: '[]' };
+    OATS_CLI_BIN: joinKernel.cli, OATS_WORKSPACE_NAME: 'fixture', OATS_SETTINGS: JSON.stringify({registry:endpoint}), OATS_TEAMS: '[]' };
   const probe = await run(binary, ['--identity-home', join(joinRoot, '.aw'), 'id', 'team', 'list', '--json'], { env, cwd: joinRoot });
   assert.equal(probe.code, 0, probe.stdout + probe.stderr);
   const joinArgs = [hook, 'setup', '--join', 'joined', '--name', 'fixture-root', '--json'];

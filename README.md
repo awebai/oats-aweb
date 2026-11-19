@@ -21,7 +21,7 @@ this oats.aweb supports, in two fields:
   hooks, the probe and a grant seat's custody refuse an older aw ("aw floor"
   below).
 - **`tested`** is the highest aw the CI journeys pass on. CI's resident-journey
-  matrix runs the floor, tested and pinned next from `scripts/aw-test-versions.mjs`, each checked to be the aw it
+  matrix runs exactly `min` and `tested`, each checked to be the aw it
   installed. Above `tested`, on a server other than the aweb Cloud, readiness
   and spawn warn `aw-newer-than-tested`.
 
@@ -513,8 +513,8 @@ Older kernels stay on oats.aweb 1.26.2.
   the command prints `oats teams default <label>` as the first step instead.
   It needs OATS 0.48.0 or later and refuses an older kernel before any effect.
 - **A seat verifies at its resident's registry.** A grant seat gets
-  `AWID_REGISTRY_URL` from the resident's `.aw/identity.yaml` when that
-  registry is not aw's default.
+  `AWID_REGISTRY_URL` only from the explicit operator setting
+  `settings.oats.aweb.registry`; saved identity URLs grant no network admission.
 - Details: [docs/resident-create.md](docs/resident-create.md).
 
 ## 1.26.0 — one command for a GLOBAL resident
@@ -536,7 +536,7 @@ Older kernels stay on oats.aweb 1.26.2.
   environment, from a terminal prompt that does not echo. With neither, the
   command refuses at once. It is in the environment of the init run only (built
   from nothing: `PATH`, `HOME`, `AWEB_URL`, the key, `AW_NO_UPDATE_CHECK`, and
-  `AWID_REGISTRY_URL` when set), and in no argv, unit, setting, capture or
+  `AWID_REGISTRY_URL` from the registry setting when configured), and in no argv, unit, setting, capture or
   output. No flag takes a key.
 - **Re-runs.** After a failure, a rerun continues aw's own partial init, so the
   DID is the same. After success, a rerun only verifies. A quarantined partial
@@ -697,7 +697,7 @@ The join half works on its own when someone else mints the invite:
 - `oats aweb setup --check-only --json` answers, as one line:
 
 ```json
-{"aw": {"status": "ok", "version": "1.36.23"},
+{"aw": {"status": "ok", "version": "1.36.33"},
  "defaultTeam": {"label": "aweb", "team": "aweb:example.aweb.ai"},
  "member": true, "root": "/Users/pat/Agents/aweb/.aweb-roots/aweb"}
 ```
@@ -738,18 +738,21 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   is held by people (retire answered `team_not_hosted`) is marked: its line ends
   `; retired by OATS on this host <YYYY-MM-DD>; the team controller removes it
   with: <command>`, and the footer counts those certificates. Only the team's
-  controller can remove them, with the printed command. Its `--registry` is
-  the one aw uses for that membership: the plain `registry_url` that aw reports
-  for it or that the identity's `teams.yaml` records for it. When the
-  membership records only its `aweb_url`, aw discovers the registry from that
-  service, so the command has no `--registry` and says so. With neither, aw
-  uses its built-in default; the cleanup command omits `--registry`. An
-  ambient `AWID_REGISTRY_URL` does not choose the cleanup destination. Retire records them in
-  `<deployment>/.oats-aweb/retired-certificates.json` (team, certificate id,
-  registry origin and command, never a secret), matched on team and certificate
-  id, never on alias. The roster never prints the stored command: it builds the
-  command from the entry's team, certificate id and registry, each validated,
-  as retire does. An entry it can't be built from shows `; its record entry is
+  controller can remove them, with the printed command. The command's admission
+  pin comes only from the current `settings.oats.aweb.registry`, safely quoted
+  as AWID_REGISTRY_URL. The membership's saved registry_url stays a locator;
+  it is never promoted to a native admission flag or environment. Retire records
+  entries in `<deployment>/.oats-aweb/retired-certificates.json` (team,
+  certificate id, registry locator and rebuilt compatibility command, never
+  a secret), matched on team and certificate id, never on alias. Stored command
+  fields are ignored by this reader, but writers rebuild them for older homes
+  sharing this record. An existing entry with no registry field or invalid
+  cleanup inputs gets a fixed `# unavailable: …` shell comment. Upgrade an
+  old home that displays it and use the controller's explicit registry or
+  repair the invalid inputs; every entry stays recorded. The current roster
+  builds its displayed
+  command from the entry's validated team/certificate and the operator's current
+  admission setting, as retire does. An entry it can't be built from shows `; its record entry is
   malformed (<why>), so no command to remove it is shown` (and `--json` gives
   `command: null`, with a `retired-record` problem); one recorded with no
   registry adds `(the registry was not recorded; the command omits --registry)` to
@@ -1273,6 +1276,44 @@ Supported acts:
   join and `--create`, and required for `--username`. Neither flag extends the
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
+- `oats aweb setup --registry <origin>`: record the operator's explicit registry
+  admission in this deployment's `oats-local.yaml`, under
+  `settings.oats.aweb.registry` (host-only). Alone, this command only records
+  configuration: it creates no root, account, team or default, even if an API
+  key is exported. `--plan` and `--check-only` preview without writing. It can
+  also accompany an onboarding form; configuration is kept if bootstrap later
+  fails. Restart resident custody by rerunning `oats aweb resident create
+  <name>` and restart the user's wake daemon with `oats aweb wake install`,
+  from the operator's own shell. Existing homes need a new start to receive
+  the updated session pin. The registry setting is never taken from ambient
+  `AWID_REGISTRY_URL`, `identity.yaml`, `teams.yaml` or a saved receipt.
+
+  A private-address registry requires this explicit administrative pin on
+  every invocation. OATS passes it by name as `AWID_REGISTRY_URL` to registry
+  calls, LOCAL and GLOBAL sessions, custody serve and wake run. Saved URLs
+  choose destinations under aw's public-address policy; they never grant
+  private-network access. Existing ambient-only deployments receive
+  `registry-setting-required` at spawn/join and readiness, with the setup and
+  restart steps. GLOBAL homes with a recorded non-default registry also get
+  that migration instead of silently losing messaging verification.
+
+  Use an absolute HTTP/HTTPS origin (scheme, hostname or bracketed IPv6,
+  optional port); default ports and a root slash are canonicalized. Every
+  non-root path is refused. For `/api`, give the bare origin: aw treats these
+  as equivalent. Queries and fragments, including empty delimiters, and
+  userinfo are unsupported and are never echoed in an error.
+
+  A registry behind a path-prefix reverse proxy is unsupported; put the
+  registry on its own hostname. Registry URLs must contain no credentials.
+  Authentication to a private registry's front door is a separate question
+  and not part of `settings.oats.aweb.registry`.
+
+  The wake daemon is shared by this host user. Reinstall refuses a different
+  pin. Keep one registry for that user's daemon, move the other deployment
+  to another host user, or first remove its registrations with `aw wake
+  deregister --home <other-home>`, then run `oats aweb wake uninstall` and
+  install again. `delivery: session` uses that same daemon.
+
 - `oats aweb setup --create <label> --namespace <domain>`: owner/admin act for
   a customer-controlled namespace. It needs aw 1.36.53 or later: `aw id team
   set-server`/`show-server` first ship in aw 1.36.44, and the `--json` error
@@ -1281,8 +1322,10 @@ Supported acts:
   1.36.53 (this host has <version>): upgrade with npm install -g
   @awebai/aw@<tested>; nothing was created", `<tested>` being aw-compat.json's
   `tested`. With `--install-aw` it installs that tested aw. It normalizes `<label>` to aweb's team-name
-  rule. `AWID_REGISTRY_URL` selects the registry for create, show-server,
-  register, set-server and invite; when unset, aw uses `https://api.awid.ai`.
+  rule. The operator setting `settings.oats.aweb.registry` selects and explicitly
+  pins the registry for create, show-server, register, set-server and invite;
+  configure it with `oats aweb setup --registry <origin>`. With no setting, aw
+  uses its own registry selection and public-address policy.
   Before any aw call, it resolves the aweb service: `AWEB_URL` (the
   server's public URL; hosted aweb is `https://app.aweb.ai/api`), else the
   `aweb_url` in an existing messaging root's `.aw/workspace.yaml`. With
@@ -1322,9 +1365,9 @@ Supported acts:
   and the `localTeams: true` alternative. A kernel without `localTeams` (OATS
   0.36) takes the local mapping. If the kernel cannot answer, setup refuses
   before creating anything. Without `--namespace`, setup refuses hosted
-  additional-team creation: the provider has no wrapper. Native aw 1.36.24
-  supports `id team create --hosted`; aw 1.36.23 does not. Native JSON
-  contains an invite token and must be captured privately. Operator notes:
+  additional-team creation: the provider implements controller-owned namespace
+  creation only. Follow the version-matched native owner procedure and capture
+  any invite/private output privately, then use provider `setup --join`. Operator notes:
   - **One trust boundary.** The namespace controller key
     (`~/.awid/controllers/<domain>.key`) and each team key
     (`~/.awid/team-keys/<domain>/<team>.key`) are user-wide on the deployment
@@ -1468,7 +1511,8 @@ home: `aw init --join-from=<root> --join-team=<team> --name=<instance> --json
 --do-not-touch-agents-md`. aw creates the invite from the root, accepts it and
 connects the workspace, so the invite token never reaches the hook. The mint
 runs without `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE`,
-`AWEB_IDENTITY_HOME` or `AWID_REGISTRY_URL`, so the service comes from the invite.
+`AWEB_IDENTITY_HOME`; only the explicit registry setting is passed as
+`AWID_REGISTRY_URL`. The service comes from the invite.
 Every aw child uses the same ambient-selector removal list; documented setup
 inputs and other deliberate overrides are passed explicitly at their call sites.
 See [the environment and call inventory](docs/aw-child-environment.md). On the broker
@@ -1505,18 +1549,15 @@ Retire acts on an intent, from the home or from that meta, only when the home
 holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
 self-deleted as usual. Otherwise retire reads `aw id team members
 --team-id=<team> --json` from the recorded root (team ids compared as aw
-spells them: name and domain lowercased). Retire never decides a registry aw
-would decide differently: it passes a registry the root records, or none.
+spells them: name and domain lowercased). Retire never promotes the root's recorded registry to an admission flag. It
+passes only the operator setting as `AWID_REGISTRY_URL`; otherwise aw applies
+its own destination selection and public-address policy.
 
-- When the team's membership in the root's `.aw/teams.yaml` records a plain
-  `registry_url`, the read gets `--registry`, and the command and the record
-  name it.
-- Otherwise the read gets no `--registry`, and aw resolves the registry itself,
-  as for any read from that root (from the membership's `aweb_url` when it has
-  one). The record stores no registry, and the command omits `--registry` and
-  says so: `the team's registry is not recorded here; aw discovers it from
-  <aweb_url>: the controller adds --registry <that registry> if it is not aw's
-  default`.
+The record keeps a plain registry_url from the exact team's membership as a
+locator, or records none when aw discovers it from the membership's service.
+Neither value is promoted to --registry or AWID_REGISTRY_URL. The controller's
+printed command carries the current configured pin, safely quoted, or no pin
+when none is configured.
 
 It never runs `aw workspace
 connect` to finish a half-done mint, and never retries the mint. A certificate
@@ -1524,8 +1565,8 @@ is this mint's only when its `member_did_key` is the did:key of the home's
 `signing.key`:
 
 - **This mint's certificate:** retire records it in the retired-certificates
-  record, with the controller's `aw id team remove-member` command (its
-  `--registry` is the registry the read used), and says
+  record, with the controller's `aw id team remove-member` command (the
+  pin comes only from the current registry setting), and says
   the identity was registered but could not be released. It exits 0, because
   the home's key can't release it.
 - **No key in the home:** aw writes the key before it registers, so the
@@ -1763,23 +1804,25 @@ the root is absent; to exercise it, provision the same source/dependency and run
 This verifies the pinned source contract, not every kernel version, a host
 installation, Claude admission or live delivery.
 
-## Native aw contracts in CI
+## aw-verb guard in CI
 
-CI runs the unit and native CLI group with the floor, tested and pinned next
-versions from `scripts/aw-test-versions.mjs`. The shared recording fakes reject
-unknown flags before acting. After exercising the hook's paths, CI checks every
-recorded full command path and flag against that real aw's help; a parent
-command's successful help does not establish a missing child command.
-Every used flag is parsed together with the others. Appending `--help` proves
-parse acceptance; required-together or mutually exclusive flag groups and
-command-level value validation need the named native behaviour tests.
+`test/oats-aweb.test.mjs` "capability guidance names only real first-level aw
+verbs" runs `aw <verb> --help` for every aw verb the hook, the inject and this
+README name. It needs a real aw 1.36.6 or later on PATH and skips without one.
+CI's validate-and-test installs the aw the provider is tested with (`AW_TESTED`
+from `lib/aw-floor.mjs`, which reads `aw-compat.json`'s `tested`; read in the
+step, never written twice) into an isolated
+prefix on the `npm test` step's PATH, and sets `OATS_AW_VERBS_REQUIRED=1`, so
+the guard fails there instead of skipping.
 
-Every selected CI group runs through `scripts/test-ci.mjs`, which requires
-zero skips. The kernel, native host and real-stack groups have their own
-prerequisites. Version and capability exclusions, and hosted acceptance work,
-are listed in [the test matrix](docs/test-matrix.md). Tests run in disposable
-homes with an empty environment; real-stack captures are sanitized and uploaded
-for author inspection before updating committed fixtures.
+With that aw on PATH, five more tests run in `npm test` instead of skipping:
+the real-aw tests in `test/oats-aweb-1-14.test.mjs` and
+`test/oats-aweb-1-15.test.mjs` that the resident-journey job already runs
+against this aw. They read aw's help, or act on throwaway identity homes and
+wake state directories: with no credentials, every call that would reach a
+service is refused locally (no identity, or an invalid invite token), and the
+wake calls write only their throwaway state directory. No other test changes
+outcome.
 
 ### Labelled join configuration (provider 1.23.1, #78/#82)
 
@@ -1861,7 +1904,7 @@ Unrelated kernel warnings do not block invitation; all failure-severity problems
 and selected-label warnings do. Refusals name only known safe problem codes,
 never arbitrary diagnostic text. Membership reads and issuance both isolate
 native HOME; plans discard temporary state without changing the selected root.
-Only the anchored CLI-generated HTTP 401/403 prefix maps
+For pinned aw 1.36.33, only its anchored CLI-generated HTTP 401/403 prefix maps
 to `E_INVITE_DENIED`; details are statically withheld, never matched as role or
 body prose. Other statuses, transport and unknown native errors are
 `E_INVITE_NATIVE`; without an HTTP status its message names the cause from the
@@ -1890,8 +1933,8 @@ It uses isolated local Git repositories and a fake aw; it does not verify live
 service behavior or perform host onboarding.
 
 The opt-in `test/username-native.test.mjs` checks #66 with an explicitly selected
-real aw at the supported floor, tested or pinned next version.
-Run `OATS_TEST_AW=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
+real aw 1.36.33 executable (commit `877bbee94ce45aa1ff103912bc9850556e61dfb4`).
+Run `OATS_TEST_AW_1_36_33=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
 node --test test/username-native.test.mjs`. It records the executable path,
 version/build and SHA-256; isolated HOME and loopback service fixtures prevent
 use of ambient accounts. Signup is deliberately refused: the test proves native
@@ -1900,7 +1943,7 @@ not successful hosted bootstrap or live membership.
 
 `test/invite.test.mjs` covers selection and output failures. The opt-in
 `test/invite-native.test.mjs` uses the same pinned executable above; run with
-`OATS_TEST_AW=/absolute/path/to/aw OATS_INVITE_NATIVE_REQUIRED=1
+`OATS_TEST_AW_1_36_33=/absolute/path/to/aw OATS_INVITE_NATIVE_REQUIRED=1
 node --test test/invite-native.test.mjs`. It exercises provider-to-native argv,
 selected-root certificate routing, synthetic loopback success and plain-detail
 HTTP denials, withheld hostile bodies, no-write plan and foreign controller-state
@@ -1933,6 +1976,14 @@ does not prove successful hosted account creation. Neither fixture is a timed
 M3 operator journey. Run the existing full suite with the explicit public/native
 test variables above; no service install or customer operation is part of testing.
 
+### Settings input validation
+
+Every command that reads `OATS_SETTINGS` uses the shared parser and requires a
+JSON object. Null, arrays, scalars and malformed JSON are errors naming
+`OATS_SETTINGS`, through that command's usual error
+format, without echoing the input. Fix the injected JSON and retry. Upgrade
+planning reports `adopt: false`; apply refuses before changing metadata.
+
 ### Grant duration and renewal verification
 
 GLOBAL spawn and launch use the shared `lib/grant-duration.mjs` resolver.
@@ -1952,20 +2003,28 @@ provider's contract; it does not establish live capped-mint acceptance.
 
 Run `node --test test/grant-duration.test.mjs test/oats-aweb-hook-1-13.test.mjs`
 for duration boundaries, mint arguments, default/explicit renewal and retained
-failure/preview controls. With `OATS_TEST_AW` selecting a released executable,
-`test/grant-duration-native.test.mjs` runs the same edge vectors through
-`resolveGrantTTL` and native `--ttl=... --help`. Both grammar and bounds must
-agree. Empty settings separately normalize to `never`; an empty wire `--ttl=`
-is refused. No mint executes in this help test. `AW_REAL_CLI_BIN` enables
-`test/never-grant.test.mjs`'s native no-identity refusal checks.
+failure/preview controls. With `OATS_TEST_AW_1_36_33` pointing at the pinned
+1.36.33 executable, `test/grant-duration-native.test.mjs` checks version, help
+and duration flag parsing in an isolated home. It always passes `--help`:
+no mint executes. The floor validates grammar, the 60s..720h range and `never`
+before showing help, and this fixture checks those decisions against the provider
+parser. The same range is qualified against native source `877bbee94ce45aa1ff103912bc9850556e61dfb4`
+(`cmd/aw/id_grant.go`). These checks are not live custody, grant or expiry
+acceptance. With `AW_REAL_CLI_BIN` pointing at a real aw 1.36.32 or later,
+native or the npm JS shim, `test/never-grant.test.mjs` checks that it parses
+`--ttl=never` and the durations OATS passes, in an empty directory where aw
+stops before any network call.
 
-The three native CLI files run at every CI matrix version. The username test's
-signup is deliberately refused on loopback; the member-invite test also reaches
-real `team invite --team-id`, `team invite inspect`, and `init --join-from`
-refusal paths. Synthetic HTTP responses do not establish hosted authority.
-`resident-journey.test.mjs` supplies real service and custody coverage using
-only disposable identities in the OSS stack. A hosted workspace release still
-needs the separate acceptance run in the test matrix.
+
+For an isolated build of the exact native source pin, the same opt-in fixtures
+also require `OATS_TEST_AW_SOURCE_RECEIPT=/absolute/path/to/receipt.json`.
+The receipt must identify `kind: "exact-source-build"`, the exact source commit,
+`sourceClean: true`, binary path, SHA256 and matching version output. Only
+`1.36.33-source-fixture` at the pinned commit is accepted in this mode.
+Record the build command/toolchain/platform separately; this is exact-source
+contract evidence, not the historical published binary. Without that receipt,
+the original published-version checks remain mandatory. The receipt validator
+has wrong-version/source/hash/path controls. No fixture authorizes live requests.
 
 The root recorder preserves block-style YAML around a replaced scalar, including
 kernel-wrapped quoted paths; ambiguous continuations refuse rather than consuming
@@ -1988,13 +2047,13 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   the kernel-selected node path changes. Their fake aw (`test/helpers/fake-aw-resident.mjs`) replays only
   real captures from `test/fixtures/resident`, and fake launchctl, systemctl and
   loginctl record their calls under a temporary HOME. The prompt tests drive a
-  real pseudo-terminal through `python3`. `test/resident-docs.test.mjs` checks runtime JSON envelopes against explicit
-  fixtures; documentation wording is reviewed separately.
+  real pseudo-terminal through `python3`. `test/resident-docs.test.mjs` fails
+  when an envelope in the doc differs from the command's real output.
 - `test/resident-journey.test.mjs` runs real aw against aweb's local stack. Bring
   the stack up from an aweb checkout at ci.yml's `AWEB_STACK_COMMIT` with
   `docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis
   awid aweb`, then set `OATS_RESIDENT_JOURNEY_AW` (an aw executable of
-  the floor, tested or pinned next from `scripts/aw-test-versions.mjs`, at the commit the test qualifies it on),
+  `aw-compat.json`'s `min` or `tested`, at the commit the test qualifies it on),
   `OATS_RESIDENT_JOURNEY_AWEB_URL=http://127.0.0.1:18000` and
   `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`, and
   `OATS_RESIDENT_JOURNEY_KERNEL` (a checkout of an OATS kernel with
@@ -2005,8 +2064,8 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   next steps through that kernel in a fixture workspace: the spawn mints a real
   grant at the resident's custody, and the retire revokes it. CI's
   `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`, once
-  for the floor, tested and pinned next from `scripts/aw-test-versions.mjs`. Moving `tested` moves three things together:
-  the matrix (generated from `scripts/aw-test-versions.mjs`), the
+  for each of `min` and `tested`. Moving `tested` moves three things together:
+  the matrix (`test/health-aw-floor.test.mjs` fails until it matches), the
   journey test's qualified aw and commit (its first test fails until they
   match), and the stack commit, to aweb's release of that aw (no test checks
   it).
