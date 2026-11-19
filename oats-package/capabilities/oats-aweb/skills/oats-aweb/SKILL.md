@@ -791,8 +791,9 @@ Renewal failures preserve the previous grant under the existing recovery rules.
 Existing captured provider modules/settings do not change automatically when
 this version ships. LOCAL identities are unchanged; there is no timer or
 background renewal.
-A grant seat gets `AWID_REGISTRY_URL` from its resident's identity when that
-registry is not aw's default.
+A grant seat, its custody and the wake service get `AWID_REGISTRY_URL` only
+from `settings.oats.aweb.registry` (`oats aweb setup --registry <origin>`); a
+saved aw registry URL is never used as admission.
 
 Every mint passes its ttl explicitly (`--ttl=never` or the duration) and records
 it, and the renew mode, as `identity.grant.ttl` and `identity.grant.renew`; a
