@@ -15,10 +15,11 @@
   health publisher reads the meta alone. No new setting, and no migration:
   `OATS_BACKEND=tmux` and an unset one behave as before, and record no
   `backend`. A known gap: the kernel's package checks still follow `delivery`
-  alone, so under `delivery: channel` a provider launch is asked for the
-  channel package and does not get the `delivery: session` version floors;
-  keep an installed `aweb-channel` at 1.7.9 or later and `@awebai/pi` at
-  0.3.10 or later on such a host (README, "Provider settings").
+  alone, so under `delivery: channel` a provider launch is refused where the
+  channel package is not installed and does not get the `delivery: session`
+  version floors. Install `aweb-channel` 1.7.9 or later and `@awebai/pi`
+  0.3.10 or later on such a host, or spawn with `--provider oats.aweb
+  delivery=session` (README, "Provider settings").
 
 - `setup --install-aw` now installs the tested aw version by default; pass
   `--aw-version` to choose another.

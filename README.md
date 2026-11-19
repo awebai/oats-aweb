@@ -959,16 +959,22 @@ and where to set it. The provider settings are:
 
   A known gap: the kernel checks this capability's packages (`requires` in
   `oats.json`) by the `delivery` setting alone, since a requirement cannot
-  name a backend yet. Under `delivery: channel` it therefore asks a provider
-  launch for the channel package it never uses, and does not apply the floors
-  that make an installed one honour `AWEB_DELIVERY=session` (`aweb-channel`
-  1.7.9, `@awebai/pi` 0.3.10): an older ambient plugin or extension would
-  open its own stream beside the broker. So, until a requirement can name the
-  backend, keep any installed `aweb-channel` and `@awebai/pi` at or above
-  those versions on a host that runs provider launches. The backend is chosen
-  per spawn, not per soul: setting `delivery: session` on a soul would make
-  the checks match its provider launches, and would also take that soul's
-  `tmux` launches off their channel.
+  name a backend yet. Under `delivery: channel` it therefore requires the
+  channel package of a provider launch that never uses it, refusing a Claude
+  Code or pi launch on a host where the package is not installed, and does
+  not apply the floors that make an installed one honour
+  `AWEB_DELIVERY=session` (`aweb-channel` 1.7.9, `@awebai/pi` 0.3.10): an
+  older ambient plugin or extension would open its own stream beside the
+  broker. Until a requirement can name the backend, there are two ways to
+  live with it. Either install the channel package and keep it at or above
+  those versions on a host that runs provider launches. Or pass the setting
+  for that spawn alone, `oats spawn <soul> --backend <provider> --provider
+  oats.aweb delivery=session`: it changes nothing about a provider launch's
+  delivery, which is the broker's under either value, and makes the checks
+  match it. The home keeps the setting captured at its spawn, so a later
+  start of that home on `tmux` would be broker-delivered too. The backend is
+  chosen per spawn, not per soul: setting `delivery: session` on a soul
+  would also take that soul's `tmux` launches off their channel.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
