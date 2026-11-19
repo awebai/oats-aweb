@@ -544,7 +544,7 @@ test("real aw: setup --create --namespace refuses an aw below its floor up front
   const teams = { teamsApi: 1, deployment, defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
   writeFileSync(cli, `#!${process.execPath}\nif (process.argv[2] === "teams" && process.argv[3] === "--json") console.log(${JSON.stringify(JSON.stringify({ schemaVersion: 1, ok: true, result: teams }))});\n`, { mode: 0o755 });
   const awBin = dirname(spawnSync("sh", ["-c", "command -v aw"], { encoding: "utf8" }).stdout.trim());
-  const env = { HOME: home, PATH: `${awBin}:${dirname(process.execPath)}:/usr/bin:/bin`, AWID_REGISTRY_URL: "http://127.0.0.1:9", AWEB_URL: "http://127.0.0.1:9/api", OATS_EVENT: "setup", OATS_WORKSPACE: deployment, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root: deployment }) };
+  const env = { HOME: home, PATH: `${awBin}:${dirname(process.execPath)}:/usr/bin:/bin`, AWID_REGISTRY_URL: "http://127.0.0.1:9", AWEB_URL: "http://127.0.0.1:9/api", OATS_EVENT: "setup", OATS_WORKSPACE: deployment, OATS_CLI_BIN: cli, OATS_SETTINGS: JSON.stringify({ root: deployment, registry: "http://127.0.0.1:9" }) };
   const r = spawnSync(process.execPath, [HOOK, "setup", "--create", "eng", "--namespace", "example.invalid", "--name", "lab-root"], { cwd: deployment, env, encoding: "utf8", timeout: 60000 });
   t.diagnostic(`aw ${installed}: ${versionAtLeast(installed, AW_BYOT_CREATE) ? "at or above" : "below"} the --create --namespace floor ${AW_BYOT_CREATE}`);
   assert.equal(r.status, 1, r.stdout + r.stderr);

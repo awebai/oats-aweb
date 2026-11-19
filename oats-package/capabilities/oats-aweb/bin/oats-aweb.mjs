@@ -92,7 +92,7 @@ import { mintedExpiryProblem } from "../lib/grant-expiry.mjs";
 import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
-import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigration, registryShellAssignment } from "../lib/registry-setting.mjs";
+import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigration, registryShellAssignment, registryShellValue } from "../lib/registry-setting.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -264,19 +264,17 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
 /** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
- *  prints progress before it. A top-level object (one opening at column 0) may also be followed
- *  by notes (`aw workspace status` appends its gone-workspace checks); an indented line is never
- *  taken for the start of the answer, since it can be an object nested inside a cut-off one. */
+ *  prints progress before it. Diagnostics such as gone-workspace checks go to stderr;
+ *  trailing stdout text is not a JSON answer. */
 const parseAwJson = (text, what) => {
   const trimmed = String(text ?? "").trim();
   if (!trimmed) throw new Error(`${what} returned no JSON result`);
-  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON or notes after it */ }
+  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON */ }
   const lines = trimmed.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].trimStart().startsWith("{")) continue;
     const rest = lines.slice(i).join("\n");
     try { return JSON.parse(rest); } catch { /* not the whole remainder */ }
-    if (lines[i].startsWith("{")) { try { return leadingJsonObject(rest); } catch { /* keep looking */ } }
   }
   throw new Error(`${what} returned no JSON result`);
 };
@@ -800,10 +798,10 @@ function seatRegistryEnv() { return registryEnv(settings); }
 /** A locator in a cleanup receipt never becomes an admission flag. The
  * operator's current configuration is the sole pin in a printed command. */
 function controllerCleanupCommand(entry) {
-  const command=recordedControllerCleanupCommand({...entry,registry:null});
-  if(!command) return undefined;
-  const origin=configuredRegistryOrigin(settings);
-  return origin ? `${registryShellAssignment(origin)} ${command}` : command;
+  const command = recordedControllerCleanupCommand({ ...entry, registry: null });
+  if (!command) return undefined;
+  const origin = configuredRegistryOrigin(settings);
+  return origin ? command.replace(/ --json$/, ` --registry ${registryShellValue(origin)} --json`) : command;
 }
 /** A retained seat holds its identity in the home's .aw: a local identity. Providers
  *  before awebai/oats-aweb#226 recorded it as mode "global" with no grant, which no

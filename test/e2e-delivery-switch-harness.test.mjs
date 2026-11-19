@@ -109,20 +109,21 @@ const regsFile = marker("regs.json");
 const regs = () => { try { return JSON.parse(fs.readFileSync(regsFile, "utf8")); } catch { return {}; } };
 const flag = (n) => a.find((x) => x.startsWith(n + "="))?.slice(n.length + 1) ?? (a.includes(n) ? a[a.indexOf(n) + 1] : undefined);
 const j = a.filter((x) => x !== "--json");
-if (j[0] === "version") { console.log("aw 1.36.23\\n  commit: fixture"); process.exit(0); }
+if (j[0] === "version") { console.log("aw " + (cfg.awVersion || "1.36.33") + "\\n  commit: fixture"); process.exit(0); }
 if (j[0] === "id" && j[1] === "create") out({ status: "created" });
 if (j[0] === "id" && j[1] === "team" && j[2] === "create") out({ status: "created", team_id: "devteam:" + flag("--namespace") });
 if (j[0] === "id" && j[1] === "team" && j[2] === "invite") out({ token: "fixture-token" });
 if (j[0] === "id" && j[1] === "team" && j[2] === "accept-invite") out({ status: "accepted" });
 if (j[0] === "id" && j[1] === "encryption-key") out({ status: "published" });
-if (j[0] === "init") out({ status: "connected" });
+// Native init materializes its root before join-from can use it.
+if (j[0] === "init") { fs.mkdirSync(path.join(process.cwd(), ".aw"), { recursive: true }); out({ status: "connected" }); }
 if (j[0] === "mail" && j[1] === "send") out({ message_id: crypto.randomUUID(), status: "delivered" });
 if (j[0] === "wake" && j[1] === "run") { hang(); }
 else if (j[0] === "wake" && j[1] === "register") { const r = regs(); r[flag("--home")] = { home: flag("--home"), identity_home: flag("--identity-home") }; fs.writeFileSync(regsFile, JSON.stringify(r)); console.log("registered"); process.exit(0); }
 else if (j[0] === "wake" && j[1] === "deregister") { const r = regs(); delete r[flag("--home")]; fs.writeFileSync(regsFile, JSON.stringify(r)); if (cfg.statusBreaksAfterDeregister) fs.writeFileSync(marker("status-broken"), ""); console.log("deregistered"); process.exit(0); }
 else if (j[0] === "wake" && j[1] === "status") {
   if (fs.existsSync(marker("status-broken"))) { console.log("status: not json"); process.exit(0); }
-  out({ daemon_running: true, daemon_version: "1.36.23", state_dir: process.env.AW_WAKE_STATE_DIR, instances: Object.values(regs()).map((r) => ({ home: r.home, delivery: "session", runtime_delivery: "external-session", phase: "active", receive_identities: [{ identity_home: r.identity_home, stream_phase: "streaming", stream_admitted: true }] })) });
+  out({ daemon_running: true, daemon_version: "1.36.33", state_dir: process.env.AW_WAKE_STATE_DIR, instances: Object.values(regs()).map((r) => ({ home: r.home, delivery: "session", runtime_delivery: "external-session", phase: "active", receive_identities: [{ identity_home: r.identity_home, stream_phase: "streaming", stream_admitted: true }] })) });
 }
 else { console.error("fake aw: unexpected " + a.join(" ")); process.exit(93); }
 `,
@@ -210,10 +211,20 @@ test("a switch that rejects mid-stream ends in cleanup, not an unhandled rejecti
   assertDownForEveryUp(r);
   assertLocalDockerOnly(r);
   const sends = r.calls.filter((c) => c.bin === "aw" && c.args.includes("mail") && c.args.includes("send"));
-  assert.ok(sends.length > 0 && sends.length < 24, `the stream started and stopped once the switch failed (sent ${sends.length} of 24)`);
+  assert.ok(sends.length > 0 && sends.length < 24, `the stream started and stopped once the switch failed (sent ${sends.length} of 24); output:\n${(r.stdout + r.stderr).slice(-6000)}`);
   assert.ok(r.calls.some((c) => c.bin === "aw" && c.args.includes("wake") && c.args.includes("deregister")), "the failure came after the claude launch deregistered the home, not earlier");
   assert.match(r.stdout + r.stderr, /wake status/i, `the run failed on the broken aw wake status; output:\n${(r.stdout + r.stderr).slice(-3000)}`);
   assert.ok(r.calls.some((c) => c.bin === "aw" && c.args.includes("run") && c.event === "terminated"), "the broker daemon was stopped");
+});
+
+test("a refused spawn is reported immediately and never waits for a stream", { timeout: 30_000 }, async (t) => {
+  const fx = fixture(t, { awVersion: "1.36.23" });
+  const r = await runHarness(fx, { timeoutMs: 25_000 });
+  assertNoUnhandledCrash(r);
+  assert.match(r.stdout + r.stderr, /spawn refused.*older than required 1\.36\.33/s);
+  assertDownForEveryUp(r);
+  assert.equal(r.calls.some(c => c.bin === "aw" && c.args.includes("mail") && c.args.includes("send")), false, "a refused spawn starts no delivery stream");
+  assert.ok(r.calls.some(c => c.bin === "aw" && c.args.includes("run") && c.event === "terminated"), "the broker is stopped");
 });
 
 test("SIGTERM while Docker Desktop starts: nothing new starts, Docker is quit", { timeout: 120_000 }, async (t) => {

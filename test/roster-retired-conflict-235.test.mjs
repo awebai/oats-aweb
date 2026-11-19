@@ -14,7 +14,8 @@ import { fileURLToPath } from "node:url";
 
 const HOOK = join(resolve(fileURLToPath(new URL("..", import.meta.url))), "oats-package", "capabilities", "oats-aweb", "bin", "oats-aweb.mjs");
 const TEAM = "default:example.test";
-const COMMAND = "aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --registry https://api.awid.ai --json";
+const STORED_COMMAND = "aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --registry https://api.awid.ai --json";
+const COMMAND = STORED_COMMAND.replace(" --registry https://api.awid.ai", "");
 const CONFLICT = "recorded as retired, but its workspace is active: check before removing";
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
@@ -29,7 +30,7 @@ function fixture(t) {
   write(join(root, ".aw", "identity.yaml"), "alias: root\n");
   mkdirSync(home, { recursive: true });
   const recordFile = join(ws, ".oats-aweb", "retired-certificates.json");
-  write(recordFile, JSON.stringify({ version: 1, entries: [{ team: TEAM, certificateId: "cert-dev-1", registry: "https://api.awid.ai", alias: "dev-1", instance: "dev-1", retiredAt: "2026-11-04T10:00:00.000Z", command: COMMAND }] }));
+  write(recordFile, JSON.stringify({ version: 1, entries: [{ team: TEAM, certificateId: "cert-dev-1", registry: "https://api.awid.ai", alias: "dev-1", instance: "dev-1", retiredAt: "2026-11-04T10:00:00.000Z", command: STORED_COMMAND }] }));
   write(join(ws, "members.json"), JSON.stringify({ team_id: TEAM, members: [{ certificate_id: "cert-dev-1", team_id: TEAM, alias: "dev-1", identity_scope: "local" }] }));
   const bin = join(ws, "bin");
   write(join(bin, "aw"), `#!${process.execPath}

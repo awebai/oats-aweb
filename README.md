@@ -1556,8 +1556,10 @@ its own destination selection and public-address policy.
 The record keeps a plain registry_url from the exact team's membership as a
 locator, or records none when aw discovers it from the membership's service.
 Neither value is promoted to --registry or AWID_REGISTRY_URL. The controller's
-printed command carries the current configured pin, safely quoted, or no pin
-when none is configured.
+printed command carries `--registry` from the current setting, safely quoted,
+or no registry flag when none is configured. The compatibility writer still
+rebuilds the stored command from the receipt's authoritative inputs for older
+providers; the current provider never executes or displays that stored text.
 
 It never runs `aw workspace
 connect` to finish a half-done mint, and never retries the mint. A certificate

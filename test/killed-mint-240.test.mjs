@@ -26,7 +26,8 @@ import { verifySignature } from "../oats-package/capabilities/oats-aweb/lib/stat
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "default:example.test";
 const REGISTRY = "https://registry.example.test";
-const COMMAND = `aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --registry ${REGISTRY} --json`;
+const STORED_COMMAND = `aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --registry ${REGISTRY} --json`;
+const COMMAND = "aw id team remove-member --namespace example.test --team default --cert-id cert-dev-1 --json";
 const MEMBERS_READ = `\`aw id team members --team-id=${TEAM} --json\``;
 // A mint the hook's own timeout cuts, as a kill at that step.
 const KILLED = { OATS_AWEB_JOIN_TIMEOUT_MS: "1500" };
@@ -178,7 +179,7 @@ for (const step of ["register", "cert"]) {
     assert.ok(retired.doc.warning.includes(COMMAND), retired.doc.warning);
     assert.doesNotMatch(retired.doc.warning, /most likely another instance's/);
     const record = JSON.parse(readFileSync(fx.recordFile, "utf8"));
-    assert.deepEqual(record.entries.map((e) => ({ team: e.team, certificateId: e.certificateId, alias: e.alias, command: e.command })), [{ team: TEAM, certificateId: "cert-dev-1", alias: "dev-1", command: COMMAND }]);
+    assert.deepEqual(record.entries.map((e) => ({ team: e.team, certificateId: e.certificateId, alias: e.alias, command: e.command })), [{ team: TEAM, certificateId: "cert-dev-1", alias: "dev-1", command: STORED_COMMAND }]);
     assert.deepEqual(retired.doc.meta.pendingControllerCleanup, [{ label: "default", team: TEAM, alias: "dev-1", certificateId: "cert-dev-1", command: COMMAND }]);
     assert.equal(fx.fake.readCalls().some((c) => c.args[0] === "workspace" && c.args[1] === "connect"), false, "retire never finishes a half-done mint");
   });
@@ -231,11 +232,13 @@ test("an unknown outcome keeps the home, and the retry settles it once the read 
   assert.ok(retry.doc.warning.includes(COMMAND), retry.doc.warning);
 });
 
-test("the controller command takes the registry the root records for that team's membership", (t) => {
+test("the controller command never grants access from the root's recorded registry", (t) => {
   const fx = fixture(t);
   const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
   const retired = fx.retire(r.doc.meta);
-  assert.ok(retired.doc.warning.includes(`--registry ${REGISTRY} --json`), retired.doc.warning);
+  assert.ok(retired.doc.warning.includes(COMMAND), retired.doc.warning);
+  assert.doesNotMatch(retired.doc.warning, /--registry|registry\.example\.test/);
+  assert.ok(fx.fake.readCalls().every(c => !c.args.some(a => a.includes(REGISTRY) || a.startsWith("--registry"))), JSON.stringify(fx.fake.readCalls()));
   assert.doesNotMatch(retired.doc.warning, /other-registry|omits --registry/);
   assert.equal(JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0].registry, REGISTRY);
 });
@@ -360,7 +363,7 @@ test("a team id configured in mixed case still finds this mint's certificate, an
   const retired = fx.retire(r.doc.meta, teams);
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.doesNotMatch(retired.doc.warning, /nothing was registered/);
-  assert.ok(retired.doc.warning.includes(`--cert-id cert-dev-1 --registry ${REGISTRY} --json`), retired.doc.warning);
+  assert.ok(retired.doc.warning.includes(`--cert-id cert-dev-1 --json`), retired.doc.warning);
   const entries = JSON.parse(readFileSync(fx.recordFile, "utf8")).entries;
   assert.equal(entries.length, 1);
   assert.equal(entries[0].registry, REGISTRY);
@@ -437,4 +440,35 @@ test("retire's self-delete finds the workspace id when the meta spells the team 
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   const del = fx.fake.readCalls().find((c) => c.args[0] === "workspace" && c.args[1] === "delete");
   assert.equal(del.args[2], workspaceId, "deleted by workspace id, not by alias");
+});
+
+test("a controller retry takes --registry only from the current setting while the receipt retains the original locator", (t) => {
+  const fx = fixture(t), configured = "http://127.0.0.1:18010";
+  fx.env.OATS_SETTINGS = JSON.stringify({ root: fx.ws, delivery: "session", registry: configured });
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = fx.retire(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  const command = COMMAND.replace(" --json", ` --registry '${configured}' --json`);
+  assert.equal(retired.doc.meta.pendingControllerCleanup[0].command, command);
+  assert.ok(retired.doc.warning.includes(command), retired.doc.warning);
+  assert.doesNotMatch(command, /registry\.example\.test/);
+  const entry = JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0];
+  assert.equal(entry.registry, REGISTRY);
+  assert.equal(entry.command, STORED_COMMAND, "the compatibility writer retains its authoritative inputs");
+});
+
+
+test("a poisoned stored origin with no setting reaches neither aw argv nor the displayed controller command", (t) => {
+  const fx = fixture(t), poisoned = "http://127.0.0.1:6666";
+  writeFileSync(join(fx.ws, ".aw", "teams.yaml"), rootTeams([{ team_id: TEAM, registry_url: poisoned }]));
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const retired = fx.retire(r.doc.meta);
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(retired.doc.meta.pendingControllerCleanup[0].command, COMMAND);
+  assert.ok(!retired.doc.warning.includes(poisoned), retired.doc.warning);
+  assert.ok(fx.fake.readCalls().every(c => !c.args.some(a => a.includes(poisoned) || a.startsWith("--registry"))), JSON.stringify(fx.fake.readCalls()));
+  const entry = JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0];
+  assert.equal(entry.registry, poisoned, "recorded as a locator only");
+  assert.equal(entry.team, TEAM);
+  assert.equal(entry.certificateId, "cert-dev-1");
 });
