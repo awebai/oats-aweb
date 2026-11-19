@@ -424,6 +424,22 @@ home is respawned: only a respawn moves its primary identity.
 
 ## 7. Troubleshooting
 
+`registry-setting-required` means the deployment needs an operator's registry
+admission setting. The operator runs `oats aweb setup --registry <origin>` in
+the deployment, then reruns `oats aweb resident create <name>` for resident
+custody and `oats aweb wake install` for the shared wake daemon. Restart homes
+to receive the new session pin. A saved registry_url is only a locator;
+neither it nor an ambient AWID_REGISTRY_URL grants an OATS child private
+network access. Give a bare HTTP/HTTPS origin, with no credentials or path
+(use the bare origin for /api). A path-prefix registry reverse proxy is
+unsupported; the registry needs its own hostname. Front-door authentication
+is separate from settings.oats.aweb.registry.
+
+`E_WAKE_REGISTRY_CONFLICT` requires one registry for this user's daemon,
+another host user for the other deployment, or deregistering its other homes
+with `aw wake deregister --home <other-home>`, then `oats aweb wake uninstall`
+and a new install. `delivery: session` uses that same daemon.
+
 Check your own state first:
 
 ```bash

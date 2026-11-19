@@ -25,13 +25,26 @@ function fixture(t) {
 }
 
 test('setup --registry records one canonical operator setting without bootstrapping',t=>{
-  const f=fixture(t),r=f.run('setup',['--registry','HTTP://[::1]:80/','--json']);
+  const f=fixture(t),r=f.run('setup',['--registry','HTTP://[::1]:80/','--json'],{AWEB_API_KEY:'unused-fixture-key',AWID_REGISTRY_URL:'http://poison.invalid'});
   assert.equal(r.status,0,r.stdout+r.stderr);
   assert.match(f.local(),/registry: "http:\/\/\[::1\]"/);
   assert.match(f.local(),/unrelated: true/);
   assert.equal(JSON.parse(r.stdout).result.registry,'http://[::1]');
   assert.match(r.stdout,/wake install/);assert.match(r.stdout,/resident create/);
   assert.deepEqual(f.calls(),[],'configuration does not bootstrap an account');
+});
+
+test('registry updates preserve unrelated mappings and refuse ambiguous YAML keys',t=>{
+  const f=fixture(t),file=join(f.base,'oats-local.yaml');
+  writeFileSync(file,'settings:\n  "oats.aweb":\n    "registry": "http://old.invalid"\n    roots:\n      team: /keep\n  unrelated: true\n');
+  const r=f.run('setup',['--registry','https://new.invalid:443','--json']);
+  assert.equal(r.status,0,r.stdout+r.stderr);assert.match(f.local(),/roots:\n      team: \/keep/);
+  assert.match(f.local(),/registry: "https:\/\/new.invalid"/);assert.match(f.local(),/unrelated: true/);
+  for(const text of ['settings:\n oats.aweb:\n','settings:\n  oats.aweb:\n      registry: http://old.invalid\n','settings :\n  oats.aweb:\n','settings:\n  oats.aweb:\n    registry : http://old.invalid\n','settings:\n  oats.aweb:\n    registry: http://one.invalid\n    "registry": http://two.invalid\n','settings:\n  oats.aweb:\n    registry: &pin http://old.invalid\n']) {
+    writeFileSync(file,text);const refused=f.run('setup',['--registry','http://new.invalid','--json']);
+    assert.equal(refused.status,1,refused.stdout+refused.stderr);assert.match(refused.stdout,/cannot safely update/);assert.equal(f.local(),text);
+  }
+  assert.deepEqual(f.calls(),[]);
 });
 
 test('registry plan and unsafe YAML never write or invoke aw',t=>{
@@ -125,5 +138,5 @@ for(const platform of ['darwin','linux'])test(`${platform} wake reinstall refuse
   let output='';const code=await wakeMain(['install','--plan','--json'],{platform,env:{...host.env,OATS_SETTINGS:JSON.stringify({registry:'http://127.0.0.1:28010'})},print:(_fd,s)=>output+=s,uid:501,user:'alice'});
   assert.equal(code,1,output);assert.match(output,/E_WAKE_REGISTRY_CONFLICT/);
   assert.match(output,/one registry/);assert.match(output,/another host user/);assert.match(output,/deregister/);
-  assert.doesNotMatch(output,/delivery: session/);assert.equal(readFileSync(file,'utf8'),before);
+  assert.doesNotMatch(output,/delivery: session/);assert.equal(readFileSync(file,'utf8'),before);assert.deepEqual(host.changes(),[]);
 });

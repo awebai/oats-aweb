@@ -1,4 +1,4 @@
-import {registryEnv, registryMigration} from './registry-setting.mjs';
+import {registryEnv} from './registry-setting.mjs';
 import { awChildEnv } from './aw-child-env.mjs';
 
 import { parseProviderSettings } from './provider-settings.mjs';
@@ -125,7 +125,6 @@ export function issueInvite(argv, env = process.env) {
   if (!opts.label && env.OATS_DEFAULT_TEAM_ID !== team) fail('E_INVITE_TEAM', 'selected default team does not match current kernel declarations');
   // With no root declared, the team's root is the deployment's own, as setup creates it and spawn
   // reads it. A declared root, even an invalid one, is never replaced.
-  const migration=registryMigration(settings,env);if(migration) fail('E_INVITE_ROOT',migration);
   const rootsKey = teamKeyIn(settings.roots, team);
   const declared = rootsKey !== undefined || Object.hasOwn(settings,'root');
   const source = rootsKey !== undefined ? 'roots[team]' : declared ? 'root' : 'the deployment directory';

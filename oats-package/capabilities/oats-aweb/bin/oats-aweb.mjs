@@ -388,6 +388,7 @@ if (event !== "setup") {
     if (problem) throw new Error(problem);
   } catch (error) {
     if (["spawn", "launch", "retire"].includes(event)) fatal(error.message);
+    if(operation) operationFail("E_SETTINGS",error.message);
     console.error(`oats aweb ${event}: ${error.message}`); process.exit(1);
   }
 }
@@ -2716,7 +2717,7 @@ if (event === "launch") {
   // from, and a certificate is this mint's only when its member_did_key is the home
   // key's did:key.
   // The read a person runs at the root: aw there resolves the same registry the hook passed.
-  const membersRead = (team) => `\`aw id team members --team-id=${team} --json\``;
+  const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
   const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
     const root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team);
@@ -3324,7 +3325,7 @@ ${JSON.stringify(problem.details || {})}`);
     const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
     let created;
     try {
-      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }), "aw id team create");
+      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
     } catch (e) {
       if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
       if (teamNameTaken(e.stdout, createNamespace, name)) throw new Error(`team ${candidateTeamId(name)} already exists in the registry, and its team key is not on this machine; choose another label (--create <label>), or run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key; nothing was created`);
@@ -3340,7 +3341,7 @@ ${JSON.stringify(problem.details || {})}`);
     // newer record, so it is read first: a record setup finds naming another URL is not replaced.
     const serverTarget = [flagEq("--team", name), flagEq("--namespace", createNamespace)];
     const readServerRecord = () => {
-      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }), "aw id team show-server"); }
+      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team show-server"); }
       catch (e) {
         if (teamServerRecordMissing(e.stdout, team)) return undefined;
         throw new Error(`reading the AWID team-server record for ${team} failed: ${e.message}${after(e)}`);
@@ -3365,11 +3366,11 @@ ${JSON.stringify(problem.details || {})}`);
     // no publish-if-absent: a record published between that read and set-server is replaced, and the
     // verify after it, which reads setup's own record, does not notice.
     const published = checkedServerRecord();
-    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }); }
+    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
     catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
     const publishedNow = !published && !checkedServerRecord();
     if (publishedNow) {
-      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }); }
+      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
       catch (e) { throw new Error(`publishing the AWID team-server record for ${team} (${service}) failed: ${e.message}${after(e)}`); }
       if (!recordVerifies(readServerRecord())) throw new Error(notVerified);
     }
@@ -3377,7 +3378,7 @@ ${JSON.stringify(problem.details || {})}`);
     let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
     if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
       let minted;
-      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true, env: { ...registryEnv(settings) } }), "aw id team invite"); }
+      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
       catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
       token = minted?.token;
       if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);
@@ -3554,7 +3555,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
-        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY, ...registryEnv(settings) } });
+        run(["aw", "init", "--do-not-touch-agents-md"], scope, 120000, { secretSafe: true, env: { AWEB_URL: process.env.AWEB_URL, AWEB_API_KEY: process.env.AWEB_API_KEY } });
       }
       teams = readTeams();
     }

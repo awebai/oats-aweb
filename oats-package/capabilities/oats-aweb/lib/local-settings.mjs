@@ -23,24 +23,32 @@ export function awebScalarText(key,value,{start=process.env.OATS_WORKSPACE||proc
     for(let i=start;i<end;i++) {
       const row=lines[i];
       if(!row.trim()||row.trimStart().startsWith('#')) continue;
-      for(const name of names) if(row.startsWith(' '.repeat(indent)+name+':')) found.push(i);
+      for(const name of names) if(row.startsWith(' '.repeat(indent)+name)&&/^[ \t]*:/.test(row.slice(indent+name.length))) found.push(i);
     }
     if(found.length>1) refuse();
     if(found.length && !names.some(name=>lines[found[0]].trimEnd()===' '.repeat(indent)+name+':')) refuse();
     return found[0];
   };
-  let settings=block(0,lines.length,0,['settings']);
+  if(lines.some(row=>/^\s*\t/.test(row)||['---','...'].includes(row.trim()))) refuse();
+  const childIndent=(start,end,expected)=>{
+    const indents=lines.slice(start+1,end).filter(row=>row.trim()&&!row.trimStart().startsWith('#')).map(row=>/^ */.exec(row)[0].length);
+    if(indents.length&&Math.min(...indents)!==expected) refuse();
+  };
+  let settings=block(0,lines.length,0,['settings','"settings"',"'settings'"]);
   if(settings===undefined){lines.push('settings:');settings=lines.length-1;}
   let end=blockEnd(lines,settings,0);
+  childIndent(settings,end,2);
   let aweb=block(settings+1,end,2,['oats.aweb','"oats.aweb"',"'oats.aweb'"]);
   if(aweb===undefined){lines.splice(end,0,'  oats.aweb:');aweb=end;}
   end=blockEnd(lines,aweb,2);
+  childIndent(aweb,end,4);
   const found=[];
-  for(let i=aweb+1;i<end;i++) if([key,JSON.stringify(key),`'${key}'`].some(k=>lines[i].startsWith(`    ${k}:`))) found.push(i);
+  for(let i=aweb+1;i<end;i++) if([key,JSON.stringify(key),`'${key}'`].some(k=>lines[i].startsWith(`    ${k}`)&&/^[ \t]*:/.test(lines[i].slice(4+k.length)))) found.push(i);
   if(found.length>1) refuse();
   const row=`    ${key}: ${yamlQuote(value)}`;
   if(found.length) {
     const at=found[0],tail=lines[at].slice(lines[at].indexOf(':')+1);
+    if(![key,JSON.stringify(key),`'${key}'`].some(k=>lines[at].startsWith(`    ${k}:`))) refuse();
     if(!tail.startsWith(' ') || !tail.trim() || /^[|>&*!{[\s#]/.test(tail.trim()) || (at+1<end&&/^     \S|^      /.test(lines[at+1]))) refuse();
     // Quoted scalars must end on this line, with an optional comment.
     const scalar=tail.trim();
