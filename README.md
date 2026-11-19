@@ -1971,7 +1971,9 @@ stdin, then deletes it. With `--json`, the answer carries `result.tokenFile`
 runs. If the token cannot be written after the mint, `E_INVITE_OUT` says the
 invite was minted and that the token is not printed, and names its
 `invite_id` (not a secret) so its owner can revoke it: only when aw gave it as
-a plain identifier, else it says the id is withheld. Without `--out`, the
+a plain identifier, else it says the id is withheld. A short write counts as
+a failure. If the file cannot be removed after a failure, the answer says so
+and names it: delete it, since after a mint it may hold part of the token. Without `--out`, the
 answer is unchanged: one token on stdout, or one `result.token`.
 
 The service URL is safe to hand on as the recipient's `--service`; the token is the secret part. Capture it privately and pass

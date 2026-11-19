@@ -5,7 +5,7 @@ import { parseProviderSettings } from './provider-settings.mjs';
 // Selected-deployment member invitation. Native/server issuance decides authority;
 // membership and a plan never claim an owner/admin role or permission to mint.
 import { execFileSync } from 'node:child_process';
-import { closeSync, lstatSync, mkdtempSync, openSync, readFileSync, realpathSync, statSync, rmSync, writeSync } from 'node:fs';
+import { closeSync, lstatSync, mkdtempSync, openSync, readFileSync, realpathSync, statSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { selectedDeployment } from './team-roots.mjs';
@@ -124,16 +124,18 @@ function reserveOut(path) {
   try { return openSync(path, 'wx', 0o600); }
   catch (e) { fail('E_INVITE_OUT', `--out ${path}: cannot be created (${e.code || 'open failed'}); nothing was minted`); }
 }
+/** Close and remove the reserved file; whether it is gone. It never throws: a failed
+ *  cleanup must not replace the outcome the caller reports (a live invite above all). */
 function releaseOut(fd, path) {
   try { closeSync(fd); } catch { /* already closed */ }
-  rmSync(path, { force: true });
+  try { rmSync(path, { force: true }); return true; } catch { return false; }
 }
 /** The refusal when the token was minted under --out but could not be written: the
  *  invite is live and its token is not printed, so the answer names its invite_id (not
  *  a secret) for revoking it, but only in a plain identifier's form: it is remote text. */
-export function unwrittenInviteMessage(out, code, inviteId) {
+export function unwrittenInviteMessage(out, code, inviteId, removed = true) {
   const id = typeof inviteId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(inviteId) ? `invite_id ${inviteId}` : 'its invite_id withheld: aw gave it in an unexpected form';
-  return `the invite was minted (${id}) but could not be written to ${out} (${typeof code === 'string' && /^E[A-Z0-9]{1,15}$/.test(code) ? code : 'write failed'}); it is not printed, and that invite stays live until it is revoked: mint another with a new --out`;
+  return `the invite was minted (${id}) but could not be written to ${out} (${typeof code === 'string' && /^E[A-Z0-9]{1,15}$/.test(code) ? code : 'write failed'}); it is not printed, and that invite stays live until it is revoked${removed ? '' : `; ${out} could not be removed and may hold part of the token: delete it`}: mint another with a new --out`;
 }
 export function issueInvite(argv, env = process.env) {
   const opts = options(argv);
@@ -180,13 +182,17 @@ export function issueInvite(argv, env = process.env) {
     const rawResult = isolatedNative(['team','invite','--team-id',team,'--member-local','--json'], root, env, { source }, settings);
     try { minted = JSON.parse(rawResult); } catch { fail('E_INVITE_OUTPUT', 'aw returned malformed invite output; issuance may have occurred; do not automatically retry'); }
     if (!object(minted) || minted.status !== 'created' || typeof minted.invite_id !== 'string' || !minted.invite_id.trim() || typeof minted.token !== 'string' || !/^aw_inv_[^\s\x00-\x1f\x7f]+$/.test(minted.token)) fail('E_INVITE_OUTPUT', 'aw returned an unsupported or malformed hosted invite; issuance may have occurred; do not automatically retry');
-  } catch (e) { if (fd !== undefined) releaseOut(fd, out); throw e; }
+  } catch (e) {
+    if (fd !== undefined && !releaseOut(fd, out) && e.code?.startsWith('E_INVITE_')) e.message += `; the empty file reserved at ${out} could not be removed: delete it`;
+    throw e;
+  }
   // The joiner's one-line command (#56): it reads the token on stdin, so the token is never in it.
   const joinCommand = `oats aweb setup --soul ${/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(opts.soul || '') ? opts.soul : '<soul>'} --invite-stdin --name <alias>`;
   // With --out the token goes to the file and the answer names the file in its place (#285).
   if (out) {
-    try { writeSync(fd, `${minted.token}\n`); closeSync(fd); }
-    catch (e) { releaseOut(fd, out); fail('E_INVITE_OUT', unwrittenInviteMessage(out, e.code, minted.invite_id)); }
+    // writeFileSync writes until every byte is out or a write fails: a short write never passes as success.
+    try { writeFileSync(fd, `${minted.token}\n`); closeSync(fd); }
+    catch (e) { const removed = releaseOut(fd, out); fail('E_INVITE_OUT', unwrittenInviteMessage(out, e.code, minted.invite_id, removed)); }
     return { ...result, issuedAt: new Date().toISOString(), tokenFile: out, joinCommand };
   }
   return { ...result, issuedAt: new Date().toISOString(), token: minted.token, joinCommand };
