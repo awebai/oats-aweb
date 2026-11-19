@@ -100,6 +100,15 @@ Decoded JSON strings are checked recursively for YAML credential fields, includi
 the workspace-record string; malformed `.json` captures also refuse without echoing
 their contents.
 
+The retained journey separately records the real kernel's post-start session
+inspection and the broker's pre-event status. Pending aw request m, a healthy idle
+seat may still carry the initial `pending` / `not-launched` observation; this is
+a native readiness false negative, not successful readiness. Once aw fixes m,
+the marked assertion must require active status before any event. The journey
+then sends one mail from a second disposable identity and requires active status,
+an admitted streaming connection and the unique message marker in its private
+inert pane. That proves terminal delivery, not model consumption.
+
 The OSS stack cannot establish `workspace delete` returning
 `alias_released:true` for a hosted self-release. Before claiming hosted
 acceptance, run spawn/retire/retry with a disposable hosted team and record

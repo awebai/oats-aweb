@@ -35,7 +35,7 @@ if (group === 'unit' && process.env.OATS_TEST_AW_VERSION === '1.36.33') {
 if (group === 'stack' && process.env.AW_VERSION !== '1.36.33') {
   // aw >=1.36.53 refuses this API key before writing a partial; there can be
   // no partial-registry mismatch. The preceding test checks that refusal.
-  exclusions.push("a rerun with another registry gets aw's own refusal");
+  exclusions.push("a rerun with another registry gets aw's own refusal, unchanged (aw 1.36.33: from aw 1.36.53 aw leaves no partial to carry a registry)");
 }
 if (group === 'kernel') {
   const root = process.env.OATS_TASKS_KERNEL_ROOT;

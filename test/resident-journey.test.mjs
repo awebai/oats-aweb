@@ -625,22 +625,91 @@ test('a real retained seat copies authority, reconnects, checks, heartbeats, rep
       if (statSync(socket).isSocket()) spawnSync('tmux', ['-S', socket, 'kill-server'], { env: j.env });
     }
   });
+  // Witness the reported ordering with real status before the session exists.
+  // This makes request m's quiet-start RED deterministic in the aw candidate
+  // reproduction, rather than depending on which initial inspection wins.
+  const prelaunch = j.shell(`oats session inspect --home ${home} --json`);
+  assert.equal(prelaunch.status, 0, prelaunch.stdout + prelaunch.stderr);
+  assert.equal(prelaunch.doc.result.state, 'not-launched');
+  let prelaunchWake;
+  for (const deadline = Date.now() + 30000; ;) {
+    const observed = j.aw(home, ['wake', 'status', '--json']);
+    assert.equal(observed.status, 0, observed.stderr);
+    prelaunchWake = JSON.parse(observed.stdout);
+    const row = prelaunchWake.instances.find(row => row.home === home);
+    if (row?.last_state === 'not-launched' && row.channel_core?.readiness_state === 'not-launched') break;
+    assert.ok(Date.now() < deadline, 'the real broker must witness the prelaunch not-launched state');
+    await delay(500);
+  }
+  nativeCapture('retained-prelaunch-wake', prelaunchWake, { version: j.awVersion, commit: j.awCommit, paths });
   const started = j.shell(`oats session start --home ${home} --json`);
   assert.equal(started.status, 0, started.stdout + started.stderr);
+  const inspected = j.shell(`oats session inspect --home ${home} --json`);
+  assert.equal(inspected.status, 0, inspected.stdout + inspected.stderr);
+  assert.equal(inspected.doc.result.present, true);
+  assert.equal(inspected.doc.result.running, true);
+  nativeCapture('retained-post-start-kernel', inspected.doc.result, { version: j.awVersion, commit: j.awCommit, paths });
   let wake;
   for (const deadline = Date.now() + 30000; ;) {
     const observed = j.aw(home, ['wake', 'status', '--json']);
     assert.equal(observed.status, 0, observed.stderr);
     wake = JSON.parse(observed.stdout);
     const row = wake.instances.find(row => row.home === home);
-    if (row?.phase === 'active' && row.receive_identities?.some(r => r.stream_admitted === true && r.stream_phase === 'streaming')) break;
+    if (row?.receive_identities?.some(r => r.stream_admitted === true && r.stream_phase === 'streaming')) break;
+    if (Date.now() >= deadline) break;
+    await delay(500);
+  }
+  nativeCapture('codex-wake-pre-event', wake, { version: j.awVersion, commit: j.awCommit, paths });
+  const expected = { home, runtime: 'codex', runtimeDelivery: 'external-session', primary: join(home, '.aw'),
+    bindings: [{ identity_home: join(home, '.aw'), team, controls: true, event_classes: [] }] };
+  const preRow = wake.instances.find(row => row.home === home);
+  const preAssessment = targetReceiveAssessment(wake, expected, { minimumVersion: AW_MIN });
+  assert.ok(['pending', 'active'].includes(preRow?.phase), JSON.stringify(preAssessment));
+  // Pending aw request m: the one quiet inspection can precede the kernel's
+  // launch receipt. Keep this false negative visible; once aw fixes it,
+  // require phase active and no pre-event assessment problems unconditionally.
+  if (preRow.phase === 'pending') {
+    assert.equal(preRow.last_state, 'not-launched');
+    assert.deepEqual(preAssessment.problems.map(problem => problem.code), ['wake-target-inactive']);
+  } else assert.deepEqual(preAssessment.problems, []);
+  t.diagnostic(`post-start pre-event broker phase=${preRow.phase}, last_state=${preRow.last_state}`);
+  const senderRoot = join(j.base, 'mail-sender');
+  mkdirSync(senderRoot);
+  const sender = j.aw(senderRoot, ['init', '--join-from', sourceRoot, '--name=fixture-sender', '--do-not-touch-agents-md', '--json']);
+  assert.equal(sender.status, 0, sender.stdout + sender.stderr);
+  const marker = `oats-ci-retained-${randomBytes(10).toString('hex')}`, bodyFile = join(j.base, 'retained-mail.txt');
+  writeFileSync(bodyFile, `${marker}\n`, { mode: 0o600 });
+  // This sender is new and has no prior conversation. One native send drives
+  // the real event path; only this journey's inert terminal can receive it.
+  const sent = j.aw(senderRoot, ['mail', 'send', '--to=retained', '--subject=' + marker, '--body-file=' + bodyFile, '--json']);
+  assert.equal(sent.status, 0, sent.stdout + sent.stderr);
+  const receipt = JSON.parse(sent.stdout);
+  assert.equal(typeof receipt.message_id, 'string');
+  assert.ok(receipt.message_id.length > 0);
+  nativeCapture('retained-mail-receipt', receipt, { version: j.awVersion, commit: j.awCommit, paths });
+  for (const deadline = Date.now() + 30000; ;) {
+    const observed = j.aw(home, ['wake', 'status', '--json']);
+    assert.equal(observed.status, 0, observed.stderr);
+    wake = JSON.parse(observed.stdout);
+    const row = wake.instances.find(row => row.home === home);
+    if (row?.phase === 'active' && row.receive_identities?.some(r => r.stream_admitted === true && r.stream_phase === 'streaming')
+      && Date.parse(row.channel_core?.last_input_at) > 0) break;
     if (Date.now() >= deadline) break;
     await delay(500);
   }
   nativeCapture('codex-wake-status', wake, { version: j.awVersion, commit: j.awCommit, paths });
-  const assessment = targetReceiveAssessment(wake, { home, runtime: 'codex', runtimeDelivery: 'external-session', primary: join(home, '.aw'),
-    bindings: [{ identity_home: join(home, '.aw'), team, controls: true, event_classes: [] }] }, { minimumVersion: AW_MIN });
+  const assessment = targetReceiveAssessment(wake, expected, { minimumVersion: AW_MIN });
   assert.deepEqual(assessment.problems, [], JSON.stringify(assessment));
+  const delivered = wake.instances.find(row => row.home === home);
+  assert.equal(delivered?.phase, 'active');
+  assert.ok(delivered.receive_identities?.some(r => r.identity_home === join(home, '.aw') && r.stream_admitted === true && r.stream_phase === 'streaming'));
+  assert.ok(Date.parse(delivered.channel_core?.last_input_at) > 0, 'the broker reports successful session input');
+  const socket = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8')).tmux.socket;
+  assert.ok(socket.startsWith(j.tmuxDir + '/'), 'delivery is inspected only on the private CI tmux server');
+  const pane = spawnSync('tmux', ['-S', socket, 'capture-pane', '-p', '-J', '-t', inspected.doc.result.paneId, '-S', '-1000'], { env: j.env, encoding: 'utf8' });
+  assert.equal(pane.status, 0, pane.stderr);
+  assert.ok(pane.stdout.includes(marker), 'the controlled mail reached the inert pane; no model-consumption claim');
+  nativeCapture('retained-delivered-pane', pane.stdout, { version: j.awVersion, commit: j.awCommit, paths });
   const retired = j.shell('oats retire real-retained --json');
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(lock), false);
