@@ -1330,10 +1330,13 @@ Supported acts:
   every invocation. OATS passes it by name as `AWID_REGISTRY_URL` to registry
   calls, LOCAL and GLOBAL sessions, custody serve and wake run. Saved URLs
   choose destinations under aw's public-address policy; they never grant
-  private-network access. Existing ambient-only deployments receive
+  private-network access. Existing non-public ambient-only deployments receive
   `registry-setting-required` at spawn/join and readiness, with the setup and
   restart steps. GLOBAL homes with a recorded non-default registry also get
-  that migration instead of silently losing messaging verification.
+  that migration instead of silently losing messaging verification. Public
+  default ambient URLs (`https://api.awid.ai`, including `/api` aliases) are harmless
+  and scrubbed. Launch also refuses a missing private pin before a session
+  starts with broken registry access.
 
   Use an absolute HTTP/HTTPS origin (scheme, hostname or bracketed IPv6,
   optional port); default ports and a root slash are canonicalized. Every
