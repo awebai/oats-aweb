@@ -69,7 +69,7 @@ import { appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync, fs
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
-import { controllerCleanupCommand as recordedControllerCleanupCommand, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
+import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
@@ -803,10 +803,11 @@ function seatRegistryEnv() { return registryEnv(settings); }
 /** A locator in a cleanup receipt never becomes an admission flag. The
  * operator's current configuration is the sole pin in a printed command. */
 function controllerCleanupCommand(entry) {
-  const command = recordedControllerCleanupCommand({ ...entry, registry: null });
-  if (!command) return undefined;
+  const args = controllerCleanupArgs({ ...entry, registry: null });
+  if (!args) return undefined;
   const origin = configuredRegistryOrigin(settings);
-  return origin ? command.replace(/ --json$/, ` --registry ${registryShellValue(origin)} --json`) : command;
+  if (origin) args.push("--registry", registryShellValue(origin));
+  return [...args, "--json"].join(" ");
 }
 /** A retained seat holds its identity in the home's .aw: a local identity. Providers
  *  before awebai/oats-aweb#226 recorded it as mode "global" with no grant, which no
