@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 
 export const REGISTRY_SETTING='settings.oats.aweb.registry';
-export const REGISTRY_MIGRATION='registry-setting-required: set settings.oats.aweb.registry with `oats aweb setup --registry <origin>`; restart serve with `oats aweb resident create <name>` and wake with `oats aweb wake install` in the operator shell. Saved registry_url values are locators, not admission.';
+export const REGISTRY_MIGRATION='registry-setting-required: settings.oats.aweb.registry: `oats aweb setup --registry <origin>`; restart serve: `oats aweb resident create <name>`; restart wake: `oats aweb wake install` (own shell).';
 const invalid=detail=>{throw new Error(`${REGISTRY_SETTING}: ${detail}`);};
 export function registryOrigin(settings={}) {
   if(!Object.hasOwn(settings,'registry')) return undefined;
@@ -49,8 +49,11 @@ export function registryEnv(settings,args) {
   return origin&&(!args||registryCommand(args))?{AWID_REGISTRY_URL:origin}:{};
 }
 /** POSIX shell text for an operator's retry command, never an argv or URL parser. */
+export function registryShellValue(origin) {
+  return `'${origin.replace(/'/g,"'\\''")}'`;
+}
 export function registryShellAssignment(origin) {
-  return `AWID_REGISTRY_URL='${origin.replace(/'/g,"'\\''")}'`;
+  return `AWID_REGISTRY_URL=${registryShellValue(origin)}`;
 }
 export function registryMigration(settings,env=process.env,{custody}={}) {
   if(registryOrigin(settings)) return undefined;

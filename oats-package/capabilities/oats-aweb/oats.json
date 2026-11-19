@@ -91,6 +91,7 @@
       "wider"
     ],
     "reasons": [
+        "registry-setting-required: settings.oats.aweb.registry: `oats aweb setup --registry <origin>`; restart serve: `oats aweb resident create <name>`; restart wake: `oats aweb wake install` (own shell).",
         "aw mail inbox does not advertise --count-only; unread-delivery attention counts are unknown. Upgrade aw to a build with read-only count support; failed counts never clear existing claims.",
         "messaging settings and explicit binding selections are required",
         "messaging input must match the supported binding contract",

@@ -88,7 +88,7 @@ console.error("fake aw: unexpected " + args.join(" ")); process.exit(93);
 test("a retire reads the certificate id from aw's file for a team whose name holds \"__\", and records its controller command", (t) => {
   const { doc, shared } = retire(t, { joinedTeam: "my__team:example.test", canonical: "my__team:example.test", certFile: "my____team__example.test.pem" });
   assert.equal(shared?.certificateId, "cert-shared-123", doc.warning);
-  assert.equal(shared?.command, "aw id team remove-member --namespace example.test --team my__team --cert-id cert-shared-123 --registry https://api.awid.ai --json", doc.warning);
+  assert.equal(shared?.command, "aw id team remove-member --namespace example.test --team my__team --cert-id cert-shared-123 --json", doc.warning);
 });
 
 test("a retire finds that file for the team recorded in mixed case", (t) => {

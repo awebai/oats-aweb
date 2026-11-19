@@ -92,7 +92,7 @@ import { mintedExpiryProblem } from "../lib/grant-expiry.mjs";
 import { childOutcome } from "../lib/child-outcome.mjs";
 import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
-import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigration, registryShellAssignment } from "../lib/registry-setting.mjs";
+import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigration, registryShellAssignment, registryShellValue } from "../lib/registry-setting.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
@@ -800,10 +800,10 @@ function seatRegistryEnv() { return registryEnv(settings); }
 /** A locator in a cleanup receipt never becomes an admission flag. The
  * operator's current configuration is the sole pin in a printed command. */
 function controllerCleanupCommand(entry) {
-  const command=recordedControllerCleanupCommand({...entry,registry:null});
-  if(!command) return undefined;
-  const origin=configuredRegistryOrigin(settings);
-  return origin ? `${registryShellAssignment(origin)} ${command}` : command;
+  const command = recordedControllerCleanupCommand({ ...entry, registry: null });
+  if (!command) return undefined;
+  const origin = configuredRegistryOrigin(settings);
+  return origin ? command.replace(/ --json$/, ` --registry ${registryShellValue(origin)} --json`) : command;
 }
 /** A retained seat holds its identity in the home's .aw: a local identity. Providers
  *  before awebai/oats-aweb#226 recorded it as mode "global" with no grant, which no

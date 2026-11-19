@@ -113,7 +113,7 @@ test('a controller retry uses the current configured IPv6 pin, never its saved l
   const fx=fixture(t,{registry:false});
   write(join(fx.sharedHome,'teams.yaml'),teamsYaml(membership(SHARED,{registry_url:'https://stored-registry.example.test'})));
   const doc=fx.retire({OATS_SETTINGS:JSON.stringify({registry:'http://[::1]:18010'}),AWID_REGISTRY_URL:'https://poison.invalid'});
-  const command="AWID_REGISTRY_URL='http://[::1]:18010' "+SHARED_NO_REGISTRY;
+  const command=SHARED_NO_REGISTRY.replace(" --json", " --registry 'http://[::1]:18010' --json");
   assert.equal(sharedPending(doc).command,command);assert.ok(doc.warning.includes(command));
   assert.equal(sharedEntry(fx).registry,'https://stored-registry.example.test');
   assert.doesNotMatch(command,/stored-registry|poison/);
