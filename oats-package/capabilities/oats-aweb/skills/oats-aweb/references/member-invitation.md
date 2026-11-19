@@ -1,7 +1,7 @@
 # Issue and accept a LOCAL hosted member invite
 
 The following provider act needs the provider 1.23.0 composition (#71); pinned native
-contract evidence is aw 1.36.23. Use an authorized selected deployment D and
+contract evidence is aw 1.36.33 (commit `877bbee94ce45aa1ff103912bc9850556e61dfb4`). Use an authorized selected deployment D and
 messaging soul S, selected-kernel `OATS_TEAM_SCOPE` dispatch and public
 `teams --dir D --json` with `teamsApi: 2` (verified at OATS 0.42 source
 `bb2ba8c9`, not an earliest-release claim). Unsupported schema refuses before

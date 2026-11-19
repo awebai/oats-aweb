@@ -1,4 +1,6 @@
 import { awChildEnv } from './aw-child-env.mjs';
+
+import { parseProviderSettings } from './provider-settings.mjs';
 // `oats aweb resident create <name>`: provisions a GLOBAL resident identity in
 // an existing hosted team from the dashboard's API key, serves it with a
 // per-user custody unit, and records it as settings.oats.aweb.residents.<name>.
@@ -315,8 +317,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
   let deployment;
   try { deployment = selectedDeployment(env, opts.dir); }
   catch (e) { throw failure("E_RESIDENT_DEPLOYMENT", "deployment", e.message); }
-  let settings;
-  try { settings = JSON.parse(env.OATS_SETTINGS || "{}"); } catch { settings = {}; }
+  const settings = parseProviderSettings(env);
   const residents = object(settings) && object(settings.residents) ? settings.residents : {};
   const root = opts.root ? resolve(opts.root) : join(deployment, ".aweb-residents", name);
   // Every failure from here on names the resident's directory, and the

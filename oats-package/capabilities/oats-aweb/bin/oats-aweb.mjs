@@ -51,6 +51,7 @@
 const CAPTURED_PRESENT = ["OATS_BINDING_FILE", "OATS_INVOCATION_CONTEXT_FILE", "OATS_SOURCE_RECEIPT_FILE"].filter((name) => Object.hasOwn(process.env, name));
 const CAPTURED_IN_HOOK = ["spawn", "retire", "launch", "upgrade"].includes(process.env.OATS_EVENT || process.argv[2]);
 if (!CAPTURED_IN_HOOK) for (const name of CAPTURED_PRESENT) process.stderr.write(`oats-aweb: ${name} is ignored: ${CAPTURED_UNSUPPORTED}\n`);
+import { parseProviderSettings } from '../lib/provider-settings.mjs';
 import { inviteMain } from '../lib/invite.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'invite') process.exit(inviteMain(process.argv.slice(3)));
 import { residentMain } from '../lib/resident.mjs';
@@ -307,13 +308,13 @@ function upgrade() {
       }
     }
   }
+  let settings;
+  try { settings = parseProviderSettings(); } catch (error) { reason ||= error.message; }
   const phase = process.env.OATS_UPGRADE_PHASE;
   if (phase === "plan") out(reason ? { adopt: false, reason, remedy: `respawn the instance: oats retire ${process.env.OATS_INSTANCE}, then oats spawn` } : { adopt: true });
   if (phase !== "apply") fatal("OATS_UPGRADE_PHASE must be plan or apply");
   if (reason) fatal(reason);
 
-  let settings = {};
-  try { const parsed = JSON.parse(process.env.OATS_SETTINGS || "{}"); if (object(parsed)) settings = parsed; } catch { /* use the default delivery */ }
   let runtime, fd;
   const warnings = [];
   try {
@@ -346,6 +347,8 @@ const AWEB_ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const AWEB_ALIAS_RULE = "invalid alias: aweb aliases must be 1-64 characters, start with a letter or digit, and then contain only letters, digits, '-' or '_'";
 /** A retired alias held until the server releases it: --purpose derives <agent>-<purpose>, so either flag gives a free one. */
 const ALIAS_UNRELEASED_REMEDY = "spawn successors with a different --name or --purpose until it is released";
+// Keep this guard: kernel 0.68.1 teamEnv can emit empty workspace name/key
+// for partial workspace facts; its floor alone does not prove this path dead.
 const CLASSIC_REFUSAL = "oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x";
 const hasWorkspaceV2Facts = () => !!(process.env.OATS_WORKSPACE_KEY || process.env.OATS_WORKSPACE_NAME || process.env.OATS_DEFAULT_TEAM);
 const isClassicEnvironment = () => !!process.env.OATS_TEAM_SCOPE && !hasWorkspaceV2Facts();
@@ -357,10 +360,23 @@ const isClassicEnvironment = () => !!process.env.OATS_TEAM_SCOPE && !hasWorkspac
 // broker types into the session's pane, and in Claude Code that keystroke can
 // answer a dialog on the human's behalf (aweb-abmy), so a runtime with a
 // channel uses it by default. See deliveryFor.
-let settings = {};
-try { settings = JSON.parse(process.env.OATS_SETTINGS || "{}"); } catch { settings = {}; }
-// Username setup validates the raw settings document in its typed preflight.
-if (settings === null && event === 'setup' && process.argv.slice(3).some(arg => arg === '--username' || arg.startsWith('--username='))) settings = {};
+let settings;
+try { settings = parseProviderSettings(); }
+catch (error) {
+  if (event === "setup") {
+    if (process.argv.includes("--json")) console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SETUP_ROOT", message: error.message, details: {} } }));
+    else console.error(`oats aweb setup: E_SETUP_ROOT: ${error.message}`);
+    process.exit(1);
+  }
+  if (operation) operationFail("E_SETTINGS", error.message);
+  if (["roster", "connect", "teams", "join", "leave"].includes(event)) {
+    console.error(`oats aweb ${event}: ${error.message}`);
+    process.exit(1);
+  }
+  fatal(error.message);
+}
+// Kernel 0.68.1 lifecycleHookEnv serializes capability.settings verbatim;
+// captured settings can still carry team. The floor does not prove it absent.
 const TEAM_SETTING_MESSAGE = "teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams";
 const hasStaleTeamSetting = settings && typeof settings === "object" && !Array.isArray(settings) && Object.hasOwn(settings, "team");
 if (hasStaleTeamSetting && ["spawn", "launch", "setup", "connect", "teams", "join", "leave", "roster"].includes(event)) fatal(TEAM_SETTING_MESSAGE);
@@ -3193,7 +3209,7 @@ ${JSON.stringify(problem.details || {})}`);
     addRoot(scope);
     return docs;
   };
-  const hostedCreateUnavailable = () => "provider setup --create without --namespace is not supported; native aw 1.36.24 supports id team create --hosted (not available in aw 1.36.23). Follow the version-matched native owner procedure, keeping invite/private output out of logs and messages, then use provider setup --join <label> --invite-stdin with the appropriate invite; use --namespace <domain> for the existing controller-owned route";
+  const hostedCreateUnavailable = () => "provider setup --create without --namespace is not supported; this provider implements controller-owned namespace creation only. Follow the version-matched native owner procedure, keeping invite/private output out of logs and messages, then use provider setup --join <label> --invite-stdin with the appropriate invite; use --namespace <domain> for the existing controller-owned route";
   const candidateTeamId = (name) => `${name}:${createNamespace}`;
   const configuredTeamForLabel = (label) => parseOatsTeams().find((t) => t.label === label && t.team)?.team || (label === defaultTeamLabel() ? defaultTeamId() : undefined);
   /** The root a team accepts into: its recorded root, else the label's per-team root. */

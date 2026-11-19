@@ -27,6 +27,8 @@ export const CAPTURED_UNSUPPORTED='captured bindings are not supported since oat
 const CAPABILITY='oats.aweb',SLOT='messaging';
 const phases=new Set(['normalize','bind','check']);
 const errorCodes=new Set(['needs-configuration','invalid-binding','provider-not-qualified']);
+// Kernel 0.68.1 lifecycleHookEnv preserves raw capability.settings, including
+// captured legacy team fields; the floor cannot prove this guard unreachable.
 const TEAM_SETTING_MESSAGE='teams are not a setting since oats.aweb 1.17 / OATS 0.30: use oats teams / oats soul teams';
 const AWEB_TEAM_ID_MESSAGE='aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)';
 const obj=value=>value!==null && typeof value==='object' && !Array.isArray(value);
@@ -157,6 +159,8 @@ export function readAwVersion({timeout=10000,env=process.env}={}) {
     child.stdout.on('data',(chunk) => {text=(text+chunk).slice(-4096);const v=versionToken(AW_VERSION_STREAM_RE,text);if(v!==null) decide(v);});
   });
 }
+// Kernel 0.68.1 teamEnv permits empty workspace facts in partial contexts;
+// a supported floor alone does not prove the classic environment unreachable.
 const CLASSIC_REFUSAL = 'oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x';
 function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_DEFAULT_TEAM);}
 export function grantYamlCustodySocket(text) {

@@ -1,5 +1,5 @@
 import { verifyPinnedAw } from './helpers/pinned-aw.mjs';
-// Opt-in real aw 1.36.23 contract check. No hosted account is created: every
+// Opt-in real aw 1.36.33 contract check. No hosted account is created: every
 // endpoint is loopback and signup is deliberately refused before credentials
 // or certificates are issued. This proves argv/wire acceptance, not live setup.
 import assert from 'node:assert/strict';
@@ -25,11 +25,11 @@ function run(command, args, options) {
   });
 }
 test('pinned real aw username contract accepts explicit root name and preserves no-root on refused signup', async t => {
-  if (!process.env.OATS_TEST_AW_1_36_23) {
-    assert.notEqual(process.env.OATS_USERNAME_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_23 to the pinned executable');
-    t.skip('requires explicit pinned real aw 1.36.23 executable'); return;
+  if (!process.env.OATS_TEST_AW_1_36_33) {
+    assert.notEqual(process.env.OATS_USERNAME_NATIVE_REQUIRED, '1', 'set OATS_TEST_AW_1_36_33 to the pinned executable');
+    t.skip('requires explicit pinned real aw 1.36.33 executable'); return;
   }
-  const binary = realpathSync(resolve(process.env.OATS_TEST_AW_1_36_23));
+  const binary = realpathSync(resolve(process.env.OATS_TEST_AW_1_36_33));
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'oats-username-native-')));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const home = join(scratch, 'home'), bin = join(scratch, 'bin');
