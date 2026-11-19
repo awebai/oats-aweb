@@ -1,6 +1,6 @@
 # Read-only native wake status evidence
 
-`aw-1.36.40-daemon-1.36.37.json` is one external-session target extracted
+`wake-status.json` is one external-session target extracted
 from a real `aw wake status --json` read at 2026-10-17T06:09:33Z. CLI: aw 1.36.40,
 commit `0c7b167cace6cf0c2347eff624bc3a87b8117dcf`, built
 `2026-10-16T07:13:56Z`. The running daemon reports 1.36.37. Absolute homes

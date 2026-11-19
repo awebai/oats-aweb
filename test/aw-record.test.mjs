@@ -11,7 +11,7 @@ import { seatServiceFromRecord } from "../oats-package/capabilities/oats-aweb/li
 // The shape aw writes with Go's yaml.v3 (4-space sequence indent, a quoted timestamp): the
 // committed aw 1.36.28 capture, and the same keys with a role and the presence fields aw 1.36.56
 // adds after a connect.
-const AW_1_36_28 = readFileSync(new URL("./fixtures/probe/native-workspace-1.36.28.yaml", import.meta.url), "utf8");
+const AW_1_36_28 = readFileSync(new URL("./fixtures/probe/native-workspace.yaml", import.meta.url), "utf8");
 const AW_CONNECTED = `aweb_url: https://record.invalid/api
 memberships:
     - team_id: t:example.test
