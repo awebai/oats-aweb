@@ -125,6 +125,38 @@ for(const action of ['create','join']) test(`setup ${action} refuses an unreadab
   assert.equal(readFileSync(join(f.base,'oats-local.yaml'),'utf8'),before);
 });
 
+test('create skips an absent default identity but refuses an existing unreadable one',t=>{
+  for(const existing of [false,true]) {
+    const f=fixture(t),created='created:example.test',target=join(f.base,'.aweb-roots','created');
+    if(!existing) rmSync(join(f.root,'.aw'),{recursive:true});
+    const kernel=fakeKernelTeamConfig(join(f.base,'create-kernel'),f.base,{
+      teams:[{label:'default',team:TEAM,from:'local'}],defaultTeam:{label:'default',team:TEAM,from:'deployment'},
+    });
+    const cli=join(f.base,'create-kernel.mjs');
+    writeFileSync(cli,`#!${process.execPath}\nimport ${JSON.stringify(kernel.cli)};`,{mode:0o755});
+    const r=f.run(['setup','--create','created','--namespace','example.test','--name','host'],{
+      OATS_CLI_BIN:cli,AW_FAKE_TEAM:created,AW_FAKE_VERSION:'1.36.56',AWEB_URL:'https://service.example.test',
+      AW_LIST_ERROR:'current identity is missing .aw/teams.yaml; join a team first',
+    });
+    if(existing) {
+      assert.equal(r.status,1,r.stdout+r.stderr);
+      assert.match(r.stderr,/could not check membership/);
+      assert.match(r.stderr,/nothing was created or redeemed/);
+      assert.deepEqual(f.fake.readCalls().map(c=>c.args),[['team','list','--json']]);
+      assert.ok(!kernel.read().teams.some(row=>row.label==='created'));
+      assert.ok(!readFileSync(join(f.base,'oats-local.yaml'),'utf8').includes(created));
+      assert.ok(!f.fake.readCalls().some(c=>c.args.includes('create')));
+    } else {
+      assert.equal(r.status,0,r.stdout+r.stderr);
+      assert.ok(r.stdout.includes(`✓ created ${created}`));
+      assert.ok(kernel.read().teams.some(row=>row.label==='created'&&row.team===created));
+      assert.ok(readFileSync(join(f.base,'oats-local.yaml'),'utf8').includes(target));
+      assert.ok(readFileSync(join(target,'.aw','workspace.yaml'),'utf8').includes('https://service.example.test'));
+      assert.ok(!f.fake.readCalls().some(c=>c.cwd===f.root&&c.args[0]==='team'&&c.args[1]==='list'));
+    }
+  }
+});
+
 for(const closed of [false,true]) test(`create reports completed work before an unreadable verdict with local teams ${closed?'closed':'allowed'}`,t=>{
   const f=fixture(t),created='created:example.test',target=join(f.base,'.aweb-roots','created');
   const kernel=fakeKernelTeamConfig(join(f.base,'create-kernel'),f.base,{

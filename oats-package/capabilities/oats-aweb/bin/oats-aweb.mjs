@@ -3241,6 +3241,7 @@ ${JSON.stringify(problem.details || {})}`);
   }
 
   const want = teamId || teamName;
+  const defaultRootHasIdentity = () => existsSync(join(scope, ".aw"));
   const readTeams = () => readTeamsAt(scope);
   const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => sameAwebTeamId(String(tid), want) || String(tid).toLowerCase().startsWith(`${String(want).trim().toLowerCase()}:`)) : undefined;
   const rootAlias = () => {
@@ -3478,7 +3479,7 @@ ${JSON.stringify(problem.details || {})}`);
   try {
     if (createLabel && !createNamespace) throw new Error(hostedCreateUnavailable());
     if (joinLabel || createLabel) deployment = selectedDeployment(process.env, setupDir);
-    const hasRoot = existsSync(join(scope, ".aw"));
+    const hasRoot = defaultRootHasIdentity();
     let teams = { memberships: [] };
     if (hasRoot) {
       try { teams = readTeams(); }
@@ -3534,7 +3535,7 @@ ${JSON.stringify(problem.details || {})}`);
       }
       if (created.teamKeyPath) console.log(`  team key: ${created.teamKeyPath} (user-wide: every process this user runs can read it; never share it)`);
       console.log(`  team server: ${created.teamServer.url} (${created.teamServer.publishedNow ? "published at AWID and verified" : "already published at AWID; verified"} against the team key)`);
-      teams = readTeams();
+      teams = defaultRootHasIdentity() ? readTeams() : { memberships: [] };
       printVerdict(teams);
       process.exit(0);
     }
