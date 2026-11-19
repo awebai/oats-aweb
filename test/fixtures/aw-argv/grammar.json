@@ -496,6 +496,19 @@
       "--team": true,
       "--trace": false
     },
+    "mail threads": {
+      "--cursor": true,
+      "--help": false,
+      "--limit": true,
+      "--debug": false,
+      "--human": true,
+      "--human-domain": true,
+      "--identity-home": true,
+      "--json": false,
+      "--server-name": true,
+      "--team": true,
+      "--trace": false
+    },
     "status publish": {
       "--alias": true,
       "--document": true,

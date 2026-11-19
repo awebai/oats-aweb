@@ -38,6 +38,16 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## messaging:mail: an instance's mail, read without acknowledging it
+
+`oats operation run messaging:mail --home <abs> --json` (and `oats aweb mail`
+from a home) answers the messaging layer's `mail` answer, `mailApi: 1`: the
+instance's received and sent mail, newest first, across all its identities.
+It never acknowledges or marks anything read, and needs aw >= 1.36.53
+(`E_AW_TOO_OLD` below). The OATS Desktop's mail sheet reads it. How it is
+read, its bounds and its errors: [docs/mail-read.md](docs/mail-read.md); the
+answer itself: the OATS kernel's `docs/desktop-cli-api.md`.
+
 ## 1.43.0 — explicit registry admission, grant seats in their team, membership reads that fail closed
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
