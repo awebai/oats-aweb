@@ -43,6 +43,23 @@ const resume=['setup','--join','joined','--name','host'];
 const identityRead=c=>c.args[0]==='whoami'||(c.args[0]==='team'&&c.args[1]==='list')||(c.args[0]==='id'&&c.args[1]==='team'&&c.args[2]==='list');
 const mutation=c=>c.args[0]==='init'||c.args[0]==='workspace'||(c.args[0]==='id'&&c.args[1]==='team'&&['create','register','set-server','invite','accept-invite'].includes(c.args[2]));
 
+test('create records the first local team and reports its ready root without a stale no-team verdict (#292)',t=>{
+  const f=fixture(t);
+  f.kernel.set({...f.kernel.read(),localTeams:true,teams:[],defaultTeam:null});
+  const r=f.run(create,{OATS_DEFAULT_TEAM:'',OATS_DEFAULT_TEAM_ID:'',OATS_DEFAULT_TEAM_FROM:'',OATS_TEAMS:'[]',OATS_WORKSPACE_NAME:'fixture'});
+  assert.equal(r.status,0,r.stdout+r.stderr);
+  assert.equal(r.stderr,'');
+  const state=f.kernel.read();
+  assert.ok(state.teams.some(row=>row.label==='joined'&&row.team===TEAM));
+  assert.deepEqual(state.defaultTeam,{label:'joined',team:TEAM,from:'deployment'});
+  assert.ok(readFileSync(join(f.base,'oats-local.yaml'),'utf8').includes(f.target));
+  assert.deepEqual(r.stdout.trim().split('\n').slice(-2),[
+    'readiness: ready',
+    `✓ root ${f.target} (from the deployment's per-team directory) is a member of ${TEAM}.`,
+  ]);
+  assert.doesNotMatch(r.stdout,/no teams configured|readiness: needs-configuration/);
+});
+
 for(const action of ['create','resume']) test(`${action} uses its selected root despite an unreadable default root`,t=>{
   const f=fixture(t);
   writeFileSync(join(f.root,'.aw','teams.json'),'not-json');
