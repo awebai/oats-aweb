@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Changed: private registry admission is explicit host configuration.**
+  `oats aweb setup --registry <origin>` records host-only
+  `settings.oats.aweb.registry` in oats-local.yaml. Only that setting reaches
+  registry-dependent children, LOCAL/GLOBAL sessions, custody serve and wake
+  run as AWID_REGISTRY_URL. Saved aw URLs are locators and never grant private
+  network access. GLOBAL sessions no longer promote identity.yaml's registry.
+  Ambient-only spawn/join and readiness, and GLOBAL homes with a non-default
+  saved registry but no setting, name `registry-setting-required` and the
+  complete setup, custody and wake restart remedy. Setup/resident no longer
+  take an ambient registry as an operator input (including BYOT admin calls).
+  Printed cleanup commands use the current configured pin, not a saved URL.
+  Origins accept IPv6 and canonicalize default ports; paths, userinfo, queries
+  and fragments are explicitly unsupported (give the bare origin for /api).
+  A shared wake unit refuses a changed pin and names the supported migration
+  choices. See README's self-hosting setup card before upgrading.
+
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:
   {"code":...}`, so setup now reads that top-level code through its existing

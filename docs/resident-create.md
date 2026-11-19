@@ -21,8 +21,8 @@ deployment's.
   environment and the command runs on a terminal, it asks for the key without
   echoing it. With no key and no terminal it refuses at once. No flag takes a
   key.
-- `AWEB_URL` is the aweb service. `AWID_REGISTRY_URL` is passed on only when
-  it is set (a local stack uses it; hosted aweb does not need it).
+- `AWEB_URL` is the aweb service. The explicit registry setting is passed as
+  `AWID_REGISTRY_URL` when configured (a private local stack needs it).
 - `<name>` is the resident's name, an aweb alias; its address is
   `<namespace>/<name>`.
 - `--root <dir>` is the resident's directory, R. It defaults to
@@ -89,14 +89,13 @@ the ops and one that is not ready each fail with their own message.
 - It is read only from `AWEB_API_KEY` or the no-echo prompt.
 - It is in the environment of one child process only: the init run. That
   environment is built from nothing: `PATH`, `HOME`, `AWEB_URL`,
-  `AWEB_API_KEY`, `AW_NO_UPDATE_CHECK=1`, and `AWID_REGISTRY_URL` when set. No
+  `AWEB_API_KEY`, `AW_NO_UPDATE_CHECK=1`, and `AWID_REGISTRY_URL` from the explicit setting when configured. No
   `AWEB_IDENTITY_HOME`, no other variable.
 - Every other child gets no key and no `AWEB_*` variable. aw's reads in R
   (`aw version`, `whoami`, the doctors, `custody status`) run with `PATH`,
-  `HOME`, `AW_NO_UPDATE_CHECK=1` and, when it is set, the init's
-  `AWID_REGISTRY_URL`. (A global identity also keeps its registry in
-  `.aw/identity.yaml`: aw's offline identity checks answer the same with and
-  without it.) The unit managers get `PATH`, `HOME`, `XDG_RUNTIME_DIR` and
+  `HOME` and `AW_NO_UPDATE_CHECK=1`; online whoami/registry reads also receive
+  the configured `AWID_REGISTRY_URL`. Version, offline doctors and local
+  custody status receive no registry pin. The unit managers get `PATH`, `HOME`, `XDG_RUNTIME_DIR` and
   `DBUS_SESSION_BUS_ADDRESS`; the kernel (its version, its teams and the team
   verbs) no `AWEB_*` or `AWID_*` variable.
 - The command never opens, copies, moves or deletes a file under R's `.aw`:
@@ -174,7 +173,7 @@ key: it verifies the resident and adds the mapping; it is not a second create.
 aw has no install verb: `aw custody serve` takes no flags and serves the
 identity home of its working directory. The command writes a per-user unit
 that runs `<aw> custody serve` with working directory R and an environment of
-`PATH` and `HOME` only. Its `PATH` is aw's directory (and its target's, when
+`PATH`, `HOME` and the configured registry pin, when present. Its `PATH` is aw's directory (and its target's, when
 aw is a link), the directory of the absolute `OATS_NODE_BIN` supplied by the
 kernel (an npm-installed aw may need it) and `/usr/local/bin:/usr/bin:/bin`.
 The kernel owns the node-path selection rule; the provider keeps that path,
@@ -289,19 +288,19 @@ retains of its inherited environment.
 
 ## A seat's registry
 
-A grant seat on the resident verifies senders at an awid registry. Its grant
-home records none, so aw would fall back to `AWID_REGISTRY_URL`, else to its
-default registry (`https://api.awid.ai`), and mail from a resident on another
-registry would read as `verification_stale`. So the spawn and launch hooks of a
-seat (`identity.mode` global) give it `AWID_REGISTRY_URL`, set to the
-`registry_url` that the resident's `.aw/identity.yaml` records (R, found
-through `settings.oats.aweb.residents.<name>`), when that registry's origin is
-not aw's default. When it is the default, or the identity records none, they
-set nothing. The operator's own `AWID_REGISTRY_URL` is never passed on. A
-recorded value that is not an http(s) registry origin is a readiness problem
-(`custody`), and a spawn warning, and is not passed on. That message names
-the identity file and the reason, never the value, which may hold
-credentials.
+LOCAL and GLOBAL sessions receive AWID_REGISTRY_URL only from the operator's
+`settings.oats.aweb.registry`. Configure it with `oats aweb setup --registry
+<origin>` in the deployment before creating a resident. A saved registry_url
+is a locator, never permission to reach private addresses. A GLOBAL home
+with a saved non-default registry and no explicit setting receives the
+`registry-setting-required` readiness/spawn/launch migration, with the setup
+command and custody/wake restart steps. Ambient-only setup/resident commands
+also refuse rather than silently target a public registry.
+
+Custody serve is its own invocation. Its generated unit carries the configured
+origin as AWID_REGISTRY_URL; rerun `oats aweb resident create <name>` after a
+setting change to restart it. The shared wake daemon requires its matching
+operator installation; see README's self-hosting setup card for conflict remedies.
 
 ## Output
 
@@ -884,10 +883,11 @@ under test, at its **tagged** commit. It runs the dashboard's line
 verbatim:
 
 ```
-AWEB_API_KEY=<key> AWEB_URL=<local Cloud url> AWID_REGISTRY_URL=<local AWID url> oats aweb resident create <name>
+oats aweb setup --registry <local AWID origin>
+AWEB_API_KEY=<key> AWEB_URL=<local Cloud url> oats aweb resident create <name>
 ```
 
-`AWID_REGISTRY_URL` is needed only because the local stack's registry is not
+The registry setting is needed because the local stack's registry is not
 the default one.
 
 **Fixture contract.**
@@ -905,7 +905,7 @@ the default one.
 4. The seat: the printed steps, in order (the spawn line, with `<soul>`
    replaced), with `--preview` first. Spawn mints the seat's grant from the
    resident's custody, and the seat's environment carries the resident's
-   registry (`AWID_REGISTRY_URL`, the local AWID).
+   registry (`settings.oats.aweb.registry`, the local AWID).
 
 What each acceptance item exercises here:
 

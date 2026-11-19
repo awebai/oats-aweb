@@ -52,3 +52,21 @@ test('real hostOnly omission keeps the provider development default', {skip:!roo
   assert.equal(selectClaudeChannel().mode,'development');
   assert.equal(selectClaudeChannel(result.payloads['oats.aweb'].claudeChannelMode).mode,'development');
 });
+
+for(const layer of ['soul','workspace','spawn'])test(`real hostOnly rejects registry admission from ${layer}`,{skip:!root},async()=>{
+  const {soul,discovery,options}=fixture(),value='http://127.0.0.1:18010';
+  if(layer==='soul')soul.definition.messaging={registry:value};
+  if(layer==='workspace')discovery.workspace.messaging={registry:value};
+  if(layer==='spawn')options.spawn={providers:{'oats.aweb':{registry:value}}};
+  await assert.rejects(kernel.resolveSoul(discovery,soul,options),error=>{
+    assert.equal(error.code,'E_WORKSPACE_SCHEMA');assert.equal(error.details.reason,'host-only-key');
+    assert.equal(error.details.key,'registry');return true;
+  });
+});
+test('real hostOnly admits registry only from operator local settings',{skip:!root},async()=>{
+  const {soul,discovery,options}=fixture(),registry='http://[::1]:18010';
+  options.local={settings:{'oats.aweb':{registry}}};
+  const result=await kernel.resolveSoul(discovery,soul,options);
+  assert.equal(result.payloads['oats.aweb'].registry,registry);
+  assert.deepEqual(result.payloadOrigins['oats.aweb']['/registry'],{kind:'host',at:'oats-local.yaml#/settings/oats.aweb'});
+});

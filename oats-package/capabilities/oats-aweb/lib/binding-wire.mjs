@@ -15,7 +15,7 @@ import {healthPublish, healthSettings} from './health-settings.mjs';
 import { identityBooleans } from './boolean-setting.mjs';
 import { retainedSeatCheck } from './retained-seat-service.mjs';
 import { childOutcome } from './child-outcome.mjs';
-import { residentRegistryEnv } from './resident-registry.mjs';
+import {registryEnv, registryOrigin, registryMigration} from './registry-setting.mjs';
 import { teamKeyIn } from './aweb-team-id.mjs';
 
 export const BINDING_WIRE_LIMITS=Object.freeze({bytes:1024*1024,depth:32,entries:16384});
@@ -93,9 +93,10 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
 function settings(value) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'team')) wireError('needs-configuration',TEAM_SETTING_MESSAGE);
-  keys(value,['delivery','claudeChannelMode','root','roots','identity','residents','join','health'],[]);
+  keys(value,['delivery','claudeChannelMode','root','roots','identity','residents','join','health','registry'],[]);
   // health.publish's refusal is carried into the readiness result (readinessDetails), so the
   // wire checks every other health setting here.
+  try {registryOrigin(value);} catch(error) {wireError('needs-configuration',error.message);}
   try {healthSettings(obj(value.health)?{...value,health:{...value.health,publish:undefined}}:value);} catch {wireError('needs-configuration');}
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
@@ -249,6 +250,7 @@ async function readinessDetails(settings,{deployment,env=process.env,retainedSea
   if(classicEnv(env)) return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:CLASSIC_REFUSAL}]}};
   const invalidTeam=invalidAwebTeamId(env);if(invalidTeam)return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:AWEB_TEAM_ID_MESSAGE}]}};
   const team=teamFromSettings(settings,null,{env}),candidate=rootCandidate(settings,team,{deployment,env}),problems=[],warnings=[];
+  const migration=registryMigration(settings,env);if(migration) problems.push({code:'registry-setting-required',message:migration});
   const aw=await awFloorObservation();if(aw.message) problems.push({code:'needs-configuration',message:aw.message});
   const tested=aw.message?undefined:awTestedWarning(settings,aw.version,{deployment,env});
   if(tested) warnings.push({code:'aw-newer-than-tested',message:tested});
@@ -259,9 +261,9 @@ async function readinessDetails(settings,{deployment,env=process.env,retainedSea
   if(!retainedSeat && needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,awVersion:aw.version,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
-function runAw(argv,cwd,{timeout=60000}={}) {
+function runAw(argv,cwd,{timeout=60000,settings={}}={}) {
   // The shared selector list applies to every readiness child.
-  const env=awChildEnv();
+  const env=awChildEnv(process.env,registryEnv(settings,argv));
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
   catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} ${childOutcome(e,timeout)}`);}
 }
@@ -302,7 +304,7 @@ export function healthPublishesNow(ctx,env,deadline) {
 async function workspaceReadinessPhase(req,{env=process.env}={}) {
   // Phase-start clock bounds the calls and judges the already-recorded grant.
   const now=Date.now(),deadline=now+28000;
-  const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
+  const localAw=(argv,cwd)=>runAw(argv,cwd,{settings:req.settings,timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
   const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
@@ -327,8 +329,8 @@ async function workspaceReadinessPhase(req,{env=process.env}={}) {
     if(!resident) problems.push({code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'});
     else if(typeof custody!=='string' || !isAbsolute(custody) || !existsSync(join(custody,'.aw','identity.yaml'))) problems.push({code:'custody',message:`identity.mode "global" resident ${JSON.stringify(resident)} is not resolvable; set oats-local.yaml settings.oats.aweb.residents.${resident} to an absolute custody directory whose .aw/identity.yaml exists`});
     else {
-      const registry=residentRegistryEnv(custody);
-      if(registry.problem) problems.push({code:'custody',message:registry.problem});
+      const problem=registryMigration(req.settings,env,{custody});
+      if(problem) problems.push({code:'registry-setting-required',message:problem});
       if(details.team) {
         try {
           // A never-grant in use, or the next mint's ttl (a renewal keeps the seat's

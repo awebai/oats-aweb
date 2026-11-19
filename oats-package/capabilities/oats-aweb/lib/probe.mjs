@@ -1,3 +1,4 @@
+import {registryEnv} from './registry-setting.mjs';
 import {mkdtempSync, chmodSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -36,7 +37,7 @@ export async function runProbe(argv, {env = process.env, signal, now, wall, chil
     temporary = mkdtempSync(join(tmpdir(), 'oats-aweb-probe-'));
     chmodSync(temporary, 0o700);
     const cleanEnv = probeEnvironment(env);
-    const execute = (cmd, args, capMs) => child(cmd, args, {budget, cwd: temporary, env: cleanEnv, capMs});
+    const execute = (cmd, args, capMs) => child(cmd, args, {budget, cwd: temporary, env: cmd===process.execPath ? cleanEnv : {...cleanEnv,...registryEnv(target.settings,args)}, capMs});
     const kernel = async (args, capMs = 5000) => parseProbeJson(await execute(process.execPath, [env.OATS_CLI_BIN, ...args], capMs));
     try {
       const manifest = readProbeRecord(fileURLToPath(new URL('../oats.json', import.meta.url)));
