@@ -721,7 +721,8 @@ test("setup --create without namespace distinguishes unsupported provider from n
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /provider setup --create without --namespace is not supported; native aw 1\.36\.24 supports id team create --hosted/);
+  assert.match(result.stderr, /provider setup --create without --namespace is not supported; this provider implements controller-owned namespace creation only/);
+  assert.match(result.stderr, /Follow the version-matched native owner procedure/);
   assert.deepEqual(fake.readCalls(), []);
   assert.deepEqual(kernel.readCalls(), []);
 });
