@@ -68,7 +68,8 @@ labelled with its label, from the home's recorded `capabilityMeta`.
 aw gives each identity's threads newest activity first, and a conversation's
 messages from its OLDEST end. The read walks the threads of every identity in
 activity order, a few at a time (6 aw calls at once), and merges their
-messages, newest first by `createdAt`, then message id, then team. A message
+messages, newest first by `createdAt` (to the microsecond aweb gives, not
+only the millisecond), then message id, then team. A message
 is certain once it is newer than the latest activity of every thread not yet
 read: no unread thread can hold a newer one. A page of threads not yet listed
 counts at the activity of the last thread listed before it. The page is the newest `limit`

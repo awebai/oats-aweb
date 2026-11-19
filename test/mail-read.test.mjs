@@ -233,7 +233,7 @@ test('arguments: limit 1 to 200, an opaque cursor from an answer, one conversati
     assert.throws(() => parseMailArgs(bad), { code: 'E_BAD_ARGS' }, bad.join(' '));
   }
   const cursor = encodeCursor({ createdAt: iso(1), id: 'm1', team: 'acme' }, null);
-  assert.deepEqual(parseMailArgs(['--cursor', cursor]).cursor, { createdAt: iso(1), id: 'm1', team: 'acme', ms: Date.parse(iso(1)) });
+  assert.deepEqual(parseMailArgs(['--cursor', cursor]).cursor, { createdAt: iso(1), id: 'm1', team: 'acme', ms: Date.parse(iso(1)), sub: 0 });
   assert.throws(() => parseMailArgs(['--cursor', cursor, '--conversation', 'c1']), { code: 'E_BAD_ARGS' });
 });
 
@@ -288,4 +288,20 @@ test('a cursor whose fields are not a time, an id and a team is E_BAD_ARGS', () 
   for (const doc of [{ v: 1, at: 'not-a-date', id: 'm1', team: 'acme' }, { v: 1, at: iso(1), id: '', team: 'acme' }, { v: 1, at: iso(1), id: 'm1', team: '' }, { v: 1, at: iso(1), id: 7, team: 'acme' }]) {
     assert.throws(() => parseMailArgs(['--cursor', raw(doc)]), { code: 'E_BAD_ARGS' }, JSON.stringify(doc));
   }
+});
+
+test('times are ordered below the millisecond: aweb\'s microseconds decide, on one identity, across identities and across pages', async () => {
+  const at = (micro) => `2026-11-19T10:00:00.000${micro}Z`;
+  const one = { [H1]: { whoami: ME, threads: [[thread('c1', 0, { last_message_at: at('900') })]], conversations: { c1: [msg('z-older', 0, { created_at: at('100') }), msg('a-newer', 0, { created_at: at('900') })] } } };
+  let { result } = await read(one, { limit: 1 });
+  assert.deepEqual(result.mail.messages.map((m) => m.id), ['a-newer']);
+  ({ result } = await read(one, { limit: 1, cursor: decodeCursor(result.mail.nextCursor) }));
+  assert.deepEqual(result.mail.messages.map((m) => m.id), ['z-older']);
+  assert.equal(result.mail.hasMore, false);
+  const two = {
+    [H1]: { whoami: ME, threads: [[thread('c1', 0, { last_message_at: at('100') })]], conversations: { c1: [msg('z-older', 0, { created_at: at('100') })] } },
+    [H2]: { whoami: ME2, threads: [[thread('a1', 0, { last_message_at: at('900') })]], conversations: { a1: [msg('a-newer', 0, { self: ME2, conversation: 'a1', created_at: at('900') })] } },
+  };
+  ({ result } = await read(two, { limit: 2, identities: [{ team: 'acme', identityHome: H1, primary: true }, { team: 'alpha', identityHome: H2, primary: false }] }));
+  assert.deepEqual(result.mail.messages.map((m) => m.id), ['a-newer', 'z-older']);
 });

@@ -142,16 +142,20 @@ export function decodeCursor(text, conversation = null) {
   const key = (v) => typeof v === 'string' && v.length > 0 && v.length <= 500;
   if (!doc || doc.v !== CURSOR_VERSION || !key(doc.at) || !Number.isFinite(Date.parse(doc.at)) || !key(doc.id) || !key(doc.team)) throw fail('E_BAD_ARGS', 'cursor is not a nextCursor from a previous answer');
   if ((doc.c ?? null) !== (conversation ?? null)) throw fail('E_BAD_ARGS', 'cursor belongs to another read: pass the same conversation (or none) as the answer that gave it');
-  return { createdAt: doc.at, id: doc.id, team: doc.team, ms: timeOf(doc.at) };
+  return { createdAt: doc.at, id: doc.id, team: doc.team, ms: timeOf(doc.at), sub: subMsOf(doc.at) };
 }
 
 // ---------------------------------------------------------------------------
 // Order: newest first by createdAt, then by id, then by team, all descending.
 
 function timeOf(iso) { const t = Date.parse(iso); return Number.isFinite(t) ? t : -Infinity; }
+/** The fraction of a second below the millisecond that Date.parse drops, in
+ *  nanoseconds (aweb gives microseconds): `.000100` and `.000900` differ. */
+function subMsOf(iso) { const m = /T[^.]*\.(\d+)/.exec(String(iso)); return m ? Number(`${m[1].slice(3)}000000`.slice(0, 6)) : 0; }
 /** > 0 when a is newer (comes first), < 0 when older. */
 function compareKeys(a, b) {
   if (a.ms !== b.ms) return a.ms > b.ms ? 1 : -1;
+  if (a.sub !== b.sub) return a.sub > b.sub ? 1 : -1;
   if (a.id !== b.id) return a.id > b.id ? 1 : -1;
   if (a.team !== b.team) return a.team > b.team ? 1 : -1;
   return 0;
@@ -230,6 +234,7 @@ function messageRecord(m, state, threadTitle) {
     priority: mailPriority(m.priority),
     // Order key; dropped from the answer.
     ms: timeOf(createdAt),
+    sub: subMsOf(createdAt),
   };
 }
 
@@ -400,7 +405,7 @@ function identityRows(states) {
   return states.map((s) => ({ team: s.row.team, alias: s.self?.alias ?? '', identity: s.self?.identity ?? '', primary: !!s.row.primary, error: s.error }));
 }
 
-const publicMessage = ({ ms: _ms, ...m }) => m;
+const publicMessage = ({ ms: _ms, sub: _sub, ...m }) => m;
 
 /** The answer, cut to `resultMaxBytes`: messages are dropped from the oldest
  *  end until it fits, and then `hasMore` is true with a cursor. */
