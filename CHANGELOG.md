@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fixed: registry admission stays explicit through command formatting.**
+  Unknown leading aw flags retain the configured pin, and controller cleanup
+  commands place it through validated arguments without relying on a JSON
+  suffix. An invalid registry still blocks retire, and the error now says
+  nothing was cleaned and names the setting repair and retry. Interrupted
+  mint cleanup keeps recorded registry locators only as audit provenance.
+
 - **Fixed: the round-trip probe sends on the tested aw (1.36.58).** It checks
   the selected native mail-send help, retains the explicit fresh-thread flag
   needed by aw 1.36.33, and omits the flag removed in aw 1.36.53. Unknown or

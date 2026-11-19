@@ -46,7 +46,7 @@ function fakeAw(t) {
   writeFileSync(join(bin, "aw"), `#!${process.execPath}
 const fs = require("node:fs"), path = require("node:path");
 const args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, cwd: process.cwd(), registry: process.env.AWID_REGISTRY_URL ?? null }) + "\\n");
 if (args[0] === "version") { console.log("aw 1.36.58\\n  commit: abc"); process.exit(0); }
 (${joinFromFake})(args);
 (${membersFake})(args);
@@ -455,6 +455,8 @@ test("a controller retry takes --registry only from the current setting while th
   const entry = JSON.parse(readFileSync(fx.recordFile, "utf8")).entries[0];
   assert.equal(entry.registry, REGISTRY);
   assert.equal(entry.command, STORED_COMMAND, "the compatibility writer retains its authoritative inputs");
+  const reads = membersCalls(fx);
+  assert.ok(reads.length > 0 && reads.every(c => c.registry === configured && c.args.join(' ') === `id team members --team-id=${TEAM} --json`), JSON.stringify(reads));
 });
 
 

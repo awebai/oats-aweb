@@ -446,3 +446,23 @@ test("roster of a default team configured in mixed case, with no root set, falls
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(JSON.parse(r.stdout).members.some((m) => m.alias === "dev-1"), r.stdout);
 });
+
+
+test("a stored command without --json is ignored and the displayed pin reaches the shell as the same argv", t => {
+  const fx = fixture(t), registry = 'http://[::1]:18010';
+  write(fx.recordFile, JSON.stringify({version:1,entries:[recorded({certificateId:'cert-default-123',registry:'https://stored.invalid',command:'aw id team remove-member --namespace poisoned.invalid --team wrong --cert-id poisoned'})]}));
+  const before = readFileSync(fx.recordFile,'utf8');
+  fx.members([{certificate_id:'cert-default-123',team_id:DEFAULT,alias:'dev-1'}]);
+  const r = fx.hook('roster',['--json'],{OATS_SETTINGS:JSON.stringify({roots:{[DEFAULT]:join(fx.ws,'root')},registry})});
+  assert.equal(r.status,0,r.stdout+r.stderr);
+  const command = JSON.parse(r.stdout).members[0].retired.command;
+  assert.equal(command, DEFAULT_COMMAND.replace(' --json', ` --registry '${registry}' --json`));
+  assert.doesNotMatch(command,/stored\.invalid|poisoned|--team wrong/);
+  const bin = join(fx.ws,'recorder-bin'), output = join(fx.ws,'shell-argv.json');
+  write(join(bin,'aw'), `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(output)},JSON.stringify(process.argv.slice(2)));\n`);
+  chmodSync(join(bin,'aw'),0o755);
+  const ran = spawnSync('/bin/sh',['-c',command],{cwd:fx.ws,env:{PATH:bin+':/usr/bin:/bin',HOME:fx.ws},encoding:'utf8'});
+  assert.equal(ran.status,0,ran.stdout+ran.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(output,'utf8')),['id','team','remove-member','--namespace','example.test','--team','default','--cert-id','cert-default-123','--registry',registry,'--json']);
+  assert.equal(readFileSync(fx.recordFile,'utf8'),before);
+});
