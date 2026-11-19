@@ -1,6 +1,34 @@
 # Changelog
 
-## Unreleased
+## 1.43.0 — 2026-11-19
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.
+
+This release makes three things explicit:
+- **Registry admission comes from one host setting.** Saved aw URLs are only locators (#284).
+- **aw children ignore ambient selectors.** Each takes only what a call passes by name (#275, #278).
+- **A grant seat's lifecycle calls stay in its recorded team.** Its `seat.json` owns that team (#279).
+
+Membership and custody reads now fail closed (#283). Retained seating verifies status and identity natively and copies authority privately (#276). An empty grant seat completes retire (#273). Setup names the register refusal's server code (#274) and an unavailable username, points a new account at `claim-human`, and keeps invite tokens off screens (#286). The `/oats-aweb` skill keeps one current card per act (#287).
+
+**What a deployment must change:**
+- **A deployment on a non-public aw registry:**
+  1. Run `oats aweb setup --registry <origin>` in the deployment.
+  2. Rerun `oats aweb resident create <name>` for each resident.
+  3. Run `oats aweb wake install` from the operator's own shell.
+  4. Restart its homes.
+
+  Until then, setup, spawn, join, launch and readiness refuse with `registry-setting-required`. Neither a saved `registry_url` nor an exported `AWID_REGISTRY_URL` grants private-network access anymore. A deployment on the public registry changes nothing.
+- **Exported aw selectors no longer reach aw children:** `AWEB_IDENTITY_HOME`, `AWEB_URL`, `AWEB_API_KEY`, `AWEB_ROLE_NAME`, `AWEB_ROLE`, `AWID_REGISTRY_URL`. A deployment that exported them for ordinary lifecycle commands records the service in the selected aw home, and a private registry in the setting above. Malformed `OATS_SETTINGS` now refuses instead of falling back to defaults.
+- **Grant seats:**
+  - A grant seat with `.oats-aweb/seat.json` whose configured `identity.resident` or default team has changed refuses start: respawn it.
+  - A home renewed into another team by an earlier release needs the printed manual revoke, then `oats retire <instance> --force`.
+- **Retained seats:** a symlinked `identity.source`, or a symlink or special file in the copied authority, now refuses. Point it at the real directory, or replace the link with the real file.
+- **Scripts that read membership** handle three changes:
+  - `setup --check-only --json` answers `member:null` with a nonzero exit when the membership can't be read.
+  - `join --plan` fails with `E_SETUP_MEMBERSHIP` for an unreadable root.
+  - `setup --create`, and `setup --join` without a token, refuse while the existing default root's membership can't be read.
+- **Scripts that run `setup --username`:** an unavailable username now fails as `E_SETUP_USERNAME_UNAVAILABLE`, where it was `E_SETUP_NATIVE`. On a terminal, `--invite-stdin` prompts with input hidden; piped stdin is unchanged.
 
 - **Changed: private registry admission is explicit host configuration.**
   `oats aweb setup --registry <origin>` records host-only
