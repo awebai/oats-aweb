@@ -53,6 +53,6 @@ test('the pinned kernel admits the AWID_ namespace and a grant seat that carries
   const { instance, home: seatHome } = oats([...seat, '--no-launch']).result;
   const record = JSON.parse(readFileSync(join(seatHome, 'instance.json'), 'utf8'));
   assert.equal(record.capabilityMeta['oats.aweb'].identity.mode, 'global');
-  assert.equal(record.launch.hooks.env.AWID_REGISTRY_URL, 'http://127.0.0.1:52519');
+  assert.equal(record.launch.hooks.env.AWID_REGISTRY_URL, 'http://127.0.0.1:18010');
   oats(['retire', instance]);
 });

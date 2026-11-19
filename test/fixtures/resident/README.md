@@ -1,19 +1,27 @@
 # aw output fixtures for `oats aweb resident create`
 
-Every file here is aw output **captured verbatim from a real aw run**, by
-`capture.sh` in this directory. None is written by hand or derived from aw's
-source. Each `<name>.stdout`, `<name>.stderr` and `<name>.exit` is one run.
+The root-level data files are native aw output refreshed by `capture.sh` in
+the disposable CI stack, then sanitized. Each `<name>.stdout`, `<name>.stderr`
+and `<name>.exit` is one command; `identity-global.yaml` is the public identity
+record from that same run. No signing key or identity directory is copied.
 
-- **aw:** 1.36.33, commit `877bbee94ce45aa1ff103912bc9850556e61dfb4`
-  (`aw-version.txt`; the npm release on this host).
-- **Stack:** aweb's local stack, `docker-compose.e2e.yml` (postgres, redis,
-  awid 0.5.23, OSS aweb server) at aweb `1d7ee6bb3519a3c940ebeb12afc86d921dc13e27`.
-- **Captured:** 2026-10-10 (`captured-at.txt`).
+- **aw:** 1.36.33, commit `877bbee94ce45aa1ff103912bc9850556e61dfb4`.
+- **Captured:** 2026-11-19T01:47:58Z (`captured-at.txt`).
+- **Artifact:** `aw-captures-1.36.33`, ID `14491051131`, `resident/` subtree.
 
-These fixtures drive unit tests only. They are **never acceptance evidence**:
-acceptance is the joint real-stack E2E against the local aweb Cloud. They are
-refreshed with `capture.sh` whenever aw's output contract changes, and this
-README is updated with the new version, commit and date.
+Captured on 2026-11-19 in [CI run 44439390779](https://github.com/awebai/oats-aweb/actions/runs/44439390779), from
+package branch `f978ed929d0eb0a21e55b7f8770b5b143e2eca45` and PR merge
+`df85234e7ca74a01d0e16a9b6f1db2d7e3d75f78` (main `66d02dc1` plus that branch).
+The disposable stack was aweb `679d50066d4160748f6f9cfa0537161992399573`;
+the kernel was OATS `13f8f133808f5932bf461108703c1bada4b3f3d3`.
+Both the floor and tested stack groups passed. Their artifacts were inspected
+before committing; they contain public wire data, no credentials or private keys.
+The sanitizer redacts credential patterns and normalizes runner paths. Disposable
+public IDs, timestamps, field omissions and newly emitted fields are preserved.
+
+These fixtures drive unit tests; OSS observations do not prove hosted acceptance.
+Refresh them with `capture.sh` when aw's output contract changes and update this
+receipt. The historical `cloud/` preview captures below were not refreshed.
 
 | Fixture | What produced it |
 | --- | --- |
@@ -26,7 +34,7 @@ README is updated with the new version, commit and date.
 | `init-certificate-connect` | A complete global identity made the way aweb's own real-stack e2e makes one (`aw id create --skip-dns-verify`, team create, add-member, fetch-cert), then connected with aw's certificate `aw init --do-not-touch-agents-md --json`. It prints the same `connectOutput` JSON as the API-key init (`cmd/aw/init_connect.go`). |
 | `whoami`, `doctor-identity-offline`, `doctor-registry-online` | `aw whoami --json`, `aw doctor identity --offline --json` and `aw doctor registry --online --json` in that complete identity's directory. |
 | `custody-status-not-running`, `custody-status-running` | `aw custody status --json` there, before and while `aw custody serve` runs. |
-| `identity-global.yaml` | Not a run's output: the `.aw/identity.yaml` that aw 1.36.33 wrote for a complete global identity made the same way, copied unchanged on 2026-10-10 from the named macOS run of 1.26.0 (run `rcmac-2c46153c`, against this same stack). It holds no key (the signing key is `signing.key`); its `registry_url` is the stack's awid, a registry other than aw's default. `test/resident-seat-registry.test.mjs` reads it, and makes its default-registry and no-registry cases by changing only the `registry_url` line. |
+| `identity-global.yaml` | The public `.aw/identity.yaml` written by this run's complete global identity. Its `registry_url` is the disposable stack's private awid, `http://127.0.0.1:18010`. `resident-seat-registry.test.mjs` changes only that line for its default-registry/no-registry vectors. |
 
 ## `cloud/`: aweb Cloud's local preview stack
 

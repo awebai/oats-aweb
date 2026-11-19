@@ -1,0 +1,12 @@
+{
+  "address": "res-602fcbed.test/carol",
+  "alias": "carol",
+  "apps": [],
+  "custody_socket_path": "/fixture/journey/deploy/.aweb-residents/carol/.aw/run/custody.sock",
+  "expires_at": "never",
+  "grant_id": "8ff3e366-fb28-48d1-9969-4ac9e91dcba7",
+  "name": "carol",
+  "out": "/fixture/journey/capture-grant",
+  "skipped_apps": [],
+  "team_id": "default:res-602fcbed.test"
+}

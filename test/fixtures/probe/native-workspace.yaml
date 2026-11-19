@@ -1,9 +1,11 @@
-aweb_url: https://app.aweb.ai/api
+aweb_url: http://127.0.0.1:18000
 memberships:
-    - team_id: aweb:test.example
-      alias: worker-1
-      workspace_id: workspace-fixture
-      cert_path: team-certs/aweb__test.example.pem
-      joined_at: "2026-10-09T00:00:00Z"
-human_name: Probe fixture
+    - team_id: default:retained-be42697a.test
+      alias: retained
+      workspace_id: 01e2c07d-571f-43c1-be87-98bcf2c60227
+      cert_path: team-certs/default__retained-be42697a.test.pem
+      joined_at: "2026-11-19T01:47:45Z"
 agent_type: agent
+hostname: ip-10-0-128-200
+workspace_path: /fixture/codex
+updated_at: "2026-11-19T01:47:46Z"

@@ -1,6 +1,6 @@
 {
   "status": "not_running",
-  "socket_path": "/private/tmp/oats-resident-capture/complete/.aw/run/custody.sock",
+  "socket_path": "/fixture/capture/resident-capture/complete/.aw/run/custody.sock",
   "resident": {},
   "teams": null,
   "keys": null,
