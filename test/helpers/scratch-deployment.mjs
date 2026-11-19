@@ -71,7 +71,7 @@ function buildScratchDeployment(root, tmux, { withAweb = false, home: givenHome,
   return {
     root, deployment, workspace: ws, bin, env, homeOf, oats, json,
     spawn(name, { launch = true } = {}) {
-      const r = json(["spawn", "plain", "--name", name, ...(launch ? ["--launch-config", "fake"] : ["--no-launch"])]);
+      const r = json(["spawn", "plain", "--name", name, "--launch-config", "fake", ...(!launch ? ["--no-launch"] : [])]);
       if (!r.ok) throw new Error(`spawn ${name}: ${JSON.stringify(r.error)}`);
       return homeOf(name);
     },
