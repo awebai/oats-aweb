@@ -14,6 +14,7 @@ test("the real aw signs every valid vector document, sent as the publisher sends
   const help = spawnSync(aw, ['status', 'publish', '--help'], { encoding: 'utf8' });
   if (!versionAtLeast(version, AW_STATUS_MIN)) {
     assert.notEqual(help.status, 0, `aw ${version} must refuse unsupported status publish`);
+    assert.match(help.stderr, /unknown command "status"/);
     return;
   }
   assert.equal(help.status, 0, help.stderr);
