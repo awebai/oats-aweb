@@ -8,6 +8,9 @@ import { AW_BYOT_CREATE, byotCreateAwRefusal } from '../oats-package/capabilitie
 import { freshMailSendFlag } from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
 import { pathToFileURL } from 'node:url';
 
+const helpOptions = home => ({ cwd: home, encoding: 'utf8', timeout: 10000,
+  env: { HOME: home, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AW_NO_UPDATE_CHECK: '1' } });
+
 export function checkRecordedAwArgv(binary, records, { version } = {}) {
   binary = resolve(binary);
   const home = mkdtempSync(join(tmpdir(), 'aw-argv-help-'));
@@ -15,8 +18,7 @@ export function checkRecordedAwArgv(binary, records, { version } = {}) {
   try {
     for (const { command, flags } of records) {
       if (!cache.has(command)) {
-        const r = spawnSync(binary, [...command.split(' '), '--help'], { cwd: home, encoding: 'utf8', timeout: 10000,
-          env: { HOME: home, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AW_NO_UPDATE_CHECK: '1' } });
+        const r = spawnSync(binary, [...command.split(' '), '--help'], helpOptions(home));
         assert.equal(r.status, 0, `${command}: ${r.stderr}`);
         if (version === '1.36.33' && ['id team set-server', 'id team show-server'].includes(command)) {
           // These commands belong only to the BYOT create route, whose existing
@@ -44,8 +46,7 @@ export function checkRecordedAwArgv(binary, records, { version } = {}) {
           const value = values[flag] ?? (/^(?:u?int)(?:64)?$/.test(type) ? '1' : type === 'duration' ? '1m' : join(home, 'unused'));
           return [flag, value];
         });
-        const accepted = spawnSync(binary, [...command.split(' '), ...argv, '--help'], { cwd: home, encoding: 'utf8', timeout: 10000,
-          env: { HOME: home, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AW_NO_UPDATE_CHECK: '1' } });
+        const accepted = spawnSync(binary, [...command.split(' '), ...argv, '--help'], helpOptions(home));
         assert.equal(accepted.status, 0, `${command}: real aw refused the recorded flag combination: ${accepted.stderr}`);
       }
     }
@@ -64,8 +65,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const observationHome = mkdtempSync(join(tmpdir(), 'aw-capability-'));
   let version, legacyFlag;
   try {
-    const options = { cwd: observationHome, encoding: 'utf8', timeout: 10000,
-      env: { HOME: observationHome, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AW_NO_UPDATE_CHECK: '1' } };
+    const options = helpOptions(observationHome);
     const detected = spawnSync(resolve(binary), ['version'], options);
     assert.equal(detected.status, 0, detected.stderr);
     version = /^aw (\S+)$/m.exec(detected.stdout)?.[1];
