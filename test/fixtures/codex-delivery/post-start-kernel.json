@@ -1,0 +1,13 @@
+{
+  "home": "/fixture/codex",
+  "backend": "tmux",
+  "present": true,
+  "state": "unknown",
+  "paneId": "%1",
+  "size": {
+    "cols": 80,
+    "rows": 24
+  },
+  "running": true,
+  "waitingOnYou": null
+}

@@ -67,7 +67,7 @@ test('in a deployment with no .aw, a global seat with a resident needs no mintin
  const custody=join(f.base,'custody');fs.mkdirSync(join(custody,'.aw'),{recursive:true});fs.copyFileSync(join(root,'test/fixtures/resident/identity-global.yaml'),join(custody,'.aw','identity.yaml'));
  const captured=name=>JSON.stringify(join(root,'test/fixtures/resident',name));
  fs.writeFileSync(join(f.base,'bin','aw'),`#!${process.execPath}\n${jsWake(f.base)}const {readFileSync}=require('node:fs');\nprocess.stdout.write(readFileSync(process.argv[2]==='version'?${captured('aw-version.txt')}:${captured('custody-status-running.stdout')}));\n`,{mode:0o755});
- const capturedTeam='default:fixture-6400.test',env={OATS_DEFAULT_TEAM_ID:capturedTeam,OATS_TEAMS:JSON.stringify([{label:'private',team:capturedTeam,default:true,from:'local'}])};
+ const capturedTeam='default:fixture-25651.test',env={OATS_DEFAULT_TEAM_ID:capturedTeam,OATS_TEAMS:JSON.stringify([{label:'private',team:capturedTeam,default:true,from:'local'}])};
  const noRoot={code:'needs-configuration',message:`no messaging root at ${deployment}: run oats aweb setup there or set settings.oats.aweb.root`};
  const noResident={code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'};
  const global={delivery:'session',identity:{mode:'global',resident:'merlin'},residents:{merlin:custody}},local={delivery:'session',residents:{merlin:custody}},residentless={delivery:'session',identity:{mode:'global'},residents:{merlin:custody}};

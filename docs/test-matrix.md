@@ -106,6 +106,14 @@ is recaptured with the still-supported floor CLI. Before artifact upload,
 without reflecting their values in logs, redacts token patterns and normalizes
 runner paths. Upload depends on successful sanitization. The author inspects
 all artifact files before committing them and records their provenance.
+The committed baseline was refreshed from passing floor/tested artifacts in
+[run 44439390779](https://github.com/awebai/oats-aweb/actions/runs/44439390779).
+Receipts and the exact transformations are documented beside the
+[resident](../test/fixtures/resident/README.md),
+[wake](../test/fixtures/codex-delivery/README.md),
+[workspace](../test/fixtures/probe/README.md) and
+[mint](../test/fixtures/grant-mint/README.md) captures. This is evidence for that
+run's package merge head, not a claim that a later PR head passed.
 Decoded JSON strings are checked recursively for YAML credential fields, including
 the workspace-record string; malformed `.json` captures also refuse without echoing
 their contents.

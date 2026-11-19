@@ -1,0 +1,10 @@
+{
+  "aw": "1.36.58",
+  "awCommit": "a3223c1d32b8144abfd34d63b521b38d2b227ad5",
+  "stackCommit": "679d50066d4160748f6f9cfa0537161992399573",
+  "kernelCommit": "13f8f133808f5932bf461108703c1bada4b3f3d3",
+  "packageCommit": "df85234e7ca74a01d0e16a9b6f1db2d7e3d75f78",
+  "capture": "workspace-record",
+  "source": "disposable real aw and OSS stack in resident-journey",
+  "capturedAt": "2026-11-19T01:47:46.544Z"
+}

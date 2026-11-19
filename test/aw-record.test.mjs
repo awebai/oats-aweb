@@ -9,9 +9,9 @@ import { readFileSync } from "node:fs";
 import { seatServiceFromRecord } from "../oats-package/capabilities/oats-aweb/lib/retained-seat-service.mjs";
 
 // The shape aw writes with Go's yaml.v3 (4-space sequence indent, a quoted timestamp): the
-// committed aw 1.36.28 capture, and the same keys with a role and the presence fields aw 1.36.56
-// adds after a connect.
-const AW_1_36_28 = readFileSync(new URL("./fixtures/probe/native-workspace.yaml", import.meta.url), "utf8");
+// committed aw 1.36.58 capture. AW_CONNECTED is an independent synthetic vector
+// with a role and the presence fields aw adds after a connect.
+const AW_1_36_58 = readFileSync(new URL("./fixtures/probe/native-workspace.yaml", import.meta.url), "utf8");
 const AW_CONNECTED = `aweb_url: https://record.invalid/api
 memberships:
     - team_id: t:example.test
@@ -28,7 +28,7 @@ updated_at: "2026-11-12T00:00:00Z"
 `;
 
 const accepted = [
-  ["aw 1.36.28's capture", AW_1_36_28, "https://app.aweb.ai/api"],
+  ["aw 1.36.58's capture", AW_1_36_58, "http://127.0.0.1:18000"],
   ["a connected record with a role", AW_CONNECTED, "https://record.invalid/api"],
   ["a path prefix", "aweb_url: https://record.invalid/aweb/api\n", "https://record.invalid/aweb/api"],
   ["an IPv6 literal", "aweb_url: http://[2001:db8::1]:8000/api\n", "http://[2001:db8::1]:8000/api"],

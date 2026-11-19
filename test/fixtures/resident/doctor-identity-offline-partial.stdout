@@ -24,8 +24,8 @@
       "source": "local",
       "status": "info",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
-        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "display": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
+        "id": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
         "type": "local_path"
       }
     },
@@ -40,8 +40,8 @@
       "source": "local",
       "status": "info",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
-        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "display": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
+        "id": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
         "type": "local_path"
       }
     },
@@ -56,8 +56,8 @@
       "source": "local",
       "status": "info",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
-        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "display": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
+        "id": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
         "type": "local_path"
       }
     },
@@ -72,8 +72,8 @@
       "source": "local",
       "status": "info",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/partial/.aw/signing.key",
-        "id": "/private/tmp/oats-resident-capture/partial/.aw/signing.key",
+        "display": "/fixture/capture/resident-capture/partial/.aw/signing.key",
+        "id": "/fixture/capture/resident-capture/partial/.aw/signing.key",
         "type": "local_path"
       }
     },
@@ -88,8 +88,8 @@
       "source": "local",
       "status": "info",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
-        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "display": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
+        "id": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
         "type": "local_path"
       }
     },
@@ -104,8 +104,8 @@
       "source": "local",
       "status": "info",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
-        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "display": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
+        "id": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
         "type": "local_path"
       }
     },
@@ -120,13 +120,13 @@
       "source": "local",
       "status": "info",
       "target": {
-        "display": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
-        "id": "/private/tmp/oats-resident-capture/partial/.aw/identity.yaml",
+        "display": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
+        "id": "/fixture/capture/resident-capture/partial/.aw/identity.yaml",
         "type": "local_path"
       }
     }
   ],
-  "generated_at": "2026-10-10T16:44:14Z",
+  "generated_at": "2026-11-19T01:47:57Z",
   "mode": "offline",
   "redactions": [
     {
@@ -144,7 +144,7 @@
   ],
   "status": "ok",
   "subject": {
-    "working_dir": "/private/tmp/oats-resident-capture/partial"
+    "working_dir": "/fixture/capture/resident-capture/partial"
   },
   "version": "doctor.v1"
 }
