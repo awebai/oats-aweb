@@ -17,8 +17,9 @@ selection and public-address policy.
 
 `registry-setting.mjs` validates this one origin and identifies registry-capable
 commands. The hook, binding, invite, health, resident and qualified probe use
-it. Version/help, offline doctors, recorded team lists, custody status and wake
-control receive no pin. Init/mint, joins/connect and rollback, cleanup, grants,
+it. Version/help, recorded team lists, custody status and wake control receive
+no pin. `doctor identity --offline` does receive it: rc.3 assesses the current
+private-registry admission from that environment without using the network. Init/mint, joins/connect and rollback, cleanup, grants,
 registry member reads, messaging and health online reads receive the explicit
 `AWID_REGISTRY_URL`. LOCAL and GLOBAL session contributions use that same
 setting. Custody and wake service units receive it for their own invocation;
@@ -28,7 +29,8 @@ Setup still supplies the documented AWEB_URL and API key to init only;
 username signup receives its URL but no key. All registry inputs, including
 BYOT create's admin calls and subsequent online calls, come from the setting.
 Resident init keeps its PATH/HOME-only base plus its named URL/key and the
-configured pin. Its offline reads retain their stricter base without the pin.
+configured pin. Offline identity diagnosis retains the stricter base plus that same explicit
+pin; local custody status and version retain it without the pin.
 Invite keeps disposable HOME/XDG directories; the probe keeps its stricter
 scrub and existing service qualification. Custody attachment verification
 alone names its grant home as AWEB_IDENTITY_HOME.

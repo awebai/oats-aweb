@@ -117,6 +117,15 @@ test('readiness gives the same complete migration without promoting a saved GLOB
   for(const c of f.calls())assert.equal(c.registry,undefined);
 });
 
+test('the native default registry remains default with YAML quotes, comments or a DNS dot',async t=>{
+  const {registryMigration}=await import('../oats-package/capabilities/oats-aweb/lib/registry-setting.mjs');
+  const f=fixture(t);
+  for(const value of ['https://api.awid.ai.','"https://api.awid.ai" # comment',"'https://api.awid.ai/' # comment"]) {
+    writeFileSync(join(f.home,'.aw','identity.yaml'),`registry_url: ${value}\n`);
+    assert.equal(registryMigration({}, {}, {custody:f.home}),undefined);
+  }
+});
+
 test('health registry reads get the setting; local wake control does not',async t=>{
   const f=fixture(t),host=healthHost({deployment:f.home,env:{...f.env,AWID_REGISTRY_URL:'http://poison.invalid'},settings:{registry:'http://127.0.0.1:18010'}});
   await host.unreadCount(f.home);await host.wakeStatus();

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 
 export const REGISTRY_SETTING='settings.oats.aweb.registry';
-export const REGISTRY_MIGRATION='registry-setting-required: record the operator pin with `oats aweb setup --registry <origin>` in the deployment, then restart each resident serve process by rerunning `oats aweb resident create <name>` and restart the wake daemon with `oats aweb wake install` in the operator shell. A saved identity.yaml or teams.yaml registry_url never grants private-network access.';
+export const REGISTRY_MIGRATION='registry-setting-required: set settings.oats.aweb.registry with `oats aweb setup --registry <origin>`; restart serve with `oats aweb resident create <name>` and wake with `oats aweb wake install` in the operator shell. Saved registry_url values are locators, not admission.';
 const invalid=detail=>{throw new Error(`${REGISTRY_SETTING}: ${detail}`);};
 export function registryOrigin(settings={}) {
   if(!Object.hasOwn(settings,'registry')) return undefined;
@@ -22,8 +22,8 @@ export function registryOrigin(settings={}) {
   return url.origin;
 }
 
-/** Explicit pins go only to online commands. Version/help, offline doctors,
- * recorded team lists, local custody and wake control never need admission. */
+/** Registry use includes diagnostic admission verdicts. Version/help,
+ * recorded team lists, local custody and wake control need no admission. */
 export function registryCommand(args) {
   args=[...args];
   if(args[0]==='aw') args.shift();
@@ -31,7 +31,11 @@ export function registryCommand(args) {
     const flag=args.shift();
     if(!flag.includes('=')) args.shift(); // --identity-home <path>
   }
-  if(args.includes('--help')||args.includes('--offline')) return false;
+  if(args.includes('--help')) return false;
+  // aw rc.3 doctor_identity.go addRegistryPinningCheck uses the live pin
+  // to assess a private locator even in --offline mode (no network request).
+  if(args[0]==='doctor'&&args[1]==='identity') return true;
+  if(args.includes('--offline')) return false;
   const [command,sub,action]=args;
   if(command==='init'||command==='whoami'||command==='heartbeat'||command==='mail'||command==='chat'||command==='status'||command==='status-host') return true;
   if(command==='workspace') return ['connect','delete','status'].includes(sub);
@@ -58,7 +62,12 @@ export function registryMigration(settings,env=process.env,{custody}={}) {
     const raw=/^registry_url:[ \t]*(.*)$/m.exec(text)?.[1]?.trim();
     if(raw) {
       let url;
-      try {url=new URL(raw.replace(/^['"]|['"]$/g,''));} catch {return REGISTRY_MIGRATION;}
+      try {
+        const scalar=raw.replace(/\s+#.*$/, '');
+        const locator=scalar.startsWith('"')?JSON.parse(scalar):scalar.replace(/^'|'$/g,'');
+        url=new URL(locator);
+        if(url.hostname.endsWith('.')) url.hostname=url.hostname.slice(0,-1);
+      } catch {return REGISTRY_MIGRATION;}
       if(url.origin!=='https://api.awid.ai'||url.username||url.password||url.search||url.hash||!['/','/api','/api/'].includes(url.pathname)) return REGISTRY_MIGRATION;
     }
   }

@@ -94,8 +94,8 @@ the ops and one that is not ready each fail with their own message.
 - Every other child gets no key and no `AWEB_*` variable. aw's reads in R
   (`aw version`, `whoami`, the doctors, `custody status`) run with `PATH`,
   `HOME` and `AW_NO_UPDATE_CHECK=1`; online whoami/registry reads also receive
-  the configured `AWID_REGISTRY_URL`. Version, offline doctors and local
-  custody status receive no registry pin. The unit managers get `PATH`, `HOME`, `XDG_RUNTIME_DIR` and
+  the configured `AWID_REGISTRY_URL`. The offline identity doctor also needs
+  that pin for its admission verdict; version and local custody status do not. The unit managers get `PATH`, `HOME`, `XDG_RUNTIME_DIR` and
   `DBUS_SESSION_BUS_ADDRESS`; the kernel (its version, its teams and the team
   verbs) no `AWEB_*` or `AWID_*` variable.
 - The command never opens, copies, moves or deletes a file under R's `.aw`:

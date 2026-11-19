@@ -162,17 +162,16 @@ test("AWID_REGISTRY_URL reaches the init child only when it is set", (t) => {
 });
 
 test("aw's reads in R run with PATH and HOME, and the init's AWID_REGISTRY_URL when it is set", (t) => {
-  // A global identity also persists its registry in .aw/identity.yaml (real
-  // doctor identity --offline answers the same with and without the variable);
-  // the reads still use the registry the init used.
+  // rc3 doctor identity --offline checks private-registry admission from
+  // the current invocation even though it performs no network request.
   for (const registry of [undefined, "http://127.0.0.1:18010"]) {
     const s = setup(t);
     assert.equal(s.run(["create", NAME], registry ? { OATS_SETTINGS:JSON.stringify({registry}) } : {}).status, 0);
     const reads = s.fake.calls().filter((c) => c.cmd === "aw" && ["whoami", "doctor", "custody"].includes(c.argv[0]));
     assert.ok(reads.length >= 3);
     for (const call of reads) {
-      assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["AW_NO_UPDATE_CHECK", "HOME", "PATH", ...(registry && !call.argv.includes("--offline") && call.argv[0]!=="custody" ? ["AWID_REGISTRY_URL"] : [])].sort(), call.argv.join(" "));
-      if (registry && !call.argv.includes("--offline") && call.argv[0]!=="custody") assert.equal(call.env.AWID_REGISTRY_URL, registry);
+      assert.deepEqual(Object.keys(call.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort(), ["AW_NO_UPDATE_CHECK", "HOME", "PATH", ...(registry && call.argv[0]!=="custody" ? ["AWID_REGISTRY_URL"] : [])].sort(), call.argv.join(" "));
+      if (registry && call.argv[0]!=="custody") assert.equal(call.env.AWID_REGISTRY_URL, registry);
     }
   }
 });

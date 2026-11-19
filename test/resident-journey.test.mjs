@@ -286,7 +286,11 @@ test("a complete global identity is adopted: verified, served by a real per-user
   assert.equal(loaded.status, 0, loaded.stderr);
   assert.ok(!loaded.stdout.includes(key), loaded.stdout);
   assert.match(loaded.stdout, /PATH/);
-  assert.doesNotMatch(loaded.stdout, /AWEB_|AWID_/);
+  // launchctl prints NAME => value; systemctl show prints NAME=value.
+  const unitRegistryValues = [...loaded.stdout.matchAll(/(?:^Environment=|^|[\s"])AWID_REGISTRY_URL\s*(?:=>\s*|=)"?([^"\s]+)(?=["\s]|$)/gm)].map(match => match[1]);
+  assert.deepEqual(unitRegistryValues, [AWID_URL]);
+  assert.doesNotMatch(loaded.stdout, /\bAWEB_/);
+  assert.deepEqual([...new Set(loaded.stdout.match(/\bAWID_[A-Za-z0-9_]*/g) ?? [])], ["AWID_REGISTRY_URL"]);
 });
 
 // ------------------------------------------------------------------ the printed steps, run as printed
@@ -530,8 +534,9 @@ test("a real join killed right after this aw accepted the invite (awebai/oats-aw
   const cleanup = JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup.find((c) => c.label === "alpha");
   assert.ok(cleanup?.command, `retire names the controller cleanup of the unrecorded membership: ${retired.stdout}`);
   assert.ok(before.includes(cleanup.certificateId), `the team listed the killed join's certificate before the retire: ${before}`);
-  const [, ...cleanupArgs] = cleanup.command.split(" ");
-  step(cleanupArgs);
+  // Execute the complete operator line, including its explicit registry pin.
+  const cleaned = j.shell(cleanup.command);
+  assert.equal(cleaned.status, 0, cleaned.stdout + cleaned.stderr);
   assert.ok(!members().includes(cleanup.certificateId), "the team no longer lists the member");
 });
 
