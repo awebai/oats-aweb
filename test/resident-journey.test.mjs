@@ -380,7 +380,7 @@ test("a real grant seat retires in team X while its resident keeps team Y active
   const adopted = j.run(["create", "resident", "--root", root, "--json"], {AWEB_URL, AWID_REGISTRY_URL:AWID_URL});
   assert.equal(adopted.status, 0, adopted.stdout + adopted.stderr);
   Object.assign(j.env, {AWEB_URL, AWID_REGISTRY_URL:AWID_URL});
-  const spawned = j.shell("oats spawn probe --name grant-seat --provider oats.aweb identity.mode=global identity.resident=resident --no-launch --json");
+  const spawned = j.shell("oats spawn probe --name grant-seat --provider oats.aweb identity.mode=global --provider oats.aweb identity.resident=resident --no-launch --json");
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
   const {home, instance} = spawned.doc.result;
   const identity = JSON.parse(readFileSync(join(home,"instance.json"),"utf8")).capabilityMeta["oats.aweb"].identity;
