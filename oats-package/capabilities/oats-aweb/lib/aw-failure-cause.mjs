@@ -109,11 +109,49 @@ export const USERNAME_UNAVAILABLE_CAUSES = {
  *  (docs/aw-error-decisions.md). */
 export function usernameUnavailable({ stderr, status }, username) {
   if (status !== 2 || typeof username !== "string") return undefined;
-  const prefix = `username ${JSON.stringify(username)} is not available (`;
+  const prefix = "username \"", middle = " is not available (";
   for (const line of String(stderr ?? "").split(/\r?\n/)) {
     if (!line.startsWith(prefix) || !line.endsWith(")")) continue;
-    const reason = line.slice(prefix.length, -1);
+    // aw quotes the name with Go's %q, which escapes what is not printable (an
+    // invisible U+200B prints as \u200b), so the quoted name is read back, not compared as JSON.
+    const quoted = goQuotedPrefix(line.slice(prefix.length - 1));
+    if (!quoted || quoted.value !== username || !line.slice(prefix.length - 1 + quoted.length).startsWith(middle)) continue;
+    const reason = line.slice(prefix.length - 1 + quoted.length + middle.length, -1);
     if (SERVICE_DETAIL_CODE_RE.test(reason)) return reason;
+  }
+  return undefined;
+}
+const GO_SIMPLE_ESCAPES = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, "\\": 92, '"': 34 };
+/** The Go double-quoted string literal `text` starts with (as strconv.Quote and %q write
+ *  one): its value and its length in `text`, or undefined when it does not start with a
+ *  complete, valid one. */
+export function goQuotedPrefix(text) {
+  if (text[0] !== '"') return undefined;
+  const bytes = [];
+  const push = s => { for (const b of Buffer.from(s, "utf8")) bytes.push(b); };
+  for (let i = 1; i < text.length;) {
+    const c = text[i];
+    if (c === '"') {
+      const value = Buffer.from(bytes).toString("utf8");
+      // Invalid UTF-8 (a \xNN that is not part of a whole character) never equals a username.
+      return Buffer.from(value, "utf8").equals(Buffer.from(bytes)) ? { value, length: i + 1 } : undefined;
+    }
+    if (c === "\n") return undefined;
+    if (c !== "\\") { const cp = text.codePointAt(i); push(String.fromCodePoint(cp)); i += cp > 0xffff ? 2 : 1; continue; }
+    const e = text[i + 1];
+    if (e !== undefined && Object.hasOwn(GO_SIMPLE_ESCAPES, e)) { bytes.push(GO_SIMPLE_ESCAPES[e]); i += 2; continue; }
+    const hex = { x: 2, u: 4, U: 8 }[e];
+    if (hex) {
+      const digits = text.slice(i + 2, i + 2 + hex);
+      if (!new RegExp(`^[0-9a-fA-F]{${hex}}$`).test(digits)) return undefined;
+      const n = parseInt(digits, 16);
+      if (e === "x") bytes.push(n);
+      else if (n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) return undefined;
+      else push(String.fromCodePoint(n));
+      i += 2 + hex; continue;
+    }
+    if (/^[0-7]{3}$/.test(text.slice(i + 1, i + 4)) && parseInt(text.slice(i + 1, i + 4), 8) <= 255) { bytes.push(parseInt(text.slice(i + 1, i + 4), 8)); i += 4; continue; }
+    return undefined;
   }
   return undefined;
 }

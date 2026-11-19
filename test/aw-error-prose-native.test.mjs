@@ -170,8 +170,28 @@ test('real aw prose: an unavailable username is one fixed sentence with its reas
       assert.equal(usernameUnavailable(r, username), reason, `${username} ${reason}`);
     }
   }
+  // aw quotes the name with Go's %q: an invisible character a paste can carry comes back escaped.
+  for (const username of ['a\u200bb', 'a\u00a0b']) {
+    const r = await signupWith(username, {available: false, reason: 'invalid_format'}, null);
+    assert.equal(r.status, 2, r.stderr);
+    assert.ok(!r.stderr.includes(username), 'aw escapes the invisible character');
+    assert.equal(usernameUnavailable(r, username), 'invalid_format', r.stderr);
+  }
   const wrapped = await signupWith('fixture-user', {available: true}, {status: 500, body: 'username "fixture-user" is not available (taken)'});
   assert.notEqual(wrapped.status, 2, wrapped.stderr);
   assert.match(wrapped.stderr, /username "fixture-user" is not available \(taken\)/);
   assert.equal(usernameUnavailable(wrapped, 'fixture-user'), undefined);
+});
+
+// The Go-quoted name is read back exactly, as strconv.Quote writes it; no aw needed.
+test('a Go-quoted username is read back exactly, and nothing else matches', () => {
+  const line = (q, reason = 'taken') => ({stderr: `username ${q} is not available (${reason})`, status: 2});
+  for (const [quoted, username] of [['"user"', 'user'], ['"a\\u200bb"', 'a\u200bb'], ['"a\\u00a0b"', 'a\u00a0b'], ['"u\\"q"', 'u"q'], ['"b\\\\s"', 'b\\s'], ['"x\\tq"', 'x\tq'], ['"\\xc3\\xa9"', '\u00e9'], ['"\\U0001f600"', '\u{1f600}'], ['"\u00e9"', '\u00e9']]) {
+    assert.equal(usernameUnavailable(line(quoted), username), 'taken', quoted);
+  }
+  for (const [quoted, username] of [['"user"', 'usr'], ['"a\\u200bb"', 'ab'], ['"\\xff"', '\ufffd'], ['"\\ud800"', '\ud800'], ['"\\q"', '\\q'], ['"user', 'user'], ['"us\ner"', 'us\ner']]) {
+    assert.equal(usernameUnavailable(line(quoted), username), undefined, quoted);
+  }
+  assert.equal(usernameUnavailable({stderr: 'username "user"  is not available (taken)', status: 2}, 'user'), undefined);
+  assert.equal(usernameUnavailable({...line('"user"'), status: 1}, 'user'), undefined);
 });
