@@ -9,7 +9,7 @@ import {runProbe} from '../oats-package/capabilities/oats-aweb/lib/probe.mjs';
 import {ProbeBudget} from '../oats-package/capabilities/oats-aweb/lib/probe-runtime.mjs';
 import {projectWorkspaceService, readWorkspaceService} from '../oats-package/capabilities/oats-aweb/lib/probe-service.mjs';
 import {PROBE_RELEASE_SUPPORT, qualifyProbeSupport, observeProbeMetadata, probeAwVersion, resolveProbeAw} from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
-const native = readFileSync(new URL('./fixtures/probe/native-workspace-1.36.28.yaml', import.meta.url), 'utf8');
+const native = readFileSync(new URL('./fixtures/probe/native-workspace.yaml', import.meta.url), 'utf8');
 const url = 'https://app.aweb.ai/api', meta = 'https://app.aweb.ai/meta';
 const metadata = {version: '0.0.1', build: {aweb_version: '1.27.12'}};
 const legacyHelp = readFileSync(new URL('./fixtures/probe/mail-send-help-1.36.33.txt', import.meta.url), 'utf8');
