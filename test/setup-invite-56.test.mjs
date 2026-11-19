@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
 import { fakeKernelTeamConfig } from './helpers/fake-kernel-team-config.mjs';
+import { AW_TESTED } from '../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs';
 const hook = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs', import.meta.url));
 const TEAM = 'ops_team:example.invalid', LABEL = 'ops-team', SERVICE = 'https://svc.example.invalid/api';
 const TOKEN = 'aw_inv_SECRET-JOIN-CODE-0123456789abcdef';
@@ -344,10 +345,11 @@ test('a hosted invite whose identity scope is unknown joins with --local', t => 
 test('--install-aw upgrades an aw older than 1.36.53 before the invite is read', t => {
   const f = fixture(t);
   const versionFile = join(f.dir, 'aw-version'), npmLog = join(f.dir, 'npm.jsonl');
-  writeFileSync(join(f.aw.path, 'npm'), `#!${process.execPath}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(npmLog)},JSON.stringify(process.argv.slice(2))+'\\n');fs.writeFileSync(${JSON.stringify(versionFile)},'1.36.53\\n');console.log('added 1 package');\n`, { mode: 0o755 });
+  writeFileSync(join(f.aw.path, 'npm'), `#!${process.execPath}\nconst fs=require('node:fs'),assert=require('node:assert/strict');const calls=fs.existsSync(${JSON.stringify(f.aw.calls)})?fs.readFileSync(${JSON.stringify(f.aw.calls)},'utf8').trim().split('\\n').filter(Boolean).map(JSON.parse):[];assert.equal(calls.some(c=>c.args.slice(0,3).join(' ')==='team invite inspect'),false,'install precedes invite inspection');fs.appendFileSync(${JSON.stringify(npmLog)},JSON.stringify(process.argv.slice(2))+'\\n');fs.writeFileSync(${JSON.stringify(versionFile)},'1.36.53\\n');console.log('added 1 package');\n`, { mode: 0o755 });
   const r = f.run(['--install-aw', '--invite-stdin', '--name', 'host', '--json'], { AW_FAKE_VERSION: '1.36.40', AW_FAKE_VERSION_FILE: versionFile });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.deepEqual(readFileSync(npmLog, 'utf8').trim().split('\n').map(JSON.parse), [['install', '-g', '@awebai/aw@^1.36.53']]);
+  assert.deepEqual(readFileSync(npmLog, 'utf8').trim().split('\n').map(JSON.parse), [['install', '-g', `@awebai/aw@${AW_TESTED}`]]);
+  assert.equal(f.inspects().length, 1);
   assert.equal(f.accepts().length, 1);
 });
 

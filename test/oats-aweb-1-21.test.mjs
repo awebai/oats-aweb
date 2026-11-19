@@ -167,12 +167,12 @@ function assertCommandsInBackticks(remedy) {
 
 const checkOnly = (stdout) => JSON.parse(stdout.trim().split("\n").pop());
 
-test("setup --install-aw with aw missing installs aw at AW_MIN's release line, re-checks the floor and continues", async (t) => {
+test("setup --install-aw with aw missing installs the tested aw, re-checks the floor and continues", async (t) => {
   const root = tempDir(t);
   const npm = fakeNpmPath(t);
   const result = await run(["setup", "--check-only", "--install-aw", "--json"], deploymentEnv(root, { PATH: npm.path }), root);
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(npm.readCalls(), [["install", "-g", `@awebai/aw@^${AW_MIN}`]]);
+  assert.deepEqual(npm.readCalls(), [["install", "-g", `@awebai/aw@${AW_TESTED}`]]);
   const doc = checkOnly(result.stdout);
   assert.equal(doc.aw.status, "done");
   assert.equal(doc.aw.version, "1.36.33");
@@ -220,10 +220,10 @@ test("setup --install-aw relays npm's failure with its exit status", async (t) =
   const doc = checkOnly(checked.stdout);
   assert.equal(doc.aw.status, "failed");
   assert.equal(doc.aw.code, "E_AW_INSTALL");
-  assert.match(doc.aw.detail, /npm install -g @awebai\/aw@\^1\.36\.33 failed \(exit 3\): npm ERR! 404 Not Found/);
+  assert.ok(doc.aw.detail.includes(`npm install -g @awebai/aw@${AW_TESTED} failed (exit 3): npm ERR! 404 Not Found`));
   const plain = await run(["setup", "--install-aw"], deploymentEnv(root, { PATH: npm.path, NPM_FAIL: "1" }), root);
   assert.equal(plain.code, 1);
-  assert.match(plain.stderr, /oats aweb setup: npm install -g @awebai\/aw@\^1\.36\.33 failed \(exit 3\): npm ERR! 404 Not Found/);
+  assert.ok(plain.stderr.includes(`oats aweb setup: npm install -g @awebai/aw@${AW_TESTED} failed (exit 3): npm ERR! 404 Not Found`));
 });
 
 test("setup --install-aw whose install still leaves aw below the floor fails", async (t) => {
@@ -255,7 +255,7 @@ process.exit(1);
   const doc = checkOnly(result.stdout);
   assert.equal(doc.aw.status, "failed");
   assert.equal(doc.aw.code, "E_AW_FLOOR");
-  assert.equal(doc.aw.detail, "npm install -g @awebai/aw@^1.36.33 ran, but aw version could not be read; install aw >= 1.36.33 with `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.33`)");
+  assert.equal(doc.aw.detail, `npm install -g @awebai/aw@${AW_TESTED} ran, but ` + "aw version could not be read; install aw >= 1.36.33 with `npm i -g @awebai/aw@latest` (or `npm i -g @awebai/aw@1.36.33`)");
 });
 
 test("setup --install-aw without --check-only continues into the ordinary setup", async (t) => {
@@ -266,7 +266,7 @@ test("setup --install-aw without --check-only continues into the ordinary setup"
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /installed aw 1\.36\.33 \(was missing\)/);
   assert.match(result.stdout, /aweb onboarding — messaging root/);
-  assert.match(result.stdout, /No aweb workspace at the messaging root yet/);
+  assert.match(result.stdout, /default root has no identity yet/);
 });
 
 test("setup without --install-aw keeps today's message when aw is missing; --check-only reports it", async (t) => {
@@ -401,7 +401,7 @@ test("connect on a fresh host installs aw, mints a hosted invite, joins through 
       { step: "readiness", status: "ok" },
     ],
   });
-  assert.deepEqual(fx.npm.readCalls(), [["install", "-g", `@awebai/aw@^${AW_MIN}`]]);
+  assert.deepEqual(fx.npm.readCalls(), [["install", "-g", `@awebai/aw@${AW_TESTED}`]]);
   assert.deepEqual(fx.kernel.readCalls(), [
     ["aweb", "setup", "--check-only", "--json", "--install-aw", "--soul", "dev", "--server", SERVER],
     ["aweb", "setup", "--join", "joined", "--invite-stdin", "--name", SERVER, "--service", SERVICE, "--soul", "dev", "--server", SERVER],

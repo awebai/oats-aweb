@@ -366,7 +366,7 @@ test("setup local default with no root keeps the onboarding menu", async (t) => 
     OATS_SETTINGS: JSON.stringify({ root }),
   }, root);
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /No aweb workspace/);
+  assert.match(result.stdout, /default root has no identity yet/);
   assert.match(result.stdout, /--username <u>/);
 });
 
@@ -578,6 +578,7 @@ test("setup --create with namespace creates a local BYOT team, registers it, min
     ["id", "team", "invite", `--team=${teamName(label)}`, `--namespace=${namespace}`, "--json"],
     ["id", "team", "accept-invite", "--token-stdin", "--name=fixture", "--local", "--json"],
     ["workspace", "connect", "--service=https://aweb.example.invalid/api", `--team=${team}`, "--json"],
+    ["team", "list", "--json"],
   ]);
   assert.deepEqual(kernel.readCalls().map((c) => c.args), [["teams", "--json"], ["teams", "add", label, `--team=${team}`]]);
   assert.match(readFileSync(join(root, "oats-local.yaml"), "utf8"), /"my-team:example\.invalid": ".*\.aweb-roots\/my-team"/);

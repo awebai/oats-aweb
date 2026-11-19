@@ -32,7 +32,12 @@ setting. Custody and wake service units receive it for their own invocation;
 changing configuration requires their documented restart procedures.
 
 Setup still supplies the documented AWEB_URL and API key to init only;
-username signup receives its URL but no key. All registry inputs, including
+username signup receives its URL but no key. Bare API-key setup refuses before
+init when an existing selected root belongs to another team or its membership
+cannot be read. Create and tokenless join check their selected target rather
+than unrelated default membership. A missing alias or service may use the
+existing default-root locator fallback; explicit values bypass those reads.
+All registry inputs, including
 BYOT create's admin calls and subsequent online calls, come from the setting.
 Resident init keeps its PATH/HOME-only base plus its named URL/key and the
 configured pin. Offline identity diagnosis retains the stricter base plus that same explicit

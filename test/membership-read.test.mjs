@@ -109,23 +109,26 @@ for(const onDisk of [false,true]) test(`pending mint from ${onDisk?'disk':'metad
   assert.ok(f.fake.readCalls().every(c=>c.args[0]==='wake'||(c.args[0]==='team'&&c.args[1]==='list')));
 });
 
-for(const action of ['create','join']) test(`setup ${action} refuses an unreadable default root before any effect`,t=>{
+for(const action of ['create','join']) test(`setup ${action} refuses an unreadable selected root before any effect`,t=>{
   const f=fixture(t),before=readFileSync(join(f.base,'oats-local.yaml'),'utf8');
   const env=joinKernelEnvironment(f.env,f.base);
+  const target=join(f.base,'.aweb-roots','wider');mkdirSync(join(target,'.aw'),{recursive:true});
+  writeFileSync(join(target,'.aw','teams.json'),'not-json');
   const args=action==='create'?['--create','wider','--namespace','example.test']:['--join','wider','--service','https://service.example.test/api'];
   const r=f.run(['setup',...args,'--json'],{...env,AW_FAKE_VERSION:'1.36.56',AW_LIST_TEAMS:'{}'});
   const output=r.stdout+r.stderr;
   assert.equal(r.status,1,output);
-  assert.match(output,/configured default root/);
-  assert.ok(output.includes(f.root));
-  assert.match(output,/make that root's membership readable/);
-  assert.ok(output.includes('oats teams default <label>'));
+  assert.match(output,/selected root/);
+  assert.ok(output.includes(target));
+  assert.match(output,/could not check membership/);
+  assert.ok(output.includes('aw team list --json'));
   assert.match(output,/nothing was created or redeemed/);
   assert.deepEqual(f.fake.readCalls().map(c=>c.args),[['team','list','--json']]);
+  assert.equal(f.fake.readCalls()[0].cwd,target);
   assert.equal(readFileSync(join(f.base,'oats-local.yaml'),'utf8'),before);
 });
 
-test('create skips an absent default identity but refuses an existing unreadable one',t=>{
+test('create skips an unrelated default identity whether absent or unreadable',t=>{
   for(const existing of [false,true]) {
     const f=fixture(t),created='created:example.test',target=join(f.base,'.aweb-roots','created');
     if(!existing) rmSync(join(f.root,'.aw'),{recursive:true});
@@ -136,24 +139,14 @@ test('create skips an absent default identity but refuses an existing unreadable
     writeFileSync(cli,`#!${process.execPath}\nimport ${JSON.stringify(kernel.cli)};`,{mode:0o755});
     const r=f.run(['setup','--create','created','--namespace','example.test','--name','host'],{
       OATS_CLI_BIN:cli,AW_FAKE_TEAM:created,AW_FAKE_VERSION:'1.36.56',AWEB_URL:'https://service.example.test',
-      AW_LIST_ERROR:'current identity is missing .aw/teams.yaml; join a team first',
+      AW_LIST_ERROR:'current identity is missing .aw/teams.yaml; join a team first',AW_LIST_ERROR_CWD:f.root,
     });
-    if(existing) {
-      assert.equal(r.status,1,r.stdout+r.stderr);
-      assert.match(r.stderr,/could not check membership/);
-      assert.match(r.stderr,/nothing was created or redeemed/);
-      assert.deepEqual(f.fake.readCalls().map(c=>c.args),[['team','list','--json']]);
-      assert.ok(!kernel.read().teams.some(row=>row.label==='created'));
-      assert.ok(!readFileSync(join(f.base,'oats-local.yaml'),'utf8').includes(created));
-      assert.ok(!f.fake.readCalls().some(c=>c.args.includes('create')));
-    } else {
-      assert.equal(r.status,0,r.stdout+r.stderr);
-      assert.ok(r.stdout.includes(`✓ created ${created}`));
-      assert.ok(kernel.read().teams.some(row=>row.label==='created'&&row.team===created));
-      assert.ok(readFileSync(join(f.base,'oats-local.yaml'),'utf8').includes(target));
-      assert.ok(readFileSync(join(target,'.aw','workspace.yaml'),'utf8').includes('https://service.example.test'));
-      assert.ok(!f.fake.readCalls().some(c=>c.cwd===f.root&&c.args[0]==='team'&&c.args[1]==='list'));
-    }
+    assert.equal(r.status,0,r.stdout+r.stderr);
+    assert.ok(r.stdout.includes(`✓ created ${created}`));
+    assert.ok(kernel.read().teams.some(row=>row.label==='created'&&row.team===created));
+    assert.ok(readFileSync(join(f.base,'oats-local.yaml'),'utf8').includes(target));
+    assert.ok(readFileSync(join(target,'.aw','workspace.yaml'),'utf8').includes('https://service.example.test'));
+    assert.ok(!f.fake.readCalls().some(c=>c.cwd===f.root&&c.args[0]==='team'&&c.args[1]==='list'));
   }
 });
 
@@ -166,7 +159,7 @@ for(const closed of [false,true]) test(`create reports completed work before an 
   writeFileSync(cli,`#!${process.execPath}\nimport ${JSON.stringify(kernel.cli)};`,{mode:0o755});
   const r=f.run(['setup','--create','created','--namespace','example.test','--name','host'],{
     OATS_CLI_BIN:cli,AW_FAKE_TEAM:created,AW_FAKE_VERSION:'1.36.56',AWEB_URL:'https://service.example.test',
-    AW_LIST_ERROR:'connection refused SECRET-POST-CREATE',AW_LIST_ERROR_AFTER:'1',
+    AW_LIST_ERROR:'connection refused SECRET-POST-CREATE',AW_LIST_ERROR_CWD:target,
   });
   assert.equal(r.status,1,r.stdout+r.stderr);
   assert.ok(r.stdout.includes(`✓ created ${created}, accepted it into ${target}, recorded roots[${created}]`),r.stdout+r.stderr);

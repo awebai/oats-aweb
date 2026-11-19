@@ -152,6 +152,12 @@ jobs:
           OATS_MEMBERSHIP_NATIVE_REQUIRED: '1'
           OATS_AWEB_TEST_AW: ${{ runner.temp }}/aw/node_modules/.bin/aw
         run: node --test test/membership-read-native.test.mjs
+      - name: Native setup root choice at this aw
+        if: ${{ !cancelled() }}
+        env:
+          OATS_SETUP_ROOT_NATIVE_REQUIRED: '1'
+          OATS_AWEB_TEST_AW: ${{ runner.temp }}/aw/node_modules/.bin/aw
+        run: node --test test/setup-root-choice-native.test.mjs
       - name: npm test disposable real-stack group, zero skips
         run: |
           mkdir -p "$RUNNER_TEMP/test-home"
