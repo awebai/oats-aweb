@@ -42,6 +42,15 @@
   names that root, says nothing was created or redeemed, and teaches repairing
   its membership or choosing another default with `oats teams default <label>`.
 
+- **Changed: the `/oats-aweb` skill keeps one current card per act (#285).**
+  Its provider-version table, and the host upgrade sections for the 1.25.0 and
+  1.26.0 floors, move to `docs/provider-history.md`, which the skill links.
+  Their current rules stay in the skill: the refusal wording for an old aw,
+  restarting custody and the wake broker after an aw upgrade, a grant seat's
+  custody ops, `oats instance upgrade` for a stopped home, and the operator's
+  decision on `oats teams default`. The first-account card describes today's
+  setup. Section numbers and the headings other skills cite are unchanged.
+
 - **Fixed: setup shows the native register refusal's server code.** aw
   unwraps the server's `detail` and prints `service register: http 422:
   {"code":...}`, so setup now reads that top-level code through its existing
