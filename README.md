@@ -38,7 +38,15 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
-## Unreleased — grant seats and membership reads
+## 1.43.0 — explicit registry admission, grant seats in their team, membership reads that fail closed
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
+1.36.58. A private aw registry is admitted only by
+`settings.oats.aweb.registry` (`oats aweb setup --registry <origin>`, then
+rerun `oats aweb resident create <name>` and `oats aweb wake install`, and
+restart homes). aw children ignore exported selectors. A grant seat's calls
+stay in its recorded team. Membership reads fail closed. The CHANGELOG's
+1.43.0 entry lists everything a deployment must change.
 
 Grant show and revoke explicitly select the grant's team, including the show
 that confirms an uncertain revoke. The recovery command includes
