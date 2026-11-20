@@ -754,11 +754,15 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
   // journey's cleanups, which run before its directory is removed.
   const spawnedSeats = ["mail-seat"];
   const retireSeats = () => {
+    // Every seat is tried, whatever an earlier one did; the failures are
+    // printed (journey's cleanups swallow a throw) and then thrown.
+    const failed = [];
     while (spawnedSeats.length) {
       const name = spawnedSeats.pop();
       const retired = j.shell(`oats retire ${name} --json`);
-      assert.equal(retired.status, 0, `retire ${name}: ${retired.stdout}${retired.stderr}`);
+      if (retired.status !== 0) failed.push(`retire ${name}: ${retired.stdout}${retired.stderr}`);
     }
+    if (failed.length) { console.error(failed.join("\n")); assert.fail(failed.join("\n")); }
   };
   j.cleanups.push(retireSeats);
   // A second joined home sends in alpha: the deployment root holds alpha's
