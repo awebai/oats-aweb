@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.47.0 — 2026-11-20
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.
+
+A legacy grant seat fills its seat record once from facts that must agree (#301).
 
 **What a deployment must change:** legacy GLOBAL grant seats (oats.aweb
 1.12–1.24) fill `.oats-aweb/seat.json` once at their next real start, including
