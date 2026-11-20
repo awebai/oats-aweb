@@ -726,3 +726,124 @@ test('a real retained seat copies authority, reconnects, checks, heartbeats, rep
   assert.equal(existsSync(lock), false);
   assert.deepEqual(readFileSync(join(source, 'signing.key')), sourceKey);
 });
+
+// messaging:mail, through the pinned kernel's `oats operation run`, against the
+// real aw and the real server: both identities of a joined-team home, sent and
+// received, newest first, and NOTHING acknowledged: each identity's unread
+// count and every message's read_at are the same before and after the read.
+test("messaging:mail reads a real home's mail on both identities and acknowledges nothing", (t) => {
+  if (!configured(t)) return;
+  if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
+  const j = journey(t);
+  const ns = `mail-${randomBytes(4).toString("hex")}.test`;
+  const team = `default:${ns}`, joinedTeam = `alpha:${ns}`;
+  j.workspace({ teams: `teams:\n  default: { team: '${team}' }\n  alpha: { team: '${joinedTeam}' }\nsouls:\n  '*':\n    teams: any\n`, defaultTeam: "default" });
+  globalIdentity(j, j.deployment, "root", ns);
+  const step = (args, cwd = j.deployment) => { const r = j.aw(cwd, args, { AWID_SKIP_DNS_VERIFY: "1" }); assert.equal(r.status, 0, `aw ${args.join(" ")}: ${r.stdout}${r.stderr}`); return r.stdout; };
+  step(["id", "team", "create", "--namespace", ns, "--name", "alpha", "--registry", AWID_URL, "--json"]);
+  const cert = JSON.parse(step(["id", "team", "add-member", "--namespace", ns, "--team", "alpha", "--member", `${ns}/root`, "--json"])).certificate_id;
+  step(["id", "team", "fetch-cert", "--namespace", ns, "--team", "alpha", "--cert-id", cert, "--registry", AWID_URL, "--json"]);
+  const local = join(j.deployment, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replace("    delivery: session\n", `    delivery: session\n    root: ${j.deployment}\n`));
+  Object.assign(j.env, { AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+  const spawned = j.shell("oats spawn probe --name mail-seat --provider oats.aweb join=alpha --no-launch --json");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const { home } = spawned.doc.result;
+  const primary = join(home, ".aw"), joined = join(home, ".aweb-identity-alpha");
+  // Retire what this test spawned: at its end, asserted; on a failure, from
+  // journey's cleanups, which run before its directory is removed.
+  const spawnedSeats = ["mail-seat"];
+  const retireSeats = () => {
+    // Every seat is tried, whatever an earlier one did; the failures are
+    // printed (journey's cleanups swallow a throw) and then thrown.
+    const failed = [];
+    while (spawnedSeats.length) {
+      const name = spawnedSeats.pop();
+      const retired = j.shell(`oats retire ${name} --json`);
+      if (retired.status !== 0) failed.push(`retire ${name}: ${retired.stdout}${retired.stderr}`);
+    }
+    if (failed.length) { console.error(failed.join("\n")); assert.fail(failed.join("\n")); }
+  };
+  j.cleanups.push(retireSeats);
+  // A second joined home sends in alpha: the deployment root holds alpha's
+  // controller keys but no alpha workspace membership to send from.
+  const peer = j.shell("oats spawn probe --name mail-peer --provider oats.aweb join=alpha --no-launch --json");
+  assert.equal(peer.status, 0, peer.stdout + peer.stderr);
+  spawnedSeats.push("mail-peer");
+  const peerAlpha = join(peer.doc.result.home, ".aweb-identity-alpha");
+
+  // Mail: root -> seat in default, mail-peer -> seat in alpha, and the seat
+  // answering in default.
+  const send = (cwd, args, body, identity = []) => {
+    const file = join(j.base, `body-${randomBytes(4).toString("hex")}.txt`);
+    writeFileSync(file, body, { mode: 0o600 });
+    return JSON.parse(step([...identity, "mail", "send", ...args, `--body-file=${file}`, "--json"], cwd));
+  };
+  const first = send(j.deployment, ["--to=mail-seat", "--subject=first"], "hello on default");
+  const second = send(peer.doc.result.home, ["--to=mail-seat", "--subject=second"], "hello on alpha", ["--identity-home", peerAlpha]);
+  const third = send(home, [`--conversation-id=${first.conversation_id}`], "answer from the seat");
+  for (const receipt of [first, second, third]) assert.equal(typeof receipt.message_id, "string");
+
+  const readState = () => {
+    const state = {};
+    for (const identityHome of [primary, joined]) {
+      const count = j.aw(home, ["--identity-home", identityHome, "mail", "inbox", "--count-only", "--json"]);
+      const threads = j.aw(home, ["--identity-home", identityHome, "mail", "threads", "--json"]);
+      state[identityHome] = { count: count.status === 0 ? JSON.parse(count.stdout).unread_count : `refused: ${count.stderr.trim()}`, read: {} };
+      if (threads.status !== 0) { state[identityHome].threads = `refused: ${threads.stderr.trim()}`; continue; }
+      for (const c of JSON.parse(threads.stdout).conversations) {
+        const shown = JSON.parse(step(["--identity-home", identityHome, "mail", "show", `--conversation-id=${c.conversation_id}`, "--limit=500", "--json"], home));
+        for (const m of shown.messages) state[identityHome].read[m.message_id] = m.read_at ?? null;
+      }
+    }
+    return state;
+  };
+  const mailSupported = versionAtLeast(j.awVersion, "1.36.53");
+  const before = mailSupported ? readState() : null;
+  if (mailSupported) {
+    assert.ok(before[primary].count >= 1 && before[joined].count >= 1, JSON.stringify(before));
+    assert.ok(Object.values(before[primary].read).includes(null), "an unread message is there to be acknowledged by mistake");
+  }
+
+  const result = j.shell(`oats operation run messaging:mail --home ${JSON.stringify(home)} --json`);
+  const doc = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  if (!mailSupported) {
+    assert.notEqual(result.status, 0);
+    assert.equal(doc.error.code, "E_AW_TOO_OLD", result.stdout + result.stderr);
+    assert.match(doc.error.message, /needs aw >= 1\.36\.53/);
+    retireSeats();
+    return;
+  }
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  // The kernel's operation-run answer; the provider's view result is inside it.
+  assert.equal(doc.result.operation, "messaging:mail");
+  assert.equal(doc.result.capability, "oats.aweb");
+  const { mail, documents } = doc.result.result;
+  assert.equal(documents[0].label, "Mail");
+  assert.equal(mail.mailApi, 1);
+  assert.equal(mail.acknowledges, false);
+  assert.deepEqual(mail.identities.map((i) => [i.team, i.primary, i.error]), [["default", true, null], ["alpha", false, null]]);
+  assert.deepEqual(mail.messages.map((m) => [m.id, m.team, m.direction, m.body]), [
+    [third.message_id, "default", "sent", "answer from the seat"],
+    [second.message_id, "alpha", "received", "hello on alpha"],
+    [first.message_id, "default", "received", "hello on default"],
+  ]);
+  assert.deepEqual([mail.messages[1].subject, mail.messages[2].subject], ["second", "first"]);
+  for (const m of mail.messages) {
+    assert.equal(m.verification, "verified", JSON.stringify(m));
+    assert.ok(["normal", "high", "unknown"].includes(m.priority));
+    assert.equal(m.readByAgent, m.direction === "sent", "nothing the seat received was read");
+  }
+  assert.equal(mail.messages[2].conversationId, first.conversation_id);
+  assert.equal(mail.messages[2].threadTitle, "first");
+  // One conversation, through the kernel's --arg.
+  const one = j.shell(`oats operation run messaging:mail --home ${JSON.stringify(home)} --arg conversation=${first.conversation_id} --arg limit=1 --json`);
+  assert.equal(one.status, 0, one.stdout + one.stderr);
+  const oneDoc = JSON.parse(one.stdout.trim().split("\n").at(-1)).result.result.mail;
+  assert.deepEqual(oneDoc.messages.map((m) => m.id), [third.message_id]);
+  assert.equal(oneDoc.hasMore, true);
+  nativeCapture('mail-operation', doc.result.result, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
+
+  assert.deepEqual(readState(), before, "the read acknowledged nothing: unread counts and read_at unchanged");
+  retireSeats();
+});

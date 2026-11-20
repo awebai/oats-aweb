@@ -38,6 +38,50 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## messaging:mail: an instance's mail, read without acknowledging it
+
+`oats operation run messaging:mail --home <abs> --json` (and `oats aweb mail`
+from a home) answers the messaging layer's `mail` answer, `mailApi: 1`: the
+instance's received and sent mail, newest first, across all its identities.
+It never acknowledges or marks anything read, and needs aw >= 1.36.53
+(`E_AW_TOO_OLD` below). The OATS Desktop's mail sheet reads it. The answer
+itself is the OATS kernel's (`docs/desktop-cli-api.md`, "Mail, `mailApi:
+1`"); oats.aweb fills it in this way. Details within contract v2:
+
+- **It runs only** `aw version`, `whoami`, `mail threads` and `mail show`,
+  each argv checked before it runs: narrower than the contract's (v2) list,
+  which also named `mail inbox --count-only`, with `aw version` added for the
+  floor.
+- **One conversation that can't be read** (a `mail show` failure, an
+  end-to-end encrypted body that won't decrypt) leaves its messages out, shows
+  the rest, and sets that identity's `error` to `conversation-unreadable`. An
+  identity's `error` therefore means something of it is missing, not that
+  nothing was read: **an identity's error doesn't mean it has no messages; it
+  can come with that identity's messages beside it.** With that error, and
+  only then, the identity's row names them: `unreadableConversations: ["<conversationId>", …]` (opaque ids, in the
+  order the read met them; a legacy message with no conversation isn't
+  named). If the 256 KiB bound can't hold every id, the list's tail is
+  dropped first, before any message is.
+- **The closed sets from aw's values.** `verification`: `verified`,
+  `verified_legacy` and `verified_custodial` are `verified`; `unverified` is
+  `unverified`; `failed` and `identity_mismatch` are `failed`; anything else
+  (`verification_stale` too) is `unknown`. `priority`: `low` and `normal` are
+  `normal`; `high` and `urgent` are `high`; anything else is `unknown`.
+- **Paging.** Messages are newest first over the merged stream of every
+  identity; `nextCursor` (opaque) encodes the last message's time, id and
+  team. Each page re-lists the threads newest activity first and stops reading
+  conversations once it has `limit` messages newer than every thread not yet
+  read; at its budget (300 conversation reads, 150 s) it answers only messages
+  it can prove are the newest. `limit` outside 1 to 200, or a cursor no answer
+  gave, is `E_BAD_ARGS`.
+- **The 256 KiB bound always holds.** If the newest message alone doesn't fit
+  (only bodies are cut at 16 KiB), its `subject` and `threadTitle` are cut, at
+  a character boundary, with `truncated: true`, so a page is never empty with
+  more to read. If even an answer with no messages doesn't fit (its
+  identities alone), the read fails whole with `E_MAIL_TOO_LARGE`.
+
+How it is read, its bounds and every error: [docs/mail-read.md](docs/mail-read.md).
+
 ## 1.44.0 — setup works in the root it was asked to work in
 
 Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is

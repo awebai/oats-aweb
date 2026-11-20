@@ -12,7 +12,7 @@ try {
     assert.equal(r.status, 0, r.stderr);
     return r.stdout;
   };
-  const commands = ['version', 'init', 'whoami', 'check', 'heartbeat', 'doctor identity', 'doctor registry', 'team list', 'team invite', 'team invite inspect', 'team join', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id cert show', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'status publish'];
+  const commands = ['version', 'init', 'whoami', 'check', 'heartbeat', 'doctor identity', 'doctor registry', 'team list', 'team invite', 'team invite inspect', 'team join', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id cert show', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'mail threads', 'status publish'];
   const grammar = Object.fromEntries(commands.map(command => {
     const help = run([...command.split(' '), '--help']);
     assert.ok(help.includes(`aw ${command}`), command);

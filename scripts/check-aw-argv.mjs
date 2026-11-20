@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from '../oats-package/capabilities/oats-aweb/lib/byot-create.mjs';
 import { freshMailSendFlag } from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
+import { MAIL_AW_MIN } from '../oats-package/capabilities/oats-aweb/lib/mail-read.mjs';
+import { versionAtLeast } from '../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs';
 import { pathToFileURL } from 'node:url';
 
 const helpOptions = home => ({ cwd: home, encoding: 'utf8', timeout: 10000,
@@ -26,6 +28,14 @@ export function checkRecordedAwArgv(binary, records, { version } = {}) {
           assert.ok(byotCreateAwRefusal(version)?.includes(AW_BYOT_CREATE));
           assert.ok(!r.stdout.includes(`\n  aw ${command} `), `${command} unexpectedly exists; update this capability exclusion`);
           console.log(`Capability exclusion: aw ${version} lacks ${command}; BYOT create requires ${AW_BYOT_CREATE}`);
+          cache.set(command, null);
+          continue;
+        }
+        if (command === 'mail threads' && version && !versionAtLeast(version, MAIL_AW_MIN)) {
+          // Only messaging:mail runs it, and it refuses an aw below its own
+          // floor (E_AW_TOO_OLD) before any aw mail call.
+          assert.ok(!r.stdout.includes(`\n  aw ${command} `) && !r.stdout.includes(`\n  aw ${command}\n`), `${command} unexpectedly exists at aw ${version}; update this capability exclusion`);
+          console.log(`Capability exclusion: aw ${version} lacks ${command}; messaging:mail requires aw >= ${MAIL_AW_MIN}`);
           cache.set(command, null);
           continue;
         }
@@ -61,7 +71,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const records = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   // Coverage witnesses: the suite must execute each hook path against its
   // recording fake, rather than passing on a small accidental subset.
-  const required = ['version', 'init', 'whoami', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show'];
+  const required = ['version', 'init', 'whoami', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'mail threads'];
   const observationHome = mkdtempSync(join(tmpdir(), 'aw-capability-'));
   let version, legacyFlag;
   try {

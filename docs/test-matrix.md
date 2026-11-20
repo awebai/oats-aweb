@@ -11,7 +11,7 @@ HOME for every group. Tests never select a person's identity or tmux server.
 | `unit` | aw 1.36.33, 1.36.58, 1.36.59-rc.3; Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
 | `kernel` | OATS v0.68.1 at `13f8f133808f5932bf461108703c1bada4b3f3d3`, tested aw, tmux; isolated local Git repositories | Public hostOnly, roots, disposal, registry, preview, runtime, upgrade, tasks and attention contracts. Only disposable kernel deployments are exercised. |
 | `host` | Same pinned kernel and tested aw, tmux on a private socket directory | Native health commands, scheduler and process observations. Identity reads moved to disposable stack journeys. |
-| `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, roster/count, joined and retained seats, native identity/readiness observations and sanitized capture generation. |
+| `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, roster/count, joined and retained seats, the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
 | `historical` (manual) | OATS `bb2ba8c9a254edb745913b9c5a9d9b833fda932d` and `e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b` | The retained 0.42/0.47 inventory projection comparison. Those kernels are below the package's supported 0.68 floor, so current CI does not provision them. |
 | `hosted` (acceptance) | Disposable hosted team, pi extension, dashboard token and status API | `health-live.test.mjs`; no Cloud credentials are available to the OSS CI stack. |
 
@@ -50,6 +50,12 @@ Next remains prerelease qualification, not an increase in the tested window.
 - A kernel without `settings-committed-only` excludes that one named tasks
   admission case. The group reads the real kernel's feature list and prints
   the exclusion with its version; the supported tasks selection cases still run.
+- On aw 1.36.33, `mail threads` does not exist. Its recorded tuple is
+  excluded from floor admission only: `messaging:mail` requires aw >=1.36.53
+  and refuses an older aw with `E_AW_TOO_OLD` before any mail call, which its
+  unit test pins. `test/mail-read-native.test.mjs` asserts the command is
+  absent at the floor and admits every built argv at tested and next. The
+  stack journey for `messaging:mail` asserts the refusal at the floor.
 - Status publishing requires aw >=1.36.38. The floor signing test asserts
   that the command is unsupported; it does not skip.
 - The Linux lingering test runs in Linux CI. A local non-Linux package group
@@ -64,12 +70,12 @@ the supported floor moves to 1.36.59 final.
 
 ## Native argv coverage
 
-The grant, setup, wake and join-from CLI doubles record the hook's built argv;
+The grant, setup, wake, join-from and mail-read CLI doubles record the hook's built argv;
 `probe-fixture.mjs` uses the same validator/recorder for the probe's selected
 aw runner. This includes `mail send --new-conversation --to --subject
 --body-file`, both `mail show` selectors and its conversation limit, and
 identity-home/team selection. The real help guard requires witnesses for all
-29 recorded command paths and checks every used flag, parsed together.
+30 recorded command paths and checks every used flag, parsed together.
 Appending `--help` proves parse acceptance; it does not exercise required-together
 or mutually exclusive flag groups, or value validation performed by the command.
 Values are never written to the shared recording log. For mail send, the

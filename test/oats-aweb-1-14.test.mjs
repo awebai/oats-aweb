@@ -135,7 +135,11 @@ test("manifest declares the current floor, no provider team setting, commands an
   assert.equal(manifest.operations.invite.kind, "action");
   assert.equal(manifest.operations.invite.args[0].flag, "--label");
   assert.equal(schema.properties.operations.propertyNames.pattern, "^[a-z][a-z0-9-]*$");
-  assert.deepEqual(Object.keys(manifest.operations).sort(), ["invite", "join", "leave", "teams"]);
+  assert.deepEqual(Object.keys(manifest.operations).sort(), ["invite", "join", "leave", "mail", "teams"]);
+  assert.equal(manifest.commands.mail, "bin/oats-aweb.mjs mail");
+  assert.deepEqual({ ...manifest.operations.mail, args: manifest.operations.mail.args.map((a) => [a.name, a.flag, a.required ?? false]) },
+    { kind: "view", command: "mail", context: "home", description: "Read-only: this instance's mail, received and sent, newest first. Never acknowledges.",
+      args: [["limit", "--limit", false], ["cursor", "--cursor", false], ["conversation", "--conversation", false]] });
   assert.ok(!Object.keys(manifest.operations).some((key) => key.includes(":")), "operation keys are names; kernel forms messaging:<name>");
   assert.equal(manifest.operations.teams.kind, "action");
   assert.equal(manifest.operations.join.args[0].flag, "--labels");
