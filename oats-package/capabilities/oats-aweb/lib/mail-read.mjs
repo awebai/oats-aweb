@@ -435,20 +435,25 @@ function boundedResult({ page, hasMore, states, conversations, observedAt, conve
   const tooLarge = () => fail('E_MAIL_TOO_LARGE', `this instance's mail answer can't fit the ${resultMaxBytes / 1024} KiB bound, even with no messages (${states.length} identities)`, { identities: states.length, bound: resultMaxBytes });
   // Without any message, the answer is its identities and partial conversations:
   // if those alone don't fit, no page can.
-  if (!fits(build([], hasMore))) {
-    // The unreadable-conversation lists give way first: their tails go.
-    const longest = Math.max(0, ...states.map((st) => st.unreadable.length));
+  let result = build(page, hasMore);
+  if (fits(result)) return result;
+  // The unreadable-conversation lists give way first, before any message:
+  // their tails go, to the longest lists with which the whole page fits.
+  const longest = Math.max(0, ...states.map((st) => st.unreadable.length));
+  if (longest) {
     let low = 0, high = longest;
     while (low < high) {
       const mid = Math.ceil((low + high) / 2);
       idsCap = mid;
-      if (fits(build([], hasMore))) low = mid; else high = mid - 1;
+      if (fits(build(page, hasMore))) low = mid; else high = mid - 1;
     }
     idsCap = low;
-    if (!fits(build([], hasMore))) throw tooLarge();
+    result = build(page, hasMore);
+    if (fits(result)) return result;
   }
-  let result = build(page, hasMore);
-  if (fits(result)) return result;
+  // Without any list, the answer is its identity rows and partial
+  // conversations: if those alone don't fit, no page can.
+  if (!fits(build([], hasMore))) throw tooLarge();
   // Too big: find the most messages that fit, by bisection.
   let lo = 0, hi = page.length;
   while (lo < hi) {

@@ -127,7 +127,9 @@ reads about 50 conversations at most on a first page.
 
 ## Errors
 
-Per identity, in `identities[].error`; the read fails whole
+Per identity, in `identities[].error`. An identity's error doesn't mean it
+has no messages: it can come with that identity's messages beside it. The read
+fails whole
 (`E_MAIL_UNREADABLE`, with `details.identities`) only when no identity could
 be read, or (`E_MAIL_TOO_LARGE`, above) when no answer can fit the bound.
 
@@ -137,7 +139,7 @@ be read, or (`E_MAIL_TOO_LARGE`, above) when no answer can fit the bound.
 | `identity-unreadable` | `aw whoami` failed |
 | `no-mail-read` | a grant without the `mail.read` scope, or the server refused the identity's thread list |
 | `threads-unreadable` | `aw mail threads` failed: nothing of this identity was read |
-| `conversation-unreadable` | one conversation could not be read (an E2EE body that won't decrypt, a server error or refusal): its messages are missing, the rest are shown. The row then has `unreadableConversations`, the ids of those conversations (a legacy message without one isn't named); past the 256 KiB bound its tail is dropped first |
+| `conversation-unreadable` | one conversation could not be read (an E2EE body that won't decrypt, a server error or refusal): its messages are missing, the rest are shown. The row then has `unreadableConversations`, the ids of those conversations (a legacy message without one isn't named); past the 256 KiB bound its tail is dropped first, before any message |
 | `too-many-threads` | the budget ran out before anything could be ordered (above) |
 
 A home whose oats.aweb copy predates the operation answers the kernel's

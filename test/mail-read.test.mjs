@@ -371,3 +371,15 @@ test('conversation-unreadable names the conversations, and only with that error;
   assert.ok(listed.length > 0 && listed.length < 400, `${listed.length} named`);
   assert.deepEqual(listed, many.slice(0, listed.length).map((t) => t.conversation_id));
 });
+
+test('readable mail beside many unreadable conversations: the list\'s tail goes before any message', async () => {
+  const failing = Array.from({ length: 299 }, (_, i) => thread(`f0e1d2c3-b4a5-4697-8879-${String(i).padStart(12, '0')}`, 59));
+  const threads = [...failing, thread('readable', 59)];
+  const conversations = { ...Object.fromEntries(failing.map((t) => [t.conversation_id, 'error'])), readable: [msg('kept', 59, { conversation: 'readable' })] };
+  const { result } = await read({ [H1]: { whoami: ME, threads: [threads], conversations } }, { resultMaxBytes: 6144, maxReads: 300 });
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 6144);
+  assert.deepEqual(result.mail.messages.map((m) => m.id), ['kept']);
+  const listed = result.mail.identities[0].unreadableConversations;
+  assert.ok(listed.length > 0 && listed.length < 299, `${listed.length} named`);
+  assert.deepEqual(listed, failing.slice(0, listed.length).map((t) => t.conversation_id));
+});
