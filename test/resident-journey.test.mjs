@@ -751,15 +751,21 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
   const { home } = spawned.doc.result;
   const primary = join(home, ".aw"), joined = join(home, ".aweb-identity-alpha");
   t.after(() => j.shell("oats retire mail-seat --json"));
+  // A second joined home sends in alpha: the deployment root holds alpha's
+  // controller keys but no alpha workspace membership to send from.
+  const peer = j.shell("oats spawn probe --name mail-peer --provider oats.aweb join=alpha --no-launch --json");
+  assert.equal(peer.status, 0, peer.stdout + peer.stderr);
+  const peerAlpha = join(peer.doc.result.home, ".aweb-identity-alpha");
+  t.after(() => j.shell("oats retire mail-peer --json"));
 
   // Mail: root -> seat in each team, and the seat answering in the default one.
-  const send = (cwd, args, body) => {
+  const send = (cwd, args, body, identity = []) => {
     const file = join(j.base, `body-${randomBytes(4).toString("hex")}.txt`);
     writeFileSync(file, body, { mode: 0o600 });
-    return JSON.parse(step(["mail", "send", ...args, `--body-file=${file}`, "--json"], cwd));
+    return JSON.parse(step([...identity, "mail", "send", ...args, `--body-file=${file}`, "--json"], cwd));
   };
   const first = send(j.deployment, ["--to=mail-seat", "--subject=first"], "hello on default");
-  const second = send(j.deployment, [`--team=${joinedTeam}`, "--to=mail-seat", "--subject=second"], "hello on alpha");
+  const second = send(peer.doc.result.home, ["--to=mail-seat", "--subject=second"], "hello on alpha", ["--identity-home", peerAlpha]);
   const third = send(home, [`--conversation-id=${first.conversation_id}`], "answer from the seat");
   for (const receipt of [first, second, third]) assert.equal(typeof receipt.message_id, "string");
 
