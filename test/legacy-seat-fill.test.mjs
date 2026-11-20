@@ -167,15 +167,47 @@ for (const field of ['grant_id','team_id']) test(`duplicate ${field} in legacy g
 });
 
 test('LOCAL and retained homes never enter the legacy grant fill', t => {
-  for (const retained of [false,true]) {
+  for (const shape of ['LOCAL','retained without grant','retained with grant','identity.source with grant']) {
     const s=legacy(t);
-    s.meta.identity.mode=retained?'global':'local';
-    s.settings.identity.mode='local';
-    if(retained) {s.meta.retained=true; delete s.meta.identity.grant;}
+    if(shape==='LOCAL') {
+      s.meta.identity.mode='local';
+      s.settings.identity.mode='local';
+    } else if(shape.startsWith('retained')) {
+      s.meta.retained=true;
+      if(shape==='retained without grant') delete s.meta.identity.grant;
+    } else s.settings.identity.source=join(s.base,'retained-source','.aw');
     const before=snapshot(s.home), r=s.run('launch',s.meta,{FAKE_GRANT_SHOW_FAIL:'must not read custody'});
-    ok(r); assert.deepEqual(snapshot(s.home),before);
-    assert.ok(!s.calls().some(c=>c.argv.slice(0,2).join(' ')==='id grant'));
+    ok(r); assert.deepEqual(snapshot(s.home),before,shape);
+    assert.ok(!s.calls().some(c=>c.argv.slice(0,2).join(' ')==='id grant'),shape);
   }
+});
+
+for (const renew of ['off','launch']) test(`an expired legacy grant refuses with renewal ${renew} and leaves the home unchanged`, t => {
+  const s=legacy(t);
+  s.settings.identity.renew=renew;
+  s.meta.identity.grant.expiresAt='2020-01-01T00:00:00Z';
+  writeFileSync(s.yaml,readFileSync(s.yaml,'utf8').replace('2099-01-01T00:00:00Z','2020-01-01T00:00:00Z'));
+  // The native list endpoint computes status from expiry, not a stored flag.
+  s.save(s.grants().map(g=>({...g,status:'expired',expires_at:'2020-01-01T00:00:00Z'})));
+  const before=snapshot(s.home), r=s.run();
+  assert.equal(r.status,1,r.stdout+r.stderr);
+  assert.match(r.doc.warning,/respawn.*custody grant is not active/);
+  assert.deepEqual(snapshot(s.home),before);
+  assert.deepEqual(r.doc.meta.identity,s.meta.identity);
+  assert.deepEqual(s.calls().map(c=>c.argv.slice(0,3).join(' ')),['id grant show']);
+  assert.equal(s.grants().length,1,'neither renewal mode mints on an expired legacy grant');
+});
+
+test('a meta-only preflight seat id is replaced when the legacy grant label has no id', t => {
+  const s=legacy(t), metaOnlySeat='0123456789abcdef';
+  s.meta.identity.seat=metaOnlySeat;
+  const r=s.run(); ok(r);
+  const seat=JSON.parse(readFileSync(s.record,'utf8')).seat;
+  assert.match(seat,/^[0-9a-f]{16}$/);
+  assert.notEqual(seat,metaOnlySeat);
+  assert.equal(r.doc.meta.identity.seat,seat);
+  ok(s.run('retire',r.doc.meta));
+  assert.equal(s.grants()[0].status,'revoked');
 });
 
 test('upgrade adopts legacy metadata without effects and the next start fills the record', t => {

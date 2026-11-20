@@ -110,6 +110,14 @@ home without seat.json. The launch must fill seat.json, keep the grant active
 with renewal off, and retire must revoke it in its recorded team. This case
 runs at every matrix version, including 1.36.33 and 1.36.58.
 
+The fill checks the list row's `status`. In the pinned service,
+[`list_identity_grants`](https://github.com/awebai/aweb/blob/679d50066d4160748f6f9cfa0537161992399573/server/src/aweb/routes/identity_grants.py#L173)
+uses [`grant_status`](https://github.com/awebai/aweb/blob/679d50066d4160748f6f9cfa0537161992399573/server/src/aweb/identity_grant_status.py#L15),
+which returns `expired` for a finite grant past its expiry. `aw id grant show`
+returns this list row; `effective_status` belongs to the separate grant
+status endpoint used by custody. Unit tests pin the no-write refusal for an
+expired grant with both renewal off and renewal on launch.
+
 The stack group writes only public observations to `OATS_AWEB_CAPTURE_DIR`:
 grant receipts/show, resident identity, roster, count, workspace record and
 broker status. It captures only identities it created. The resident baseline

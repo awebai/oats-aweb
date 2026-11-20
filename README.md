@@ -146,7 +146,9 @@ start too; their retire requires the printed manual revoke followed by
 A pre-1.25.0 home no longer follows a changed default team: respawn to move
 it to another team or resident. The legacy `oats:<instance>` label has no
 seat id, so the fill mints one; a label already encoding a valid seat id
-preserves it. The legacy grant stays owned by its recorded grant id: the
+preserves it. A meta-only seat id left by a failed renewal preflight is
+replaced when the grant label has no id: that preflight never minted a grant
+under the discarded id. The legacy grant stays owned by its recorded grant id: the
 sweep keeps it, renewal revokes it in its team and replaces it with a grant
 bearing the new seat label, and retire revokes it even before any renewal.
 The fill uses the same atomic, owner-only seat writer as spawn. A killed
