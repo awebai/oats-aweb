@@ -347,6 +347,12 @@ test("launch with renewal off preserves the existing grant locator and session d
     assert.deepEqual(record, { seat: record.seat, instance: "probe", resident: old.identity.resident, team: old.identity.team });
     assert.deepEqual(r.doc.meta, { ...old, identity: { ...old.identity, seat: record.seat }, delivery: "session", runtime: "" }, "the fill adds only the seat id to the identity and preserves the grant");
     const calls = logLines(base);
+    assert.deepEqual(calls.map((l) => l.argv.join(" ")), [
+      "id grant show grant-old --team=t:example.test --json",
+      "wake status --json",
+      `wake register --home ${home} --identity-home ${oldHome} --delivery session`,
+      "id grant list --team=t:example.test --json",
+    ], "legacy verification, the original broker calls, then the sweep; no other aw calls");
     const grantCalls = calls.filter((l) => l.argv.slice(0, 2).join(" ") === "id grant");
     assert.deepEqual(grantCalls.map((l) => l.argv.join(" ")), ["id grant show grant-old --team=t:example.test --json", "id grant list --team=t:example.test --json"], "one legacy custody show, then the sweep; no mint or revoke");
     assert.ok(grantCalls.every((l) => l.cwd === realpathSync(custody)), "both reads use the recorded resident custody");

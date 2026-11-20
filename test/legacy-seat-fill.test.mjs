@@ -220,3 +220,18 @@ test('upgrade adopts legacy metadata without effects and the next start fills th
   assert.match(JSON.parse(readFileSync(s.record,'utf8')).seat,/^[0-9a-f]{16}$/);
   ok(s.run('retire',launched.doc.meta));
 });
+
+for (const [key,value,warning] of [['ttl','1d',/E_GRANT_TTL/],['renew','sometimes',/identity\.renew must be "off" or "launch"/]]) {
+  for (const preview of [false,true]) test(`invalid legacy ${key} refuses before custody or writes: ${preview?'preview':'real start'}`, t => {
+    const s=legacy(t);
+    s.settings.identity[key]=value;
+    const before=snapshot(s.home);
+    const r=s.run('launch',s.meta,preview?{OATS_LAUNCH_PREVIEW:'1'}:{});
+    assert.equal(r.status,1,r.stdout+r.stderr);
+    assert.match(r.doc.warning,warning);
+    assert.deepEqual(snapshot(s.home),before,'a refused legacy home stays exactly as it was');
+    assert.equal(existsSync(s.record),false);
+    assert.deepEqual(s.calls(),[],'configuration refuses before the legacy custody show');
+    assert.equal(s.grants()[0].status,'active');
+  });
+}
