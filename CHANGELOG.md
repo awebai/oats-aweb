@@ -6,7 +6,8 @@
   acknowledges.** A new view operation (and `oats aweb mail`) answers the
   messaging layer's `mail` answer, `mailApi: 1`: received and sent mail,
   newest first, across the primary identity and every joined team's,
-  labelled by team, with bounded bodies (16 KiB) and answers (256 KiB),
+  labelled by team, with per-identity errors (naming the conversations that
+  couldn't be read), bounded bodies (16 KiB) and answers (256 KiB),
   paging by an opaque cursor, and long conversations marked
   `partial: "oldest-first-only"`. The bound always holds: a message too
   big alone has its subject and thread title cut too, and an answer whose

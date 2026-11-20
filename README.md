@@ -56,7 +56,11 @@ itself is the OATS kernel's (`docs/desktop-cli-api.md`, "Mail, `mailApi:
   end-to-end encrypted body that won't decrypt) leaves its messages out, shows
   the rest, and sets that identity's `error` to `conversation-unreadable`. An
   identity's `error` therefore means something of it is missing, not that
-  nothing was read.
+  nothing was read. With that error, and only then, the identity's row names
+  them: `unreadableConversations: ["<conversationId>", …]` (opaque ids, in the
+  order the read met them; a legacy message with no conversation isn't
+  named). If the 256 KiB bound can't hold every id, the list's tail is
+  dropped first, before any other part of the answer.
 - **The closed sets from aw's values.** `verification`: `verified`,
   `verified_legacy` and `verified_custodial` are `verified`; `unverified` is
   `unverified`; `failed` and `identity_mismatch` are `failed`; anything else

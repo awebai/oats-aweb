@@ -137,7 +137,7 @@ be read, or (`E_MAIL_TOO_LARGE`, above) when no answer can fit the bound.
 | `identity-unreadable` | `aw whoami` failed |
 | `no-mail-read` | a grant without the `mail.read` scope, or the server refused the identity's thread list |
 | `threads-unreadable` | `aw mail threads` failed: nothing of this identity was read |
-| `conversation-unreadable` | one conversation could not be read (an E2EE body that won't decrypt, a server error or refusal): its messages are missing, the rest are shown |
+| `conversation-unreadable` | one conversation could not be read (an E2EE body that won't decrypt, a server error or refusal): its messages are missing, the rest are shown. The row then has `unreadableConversations`, the ids of those conversations (a legacy message without one isn't named); past the 256 KiB bound its tail is dropped first |
 | `too-many-threads` | the budget ran out before anything could be ordered (above) |
 
 A home whose oats.aweb copy predates the operation answers the kernel's

@@ -348,3 +348,26 @@ test('the only message, cut to fit, says there is no more', async () => {
   assert.equal(result.mail.nextCursor, null);
   assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 256 * 1024);
 });
+
+test('conversation-unreadable names the conversations, and only with that error; past the bound the list\'s tail goes', async () => {
+  const threads = Array.from({ length: 8 }, (_, i) => thread(`conv-${i}`, 59 - i));
+  const conversations = Object.fromEntries(threads.map((t, i) => [t.conversation_id, i % 2 ? 'error' : [msg(`m${i}`, 59 - i, { conversation: t.conversation_id })]]));
+  const script = { [H1]: { whoami: ME, threads: [threads], conversations }, [H2]: { whoami: ME2, threads: [[]], conversations: {} } };
+  const identities = [{ team: 'acme', identityHome: H1, primary: true }, { team: 'alpha', identityHome: H2, primary: false }];
+  const { result } = await read(script, { identities, limit: 10 });
+  const [acme, alpha] = result.mail.identities;
+  assert.equal(acme.error, MAIL_IDENTITY_ERRORS.conversation);
+  assert.deepEqual(acme.unreadableConversations, ['conv-1', 'conv-3', 'conv-5', 'conv-7']);
+  assert.equal(Object.hasOwn(alpha, 'unreadableConversations'), false, 'absent without that error');
+  assert.deepEqual(result.mail.messages.map((m) => m.id), ['m0', 'm2', 'm4', 'm6']);
+  // Many unreadable conversations and a bound they can't all fit in: the
+  // list keeps its head, the answer fits, nothing else is lost.
+  const many = Array.from({ length: 400 }, (_, i) => thread(`unreadable-conversation-${String(i).padStart(4, '0')}`, 59, {}));
+  const bad = { [H1]: { whoami: ME, threads: [many], conversations: Object.fromEntries(many.map((t) => [t.conversation_id, 'error'])) } };
+  const bound = 6 * 1024;
+  const cut = (await read(bad, { resultMaxBytes: bound, maxReads: 400 })).result;
+  assert.ok(Buffer.byteLength(JSON.stringify(cut)) <= bound);
+  const listed = cut.mail.identities[0].unreadableConversations;
+  assert.ok(listed.length > 0 && listed.length < 400, `${listed.length} named`);
+  assert.deepEqual(listed, many.slice(0, listed.length).map((t) => t.conversation_id));
+});

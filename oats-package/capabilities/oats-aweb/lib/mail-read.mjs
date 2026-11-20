@@ -291,7 +291,7 @@ export async function readMail({
   };
   // `listedUntil`: the activity of the last thread listed so far. Threads come
   // newest activity first, so a page not yet listed holds nothing newer.
-  const states = identities.map((row) => ({ row, self: null, error: null, readable: false, queue: [], threadsCursor: null, threadsDone: false, listedUntil: Infinity }));
+  const states = identities.map((row) => ({ row, self: null, error: null, readable: false, queue: [], threadsCursor: null, threadsDone: false, listedUntil: Infinity, unreadable: [] }));
   const setError = (state, code) => { if (!state.error) state.error = code; };
   const conversations = new Map();
   const collected = [];
@@ -322,6 +322,7 @@ export async function readMail({
       // One conversation's failure, a refusal included, is that conversation's:
       // the identity's other conversations are still read.
       setError(state, MAIL_IDENTITY_ERRORS.conversation);
+      if (conversationId && !state.unreadable.includes(conversationId)) state.unreadable.push(conversationId);
       return;
     }
     state.readable = true;
@@ -401,8 +402,12 @@ export async function readMail({
   return boundedResult({ page, hasMore, states, conversations, observedAt, conversation, resultMaxBytes });
 }
 
-function identityRows(states) {
-  return states.map((s) => ({ team: s.row.team, alias: s.self?.alias ?? '', identity: s.self?.identity ?? '', primary: !!s.row.primary, error: s.error }));
+/** identities[]: one row per identity. With conversation-unreadable, the row
+ *  names those conversations (`unreadableConversations`), the first `idsCap`
+ *  of them when the bound needs a shorter list. */
+function identityRows(states, idsCap = Infinity) {
+  return states.map((s) => ({ team: s.row.team, alias: s.self?.alias ?? '', identity: s.self?.identity ?? '', primary: !!s.row.primary, error: s.error,
+    ...(s.error === MAIL_IDENTITY_ERRORS.conversation ? { unreadableConversations: s.unreadable.slice(0, idsCap) } : {}) }));
 }
 
 const publicMessage = ({ ms: _ms, sub: _sub, ...m }) => m;
@@ -410,11 +415,12 @@ const publicMessage = ({ ms: _ms, sub: _sub, ...m }) => m;
 /** The answer, cut to `resultMaxBytes`: messages are dropped from the oldest
  *  end until it fits, and then `hasMore` is true with a cursor. */
 function boundedResult({ page, hasMore, states, conversations, observedAt, conversation, resultMaxBytes }) {
+  let idsCap = Infinity;
   const build = (messages, more) => {
     const used = new Set(messages.map((m) => `${m.team}\u0000${m.conversationId}`));
     const mail = {
       mailApi: MAIL_API, acknowledges: false, observedAt,
-      identities: identityRows(states),
+      identities: identityRows(states, idsCap),
       messages: messages.map(publicMessage),
       // A partial conversation is listed even when none of its (old) messages
       // made this page: a client must still say its newest can't be read.
@@ -429,7 +435,18 @@ function boundedResult({ page, hasMore, states, conversations, observedAt, conve
   const tooLarge = () => fail('E_MAIL_TOO_LARGE', `this instance's mail answer can't fit the ${resultMaxBytes / 1024} KiB bound, even with no messages (${states.length} identities)`, { identities: states.length, bound: resultMaxBytes });
   // Without any message, the answer is its identities and partial conversations:
   // if those alone don't fit, no page can.
-  if (!fits(build([], hasMore))) throw tooLarge();
+  if (!fits(build([], hasMore))) {
+    // The unreadable-conversation lists give way first: their tails go.
+    const longest = Math.max(0, ...states.map((st) => st.unreadable.length));
+    let low = 0, high = longest;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      idsCap = mid;
+      if (fits(build([], hasMore))) low = mid; else high = mid - 1;
+    }
+    idsCap = low;
+    if (!fits(build([], hasMore))) throw tooLarge();
+  }
   let result = build(page, hasMore);
   if (fits(result)) return result;
   // Too big: find the most messages that fit, by bisection.
