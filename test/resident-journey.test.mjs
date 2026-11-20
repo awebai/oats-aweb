@@ -750,15 +750,26 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
   const { home } = spawned.doc.result;
   const primary = join(home, ".aw"), joined = join(home, ".aweb-identity-alpha");
-  t.after(() => j.shell("oats retire mail-seat --json"));
+  // Retire what this test spawned: at its end, asserted; on a failure, from
+  // journey's cleanups, which run before its directory is removed.
+  const spawnedSeats = ["mail-seat"];
+  const retireSeats = () => {
+    while (spawnedSeats.length) {
+      const name = spawnedSeats.pop();
+      const retired = j.shell(`oats retire ${name} --json`);
+      assert.equal(retired.status, 0, `retire ${name}: ${retired.stdout}${retired.stderr}`);
+    }
+  };
+  j.cleanups.push(retireSeats);
   // A second joined home sends in alpha: the deployment root holds alpha's
   // controller keys but no alpha workspace membership to send from.
   const peer = j.shell("oats spawn probe --name mail-peer --provider oats.aweb join=alpha --no-launch --json");
   assert.equal(peer.status, 0, peer.stdout + peer.stderr);
+  spawnedSeats.push("mail-peer");
   const peerAlpha = join(peer.doc.result.home, ".aweb-identity-alpha");
-  t.after(() => j.shell("oats retire mail-peer --json"));
 
-  // Mail: root -> seat in each team, and the seat answering in the default one.
+  // Mail: root -> seat in default, mail-peer -> seat in alpha, and the seat
+  // answering in default.
   const send = (cwd, args, body, identity = []) => {
     const file = join(j.base, `body-${randomBytes(4).toString("hex")}.txt`);
     writeFileSync(file, body, { mode: 0o600 });
@@ -796,6 +807,7 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
     assert.notEqual(result.status, 0);
     assert.equal(doc.error.code, "E_AW_TOO_OLD", result.stdout + result.stderr);
     assert.match(doc.error.message, /needs aw >= 1\.36\.53/);
+    retireSeats();
     return;
   }
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -826,4 +838,5 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
   nativeCapture('mail-operation', doc.result, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
 
   assert.deepEqual(readState(), before, "the read acknowledged nothing: unread counts and read_at unchanged");
+  retireSeats();
 });
