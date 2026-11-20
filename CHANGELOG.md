@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.46.0 — 2026-11-20
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58; `messaging:mail` alone needs aw >= 1.36.53 (`E_AW_TOO_OLD` below it).
+
+An instance's own mail can be read without acknowledging anything: the view operation `messaging:mail` (#299), the data for the Desktop's mail sheet. Its answer, `mailApi: 1`, is described for every messaging provider in OATS's `docs/desktop-cli-api.md` ("Mail, `mailApi: 1`").
+
+**What a deployment must change:** nothing. It is additive: a home gets the operation through `oats instance upgrade` or a new spawn, and a home without it answers `E_OPERATION_UNKNOWN`.
 
 - **Added: `messaging:mail`, a read of an instance's own mail that never
   acknowledges.** A new view operation (and `oats aweb mail`) answers the
