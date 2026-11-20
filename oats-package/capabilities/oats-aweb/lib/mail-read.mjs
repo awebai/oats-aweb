@@ -443,17 +443,19 @@ function boundedResult({ page, hasMore, states, conversations, observedAt, conve
     // cut its subject and thread title, as a body is cut, to the most that
     // fits, so a page never comes back empty with more to read.
     const [first] = page;
+    // More only if there is: older messages on this page, or past it.
+    const more = hasMore || page.length > 1;
     const cut = (bytes) => {
       const subject = truncateUtf8(first.subject, bytes), title = truncateUtf8(first.threadTitle, bytes);
       return { ...first, subject: subject.text, threadTitle: title.text, truncated: first.truncated || subject.truncated || title.truncated };
     };
     let low = 0, high = Math.max(Buffer.byteLength(first.subject), Buffer.byteLength(first.threadTitle));
-    if (!fits(build([cut(0)], true))) throw tooLarge();
+    if (!fits(build([cut(0)], more))) throw tooLarge();
     while (low < high) {
       const mid = Math.ceil((low + high) / 2);
-      if (fits(build([cut(mid)], true))) low = mid; else high = mid - 1;
+      if (fits(build([cut(mid)], more))) low = mid; else high = mid - 1;
     }
-    result = build([cut(low)], true);
+    result = build([cut(low)], more);
   } else result = build(page.slice(0, lo), true);
   if (!fits(result) || (result.mail.hasMore && !result.mail.nextCursor)) throw tooLarge();
   return result;

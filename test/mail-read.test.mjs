@@ -339,3 +339,12 @@ test('at any bound, the answer fits it or is E_MAIL_TOO_LARGE, and never has mor
     } catch (e) { assert.equal(e.code, 'E_MAIL_TOO_LARGE', `bound ${bound}: ${e.message}`); }
   }
 });
+
+test('the only message, cut to fit, says there is no more', async () => {
+  const huge = 'ü'.repeat(200 * 1024);
+  const { result } = await read({ [H1]: { whoami: ME, threads: [[thread('c1', 59, { title: huge })]], conversations: { c1: [msg('only', 59, { subject: huge })] } } });
+  assert.deepEqual(result.mail.messages.map((m) => [m.id, m.truncated]), [['only', true]]);
+  assert.equal(result.mail.hasMore, false);
+  assert.equal(result.mail.nextCursor, null);
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 256 * 1024);
+});
