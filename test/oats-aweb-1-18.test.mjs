@@ -240,6 +240,9 @@ test("a launch preview leaves a joined team the workspace no longer maps", (t) =
 
 test("a launch preview refuses what the real start refuses before any aw call", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", settings: { identity: { mode: "global", resident: "ops", renew: "sometimes" } } });
+  // An existing seat isolates renew validation from the legacy-source checks.
+  mkdirSync(join(fx.home, ".oats-aweb"), {recursive:true});
+  writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), JSON.stringify({seat: "0123456789abcdef", instance: "dev-1", resident: "ops", team: "legacy:example.test"}));
   const meta = { identity: { mode: "global", grant: { id: "grant-1" } } };
   const preview = fx.launch(meta, "claude", { extra: { OATS_LAUNCH_PREVIEW: "1" } });
   assert.notEqual(preview.status, 0);

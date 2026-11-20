@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+**What a deployment must change:** legacy GLOBAL grant seats (oats.aweb
+1.12–1.24) fill `.oats-aweb/seat.json` once at their next real start, including
+a start after `oats instance upgrade`. A legacy seat no longer follows a
+changed default team; respawn to move it. No live host rollout is included.
+
+The fill requires recorded metadata, grant.yaml and the resident custody
+record to agree on the grant and team, an active grant, and a configured
+resident custody. Missing or disagreeing facts, an unreadable or inactive
+grant, an unresolved resident, or changed resident/team configuration refuses
+start without writing the record and names the respawn remedy. A team
+mismatch between metadata and grant.yaml also prints the manual revoke and
+`oats retire <instance> --force` remedies. Preview performs only local checks.
+Existing seat records, LOCAL homes and retained identities keep their behavior.
+The atomic 0600 writer survives interrupted starts; legacy bare-label grants
+remain owned by their recorded id until renewal or retire revokes them.
+
 ## 1.46.0 — 2026-11-20
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58; `messaging:mail` alone needs aw >= 1.36.53 (`E_AW_TOO_OLD` below it).

@@ -184,6 +184,8 @@ if (a[0] === "id" && a[1] === "grant" && a[2] === "list") {
   console.log(j({ grants: grants().filter(g => !team || g.team_id === team) })); process.exit(0);
 }
 if (a[0] === "id" && a[1] === "grant" && a[2] === "show") {
+  if (process.env.FAKE_GRANT_SHOW_FAIL) { console.error(process.env.FAKE_GRANT_SHOW_FAIL); process.exit(1); }
+  if (process.env.FAKE_GRANT_SHOW_REPLY) { console.log(process.env.FAKE_GRANT_SHOW_REPLY); process.exit(0); }
   const id = grantId();
   const team = val("--team") || process.env.FAKE_ACTIVE_TEAM || "t:example.test";
   const grant = grants().find(g => g.grant_id === id && g.team_id === team);

@@ -123,7 +123,15 @@ team refuses the start with a respawn remedy before host effects. Respawn the
 home to choose another team or resident. An unreadable or incomplete record
 refuses start and retire; restore the original readable record to retry cleanup.
 The hook never replaces an unreadable record with a new seat id. Homes created
-before 1.25.0 that have no seat record keep their existing lifecycle path.
+before 1.25.0 that have no seat record fill it once at their next real start,
+including after a module upgrade. Recorded meta, grant.yaml and the resident
+custody's active grant must agree on the grant and team, and the recorded
+resident must resolve through settings.oats.aweb.residents. Preview checks only
+local facts and configuration, without custody calls or writes. An unreadable
+or inactive custody grant, missing or disagreeing local facts, or an
+unresolvable resident refuses start with the cause and a respawn remedy; no
+seat record is written. A meta/grant.yaml team mismatch also prints the manual
+revoke in the grant file's team and `oats retire <instance> --force` remedy.
 Existing homes receive this change through a provider module upgrade or respawn.
 A selected grant home recording another team refuses start even when the
 configured default matches the seat, including preview and `renew: off`.
@@ -135,12 +143,17 @@ Homes already renewed into another default team under an earlier release refuse
 start too; their retire requires the printed manual revoke followed by
 `oats retire <instance> --force`.
 
-A pre-1.25.0 home renewing into a changed default team revokes its previous
-grant in that grant's recorded team. If renewal fails after writing its first
-seat record, it keeps the previous grant. When that grant and the new record
-name different teams, the next start refuses until the home is respawned;
-follow retire's printed cleanup steps. The record stays durable so a grant
-minted before a crash remains discoverable.
+A pre-1.25.0 home no longer follows a changed default team: respawn to move
+it to another team or resident. The legacy `oats:<instance>` label has no
+seat id, so the fill mints one; a label already encoding a valid seat id
+preserves it. A meta-only seat id left by a failed renewal preflight is
+replaced when the grant label has no id: that preflight never minted a grant
+under the discarded id. The legacy grant stays owned by its recorded grant id: the
+sweep keeps it, renewal revokes it in its team and replaces it with a grant
+bearing the new seat label, and retire revokes it even before any renewal.
+The fill uses the same atomic, owner-only seat writer as spawn. A killed
+write leaves no partial seat record; a completed write survives a killed
+start, and the next start uses that record without repeating legacy checks.
 
 If a mint receipt anomalously reports another team and immediate compensation
 cannot revoke it, retire stays within the recorded team and refuses. Run its

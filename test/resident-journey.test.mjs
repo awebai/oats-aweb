@@ -847,3 +847,39 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
   assert.deepEqual(readState(), before, "the read acknowledged nothing: unread counts and read_at unchanged");
   retireSeats();
 });
+
+test("a real legacy bare-label grant seat fills at launch and retires its grant in its team", (t) => {
+  if (!configured(t)) return;
+  if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
+  const j = journey(t), ns = `legacy-${randomBytes(4).toString('hex')}.test`, team = `default:${ns}`;
+  j.workspace({teams:`teams:\n  default: { team: '${team}' }\n`,defaultTeam:'default'});
+  const custody = join(j.base,'resident');
+  globalIdentity(j,custody,'resident',ns);
+  const adopted = j.run(['create','resident','--root',custody,'--json'],{AWEB_URL,AWID_REGISTRY_URL:AWID_URL});
+  assert.equal(adopted.status,0,adopted.stdout+adopted.stderr);
+  const status = j.aw(custody,['custody','status','--json']);
+  assert.equal(status.status,0,status.stderr);
+  const home=join(j.base,'legacy-seat'), grantHome=join(home,'.aweb-identity');
+  mkdirSync(home);
+  const minted=j.aw(custody,['id','grant','mint',`--team=${team}`,'--scope=mail.read','--ttl=720h','--label=oats:legacy-seat',`--out=${grantHome}`,`--custody-socket=${JSON.parse(status.stdout).socket_path}`,'--json']);
+  assert.equal(minted.status,0,minted.stdout+minted.stderr);
+  const receipt=JSON.parse(minted.stdout);
+  const meta={identity:{mode:'global',alias:'resident',resident:'resident',team,grant:{id:receipt.grant_id,home:grantHome,expiresAt:receipt.expires_at,ttl:'720h',scopes:['mail.read']}}};
+  const hook=(event,input)=>spawnSync(process.execPath,[HOOK,event],{cwd:home,encoding:'utf8',env:{...j.env,
+    OATS_EVENT:event,OATS_HOME:home,OATS_INSTANCE:'legacy-seat',OATS_CONTEXT:j.deployment,
+    OATS_RUNTIME:'pi',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:team,
+    OATS_SETTINGS:JSON.stringify({registry:AWID_URL,identity:{mode:'global',resident:'resident',renew:'off'},residents:{resident:custody}}),OATS_META:JSON.stringify(input)}});
+  const launched=hook('launch',meta);
+  assert.equal(launched.status,0,launched.stdout+launched.stderr);
+  const filled=JSON.parse(readFileSync(join(home,'.oats-aweb','seat.json'),'utf8'));
+  assert.match(filled.seat,/^[0-9a-f]{16}$/);
+  assert.deepEqual({...filled,seat:undefined},{seat:undefined,instance:'legacy-seat',resident:'resident',team});
+  const show=()=>{
+    const r=j.aw(custody,['id','grant','show',receipt.grant_id,`--team=${team}`,'--json']);
+    assert.equal(r.status,0,r.stderr); return JSON.parse(r.stdout);
+  };
+  assert.equal(show().status,'active');
+  const retired=hook('retire',JSON.parse(launched.stdout).meta);
+  assert.equal(retired.status,0,retired.stdout+retired.stderr);
+  assert.equal(show().status,'revoked');
+});
