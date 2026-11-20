@@ -811,7 +811,10 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
     return;
   }
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  const { mail, documents } = doc.result;
+  // The kernel's operation-run answer; the provider's view result is inside it.
+  assert.equal(doc.result.operation, "messaging:mail");
+  assert.equal(doc.result.capability, "oats.aweb");
+  const { mail, documents } = doc.result.result;
   assert.equal(documents[0].label, "Mail");
   assert.equal(mail.mailApi, 1);
   assert.equal(mail.acknowledges, false);
@@ -832,10 +835,10 @@ test("messaging:mail reads a real home's mail on both identities and acknowledge
   // One conversation, through the kernel's --arg.
   const one = j.shell(`oats operation run messaging:mail --home ${JSON.stringify(home)} --arg conversation=${first.conversation_id} --arg limit=1 --json`);
   assert.equal(one.status, 0, one.stdout + one.stderr);
-  const oneDoc = JSON.parse(one.stdout.trim().split("\n").at(-1)).result.mail;
+  const oneDoc = JSON.parse(one.stdout.trim().split("\n").at(-1)).result.result.mail;
   assert.deepEqual(oneDoc.messages.map((m) => m.id), [third.message_id]);
   assert.equal(oneDoc.hasMore, true);
-  nativeCapture('mail-operation', doc.result, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
+  nativeCapture('mail-operation', doc.result.result, { version: j.awVersion, commit: j.awCommit, paths: { [j.base]: '/fixture/journey' } });
 
   assert.deepEqual(readState(), before, "the read acknowledged nothing: unread counts and read_at unchanged");
   retireSeats();
