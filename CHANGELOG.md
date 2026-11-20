@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.45.0 — 2026-11-20
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.
+
+A launch on a session provider is delivered by the host wake broker (#293), as the session-provider contract's delivery item says. It is inert until the kernel sets `OATS_BACKEND` to a session provider: on today's kernels every home runs on tmux and behaves as before.
+
+**What a deployment must change:**
+- **Nothing on tmux.** `OATS_BACKEND=tmux` and an unset one keep their delivery and record no `backend`.
+- **A host that runs a session provider's homes under `delivery: channel`** keeps an installed `aweb-channel` at 1.7.9 or later and `@awebai/pi` at 0.3.10 or later. These are the `delivery: session` floors. The package requirements are keyed by `delivery` alone, so they don't yet declare them for such a launch (README, "Provider settings").
 
 - **Added: a session provider's launch is delivered by the host wake broker.**
   A spawn or a start whose `OATS_BACKEND` names a session provider (anything
