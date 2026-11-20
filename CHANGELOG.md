@@ -18,6 +18,61 @@
   provider's aw floor is unchanged. Additive: a home gets it
   with `oats instance upgrade` or a new spawn. See `docs/mail-read.md`.
 
+## 1.45.0 — 2026-11-20
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.
+
+A launch on a session provider is delivered by the host wake broker (#293), as the session-provider contract's delivery item says. It is inert until the kernel sets `OATS_BACKEND` to a session provider: on today's kernels every home runs on tmux and behaves as before.
+
+**What a deployment must change:**
+- **Nothing on tmux.** `OATS_BACKEND=tmux` and an unset one keep their delivery and record no `backend`.
+- **A host that runs a session provider's homes under `delivery: channel`** keeps an installed `aweb-channel` at 1.7.9 or later and `@awebai/pi` at 0.3.10 or later. These are the `delivery: session` floors. The package requirements are keyed by `delivery` alone, so they don't yet declare them for such a launch (README, "Provider settings").
+
+- **Added: a session provider's launch is delivered by the host wake broker.**
+  A spawn or a start whose `OATS_BACKEND` names a session provider (anything
+  but `tmux` or unset) is on the broker path whatever `delivery` and the
+  runtime say, Claude Code and pi included: no `--channels` argument and no
+  Claude channel mode, `AWEB_DELIVERY=session`, the session-delivery brief,
+  and joined teams registered with the broker. It is registered with
+  `aw wake register --delivery session` and no `--backend`, which takes only
+  aw's own terminal backends. The start records the provider as `backend` in
+  the home's `oats.aweb` meta. Retire, join, leave, readiness and the
+  round-trip probe read it, or the kernel's `backend` in `instance.json`; the
+  health publisher reads the meta alone. No new setting, and no migration:
+  `OATS_BACKEND=tmux` and an unset one behave as before, and record no
+  `backend`. A known gap: the package requirements are keyed by `delivery`
+  alone, so the `delivery: session` version floors are not declared for a
+  provider launch under `delivery: channel`; keep an installed `aweb-channel`
+  at 1.7.9 or later and `@awebai/pi` at 0.3.10 or later on such a host
+  (README, "Provider settings").
+
+## 1.44.0 — 2026-11-19
+
+Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.
+
+Setup now works in the root it was asked to work in: `setup --create` and `setup --join` without a token check and report their own per-team root, not the default root (#291). Registry admission stays explicit through command formatting and retire cleanup (#288). The provider's native aw contracts are checked against real aw at the floor, the tested release and the next release. The provider's regressions carried by the kernel's version-named hook suites now live here, and aw JSON answers with trailing stdout text are refused (#281). The member-invitation reference is fixed (#289).
+
+**What a deployment must change:**
+- **`setup --install-aw` installs the tested aw (1.36.58) by default,** where it installed the newest aw 1.x (`^1.36.33`). Pass `--aw-version <v>` to keep another.
+- **Bare API-key setup refuses before `aw init`** in an existing root that belongs to another team, or that lists memberships while no team is configured. Point `settings.oats.aweb.roots[<team>]` at the intended team's root, or at a fresh `.aweb-roots/<label>` directory, or configure the team first; then retry. A root with confirmed empty membership still bootstraps.
+- **`setup --create` and `setup --join` without a token no longer need the default root's membership to be readable.** This reverses 1.43.0's interim refusal for those two acts. They now refuse when their own selected root's membership is unreadable or belongs to another team. Invited `setup --join` keeps the default-root read.
+
+- `setup --install-aw` now installs the tested aw version by default; pass
+  `--aw-version` to choose another.
+
+- **Changed: setup checks the root selected for its act.** Create and tokenless
+  join verify their per-team target before effects and report that target's
+  readiness. An unreadable unrelated default root no longer blocks them.
+  Explicit alias and service values avoid default-root locator reads; omitted
+  values retain their existing alias/service fallback and refuse with the
+  explicit input remedy when unavailable. Bare API-key setup refuses to init
+  an existing root in another team, naming the intended team, root/source and
+  explicit destination choices. When that root lists memberships but no team
+  is configured, it refuses with the team-configuration remedy before init.
+  Setup success and existing missing-root
+  diagnostics name their root source. An absent default root is described as
+  having no identity yet. JSON and binding wire shapes are unchanged.
+
 - **Fixed: registry admission stays explicit through command formatting.**
   Unknown leading aw flags retain the configured pin, and controller cleanup
   commands place it through validated arguments without relying on a JSON

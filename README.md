@@ -57,8 +57,8 @@ itself is the OATS kernel's (`docs/desktop-cli-api.md`, "Mail, `mailApi:
   the rest, and sets that identity's `error` to `conversation-unreadable`. An
   identity's `error` therefore means something of it is missing, not that
   nothing was read: **an identity's error doesn't mean it has no messages; it
-  can come with that identity's messages beside it.** With that error, and only then, the identity's row names
-  them: `unreadableConversations: ["<conversationId>", …]` (opaque ids, in the
+  can come with that identity's messages beside it.** With that error, and
+  only then, the identity's row names them: `unreadableConversations: ["<conversationId>", …]` (opaque ids, in the
   order the read met them; a legacy message with no conversation isn't
   named). If the 256 KiB bound can't hold every id, the list's tail is
   dropped first, before any message is.
@@ -81,6 +81,27 @@ itself is the OATS kernel's (`docs/desktop-cli-api.md`, "Mail, `mailApi:
   identities alone), the read fails whole with `E_MAIL_TOO_LARGE`.
 
 How it is read, its bounds and every error: [docs/mail-read.md](docs/mail-read.md).
+
+## 1.44.0 — setup works in the root it was asked to work in
+
+Requires OATS >=0.68.0; the aw floor stays >=1.36.33 and the tested aw is
+1.36.58. The CHANGELOG's 1.44.0 entry lists everything a deployment must change.
+
+`setup --create` and tokenless `setup --join` check their selected per-team root,
+and report that root's readiness. An unrelated default root's membership no
+longer blocks these acts. An existing selected root with unreadable or
+wrong-team membership refuses before effects. Explicit `--name` and `AWEB_URL`
+avoid default-root locator reads; omitted values keep the existing alias and
+service fallbacks. If a needed value is unavailable, supply the named explicit
+input and retry. Bare API-key setup refuses before init in an existing root
+for another team and names the explicit destination choices. If that root lists
+memberships but no team is configured, setup names the root/source and teaches
+configuring the intended team first. Setup human output
+and existing missing-root diagnostics name the root source. An absent default
+root is described as having no identity yet.
+
+`setup --install-aw` installs `aw-compat.json`'s exact tested version by default.
+Pass `--aw-version` to choose another; each setup route still checks its own floor.
 
 ## 1.43.0 — explicit registry admission, grant seats in their team, membership reads that fail closed
 
@@ -957,6 +978,7 @@ and where to set it. The provider settings are:
   | Claude Code | the `aweb-channel` plugin (launch flag) | host wake broker |
   | pi | the `@awebai/pi` extension, without its skills ([below](#the-pi-extension-without-its-skills)) | host wake broker |
   | Codex, or any runtime without an aweb channel | host wake broker | host wake broker |
+  | any runtime a session provider launches (`OATS_BACKEND` is neither `tmux` nor unset) | host wake broker | host wake broker |
 
   The channel packages push events into the session. The host wake broker
   presents them by typing into the session's terminal pane, and in Claude Code
@@ -965,6 +987,36 @@ and where to set it. The provider settings are:
   runtimes that have none. The broker path sets `AWEB_DELIVERY=session` (which
   also keeps any ambient channel package silent) and registers the home with
   `aw wake register`.
+
+  A session provider is a session backend that a capability supplies, where
+  `tmux` is the kernel's own. The kernel names the backend of every spawn and
+  start in `OATS_BACKEND`. A provider starts the session itself, so no channel
+  launch argument reaches it, and this is not a setting: such a launch is on
+  the broker path whatever `delivery` and the runtime say, Claude Code and pi
+  included. It gets no `--channels` argument and no Claude channel mode, its
+  joined teams are registered with the broker like any broker-delivered home's
+  (never polled), and the broker delivers through `oats session input`. The
+  registration carries no `--backend`, since `aw wake register` takes only its
+  own terminal backends there (`tmux`, `herdr`) as a status label. The start
+  records the provider's name as `backend` in the home's `oats.aweb` meta, so
+  a later retire, join or leave, which run under no `OATS_BACKEND` of their
+  own, and readiness decide the same path; they fall back to the kernel's
+  `backend` in `instance.json`; the health publisher reads the meta alone. A
+  start on `tmux` records none.
+
+  A known gap: this capability's package requirements (`requires` in
+  `oats.json`) are keyed by the `delivery` setting alone, since a requirement
+  cannot name a backend yet. The floors that make an installed `aweb-channel`
+  (1.7.9) or `@awebai/pi` (0.3.10) honour `AWEB_DELIVERY=session` are
+  declared only for `delivery: session`, so nothing declares them for a
+  provider launch under `delivery: channel`, where an older ambient plugin or
+  extension that the session loads can open its own stream beside the broker. Until a requirement
+  can name the backend, keep any installed `aweb-channel` and `@awebai/pi` at
+  or above those versions on a host that runs provider launches. Which
+  package checks the kernel runs for a provider launch is the kernel's to
+  say, not this package's. The backend is chosen per spawn, not
+  per soul, so `delivery: session` on a soul is not the remedy: it would also
+  take that soul's `tmux` launches off their channel.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
@@ -1027,9 +1079,9 @@ and where to set it. The provider settings are:
   [cjr adoption #673](https://github.com/awebai/oats/issues/673) is separate.
 
   A home is on exactly one path. Every start decides the path afresh from the
-  setting and the kernel-selected target runtime (`OATS_RUNTIME`, the
+  setting, the kernel-selected target runtime (`OATS_RUNTIME`, the
   compatibility alias of `OATS_HARNESS`; a home can restart under another
-  harness), regardless of a retained launch configuration's name: the broker
+  harness) and the session backend (`OATS_BACKEND`), regardless of a retained launch configuration's name: the broker
   path registers the home, the channel path runs `aw wake deregister` and confirms with `aw wake status --json` that the home is no
   longer listed. If either step fails the start is refused, since a home on both
   paths would get every wake twice and a home on neither hears nothing. The
@@ -1388,6 +1440,10 @@ Supported acts:
   join and `--create`, and required for `--username`. Neither flag extends the
   API-key flow or provides GLOBAL setup; no `setup --global` exists. Do not
   place the key in a literal command or history.
+  If the selected root already belongs to another team, setup refuses before
+  init. Configure `settings.oats.aweb.roots[<intended team id>]` to that team's
+  root, or a fresh `<deployment>/.aweb-roots/<label>` directory, then retry.
+  Unreadable membership is also a refusal; the key reaches only the init call.
 - `oats aweb setup --registry <origin>`: record the operator's explicit registry
   admission in this deployment's `oats-local.yaml`, under
   `settings.oats.aweb.registry` (host-only). Alone, this command only records

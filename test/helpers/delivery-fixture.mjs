@@ -39,6 +39,8 @@ export function fixture(t, { delivery, runtime = "claude", settings = {}, daemon
     const last = r.stdout.trim().split("\n").pop();
     return { ...r, doc: last ? JSON.parse(last) : undefined };
   };
+  /** A provider command (join, leave) run in this home, with its arguments. */
+  const command = (name, args = [], extra = {}) => spawnSync(process.execPath, [HOOK, name, ...args], { cwd: home, env: { ...env, ...extra, OATS_EVENT: name }, encoding: "utf8", timeout: 20000 });
   /** Spawn under one runtime; return the meta the kernel records. */
   const spawn = () => { const r = hook("spawn"); assert.equal(r.status, 0, r.stdout + r.stderr); return r.doc; };
   /** Start the spawned home under `runtime`, as the kernel does: the recorded
@@ -59,5 +61,5 @@ export function fixture(t, { delivery, runtime = "claude", settings = {}, daemon
     assert.equal(r.status, 0, r.stdout + r.stderr);
     return assertKernelCheckAnswerRule(r.stdout, input, "oats-aweb binding check").result;
   };
-  return { fake, ws, home, hook, spawn, launch, wakeCalls, record, readiness, registered: () => fake.registrations()[home] };
+  return { fake, ws, home, hook, command, spawn, launch, wakeCalls, record, readiness, registered: () => fake.registrations()[home] };
 }

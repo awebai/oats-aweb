@@ -48,7 +48,7 @@ test('binding-less workspace readiness check follows settings roots, team labels
  assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]},'a teamless soul context is valid and settings/team env still drive readiness');
  const absent=join(f.base,'absent-deployment');fs.mkdirSync(absent);
  checked=invoke(f,'check',request('check',{context:{...workspaceContext,deployment:absent},action},{delivery:'session'}));
- assert.deepEqual(checked.value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:`no messaging root at ${absent}: run oats aweb setup there or set settings.oats.aweb.root`}],warnings:[]});
+ assert.deepEqual(checked.value.result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:`no messaging root at ${absent} (from the workspace directory): run oats aweb setup there or set settings.oats.aweb.root`}],warnings:[]});
  checked=invoke(f,'check',request('check',{context:workspaceContext,action},{delivery:'session',root:f.root}),{OATS_TEAM_LABEL:'experts'});
  assert.deepEqual(checked.value.result,{status:'ready',problems:[],warnings:[]});
  const custody=join(f.base,'custody');fs.mkdirSync(join(custody,'.aw'),{recursive:true});fs.writeFileSync(join(custody,'.aw','identity.yaml'),'alias: resident\n');
@@ -69,7 +69,7 @@ test('in a deployment with no .aw, a global seat with a resident needs no mintin
  const captured=name=>JSON.stringify(join(root,'test/fixtures/resident',name));
  fs.writeFileSync(join(f.base,'bin','aw'),`#!${process.execPath}\n${jsWake(f.base)}const {readFileSync}=require('node:fs');\nprocess.stdout.write(readFileSync(process.argv[2]==='version'?${captured('aw-version.txt')}:${captured('custody-status-running.stdout')}));\n`,{mode:0o755});
  const capturedTeam='default:fixture-25651.test',env={OATS_DEFAULT_TEAM_ID:capturedTeam,OATS_TEAMS:JSON.stringify([{label:'private',team:capturedTeam,default:true,from:'local'}])};
- const noRoot={code:'needs-configuration',message:`no messaging root at ${deployment}: run oats aweb setup there or set settings.oats.aweb.root`};
+ const noRoot={code:'needs-configuration',message:`no messaging root at ${deployment} (from the workspace directory): run oats aweb setup there or set settings.oats.aweb.root`};
  const noResident={code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'};
  const global={delivery:'session',registry:'http://127.0.0.1:18010',identity:{mode:'global',resident:'merlin'},residents:{merlin:custody}},local={delivery:'session',residents:{merlin:custody}},residentless={delivery:'session',identity:{mode:'global'},residents:{merlin:custody}};
  // The workspace readiness phase, as `oats readiness` asks it for the deployment.
@@ -99,5 +99,5 @@ test('manifest keeps required messaging and both delivery resource closures, wit
  for(const key of ['root','roots','residents','registry'])assert.equal(m.settings[key]?.hostOnly,true,`${key} is a host fact and must be rejected outside oats-local.yaml by kernels that enforce hostOnly`);
  assert.equal(Object.hasOwn(m,'helperInjection'),false);
  const distribution=JSON.parse(fs.readFileSync(join(root,'oats-package/oats-package.json'))),tooling=JSON.parse(fs.readFileSync(join(root,'package.json')));
- assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.43.0');
+ assert.equal(distribution.compatibility.oats,m.compatibility.oats);for(const value of [m,distribution,tooling])assert.equal(value.version,'1.45.0');
 });

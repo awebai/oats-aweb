@@ -96,7 +96,7 @@ import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigrat
 import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
-import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedRuntime, recordedStart, statusListsHome, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
+import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -503,7 +503,7 @@ function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", no
 const AW_VERSION_SPEC_RE = /^[\^~]?\d+\.\d+\.\d+$/;
 /** The aw step of `setup --install-aw` / `--check-only`, as one status: `ok` (meets the floor),
  *  `done` (installed now), `needs-human` (missing or old, not asked to install) or `failed`. The
- *  default install is AW_MIN's release line (`^AW_MIN`, the newest compatible aw). */
+ *  default install is the exact AW_TESTED version from aw-compat.json. */
 /** aw at or above the floor, and `min` when given (the invite form's 1.36.53), installing it
  *  with npm when `install` is set. */
 async function ensureAw({ install, version, min }) {
@@ -517,7 +517,7 @@ async function ensureAw({ install, version, min }) {
   if (!problem) return { status: "ok", version: await readAwVersion() };
   if (!install) return { status: "needs-human", detail: problem, remedy: "`oats aweb setup --install-aw` (installs aw with npm)" };
   const was = onPath("aw") ? (await readAwVersion()) || "unreadable" : "missing";
-  const pkg = `@awebai/aw@${version || `^${min || AW_MIN}`}`;
+  const pkg = `@awebai/aw@${version || AW_TESTED}`;
   try { run(["npm", "install", "-g", pkg], process.cwd(), 300000); }
   catch (e) {
     const why = String(e.stderr || e.message || "").replace(/\s+/g, " ").trim().slice(0, 500);
@@ -587,9 +587,11 @@ const CHANNEL_DELIVERY_BRIEF = {
  *  the broker (AWEB_DELIVERY=session, which also silences any ambient channel
  *  package) or the runtime's own channel (the Claude plugin needs its launch
  *  flag; pi loads its extension itself). The kernel captures the setting at
- *  spawn, and the runtime may change at every start. */
-function deliveryFor(runtime = process.env.OATS_RUNTIME || "", delivery = deliveryMode) {
-  const broker = brokerDelivers({ delivery, runtime });
+ *  spawn, and the runtime may change at every start. A session provider's
+ *  launch (OATS_BACKEND names one) is always the broker's: the provider
+ *  starts the session, and no channel launch argument reaches it. */
+function deliveryFor(runtime = process.env.OATS_RUNTIME || "", delivery = deliveryMode, backend = process.env.OATS_BACKEND) {
+  const broker = brokerDelivers({ delivery, runtime, backend });
   return {
     broker,
     env: broker ? { AWEB_DELIVERY: "session" } : {},
@@ -600,10 +602,11 @@ function deliveryFor(runtime = process.env.OATS_RUNTIME || "", delivery = delive
 /** Whether the broker delivered to this home's primary identity as of its last
  *  recorded start (retire runs under no runtime of its own). A meta with no
  *  delivery comes from a spawn that never reached the registration. */
-const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ delivery: meta.delivery, runtime: instanceRuntime(meta) });
+const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ delivery: meta.delivery, runtime: instanceRuntime(meta), backend: instanceBackend(meta) });
 // Session delivery registers the home with the host wake broker (aweb-abil:
 // `aw wake register --home <abs> --identity-home <abs> --delivery session
-// [--backend tmux|herdr]`, durable even when the daemon is down). An aw
+// [--backend tmux|herdr]`, durable even when the daemon is down). `--backend`
+// is aw's terminal hint, so a session provider's name is never passed. An aw
 // without `aw wake` cannot deliver in session mode: refuse, never silently
 // turn a working channel into a poll-only instance.
 // Throws, never exits: both callers run it inside a try whose catch performs
@@ -613,13 +616,14 @@ const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ del
  *  diagnostics may name it (a network error does), so they show none of aw's output. */
 const seatRun = (argv, cwd, timeout) => run(argv, cwd, timeout, { withhold: "aw's output may name the seat's service, which is never printed" });
 /** Registers `instanceHome` with the host wake broker. `runner` runs the aw call: run, or a
- *  retained seat's seatRun, which withholds aw's output because it may name the seat's service. */
-function wakeRegister(instanceHome, identityHome, runner = run) {
-  const backend = process.env.OATS_BACKEND;
+ *  retained seat's seatRun, which withholds aw's output because it may name the seat's service.
+ *  `sessionBackend` is the home's session backend: a start's own OATS_BACKEND by default. */
+function wakeRegister(instanceHome, identityHome, runner = run, sessionBackend = process.env.OATS_BACKEND) {
+  const backend = wakeBackendHint(sessionBackend);
   try {
     runner(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
-    throw new Error(`the host wake broker delivers to this home (delivery: session, or a runtime with no aweb channel) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
+    throw new Error(`the host wake broker delivers to this home (delivery: session, a runtime with no aweb channel, or a session provider) and needs an aw with the wake broker CLI (aw wake register), which failed (${e.message || e}); install the aweb release that ships aw wake`);
   }
 }
 function wakeDeregister(instanceHome) {
@@ -669,11 +673,15 @@ function requireWakeBroker() {
   });
   if (refusal) fatal(refusal);
 }
-/** The meta a start records: the delivery setting it ran under and its runtime. */
+/** The meta a start records: the delivery setting it ran under, its runtime
+ *  and, when a session provider launches it, that backend (a retire, a join
+ *  or a leave has no OATS_BACKEND of its own to decide the path from). A
+ *  start on tmux, or under a kernel that names no backend, records none. */
 const startedMeta = (meta = {}) => {
-  const {claudeChannelMode: previousMode, ...retained} = meta;
+  const {claudeChannelMode: previousMode, backend: previousBackend, ...retained} = meta;
   const runtime = process.env.OATS_RUNTIME || "";
-  return {...deliveryRuntimeMeta(retained, deliveryMode, runtime), ...(deliveryMode === "channel" && runtime === "claude" ? {claudeChannelMode: claudeChannel.mode} : {})};
+  const provider = sessionProviderBackend(process.env.OATS_BACKEND) ? process.env.OATS_BACKEND : undefined;
+  return {...deliveryRuntimeMeta(retained, deliveryMode, runtime), ...(provider ? {backend: provider} : {}), ...(deliveryMode === "channel" && runtime === "claude" && !provider ? {claudeChannelMode: claudeChannel.mode} : {})};
 };
 /** wakeDeregister as a child that runs while the hook does other work (retire
  *  overlaps it with the self-delete). Settles to whether it succeeded. */
@@ -2307,6 +2315,13 @@ function instanceRuntime(meta = {}) {
   if (["spawn", "launch"].includes(event)) return process.env.OATS_RUNTIME || "";
   return recordedRuntime(meta, recordedStart(home).harness) ?? (process.env.OATS_RUNTIME || undefined);
 }
+/** The home's session backend, read as its runtime is: spawn and launch run
+ *  under the kernel's OATS_BACKEND; a retire, join or leave reads what the
+ *  last start recorded. */
+function instanceBackend(meta = {}) {
+  if (["spawn", "launch"].includes(event)) return process.env.OATS_BACKEND || undefined;
+  return recordedBackend(meta, recordedStart(home).backend);
+}
 function primaryIdentityHomeOf(meta = {}) {
   return meta.identity?.mode === "global" && meta.identity?.grant?.id ? priorGrantHome(meta) : join(home, ".aw");
 }
@@ -2321,8 +2336,9 @@ function syncWakeReceive(meta) {
   const delivery = meta.delivery || deliveryMode;
   const runtime = instanceRuntime(meta);
   const primary = primaryIdentityHomeOf(meta);
-  const polled = joinedTeamsPolled({ delivery, runtime });
-  const doc = polled ? null : wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend: process.env.OATS_BACKEND });
+  const backend = instanceBackend(meta);
+  const polled = joinedTeamsPolled({ delivery, runtime, backend });
+  const doc = polled ? null : wakeRegistration({ home, primaryIdentityHome: primary, delivery, runtime, joined, backend });
   const warnings = [];
   let receive = "poll", wakeJoined = false;
   if (doc) {
@@ -2332,7 +2348,7 @@ function syncWakeReceive(meta) {
   if (!wakeJoined && meta.wakeJoined) {
     // Back to one identity: a broker home keeps its legacy registration, a
     // native home leaves the broker entirely.
-    if (brokerDelivers({ delivery, runtime })) { try { wakeRegister(home, primary); } catch (e) { warnings.push(String(e.message || e)); } }
+    if (brokerDelivers({ delivery, runtime, backend })) { try { wakeRegister(home, primary, run, backend); } catch (e) { warnings.push(String(e.message || e)); } }
     else if (!wakeDeregister(home)) warnings.push("aw wake deregister failed; the broker treats a stale registration as inactive on its own");
   }
   const next = { ...meta, ...(typeof runtime === "string" ? { runtime } : {}), wakeJoined, joinedTeams: joinedTeamsOf(meta).map((j) => { const { expectedPoll: _last, ...team } = j; return { ...team, receive: joined.includes(j) ? receive : "poll", ...(polled ? { expectedPoll: true } : {}) }; }) };
@@ -3187,10 +3203,10 @@ if (event === "launch") {
       const result = await setupUsernameDefault({ username, name: joinName, label: setupLabel, plan: setupPlan, dir: setupDir, installAw, awVersion }, { normalize: normalizeAwebTeamName, validTeam: validAwebTeamId, ensureAw, run });
       if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result }));
       else if (result.plan) {
-        console.log(`Plan: label ${result.label}, predicted team ${result.predictedTeam}, root ${result.root}; bootstrap ${result.bootstrap}. No effects.`);
+        console.log(`Plan: label ${result.label}, predicted team ${result.predictedTeam}, root ${result.root} (from ${rootSourceOf(result.team || result.predictedTeam)}); bootstrap ${result.bootstrap}. No effects.`);
         console.log(JSON.stringify(result.configuration));
       } else {
-        console.log(`✓ verified ${result.team} at ${result.root}; mapping and deployment default ${result.label} read back successfully.`);
+        console.log(`✓ verified ${result.team} at ${result.root} (from ${rootSourceOf(result.team)}); mapping and deployment default ${result.label} read back successfully.`);
         console.log(JSON.stringify({ steps: result.steps, observed: result.observed }));
         // The account has no person on it, so the first next step is attaching one (/oats-aweb, "attach yourself to the account").
         const identityHome = `${result.root}/.aw`;
@@ -3305,7 +3321,9 @@ ${JSON.stringify(problem.details || {})}`);
   const teamId = defaultTeamId();
   const candidate = rootSettingCandidate(teamName);
   const scope = candidate?.root ? resolve(candidate.root) : process.cwd();
-  if (!json) console.log(`aweb onboarding — messaging root: ${scope}${teamName ? `, team: ${teamName}` : ""}\n`);
+  const independentTarget = !!createLabel || (!!joinLabel && !invite);
+  const printSetupRoot = (root, team, source) => { if (!json) console.log(`aweb onboarding — messaging root: ${root} (from ${source})${team ? `, team: ${team}` : ""}\n`); };
+  if (!createLabel && !joinLabel) printSetupRoot(scope, teamName, rootSourceOf(teamName));
   if (!isAbsolute(scope)) {
     console.log(`${candidate?.key || "settings.oats.aweb.root"} must be an absolute directory whose .aw is the aweb minting root.`);
     process.exit(0);
@@ -3328,8 +3346,8 @@ ${JSON.stringify(problem.details || {})}`);
 
   const setupServiceDocs = (teamRoot) => {
     const docs = [];
-    if (joinService) docs.push({ aweb_url: joinService });
-    if (process.env.AWEB_URL) docs.push({ aweb_url: process.env.AWEB_URL });
+    if (joinService) return [{ aweb_url: joinService }];
+    if (process.env.AWEB_URL) return [{ aweb_url: process.env.AWEB_URL }];
     const addRoot = (rootDir) => {
       if (!rootDir || resolve(rootDir) === resolve(teamRoot || "")) return;
       try { const url = yamlScalar(readFileSync(join(resolve(rootDir), ".aw", "workspace.yaml"), "utf8"), "aweb_url"); if (url) docs.push({ aweb_url: url }); } catch { /* no service there */ }
@@ -3349,14 +3367,24 @@ ${JSON.stringify(problem.details || {})}`);
     const recordedKey = configured ? teamKeyIn(settings.roots, configured) : undefined;
     const recorded = recordedKey !== undefined ? settings.roots[recordedKey] : undefined;
     if (recorded !== undefined && (typeof recorded !== "string" || !isAbsolute(recorded))) throw new Error(`configured root for ${label} must be an absolute directory`);
-    return { configured, teamRoot: recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label) };
+    return { configured, teamRoot: recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label), source: recorded !== undefined ? "roots[team]" : "the deployment's per-team directory" };
+  };
+  const verifyTargetMembership = (target, team) => {
+    if (!existsSync(join(target.teamRoot, ".aw"))) throw Object.assign(new Error(`selected root ${target.teamRoot} (from ${target.source}) has no identity yet; retry its setup before checking readiness`), { code: "E_SETUP_MEMBERSHIP" });
+    const teams = readTeamsAt(target.teamRoot);
+    if (team && !teamIdsOf(teams).some(id => sameAwebTeamId(id, team))) {
+      throw Object.assign(new Error(`selected root ${target.teamRoot} (from ${target.source}) is not a member of ${team}; choose that team's root or reconcile the selected root before retrying`), { code: "E_SETUP_MEMBERSHIP" });
+    }
+  };
+  const printSelectedReady = (target, team) => {
+    if (!json) console.log(`readiness: ready\n✓ root ${target.teamRoot} (from ${target.source}) is a member of ${team}.`);
   };
   const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
     const { configured, teamRoot } = teamRootFor(label, expectedTeam);
     const idHome = join(teamRoot, ".aw");
     const resumeCommand = setupResumeCommand(label);
     // The caller's own service (create's canonical one) comes before setup's general sources.
-    const docs = [...serviceDocs, ...setupServiceDocs(teamRoot)];
+    const docs = () => serviceDocs.length ? serviceDocs : setupServiceDocs(teamRoot);
     const recordTeam = expectedTeam || configuredTeamForLabel(label) || `<team for ${label}>`;
     assertAwebRootSettingRecordable(recordTeam, teamRoot, { start: deployment });
     let joined;
@@ -3372,7 +3400,7 @@ ${JSON.stringify(problem.details || {})}`);
         recordAwebRootSetting(want, teamRoot, { start: deployment });
         return { team: want, teamRoot };
       }
-      joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, resumeCommand });
+      joined = connectExistingJoinedTeam({ label, identityHome: idHome, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs(), resumeCommand });
     } else {
       if (!token || typeof token !== "string") throw new Error(`--join ${label} needs an invite (--invite-stdin) unless ${teamRoot} already holds an accepted unconnected identity to resume`);
       const alias = setupAlias();
@@ -3381,7 +3409,7 @@ ${JSON.stringify(problem.details || {})}`);
       try { mkdirSync(teamRoot); createdRoot = true; }
       catch (e) { if (e.code !== "EEXIST" || !statSync(teamRoot).isDirectory()) throw e; }
       try {
-        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs, cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
+        ({ joined } = acceptConnectVerifyJoinedTeam({ label, token, identityHome: idHome, alias, expectedTeam: configured, root: scope, cwd: teamRoot, serviceDocs: docs(), cleanupOnFailure: false, resumeCommand, useAcceptedService: false }));
       } catch (e) {
         // A recorded root may contain operator data or be the deployment itself.
         // Roll back only our newly created, still-empty directory; retain any
@@ -3418,7 +3446,7 @@ ${JSON.stringify(problem.details || {})}`);
     const createArgs = ["aw", "id", "team", "create", flagEq("--name", name), flagEq("--namespace", createNamespace), "--json"];
     let created;
     try {
-      created = parseSecretJson(run(createArgs, scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
+      created = parseSecretJson(run(createArgs, deployment, 120000, { secretSafe: true, failureDetail: true }), "aw id team create");
     } catch (e) {
       if (withheldFailureCause(e) === NAMESPACE_CONTROLLER_KEY_MISSING) throw new Error(`${e.message}; run \`aw id namespace prepare-controller --domain ${createNamespace}\` as this user, or create the team where that key is, then re-run; nothing was created`);
       if (teamNameTaken(e.stdout, createNamespace, name)) throw new Error(`team ${candidateTeamId(name)} already exists in the registry, and its team key is not on this machine; choose another label (--create <label>), or run setup as the user whose ~/.awid/team-keys/${createNamespace}/ holds its key; nothing was created`);
@@ -3434,7 +3462,7 @@ ${JSON.stringify(problem.details || {})}`);
     // newer record, so it is read first: a record setup finds naming another URL is not replaced.
     const serverTarget = [flagEq("--team", name), flagEq("--namespace", createNamespace)];
     const readServerRecord = () => {
-      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], scope, 120000, { secretSafe: true, failureDetail: true }), "aw id team show-server"); }
+      try { return parseSecretJson(run(["aw", "id", "team", "show-server", ...serverTarget, "--json"], deployment, 120000, { secretSafe: true, failureDetail: true }), "aw id team show-server"); }
       catch (e) {
         if (teamServerRecordMissing(e.stdout, team)) return undefined;
         throw new Error(`reading the AWID team-server record for ${team} failed: ${e.message}${after(e)}`);
@@ -3459,11 +3487,11 @@ ${JSON.stringify(problem.details || {})}`);
     // no publish-if-absent: a record published between that read and set-server is replaced, and the
     // verify after it, which reads setup's own record, does not notice.
     const published = checkedServerRecord();
-    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+    try { run(["aw", "id", "team", "register", flagEq("--service", service), flagEq("--team", team), "--json"], deployment, 120000, { secretSafe: true, failureDetail: true }); }
     catch (e) { throw new Error(`registering ${team} with the aweb service at ${service} failed: ${e.message}${after(e)}`); }
     const publishedNow = !published && !checkedServerRecord();
     if (publishedNow) {
-      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], scope, 120000, { secretSafe: true, failureDetail: true }); }
+      try { run(["aw", "id", "team", "set-server", ...serverTarget, flagEq("--url", service), "--json"], deployment, 120000, { secretSafe: true, failureDetail: true }); }
       catch (e) { throw new Error(`publishing the AWID team-server record for ${team} (${service}) failed: ${e.message}${after(e)}`); }
       if (!recordVerifies(readServerRecord())) throw new Error(notVerified);
     }
@@ -3471,7 +3499,7 @@ ${JSON.stringify(problem.details || {})}`);
     let token = [created.invite_token, created.invite, created.token].find((v) => typeof v === "string" && v);
     if (!token && !existsSync(join(teamRootFor(label, team).teamRoot, ".aw", "identity.yaml"))) {
       let minted;
-      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], scope, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
+      try { minted = parseSecretJson(run(["aw", "id", "team", "invite", flagEq("--team", name), flagEq("--namespace", createNamespace), "--json"], deployment, 45000, { secretSafe: true, failureDetail: true }), "aw id team invite"); }
       catch (e) { throw new Error(`minting a local invite for ${team} failed: ${e.message}${after(e)}`); }
       token = minted?.token;
       if (!token || typeof token !== "string") throw new Error(`aw id team invite returned no invite token for ${team}; ${resume}`);
@@ -3541,7 +3569,7 @@ ${JSON.stringify(problem.details || {})}`);
       if (active) adviseRecordDefault(`This root is a member of ${active}`, active);
       return;
     }
-    console.log(`  Workspace initialized, but no membership matching "${want}".`);
+    console.log(defaultRootHasIdentity() ? `  Workspace initialized, but no membership matching "${want}".` : `  The default root has no identity yet at ${scope} (from ${rootSourceOf(want)}).`);
     console.log(`  Existing team path: ask a member for an appropriate invite token, then run \`${setupInviteCommand(defaultTeamLabel())}\` (accepts into the selected per-team root; supply the token on stdin, never in logs or messages).`);
     console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init --do-not-touch-agents-md` at the root; the key is never printed).");
     console.log("  New hosted-account path: run `oats aweb setup --username <u> --name <alias>` (uses `aw init --new-account --username <u> --name <alias> --do-not-touch-agents-md` and creates default:<u>.aweb.ai).");
@@ -3550,12 +3578,23 @@ ${JSON.stringify(problem.details || {})}`);
   try {
     if (createLabel && !createNamespace) throw new Error(hostedCreateUnavailable());
     if (joinLabel || createLabel) deployment = selectedDeployment(process.env, setupDir);
+    let target;
+    if (createLabel || joinLabel) {
+      const team = createLabel ? candidateTeamId(normalizeAwebTeamName(createLabel)) : joinConfiguration.expectedTeam;
+      target = teamRootFor(createLabel || joinLabel, team);
+      printSetupRoot(target.teamRoot, team, target.source);
+      if (independentTarget && existsSync(join(target.teamRoot, ".aw"))) {
+        try { verifyTargetMembership(target, team); }
+        catch (e) { e.message += `; selected root from ${target.source}; nothing was created or redeemed`; throw e; }
+      }
+    }
     const hasRoot = defaultRootHasIdentity();
     let teams = { memberships: [] };
-    if (hasRoot) {
+    if (hasRoot && !independentTarget) {
       try { teams = readTeams(); }
       catch (e) {
-        if (createLabel || joinLabel) e.message += "; the configured default root must be readable first: make that root's membership readable, or choose another default with `oats teams default <label>`; nothing was created or redeemed";
+        e.message += `; root chosen from ${rootSourceOf(want)}`;
+        if (joinLabel) e.message += "; the configured default root must be readable first: make that root's membership readable, or choose another default with `oats teams default <label>`; nothing was created or redeemed";
         throw e;
       }
     }
@@ -3567,7 +3606,7 @@ ${JSON.stringify(problem.details || {})}`);
     const missingShared = !actions.length ? missingSharedRows() : [];
     if (missingShared.length) { printSharedMissing(missingShared); process.exit(1); }
     if (!hasRoot && !actions.length) {
-      console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}).`);
+      console.log(`The default root has no identity yet at ${scope} (from ${rootSourceOf(want)}).`);
       if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
       console.log("  Choose one guided setup path:");
       console.log("    oats aweb setup --username <u> --name <alias>     # runs `aw init --new-account --username <u> --name <alias> --do-not-touch-agents-md` and creates default:<u>.aweb.ai");
@@ -3592,10 +3631,9 @@ ${JSON.stringify(problem.details || {})}`);
       if (!resolvedService) throw new Error(noCreateService(label));
       const { url: service, reason } = canonicalTeamServerURL(resolvedService);
       if (!service) throw new Error(`the aweb service URL cannot be published as the team's AWID server: server_url ${reason}; set AWEB_URL to the server's public URL and re-run; nothing was created`);
-      mkdirSync(scope, { recursive: true });
       console.log(`Creating aweb team ${label} in namespace ${createNamespace} for a new per-team root, registered with ${service}.`);
       const created = createTeam(label, service);
-      // Record and report the completed create before the fallible default-root verdict read.
+      // Record and report the completed create before the fallible selected-root verdict read.
       const done = `✓ created ${created.team}, accepted it into ${created.teamRoot}, recorded roots[${created.team}]`;
       if (localTeams.closed) {
         console.log(`${done}.`);
@@ -3606,8 +3644,8 @@ ${JSON.stringify(problem.details || {})}`);
       }
       if (created.teamKeyPath) console.log(`  team key: ${created.teamKeyPath} (user-wide: every process this user runs can read it; never share it)`);
       console.log(`  team server: ${created.teamServer.url} (${created.teamServer.publishedNow ? "published at AWID and verified" : "already published at AWID; verified"} against the team key)`);
-      teams = defaultRootHasIdentity() ? readTeams() : { memberships: [] };
-      printVerdict(teams);
+      verifyTargetMembership(target, created.team);
+      printSelectedReady(target, created.team);
       process.exit(0);
     }
     if (joinLabel) {
@@ -3617,7 +3655,7 @@ ${JSON.stringify(problem.details || {})}`);
       let configuration;
       try { configuration = joinConfiguration.finish(accepted.team); }
       catch (error) { error.details = { ...error.details, ...joinConfiguration.details(), root: accepted.teamRoot }; throw error; }
-      // The invite form ends with exactly one next step; the released --join output is unchanged.
+      // The invite form ends with exactly one next step; labelled joins keep their configuration result.
       // A preserved default folds `remaining` into the note: moving the default is the operator's call.
       // The step follows the soul's teams (`oats soul teams S`): its default is the label, the label
       // is eligible for it, or it must first be made eligible in the workspace's souls:.
@@ -3644,13 +3682,20 @@ ${JSON.stringify(problem.details || {})}`);
       const fromInvite = inviteEnvelope ? { invite: { kind: inviteEnvelope.kind, team: inviteEnvelope.team, service: inviteEnvelope.service }, labelFrom: joinConfiguration.labelFrom, next, ...(nextNote ? { nextNote } : {}) } : {};
       if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { ...accepted, ...configuration, ...fromInvite } }));
       else {
-        console.log(`✓ joined ${accepted.team} as ${joinLabel} in ${accepted.teamRoot}; recorded settings.oats.aweb.roots[${accepted.team}].`);
+        console.log(`✓ joined ${accepted.team} as ${joinLabel} in ${accepted.teamRoot} (from ${target.source}); recorded settings.oats.aweb.roots[${accepted.team}].`);
         console.log(JSON.stringify(configuration));
+        if (independentTarget) printSelectedReady(target, accepted.team);
         if (next) console.log(`Next: ${nextIsCommand ? `\`${next}\`` : next}${nextNote ? ` (${nextNote})` : ""}`);
       }
       process.exit(0);
     }
     if (hasRoot && !matchingTeam(teams) && !actions.length) { printVerdict(teams); process.exit(0); }
+    if (apiKey && hasRoot && teamIdsOf(teams).length && !matchingTeam(teams)) {
+      if (!want) throw new Error(`no team is configured for selected root ${scope} (from ${rootSourceOf(want)}); choose the intended team first: ${teamConfigRemedy()}; aw init was not run`);
+      const scopeBase = process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || process.cwd();
+      const fresh = defaultTeamLabel() ? perTeamRoot(scopeBase, defaultTeamLabel()) : join(resolve(scopeBase), ".aweb-roots", "<label>");
+      throw new Error(`wanted team ${want}, but selected root ${scope} (from ${rootSourceOf(want)}) is not a member; set settings.oats.aweb.roots[${JSON.stringify(want)}] to the intended team's root, or choose a fresh root at ${fresh} and record that setting before retrying; aw init was not run`);
+    }
     if (!hasRoot || !matchingTeam(teams)) {
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
