@@ -11,7 +11,7 @@ HOME for every group. Tests never select a person's identity or tmux server.
 | `unit` | aw 1.36.33, 1.36.58, 1.36.59-rc.3; Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
 | `kernel` | OATS v0.68.1 at `13f8f133808f5932bf461108703c1bada4b3f3d3`, tested aw, tmux; isolated local Git repositories | Public hostOnly, roots, disposal, registry, preview, runtime, upgrade, tasks and attention contracts. Only disposable kernel deployments are exercised. |
 | `host` | Same pinned kernel and tested aw, tmux on a private socket directory | Native health commands, scheduler and process observations. Identity reads moved to disposable stack journeys. |
-| `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, roster/count, joined and retained seats, the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
+| `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, legacy bare-label grant fill/retire, roster/count, joined and retained seats, the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
 | `historical` (manual) | OATS `bb2ba8c9a254edb745913b9c5a9d9b833fda932d` and `e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b` | The retained 0.42/0.47 inventory projection comparison. Those kernels are below the package's supported 0.68 floor, so current CI does not provision them. |
 | `hosted` (acceptance) | Disposable hosted team, pi extension, dashboard token and status API | `health-live.test.mjs`; no Cloud credentials are available to the OSS CI stack. |
 
@@ -103,6 +103,12 @@ The runner rejects stale exclusions before starting npm test. The literal-name c
 it makes no claim about provider behavior from source text.
 
 ## Captures and acceptance
+
+The resident journey also mints a real 720-hour grant with the pre-1.25
+`oats:<instance>` label and constructs its legacy-shaped metadata and grant
+home without seat.json. The launch must fill seat.json, keep the grant active
+with renewal off, and retire must revoke it in its recorded team. This case
+runs at every matrix version, including 1.36.33 and 1.36.58.
 
 The stack group writes only public observations to `OATS_AWEB_CAPTURE_DIR`:
 grant receipts/show, resident identity, roster, count, workspace record and
