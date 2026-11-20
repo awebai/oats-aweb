@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **Added: a session provider's launch is delivered by the host wake broker.**
+  A spawn or a start whose `OATS_BACKEND` names a session provider (anything
+  but `tmux` or unset) is on the broker path whatever `delivery` and the
+  runtime say, Claude Code and pi included: no `--channels` argument and no
+  Claude channel mode, `AWEB_DELIVERY=session`, the session-delivery brief,
+  and joined teams registered with the broker. It is registered with
+  `aw wake register --delivery session` and no `--backend`, which takes only
+  aw's own terminal backends. The start records the provider as `backend` in
+  the home's `oats.aweb` meta. Retire, join, leave, readiness and the
+  round-trip probe read it, or the kernel's `backend` in `instance.json`; the
+  health publisher reads the meta alone. No new setting, and no migration:
+  `OATS_BACKEND=tmux` and an unset one behave as before, and record no
+  `backend`. A known gap: the package requirements are keyed by `delivery`
+  alone, so the `delivery: session` version floors are not declared for a
+  provider launch under `delivery: channel`; keep an installed `aweb-channel`
+  at 1.7.9 or later and `@awebai/pi` at 0.3.10 or later on such a host
+  (README, "Provider settings").
+
 ## 1.44.0 — 2026-11-19
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.

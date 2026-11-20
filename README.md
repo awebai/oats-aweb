@@ -934,6 +934,7 @@ and where to set it. The provider settings are:
   | Claude Code | the `aweb-channel` plugin (launch flag) | host wake broker |
   | pi | the `@awebai/pi` extension, without its skills ([below](#the-pi-extension-without-its-skills)) | host wake broker |
   | Codex, or any runtime without an aweb channel | host wake broker | host wake broker |
+  | any runtime a session provider launches (`OATS_BACKEND` is neither `tmux` nor unset) | host wake broker | host wake broker |
 
   The channel packages push events into the session. The host wake broker
   presents them by typing into the session's terminal pane, and in Claude Code
@@ -942,6 +943,36 @@ and where to set it. The provider settings are:
   runtimes that have none. The broker path sets `AWEB_DELIVERY=session` (which
   also keeps any ambient channel package silent) and registers the home with
   `aw wake register`.
+
+  A session provider is a session backend that a capability supplies, where
+  `tmux` is the kernel's own. The kernel names the backend of every spawn and
+  start in `OATS_BACKEND`. A provider starts the session itself, so no channel
+  launch argument reaches it, and this is not a setting: such a launch is on
+  the broker path whatever `delivery` and the runtime say, Claude Code and pi
+  included. It gets no `--channels` argument and no Claude channel mode, its
+  joined teams are registered with the broker like any broker-delivered home's
+  (never polled), and the broker delivers through `oats session input`. The
+  registration carries no `--backend`, since `aw wake register` takes only its
+  own terminal backends there (`tmux`, `herdr`) as a status label. The start
+  records the provider's name as `backend` in the home's `oats.aweb` meta, so
+  a later retire, join or leave, which run under no `OATS_BACKEND` of their
+  own, and readiness decide the same path; they fall back to the kernel's
+  `backend` in `instance.json`; the health publisher reads the meta alone. A
+  start on `tmux` records none.
+
+  A known gap: this capability's package requirements (`requires` in
+  `oats.json`) are keyed by the `delivery` setting alone, since a requirement
+  cannot name a backend yet. The floors that make an installed `aweb-channel`
+  (1.7.9) or `@awebai/pi` (0.3.10) honour `AWEB_DELIVERY=session` are
+  declared only for `delivery: session`, so nothing declares them for a
+  provider launch under `delivery: channel`, where an older ambient plugin or
+  extension that the session loads can open its own stream beside the broker. Until a requirement
+  can name the backend, keep any installed `aweb-channel` and `@awebai/pi` at
+  or above those versions on a host that runs provider launches. Which
+  package checks the kernel runs for a provider launch is the kernel's to
+  say, not this package's. The backend is chosen per spawn, not
+  per soul, so `delivery: session` on a soul is not the remedy: it would also
+  take that soul's `tmux` launches off their channel.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
@@ -1004,9 +1035,9 @@ and where to set it. The provider settings are:
   [cjr adoption #673](https://github.com/awebai/oats/issues/673) is separate.
 
   A home is on exactly one path. Every start decides the path afresh from the
-  setting and the kernel-selected target runtime (`OATS_RUNTIME`, the
+  setting, the kernel-selected target runtime (`OATS_RUNTIME`, the
   compatibility alias of `OATS_HARNESS`; a home can restart under another
-  harness), regardless of a retained launch configuration's name: the broker
+  harness) and the session backend (`OATS_BACKEND`), regardless of a retained launch configuration's name: the broker
   path registers the home, the channel path runs `aw wake deregister` and confirms with `aw wake status --json` that the home is no
   longer listed. If either step fails the start is refused, since a home on both
   paths would get every wake twice and a home on neither hears nothing. The

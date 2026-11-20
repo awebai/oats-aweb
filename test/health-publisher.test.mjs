@@ -285,6 +285,21 @@ test("a receipt whose process is gone, or whose heartbeat is over 90 s old, is a
   }
 });
 
+test("a session provider's Claude home has no native channel: no receipt is read for it", async () => {
+  const home = "/d/agents/a/instances/dev-1";
+  const ready = { status: "ready", problems: [], warnings: [] };
+  // A receipt whose process is gone: a stream that is down for a native home, nothing for this one.
+  const dead = receiptAt("did:key:z6MkDev", NOW - 30000);
+  for (const [backend, code] of [["bb", undefined], ["tmux", "oats.channel_stream_down"], [undefined, "oats.channel_stream_down"]]) {
+    const row = nativeRow("dev-1");
+    if (backend) row.capabilityMeta["oats.aweb"].backend = backend;
+    const host = fakeHost({ rows: [row], ids: { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkDev" } }, readiness: { [home]: backend === "bb" ? ready : unproven }, receipts: { [`${home}/.aw`]: dead }, alive: [] });
+    await publishTick({ settings, now: () => NOW, host });
+    assert.equal(host.calls.publish[0].document.reason?.code, code, String(backend));
+    if (backend === "bb") assert.equal(host.calls.publish[0].document.reachable, "yes");
+  }
+});
+
 test("a receipt for another identity proves nothing about this one", async () => {
   const home = "/d/agents/a/instances/dev-1";
   const host = fakeHost({ rows: [nativeRow("dev-1")], ids: { ...idsFor, [`${home}/.aw`]: { did: "did:key:z6MkDev" } }, readiness: { [home]: unproven }, receipts: { [`${home}/.aw`]: receiptAt("did:key:z6MkOld", NOW - 30000) }, alive: [4242] });
