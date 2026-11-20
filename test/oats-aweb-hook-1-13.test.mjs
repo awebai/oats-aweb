@@ -336,12 +336,22 @@ test("launch with renewal off preserves the existing grant locator and session d
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
-    legacyGrant(base);
+    legacyGrant(base, "grant-old", home);
     const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: oldHome });
-    assert.deepEqual(r.doc.meta, { ...old, delivery: "session", runtime: "" }, "the start records the delivery and runtime it ran under and keeps the grant");
-    assert.deepEqual(logLines(base).map((l) => l.argv.join(" ")), ["wake status --json", `wake register --home ${home} --identity-home ${oldHome} --delivery session`], "renewal off calls aw only to confirm the broker runs and keep its registration on the existing grant home");
+    const recordPath = join(home, ".oats-aweb", "seat.json");
+    const record = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(statSync(recordPath).mode & 0o777, 0o600);
+    assert.match(record.seat, /^[0-9a-f]{16}$/);
+    assert.deepEqual(record, { seat: record.seat, instance: "probe", resident: old.identity.resident, team: old.identity.team });
+    assert.deepEqual(r.doc.meta, { ...old, identity: { ...old.identity, seat: record.seat }, delivery: "session", runtime: "" }, "the fill adds only the seat id to the identity and preserves the grant");
+    const calls = logLines(base);
+    const grantCalls = calls.filter((l) => l.argv.slice(0, 2).join(" ") === "id grant");
+    assert.deepEqual(grantCalls.map((l) => l.argv.join(" ")), ["id grant show grant-old --team=t:example.test --json", "id grant list --team=t:example.test --json"], "one legacy custody show, then the sweep; no mint or revoke");
+    assert.ok(grantCalls.every((l) => l.cwd === realpathSync(custody)), "both reads use the recorded resident custody");
+    assert.equal(grantStatus(base, "grant-old"), "active", "the sweep keeps the recorded bare-label grant");
+    assert.deepEqual(calls.filter((l) => l.argv[0] === "wake").map((l) => l.argv.join(" ")), ["wake status --json", `wake register --home ${home} --identity-home ${oldHome} --delivery session`], "the same broker calls keep registration on the existing grant home");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
