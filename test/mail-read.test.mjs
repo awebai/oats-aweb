@@ -305,3 +305,37 @@ test('times are ordered below the millisecond: aweb\'s microseconds decide, on o
   ({ result } = await read(two, { limit: 2, identities: [{ team: 'acme', identityHome: H1, primary: true }, { team: 'alpha', identityHome: H2, primary: false }] }));
   assert.deepEqual(result.mail.messages.map((m) => m.id), ['a-newer', 'z-older']);
 });
+
+test('identities alone past the 256 KiB bound: E_MAIL_TOO_LARGE, never an oversized answer', async () => {
+  const identities = Array.from({ length: 3000 }, (_, i) => ({ team: `team-${i}`, identityHome: `/fixture/${i}/.aw`, primary: i === 0 }));
+  const aw = async (home, args) => ({ status: 0, stderr: '', stdout: JSON.stringify(args[0] === 'whoami' ? { did: 'did:key:z6MkrVJVjQ4rkw7SB1goM7D5BViwd9TkaE1VZLfn7njC6QPB', alias: 'agent' } : { conversations: [] }) });
+  await assert.rejects(readMail({ identities, aw }), (e) => e.code === 'E_MAIL_TOO_LARGE' && /256 KiB/.test(e.message) && e.details.identities === 3000);
+});
+
+test('a newest message too big alone has its subject and thread title cut like a body, so the page holds it and a cursor', async () => {
+  const huge = 'ü'.repeat(200 * 1024); // 400 KiB of UTF-8
+  const script = { [H1]: { whoami: ME, threads: [[thread('c1', 59, { title: huge })]], conversations: { c1: [msg('big', 59, { subject: huge }), msg('next', 58)] } } };
+  const { result } = await read(script);
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 256 * 1024);
+  const [m] = result.mail.messages;
+  assert.equal(result.mail.messages.length, 1);
+  assert.equal(m.id, 'big');
+  assert.equal(m.truncated, true);
+  assert.ok(m.subject.length > 1000 && huge.startsWith(m.subject) && huge.startsWith(m.threadTitle), 'cut, at a character boundary');
+  assert.equal(result.mail.hasMore, true);
+  const rest = (await read(script, { cursor: decodeCursor(result.mail.nextCursor) })).result;
+  assert.deepEqual(rest.mail.messages.map((x) => x.id), ['next']);
+});
+
+test('at any bound, the answer fits it or is E_MAIL_TOO_LARGE, and never has more without a cursor', async () => {
+  const messages = Array.from({ length: 12 }, (_, i) => msg(`m${i}`, i, { subject: 's'.repeat(500 * i), body: 'b'.repeat(1500 * i) }));
+  const script = { [H1]: { whoami: ME, threads: [[thread('c1', 11)]], conversations: { c1: messages } } };
+  for (const bound of [600, 1200, 2000, 4000, 8000, 16000, 32000, 64000, 128000]) {
+    try {
+      const { result } = await read(script, { resultMaxBytes: bound });
+      assert.ok(Buffer.byteLength(JSON.stringify(result)) <= bound, `bound ${bound}`);
+      assert.ok(!result.mail.hasMore || result.mail.nextCursor, `bound ${bound}: more without a cursor`);
+      assert.ok(result.mail.messages.length >= 1, `bound ${bound}: an empty page`);
+    } catch (e) { assert.equal(e.code, 'E_MAIL_TOO_LARGE', `bound ${bound}: ${e.message}`); }
+  }
+});

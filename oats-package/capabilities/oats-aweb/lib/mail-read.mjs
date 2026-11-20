@@ -425,16 +425,37 @@ function boundedResult({ page, hasMore, states, conversations, observedAt, conve
     return { documents: [{ label: 'Mail', kind: 'markdown', text: renderMail(mail) }], mail };
   };
   const size = (result) => Buffer.byteLength(JSON.stringify(result), 'utf8');
+  const fits = (result) => size(result) <= resultMaxBytes;
+  const tooLarge = () => fail('E_MAIL_TOO_LARGE', `this instance's mail answer can't fit the ${resultMaxBytes / 1024} KiB bound, even with no messages (${states.length} identities)`, { identities: states.length, bound: resultMaxBytes });
+  // Without any message, the answer is its identities and partial conversations:
+  // if those alone don't fit, no page can.
+  if (!fits(build([], hasMore))) throw tooLarge();
   let result = build(page, hasMore);
-  if (size(result) <= resultMaxBytes) return result;
+  if (fits(result)) return result;
   // Too big: find the most messages that fit, by bisection.
-  let lo = 0, hi = page.length - 1;
+  let lo = 0, hi = page.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (size(build(page.slice(0, mid), true)) <= resultMaxBytes) lo = mid; else hi = mid - 1;
+    if (fits(build(page.slice(0, mid), true))) lo = mid; else hi = mid - 1;
   }
-  result = build(page.slice(0, lo), true);
-  if (!lo) result.mail.nextCursor = null;
+  if (lo === 0) {
+    // The newest message alone doesn't fit (only bodies are cut at 16 KiB):
+    // cut its subject and thread title, as a body is cut, to the most that
+    // fits, so a page never comes back empty with more to read.
+    const [first] = page;
+    const cut = (bytes) => {
+      const subject = truncateUtf8(first.subject, bytes), title = truncateUtf8(first.threadTitle, bytes);
+      return { ...first, subject: subject.text, threadTitle: title.text, truncated: first.truncated || subject.truncated || title.truncated };
+    };
+    let low = 0, high = Math.max(Buffer.byteLength(first.subject), Buffer.byteLength(first.threadTitle));
+    if (!fits(build([cut(0)], true))) throw tooLarge();
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (fits(build([cut(mid)], true))) low = mid; else high = mid - 1;
+    }
+    result = build([cut(low)], true);
+  } else result = build(page.slice(0, lo), true);
+  if (!fits(result) || (result.mail.hasMore && !result.mail.nextCursor)) throw tooLarge();
   return result;
 }
 

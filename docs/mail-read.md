@@ -95,7 +95,13 @@ reads about 50 conversations at most on a first page.
 - Each `body` is cut at 16 KiB of UTF-8, on a character boundary, with
   `truncated: true`.
 - The whole `result` is at most 256 KiB of JSON. Past it the page ends early,
-  with `hasMore: true` and a `nextCursor` at its last message.
+  with `hasMore: true` and a `nextCursor` at its last message. When the newest
+  message alone doesn't fit, its `subject` and `threadTitle` are cut to the
+  most that fits, at a character boundary, with `truncated: true`: a page is
+  never empty with more to read. When even the answer with no messages
+  doesn't fit (its identities and partial conversations alone), the read
+  fails whole with `E_MAIL_TOO_LARGE`, `details: {identities, bound}`. Every
+  answer is checked against the bound before it is returned.
 - A conversation whose read returned 500 messages (aw's `mail show` ceiling)
   may be longer, and its newest messages are the missing ones. It is listed in
   `conversations` with `partial: "oldest-first-only"`. When aw sends
@@ -123,7 +129,7 @@ reads about 50 conversations at most on a first page.
 
 Per identity, in `identities[].error`; the read fails whole
 (`E_MAIL_UNREADABLE`, with `details.identities`) only when no identity could
-be read.
+be read, or (`E_MAIL_TOO_LARGE`, above) when no answer can fit the bound.
 
 | error | meaning |
 | --- | --- |

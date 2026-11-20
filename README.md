@@ -46,7 +46,7 @@ instance's received and sent mail, newest first, across all its identities.
 It never acknowledges or marks anything read, and needs aw >= 1.36.53
 (`E_AW_TOO_OLD` below). The OATS Desktop's mail sheet reads it. The answer
 itself is the OATS kernel's (`docs/desktop-cli-api.md`, "Mail, `mailApi:
-1`"); oats.aweb fills it in this way:
+1`"); oats.aweb fills it in this way. Details within contract v2:
 
 - **It runs only** `aw version`, `whoami`, `mail threads` and `mail show`,
   each argv checked before it runs: narrower than the contract's (v2) list,
@@ -69,6 +69,11 @@ itself is the OATS kernel's (`docs/desktop-cli-api.md`, "Mail, `mailApi:
   read; at its budget (300 conversation reads, 150 s) it answers only messages
   it can prove are the newest. `limit` outside 1 to 200, or a cursor no answer
   gave, is `E_BAD_ARGS`.
+- **The 256 KiB bound always holds.** If the newest message alone doesn't fit
+  (only bodies are cut at 16 KiB), its `subject` and `threadTitle` are cut, at
+  a character boundary, with `truncated: true`, so a page is never empty with
+  more to read. If even an answer with no messages doesn't fit (its
+  identities alone), the read fails whole with `E_MAIL_TOO_LARGE`.
 
 How it is read, its bounds and every error: [docs/mail-read.md](docs/mail-read.md).
 

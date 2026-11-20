@@ -8,10 +8,13 @@
   newest first, across the primary identity and every joined team's,
   labelled by team, with bounded bodies (16 KiB) and answers (256 KiB),
   paging by an opaque cursor, and long conversations marked
-  `partial: "oldest-first-only"`. It runs only `aw version`, `whoami`,
-  `mail threads` and `mail show`, pinned against the real aw and, on the
-  real stack, by unchanged unread counts and `read_at`. It needs aw >= 1.36.53 and answers `E_AW_TOO_OLD`
-  below it; the provider's aw floor is unchanged. Additive: a home gets it
+  `partial: "oldest-first-only"`. The bound always holds: a message too
+  big alone has its subject and thread title cut too, and an answer whose
+  identities alone can't fit fails with `E_MAIL_TOO_LARGE`. It runs only
+  `aw version`, `whoami`, `mail threads` and `mail show`, pinned against the
+  real aw and, on the real stack, by unchanged unread counts and `read_at`.
+  It needs aw >= 1.36.53 and answers `E_AW_TOO_OLD` below it; the
+  provider's aw floor is unchanged. Additive: a home gets it
   with `oats instance upgrade` or a new spawn. See `docs/mail-read.md`.
 
 - **Fixed: registry admission stays explicit through command formatting.**
