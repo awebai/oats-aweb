@@ -95,7 +95,10 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   `hosted-invite-creation.json` nor `pending-hosted-accept` is there), or when no
   signature-pending stop was recorded and the issuing root reads genuinely chainless
   (`unknown`, `legacy_no_chain`, with no record of an adoption), as before
-  (#240). Anything else is kept, with exit status 1 and `retired: false` in the
+  (#240), which needs the record of adoptions to have been read. While aw's pending
+  files are in the home, no other retire path runs: not the self-delete of an alias
+  in its binding, not a completed-retire marker, and a home with no record of the
+  mint is kept. Anything else is kept, with exit status 1 and `retired: false` in the
   meta, which the kernel reads as an incomplete cleanup: it keeps the home and marks
   it `.oats-rollback-incomplete.json`. The reason is `signature-pending` for the exact
   mint that stopped (the same key, with aw's files naming the same invite selection

@@ -766,6 +766,62 @@ test("A8 (signature pending) on aw without the code: a post-key failure from a c
   }
 });
 
+test("retention fence: while aw holds a pending mint in the home, no other retire path settles it", (t) => {
+  const kept = (r, name) => {
+    assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, "mint-outcome-unknown"], name);
+  };
+  const stopped = () => {
+    const fx = fixture(t);
+    fx.fake.set({ version: "1.36.59", signaturePending: "code" });
+    return { fx, spawned: fx.run(["spawn"]) };
+  };
+  // A workspace binding with an alias next to aw's pending files: no self-delete.
+  {
+    const { fx, spawned } = stopped();
+    writeFileSync(join(fx.homeAw, "workspace.yaml"), "aweb_url: https://app.aweb.ai/api\nteam_id: default:example.test\nalias: dev-1\nworkspace_id: ws-fixture\n");
+    kept(fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } }), "alias in the home");
+    assert.equal(fx.fake.calls().filter((c) => c.args[0] === "workspace" && c.args[1] === "delete").length, 0, "no self-delete");
+    assert.ok(existsSync(join(fx.homeAw, "signing.key")));
+  }
+  // No record of the mint at all (journal and metadata lost).
+  {
+    const { fx } = stopped();
+    rmSync(join(fx.home, ".oats-aweb", "pending-mint.json"));
+    const r = fx.run(["retire"], { env: { OATS_META: "{}" } });
+    kept(r, "no record");
+    assert.match(r.doc.warning, /aw still holds a pending mint in .*, and this home has no usable record of it/);
+  }
+  // A completed default retire marker does not short-cut it either.
+  {
+    const { fx, spawned } = stopped();
+    writeFileSync(join(fx.home, ".oats-aweb", "default-retire.json"), JSON.stringify({ schemaVersion: 1, kind: "default-workspace-delete", retired: true, alias: "dev-1" }));
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+    assert.deepEqual([r.status, r.doc.meta.reason], [1, "signature-pending"], "the marker is not a settlement");
+  }
+  // aw's files gone: the ordinary paths run again, unchanged.
+  {
+    const { fx, spawned } = stopped();
+    for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) rmSync(join(fx.homeAw, f));
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+    assert.deepEqual([r.status, r.doc.meta.reason], [0, "nothing-to-delete"]);
+  }
+});
+
+test("retention invariant: an unreadable C3 record never shows a root chainless", (t) => {
+  const fx = fixture(t);
+  fx.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fx.rootHome]: chainless(fx.rootKey) } });
+  const spawned = fx.run(["spawn"]);
+  assert.equal(spawned.doc.meta.pendingMint.signaturePending, undefined, "an ordinary mint intent");
+  mkdirSync(join(fx.ws, ".oats-aweb"), { recursive: true });
+  writeFileSync(join(fx.ws, ".oats-aweb", "root-lineage.json"), "{not json");
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  assert.deepEqual([r.status, r.doc.meta.reason], [1, "mint-outcome-unknown"], "the record could not be read: not shown chainless");
+  assert.equal(fx.fake.calls().filter((c) => c.args.includes("members")).length, 0);
+  rmSync(join(fx.ws, ".oats-aweb", "root-lineage.json"));
+  const settled = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  assert.deepEqual([settled.status, settled.doc.meta.reason], [0, "nothing-to-delete"], "a store that isn't there yet is read: chainless, settled (#240)");
+});
+
 test("retention invariant: with aw's pending files in the home, retire settles only a mint with no recorded stop from a genuinely chainless root", (t) => {
   // [the issuing root's answer, settled?]
   for (const [name, root, settles] of [

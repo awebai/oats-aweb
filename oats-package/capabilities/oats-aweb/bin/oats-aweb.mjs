@@ -97,7 +97,7 @@ import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
-import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, pendingMintBinding, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -2952,18 +2952,6 @@ if (event === "launch") {
     const retainedWarning = `${released}; the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}${rebind}`;
     await finish({ meta: retiredMeta({ retired: true, retained: true, identityReleased: true, joinedTeams: joinedTeamsOf(meta), ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }), warning: `oats-aweb: ${[...retireWarnings, retainedWarning].join(" | ")}` });
   }
-  // No alias means the spawn hook never reported an identity: nothing exists to
-  // undo, which is completion. An alias WITH no local `.aw` is the opposite —
-  // the remote record exists and its key is gone, so the self-delete cannot be
-  // authenticated and the cleanup is incomplete, not vacuous (reviewer-602627c).
-  // A home whose spawn hook could not report its alias (a join killed on
-  // timeout that completed anyway) still carries the alias in its workspace
-  // binding: use it rather than leaving the workspace orphaned.
-  if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
-  const completedDefaultRetire = readDefaultRetireMarker();
-  if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
-    await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); ${ALIAS_UNRELEASED_REMEDY}` }) });
-  }
   // A mint killed or failed after aw may have registered the identity, with no bound
   // identity in the home (awebai/oats-aweb#240). aw writes the member's key before it
   // registers and the binding last, so such a home holds the key, or nothing, and no
@@ -2984,8 +2972,9 @@ if (event === "launch") {
     // kernel reads this meta and retains the home), never settled or deleted on a guess.
     const issuerChainless = () => {
       if (!intendedRoot || !existsSync(join(intendedRoot, ".aw"))) return false;
-      const { observation, record } = readRoot(intendedRoot);
-      return observation.answered && observation.outcome === "unknown" && observation.reason === "legacy_no_chain" && !record;
+      // No record must be shown, not assumed: the record store has to have been read.
+      const { observation, record, lineageRead } = readRoot(intendedRoot);
+      return lineageRead === true && observation.answered && observation.outcome === "unknown" && observation.reason === "legacy_no_chain" && !record;
     };
     const retention = pendingMintRetention(join(home, ".aw"), { signaturePending, issuerChainless });
     if (retention.keep === "signature-pending") {
@@ -3037,6 +3026,28 @@ if (event === "launch") {
     // retired by OATS). The person checks the member, as for a later spawn's refusal.
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint may have registered alias "${alias}" in team ${team}, and it was not released: the alias holds a certificate${named}, but this home holds no key it can read, so the certificate is most likely another instance's (aw writes the key before it registers) and no command to remove it is shown; check it with \`oats aweb roster\` and ${membersRead(team)}${where}`) });
   };
+  // The retention fence (README, "Human attribution"): while aw holds a pending mint
+  // in this home, nothing below (alias recovery, the completed-retire marker, the
+  // self-delete, nothing-to-delete) runs. The recorded mint's one retention decision
+  // answers; with no usable record of it, the home is kept.
+  if (pendingMintFilesIn(join(home, ".aw")).length) {
+    const onDisk = readPendingMint();
+    const pending = onDisk.intent || pendingMintOf(meta.pendingMint);
+    if (pending) await retirePendingMint(pending);
+    await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `aw still holds a pending mint in ${join(home, ".aw")}, and this home has no usable record of it${onDisk.problem ? ` (${pendingMintFile()}: ${onDisk.problem})` : ""}, so whether it can be settled is unknown: this home and aw's files are kept; reconcile them with aw, then retire again (${README_ATTRIBUTION})`].join(" | ")}` }, 1);
+  }
+  // No alias means the spawn hook never reported an identity: nothing exists to
+  // undo, which is completion. An alias WITH no local `.aw` is the opposite —
+  // the remote record exists and its key is gone, so the self-delete cannot be
+  // authenticated and the cleanup is incomplete, not vacuous (reviewer-602627c).
+  // A home whose spawn hook could not report its alias (a join killed on
+  // timeout that completed anyway) still carries the alias in its workspace
+  // binding: use it rather than leaving the workspace orphaned.
+  if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
+  const completedDefaultRetire = readDefaultRetireMarker();
+  if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
+    await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); ${ALIAS_UNRELEASED_REMEDY}` }) });
+  }
   if (!meta.alias) {
     const onDisk = readPendingMint();
     const pending = onDisk.intent || pendingMintOf(meta.pendingMint);

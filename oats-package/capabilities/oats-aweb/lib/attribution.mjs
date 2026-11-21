@@ -225,15 +225,17 @@ export function observeRoot({ runAw, rootDir, deployment, timeoutMs = WHO_TIMEOU
   const identityHome = join(rootDir, ".aw");
   const observation = readWho(runAw, identityHome, timeoutMs);
   const key = signingDidKey(identityHome), notes = [];
-  let entries = [];
-  if (deployment && key) { const read = readLineage(deployment); entries = read.entries; if (read.problem) notes.push(`${read.problem} (${lineageFile(deployment)})`); }
+  let entries = [], lineageRead = false;
+  if (deployment && key) { const read = readLineage(deployment); entries = read.entries; lineageRead = !read.problem; if (read.problem) notes.push(`${read.problem} (${lineageFile(deployment)})`); }
   let record = lineageEntryFor(entries, { id: observation.id, key });
   if (deployment && key && observation.answered && observation.outcome === "nearest_human" && observation.id) {
     record = { id: observation.id, key, humanId: observation.humanId, seenAt: now().toISOString() };
     const { cause } = recordLineage(deployment, record);
     if (cause) notes.push(`root ${name}'s adoption was not recorded: ${cause}`);
   }
-  return { observation, record, key, warning: lineageWarning({ name, observation, record }), notes };
+  // `lineageRead`: whether C3's record store was resolved and read (a store that isn't
+  // there yet counts as read): only then does no `record` show the root has none.
+  return { observation, record, key, lineageRead, warning: lineageWarning({ name, observation, record }), notes };
 }
 
 // ---------------------------------------------------------------------------
