@@ -109,9 +109,12 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   after storing its certificate but before removing its marker is kept by retire
   too; `oats aweb leave` or `join` settles it as before. Whatever path retire takes,
   its answer passes one last check on the way out: while either of aw's pending files
-  is in `<home>/.aw`, the legacy grant home `<home>/.aweb-identity`, any
-  `<home>/.aweb-identity-*` directory or an identity home a provider record names
-  inside the home (or one of them
+  is in any directory directly in the home, whatever its name (`.aw`,
+  `.aweb-identity`, `.aweb-identity-*` among them), in a symlink's target inside the
+  home, or in any identity home a record names inside the home (the meta's grant home
+  and joined or pending-join homes, and those `teams.json` names, read at that
+  moment), which covers every place aw writes: aw writes only at the
+  `--identity-home` it's given (or one of them
   can't be inspected), an answer that would let the kernel remove the home
   (`retired: true`, `nothing-to-delete`, or a plain exit 0) becomes `retired: false`,
   `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle

@@ -1031,6 +1031,52 @@ test("one inventory: the legacy grant home and a recorded identity home of any n
   assert.ok(existsSync(join(custom, "hosted-invite-creation.json")) && existsSync(join(custom, "signing.key")));
 });
 
+test("the choke point's inventory is what is in the home at exit: any top-level directory, an in-home symlink target, every recorded locator", (t) => {
+  const pendingIn = (dir) => spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(dir)})`]);
+  const global = (fx, grant = {}) => ({ identity: { mode: "global", team: TEAM, resident: "fixture", grant: { id: "g1", ...grant } } });
+  const globalSettings = (fx) => JSON.stringify({ ...fx.settings, residents: { fixture: fx.root } });
+  const kept = (r, files, name) => {
+    assert.deepEqual([r.status, r.doc?.meta?.retired], [1, false], `${name}: ${r.stdout}${r.stderr}`);
+    for (const f of files) assert.ok(existsSync(f), `${name}: ${f} kept`);
+  };
+  // A global seat's recorded grant home, of any name.
+  {
+    const fx = fixture(t);
+    const grantHome = join(fx.home, "custom-grant-home");
+    pendingIn(grantHome);
+    writeFileSync(join(fx.rootHome, "identity.yaml"), `did: ${fx.rootKey}\n`);
+    fx.fake.set({ grantRevoke: "ok" });
+    kept(fx.run(["retire"], { env: { OATS_META: JSON.stringify(global(fx, { home: grantHome })), OATS_SETTINGS: globalSettings(fx) } }), [join(grantHome, "pending-hosted-accept")], "grant.home");
+  }
+  // The missing-aw exit, before retire reads anything: a custom home teams.json records.
+  {
+    const fx = fixture(t);
+    assert.equal(fx.run(["spawn"]).status, 0);
+    const custom = join(fx.home, "custom-joined-home", "nested");
+    pendingIn(custom);
+    const state = join(fx.home, ".oats-aweb", "teams.json");
+    writeFileSync(state, JSON.stringify({ ...JSON.parse(readFileSync(state, "utf8")), pendingJoins: [{ label: "custom", team: JOINED, identityHome: custom, alias: "dev-1", root: fx.joinedRoot }] }));
+    kept(fx.run(["retire"], { env: { OATS_META: "{}", PATH: "/no-aw-here" } }), [join(custom, "pending-hosted-accept")], "missing aw");
+  }
+  // <home>/.aw a symlink to a directory inside the home.
+  {
+    const fx = fixture(t);
+    const relocated = join(fx.home, "relocated-aw");
+    pendingIn(relocated);
+    rmSync(join(fx.home, ".aw"), { recursive: true, force: true });
+    symlinkSync("relocated-aw", join(fx.home, ".aw"));
+    kept(fx.run(["retire"], { env: { OATS_META: JSON.stringify({ retained: true }) } }), [join(relocated, "pending-hosted-accept")], "in-home symlink");
+  }
+  // A top-level directory of any name that no record names.
+  {
+    const fx = fixture(t);
+    assert.equal(fx.run(["spawn"]).status, 0);
+    const other = join(fx.home, "anything");
+    pendingIn(other);
+    kept(fx.run(["retire"], { env: { OATS_META: JSON.stringify({ alias: "dev-1", team: TEAM }) } }), [join(other, "pending-hosted-accept")], "any top-level name");
+  }
+});
+
 test("retention invariant: with aw's pending files in the home, retire settles only a mint with no recorded stop from a genuinely chainless root", (t) => {
   // [the issuing root's answer, settled?]
   for (const [name, root, settles] of [

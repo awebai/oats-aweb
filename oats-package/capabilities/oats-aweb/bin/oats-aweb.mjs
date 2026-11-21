@@ -261,38 +261,68 @@ if (operation) {
  *  rule (b), its issuer shown genuinely chainless (#240): the one settle the retire
  *  choke point lets through while aw's pending files are in that home. */
 let retireChainlessSettle = false;
-/** Whether aw holds a pending mint in `dir` (either of its pending files), or `dir`
+/** Whether aw holds a pending mint in `path` (either of its pending files), or it
  *  can't be inspected (README, "Human attribution"): the one check the retire choke
- *  point and every delete on the retire path make, so they can't drift apart. `dir`
- *  itself is never followed: a symlink or a file there is no identity home (removing
- *  it removes none of aw's files), and a directory that is gone holds nothing. */
-function awHoldsPendingIn(dir) {
+ *  point, its early fence and every delete on the retire path make, so they can't
+ *  drift apart. A symlink is resolved: a target inside the instance home is checked
+ *  (removing the home removes it), one outside isn't held (removing the home leaves
+ *  it), and one that can't be resolved is held. A file holds nothing, and neither
+ *  does an entry that is gone. */
+function awHoldsPendingIn(path) {
   let entry;
-  try { entry = lstatSync(dir); }
+  try { entry = lstatSync(path); }
   catch (e) { return e?.code !== "ENOENT" && e?.code !== "ENOTDIR"; }
-  return entry.isDirectory() && pendingMintFilesIn(dir).length > 0;
+  if (entry.isSymbolicLink()) {
+    let target, inside;
+    try { target = realpathSync(path); inside = isInside(realpathSync(home), target); }
+    catch { return true; }
+    if (!inside) return false;
+    try { entry = lstatSync(target); path = target; } catch { return true; }
+  }
+  return entry.isDirectory() && pendingMintFilesIn(path).length > 0;
 }
-/** The one rule that names an instance home's aw identity homes (README, "Human
- *  attribution"): its own `.aw`, the legacy grant home `.aweb-identity`, and every
- *  `.aweb-identity-*` (grant homes `.aweb-identity-<digits>`, joined teams
- *  `.aweb-identity-<label>`). Retire's choke point, its early fence and grantHomeDirs
- *  all take their names from here. */
+const isInside = (root, p) => { const rel = relative(root, p); return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)); };
+/** The names grant homes take (legacy `.aweb-identity`, generated
+ *  `.aweb-identity-<digits>`); a joined team's home is `.aweb-identity-<label>`. */
 const isIdentityHomeName = (name) => name === ".aw" || name === ".aweb-identity" || name.startsWith(".aweb-identity-");
-/** Identity homes a provider record names inside the instance home that the rule
- *  above doesn't (a record names `.aweb-identity-<label>`; one edited by hand may name
- *  anything): retire registers them before it acts, so the scan covers them too. */
-const recordedIdentityHomes = new Set();
-/** The identity homes inside `dir` (the rule's names, and the recorded ones) where aw
- *  holds a pending mint, or that can't be inspected (awHoldsPendingIn). */
+/** Every identity home a record names: the input meta's grant home and joined or
+ *  pending-join homes, and those the provider's teams state names. `unreadable` when
+ *  that state exists but can't be read as one. Read here, at the moment it's asked,
+ *  never from what retire has read so far. */
+function recordedIdentityLocators(dir) {
+  const locators = [];
+  const add = (doc) => {
+    if (!doc || typeof doc !== "object") return;
+    if (typeof doc.identity?.grant?.home === "string") locators.push(doc.identity.grant.home);
+    for (const k of ["joinedTeams", "pendingJoins"]) if (Array.isArray(doc[k])) for (const e of doc[k]) if (typeof e?.identityHome === "string") locators.push(e.identityHome);
+  };
+  try { add(JSON.parse(process.env.OATS_META || "{}")); } catch { /* the meta's own parse fails retire first */ }
+  const state = join(dir, ".oats-aweb", "teams.json");
+  let text;
+  try { text = readFileSync(state, "utf8"); }
+  catch (e) { return entryAbsent(e, state) ? { locators } : { locators, unreadable: state }; }
+  try { add(JSON.parse(text)); } catch { return { locators, unreadable: state }; }
+  return { locators };
+}
+/** The identity homes of the instance home `dir` where aw holds a pending mint, or
+ *  that can't be inspected (awHoldsPendingIn), from what is in it at the moment it's
+ *  asked: every entry directly in it, whatever its name, and every identity home a
+ *  record names inside it, at any depth. aw writes only at the --identity-home it's
+ *  given, which the provider takes from those records. */
 function heldIdentityHomeNames(dir) {
   let names;
-  try { names = readdirSync(dir).filter(isIdentityHomeName); }
+  try { names = readdirSync(dir); }
   catch (e) { if (e?.code === "ENOENT") return []; return [`${dir} (it can't be listed)`]; }
-  for (const p of recordedIdentityHomes) {
-    const rel = relative(dir, p);
-    if (rel && !rel.startsWith("..") && !isAbsolute(rel) && !names.includes(rel)) names.push(rel);
+  const held = names.filter((name) => awHoldsPendingIn(join(dir, name)));
+  const { locators, unreadable } = recordedIdentityLocators(dir);
+  if (unreadable) held.push(`${relative(dir, unreadable)} (it can't be read, so the identity homes it names are unknown)`);
+  for (const p of locators) {
+    if (!isAbsolute(p)) continue;
+    const rel = relative(dir, resolve(p));
+    if (!rel || rel.startsWith("..") || isAbsolute(rel) || held.includes(rel) || names.includes(rel)) continue;
+    if (awHoldsPendingIn(join(dir, rel))) held.push(rel);
   }
-  return names.filter((name) => awHoldsPendingIn(join(dir, name)));
+  return held;
 }
 /** The retire choke point (README, "Human attribution"): every answer of the retire
  *  hook passes here on its way out. One that would let the kernel delete the home
@@ -2863,7 +2893,6 @@ if (event === "launch") {
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
-  for (const e of [...joinedTeamsOf(meta), ...pendingJoinsOf(meta)]) if (typeof e.identityHome === "string" && isAbsolute(e.identityHome)) recordedIdentityHomes.add(resolve(e.identityHome));
   // Only the boolean true records a retained seat: any other value records none.
   if (meta.retained !== undefined && meta.retained !== true) { const { retained: _notBoolean, ...rest } = meta; meta = rest; }
   const retireWarnings = [];
