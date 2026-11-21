@@ -49,9 +49,27 @@
     the home (`retired: false, reason: "signature-pending"`) while aw holds the
     pending mint; a plain retire clears it once aw settles it.
 
-  **What a deployment must change:** nothing. Roots with no identity chain behave as
-  before, apart from `attribution: unknown` and the new `roots` entries. A consumer
-  that compares the check-only document's keys exactly sees `roots`.
+  **What a deployment must change:**
+  - **Nothing, in most deployments.** Roots with no identity chain behave as before,
+    apart from `attribution: unknown` and the new `roots` entries. A consumer that
+    compares the check-only document's keys exactly sees `roots`.
+  - **A home left by a mint cut short under an older provider:** its record of the
+    mint names no issuing key. Retire settled such a home under #240. It now keeps it
+    as `mint-outcome-unknown`, even in a deployment that adopts nothing. aw 1.36.58
+    and 1.36.59 have no command that abandons a pending accept. To clear one:
+    1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`.
+    2. Check that root is chainless: `aw --identity-home <root>/.aw who --json`
+       answers `unknown` / `legacy_no_chain`, and
+       `oats aweb setup --check-only --json` lists `<root>` with no warnings. On any
+       other answer, stop: the mint may be waiting for a signature.
+    3. Optionally, `aw id team members --team-id=<team> --json` at `<root>` shows
+       whether the mint registered alias `<instance>`. Retire makes the same read.
+    4. Move aw's two pending files aside, never delete them:
+       `mkdir -p <home>.aw-pending-aside && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept <home>.aw-pending-aside/`.
+    5. Run `oats retire <instance>`: it settles the mint as before.
+
+    Why it's safe, with aw's source lines: README, "Human attribution", "A mint cut
+    short under an older provider".
   aw-compat.json is unchanged (`tested` moves to 1.36.59 when it is published); CI
   qualifies 1.36.59-rc.3 by its pinned npm integrity.
 

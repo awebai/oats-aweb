@@ -136,6 +136,49 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   that can't be read), for the operator to reconcile with aw. Nothing is settled or
   deleted on a guess. Once aw settles the mint, a plain `oats retire` clears the
   home.
+- **A mint cut short under an older provider.** A home whose spawn was killed or
+  failed during its mint under an oats-aweb release before this one has a record of
+  the mint, `<home>/.oats-aweb/pending-mint.json`, that names no issuing key. Retire
+  can't show its issuer genuinely chainless, so it keeps the home
+  (`mint-outcome-unknown`), even in a deployment that adopts nothing; its warning
+  points here. aw 1.36.58 and 1.36.59 have no command that abandons or settles a
+  pending accept: `aw id team accept-invite` completes one or is refused, and
+  `aw reset` removes only a workspace binding. To clear it:
+  1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`: the root
+     the mint used (`<root>` below) and its team (`<team>`).
+  2. Check that root is chainless:
+     - `aw --identity-home <root>/.aw who --json` answers `"outcome": "unknown"` and
+       `"reason": "legacy_no_chain"`;
+     - `oats aweb setup --check-only --json` lists `<root>` in `roots` with no
+       warnings, so no record says it ever had a person.
+
+     Any other answer: stop. The mint may be waiting for a signature; finish the
+     exchange aw printed for it instead.
+  3. Optionally, see what the mint registered. At `<root>`, run
+     `aw id team members --team-id=<team> --json`. A certificate for alias
+     `<instance>` means the mint registered it, and retire hands it to the team's
+     controller. None means nothing was registered. Retire makes this same read
+     itself in step 5.
+  4. Move aw's two pending files out of the home. Never delete them:
+
+     ```bash
+     mkdir -p <home>.aw-pending-aside
+     mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept <home>.aw-pending-aside/
+     ```
+
+     `<home>.aw-pending-aside` sits beside the home, so the kernel's removal of the
+     home leaves it.
+  5. Run `oats retire <instance>`. It settles the mint as releases before this one
+     did (#240): `nothing-to-delete`, or the controller's removal command for the
+     certificate.
+
+  This is safe only after step 2. aw stops an accept as waiting for a signature in
+  two cases. The first is when the inviting root is under a namespace with no chain
+  installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
+  1.36.59-rc.3 `:204-215`). The second is when the invite names a human (1.36.59-rc.3
+  `:199-200`), and the provider's invites (`aw team invite --team-id=<team>`) name
+  none. A root that reads `legacy_no_chain` has no namespace, so its pending files are
+  an accept cut short, not a mint waiting for a signature.
 - **Roots with no chain change nothing.** For a root with no chain (a local
   `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
   retire behave as before; the only differences are `attribution` `unknown` and the

@@ -97,7 +97,7 @@ import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
-import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, entryAbsent, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, README_OLDER_MINT, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, entryAbsent, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -3121,7 +3121,12 @@ if (event === "launch") {
       await finish({ meta: retiredMeta({ retired: false, reason: "signature-pending", pendingMint: { team, alias, root: intendedRoot, signaturePending, ...(issuer ? { issuer } : {}) } }), warning: said(`signature-pending — the mint of alias "${alias}" in team ${team} is waiting for an agent signature: aw keeps this home's key and its pending invite, so the home is kept; finish the exchange aw printed, or have aw settle the mint, then retire again (${README_ATTRIBUTION})`) }, 1);
     }
     if (retention.keep) {
-      await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, ...(signaturePending ? { signaturePending } : {}), ...(issuer ? { issuer } : {}) } }), warning: said(`aw still holds a pending mint in this home, and ${retention.cause}, so whether the mint of alias "${alias}" in team ${team} can be settled is unknown: this home, aw's files in ${join(home, ".aw")} and the record of the mint are kept; reconcile them with aw, then retire again (${README_ATTRIBUTION})`) }, 1);
+      // A mint recorded by an older provider names no issuing key: the operator's way
+      // out is its own README entry, not a general reconciliation with aw.
+      const remedy = !signaturePending && !issuer?.key
+        ? `this record of the mint, from an older provider, names no issuing key; if its root reads chainless, clear it as ${README_ATTRIBUTION}, "${README_OLDER_MINT}" says, then retire again`
+        : `reconcile them with aw, then retire again (${README_ATTRIBUTION})`;
+      await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, ...(signaturePending ? { signaturePending } : {}), ...(issuer ? { issuer } : {}) } }), warning: said(`aw still holds a pending mint in this home, and ${retention.cause}, so whether the mint of alias "${alias}" in team ${team} can be settled is unknown: this home, aw's files in ${join(home, ".aw")} and the record of the mint are kept; ${remedy}`) }, 1);
     }
     let root, doc, why;
     try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }

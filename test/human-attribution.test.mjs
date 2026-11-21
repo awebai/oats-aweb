@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
@@ -900,6 +900,17 @@ test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainle
   const { issuer: _metaIssuer, ...unboundMeta } = older.doc.meta.pendingMint;
   const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
   assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], "no issuer binding");
+  // Its warning points to the README entry with the way out, which exists by that name.
+  assert.ok(k.doc.warning.includes('clear it as README, "Human attribution", "A mint cut short under an older provider" says'), k.doc.warning);
+  assert.ok(readFileSync(new URL("../README.md", import.meta.url), "utf8").includes("- **A mint cut short under an older provider.**"));
+  assert.doesNotMatch(r.doc.warning, /older provider/, "a bound issuer's keep points elsewhere");
+  // The README's way out on a chainless root: aw's two files moved aside, then a plain retire settles it.
+  const aside = `${fy.home}.aw-pending-aside`;
+  mkdirSync(aside);
+  for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) renameSync(join(fy.home, ".aw", f), join(aside, f));
+  const cleared = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
+  assert.deepEqual([cleared.status, cleared.doc.meta.reason], [0, "nothing-to-delete"], cleared.stdout + cleared.stderr);
+  assert.ok(existsSync(join(aside, "hosted-invite-creation.json")), "moved aside, never deleted");
 });
 
 test("retire choke point: no answer lets the kernel delete a home where aw holds a pending file, whichever branch gives it", (t) => {

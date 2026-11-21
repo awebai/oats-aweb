@@ -28,6 +28,9 @@ export const SIGNATURE_PENDING_CODE = "native_agent_signature_pending";
 export const ADOPTED_ROOT_AW_TOO_OLD = "E_ADOPTED_ROOT_AW_TOO_OLD";
 export const CONNECT_CHAINED_INVITER = "E_CONNECT_CHAINED_INVITER";
 export const README_ATTRIBUTION = 'README, "Human attribution"';
+/** The README entry, under "Human attribution", for a home left by a mint an older
+ *  provider recorded with no issuing key. */
+export const README_OLDER_MINT = "A mint cut short under an older provider";
 export const UNKNOWN_ATTRIBUTION = Object.freeze({ mode: "unknown", human: null, parent: null });
 
 /** A string aw gives that is copied, never interpreted: bounded, no control characters. */
