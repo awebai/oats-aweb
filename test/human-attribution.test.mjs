@@ -1201,6 +1201,20 @@ for (const dirName of ["nested-root", "..nested-root"]) test(`a configured root 
   }
 });
 
+test("a root an earlier provider set up directly in the home, under a setting retire wasn't given, keeps the home: its .aw is checked", (t) => {
+  // The earlier provider accepted into <home>/nested-root/.aw (no refusal then); the
+  // instance's captured settings name only its original root.
+  const d = homeDeployment(t), nested = join(d.home, "nested-root");
+  const setup = d.join(d.settingsWith(nested));
+  assert.ok(existsSync(join(nested, ".aw", "pending-hosted-accept")), setup.stdout + setup.stderr);
+  for (const [name, extra] of [["with aw", {}], ["aw not on PATH", { PATH: "/no-aw-here" }]]) {
+    const r = d.hook(["retire"], { OATS_META: "{}", ...extra }, undefined, d.settingsWith(undefined));
+    assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], `${name}: ${r.stdout}${r.stderr}`);
+    assert.ok(r.doc.warning.includes("nested-root/.aw"), `${name}: ${r.doc.warning}`);
+    assert.ok(existsSync(join(nested, ".aw", "pending-hosted-accept")), `${name}: kept`);
+  }
+});
+
 test("setup refuses to accept into a root inside an instance home, before any aw call: nested, ..-named, or a symlink resolving into it", (t) => {
   for (const [name, place] of [
     ["nested", (d) => join(d.home, "nested-root")],

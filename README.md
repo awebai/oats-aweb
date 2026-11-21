@@ -110,7 +110,7 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   too; `oats aweb leave` or `join` settles it as before. Whatever path retire takes,
   its answer passes one last check on the way out: while either of aw's pending files
   is in any directory directly in the home, whatever its name (`.aw`,
-  `.aweb-identity`, `.aweb-identity-*` among them), in a symlink's target inside the
+  `.aweb-identity`, `.aweb-identity-*` among them), or in its `.aw`, in a symlink's target inside the
   home, or in any identity home a record names inside the home (the meta's grant home
   and joined or pending-join homes, and those `teams.json` names, read at that
   moment), or in any directory a setting names inside the home, or its `.aw` (`root`,
@@ -123,8 +123,13 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   the `--identity-home` it's given, which the provider takes from those records and
   settings. No deeper scan is made. Setup refuses to accept or mint into a root inside
   an instance home (`E_ROOT_INSIDE_INSTANCE_HOME`, below), so OATS's own flows put
-  aw's files under a home only at those locators. A root set there by an earlier
-  provider, after the instance's spawn, isn't in the settings its retire was given. Every delete retire makes before it answers makes the
+  aw's files under a home only at those locators. Not covered: a root an earlier
+  provider set up two or more levels down in a home, under a setting made after that
+  instance's spawn. Its retire isn't given that setting. aw's files are left there
+  only by a signature-pending stop, which needs an adopted root and so aw 1.36.59
+  final, released after this provider, or by that setup's accept cut short by a kill.
+  `oats aweb setup --check-only` is to warn of a root inside an instance home
+  (awebai/oats-aweb#311). Every delete retire makes before it answers makes the
   same check first and leaves such a directory in place: a global seat's grant-home
   cleanup, a joined team's leave and a pending join's settlement. A record retire
   reasons about (the record of adoptions, the provider's record of an interrupted
