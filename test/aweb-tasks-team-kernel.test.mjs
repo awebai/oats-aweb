@@ -27,12 +27,13 @@ function kernelFixture(t) {
   const base = realpathSync(mkdtempSync(join(process.env.OATS_TASKS_SCRATCH_ROOT, 'aweb-tasks-team-kernel-')));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const home = join(base, 'home'), bin = join(base, 'bin'), marker = join(base, 'aw-called');
-  mkdirSync(home); mkdirSync(bin);
+  mkdirSync(home); mkdirSync(bin); mkdirSync(join(base, 'tmux'), { mode: 0o700 });
   writeFileSync(join(bin, 'aw'), `#!/bin/sh\necho called >> '${marker}'\nexit 97\n`, { mode: 0o755 });
   // The previews name a harness, and a kernel from 0.70 refuses one that is not on PATH
   // (E_HARNESS_UNAVAILABLE). A preview never runs it; this one says so if anything does.
   writeFileSync(join(bin, 'codex'), `#!/bin/sh\necho 'the fixture codex must never run' >&2\nexit 97\n`, { mode: 0o755 });
-  // TMUX_TMPDIR: the kernel reads a running OATS tmux server's environment for a launch's PATH;
+  // TMUX_TMPDIR (a directory that exists: tmux falls back to /tmp for one that does not): the
+  // kernel reads a running OATS tmux server's environment for a launch's PATH;
   // without it a run on a developer's host would read that person's server.
   const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, TMUX_TMPDIR: join(base, 'tmux'),
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0',
