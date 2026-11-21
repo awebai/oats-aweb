@@ -1015,7 +1015,10 @@ and where to set it. The provider settings are:
   a later retire, join or leave, which run under no `OATS_BACKEND` of their
   own, and readiness decide the same path. They, and the round-trip probe,
   read the kernel's `backend` in `instance.json` first and that meta where the
-  kernel recorded none; the health publisher reads the meta alone. A
+  kernel recorded none; the health publisher reads the meta alone. A retire
+  goes further when it removes the broker registration: either record naming
+  a session provider is enough, so nothing stays registered for a retired
+  home even where the two contradict each other. A
   start on `tmux` records none.
 
   The package requirements (`requires` in `oats.json`) follow the backend too,

@@ -26,7 +26,10 @@
   round-trip probe, retire, join and leave read the kernel's `backend` in
   `instance.json` first, and the provider's own `backend` meta where the kernel
   recorded none. Before, readiness read the kernel's first and the others the
-  meta's; the two differ only in a record that contradicts itself.
+  meta's; the two differ only in a record that contradicts itself. On such a
+  record a retire still removes the home's broker registration: for that one
+  act, either record naming a session provider is enough, since a provider
+  start may have registered the home and the home is going away.
 
 - The capability-manifest schema copy is the kernel's at v0.70.0
   (`requires[].backends`, `sessionProviders`, `sandboxDomains`), and the

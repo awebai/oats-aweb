@@ -79,8 +79,10 @@ test("the recorded backend is read in one order: the kernel's record, else the p
 });
 
 // A record that contradicts itself (the kernel says tmux, the provider's meta
-// says bb) is read the same way by readiness, the probe and retire.
-test("readiness, the probe and retire read a contradicting record alike: the kernel's backend", (t) => {
+// says bb) is read the same way by readiness and the probe: the kernel's
+// backend. Retire is the exception, on purpose: it removes a registration
+// that a provider start may have made, so either record is enough for it.
+test("a contradicting record: readiness and the probe read the kernel's backend, and retire still deregisters", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude" });
   const spawned = fx.hook("spawn", BB);
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
@@ -91,16 +93,30 @@ test("readiness, the probe and retire read a contradicting record alike: the ker
   const result = fx.readiness();
   assert.equal(result.problems.some((p) => /^wake-/.test(p.code)), false, JSON.stringify(result));
   assert.ok(result.warnings.some((w) => w.code === "native-receive-unproven"), JSON.stringify(result));
-  // Retire: the same reading, so it does not treat the home as the broker's.
+  // Retire: the provider spawn above registered the home, and the meta still names the provider,
+  // so the registration goes with the home, whatever the kernel's record says.
   const r = fx.hook("retire", { OATS_META: JSON.stringify(meta) });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(fx.wakeCalls().includes("deregister"), false, "retire reads the kernel's tmux, as readiness does");
+  assert.ok(fx.wakeCalls().includes("deregister"));
+  assert.equal(fx.registered(), undefined, "nothing is left registered for a retired home");
   // The probe: the same order.
   const f = probeFixture(t);
   Object.assign(f.doc, { harness: "claude", launch: { ...f.doc.launch, harness: "claude" }, backend: "tmux" });
   Object.assign(f.doc.capabilityMeta["oats.aweb"], { runtime: "claude", backend: "bb" });
   f.save();
   assert.equal(loadProbeTarget(f.home, f.deployment).delivery, "channel");
+});
+
+// Neither record names a provider: a tmux Claude channel home was never the broker's, and retire leaves the broker alone.
+test("retire of a tmux channel home whose records name no session provider makes no broker call", (t) => {
+  for (const kernel of ["tmux", undefined]) {
+    const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+    const meta = fx.spawn().meta;
+    writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ harness: "claude", launch: { harness: "claude" }, ...(kernel ? { backend: kernel } : {}), capabilityMeta: { "oats.aweb": meta } }));
+    const r = fx.hook("retire", { OATS_META: JSON.stringify(meta), OATS_BACKEND: "bb" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(fx.wakeCalls(), [], String(kernel));
+  }
 });
 
 // ---------------------------------------------------------------- acceptance
