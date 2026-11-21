@@ -58,10 +58,12 @@
     as `mint-outcome-unknown`, even in a deployment that adopts nothing. aw 1.36.58
     and 1.36.59 have no command that abandons a pending accept. To clear one:
     1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`.
-    2. Check aw's own record of the accept:
-       `jq '{domain: .id_tree.domain, for_human: .for_human}' <home>/.aw/hosted-invite-creation.json`
-       must print `"domain": null` (or `""`) and `"for_human": null`. On any other
-       output, stop: the mint may be waiting for a signature.
+    2. Read retire's warning for that home. Go on only if it says aw's record of the
+       accept "is this home key's and names no ID-tree issuer and no human, so no
+       signature can be pending for it". The provider checks that the record is one
+       aw accepts, made for this home's key, with no `id_tree.domain` and no
+       `for_human`. If it says aw's record "doesn't show that no signature can be
+       pending", stop: the mint may be waiting for a signature.
     3. Check that root reads chainless: `aw --identity-home <root>/.aw who --json`
        answers `unknown` / `legacy_no_chain`, and
        `oats aweb setup --check-only --json` lists `<root>` with no warnings. On any

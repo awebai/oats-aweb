@@ -17,7 +17,7 @@ import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
 import { pendingMintFake } from "./helpers/fake-pending-mint.mjs";
 import { fakeAwArgvCheck } from "./helpers/aw-argv.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
-import { attributionFor, lineageEntryFor, pendingMintRetention, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { attributionFor, lineageEntryFor, noSignatureCanBePending, NO_SIGNATURE_PENDING_PROOF, pendingMintRetention, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "default:example.test";
@@ -901,12 +901,13 @@ test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainle
   const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
   assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], "no issuer binding");
   // Its warning points to the README entry with the way out, which exists by that name.
-  assert.ok(k.doc.warning.includes('clear it as README, "Human attribution", "A mint cut short under an older provider" says'), k.doc.warning);
+  assert.ok(k.doc.warning.includes('it can be cleared as README, "Human attribution", "A mint cut short under an older provider" says'), k.doc.warning);
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes("- **A mint cut short under an older provider.**"));
-  // Its proof is aw's own record of the accept, never the root now at that path.
-  assert.ok(readme.includes("jq '{domain: .id_tree.domain, for_human: .for_human}' <home>/.aw/hosted-invite-creation.json"));
-  assert.match(readFileSync(join(fy.home, ".aw", "hosted-invite-creation.json"), "utf8"), /"id_tree"/, "the fixture's record has the field the check reads");
+  // Its proof is aw's own record of the accept, never the root now at that path: the
+  // warning says the provider found it, in the words the README's step 2 waits for.
+  assert.ok(k.doc.warning.includes(NO_SIGNATURE_PENDING_PROOF), k.doc.warning);
+  assert.ok(readme.replace(/\s+/g, " ").includes(`"${NO_SIGNATURE_PENDING_PROOF}"`), "the README's step 2 quotes the proof's words");
   assert.doesNotMatch(r.doc.warning, /older provider/, "a bound issuer's keep points elsewhere");
   // The README's way out on a chainless root: aw's two files moved aside, then a plain retire settles it.
   const aside = `${fy.home}.aw-pending-aside`;
@@ -980,6 +981,45 @@ test("retire's deletes: a global retire never removes a numeric joined home wher
   fx.fake.set({ grantRevoke: "ok" });
   const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify({ identity: { mode: "global", team: TEAM, resident: "fixture", grant: { id: "g1" } } }), OATS_SETTINGS: JSON.stringify({ ...fx.settings, residents: { fixture: fx.root } }) } });
   assert.equal(existsSync(grantHome), false, r.stdout + r.stderr);
+});
+
+test("an older provider's cut-short mint: only aw's own record, valid and this home key's, with no ID-tree issuer and no human, shows no signature can be pending", (t) => {
+  const pending = (t) => { const dir = join(tempDir(t), ".aw"); spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(dir)})`]); return dir; };
+  const record = (dir) => join(dir, "hosted-invite-creation.json");
+  const edit = (dir, f) => writeFileSync(record(dir), JSON.stringify(f(JSON.parse(readFileSync(record(dir), "utf8")))));
+  assert.deepEqual(noSignatureCanBePending(pending(t)), { proven: true }, "aw's record of a legacy accept");
+  for (const [name, spoil] of [
+    ["an empty object", (dir) => writeFileSync(record(dir), "{}")],
+    ["JSON null", (dir) => writeFileSync(record(dir), "null")],
+    ["not JSON", (dir) => writeFileSync(record(dir), "{not json")],
+    ["no id_tree", (dir) => edit(dir, ({ id_tree: _t, ...d }) => d)],
+    ["no request id", (dir) => edit(dir, (d) => ({ ...d, id_tree: {} }))],
+    ["no token hash", (dir) => edit(dir, ({ token_hash: _h, ...d }) => d)],
+    ["an ID-tree issuer", (dir) => edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, domain: "example.test", mode: "self_custodial" } }))],
+    ["a named human", (dir) => edit(dir, (d) => ({ ...d, for_human: HUMAN }))],
+    ["another key", (dir) => writeKey(dir)],
+    ["no key", (dir) => rmSync(join(dir, "signing.key"))],
+    ["no record", (dir) => rmSync(record(dir))],
+  ]) {
+    const dir = pending(t);
+    spoil(dir);
+    const r = noSignatureCanBePending(dir);
+    assert.ok(!r.proven && r.why, `${name}: ${JSON.stringify(r)}`);
+  }
+  // Through retire: a malformed record keeps the home and the warning says not to move aw's files.
+  const fy = fixture(t);
+  fy.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fy.rootHome]: chainless(fy.rootKey) } });
+  const older = fy.run(["spawn"]);
+  const file = join(fy.home, ".oats-aweb", "pending-mint.json");
+  const { issuer: _issuer, ...unbound } = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify(unbound));
+  writeFileSync(join(fy.home, ".aw", "hosted-invite-creation.json"), "{}");
+  const { issuer: _metaIssuer, ...unboundMeta } = older.doc.meta.pendingMint;
+  const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
+  assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"]);
+  assert.ok(!k.doc.warning.includes(NO_SIGNATURE_PENDING_PROOF), k.doc.warning);
+  assert.match(k.doc.warning, /doesn't show that no signature can be pending \(aw's pending invite record is not one aw accepts\): don't move aw's files/);
+  assert.ok(k.doc.warning.includes('"A mint cut short under an older provider"'), "still points to the README entry");
 });
 
 test("retention invariant: an unreadable C3 record never shows a root chainless", (t) => {

@@ -31,6 +31,9 @@ export const README_ATTRIBUTION = 'README, "Human attribution"';
 /** The README entry, under "Human attribution", for a home left by a mint an older
  *  provider recorded with no issuing key. */
 export const README_OLDER_MINT = "A mint cut short under an older provider";
+/** What retire's warning says when aw's record proves no signature can be pending
+ *  (noSignatureCanBePending): the README's step 2 waits for these words. */
+export const NO_SIGNATURE_PENDING_PROOF = "aw's record of the accept is this home key's and names no ID-tree issuer and no human, so no signature can be pending for it";
 export const UNKNOWN_ATTRIBUTION = Object.freeze({ mode: "unknown", human: null, parent: null });
 
 /** A string aw gives that is copied, never interpreted: bounded, no control characters. */
@@ -291,6 +294,30 @@ export function pendingMintBinding(identityHome) {
   const tokenHash = object(doc) ? doc.token_hash : undefined, request = object(doc?.id_tree) ? doc.id_tree.request_id : undefined;
   if (!opaque(tokenHash) || typeof request !== "string" || !UUID_RE.test(request) || typeof doc.did_key !== "string" || !/^did:key:z[1-9A-HJ-NP-Za-km-z]{1,128}$/.test(doc.did_key)) return { unreadable: "aw's pending invite record is not one aw accepts" };
   return { selection: createHash("sha256").update(`oats-aweb pending selection\0${tokenHash}`).digest("hex"), request: request.toLowerCase(), did: doc.did_key };
+}
+
+/** Whether aw's record of the accept in `identityHome` shows that no signature can be
+ *  pending for it (README, "Human attribution", "A mint cut short under an older
+ *  provider"). The record must be one aw accepts (its token_hash, id_tree.request_id
+ *  and did_key, as pendingMintBinding reads them), made for this home's own key, with
+ *  no ID-tree issuer (`id_tree.domain` absent or empty) and naming no human
+ *  (`for_human` absent or null). aw prepares no request for such an invite (aw 1.36.58
+ *  cli/go/cmd/aw/hosted_invite_creation.go:94,114; 1.36.59-rc.3 :168,:199,:206).
+ *  Diagnostic only: it decides no retention. `{proven: true}`, else `{why}`. */
+export function noSignatureCanBePending(identityHome) {
+  const key = signingKeyRead(identityHome);
+  if (!key.did) return { why: key.missing ? "this home has no key" : "this home's key can't be read" };
+  const binding = pendingMintBinding(identityHome);
+  if (binding.unreadable) return { why: binding.unreadable };
+  if (!binding.did) return { why: "aw's pending invite record isn't there" };
+  if (binding.did !== key.did) return { why: "aw's pending invite record names another key" };
+  let doc;
+  try { doc = JSON.parse(readBounded(join(identityHome, PENDING_MINT_FILES[0]), PENDING_RECORD_MAX_BYTES)); }
+  catch { return { why: "aw's pending invite record could not be read" }; }
+  const domain = doc.id_tree.domain;
+  if (!(domain === undefined || domain === "")) return { why: "aw's record names an ID-tree issuer" };
+  if (!(doc.for_human === undefined || doc.for_human === null)) return { why: "aw's record names a human" };
+  return { proven: true };
 }
 
 /** Which of aw's pending-mint files are in `identityHome`. One that can't be looked

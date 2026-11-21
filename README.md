@@ -146,26 +146,23 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   `aw reset` removes only a workspace binding. To clear it:
   1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`: the root
      the mint used (`<root>` below) and its team (`<team>`).
-  2. Check aw's own record of the accept, which pinned the invite's issuer when it
-     was made:
-
-     ```bash
-     jq '{domain: .id_tree.domain, for_human: .for_human}' <home>/.aw/hosted-invite-creation.json
-     ```
-
-     Go on only if it prints `"domain": null` (or `""`) and `"for_human": null`: the
-     invite had no ID-tree issuer and named no human, so aw can't be waiting for a
-     signature for it. On any other output (a domain, a human, an error, or a file
-     that isn't JSON), stop: the mint may be waiting for a signature, so finish the
-     exchange aw printed for it instead.
+  2. Read the warning retire gave when it kept the home. The provider has checked
+     aw's own record of the accept (`<home>/.aw/hosted-invite-creation.json`), which
+     pinned the invite's issuer when it was made. Go on only if the warning says
+     "aw's record of the accept is this home key's and names no ID-tree issuer and no
+     human, so no signature can be pending for it". That means the record is one aw
+     accepts, made for this home's own key, with no `id_tree.domain` and no
+     `for_human`. If the warning instead says aw's record "doesn't show that no
+     signature can be pending", stop: the mint may be waiting for a signature, so
+     finish the exchange aw printed for it, or reconcile it with aw.
   3. Check that the root reads chainless:
      - `aw --identity-home <root>/.aw who --json` answers `"outcome": "unknown"` and
        `"reason": "legacy_no_chain"`;
      - `oats aweb setup --check-only --json` lists `<root>` in `roots` with no
        warnings.
 
-     This is not proof about the mint, since the root at that path may have been
-     replaced since. Step 2 is the proof. On any other answer, stop.
+     This proves nothing about the mint on its own, since the root at that path may
+     have been replaced. Step 2 is the proof. On any other answer, stop.
   4. Optionally, see what the mint registered. At `<root>`, run
      `aw id team members --team-id=<team> --json`. Retire makes this same read in
      step 6 and looks for a certificate for alias `<instance>` whose
