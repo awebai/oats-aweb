@@ -601,8 +601,15 @@ function deliveryFor(runtime = process.env.OATS_RUNTIME || "", delivery = delive
 }
 /** Whether the broker delivered to this home's primary identity as of its last
  *  recorded start (retire runs under no runtime of its own). A meta with no
- *  delivery comes from a spawn that never reached the registration. */
-const brokerDeliveredTo = (meta = {}) => !!meta.delivery && brokerDelivers({ delivery: meta.delivery, runtime: instanceRuntime(meta), backend: instanceBackend(meta) });
+ *  delivery comes from a spawn that never reached the registration. Only a
+ *  retire asks, and it removes a registration that may exist, so here either
+ *  record naming a session provider is enough: where the kernel's backend and
+ *  this provider's meta contradict each other (readiness and the probe then
+ *  read the kernel's), a provider start may still have registered the home,
+ *  `aw wake deregister` is idempotent, and the home is going away. */
+const brokerDeliveredTo = (meta = {}) => !!meta.delivery && (
+  brokerDelivers({ delivery: meta.delivery, runtime: instanceRuntime(meta), backend: instanceBackend(meta) }) ||
+  sessionProviderBackend(meta.backend) || sessionProviderBackend(recordedStart(home).backend));
 // Session delivery registers the home with the host wake broker (aweb-abil:
 // `aw wake register --home <abs> --identity-home <abs> --delivery session
 // [--backend tmux|herdr]`, durable even when the daemon is down). `--backend`
