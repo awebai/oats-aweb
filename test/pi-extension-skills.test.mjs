@@ -337,23 +337,24 @@ test("recordedPiAgentDir reads the legacy runtime and needs an absolute HOME for
 
 // -------------------------------------------------------------------- manifest
 
-test("both pi install texts install the extension, then name the filtered settings entry the warning accepts", (t) => {
+test("every pi install text installs the extension, then names the filtered settings entry the warning accepts", (t) => {
   const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"));
   const rows = manifest.requires.filter((r) => r.runtime === "pi");
-  assert.deepEqual(rows.map((r) => r.when.delivery).sort(), ["channel", "session"]);
+  const where = (r) => r.when?.delivery ?? r.backends.join(",");
+  assert.deepEqual(rows.map(where).sort(), ["channel", "session", "session-provider"]);
   const dir = mkdtempSync(join(tmpdir(), "oats-aweb-pi-manifest-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   for (const row of rows) {
-    const spec = row.when.delivery === "channel" ? "npm:@awebai/pi" : "npm:@awebai/pi@latest";
+    const spec = where(row) === "channel" ? "npm:@awebai/pi" : "npm:@awebai/pi@latest";
     assert.equal(row.package, "npm:@awebai/pi");
     assert.equal(row.install, `pi install ${spec}, then, if the @awebai/pi installed is below 0.5.0, make its entry {"source": "${spec}", "skills": []} in the pi folder's settings.json (PI_CODING_AGENT_DIR, else ~/.pi/agent), so pi loads the extension without its bundled skills. Never install @awebai/claude-skills in a pi folder that OATS homes use: a home's skills come from its capabilities (README, "The pi extension without its skills")`);
     const entry = JSON.parse(/\{"source".*?\}/.exec(row.install)[0]);
     writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages: [entry] }));
-    assert.equal(piExtensionSkillsWarning(dir), undefined, `${row.when.delivery}: the named entry is the filtered one`);
+    assert.equal(piExtensionSkillsWarning(dir), undefined, `${where(row)}: the named entry is the filtered one`);
     writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages: [spec] }));
-    assert.equal(piExtensionSkillsWarning(dir)?.code, CODE, `${row.when.delivery}: what pi install alone writes warns below 0.5.0`);
+    assert.equal(piExtensionSkillsWarning(dir)?.code, CODE, `${where(row)}: what pi install alone writes warns below 0.5.0`);
     installPi(dir, "0.5.0");
-    assert.equal(piExtensionSkillsWarning(dir), undefined, `${row.when.delivery}: what pi install alone writes is quiet from 0.5.0`);
+    assert.equal(piExtensionSkillsWarning(dir), undefined, `${where(row)}: what pi install alone writes is quiet from 0.5.0`);
     rmSync(join(dir, "npm"), { recursive: true });
   }
 });

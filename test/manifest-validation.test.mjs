@@ -112,3 +112,35 @@ test('retirement.disposable.home accepts the provider entries and refuses kernel
     assert.match(r.stderr, /retirement\.disposable\.home\[0\]/, entry); assert.match(r.stderr, why, `${entry}: ${r.stderr}`);
   }
 });
+
+// requires[].backends (the kernel's session-providers schema): the rows this
+// package ships validate, and nothing but `tmux` and `session-provider`, each
+// at most once, is a backend a requirement may name.
+test('requires[].backends accepts tmux and session-provider and refuses anything else', t => {
+  const f = bindingFixture(t);
+  assert.deepEqual(f.manifest.requires.filter(row => row.backends).map(row => [row.runtime, row.when?.delivery, row.backends]), [
+    ['pi', 'channel', ['tmux']], ['claude', 'channel', ['tmux']], ['pi', 'session', ['tmux']], ['claude', 'session', ['tmux']],
+    ['pi', undefined, ['session-provider']], ['claude', undefined, ['session-provider']],
+  ]);
+  const row = f.manifest.requires.findIndex(r => r.backends);
+  for (const backends of [['tmux'], ['session-provider'], ['tmux', 'session-provider']]) {
+    f.manifest.requires[row].backends = backends;
+    const r = f.run(); assert.equal(r.status, 0, `${JSON.stringify(backends)}: ${r.stderr}`);
+  }
+  // A requirement is one of the schema's alternatives, so a bad `backends` reports at its row.
+  for (const backends of [['bb'], [], ['tmux', 'tmux'], 'tmux', ['tmux', 'herdr']]) {
+    f.manifest.requires[row].backends = backends;
+    const r = f.run(); assert.equal(r.status, 1, `${JSON.stringify(backends)} must be refused`);
+    assert.match(r.stderr, new RegExp(`requires\\[${row}\\]: must match exactly one schema alternative`), `${JSON.stringify(backends)}: ${r.stderr}`);
+  }
+});
+
+// The refreshed schema allows `sandboxDomains` only beside `layer` (dependentRequired).
+test('a property the schema allows only beside another is refused without it', t => {
+  const f = bindingFixture(t);
+  f.manifest.sandboxDomains = [{ setting: 'registry' }];
+  let r = f.run(); assert.equal(r.status, 0, r.stderr);
+  delete f.manifest.layer;
+  r = f.run(); assert.equal(r.status, 1);
+  assert.match(r.stderr, /property sandboxDomains requires property layer/);
+});

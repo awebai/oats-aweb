@@ -69,10 +69,38 @@ test("aw's backend hint is tmux or nothing, never a provider's name", () => {
   assert.deepEqual(doc("bb").receive_identities.map((r) => r.label), ["default", "alpha"]);
 });
 
-test("the recorded backend is the provider's own record, else the kernel's", () => {
-  assert.equal(recordedBackend({ backend: "bb" }, "tmux"), "bb");
+test("the recorded backend is read in one order: the kernel's record, else the provider's own", () => {
+  assert.equal(recordedBackend({ backend: "bb" }, "tmux"), "tmux");
+  assert.equal(recordedBackend({ backend: "bb" }, "fake"), "fake");
+  assert.equal(recordedBackend({ backend: "bb" }, undefined), "bb");
   assert.equal(recordedBackend({}, "bb"), "bb");
+  assert.equal(recordedBackend({ backend: 7 }, undefined), undefined);
   assert.equal(recordedBackend(undefined, undefined), undefined);
+});
+
+// A record that contradicts itself (the kernel says tmux, the provider's meta
+// says bb) is read the same way by readiness, the probe and retire.
+test("readiness, the probe and retire read a contradicting record alike: the kernel's backend", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "claude" });
+  const spawned = fx.hook("spawn", BB);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  assert.ok(fx.registered());
+  const { claudeChannelMode: _none, ...meta } = { ...spawned.doc.meta, backend: "bb" };
+  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ harness: "claude", launch: { harness: "claude" }, backend: "tmux", capabilityMeta: { "oats.aweb": meta } }));
+  // Readiness: a tmux Claude home under delivery: channel is a channel home, so no broker is expected of it.
+  const result = fx.readiness();
+  assert.equal(result.problems.some((p) => /^wake-/.test(p.code)), false, JSON.stringify(result));
+  assert.ok(result.warnings.some((w) => w.code === "native-receive-unproven"), JSON.stringify(result));
+  // Retire: the same reading, so it does not treat the home as the broker's.
+  const r = fx.hook("retire", { OATS_META: JSON.stringify(meta) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(fx.wakeCalls().includes("deregister"), false, "retire reads the kernel's tmux, as readiness does");
+  // The probe: the same order.
+  const f = probeFixture(t);
+  Object.assign(f.doc, { harness: "claude", launch: { ...f.doc.launch, harness: "claude" }, backend: "tmux" });
+  Object.assign(f.doc.capabilityMeta["oats.aweb"], { runtime: "claude", backend: "bb" });
+  f.save();
+  assert.equal(loadProbeTarget(f.home, f.deployment).delivery, "channel");
 });
 
 // ---------------------------------------------------------------- acceptance

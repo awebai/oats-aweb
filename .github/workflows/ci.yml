@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  # OATS v0.68.1: released kernel above the provider's 0.68.0 floor.
-  OATS_KERNEL_COMMIT: 13f8f133808f5932bf461108703c1bada4b3f3d3
+  # OATS v0.70.0: the released kernel at the provider's 0.70.0 floor.
+  OATS_KERNEL_COMMIT: 7512163012876511088da79168c74540f9523c66
 
 jobs:
   aw-versions:

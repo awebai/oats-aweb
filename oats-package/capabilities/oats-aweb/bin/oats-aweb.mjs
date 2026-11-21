@@ -2369,7 +2369,7 @@ function instanceRuntime(meta = {}) {
 }
 /** The home's session backend, read as its runtime is: spawn and launch run
  *  under the kernel's OATS_BACKEND; a retire, join or leave reads what the
- *  last start recorded. */
+ *  last start recorded, in the one order every reader uses (recordedBackend). */
 function instanceBackend(meta = {}) {
   if (["spawn", "launch"].includes(event)) return process.env.OATS_BACKEND || undefined;
   return recordedBackend(meta, recordedStart(home).backend);
