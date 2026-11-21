@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.48.0 — 2026-11-21
 
 - **Changed: the package requirements follow the session backend, and the OATS
   floor moves to 0.70.0 (#297).** This closes the gap 1.45.0 left for a
@@ -20,7 +20,7 @@
   requirement to every launch whatever its `backends` says, so it would hold
   every `tmux` launch under `delivery: channel` to the two new floors; 0.70.0
   is the first release whose kernel also speaks the released session-provider
-  wire (1.3). The release lane confirms the number when it cuts this release.
+  wire (1.3).
 
 - **Changed: one order for a home's recorded backend.** Readiness, the
   round-trip probe, retire, join and leave read the kernel's `backend` in
