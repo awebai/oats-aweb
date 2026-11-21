@@ -10,6 +10,7 @@
 // - C3: the deployment's record of each root's last verified nearest human, keyed by
 //   the root's identity and key, never its label (observeRoot, the lineage record).
 // - Signature pending: a mint aw stopped before membership, kept for the operator.
+import { createHash } from "node:crypto";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { leadingJsonObject } from "./aw-failure-cause.mjs";
@@ -138,7 +139,6 @@ export const chainedIssuer = (observation, record) => (observation.answered && [
 // within LOCK_WAIT_MS is skipped and said so (the next read records it again).
 
 const LINEAGE_LOCK_WAIT_MS = 500;
-const LINEAGE_MAX = 200;
 export const lineageFile = (deployment) => join(deployment, ".oats-aweb", "root-lineage.json");
 const validEntry = (e) => object(e) && !!opaque(e.id) && !!opaque(e.key) && !!opaque(e.humanId) && typeof e.seenAt === "string" && !Number.isNaN(Date.parse(e.seenAt));
 function parseLineage(text) {
@@ -164,7 +164,8 @@ export function lineageEntryFor(entries, { id, key }) {
 }
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-/** Records `entry`, replacing the one with the same identity and key. Never throws:
+/** Records `entry`, replacing the one with the same identity and key and keeping
+ *  every other: a verified observation is never evicted (C3). Never throws:
  *  returns `{cause}` when nothing was written. */
 export function recordLineage(deployment, entry, { lockWaitMs = LINEAGE_LOCK_WAIT_MS } = {}) {
   if (!validEntry(entry)) return { cause: "the observation is not one the record holds" };
@@ -181,7 +182,7 @@ export function recordLineage(deployment, entry, { lockWaitMs = LINEAGE_LOCK_WAI
   try {
     let entries;
     try { entries = parseLineage(readFileSync(file, "utf8")) ?? []; } catch { entries = []; }
-    const merged = [...entries.filter((e) => !(e.key === entry.key && e.id === entry.id)), { id: entry.id, key: entry.key, humanId: entry.humanId, seenAt: entry.seenAt }].slice(-LINEAGE_MAX);
+    const merged = [...entries.filter((e) => !(e.key === entry.key && e.id === entry.id)), { id: entry.id, key: entry.key, humanId: entry.humanId, seenAt: entry.seenAt }];
     writeFileSync(tmp, `${JSON.stringify({ version: 1, roots: merged }, null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, file);
     return {};
@@ -239,10 +240,54 @@ export function signaturePendingStop({ status, stdout, keyWritten, chained, awVe
   return undefined;
 }
 
-/** Whether aw still holds the pending mint recorded with `did` in `identityHome`:
- *  that same key, aw's pending selection, and no identity or binding. */
-export function signaturePendingHeld(identityHome, did) {
-  if (!did || signingDidKey(identityHome) !== did) return false;
-  if (["identity.yaml", "workspace.yaml"].some((name) => existsSync(join(identityHome, name)))) return false;
-  return PENDING_MINT_FILES.some((name) => existsSync(join(identityHome, name)));
+const PENDING_RECORD_MAX_BYTES = 1 << 20;
+const PENDING_MARKER_BODY = "pending hosted accept\n";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const readBounded = (path, max) => {
+  const text = readFileSync(path, "utf8");
+  if (Buffer.byteLength(text) > max) throw new Error("too large");
+  return text;
+};
+
+/** What binds aw's pending mint in `identityHome` (hosted-invite-creation.json, as aw
+ *  1.36.58 and 1.36.59-rc.3 write and validate it): `selection`, a digest of the invite
+ *  selection's token_hash (never the hash itself), `request`, the prepared id_tree
+ *  request's id, and `did`, the key the record names. `{selection: null, request: null,
+ *  did: null}` with no record; `{unreadable}` when it is there and isn't one aw accepts. */
+export function pendingMintBinding(identityHome) {
+  let text;
+  try { text = readBounded(join(identityHome, PENDING_MINT_FILES[0]), PENDING_RECORD_MAX_BYTES); }
+  catch (e) { return e?.code === "ENOENT" ? { selection: null, request: null, did: null } : { unreadable: "aw's pending invite record could not be read" }; }
+  let doc;
+  try { doc = JSON.parse(text); } catch { return { unreadable: "aw's pending invite record is not JSON" }; }
+  const tokenHash = object(doc) ? doc.token_hash : undefined, request = object(doc?.id_tree) ? doc.id_tree.request_id : undefined;
+  if (!opaque(tokenHash) || typeof request !== "string" || !UUID_RE.test(request) || typeof doc.did_key !== "string" || !/^did:key:z[1-9A-HJ-NP-Za-km-z]{1,128}$/.test(doc.did_key)) return { unreadable: "aw's pending invite record is not one aw accepts" };
+  return { selection: createHash("sha256").update(`oats-aweb pending selection\0${tokenHash}`).digest("hex"), request: request.toLowerCase(), did: doc.did_key };
+}
+
+/** Whether aw still holds the exact pending mint recorded as `{did, binding}` in
+ *  `identityHome`: `{state: "held"}` (that key, no identity yet, aw's pending files,
+ *  and, where a record was bound at the stop, the same selection and request);
+ *  `{state: "settled"}` (aw finished or released it, or the key is another: what is
+ *  true is answered as for any recorded mint); `{state: "changed", cause}` when aw's
+ *  pending files are there but name another mint or can't be read, which is kept
+ *  for the operator, never settled or deleted on a guess. */
+export function signaturePendingState(identityHome, { did, binding } = {}) {
+  if (!did || signingDidKey(identityHome) !== did) return { state: "settled" };
+  if (["identity.yaml", "workspace.yaml"].some((name) => existsSync(join(identityHome, name)))) return { state: "settled" };
+  const present = PENDING_MINT_FILES.filter((name) => existsSync(join(identityHome, name)));
+  if (!present.length) return { state: "settled" };
+  if (present.includes(PENDING_MINT_FILES[1])) {
+    let body;
+    try { body = readBounded(join(identityHome, PENDING_MINT_FILES[1]), 256); } catch { body = null; }
+    if (body !== PENDING_MARKER_BODY) return { state: "changed", cause: "aw's pending-accept marker can't be read or is malformed" };
+  }
+  const now = pendingMintBinding(identityHome);
+  if (now.unreadable) return { state: "changed", cause: now.unreadable };
+  if (binding?.unreadable) return { state: "changed", cause: "aw's pending invite record could not be read when the mint stopped" };
+  if (now.did !== null && now.did !== did) return { state: "changed", cause: "aw's pending invite record names another key" };
+  if (binding?.selection && (now.selection !== binding.selection || now.request !== binding.request)) {
+    return { state: "changed", cause: now.selection === null ? "aw's pending invite record is gone while its pending-accept marker stays" : "aw's pending invite record now names another invite or request" };
+  }
+  return { state: "held" };
 }

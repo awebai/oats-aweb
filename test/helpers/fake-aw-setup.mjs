@@ -75,8 +75,8 @@ import { fakeAwArgvCheck } from "./aw-argv.mjs";
 //                     any other home answers what aw says of a local did:key with no chain
 //                     (unknown, legacy_no_chain)
 //   AW_SIGNATURE_PENDING=code|error  init --join-from stops before membership as aw does
-//                     for a mint waiting for an agent signature: it writes the member's key,
-//                     hosted-invite-creation.json and pending-hosted-accept, prints aw's
+//                     for a mint waiting for an agent signature: it writes what aw keeps
+//                     (test/helpers/fake-pending-mint.mjs), prints aw's
 //                     --json envelope with code native_agent_signature_pending (code; aw
 //                     1.36.59) or the generic error (error; aw 1.36.58) and exits 1
 //   id team members   answered from FAKE_JOIN_FROM_REGISTRY when it is set
@@ -89,6 +89,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { joinFromFake, membersFake } from "./fake-aw-join-from.mjs";
+import { pendingMintFake } from "./fake-pending-mint.mjs";
 
 const sourceDerived = fileURLToPath(new URL("../fixtures/byot-create/source-derived", import.meta.url));
 
@@ -124,12 +125,7 @@ fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome
 const writeKeys = (dir) => { if (!process.env.AW_FAKE_KEYS) return; fs.mkdirSync(path.join(dir, "encryption-keys"), { recursive: true }); fs.writeFileSync(path.join(dir, "signing.key"), "FIXTURE-PRIVATE-SIGNING-KEY\\n"); fs.writeFileSync(path.join(dir, "encryption-keys", "fixture.x25519.key"), "FIXTURE-PRIVATE-X25519-KEY\\n"); };
 if (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) process.on("exit", (code) => { if (code === 0) writeKeys(awDir); });
 if (args[0] === "init" && args.some((a) => a.startsWith("--join-from")) && process.env.AW_SIGNATURE_PENDING) {
-  const { privateKey } = require("node:crypto").generateKeyPairSync("ed25519");
-  const der = privateKey.export({ format: "der", type: "pkcs8" });
-  fs.mkdirSync(awDir, { recursive: true });
-  fs.writeFileSync(path.join(awDir, "signing.key"), "-----BEGIN ED25519 PRIVATE KEY-----\\n" + Buffer.from(der.subarray(der.length - 32)).toString("base64") + "\\n-----END ED25519 PRIVATE KEY-----\\n", { mode: 0o600 });
-  fs.writeFileSync(path.join(awDir, "hosted-invite-creation.json"), JSON.stringify({ token_hash: "fixture", request_ready: true }));
-  fs.writeFileSync(path.join(awDir, "pending-hosted-accept"), "pending hosted accept\\n");
+  (${pendingMintFake})(awDir);
   const message = "native agent signature pending; its key and pending invite are retained in " + awDir;
   console.error(message);
   console.log(JSON.stringify({ error: { code: process.env.AW_SIGNATURE_PENDING === "code" ? "native_agent_signature_pending" : "error", message } }));

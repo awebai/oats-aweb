@@ -87,9 +87,14 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
 - **A mint waiting for a signature.** When aw stops a mint as
   `native_agent_signature_pending` (aw 1.36.59), the spawn fails and the home is
   kept: retire answers `retired: false, reason: "signature-pending"` while aw still
-  holds that exact pending mint (its key, `hosted-invite-creation.json` or
-  `pending-hosted-accept`), and the kernel keeps the home. Once aw settles the mint, a
-  plain `oats retire` clears it. On aw 1.36.58, which has no such code, a failure
+  holds that exact pending mint, and the kernel keeps the home. "That exact mint" is
+  the same key, with aw's `hosted-invite-creation.json` naming the same invite
+  selection and prepared request as when the mint stopped (the provider records a
+  digest of the selection and the request's id, never the token or its hash), or its
+  `pending-hosted-accept` marker. Pending files that name another mint, or can't be
+  read, are kept too, as `mint-outcome-unknown`, for the operator to reconcile with
+  aw: nothing is settled or deleted on a guess. Once aw settles the mint, a plain
+  `oats retire` clears the home. On aw 1.36.58, which has no such code, a failure
   after the key was written is kept the same way only when the issuing root has an
   identity chain.
 - **Roots with no chain change nothing.** For a root with no chain (a local

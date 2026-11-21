@@ -14,9 +14,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
+import { pendingMintFake } from "./helpers/fake-pending-mint.mjs";
 import { fakeAwArgvCheck } from "./helpers/aw-argv.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
-import { attributionFor, readWho, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { attributionFor, lineageEntryFor, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "default:example.test";
@@ -80,9 +81,7 @@ if (rest[0] === "who") {
   process.exit(0);
 }
 if (rest[0] === "init" && cfg.signaturePending) {
-  key(awDir);
-  fs.writeFileSync(path.join(awDir, "hosted-invite-creation.json"), JSON.stringify({ token_hash: "fixture", request_ready: true }));
-  fs.writeFileSync(path.join(awDir, "pending-hosted-accept"), "pending hosted accept\\n");
+  (${pendingMintFake})(awDir);
   const message = "native agent signature pending; its key and pending invite are retained in " + awDir;
   console.error(message);
   console.log(JSON.stringify({ error: { code: cfg.signaturePending === "code" ? "native_agent_signature_pending" : "error", message } }));
@@ -122,6 +121,7 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(kernelCalls)}, JSON.stringify(args) + "\\n");
 const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, "utf8"));
+if (args[0] === "version" && cfg.kernelHang) { process.on("SIGTERM", () => {}); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60000); process.exit(0); }
 if (args[0] === "version") { console.log(JSON.stringify({ version: "0.70.0", features: cfg.features || ["spawn-attribution"] })); process.exit(0); }
 // \`oats inspect\`, as an explicit join reads the deployment's live roots (lib/team-roots.mjs).
 if (args[0] === "inspect") {
@@ -313,6 +313,18 @@ test("A3 (C1 bound): a who that never exits is cut at 5 s, once; the start and t
   assert.equal(fx.who(fx.fake.calls(), fx.homeAw).length, 2, "the instance once at this spawn, no retry");
 });
 
+test("A3 (C1 bound): a kernel feature read that ignores SIGTERM is cut within the same 5 s; the start completes", (t) => {
+  const fx = fixture(t);
+  writeKey(fx.homeAw);
+  const previous = { mode: "none", human: null, parent: null };
+  fx.fake.set({ kernelHang: true });
+  const started = fx.launch(previous);
+  assert.equal(started.status, 0, started.stdout + started.stderr);
+  assert.ok(started.ms < 9000, `bounded (${started.ms} ms)`);
+  assert.deepEqual(started.doc.meta.identity.attribution, previous, "no feature answer: the recorded identity is left as it is");
+  assert.equal(fx.who(fx.fake.calls(), fx.homeAw).length, 0, "no time left for who after the cut");
+});
+
 test("a chainless did:key root's read at spawn is offline and fast, and adds nothing to the answer", (t) => {
   const fx = fixture(t);
   fx.fake.set({ who: { [fx.rootHome]: chainless(fx.rootKey), [fx.homeAw]: chainless("did:key:zLeaf") } });
@@ -398,6 +410,19 @@ test("A5 (C3): nearest_human then unknown warns, naming the root and aw's reason
 
   writeKey(fx.rootHome);
   assert.deepEqual(shared(checkOnly(fx)).warnings, [], "a new key doesn't inherit the record");
+});
+
+test("A5 (C3): no verified observation is evicted by others: 250 roots keep every record", (t) => {
+  const dep = tempDir(t);
+  const key = (i) => `did:key:z6Mk${String(i).padStart(40, "A")}`;
+  for (let i = 0; i < 250; i++) assert.deepEqual(recordLineage(dep, { id: `did:aw:person.example.test/root-${i}`, key: key(i), humanId: HUMAN, seenAt: new Date(0).toISOString() }), {});
+  const { entries } = readLineage(dep);
+  assert.equal(entries.length, 250);
+  assert.equal(lineageEntryFor(entries, { id: "did:aw:person.example.test/root-0", key: key(0) })?.humanId, HUMAN, "the first root's record is kept");
+  assert.deepEqual(recordLineage(dep, { id: "did:aw:person.example.test/root-0", key: key(0), humanId: "did:aw:other.example.test", seenAt: new Date(1).toISOString() }), {});
+  const after = readLineage(dep).entries;
+  assert.equal(after.length, 250, "a new nearest_human replaces only that root's entry");
+  assert.equal(lineageEntryFor(after, { id: "did:aw:person.example.test/root-0", key: key(0) }).humanId, "did:aw:other.example.test");
 });
 
 test("A5 (C3): the warning shows at every spawn from that root", (t) => {
@@ -562,6 +587,35 @@ test("A8 (signature pending): a mint aw stops with native_agent_signature_pendin
   const cleared = retire();
   assert.equal(cleared.status, 0, cleared.stdout + cleared.stderr);
   assert.deepEqual([cleared.doc.meta.retired, cleared.doc.meta.reason], [false, "nothing-to-delete"]);
+});
+
+test("A8 (signature pending): only that exact pending mint is held: progress on it is, another selection or request or a malformed record is kept as unknown", (t) => {
+  const journal = (fx) => join(fx.homeAw, "hosted-invite-creation.json");
+  const edit = (fx, change) => { const doc = JSON.parse(readFileSync(journal(fx), "utf8")); change(doc); writeFileSync(journal(fx), JSON.stringify(doc)); };
+  const cases = [
+    ["aw prepares the response for that request", (fx) => edit(fx, (d) => { d.request_ready = true; d.response_json = "{}"; d.accept_attempted = true; }), "signature-pending"],
+    ["another invite selection", (fx) => edit(fx, (d) => { d.token_hash = "f".repeat(64); }), "mint-outcome-unknown"],
+    ["another prepared request", (fx) => edit(fx, (d) => { d.id_tree.request_id = "00000000-0000-4000-8000-000000000000"; }), "mint-outcome-unknown"],
+    ["another key named in the record", (fx) => edit(fx, (d) => { d.did_key = "did:key:z6MkOther"; }), "mint-outcome-unknown"],
+    ["a malformed record", (fx) => writeFileSync(journal(fx), "{not json"), "mint-outcome-unknown"],
+    ["the record gone, the marker kept", (fx) => rmSync(journal(fx)), "mint-outcome-unknown"],
+    ["a malformed marker", (fx) => writeFileSync(join(fx.homeAw, "pending-hosted-accept"), "something else\n"), "mint-outcome-unknown"],
+  ];
+  for (const [name, change, reason] of cases) {
+    const fx = fixture(t);
+    fx.fake.set({ version: "1.36.59", signaturePending: "code" });
+    const spawned = fx.run(["spawn"]);
+    const { binding } = spawned.doc.meta.pendingMint.signaturePending;
+    assert.match(binding.selection, /^[0-9a-f]{64}$/, name);
+    assert.match(binding.request, /^[0-9a-f-]{36}$/, name);
+    assert.ok(!readFileSync(join(fx.home, ".oats-aweb", "pending-mint.json"), "utf8").includes(JSON.parse(readFileSync(journal(fx), "utf8")).token_hash), "aw's token_hash is never copied");
+    change(fx);
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+    assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, reason], name);
+    if (reason !== "signature-pending") assert.match(r.doc.warning, /so whether it is still that mint is unknown: this home, aw's files .* are kept/, name);
+    assert.ok(existsSync(join(fx.homeAw, "signing.key")), `${name}: nothing deleted`);
+    assert.equal(fx.fake.calls().filter((c) => c.args.includes("members")).length, 0, `${name}: nothing settled on a guess`);
+  }
 });
 
 test("A8 (signature pending): a held mint whose key was replaced is no longer the one recorded", (t) => {

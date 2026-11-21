@@ -28,7 +28,7 @@ function deployment(t) {
   for (const dir of [join(host, 'souls', 'probe'), join(dep, 'agents'), join(root, '.aw'), privateHome]) mkdirSync(dir, { recursive: true });
   const fake = fakeAwSetupPath(t);
   writeFileSync(join(fake.path, 'codex'), '#!/bin/sh\necho unexpected-harness-launch >&2\nexit 99\n', { mode: 0o755 });
-  const env = { PATH: `${fake.path}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: privateHome, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', OATS_REMOTE_CACHE: join(base, 'cache'), AW_NO_UPDATE_CHECK: '1', AW_FAKE_KEYS: '1', AW_SIGNATURE_PENDING: 'code', AW_FAKE_VERSION: '1.36.59' };
+  const env = { PATH: `${fake.path}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: privateHome, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', OATS_REMOTE_CACHE: join(base, 'cache'), AW_NO_UPDATE_CHECK: '1', AW_FAKE_KEYS: '1', AW_SIGNATURE_PENDING: 'code', AW_FAKE_VERSION: '1.36.59', FAKE_JOIN_FROM_REGISTRY: join(base, 'registry.json') };
   const git = (...args) => execFileSync('git', ['-C', host, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], { env, encoding: 'utf8' }).trim();
   const ref = pathToFileURL(host).href;
   writeFileSync(join(host, 'oats-workspace.yaml'), `schemaVersion: 2\nname: fixture\nmembers:\n  - ${ref}\nteams:\n  default: { team: 'default:example.invalid' }\ndefaultTeam: default\nlocalTeams: true\ndefaults:\n  messaging:\n    oats.aweb: { from: local/${host} }\n`);
