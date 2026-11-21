@@ -11,7 +11,7 @@
 //   the root's identity and key, never its label (observeRoot, the lineage record).
 // - Signature pending: a mint aw stopped before membership, kept for the operator.
 import { createHash } from "node:crypto";
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { leadingJsonObject } from "./aw-failure-cause.mjs";
 import { versionAtLeast } from "./aw-floor.mjs";
@@ -180,8 +180,13 @@ export function recordLineage(deployment, entry, { lockWaitMs = LINEAGE_LOCK_WAI
     sleep(20);
   }
   try {
-    let entries;
-    try { entries = parseLineage(readFileSync(file, "utf8")) ?? []; } catch { entries = []; }
+    // Only a record that isn't there is an empty one: an existing record that can't be
+    // read or parsed is left as it is, never replaced by a partial one.
+    let text;
+    try { text = readFileSync(file, "utf8"); }
+    catch (e) { if (e?.code !== "ENOENT") return { cause: `the existing record ${file} could not be read, and is left as it is: move it aside to record roots again` }; }
+    const entries = text === undefined ? [] : parseLineage(text);
+    if (!entries) return { cause: `the existing record ${file} is malformed, and is left as it is: move it aside to record roots again` };
     const merged = [...entries.filter((e) => !(e.key === entry.key && e.id === entry.id)), { id: entry.id, key: entry.key, humanId: entry.humanId, seenAt: entry.seenAt }];
     writeFileSync(tmp, `${JSON.stringify({ version: 1, roots: merged }, null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, file);
@@ -274,36 +279,56 @@ export function pendingMintBinding(identityHome) {
   return { selection: createHash("sha256").update(`oats-aweb pending selection\0${tokenHash}`).digest("hex"), request: request.toLowerCase(), did: doc.did_key };
 }
 
-/** Whether aw still holds the exact pending mint recorded as `{did, binding}` in
- *  `identityHome`: `{state: "held"}` (that key, no identity yet, aw's pending files,
- *  and, where a record was bound at the stop, the same selection and request);
- *  `{state: "settled"}` (aw finished or released it, or the key is another: what is
- *  true is answered as for any recorded mint); `{state: "changed", cause}` when aw's
- *  pending files are there but name another mint or can't be read, which is kept
- *  for the operator, never settled or deleted on a guess. */
-export function signaturePendingState(identityHome, { did, binding } = {}) {
-  const present = PENDING_MINT_FILES.filter((name) => existsSync(join(identityHome, name)));
+/** Which of aw's pending-mint files are in `identityHome`. One that can't be looked
+ *  at (anything but "not there") counts as there: retention fails closed. */
+export function pendingMintFilesIn(identityHome) {
+  return PENDING_MINT_FILES.filter((name) => {
+    try { lstatSync(join(identityHome, name)); return true; }
+    catch (e) { return !(e?.code === "ENOENT" || e?.code === "ENOTDIR"); }
+  });
+}
+
+/** Whether aw's pending files in `identityHome` are the exact mint recorded as
+ *  `{did, binding}` at its signature-pending stop: `{exact: true}`, or `{cause}`
+ *  saying how they aren't (or can't be shown to be). */
+function exactPendingMint(identityHome, present, { did, binding, invalid }) {
+  if (invalid) return { cause: "the provider's record of this signature-pending mint is malformed" };
+  if (!did) return { cause: "the key aw kept could not be read when the mint stopped" };
+  if (binding?.unreadable) return { cause: "aw's pending invite record could not be read when the mint stopped" };
   const key = signingKeyRead(identityHome);
-  // A key that can't be established while aw's pending files remain is never a
-  // settled one: kept, as is a stop whose key couldn't be read then.
-  // A key that can't be established, or another key, while aw's pending files remain
-  // is never a settled mint: kept, as is a stop whose key couldn't be read then. Only
-  // when aw's pending files are gone is another key (or none) a settled one.
-  if (present.length && (!key.did || !did || key.did !== did)) return { state: "changed", cause: !did ? "the key aw kept could not be read when the mint stopped" : key.missing ? "the key aw kept is gone while its pending files stay" : key.unreadable ? "the key aw kept can't be read now" : "the home holds another key while aw's pending files stay" };
-  if (!did || key.did !== did) return { state: "settled" };
-  if (["identity.yaml", "workspace.yaml"].some((name) => existsSync(join(identityHome, name)))) return { state: "settled" };
-  if (!present.length) return { state: "settled" };
+  if (!key.did) return { cause: key.missing ? "the key aw kept is gone while its pending files stay" : "the key aw kept can't be read now" };
+  if (key.did !== did) return { cause: "the home holds another key while aw's pending files stay" };
+  if (["identity.yaml", "workspace.yaml"].some((name) => existsSync(join(identityHome, name)))) return { cause: "the home holds an identity while aw's pending files stay" };
   if (present.includes(PENDING_MINT_FILES[1])) {
     let body;
     try { body = readBounded(join(identityHome, PENDING_MINT_FILES[1]), 256); } catch { body = null; }
-    if (body !== PENDING_MARKER_BODY) return { state: "changed", cause: "aw's pending-accept marker can't be read or is malformed" };
+    if (body !== PENDING_MARKER_BODY) return { cause: "aw's pending-accept marker can't be read or is malformed" };
   }
   const now = pendingMintBinding(identityHome);
-  if (now.unreadable) return { state: "changed", cause: now.unreadable };
-  if (binding?.unreadable) return { state: "changed", cause: "aw's pending invite record could not be read when the mint stopped" };
-  if (now.did !== null && now.did !== did) return { state: "changed", cause: "aw's pending invite record names another key" };
+  if (now.unreadable) return { cause: now.unreadable };
+  if (now.did !== null && now.did !== did) return { cause: "aw's pending invite record names another key" };
   if (binding?.selection && (now.selection !== binding.selection || now.request !== binding.request)) {
-    return { state: "changed", cause: now.selection === null ? "aw's pending invite record is gone while its pending-accept marker stays" : "aw's pending invite record now names another invite or request" };
+    return { cause: now.selection === null ? "aw's pending invite record is gone while its pending-accept marker stays" : "aw's pending invite record now names another invite or request" };
   }
-  return { state: "held" };
+  return { exact: true };
+}
+
+/** Retire's one retention decision for a recorded mint (README, "Human attribution";
+ *  fail closed). It settles the mint, `{settle: true}`, only on positive evidence that
+ *  keeping it is wrong: (a) aw holds no pending mint in `identityHome` (none of its
+ *  pending files is there), or (b) no signature-pending stop was recorded and the
+ *  issuing root is genuinely chainless (`issuerChainless()`: P5 reads unknown /
+ *  legacy_no_chain, with no C3 record), aw's #240 behaviour. Otherwise the home is
+ *  kept: `{keep: "signature-pending"}` for the exact recorded mint, else
+ *  `{keep: "mint-outcome-unknown", cause}`. `signaturePending` is the recorded stop,
+ *  undefined when none was recorded. */
+export function pendingMintRetention(identityHome, { signaturePending, issuerChainless }) {
+  const present = pendingMintFilesIn(identityHome);
+  if (!present.length) return { settle: true };
+  if (!signaturePending) {
+    if (issuerChainless()) return { settle: true };
+    return { keep: "mint-outcome-unknown", cause: "aw holds a pending mint in this home and its issuing root isn't shown to be chainless" };
+  }
+  const match = exactPendingMint(identityHome, present, signaturePending);
+  return match.exact ? { keep: "signature-pending" } : { keep: "mint-outcome-unknown", cause: match.cause };
 }

@@ -70,7 +70,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   and key. While a root it recorded reads `unknown` or `no_human`, every spawn from
   it and every check-only warns `attribution-lineage-missing`, naming the root, aw's
   reason and the human it was verified to. A read that is `unavailable` keeps the
-  record and doesn't warn. Nothing is refused for it.
+  record and doesn't warn. Nothing is refused for it. A record file that can't be
+  read or is malformed is left as it is, and the note says the root's adoption
+  wasn't recorded and names the file: move it aside to record roots again.
 - **Joined teams.** The join's accept passes `--parent <root>/.aw` only when the
   team's root reads `nearest_human` (one bounded read at join time; on
   `unavailable`, the record above decides). A join from an adopted root on an aw
@@ -86,18 +88,23 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   falls back to the record above; with none, connect goes on with a warning.
 - **A mint waiting for a signature.** When aw stops a mint as
   `native_agent_signature_pending` (aw 1.36.59), the spawn fails and the home is
-  kept: retire answers `retired: false, reason: "signature-pending"` while aw still
-  holds that exact pending mint, and the kernel keeps the home. "That exact mint" is
-  the same key, with aw's `hosted-invite-creation.json` naming the same invite
-  selection and prepared request as when the mint stopped (the provider records a
-  digest of the selection and the request's id, never the token or its hash), or its
-  `pending-hosted-accept` marker. Pending files that name another mint or can't be
-  read, or a key that is gone, can't be read or is another while they stay, are kept
-  too, as `mint-outcome-unknown`, for the operator to reconcile with aw: nothing is
-  settled or deleted on a guess. Once aw settles the mint, a plain
-  `oats retire` clears the home. On aw 1.36.58, which has no such code, a failure
-  after the key was written is kept the same way only when the issuing root has an
-  identity chain.
+  kept. On aw 1.36.58, which has no such code, a failure after the key was written
+  is recorded the same way only when the issuing root has an identity chain.
+  Retire keeps such a home on one rule, which fails closed: it settles a recorded
+  mint only when aw holds no pending mint in the home (neither
+  `hosted-invite-creation.json` nor `pending-hosted-accept` is there), or when no
+  signature-pending stop was recorded and the issuing root reads genuinely chainless
+  (`unknown`, `legacy_no_chain`, with no record of an adoption), as before
+  (#240). Anything else is kept, with exit status 1 and `retired: false` in the
+  meta, which the kernel reads as an incomplete cleanup: it keeps the home and marks
+  it `.oats-rollback-incomplete.json`. The reason is `signature-pending` for the exact
+  mint that stopped (the same key, with aw's files naming the same invite selection
+  and prepared request; the provider records a digest of the selection and the
+  request's id, never the token or its hash), and `mint-outcome-unknown` for
+  anything else (another key, another selection or request, or files or a record
+  that can't be read), for the operator to reconcile with aw. Nothing is settled or
+  deleted on a guess. Once aw settles the mint, a plain `oats retire` clears the
+  home.
 - **Roots with no chain change nothing.** For a root with no chain (a local
   `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
   retire behave as before; the only differences are `attribution` `unknown` and the

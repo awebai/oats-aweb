@@ -97,7 +97,7 @@ import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
-import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, pendingMintBinding, readWho, signaturePendingState, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, pendingMintBinding, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -1660,8 +1660,10 @@ const pendingBindingOf = (b) => b && typeof b === "object" && !Array.isArray(b)
 const signaturePendingOf = (v) => v && typeof v === "object" && !Array.isArray(v) && (v.did === null || (typeof v.did === "string" && /^did:key:z[1-9A-HJ-NP-Za-km-z]{1,128}$/.test(v.did)))
   ? { did: v.did, code: typeof v.code === "string" && /^[a-z_]{1,64}$/.test(v.code) ? v.code : null, at: typeof v.at === "string" ? v.at : null, binding: pendingBindingOf(v.binding) }
   : undefined;
+// A record that names a signature-pending stop it can't be read back as is kept as
+// one (`invalid`): never downgraded to an ordinary pending mint, which retire settles.
 const pendingMintOf = (doc) => doc && typeof doc === "object" && typeof doc.team === "string" && validAwebTeamId(doc.team) && typeof doc.alias === "string" && AWEB_ALIAS_RE.test(doc.alias)
-  ? { team: doc.team, alias: doc.alias, root: typeof doc.root === "string" && isAbsolute(doc.root) ? doc.root : null, at: typeof doc.at === "string" ? doc.at : null, ...(signaturePendingOf(doc.signaturePending) ? { signaturePending: signaturePendingOf(doc.signaturePending) } : {}) }
+  ? { team: doc.team, alias: doc.alias, root: typeof doc.root === "string" && isAbsolute(doc.root) ? doc.root : null, at: typeof doc.at === "string" ? doc.at : null, ...(doc.signaturePending === undefined ? {} : { signaturePending: signaturePendingOf(doc.signaturePending) ?? { did: null, code: null, at: null, binding: { unreadable: true }, invalid: true } }) }
   : undefined;
 /** `{ intent }`, `{}` when there is none, or `{ problem }` when the file is there and is not one. */
 function readPendingMint() {
@@ -2975,18 +2977,22 @@ if (event === "launch") {
   const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
   const retirePendingMint = async ({ team, alias, root: intendedRoot, signaturePending }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
-    // A mint stopped as signature pending is the operator's while aw still holds it
-    // (the same key, its pending invite and any prepared request): an incomplete
-    // cleanup, so the kernel retains the home. Once aw settles it, either way, this
-    // answers what is true below, and a plain retry clears the home.
-    const pending = signaturePending ? signaturePendingState(join(home, ".aw"), signaturePending) : { state: "settled" };
-    if (pending.state === "held") {
+    // One retention decision, fail closed (README, "Human attribution"): the mint is
+    // settled below only when aw holds no pending mint in this home, or when no
+    // signature-pending stop was recorded and the issuing root is shown genuinely
+    // chainless (#240). Anything else is kept: an incomplete cleanup (status 1; the
+    // kernel reads this meta and retains the home), never settled or deleted on a guess.
+    const issuerChainless = () => {
+      if (!intendedRoot || !existsSync(join(intendedRoot, ".aw"))) return false;
+      const { observation, record } = readRoot(intendedRoot);
+      return observation.answered && observation.outcome === "unknown" && observation.reason === "legacy_no_chain" && !record;
+    };
+    const retention = pendingMintRetention(join(home, ".aw"), { signaturePending, issuerChainless });
+    if (retention.keep === "signature-pending") {
       await finish({ meta: retiredMeta({ retired: false, reason: "signature-pending", pendingMint: { team, alias, root: intendedRoot, signaturePending } }), warning: said(`signature-pending — the mint of alias "${alias}" in team ${team} is waiting for an agent signature: aw keeps this home's key and its pending invite, so the home is kept; finish the exchange aw printed, or have aw settle the mint, then retire again (${README_ATTRIBUTION})`) }, 1);
     }
-    // aw's pending files are there but no longer the mint that stopped: kept, never
-    // settled or deleted on a guess.
-    if (pending.state === "changed") {
-      await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, signaturePending } }), warning: said(`the mint of alias "${alias}" in team ${team} stopped as signature pending, and ${pending.cause}, so whether it is still that mint is unknown: this home, aw's files in ${join(home, ".aw")} and the record of the mint are kept; reconcile them with aw, then retire again (${README_ATTRIBUTION})`) }, 1);
+    if (retention.keep) {
+      await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, ...(signaturePending ? { signaturePending } : {}) } }), warning: said(`aw still holds a pending mint in this home, and ${retention.cause}, so whether the mint of alias "${alias}" in team ${team} can be settled is unknown: this home, aw's files in ${join(home, ".aw")} and the record of the mint are kept; reconcile them with aw, then retire again (${README_ATTRIBUTION})`) }, 1);
     }
     let root, doc, why;
     try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }

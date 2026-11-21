@@ -10,14 +10,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
 import { pendingMintFake } from "./helpers/fake-pending-mint.mjs";
 import { fakeAwArgvCheck } from "./helpers/aw-argv.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
-import { attributionFor, lineageEntryFor, signaturePendingState, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { attributionFor, lineageEntryFor, pendingMintRetention, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "default:example.test";
@@ -440,6 +440,37 @@ test("A5 (C3): a joined root's warning is said when its join fails too", (t) => 
   assert.match(explicit.stderr, /attribution-lineage-missing — root .* now reads unknown \(revoked\)/);
 });
 
+test("A5 (C3): an existing record that can't be read or is malformed is left as it is, never replaced by a partial one", (t) => {
+  for (const [name, spoil] of [
+    ["unreadable (a directory)", (file) => { rmSync(file); mkdirSync(file); }],
+    ["malformed JSON", (file) => writeFileSync(file, "{not json")],
+    ["one malformed entry", (file) => { const doc = JSON.parse(readFileSync(file, "utf8")); doc.roots.push({ id: "x" }); writeFileSync(file, JSON.stringify(doc)); }],
+  ]) {
+    const dep = tempDir(t), file = join(dep, ".oats-aweb", "root-lineage.json");
+    const a = { id: "did:aw:person.example.test/root-a", key: "did:key:z6MkA", humanId: HUMAN, seenAt: new Date(0).toISOString() };
+    assert.deepEqual(recordLineage(dep, a), {});
+    spoil(file);
+    const before = existsSync(file) && !statSync(file).isDirectory() ? readFileSync(file, "utf8") : null;
+    const r = recordLineage(dep, { id: "did:aw:person.example.test/root-b", key: "did:key:z6MkB", humanId: HUMAN, seenAt: new Date(1).toISOString() });
+    assert.match(r.cause ?? "", /left as it is/, name);
+    if (before !== null) assert.equal(readFileSync(file, "utf8"), before, `${name}: untouched`);
+    else assert.ok(statSync(file).isDirectory(), `${name}: untouched`);
+    assert.equal(readdirSync(join(dep, ".oats-aweb")).filter((f) => f !== "root-lineage.json").length, 0, `${name}: no lock or temporary file left`);
+  }
+});
+
+test("A5 (C3): with an unreadable record, check-only says the root's adoption wasn't recorded and names the file to move aside", (t) => {
+  const fx = fixture(t);
+  const rootId = "did:aw:person.example.test/root", file = join(fx.ws, ".oats-aweb", "root-lineage.json");
+  mkdirSync(join(fx.ws, ".oats-aweb"), { recursive: true });
+  writeFileSync(file, "{not json");
+  fx.fake.set({ version: "1.36.59", who: { [fx.rootHome]: nearest(rootId, [HUMAN, rootId]) } });
+  const r = checkOnly(fx);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.stderr.includes(`root ${fx.root}'s adoption was not recorded: the existing record ${file} is malformed, and is left as it is: move it aside to record roots again`), r.stderr);
+  assert.equal(readFileSync(file, "utf8"), "{not json");
+});
+
 test("A5 (C3): no verified observation is evicted by others: 250 roots keep every record", (t) => {
   const dep = tempDir(t);
   const key = (i) => `did:key:z6Mk${String(i).padStart(40, "A")}`;
@@ -640,7 +671,7 @@ test("A8 (signature pending): only that exact pending mint is held: progress on 
     change(fx);
     const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
     assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, reason], name);
-    if (reason !== "signature-pending") assert.match(r.doc.warning, /so whether it is still that mint is unknown: this home, aw's files .* are kept/, name);
+    if (reason !== "signature-pending") assert.match(r.doc.warning, /aw still holds a pending mint in this home, and .*, so whether the mint of alias "dev-1" .* can be settled is unknown: this home, aw's files .* are kept/, name);
     assert.ok(existsSync(join(fx.homeAw, "signing.key")), `${name}: nothing deleted`);
     assert.equal(fx.fake.calls().filter((c) => c.args.includes("members")).length, 0, `${name}: nothing settled on a guess`);
   }
@@ -669,9 +700,10 @@ test("A8 (signature pending): a key that can't be read, or is gone, while aw's p
   const dir = tempDir(t), aw = join(dir, ".aw");
   writeKey(aw);
   writeFileSync(join(aw, "pending-hosted-accept"), "pending hosted accept\n");
-  assert.equal(signaturePendingState(aw, { did: null, binding: { selection: null, request: null } }).state, "changed", "a stop whose key couldn't be read is kept while aw's files stay");
+  const never = () => assert.fail("a recorded signature-pending stop never asks whether its root is chainless");
+  assert.deepEqual(pendingMintRetention(aw, { signaturePending: { did: null, binding: { selection: null, request: null } }, issuerChainless: never }), { keep: "mint-outcome-unknown", cause: "the key aw kept could not be read when the mint stopped" }, "a stop whose key couldn't be read is kept while aw's files stay");
   rmSync(join(aw, "pending-hosted-accept"));
-  assert.equal(signaturePendingState(aw, { did: null, binding: { selection: null, request: null } }).state, "settled");
+  assert.deepEqual(pendingMintRetention(aw, { signaturePending: { did: null, binding: { selection: null, request: null } }, issuerChainless: never }), { settle: true }, "aw holds no pending mint: settled");
 });
 
 test("A8 (signature pending): another key is kept while aw's pending files stay, and settled once they are gone", (t) => {
@@ -698,22 +730,79 @@ test("A8 (signature pending): another key is kept while aw's pending files stay,
   }
 });
 
+test("A8 (signature pending): a provider record whose signature-pending stop can't be read back is kept, never settled as an ordinary mint", (t) => {
+  for (const [name, corrupt] of [["a corrupt did", (sp) => ({ ...sp, did: "corrupt-did" })], ["the wrong type", () => "signature-pending"], ["null", () => null]]) {
+    const fx = fixture(t);
+    fx.fake.set({ version: "1.36.59", signaturePending: "code" });
+    const spawned = fx.run(["spawn"]);
+    const file = join(fx.home, ".oats-aweb", "pending-mint.json");
+    const doc = JSON.parse(readFileSync(file, "utf8"));
+    writeFileSync(file, JSON.stringify({ ...doc, signaturePending: corrupt(doc.signaturePending) }));
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+    assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, "mint-outcome-unknown"], name);
+    assert.match(r.doc.warning, /the provider's record of this signature-pending mint is malformed/, name);
+    for (const f of ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"]) assert.ok(existsSync(join(fx.homeAw, f)), `${name}: ${f} kept`);
+    assert.equal(fx.fake.calls().filter((c) => c.args.includes("members")).length, 0, `${name}: nothing settled on a guess`);
+  }
+});
+
 test("A8 (signature pending) on aw without the code: a post-key failure from a chainless root is retired as today, from a chained root kept", (t) => {
-  for (const [name, version, root, kept] of [
-    ["chainless, 1.36.58", "1.36.58", (fx) => chainless(fx.rootKey), false],
-    ["no_human, 1.36.58", "1.36.58", () => noHuman("did:aw:example.test/root"), true],
-    ["nearest_human, 1.36.59-rc.3", "1.36.59-rc.3", () => nearest("did:aw:person.example.test/root", [HUMAN, "did:aw:person.example.test/root"]), true],
-    ["no_human, 1.36.59 (the code is the only path)", "1.36.59", () => noHuman("did:aw:example.test/root"), false],
+  // [name, aw, issuing root's answer, recorded as signature pending, retire's status and reason]
+  for (const [name, version, root, recorded, expected] of [
+    ["chainless, 1.36.58", "1.36.58", (fx) => chainless(fx.rootKey), false, [0, "nothing-to-delete"]],
+    ["no_human, 1.36.58", "1.36.58", () => noHuman("did:aw:example.test/root"), true, [1, "signature-pending"]],
+    ["nearest_human, 1.36.59-rc.3", "1.36.59-rc.3", () => nearest("did:aw:person.example.test/root", [HUMAN, "did:aw:person.example.test/root"]), true, [1, "signature-pending"]],
+    // aw 1.36.59 has the code, so a generic error is no signature-pending stop; aw
+    // still holds a pending mint from a root that isn't chainless: kept, fail closed.
+    ["no_human, 1.36.59 (the code is the only signature-pending path)", "1.36.59", () => noHuman("did:aw:example.test/root"), false, [1, "mint-outcome-unknown"]],
   ]) {
     const fx = fixture(t);
     fx.fake.set({ version, signaturePending: "error", who: { [fx.rootHome]: root(fx) } });
     const spawned = fx.run(["spawn"]);
     assert.equal(spawned.status, 1, name);
-    assert.equal(!!spawned.doc.meta.pendingMint.signaturePending, kept, name);
+    assert.equal(!!spawned.doc.meta.pendingMint.signaturePending, recorded, name);
     const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
-    if (kept) assert.deepEqual([r.status, r.doc.meta.reason], [1, "signature-pending"], name);
-    else assert.deepEqual([r.status, r.doc.meta.reason], [0, "nothing-to-delete"], `${name}: as today (#240)`);
+    assert.deepEqual([r.status, r.doc.meta.reason], expected, name);
   }
+});
+
+test("retention invariant: with aw's pending files in the home, retire settles only a mint with no recorded stop from a genuinely chainless root", (t) => {
+  // [the issuing root's answer, settled?]
+  for (const [name, root, settles] of [
+    ["chainless (unknown / legacy_no_chain)", (fx) => chainless(fx.rootKey), true],
+    ["unknown for another reason", (fx) => ({ ...chainless(fx.rootKey), reason: "revoked" }), false],
+    ["no_human", () => noHuman("did:aw:example.test/root"), false],
+    ["nearest_human", () => nearest("did:aw:person.example.test/root", [HUMAN, "did:aw:person.example.test/root"]), false],
+    ["unavailable", () => unavailable("did:aw:example.test/root"), false],
+    ["a failed read", () => ({ status: 1 }), false],
+  ]) {
+    const fx = fixture(t);
+    fx.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fx.rootHome]: chainless(fx.rootKey) } });
+    const spawned = fx.run(["spawn"]);
+    assert.equal(spawned.doc.meta.pendingMint.signaturePending, undefined, `${name}: no stop recorded`);
+    fx.fake.set({ who: { [fx.rootHome]: root(fx) } });
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+    if (settles) assert.deepEqual([r.status, r.doc.meta.reason], [0, "nothing-to-delete"], name);
+    else {
+      assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, "mint-outcome-unknown"], name);
+      assert.match(r.doc.warning, /its issuing root isn't shown to be chainless/, name);
+      assert.equal(fx.fake.calls().filter((c) => c.args.includes("members")).length, 0, `${name}: nothing settled on a guess`);
+    }
+  }
+  // A chainless root with a C3 record (adopted once) isn't genuinely chainless.
+  const fx = fixture(t);
+  const rootId = "did:aw:person.example.test/root";
+  fx.fake.set({ version: "1.36.59", who: { [fx.rootHome]: nearest(rootId, [HUMAN, rootId]) } });
+  checkOnly(fx);
+  fx.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fx.rootHome]: unavailable(rootId) } });
+  const spawned = fx.run(["spawn"]);
+  assert.ok(spawned.doc.meta.pendingMint.signaturePending, "chained by C3's record: recorded as signature pending");
+  fx.fake.set({ who: { [fx.rootHome]: { ...chainless(rootId), id: rootId } } });
+  const pm = { ...spawned.doc.meta, pendingMint: { ...spawned.doc.meta.pendingMint } };
+  delete pm.pendingMint.signaturePending;
+  rmSync(join(fx.home, ".oats-aweb", "pending-mint.json"), { force: true });
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(pm) } });
+  assert.deepEqual([r.status, r.doc.meta.reason], [1, "mint-outcome-unknown"], "a recorded root reading legacy_no_chain is not shown chainless");
 });
 
 test("A8 (signature pending) on aw without the code: an unavailable root read falls back to C3's record", (t) => {
