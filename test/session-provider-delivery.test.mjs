@@ -236,22 +236,28 @@ test("a later start on tmux takes a pi home off the broker: its extension delive
 });
 
 test("a later start on tmux keeps only a pi home's joined team on the broker, never its primary", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "pi", settings: { join: "alpha" } });
-  const spawned = fx.hook("spawn", BB);
-  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-  const primary = join(fx.home, ".aw");
-  assert.equal(fx.registered().runtime_delivery, "external-session");
-  assert.deepEqual(fx.registered().receive_identities.map((x) => x.label), ["default", "alpha"], "the provider start has the primary and the team on the broker");
-  const r = fx.launch(spawned.doc.meta, "pi", { extra: { OATS_BACKEND: "tmux" } });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  const doc = fx.registered();
-  assert.equal(doc.runtime_delivery, "native-pi");
-  assert.equal(doc.primary_identity_home, primary, "the extension owns the primary");
-  assert.deepEqual(doc.receive_identities.map((x) => x.label), ["alpha"]);
-  assert.equal(doc.receive_identities.some((x) => x.identity_home === primary), false, "the broker receives nothing for the primary");
-  assert.equal(r.doc.env.AWEB_DELIVERY, undefined);
-  assert.equal(r.doc.meta.joinedTeams[0].receive, "native");
-  assert.equal("backend" in r.doc.meta, false);
+  for (const extra of [{ OATS_BACKEND: "tmux" }, {}]) {
+    const label = JSON.stringify(extra);
+    const fx = fixture(t, { delivery: "channel", runtime: "pi", settings: { join: "alpha" } });
+    const spawned = fx.hook("spawn", BB);
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const primary = join(fx.home, ".aw");
+    assert.equal(fx.registered().runtime_delivery, "external-session");
+    assert.deepEqual(fx.registered().receive_identities.map((x) => x.label), ["default", "alpha"], "the provider start has the primary and the team on the broker");
+    assert.equal("backend" in fx.registered(), false, "a provider's name is never aw's backend hint");
+    const r = fx.launch(spawned.doc.meta, "pi", { extra });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const doc = fx.registered();
+    assert.equal(doc.runtime_delivery, "native-pi", label);
+    assert.equal(doc.primary_identity_home, primary, "the extension owns the primary");
+    assert.deepEqual(doc.receive_identities.map((x) => x.label), ["alpha"], label);
+    assert.equal(doc.receive_identities.some((x) => x.identity_home === primary), false, "the broker receives nothing for the primary");
+    // The registration carries aw's backend hint as any tmux home's does: tmux when the kernel names it, none when it names none.
+    assert.equal(doc.backend, extra.OATS_BACKEND, label);
+    assert.equal(r.doc.env.AWEB_DELIVERY, undefined, label);
+    assert.equal(r.doc.meta.joinedTeams[0].receive, "native", label);
+    assert.equal("backend" in r.doc.meta, false, label);
+  }
 });
 
 test("a later start on tmux keeps a codex home registered: the broker is still its path", (t) => {
