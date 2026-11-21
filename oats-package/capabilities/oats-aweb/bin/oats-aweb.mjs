@@ -97,7 +97,7 @@ import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
-import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -1763,6 +1763,11 @@ function teamNotHostedRefusal(e, identityHome) {
   return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
 }
 function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
+  // The retention fence (README, "Human attribution"): a joined identity home where
+  // aw holds a pending mint (a signature-pending accept, from aw's
+  // team_invite_accept.go) releases nothing and is kept, never its key.
+  const held = pendingMintFilesIn(entry.identityHome);
+  if (held.length) throw new Error(`failed to leave team ${entry.label}: aw holds a pending mint in ${entry.identityHome} (${held.join(", ")}), so nothing was released and it is kept; finish or settle it with aw, then oats aweb leave --labels ${entry.label}`);
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
   if (!alias) throw new Error(`failed to leave team ${entry.label}; no alias is known for ${entry.identityHome}`);
@@ -1824,6 +1829,12 @@ const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to fi
  *  fails, or a hosted accept was cut short) or the connect fails. */
 function settlePendingJoin(pending, { root, resumeCommand }) {
   const { label, team, identityHome } = pending;
+  // The retention fence: aw's pending mint in this home (a signature-pending accept)
+  // is never settled from here. An interrupted hosted accept (its marker alone) keeps
+  // the #217 handling below.
+  if (existsSync(join(identityHome, PENDING_MINT_FILES[0])) || (!holdsIdentity(identityHome) && pendingMintFilesIn(identityHome).length)) {
+    throw new Error(`signature pending: aw holds the pending mint of the join of ${label} (${team}) in ${identityHome}; finish the exchange aw printed, or have aw settle it, then oats aweb leave --labels ${label}. Kept ${identityHome}, its key, aw's files and the pending join`);
+  }
   if (!holdsIdentity(identityHome)) {
     // ENOENT (never created) or ENOTEMPTY (what is there is not an identity, and the next accept decides): both leave nothing to release.
     try { rmdirSync(identityHome); } catch { /* see above */ }
@@ -1841,7 +1852,7 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
     // means the accept was cut short, not that the server holds no membership.
     // The whole remedy comes first, the label once: retire keeps 300
     // characters of it, which hold it for a label of 64.
-    if (existsSync(join(identityHome, HOSTED_ACCEPT_PENDING_MARKER))) throw new Error(`hosted accept interrupted: the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Team ${team}: kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
+    if (pendingMintFilesIn(identityHome).length) throw new Error(`hosted accept interrupted: the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Team ${team}: kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
     rmSync(identityHome, { recursive: true, force: true });
     return { absent: true };
   }
@@ -1970,7 +1981,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
     try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv], parentHome })); }
     catch (e) {
       if (preexisting) throw e;
-      if (holdsIdentity(identityHome)) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
+      if (holdsIdentity(identityHome) || pendingMintFilesIn(identityHome).length) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
       // Confirmed: aw left no identity, so nothing was joined and nothing needs releasing.
       try { rmdirSync(identityHome); } catch { /* never created, or holds what is not an identity */ }
       if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });

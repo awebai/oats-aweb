@@ -97,6 +97,11 @@ if (rest[0] === "team" && rest[1] === "invite" && cfg.inviteFail) { console.erro
 if (rest[0] === "team" && rest[1] === "invite") { console.log(JSON.stringify({ token: "aw_inv_FIXTURE-TOKEN", aweb_url: "https://app.aweb.ai/api" })); process.exit(0); }
 if (accepting) {
   if (!stdin) { console.error("no token on stdin"); process.exit(2); }
+  if (cfg.joinPending) {
+    (${pendingMintFake})(awDir);
+    console.log(JSON.stringify({ error: { code: "native_agent_signature_pending", message: "native agent signature pending in " + awDir + "; child key and request retained" } }));
+    process.exit(1);
+  }
   const team = cfg.joinTeam || ${JSON.stringify(JOINED)};
   key(awDir);
   fs.writeFileSync(path.join(awDir, "teams.json"), JSON.stringify({ memberships: [{ team_id: team }] }));
@@ -805,6 +810,45 @@ test("retention fence: while aw holds a pending mint in the home, no other retir
     const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
     assert.deepEqual([r.status, r.doc.meta.reason], [0, "nothing-to-delete"]);
   }
+});
+
+test("retention fence, joined teams: an accept aw leaves signature pending in .aweb-identity-<label> is kept by spawn, retire, join and leave until aw settles it", (t) => {
+  const fx = fixture(t, { join: "joined" });
+  const joinedHome = join(fx.home, ".aweb-identity-joined");
+  const awFiles = ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"];
+  fx.fake.set({ version: "1.36.59", joinPending: true });
+  const spawned = fx.run(["spawn"]);
+  assert.equal(spawned.status, 1, spawned.stdout + spawned.stderr);
+  assert.deepEqual(spawned.doc.meta.pendingJoins.map((p) => p.label), ["joined"], "the join stays recorded as unfinished");
+  for (const f of awFiles) assert.ok(existsSync(join(joinedHome, f)), `${f} kept by the spawn`);
+  const retire = () => fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  const kept = retire();
+  assert.notEqual(kept.status, 0, kept.stdout + kept.stderr);
+  assert.match(kept.doc.warning, /signature pending: aw holds the pending mint of the join of joined/);
+  for (const f of awFiles) assert.ok(existsSync(join(joinedHome, f)), `${f} kept by retire`);
+  assert.equal(fx.fake.calls().filter((c) => c.identityHome === joinedHome && c.args.includes("delete")).length, 0, "nothing released");
+  const left = fx.run(["leave", "--labels", "joined"]);
+  assert.equal(left.status, 1);
+  assert.match(left.stderr, /signature pending: aw holds the pending mint of the join of joined/);
+  for (const f of awFiles) assert.ok(existsSync(join(joinedHome, f)), `${f} kept by leave`);
+  // aw settles it (a refusal clears both files): the home holds no membership, and leave drops it.
+  for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) rmSync(join(joinedHome, f));
+  const settled = fx.run(["leave", "--labels", "joined", "--json"]);
+  assert.equal(settled.status, 0, settled.stdout + settled.stderr);
+  assert.equal(existsSync(joinedHome), false);
+});
+
+test("retention fence, joined teams: a recorded joined team whose home holds aw's pending files releases nothing", (t) => {
+  const fx = fixture(t, { join: "joined" });
+  const joinedHome = join(fx.home, ".aweb-identity-joined");
+  assert.equal(fx.run(["join", "--labels", "joined", "--json"]).status, 0);
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(joinedHome + "-scratch")})`]);
+  for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) writeFileSync(join(joinedHome, f), readFileSync(join(joinedHome + "-scratch", f)));
+  const left = fx.run(["leave", "--labels", "joined"]);
+  assert.equal(left.status, 1, left.stdout + left.stderr);
+  assert.match(left.stderr, /aw holds a pending mint in .*\.aweb-identity-joined .*so nothing was released and it is kept/);
+  assert.equal(fx.fake.calls().filter((c) => c.identityHome === joinedHome && c.args.includes("delete")).length, 0);
+  assert.ok(existsSync(join(joinedHome, "signing.key")));
 });
 
 test("retention invariant: an unreadable C3 record never shows a root chainless", (t) => {
