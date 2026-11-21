@@ -285,6 +285,21 @@ function awHoldsPendingIn(path) {
  *  segments: `..nested-root` is a name inside, `..` or `../x` is outside. */
 const relInside = (rel) => rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 const isInside = (root, p) => relInside(relative(root, p));
+/** The instance home `dir` lies in: the nearest directory at or above it holding an
+ *  `instance.json`, by realpath (a symlinked root that resolves into a home is in it),
+ *  walking whole segments up from the deepest part that exists. Undefined when none. */
+function instanceHomeHolding(dir) {
+  let real = resolve(dir);
+  for (;;) {
+    try { real = realpathSync(real); break; }
+    catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e; const parent = dirname(real); if (parent === real) break; real = parent; }
+  }
+  for (let d = real; ; d = dirname(d)) {
+    try { lstatSync(join(d, "instance.json")); return d; }
+    catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e; }
+    if (dirname(d) === d) return undefined;
+  }
+}
 /** The names grant homes take (legacy `.aweb-identity`, generated
  *  `.aweb-identity-<digits>`); a joined team's home is `.aweb-identity-<label>`. */
 const isIdentityHomeName = (name) => name === ".aw" || name === ".aweb-identity" || name.startsWith(".aweb-identity-");
@@ -3732,6 +3747,15 @@ ${JSON.stringify(problem.details || {})}`);
     return alias;
   };
   let deployment;
+  /** Setup never accepts or mints into a root inside an instance home: retiring that
+   *  instance removes its home, and the root with it (README, "Human attribution";
+   *  awebai/oats-aweb#311). Checked before any aw call. */
+  const refuseRootInsideInstanceHome = (rootDir, setting, label) => {
+    const owner = instanceHomeHolding(rootDir);
+    if (!owner) return;
+    const beside = perTeamRoot(deployment || process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || process.cwd(), label || "<label>");
+    throw Object.assign(new Error(`${setting} puts ${label ? `${label}'s ` : "the "}root at ${rootDir}, inside the instance home ${owner}: retiring that instance would remove the root with its home. Move it beside the deployment's other roots (for example ${beside}) and set ${setting} there; nothing was accepted or minted`), { code: "E_ROOT_INSIDE_INSTANCE_HOME", details: { root: rootDir, instanceHome: owner, setting } });
+  };
 
   const setupServiceDocs = (teamRoot) => {
     const docs = [];
@@ -3756,7 +3780,7 @@ ${JSON.stringify(problem.details || {})}`);
     const recordedKey = configured ? teamKeyIn(settings.roots, configured) : undefined;
     const recorded = recordedKey !== undefined ? settings.roots[recordedKey] : undefined;
     if (recorded !== undefined && (typeof recorded !== "string" || !isAbsolute(recorded))) throw new Error(`configured root for ${label} must be an absolute directory`);
-    return { configured, teamRoot: recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label), source: recorded !== undefined ? "roots[team]" : "the deployment's per-team directory" };
+    return { configured, recordedKey, teamRoot: recorded !== undefined ? resolve(recorded) : perTeamRoot(deployment, label), source: recorded !== undefined ? "roots[team]" : "the deployment's per-team directory" };
   };
   const verifyTargetMembership = (target, team) => {
     if (!existsSync(join(target.teamRoot, ".aw"))) throw Object.assign(new Error(`selected root ${target.teamRoot} (from ${target.source}) has no identity yet; retry its setup before checking readiness`), { code: "E_SETUP_MEMBERSHIP" });
@@ -3769,7 +3793,8 @@ ${JSON.stringify(problem.details || {})}`);
     if (!json) console.log(`readiness: ready\n✓ root ${target.teamRoot} (from ${target.source}) is a member of ${team}.`);
   };
   const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
-    const { configured, teamRoot } = teamRootFor(label, expectedTeam);
+    const { configured, recordedKey, teamRoot } = teamRootFor(label, expectedTeam);
+    refuseRootInsideInstanceHome(teamRoot, recordedKey !== undefined ? `settings.oats.aweb.roots[${JSON.stringify(recordedKey)}]` : "the deployment's per-team root", label);
     const idHome = join(teamRoot, ".aw");
     const resumeCommand = setupResumeCommand(label);
     // The caller's own service (create's canonical one) comes before setup's general sources.
@@ -4086,6 +4111,7 @@ ${JSON.stringify(problem.details || {})}`);
       throw new Error(`wanted team ${want}, but selected root ${scope} (from ${rootSourceOf(want)}) is not a member; set settings.oats.aweb.roots[${JSON.stringify(want)}] to the intended team's root, or choose a fresh root at ${fresh} and record that setting before retrying; aw init was not run`);
     }
     if (!hasRoot || !matchingTeam(teams)) {
+      if (actions.length || apiKey) refuseRootInsideInstanceHome(scope, candidate?.key || "settings.oats.aweb.root", defaultTeamLabel());
       if (actions.length) mkdirSync(scope, { recursive: true });
       if (apiKey) {
         console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);

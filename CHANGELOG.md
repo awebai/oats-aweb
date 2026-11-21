@@ -53,6 +53,10 @@
   - **Nothing, in most deployments.** Roots with no identity chain behave as before,
     apart from `attribution: unknown` and the new `roots` entries. A consumer that
     compares the check-only document's keys exactly sees `roots`.
+  - **A root inside an instance home** (`root` or a `roots` value, or a symlink that
+    resolves there) is refused at its next accept or mint with
+    `E_ROOT_INSIDE_INSTANCE_HOME`: move it beside the deployment's other roots
+    (`<deployment>/.aweb-roots/<label>`) and set the setting there.
   - **A home left by a mint cut short under an older provider:** its record of the
     mint names no issuing key. Retire settled such a home under #240. It now keeps it
     as `mint-outcome-unknown`, even in a deployment that adopts nothing. aw 1.36.58

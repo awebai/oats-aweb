@@ -121,8 +121,10 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle
   above, of `<home>/.aw` alone. That covers every place aw writes: aw writes only at
   the `--identity-home` it's given, which the provider takes from those records and
-  settings. No
-  deeper scan is made. Every delete retire makes before it answers makes the
+  settings. No deeper scan is made. Setup refuses to accept or mint into a root inside
+  an instance home (`E_ROOT_INSIDE_INSTANCE_HOME`, below), so OATS's own flows put
+  aw's files under a home only at those locators. A root set there by an earlier
+  provider, after the instance's spawn, isn't in the settings its retire was given. Every delete retire makes before it answers makes the
   same check first and leaves such a directory in place: a global seat's grant-home
   cleanup, a joined team's leave and a pending join's settlement. A record retire
   reasons about (the record of adoptions, the provider's record of an interrupted
@@ -1458,6 +1460,11 @@ and where to set it. The provider settings are:
 - `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over
   `root` and is required when a deployment mints into more than one aweb team.
   Each mapped directory owns its own `.aw` identity for exactly that team.
+- A `root` or `roots` directory never lies inside an instance home (a directory with
+  an `instance.json` at or above it, through symlinks): retiring that instance removes
+  its home, and the root with it. Setup refuses to accept or mint into one, before
+  any aw call, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and a place
+  beside the deployment's other roots (`<deployment>/.aweb-roots/<label>`).
 - `residents`: map of resident name to absolute custody directory for
   `identity.mode: global`; host-only because it points at custody material.
   `oats aweb resident create <name>` records its resident here.

@@ -1159,32 +1159,83 @@ test("the choke point's inventory is what is in the home at exit: any top-level 
   }
 });
 
-for (const dirName of ["nested-root", "..nested-root"]) test(`a configured root inside the home (${dirName}): setup's accept left signature pending there keeps the home at retire, with aw and without`, (t) => {
-  // The deployment's settings put the joined team's root inside an instance home (README
-  // allows any absolute roots[team]); setup --join accepts into exactly <root>/.aw.
+/** A deployment whose instance home `home` sits beside its default root, with the
+ *  setup fake (its accept stops signature pending). `hook(args, extra, input, settings)`
+ *  runs the provider with those settings (the live ones at setup, the captured ones at
+ *  retire); `instanceJson` marks `home` as an instance home, as the kernel does. */
+function homeDeployment(t, { instanceJson = false } = {}) {
   const base = tempDir(t), deployment = join(base, "deployment"), home = join(deployment, "agents", "dev", "instances", "dev-1");
-  const root = join(deployment, ".aweb-roots", "default"), nested = join(home, dirName);
+  const root = join(deployment, ".aweb-roots", "default");
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home, { recursive: true });
+  if (instanceJson) writeFileSync(join(home, "instance.json"), "{}\n");
   writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ memberships: [{ team_id: "default:example.invalid" }] }));
   const fake = fakeAwSetupPath(t);
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AWID_)/.test(k)));
-  Object.assign(env, { PATH: fake.path, HOME: base, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_TEAM_SCOPE: deployment, OATS_WORKSPACE_NAME: "fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.invalid", OATS_TEAMS: JSON.stringify([{ label: "default", team: "default:example.invalid", default: true }, { label: "joined", team: "joined:example.invalid" }]), OATS_SETTINGS: JSON.stringify({ root, roots: { "joined:example.invalid": nested } }), AW_ACCEPT_SIGNATURE_PENDING: "code" });
+  Object.assign(env, { PATH: fake.path, HOME: base, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_TEAM_SCOPE: deployment, OATS_WORKSPACE_NAME: "fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.invalid", OATS_TEAMS: JSON.stringify([{ label: "default", team: "default:example.invalid", default: true }, { label: "joined", team: "joined:example.invalid" }]), AW_ACCEPT_SIGNATURE_PENDING: "code" });
   Object.assign(env, joinKernelEnvironment(env, deployment));
-  const hook = (args, extra = {}, input) => spawnSync(process.execPath, [HOOK, ...args], { cwd: deployment, env: { ...env, ...extra }, input, encoding: "utf8", timeout: 30000 });
-  const setup = hook(["setup", "--join", "joined", "--invite-stdin", "--name", "nested-root", "--service", "https://service.invalid"], { OATS_EVENT: "setup" }, "TOKEN\n");
+  const hook = (args, extra, input, settings) => {
+    const r = spawnSync(process.execPath, [HOOK, ...args], { cwd: deployment, env: { ...env, OATS_SETTINGS: JSON.stringify(settings), OATS_EVENT: args[0], ...extra }, input, encoding: "utf8", timeout: 30000 });
+    return { ...r, doc: (() => { try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return undefined; } })() };
+  };
+  const settingsWith = (joinedRoot) => ({ root, ...(joinedRoot ? { roots: { "joined:example.invalid": joinedRoot } } : {}) });
+  const join_ = (settings) => hook(["setup", "--join", "joined", "--invite-stdin", "--name", "nested-root", "--service", "https://service.invalid", "--json"], {}, "TOKEN\n", settings);
+  return { deployment, home, root, fake, hook, settingsWith, join: join_ };
+}
+
+// The retention inventory itself: a configured root inside a directory that isn't marked
+// as an instance home lets setup accept there, and retire still keeps the home.
+for (const dirName of ["nested-root", "..nested-root"]) test(`a configured root inside the home (${dirName}): setup's accept left signature pending there keeps the home at retire, with aw and without`, (t) => {
+  const d = homeDeployment(t), nested = join(d.home, dirName), settings = d.settingsWith(nested);
+  const setup = d.join(settings);
   assert.notEqual(setup.status, 0, setup.stdout + setup.stderr);
   const pendingFile = join(nested, ".aw", "pending-hosted-accept");
   assert.ok(existsSync(pendingFile), `setup's accept left aw's pending files in <root>/.aw: ${setup.stdout}${setup.stderr}`);
-  assert.equal(fake.readCalls().find((c) => c.args.includes("accept-invite"))?.identityHome, join(nested, ".aw"), "setup accepted into the configured root's .aw");
+  assert.equal(d.fake.readCalls().find((c) => c.args.includes("accept-invite"))?.identityHome, join(nested, ".aw"), "setup accepted into the configured root's .aw");
   for (const [name, extra] of [["with aw", {}], ["aw not on PATH", { PATH: "/no-aw-here" }]]) {
-    const r = hook(["retire"], { OATS_EVENT: "retire", OATS_META: "{}", ...extra });
-    const doc = (() => { try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return undefined; } })();
-    assert.deepEqual([r.status, doc?.meta?.retired, doc?.meta?.reason], [1, false, "mint-outcome-unknown"], `${name}: ${r.stdout}${r.stderr}`);
-    assert.ok(doc.warning.includes(`${dirName}/.aw`), `${name}: ${doc.warning}`);
+    const r = d.hook(["retire"], { OATS_META: "{}", ...extra }, undefined, settings);
+    assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], `${name}: ${r.stdout}${r.stderr}`);
+    assert.ok(r.doc.warning.includes(`${dirName}/.aw`), `${name}: ${r.doc.warning}`);
     assert.ok(existsSync(pendingFile), `${name}: kept`);
   }
+});
+
+test("setup refuses to accept into a root inside an instance home, before any aw call: nested, ..-named, or a symlink resolving into it", (t) => {
+  for (const [name, place] of [
+    ["nested", (d) => join(d.home, "nested-root")],
+    ["..-named", (d) => join(d.home, "..nested-root")],
+    ["deeper, not yet made", (d) => join(d.home, "a", "b", "root")],
+    ["a symlink that resolves into the home", (d) => { mkdirSync(join(d.home, "deep")); const link = join(d.deployment, "linked-root"); symlinkSync(join(d.home, "deep"), link); return link; }],
+  ]) {
+    const d = homeDeployment(t, { instanceJson: true }), rootDir = place(d);
+    const r = d.join(d.settingsWith(rootDir));
+    assert.equal(r.status, 1, `${name}: ${r.stdout}${r.stderr}`);
+    assert.equal(r.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", `${name}: ${r.stdout}${r.stderr}`);
+    assert.ok(r.doc.error.message.includes('settings.oats.aweb.roots["joined:example.invalid"]'), `${name}: names the setting`);
+    assert.ok(r.doc.error.message.includes(join(d.deployment, ".aweb-roots", "joined")), `${name}: names a place beside the deployment's roots`);
+    assert.equal(r.doc.error.details.instanceHome, realpathSync(d.home), name);
+    // Before it, setup only reads the default root's teams; nothing reaches the refused root.
+    const touching = d.fake.readCalls().filter((c) => c.args.includes("accept-invite") || c.args.includes("init") || [c.cwd, c.identityHome].some((p) => p && (p.startsWith(d.home) || p.startsWith(rootDir))));
+    assert.deepEqual(touching, [], `${name}: no aw call into the root`);
+    assert.ok(!existsSync(join(rootDir, ".aw")), `${name}: nothing minted`);
+  }
+  // A root beside the deployment's others is accepted as before.
+  const d = homeDeployment(t, { instanceJson: true }), beside = join(d.deployment, ".aweb-roots", "joined");
+  const r = d.join(d.settingsWith(beside));
+  assert.notEqual(r.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", r.stdout + r.stderr);
+  assert.equal(d.fake.readCalls().find((c) => c.args.includes("accept-invite"))?.identityHome, join(beside, ".aw"));
+});
+
+test("a root configured inside an instance home after its spawn: setup refuses it, so retire with the settings captured at spawn has nothing of aw's to miss", (t) => {
+  const d = homeDeployment(t, { instanceJson: true }), nested = join(d.home, "nested-root");
+  const captured = d.settingsWith(undefined), live = d.settingsWith(nested);
+  const setup = d.join(live);
+  assert.equal(setup.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", setup.stdout + setup.stderr);
+  assert.ok(!existsSync(join(nested, ".aw")), "nothing of aw's under the home");
+  const r = d.hook(["retire"], { OATS_META: "{}" }, undefined, captured);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!existsSync(join(nested, ".aw")));
 });
 
 test("retention invariant: with aw's pending files in the home, retire settles only a mint with no recorded stop from a genuinely chainless root", (t) => {
