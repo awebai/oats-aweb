@@ -72,8 +72,10 @@
     4. Optionally, `aw id team members --team-id=<team> --json` at `<root>`: only a
        certificate for alias `<instance>` whose `member_did_key` is this home's key
        is this mint's. Retire makes the same read.
-    5. Move aw's two pending files aside, never delete them:
-       `mkdir -p <home>.aw-pending-aside && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept <home>.aw-pending-aside/`.
+    5. Move aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
+       `<home>/.aw/pending-hosted-accept`, to a dated directory beside the home,
+       never `rm` them:
+       `aside="<home>.aw-pending-aside-$(date -u +%Y%m%dT%H%M%SZ)" && mkdir "$aside" && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/`.
     6. Run `oats retire <instance>`: it settles the mint as before.
 
     Why it's safe, with aw's source lines: README, "Human attribution", "A mint cut

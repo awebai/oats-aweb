@@ -298,25 +298,34 @@ export function pendingMintBinding(identityHome) {
 
 /** Whether aw's record of the accept in `identityHome` shows that no signature can be
  *  pending for it (README, "Human attribution", "A mint cut short under an older
- *  provider"). The record must be one aw accepts (its token_hash, id_tree.request_id
- *  and did_key, as pendingMintBinding reads them), made for this home's own key, with
- *  no ID-tree issuer (`id_tree.domain` absent or empty) and naming no human
- *  (`for_human` absent or null). aw prepares no request for such an invite (aw 1.36.58
- *  cli/go/cmd/aw/hosted_invite_creation.go:94,114; 1.36.59-rc.3 :168,:199,:206).
- *  Diagnostic only: it decides no retention. `{proven: true}`, else `{why}`. */
+ *  provider"). One bounded read of the record, as aw writes it with its own encoder:
+ *  it must parse, its top level and its `id_tree` must be objects, every field read
+ *  here must be absent or have aw's type at 1.36.58 and 1.36.59-rc.3, its `did_key`
+ *  must be this home's own key, and it must name no ID-tree issuer (`id_tree.domain`
+ *  absent or empty) and no human (`for_human` absent or null). aw prepares no request
+ *  for such an invite (aw 1.36.58 cli/go/cmd/aw/hosted_invite_creation.go:94,114;
+ *  1.36.59-rc.3 :168,:199,:206). A record cut short by a kill or an IO error doesn't
+ *  parse, so it shows nothing. Diagnostic only: it decides no retention.
+ *  `{proven: true}`, else `{why}`. */
 export function noSignatureCanBePending(identityHome) {
   const key = signingKeyRead(identityHome);
   if (!key.did) return { why: key.missing ? "this home has no key" : "this home's key can't be read" };
-  const binding = pendingMintBinding(identityHome);
-  if (binding.unreadable) return { why: binding.unreadable };
-  if (!binding.did) return { why: "aw's pending invite record isn't there" };
-  if (binding.did !== key.did) return { why: "aw's pending invite record names another key" };
+  const file = join(identityHome, PENDING_MINT_FILES[0]);
+  let text;
+  try { text = readBounded(file, PENDING_RECORD_MAX_BYTES); }
+  catch (e) { return { why: entryAbsent(e, file) ? "aw's pending invite record isn't there" : "aw's pending invite record could not be read" }; }
   let doc;
-  try { doc = JSON.parse(readBounded(join(identityHome, PENDING_MINT_FILES[0]), PENDING_RECORD_MAX_BYTES)); }
-  catch { return { why: "aw's pending invite record could not be read" }; }
-  const domain = doc.id_tree.domain;
-  if (!(domain === undefined || domain === "")) return { why: "aw's record names an ID-tree issuer" };
-  if (!(doc.for_human === undefined || doc.for_human === null)) return { why: "aw's record names a human" };
+  try { doc = JSON.parse(text); } catch { return { why: "aw's pending invite record is not JSON (it may have been cut short)" }; }
+  if (!object(doc) || !object(doc.id_tree)) return { why: "aw's pending invite record is not one aw writes" };
+  const tree = doc.id_tree;
+  const absentOr = (v, type) => v === undefined || typeof v === type;
+  if (!opaque(doc.token_hash) || typeof tree.request_id !== "string" || !UUID_RE.test(tree.request_id)
+    || typeof doc.did_key !== "string" || !absentOr(tree.domain, "string") || !(doc.for_human === undefined || doc.for_human === null || typeof doc.for_human === "string")) {
+    return { why: "aw's pending invite record is not one aw writes" };
+  }
+  if (doc.did_key !== key.did) return { why: "aw's pending invite record names another key" };
+  if (tree.domain !== undefined && tree.domain !== "") return { why: "aw's record names an ID-tree issuer" };
+  if (typeof doc.for_human === "string") return { why: "aw's record names a human" };
   return { proven: true };
 }
 

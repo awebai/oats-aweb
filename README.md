@@ -152,7 +152,8 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
      "aw's record of the accept is this home key's and names no ID-tree issuer and no
      human, so no signature can be pending for it". That means the record is one aw
      accepts, made for this home's own key, with no `id_tree.domain` and no
-     `for_human`. If the warning instead says aw's record "doesn't show that no
+     `for_human`. The check reads the file as aw writes it; a file edited by hand
+     isn't covered. If the warning instead says aw's record "doesn't show that no
      signature can be pending", stop: the mint may be waiting for a signature, so
      finish the exchange aw printed for it, or reconcile it with aw.
   3. Check that the root reads chainless:
@@ -170,15 +171,19 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
      hands it to the team's controller. A certificate for `<instance>` held by
      another key belongs to another agent. With none of this home's key, retire
      answers `nothing-to-delete`.
-  5. Move aw's two pending files out of the home. Never delete them:
+  5. Move aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
+     `<home>/.aw/pending-hosted-accept`, out of the home to a dated name. Never `rm`
+     them:
 
      ```bash
-     mkdir -p <home>.aw-pending-aside
-     mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept <home>.aw-pending-aside/
+     aside="<home>.aw-pending-aside-$(date -u +%Y%m%dT%H%M%SZ)"
+     mkdir "$aside"
+     mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/
      ```
 
-     `<home>.aw-pending-aside` sits beside the home, so the kernel's removal of the
-     home leaves it.
+     The dated directory sits beside the home, not inside it, so the kernel's removal
+     of the home leaves it. Renaming the files inside `<home>/.aw` would not keep
+     them: that removal would take them with the home.
   6. Run `oats retire <instance>`. It settles the mint as releases before this one
      did (#240): `nothing-to-delete`, or the controller's removal command for this
      home's certificate.

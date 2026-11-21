@@ -910,7 +910,7 @@ test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainle
   assert.ok(readme.replace(/\s+/g, " ").includes(`"${NO_SIGNATURE_PENDING_PROOF}"`), "the README's step 2 quotes the proof's words");
   assert.doesNotMatch(r.doc.warning, /older provider/, "a bound issuer's keep points elsewhere");
   // The README's way out on a chainless root: aw's two files moved aside, then a plain retire settles it.
-  const aside = `${fy.home}.aw-pending-aside`;
+  const aside = `${fy.home}.aw-pending-aside-20261121T230000Z`;
   mkdirSync(aside);
   for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) renameSync(join(fy.home, ".aw", f), join(aside, f));
   const cleared = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
@@ -988,6 +988,7 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
   const record = (dir) => join(dir, "hosted-invite-creation.json");
   const edit = (dir, f) => writeFileSync(record(dir), JSON.stringify(f(JSON.parse(readFileSync(record(dir), "utf8")))));
   assert.deepEqual(noSignatureCanBePending(pending(t)), { proven: true }, "aw's record of a legacy accept");
+  assert.deepEqual(noSignatureCanBePending((() => { const dir = pending(t); edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, domain: "" }, for_human: null })); return dir; })()), { proven: true }, "an empty domain and a null human, as aw's encoder writes them");
   for (const [name, spoil] of [
     ["an empty object", (dir) => writeFileSync(record(dir), "{}")],
     ["JSON null", (dir) => writeFileSync(record(dir), "null")],
@@ -1000,6 +1001,12 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
     ["another key", (dir) => writeKey(dir)],
     ["no key", (dir) => rmSync(join(dir, "signing.key"))],
     ["no record", (dir) => rmSync(record(dir))],
+    // A kill or an IO error mid-write leaves a record cut short: it shows nothing.
+    ["cut short at half", (dir) => { const text = readFileSync(record(dir), "utf8"); writeFileSync(record(dir), text.slice(0, Math.floor(text.length / 2))); }],
+    ["cut short before its last brace", (dir) => { const text = readFileSync(record(dir), "utf8"); writeFileSync(record(dir), text.slice(0, -1)); }],
+    ["empty", (dir) => writeFileSync(record(dir), "")],
+    ["a domain of another type", (dir) => edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, domain: 1 } }))],
+    ["for_human of another type", (dir) => edit(dir, (d) => ({ ...d, for_human: {} }))],
   ]) {
     const dir = pending(t);
     spoil(dir);
@@ -1018,7 +1025,7 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
   const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
   assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"]);
   assert.ok(!k.doc.warning.includes(NO_SIGNATURE_PENDING_PROOF), k.doc.warning);
-  assert.match(k.doc.warning, /doesn't show that no signature can be pending \(aw's pending invite record is not one aw accepts\): don't move aw's files/);
+  assert.match(k.doc.warning, /doesn't show that no signature can be pending \(aw's pending invite record is not one aw writes\): don't move aw's files/);
   assert.ok(k.doc.warning.includes('"A mint cut short under an older provider"'), "still points to the README entry");
 });
 
