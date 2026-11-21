@@ -58,15 +58,21 @@
     as `mint-outcome-unknown`, even in a deployment that adopts nothing. aw 1.36.58
     and 1.36.59 have no command that abandons a pending accept. To clear one:
     1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`.
-    2. Check that root is chainless: `aw --identity-home <root>/.aw who --json`
+    2. Check aw's own record of the accept:
+       `jq '{domain: .id_tree.domain, for_human: .for_human}' <home>/.aw/hosted-invite-creation.json`
+       must print `"domain": null` (or `""`) and `"for_human": null`. On any other
+       output, stop: the mint may be waiting for a signature.
+    3. Check that root reads chainless: `aw --identity-home <root>/.aw who --json`
        answers `unknown` / `legacy_no_chain`, and
        `oats aweb setup --check-only --json` lists `<root>` with no warnings. On any
-       other answer, stop: the mint may be waiting for a signature.
-    3. Optionally, `aw id team members --team-id=<team> --json` at `<root>` shows
-       whether the mint registered alias `<instance>`. Retire makes the same read.
-    4. Move aw's two pending files aside, never delete them:
+       other answer, stop. This check alone proves nothing about the mint, because
+       the root at that path may have been replaced.
+    4. Optionally, `aw id team members --team-id=<team> --json` at `<root>`: only a
+       certificate for alias `<instance>` whose `member_did_key` is this home's key
+       is this mint's. Retire makes the same read.
+    5. Move aw's two pending files aside, never delete them:
        `mkdir -p <home>.aw-pending-aside && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept <home>.aw-pending-aside/`.
-    5. Run `oats retire <instance>`: it settles the mint as before.
+    6. Run `oats retire <instance>`: it settles the mint as before.
 
     Why it's safe, with aw's source lines: README, "Human attribution", "A mint cut
     short under an older provider".

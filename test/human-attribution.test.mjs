@@ -902,7 +902,11 @@ test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainle
   assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], "no issuer binding");
   // Its warning points to the README entry with the way out, which exists by that name.
   assert.ok(k.doc.warning.includes('clear it as README, "Human attribution", "A mint cut short under an older provider" says'), k.doc.warning);
-  assert.ok(readFileSync(new URL("../README.md", import.meta.url), "utf8").includes("- **A mint cut short under an older provider.**"));
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  assert.ok(readme.includes("- **A mint cut short under an older provider.**"));
+  // Its proof is aw's own record of the accept, never the root now at that path.
+  assert.ok(readme.includes("jq '{domain: .id_tree.domain, for_human: .for_human}' <home>/.aw/hosted-invite-creation.json"));
+  assert.match(readFileSync(join(fy.home, ".aw", "hosted-invite-creation.json"), "utf8"), /"id_tree"/, "the fixture's record has the field the check reads");
   assert.doesNotMatch(r.doc.warning, /older provider/, "a bound issuer's keep points elsewhere");
   // The README's way out on a chainless root: aw's two files moved aside, then a plain retire settles it.
   const aside = `${fy.home}.aw-pending-aside`;

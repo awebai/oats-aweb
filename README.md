@@ -146,20 +146,34 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   `aw reset` removes only a workspace binding. To clear it:
   1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`: the root
      the mint used (`<root>` below) and its team (`<team>`).
-  2. Check that root is chainless:
+  2. Check aw's own record of the accept, which pinned the invite's issuer when it
+     was made:
+
+     ```bash
+     jq '{domain: .id_tree.domain, for_human: .for_human}' <home>/.aw/hosted-invite-creation.json
+     ```
+
+     Go on only if it prints `"domain": null` (or `""`) and `"for_human": null`: the
+     invite had no ID-tree issuer and named no human, so aw can't be waiting for a
+     signature for it. On any other output (a domain, a human, an error, or a file
+     that isn't JSON), stop: the mint may be waiting for a signature, so finish the
+     exchange aw printed for it instead.
+  3. Check that the root reads chainless:
      - `aw --identity-home <root>/.aw who --json` answers `"outcome": "unknown"` and
        `"reason": "legacy_no_chain"`;
      - `oats aweb setup --check-only --json` lists `<root>` in `roots` with no
-       warnings, so no record says it ever had a person.
+       warnings.
 
-     Any other answer: stop. The mint may be waiting for a signature; finish the
-     exchange aw printed for it instead.
-  3. Optionally, see what the mint registered. At `<root>`, run
-     `aw id team members --team-id=<team> --json`. A certificate for alias
-     `<instance>` means the mint registered it, and retire hands it to the team's
-     controller. None means nothing was registered. Retire makes this same read
-     itself in step 5.
-  4. Move aw's two pending files out of the home. Never delete them:
+     This is not proof about the mint, since the root at that path may have been
+     replaced since. Step 2 is the proof. On any other answer, stop.
+  4. Optionally, see what the mint registered. At `<root>`, run
+     `aw id team members --team-id=<team> --json`. Retire makes this same read in
+     step 6 and looks for a certificate for alias `<instance>` whose
+     `member_did_key` is this home's key. Only that one is this mint's, and retire
+     hands it to the team's controller. A certificate for `<instance>` held by
+     another key belongs to another agent. With none of this home's key, retire
+     answers `nothing-to-delete`.
+  5. Move aw's two pending files out of the home. Never delete them:
 
      ```bash
      mkdir -p <home>.aw-pending-aside
@@ -168,17 +182,17 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
 
      `<home>.aw-pending-aside` sits beside the home, so the kernel's removal of the
      home leaves it.
-  5. Run `oats retire <instance>`. It settles the mint as releases before this one
-     did (#240): `nothing-to-delete`, or the controller's removal command for the
-     certificate.
+  6. Run `oats retire <instance>`. It settles the mint as releases before this one
+     did (#240): `nothing-to-delete`, or the controller's removal command for this
+     home's certificate.
 
-  This is safe only after step 2. aw stops an accept as waiting for a signature in
-  two cases. The first is when the inviting root is under a namespace with no chain
+  This is safe only after step 2. aw stops an accept to wait for a signature only
+  when the invite it recorded has an ID-tree issuer and the child has no chain
   installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
-  1.36.59-rc.3 `:204-215`). The second is when the invite names a human (1.36.59-rc.3
-  `:199-200`), and the provider's invites (`aw team invite --team-id=<team>`) name
-  none. A root that reads `legacy_no_chain` has no namespace, so its pending files are
-  an accept cut short, not a mint waiting for a signature.
+  1.36.59-rc.3 `:206-215`), or when it names a human (1.36.59-rc.3 `:199-200`). An
+  invite with no ID-tree binding leaves `id_tree.domain` empty (1.36.58 `:94`;
+  1.36.59-rc.3 `:168`), and aw then prepares no request at all. The provider's
+  invites (`aw team invite --team-id=<team>`) name no human.
 - **Roots with no chain change nothing.** For a root with no chain (a local
   `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
   retire behave as before; the only differences are `attribution` `unknown` and the
