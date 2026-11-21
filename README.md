@@ -113,7 +113,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   can't be inspected), an answer that would let the kernel remove the home
   (`retired: true`, `nothing-to-delete`, or a plain exit 0) becomes `retired: false`,
   `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle
-  above, of `<home>/.aw` alone. Anything else is kept, with exit status 1 and
+  above, of `<home>/.aw` alone. Every delete retire makes before it answers makes the
+  same check first and leaves such a directory in place: a global seat's grant-home
+  cleanup, a joined team's leave and a pending join's settlement. Anything else is kept, with exit status 1 and
   `retired: false` in the
   meta, which the kernel reads as an incomplete cleanup: it keeps the home and marks
   it `.oats-rollback-incomplete.json`. The reason is `signature-pending` for the exact

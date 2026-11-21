@@ -261,21 +261,26 @@ if (operation) {
  *  rule (b), its issuer shown genuinely chainless (#240): the one settle the retire
  *  choke point lets through while aw's pending files are in that home. */
 let retireChainlessSettle = false;
-/** The identity homes of `dir` where aw holds a pending mint (README, "Human
- *  attribution"): `.aw` and each `.aweb-identity-*` entry holding either of aw's pending
- *  files, and any entry that can't be inspected. Read from the directory itself; a
- *  `.aweb-identity-*` symlink or file is never followed. */
+/** Whether aw holds a pending mint in `dir` (either of its pending files), or `dir`
+ *  can't be inspected (README, "Human attribution"): the one check the retire choke
+ *  point and every delete on the retire path make, so they can't drift apart. `dir`
+ *  itself is never followed: a symlink or a file there is no identity home (removing
+ *  it removes none of aw's files), and a directory that is gone holds nothing. */
+function awHoldsPendingIn(dir) {
+  let entry;
+  try { entry = lstatSync(dir); }
+  catch (e) { return e?.code !== "ENOENT" && e?.code !== "ENOTDIR"; }
+  return entry.isDirectory() && pendingMintFilesIn(dir).length > 0;
+}
+/** The identity homes of `dir` where aw holds a pending mint, or that can't be
+ *  inspected (awHoldsPendingIn): `.aw` and each `.aweb-identity-*` entry. Read from the
+ *  directory itself. */
 function identityHomesHeldByAw(dir) {
-  const held = pendingMintFilesIn(join(dir, ".aw")).length ? [".aw"] : [];
+  const held = awHoldsPendingIn(join(dir, ".aw")) ? [".aw"] : [];
   let names;
   try { names = readdirSync(dir); }
   catch (e) { return e?.code === "ENOENT" ? held : [...held, `${dir} (it can't be listed)`]; }
-  for (const name of names.filter((n) => n.startsWith(".aweb-identity-"))) {
-    let entry;
-    try { entry = lstatSync(join(dir, name)); }
-    catch (e) { if (e?.code !== "ENOENT") held.push(`${name} (it can't be inspected)`); continue; }
-    if (entry.isDirectory() && pendingMintFilesIn(join(dir, name)).length) held.push(name);
-  }
+  for (const name of names.filter((n) => n.startsWith(".aweb-identity-"))) if (awHoldsPendingIn(join(dir, name))) held.push(name);
   return held;
 }
 /** The retire choke point (README, "Human attribution"): every answer of the retire
@@ -852,7 +857,11 @@ function grantHomeDirs() {
       .filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } });
   } catch { return []; }
 }
-function removeGrantHomes() { for (const p of grantHomeDirs()) { try { rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } } }
+/** Removes the home's grant homes, never one where aw holds a pending mint or that
+ *  can't be inspected (awHoldsPendingIn): a joined team's label may be digits, so its
+ *  identity home can carry a grant home's name. What stays keeps the home at retire's
+ *  choke point. */
+function removeGrantHomes() { for (const p of grantHomeDirs()) { if (awHoldsPendingIn(p)) continue; try { rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } } }
 function newestGrantHome() {
   const dirs = grantHomeDirs().map((p) => {
     try { return { path: p, mtime: statSync(p).mtimeMs }; } catch { return { path: p, mtime: 0 }; }
@@ -1813,8 +1822,8 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
   // The retention fence (README, "Human attribution"): a joined identity home where
   // aw holds a pending mint (a signature-pending accept, from aw's
   // team_invite_accept.go) releases nothing and is kept, never its key.
-  const held = pendingMintFilesIn(entry.identityHome);
-  if (held.length) throw new Error(`failed to leave team ${entry.label}: aw holds a pending mint in ${entry.identityHome} (${held.join(", ")}), so nothing was released and it is kept; finish or settle it with aw, then oats aweb leave --labels ${entry.label}`);
+  const heldByAw = (done) => new Error(`failed to leave team ${entry.label}: aw holds a pending mint in ${entry.identityHome} (or it can't be inspected), so ${done} and it is kept; finish or settle it with aw, then oats aweb leave --labels ${entry.label}`);
+  if (awHoldsPendingIn(entry.identityHome)) throw heldByAw("nothing was released");
   let receipt, released;
   const alias = entry.alias || fallbackAlias;
   if (!alias) throw new Error(`failed to leave team ${entry.label}; no alias is known for ${entry.identityHome}`);
@@ -1831,6 +1840,7 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
     if (receipt?.alias_released_reason === "team_not_hosted") error.nativeReason = "team_not_hosted";
     throw error;
   }
+  if (awHoldsPendingIn(entry.identityHome)) throw heldByAw("its workspace was deleted but nothing local was removed");
   try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
   return { released, receipt };
 }
@@ -1913,7 +1923,7 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
     // means the accept was cut short, not that the server holds no membership.
     // The whole remedy comes first, the label once: retire keeps 300
     // characters of it, which hold it for a label of 64.
-    if (pendingMintFilesIn(identityHome).length) throw new Error(`hosted accept interrupted: the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Team ${team}: kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
+    if (awHoldsPendingIn(identityHome)) throw new Error(`hosted accept interrupted: the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Team ${team}: kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
     rmSync(identityHome, { recursive: true, force: true });
     return { absent: true };
   }
@@ -2918,7 +2928,10 @@ if (event === "launch") {
   // released: a joined identity home where aw holds a pending mint and that no usable
   // record names keeps the whole home. A recorded one goes through its own leave
   // below; the retire choke point (retireChokePoint) keeps the home for either.
-  const heldJoined = joinedHomesHeldByAw(new Set([...joinedTeamsOf(meta), ...pendingJoinsOf(meta)].filter((e) => dirname(e.identityHome) === home).map((e) => basename(e.identityHome))));
+  // The global path removes grant homes before any leave runs, so there no record
+  // stands in for the check; a seat record that can't be read counts as that path.
+  const globalPath = !meta.retained && (meta.identity?.mode === "global" || (() => { try { return !!recordedSeat(); } catch { return true; } })());
+  const heldJoined = joinedHomesHeldByAw(new Set(globalPath ? [] : [...joinedTeamsOf(meta), ...pendingJoinsOf(meta)].filter((e) => dirname(e.identityHome) === home).map((e) => basename(e.identityHome))));
   if (heldJoined.length) {
     await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `aw holds a pending mint in ${heldJoined.join(", ")} of ${home}, so nothing was released and the home is kept; finish the exchange aw printed, or have aw settle it, then retire again (${README_ATTRIBUTION})`].join(" | ")}` }, 1);
   }

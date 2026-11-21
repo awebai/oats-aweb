@@ -118,6 +118,7 @@ if (rest[0] === "workspace" && rest[1] === "delete") {
   fs.rmSync(awDir, { recursive: true, force: true });
   console.log(JSON.stringify({ workspace_id: own, identity_deleted: true, alias_released: true, alias_released_reason: "released" })); process.exit(0);
 }
+if (cfg.grantRevoke !== undefined && rest.slice(0, 3).join(" ") === "id grant revoke") { if (cfg.grantRevoke === "fail") { console.error("revoke refused"); process.exit(1); } console.log("{}"); process.exit(0); }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 `, { mode: 0o755 });
   // The kernel: `version --json` lists `features` (default: spawn-attribution), and the
@@ -935,6 +936,35 @@ test("retire choke point: no answer lets the kernel delete a home where aw holds
   rmSync(join(fz.home, ".aweb-identity-other"), { recursive: true });
   const settled = fz.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
   assert.deepEqual([settled.status, settled.doc.meta.reason], [0, "nothing-to-delete"], "rule (b) alone settles, as #240");
+});
+
+test("retire's deletes: a global retire never removes a numeric joined home where aw holds a pending mint", (t) => {
+  // A joined label of digits names its home like a grant home (.aweb-identity-<digits>).
+  for (const [name, revoke, seatRecord] of [["a grant in the meta, revoked", "ok", false], ["a grant in the meta, its revoke refused", "fail", false], ["a surviving seat record", "ok", true]]) {
+    const fx = fixture(t);
+    const pendingHome = join(fx.home, ".aweb-identity-123");
+    spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(pendingHome)})`]);
+    writeFileSync(join(fx.rootHome, "identity.yaml"), `did: ${fx.rootKey}\n`);
+    fx.fake.set({ grantRevoke: revoke });
+    const pendingJoins = [{ label: "123", team: JOINED, identityHome: pendingHome, alias: "dev-1", root: fx.joinedRoot }];
+    if (seatRecord) {
+      mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true });
+      writeFileSync(join(fx.home, ".oats-aweb", "seat.json"), JSON.stringify({ seat: "0123456789abcdef", instance: "dev-1", resident: "fixture", team: TEAM }));
+    }
+    const meta = { alias: "dev-1", team: TEAM, pendingJoins, ...(seatRecord ? {} : { identity: { mode: "global", team: TEAM, resident: "fixture", grant: { id: "g1" } } }) };
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify({ ...fx.settings, residents: { fixture: fx.root } }) } });
+    assert.notEqual(r.status, 0, `${name}: ${r.stdout}${r.stderr}`);
+    assert.equal(r.doc.meta.retired, false, name);
+    for (const f of ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"]) assert.ok(existsSync(join(pendingHome, f)), `${name}: ${f} kept`);
+  }
+  // With nothing pending, a numeric grant home is still removed (the global path as before).
+  const fx = fixture(t);
+  const grantHome = join(fx.home, ".aweb-identity-1");
+  writeKey(grantHome);
+  writeFileSync(join(fx.rootHome, "identity.yaml"), `did: ${fx.rootKey}\n`);
+  fx.fake.set({ grantRevoke: "ok" });
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify({ identity: { mode: "global", team: TEAM, resident: "fixture", grant: { id: "g1" } } }), OATS_SETTINGS: JSON.stringify({ ...fx.settings, residents: { fixture: fx.root } }) } });
+  assert.equal(existsSync(grantHome), false, r.stdout + r.stderr);
 });
 
 test("retention invariant: an unreadable C3 record never shows a root chainless", (t) => {
