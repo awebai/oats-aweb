@@ -79,6 +79,8 @@ import { fakeAwArgvCheck } from "./aw-argv.mjs";
 //                     (test/helpers/fake-pending-mint.mjs), prints aw's
 //                     --json envelope with code native_agent_signature_pending (code; aw
 //                     1.36.59) or the generic error (error; aw 1.36.58) and exits 1
+//   AW_ACCEPT_SIGNATURE_PENDING=code  id team accept-invite stops the same way in its
+//                     identity home (a setup --join whose accept waits for a signature)
 //   id team members   answered from FAKE_JOIN_FROM_REGISTRY when it is set
 //                     (test/helpers/fake-aw-join-from.mjs membersFake)
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
@@ -129,6 +131,13 @@ if (args[0] === "init" && args.some((a) => a.startsWith("--join-from")) && proce
   const message = "native agent signature pending; its key and pending invite are retained in " + awDir;
   console.error(message);
   console.log(JSON.stringify({ error: { code: process.env.AW_SIGNATURE_PENDING === "code" ? "native_agent_signature_pending" : "error", message } }));
+  process.exit(1);
+}
+if (args.slice(0, 3).join(" ") === "id team accept-invite" && process.env.AW_ACCEPT_SIGNATURE_PENDING) {
+  (${pendingMintFake})(awDir);
+  const message = "native agent signature pending in " + awDir + "; child key and request retained";
+  console.error(message);
+  console.log(JSON.stringify({ error: { code: "native_agent_signature_pending", message } }));
   process.exit(1);
 }
 (${joinFromFake})(args);

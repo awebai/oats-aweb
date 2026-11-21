@@ -285,12 +285,23 @@ const isInside = (root, p) => { const rel = relative(root, p); return rel === ""
 /** The names grant homes take (legacy `.aweb-identity`, generated
  *  `.aweb-identity-<digits>`); a joined team's home is `.aweb-identity-<label>`. */
 const isIdentityHomeName = (name) => name === ".aw" || name === ".aweb-identity" || name.startsWith(".aweb-identity-");
-/** Every identity home a record names: the input meta's grant home and joined or
- *  pending-join homes, and those the provider's teams state names. `unreadable` when
- *  that state exists but can't be read as one. Read here, at the moment it's asked,
- *  never from what retire has read so far. */
+/** Every identity home a record or a setting names. `locators` are identity homes
+ *  themselves: the input meta's grant home and joined or pending-join homes, and those
+ *  the provider's teams state names. `configured` are directories a setting names,
+ *  each checked with its `.aw` too: `root`, every `roots` value, `identity.source` and
+ *  every `residents` value (a deployment may place a root inside an instance home,
+ *  and setup accepts into `<root>/.aw`). `unreadable` when the teams state exists but
+ *  can't be read as one. Read here, at the moment it's asked, never from what retire
+ *  has read so far. */
 function recordedIdentityLocators(dir) {
-  const locators = [];
+  const locators = [], configured = [];
+  try {
+    const set = JSON.parse(process.env.OATS_SETTINGS || "{}");
+    if (set && typeof set === "object") {
+      const values = (o) => o && typeof o === "object" && !Array.isArray(o) ? Object.values(o) : [];
+      for (const v of [set.root, ...values(set.roots), set.identity?.source, ...values(set.residents)]) if (typeof v === "string" && v.trim()) configured.push(v.trim());
+    }
+  } catch { /* the settings' own parse fails the hook first */ }
   const add = (doc) => {
     if (!doc || typeof doc !== "object") return;
     if (typeof doc.identity?.grant?.home === "string") locators.push(doc.identity.grant.home);
@@ -300,9 +311,9 @@ function recordedIdentityLocators(dir) {
   const state = join(dir, ".oats-aweb", "teams.json");
   let text;
   try { text = readFileSync(state, "utf8"); }
-  catch (e) { return entryAbsent(e, state) ? { locators } : { locators, unreadable: state }; }
-  try { add(JSON.parse(text)); } catch { return { locators, unreadable: state }; }
-  return { locators };
+  catch (e) { return entryAbsent(e, state) ? { locators, configured } : { locators, configured, unreadable: state }; }
+  try { add(JSON.parse(text)); } catch { return { locators, configured, unreadable: state }; }
+  return { locators, configured };
 }
 /** The identity homes of the instance home `dir` where aw holds a pending mint, or
  *  that can't be inspected (awHoldsPendingIn), from what is in it at the moment it's
@@ -314,9 +325,10 @@ function heldIdentityHomeNames(dir) {
   try { names = readdirSync(dir); }
   catch (e) { if (e?.code === "ENOENT") return []; return [`${dir} (it can't be listed)`]; }
   const held = names.filter((name) => awHoldsPendingIn(join(dir, name)));
-  const { locators, unreadable } = recordedIdentityLocators(dir);
+  const { locators, configured, unreadable } = recordedIdentityLocators(dir);
   if (unreadable) held.push(`${relative(dir, unreadable)} (it can't be read, so the identity homes it names are unknown)`);
-  for (const p of locators) {
+  const candidates = [...locators.map((p) => [p]), ...configured.map((p) => [p, join(p, ".aw")])].flat();
+  for (const p of candidates) {
     if (!isAbsolute(p)) continue;
     const rel = relative(dir, resolve(p));
     if (!rel || rel.startsWith("..") || isAbsolute(rel) || held.includes(rel) || names.includes(rel)) continue;

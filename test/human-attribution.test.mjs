@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
 import { pendingMintFake } from "./helpers/fake-pending-mint.mjs";
+import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
+import { joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwArgvCheck } from "./helpers/aw-argv.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
 import { attributionFor, lineageEntryFor, noSignatureCanBePending, NO_SIGNATURE_PENDING_PROOF, pendingMintRetention, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
@@ -172,9 +174,9 @@ function fixture(t, { join: joinLabels } = {}) {
     OATS_SETTINGS: JSON.stringify(settings), OATS_CLI_BIN: join(fake.bin, "oats"), OATS_NODE_BIN: process.execPath,
     FAKE_JOIN_FROM_REGISTRY: join(base, "registry.json"),
   };
-  const run = (argv, { cwd = home, env: more = {} } = {}) => {
+  const run = (argv, { cwd = home, env: more = {}, input } = {}) => {
     const started = Date.now();
-    const r = spawnSync(process.execPath, [HOOK, ...argv], { cwd, env: { ...env, OATS_EVENT: argv[0], ...more }, encoding: "utf8", timeout: 60000 });
+    const r = spawnSync(process.execPath, [HOOK, ...argv], { cwd, env: { ...env, OATS_EVENT: argv[0], ...more }, encoding: "utf8", timeout: 60000, ...(input !== undefined ? { input } : {}) });
     return { ...r, ms: Date.now() - started, doc: (() => { try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return undefined; } })() };
   };
   const rootHome = join(root, ".aw"), homeAw = join(home, ".aw");
@@ -1143,6 +1145,34 @@ test("the choke point's inventory is what is in the home at exit: any top-level 
     const other = join(fx.home, "anything");
     pendingIn(other);
     kept(fx.run(["retire"], { env: { OATS_META: JSON.stringify({ alias: "dev-1", team: TEAM }) } }), [join(other, "pending-hosted-accept")], "any top-level name");
+  }
+});
+
+test("a configured root inside the home: setup's accept left signature pending there keeps the home at retire, with aw and without", (t) => {
+  // The deployment's settings put the joined team's root inside an instance home (README
+  // allows any absolute roots[team]); setup --join accepts into exactly <root>/.aw.
+  const base = tempDir(t), deployment = join(base, "deployment"), home = join(deployment, "agents", "dev", "instances", "dev-1");
+  const root = join(deployment, ".aweb-roots", "default"), nested = join(home, "nested-root");
+  mkdirSync(join(root, ".aw"), { recursive: true });
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
+  writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ memberships: [{ team_id: "default:example.invalid" }] }));
+  const fake = fakeAwSetupPath(t);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AWID_)/.test(k)));
+  Object.assign(env, { PATH: fake.path, HOME: base, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_TEAM_SCOPE: deployment, OATS_WORKSPACE_NAME: "fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.invalid", OATS_TEAMS: JSON.stringify([{ label: "default", team: "default:example.invalid", default: true }, { label: "joined", team: "joined:example.invalid" }]), OATS_SETTINGS: JSON.stringify({ root, roots: { "joined:example.invalid": nested } }), AW_ACCEPT_SIGNATURE_PENDING: "code" });
+  Object.assign(env, joinKernelEnvironment(env, deployment));
+  const hook = (args, extra = {}, input) => spawnSync(process.execPath, [HOOK, ...args], { cwd: deployment, env: { ...env, ...extra }, input, encoding: "utf8", timeout: 30000 });
+  const setup = hook(["setup", "--join", "joined", "--invite-stdin", "--name", "nested-root", "--service", "https://service.invalid"], { OATS_EVENT: "setup" }, "TOKEN\n");
+  assert.notEqual(setup.status, 0, setup.stdout + setup.stderr);
+  const pendingFile = join(nested, ".aw", "pending-hosted-accept");
+  assert.ok(existsSync(pendingFile), `setup's accept left aw's pending files in <root>/.aw: ${setup.stdout}${setup.stderr}`);
+  assert.equal(fake.readCalls().find((c) => c.args.includes("accept-invite"))?.identityHome, join(nested, ".aw"), "setup accepted into the configured root's .aw");
+  for (const [name, extra] of [["with aw", {}], ["aw not on PATH", { PATH: "/no-aw-here" }]]) {
+    const r = hook(["retire"], { OATS_EVENT: "retire", OATS_META: "{}", ...extra });
+    const doc = (() => { try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return undefined; } })();
+    assert.deepEqual([r.status, doc?.meta?.retired, doc?.meta?.reason], [1, false, "mint-outcome-unknown"], `${name}: ${r.stdout}${r.stderr}`);
+    assert.match(doc.warning, /nested-root\/\.aw/, name);
+    assert.ok(existsSync(pendingFile), `${name}: kept`);
   }
 });
 
