@@ -1034,10 +1034,11 @@ and where to set it. The provider settings are:
   were, and a provider launch has two floor rows of its own, which hold under
   either `delivery` value. Those two name only session providers, and a
   kernel from before session providers applies a requirement to every launch
-  whatever its `backends` says. That is why this package's OATS floor is
-  0.70.0, the first release whose kernel lists `session-providers` and speaks
-  the released session-provider wire: on an older one, every `tmux` launch
-  under `delivery: channel` would be held to those floors.
+  whatever its `backends` says, so under `delivery: channel` it would hold
+  every `tmux` launch to those floors too. This package's OATS floor is
+  therefore 0.70.0: among the releases whose kernel reads `backends`, the
+  first that also speaks the released session-provider wire (1.3), which the
+  session-provider contract asks of any package that declares such a row.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
