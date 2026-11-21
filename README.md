@@ -178,11 +178,11 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
 
      ```bash
      aside="<home>.aw-pending-aside-$(date -u +%Y%m%dT%H%M%SZ)"
-     mkdir "$aside"
-     mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/
+     mkdir "$aside" && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/
      ```
 
-     The dated directory sits beside the home, not inside it, so the kernel's removal
+     If `mkdir` fails (that name is taken), nothing moves: choose another name. The
+     dated directory sits beside the home, not inside it, so the kernel's removal
      of the home leaves it. Renaming the files inside `<home>/.aw` would not keep
      them: that removal would take them with the home.
   6. Run `oats retire <instance>`. It settles the mint as releases before this one
