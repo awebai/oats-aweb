@@ -374,6 +374,9 @@ function exactPendingMint(identityHome, present, { did, binding, invalid }) {
   if (binding?.selection && (now.selection !== binding.selection || now.request !== binding.request)) {
     return { cause: now.selection === null ? "aw's pending invite record is gone while its pending-accept marker stays" : "aw's pending invite record now names another invite or request" };
   }
+  // A stop recorded before aw wrote its invite record (aw 1.36.58 can stop between the
+  // key and the record) binds no invite: a record that appears later may be another.
+  if (!binding?.selection && now.selection !== null) return { cause: "aw's pending invite record appeared after the mint stopped, so it may be another invite's" };
   return { exact: true };
 }
 

@@ -712,6 +712,17 @@ test("A8 (signature pending): a key that can't be read, or is gone, while aw's p
   assert.deepEqual(pendingMintRetention(aw, { signaturePending: { did: null, binding: { selection: null, request: null } }, issuerChainless: never }), { keep: "mint-outcome-unknown", cause: "the key aw kept could not be read when the mint stopped" }, "a stop whose key couldn't be read is kept while aw's files stay");
   rmSync(join(aw, "pending-hosted-accept"));
   assert.deepEqual(pendingMintRetention(aw, { signaturePending: { did: null, binding: { selection: null, request: null } }, issuerChainless: never }), { settle: true }, "aw holds no pending mint: settled");
+  // aw 1.36.58 can stop after the key and marker, before its invite record: the stop
+  // binds no invite, so a record that appears later is not shown to be its mint.
+  const later = join(tempDir(t), ".aw");
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(later)})`]);
+  const did = didKeyOfSigningKey(readFileSync(join(later, "signing.key"), "utf8"));
+  const record = join(later, "hosted-invite-creation.json"), aside = `${record}.aside`;
+  renameSync(record, aside);
+  const stop = { signaturePending: { did, binding: { selection: null, request: null } }, issuerChainless: never };
+  assert.deepEqual(pendingMintRetention(later, stop), { keep: "signature-pending" }, "the marker alone, as at the stop");
+  renameSync(aside, record);
+  assert.deepEqual(pendingMintRetention(later, stop), { keep: "mint-outcome-unknown", cause: "aw's pending invite record appeared after the mint stopped, so it may be another invite's" }, "a record that appeared later");
 });
 
 test("A8 (signature pending): another key is kept while aw's pending files stay, and settled once they are gone", (t) => {
@@ -1148,11 +1159,11 @@ test("the choke point's inventory is what is in the home at exit: any top-level 
   }
 });
 
-test("a configured root inside the home: setup's accept left signature pending there keeps the home at retire, with aw and without", (t) => {
+for (const dirName of ["nested-root", "..nested-root"]) test(`a configured root inside the home (${dirName}): setup's accept left signature pending there keeps the home at retire, with aw and without`, (t) => {
   // The deployment's settings put the joined team's root inside an instance home (README
   // allows any absolute roots[team]); setup --join accepts into exactly <root>/.aw.
   const base = tempDir(t), deployment = join(base, "deployment"), home = join(deployment, "agents", "dev", "instances", "dev-1");
-  const root = join(deployment, ".aweb-roots", "default"), nested = join(home, "nested-root");
+  const root = join(deployment, ".aweb-roots", "default"), nested = join(home, dirName);
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home, { recursive: true });
   writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
@@ -1171,7 +1182,7 @@ test("a configured root inside the home: setup's accept left signature pending t
     const r = hook(["retire"], { OATS_EVENT: "retire", OATS_META: "{}", ...extra });
     const doc = (() => { try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { return undefined; } })();
     assert.deepEqual([r.status, doc?.meta?.retired, doc?.meta?.reason], [1, false, "mint-outcome-unknown"], `${name}: ${r.stdout}${r.stderr}`);
-    assert.match(doc.warning, /nested-root\/\.aw/, name);
+    assert.ok(doc.warning.includes(`${dirName}/.aw`), `${name}: ${doc.warning}`);
     assert.ok(existsSync(pendingFile), `${name}: kept`);
   }
 });

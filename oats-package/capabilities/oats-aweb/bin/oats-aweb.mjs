@@ -67,7 +67,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { awChildEnv } from "../lib/aw-child-env.mjs";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
-import { join, basename, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
+import { join, basename, dirname, resolve, delimiter, isAbsolute, relative, sep } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
@@ -281,7 +281,10 @@ function awHoldsPendingIn(path) {
   }
   return entry.isDirectory() && pendingMintFilesIn(path).length > 0;
 }
-const isInside = (root, p) => { const rel = relative(root, p); return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)); };
+/** Whether `rel`, a path relative to some directory, stays inside it, by whole
+ *  segments: `..nested-root` is a name inside, `..` or `../x` is outside. */
+const relInside = (rel) => rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+const isInside = (root, p) => relInside(relative(root, p));
 /** The names grant homes take (legacy `.aweb-identity`, generated
  *  `.aweb-identity-<digits>`); a joined team's home is `.aweb-identity-<label>`. */
 const isIdentityHomeName = (name) => name === ".aw" || name === ".aweb-identity" || name.startsWith(".aweb-identity-");
@@ -331,7 +334,7 @@ function heldIdentityHomeNames(dir) {
   for (const p of candidates) {
     if (!isAbsolute(p)) continue;
     const rel = relative(dir, resolve(p));
-    if (!rel || rel.startsWith("..") || isAbsolute(rel) || held.includes(rel) || names.includes(rel)) continue;
+    if (!rel || !relInside(rel) || held.includes(rel) || names.includes(rel)) continue;
     if (awHoldsPendingIn(join(dir, rel))) held.push(rel);
   }
   return held;
