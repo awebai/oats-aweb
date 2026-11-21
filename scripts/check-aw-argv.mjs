@@ -8,6 +8,12 @@ import { AW_BYOT_CREATE, byotCreateAwRefusal } from '../oats-package/capabilitie
 import { freshMailSendFlag } from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
 import { MAIL_AW_MIN } from '../oats-package/capabilities/oats-aweb/lib/mail-read.mjs';
 import { versionAtLeast } from '../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs';
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW } from '../oats-package/capabilities/oats-aweb/lib/attribution.mjs';
+
+/** The lowest aw of the test matrix with `aw who` (contract §3: its fields are those of
+ *  aw 1.36.58). Below it the provider's reads answer nothing: C1 carries the recorded
+ *  attribution forward and C2 reports `unavailable`, so nothing depends on it. */
+export const WHO_AW_MIN = '1.36.58';
 import { pathToFileURL } from 'node:url';
 
 const helpOptions = home => ({ cwd: home, encoding: 'utf8', timeout: 10000,
@@ -18,9 +24,15 @@ export function checkRecordedAwArgv(binary, records, { version } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'aw-argv-help-'));
   const cache = new Map(), combinations = new Set();
   try {
-    for (const { command, flags } of records) {
+    for (let { command, flags } of records) {
       if (!cache.has(command)) {
         const r = spawnSync(binary, [...command.split(' '), '--help'], helpOptions(home));
+        if (command === 'who' && version && !versionAtLeast(version, WHO_AW_MIN)) {
+          assert.ok(r.status !== 0 || !r.stdout.includes('\n  aw who '), `aw who unexpectedly exists at aw ${version}; update this capability exclusion`);
+          console.log(`Capability exclusion: aw ${version} lacks who; attribution reads answer nothing below aw ${WHO_AW_MIN} (C1 carries forward, C2 reports unavailable)`);
+          cache.set(command, null);
+          continue;
+        }
         assert.equal(r.status, 0, `${command}: ${r.stderr}`);
         if (version === '1.36.33' && ['id team set-server', 'id team show-server'].includes(command)) {
           // These commands belong only to the BYOT create route, whose existing
@@ -45,6 +57,13 @@ export function checkRecordedAwArgv(binary, records, { version } = {}) {
         cache.set(command, new Map([...r.stdout.matchAll(/^\s+(?:-\w, )?(--[\w-]+)(?:\s+(stringArray|stringSlice|string|int64|uint64|int|uint|duration))?\s{2,}/gm)].map(m => [m[1], m[2]])));
       }
       if (cache.get(command) === null) continue;
+      if (command === 'id team accept-invite' && flags.includes('--parent') && version && !versionAtLeast(version, ATTRIBUTION_AW) && !cache.get(command).has('--parent')) {
+        // Only a join from an adopted root passes it, and below aw 1.36.59 that join
+        // stops before any invite with the provider's own code. An aw that has the flag
+        // (the pinned next, 1.36.59-rc.3) is checked like any other.
+        console.log(`Capability exclusion: aw ${version} lacks ${command} --parent; a join from an adopted root needs aw >= ${ATTRIBUTION_AW} and stops before any invite below it (${ADOPTED_ROOT_AW_TOO_OLD})`);
+        flags = flags.filter((flag) => flag !== '--parent');
+      }
       for (const flag of flags) assert.ok(cache.get(command).has(flag), `${binary}: aw ${command} does not accept ${flag}`);
       const key = JSON.stringify([command, [...flags].sort()]);
       if (!combinations.has(key)) {
@@ -71,7 +90,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const records = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   // Coverage witnesses: the suite must execute each hook path against its
   // recording fake, rather than passing on a small accidental subset.
-  const required = ['version', 'init', 'whoami', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'mail threads'];
+  const required = ['version', 'init', 'whoami', 'heartbeat', 'team list', 'team invite', 'team invite inspect', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'mail threads', 'who'];
   const observationHome = mkdtempSync(join(tmpdir(), 'aw-capability-'));
   let version, legacyFlag;
   try {

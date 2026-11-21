@@ -291,13 +291,16 @@ test("setup --check-only reports membership of the default team from its root", 
   const fake = fakeAwSetupPath(t, { activeTeam: TEAM });
   const before = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path }), root);
   assert.equal(before.code, 0, before.stderr);
-  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null });
+  assert.deepEqual(checkOnly(before.stdout), { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: false, root: null, roots: [{ label: "root", team: null, home: root, attribution: { outcome: "unavailable", humanId: null, reason: `no aw identity at ${join(root, ".aw")}` }, warnings: [] }] });
   const teamRoot = join(root, ".aweb-roots", "joined");
   mkdirSync(join(teamRoot, ".aw"), { recursive: true });
   writeFileSync(join(teamRoot, ".aw", "teams.json"), JSON.stringify({ active_team: TEAM, memberships: [{ team_id: TEAM }] }));
   const after = await run(["setup", "--check-only", "--json"], deploymentEnv(root, { PATH: fake.path, OATS_SETTINGS: JSON.stringify({ root, roots: { [TEAM]: teamRoot } }) }), root);
   assert.equal(after.code, 0, after.stderr);
-  assert.deepEqual(checkOnly(after.stdout), { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot });
+  const { roots, ...checked } = checkOnly(after.stdout);
+  assert.deepEqual(checked, { aw: { status: "ok", version: "1.36.33" }, defaultTeam: { label: "joined", team: TEAM }, member: true, root: teamRoot });
+  // Human attribution (README): each configured root, read with aw who; neither has a key.
+  assert.deepEqual(roots.map((r) => [r.label, r.team, r.home, r.attribution.outcome, r.warnings]), [["joined", TEAM, teamRoot, "unavailable", []], ["root", null, root, "unavailable", []]]);
 });
 
 test("setup --check-only cannot be combined with an onboarding action", async (t) => {

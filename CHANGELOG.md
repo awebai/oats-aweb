@@ -27,6 +27,33 @@
   refusal still hands the membership to the controller. The provider is
   unchanged; the real-stack journeys now prove both outcomes on aw 1.36.59, and
   a fake-aw test the partial one.
+- **Added: human attribution (aweb-acxy7.7; OATS
+  `docs/design/2026-11-21-human-ids-contract.md`).** The provider reads who
+  stands behind a root or an identity with `aw who --json` and shows it; it adopts
+  nothing and changes no setting. README, "Human attribution".
+  - With a kernel that lists `spawn-attribution`, spawn and each real start record
+    `identity.attribution` in the served identity (`human`, `none` or `unknown`),
+    from one `aw who` bounded at 5 s; a failed read keeps what was recorded.
+  - `setup --check-only --json` gains `roots[]`: each configured root's label,
+    team, home, `attribution {outcome, humanId, reason}` and warnings.
+  - The provider records each root's last verified human in
+    `<deployment>/.oats-aweb/root-lineage.json` and warns
+    `attribution-lineage-missing` at every spawn and check-only while that root
+    reads `unknown` or `no_human`.
+  - A joined team's accept passes `--parent <root>/.aw` for a root a person
+    adopted; on an aw below 1.36.59 that join stops before any invite with
+    `E_ADOPTED_ROOT_AW_TOO_OLD` (upgrade aw to 1.36.59).
+  - `connect` refuses an inviting root with an identity chain
+    (`E_CONNECT_CHAINED_INVITER`) and names the manual route.
+  - A mint aw stops as `native_agent_signature_pending` fails the spawn and keeps
+    the home (`retired: false, reason: "signature-pending"`) while aw holds the
+    pending mint; a plain retire clears it once aw settles it.
+
+  **What a deployment must change:** nothing. Roots with no identity chain behave as
+  before, apart from `attribution: unknown` and the new `roots` entries. A consumer
+  that compares the check-only document's keys exactly sees `roots`.
+  aw-compat.json is unchanged (`tested` moves to 1.36.59 when it is published); CI
+  qualifies 1.36.59-rc.3 by its pinned npm integrity.
 
 ## 1.48.0 — 2026-11-21
 

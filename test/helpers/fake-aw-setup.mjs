@@ -70,6 +70,17 @@ import { fakeAwArgvCheck } from "./aw-argv.mjs";
 //                     available (<reason>)` on stderr, exit 2, nothing written;
 //                     with AW_SIGNUP_WRAPPED the same words inside a registry
 //                     HTTP 500 error, exit 1, as aw prints a server body
+//   who --json        as aw 1.36.58 answers it: AW_WHO_JSON, a JSON object from an identity
+//                     home's path to aw's answer (an object), or {"status": N, "stdout": text};
+//                     any other home answers what aw says of a local did:key with no chain
+//                     (unknown, legacy_no_chain)
+//   AW_SIGNATURE_PENDING=code|error  init --join-from stops before membership as aw does
+//                     for a mint waiting for an agent signature: it writes the member's key,
+//                     hosted-invite-creation.json and pending-hosted-accept, prints aw's
+//                     --json envelope with code native_agent_signature_pending (code; aw
+//                     1.36.59) or the generic error (error; aw 1.36.58) and exits 1
+//   id team members   answered from FAKE_JOIN_FROM_REGISTRY when it is set
+//                     (test/helpers/fake-aw-join-from.mjs membersFake)
 //   AW_INVITE_FAIL    team invite fails with exit 5, printing AW_INVITE_FAIL_STDERR
 //                     (default "403 forbidden") on stderr and AW_INVITE_FAIL_STDOUT,
 //                     when set, on stdout (aw's --json error envelope)
@@ -77,7 +88,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { joinFromFake } from "./fake-aw-join-from.mjs";
+import { joinFromFake, membersFake } from "./fake-aw-join-from.mjs";
 
 const sourceDerived = fileURLToPath(new URL("../fixtures/byot-create/source-derived", import.meta.url));
 
@@ -112,7 +123,20 @@ const stdinToken = readsStdin ? fs.readFileSync(0, "utf8").trim() : undefined;
 fs.appendFileSync(calls, JSON.stringify({ args, cwd: process.cwd(), identityHome, hasApiKey: !!process.env.AWEB_API_KEY, routingEnv: { AWEB_URL: process.env.AWEB_URL, AWID_REGISTRY_URL: process.env.AWID_REGISTRY_URL }, ...(deleting ? { signingKey: fs.existsSync(path.join(awDir, "signing.key")) } : {}), ...(readsStdin ? { stdin: !!stdinToken, stdinSha256: stdinToken ? require("node:crypto").createHash("sha256").update(stdinToken).digest("hex") : null } : {}) }) + "\\n");
 const writeKeys = (dir) => { if (!process.env.AW_FAKE_KEYS) return; fs.mkdirSync(path.join(dir, "encryption-keys"), { recursive: true }); fs.writeFileSync(path.join(dir, "signing.key"), "FIXTURE-PRIVATE-SIGNING-KEY\\n"); fs.writeFileSync(path.join(dir, "encryption-keys", "fixture.x25519.key"), "FIXTURE-PRIVATE-X25519-KEY\\n"); };
 if (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) process.on("exit", (code) => { if (code === 0) writeKeys(awDir); });
+if (args[0] === "init" && args.some((a) => a.startsWith("--join-from")) && process.env.AW_SIGNATURE_PENDING) {
+  const { privateKey } = require("node:crypto").generateKeyPairSync("ed25519");
+  const der = privateKey.export({ format: "der", type: "pkcs8" });
+  fs.mkdirSync(awDir, { recursive: true });
+  fs.writeFileSync(path.join(awDir, "signing.key"), "-----BEGIN ED25519 PRIVATE KEY-----\\n" + Buffer.from(der.subarray(der.length - 32)).toString("base64") + "\\n-----END ED25519 PRIVATE KEY-----\\n", { mode: 0o600 });
+  fs.writeFileSync(path.join(awDir, "hosted-invite-creation.json"), JSON.stringify({ token_hash: "fixture", request_ready: true }));
+  fs.writeFileSync(path.join(awDir, "pending-hosted-accept"), "pending hosted accept\\n");
+  const message = "native agent signature pending; its key and pending invite are retained in " + awDir;
+  console.error(message);
+  console.log(JSON.stringify({ error: { code: process.env.AW_SIGNATURE_PENDING === "code" ? "native_agent_signature_pending" : "error", message } }));
+  process.exit(1);
+}
 (${joinFromFake})(args);
+if (process.env.FAKE_JOIN_FROM_REGISTRY) (${membersFake})(args);
 const teamsFile = path.join(awDir, "teams.json");
 const writeTeams = (team, facts = {}) => { fs.mkdirSync(awDir, { recursive: true }); writeKeys(awDir); fs.writeFileSync(path.join(awDir, "identity.yaml"), "did: did:key:zFixture\\n"); fs.writeFileSync(teamsFile, JSON.stringify({ active_team: team, memberships: [{ team_id: team, ...facts }] })); };
 const flag = (n) => args.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
@@ -196,6 +220,10 @@ if (args[0] === "team" && args[1] === "list" && args.includes("--json")) {
   const team = process.env.AW_FAKE_TEAM || (stdinToken ?? args[3]).replace(/^(?:TOKEN__|SECRET-LOCAL-INVITE__)/, "");
   writeTeams(team, { alias: flag("--name") || "root", identity_scope: "local" });
   console.log(JSON.stringify({ team_id: team, alias: flag("--name") || "root", ...(process.env.AW_ACCEPT_OMIT_SERVICE ? {} : { aweb_url: "https://app.aweb.ai/api" }) }));
+} else if (args[0] === "who") {
+  const answer = JSON.parse(process.env.AW_WHO_JSON || "{}")[awDir];
+  if (answer && answer.status !== undefined) { if (answer.stdout) process.stdout.write(answer.stdout); process.exit(answer.status); }
+  console.log(JSON.stringify(answer || { domain: "", human_id: null, id: "did:key:zFixture", identity_valid: null, kind: null, outcome: "unknown", reason: "legacy_no_chain" }, null, 2));
 } else if (args[0] === "whoami") {
   if (process.env.AW_WHOAMI_FAIL) { console.error("no identity"); process.exit(6); }
   console.log(JSON.stringify({ alias: "fixture", did: "did:key:zFixture" }));

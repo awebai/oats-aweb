@@ -20,6 +20,8 @@ The current decisions and structured signals needed from aw:
 | No published team-server record | Generic `error` with exact `no team server record is published for ...` | Real-aw loopback 404 test. Ask aw for a distinct missing-record code. |
 | Withheld HTTP failure class | `http <status>` then safe `detail`/`detail.code`; register prints the unwrapped `code` | Real-aw register test. Keep HTTP status and bounded code, discard arbitrary body messages. Ask aw for structured server status/code fields on register failures. |
 | Unread count feature | `--count-only` in `mail inbox --help` | Real-aw help test. Ask aw for machine-readable command/feature capabilities. |
+| A mint waiting for an agent signature | `error.code` `native_agent_signature_pending` (aw 1.36.59); on aw 1.36.58 and 1.36.59-rc.3, which answer the generic `error`, a failure after the key was written from a root with an identity chain | The code path is gated on the code, never on a version. `test/human-attribution.test.mjs` (A8) and the kernel's retention, `test/public-kernel-signature-pending.test.mjs`. Remove the fallback when the floor moves to 1.36.59 final. |
+| Who stands behind a root or an identity | `aw who --json`: `outcome`, `human_id`, `reason`, `chain` (aw 1.36.58 and later); exit status and `error.code` only on a failure | `test/human-attribution-native.test.mjs` on every matrix aw. Below aw 1.36.58 there is no `who`: the read gives no answer. |
 | Version gates | `aw <version>` first line | Real-aw version test runs both binding and probe version readers. Ask aw for a JSON version answer. |
 
 The hook's calls affected by these decisions are `init --join-from`,

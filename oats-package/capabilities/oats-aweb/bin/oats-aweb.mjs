@@ -96,6 +96,8 @@ import { registryEnv, registryOrigin as configuredRegistryOrigin, registryMigrat
 import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
+import { querySelectedKernel } from "../lib/session-readiness.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, readWho, signaturePendingHeld, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -1646,8 +1648,13 @@ const defaultRetireMarkerFile = () => join(providerStateDir(), "default-retire.j
  *  failed after aw may have registered the identity, which retire settles. A file of
  *  its own: writeProviderTeamsState rewrites teams.json with only its known fields. */
 const pendingMintFile = () => join(providerStateDir(), "pending-mint.json");
+/** A mint aw stopped as signature pending (README, "Human attribution"): the did:key
+ *  of the key aw kept, aw's code (null for an aw without it) and when. */
+const signaturePendingOf = (v) => v && typeof v === "object" && !Array.isArray(v) && (v.did === null || (typeof v.did === "string" && /^did:key:z[1-9A-HJ-NP-Za-km-z]{1,128}$/.test(v.did)))
+  ? { did: v.did, code: typeof v.code === "string" && /^[a-z_]{1,64}$/.test(v.code) ? v.code : null, at: typeof v.at === "string" ? v.at : null }
+  : undefined;
 const pendingMintOf = (doc) => doc && typeof doc === "object" && typeof doc.team === "string" && validAwebTeamId(doc.team) && typeof doc.alias === "string" && AWEB_ALIAS_RE.test(doc.alias)
-  ? { team: doc.team, alias: doc.alias, root: typeof doc.root === "string" && isAbsolute(doc.root) ? doc.root : null, at: typeof doc.at === "string" ? doc.at : null }
+  ? { team: doc.team, alias: doc.alias, root: typeof doc.root === "string" && isAbsolute(doc.root) ? doc.root : null, at: typeof doc.at === "string" ? doc.at : null, ...(signaturePendingOf(doc.signaturePending) ? { signaturePending: signaturePendingOf(doc.signaturePending) } : {}) }
   : undefined;
 /** `{ intent }`, `{}` when there is none, or `{ problem }` when the file is there and is not one. */
 function readPendingMint() {
@@ -1846,10 +1853,12 @@ function releasePendingJoin(pending, meta, { resumeCommand = `oats aweb leave --
   const { released, receipt } = cleanupJoinedIdentity(settled.joined, meta.alias || instance, home);
   return { meta: next, changed: true, released, receipt };
 }
-function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true }) {
+function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true, parentHome }) {
   if (!token || typeof token !== "string") throw new Error(`aw id team accept-invite received no invite token for ${label}`);
   // The token reaches aw on stdin, never its argv (`--token-stdin`: aw 1.36.33, the provider's floor).
-  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", "--token-stdin", flagEq("--name", requestedAlias), "--local", "--json"]), cwd, JOIN_TIMEOUT_MS, { secrets: [token], secretSafe: true, input: `${token}\n` }), "aw id team accept-invite");
+  // `--parent <root>/.aw` (aw 1.36.59) only for an adopted root: the child is signed
+  // under it on this machine, before membership is submitted (README, "Human attribution").
+  const raw = parseSecretJson(run(awWithIdentity(identityHome, ["id", "team", "accept-invite", "--token-stdin", flagEq("--name", requestedAlias), "--local", ...(parentHome ? [flagEq("--parent", parentHome)] : []), "--json"]), cwd, JOIN_TIMEOUT_MS, { secrets: [token], secretSafe: true, input: `${token}\n` }), "aw id team accept-invite");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`aw id team accept-invite returned no usable result for joined team ${label}`);
   const alias = typeof raw.alias === "string" && AWEB_ALIAS_RE.test(raw.alias) ? raw.alias : requestedAlias;
   const team = typeof raw.team_id === "string" && raw.team_id ? raw.team_id : expectedTeam;
@@ -1916,6 +1925,15 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   }
   const { root, source } = chooseRoot();
   if (!root) throw new Error(joinedTeamRootRefusal(row.team, row.label));
+  // One bounded read of the minting root at join time (README, "Human attribution"):
+  // an adopted root (nearest_human, or C3's record when the read has no answer) joins
+  // with --parent, which needs aw 1.36.59; any other root joins as before.
+  const rootRead = readRoot(root);
+  const parentHome = adoptedRoot(rootRead.observation, rootRead.record) ? join(root, ".aw") : undefined;
+  if (parentHome && !versionAtLeast(spawnAwVersion, ATTRIBUTION_AW)) {
+    throw Object.assign(new Error(`root ${root} for ${row.label} (${row.team}) is adopted by a person, and joining from it needs aw ${ATTRIBUTION_AW} or later; this host has aw ${spawnAwVersion || "of unreadable version"}: upgrade aw to ${ATTRIBUTION_AW} and join again; nothing was minted (${README_ATTRIBUTION})`), { code: ADOPTED_ROOT_AW_TOO_OLD });
+  }
+  const rootNotes = [rootRead.warning, ...rootRead.notes].filter(Boolean);
   let minted;
   try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
   catch (e) {
@@ -1935,7 +1953,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   const hadState = existsSync(providerTeamsFile());
   if (!preexisting) writeProviderTeamsState({ ...meta, pendingJoins: [...pendingJoinsOf(meta), { label: row.label, team: row.team, identityHome, alias, root, at: new Date().toISOString() }] });
   let joined;
-  try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv] })); }
+  try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv], parentHome })); }
   catch (e) {
     if (preexisting) throw e;
     if (holdsIdentity(identityHome)) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
@@ -1944,7 +1962,7 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
     if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });
     throw e;
   }
-  return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true };
+  return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true, ...(rootNotes.length ? { warning: rootNotes.join(" | ") } : {}) };
 }
 const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).some((id) => sameAwebTeamId(String(id), team));
 /** `join --plan`: the root each label's join would mint from, chosen exactly as
@@ -2386,6 +2404,72 @@ function instanceBackend(meta = {}) {
 function primaryIdentityHomeOf(meta = {}) {
   return meta.identity?.mode === "global" && meta.identity?.grant?.id ? priorGrantHome(meta) : join(home, ".aw");
 }
+// Human attribution (README, "Human attribution"; lib/attribution.mjs). Every read
+// is one `aw who --json`, bounded at 5 s, never retried, and never refuses anything.
+/** aw for one P5 read, as the hook runs aw: its runner, cut to the read's bound. */
+const whoRunner = (cwd = home) => (args, timeout) => run(["aw", ...args], cwd, timeout);
+/** The deployment that keeps C3's record, or undefined when it can't be resolved:
+ *  the read still runs, and nothing is recorded or recalled. */
+const lineageDeployment = (explicitDir) => { try { return selectedDeployment(process.env, explicitDir); } catch { return undefined; } };
+/** One bounded P5 read of the root at `rootDir`, with C3's record and warning. */
+const readRoot = (rootDir, { deployment = lineageDeployment(), cwd = home } = {}) => observeRoot({ runAw: whoRunner(cwd), rootDir, deployment, name: rootDir });
+/** Whether the selected kernel serves `attribution` (feature spawn-attribution),
+ *  read at run time, never through compatibility.oats, within `timeout`. */
+function kernelServesAttribution(timeout) {
+  if (!(timeout > 0)) return false;
+  try {
+    const doc = querySelectedKernel(["version", "--json"], { timeout });
+    return Array.isArray(doc?.features) && doc.features.includes(SPAWN_ATTRIBUTION_FEATURE);
+  } catch { return false; }
+}
+/** C1: the served identity's `attribution` from this home's own identity, the
+ *  kernel's feature read and the `who` read within one 5 s bound; `previous` is
+ *  carried forward when aw gives no answer. Undefined when the kernel doesn't
+ *  serve it: the identity is then left as it is. */
+function instanceAttribution(previous) {
+  const deadline = performance.now() + WHO_TIMEOUT_MS, left = () => Math.floor(deadline - performance.now());
+  if (!kernelServesAttribution(left())) return undefined;
+  return attributionFor(readWho(whoRunner(home), join(home, ".aw"), left()), previous);
+}
+const withAttribution = (meta, attribution) => attribution ? { ...meta, identity: { ...meta.identity, attribution } } : meta;
+
+/** C2: one entry per configured root, each `roots[<team id>]` and the shared `root`:
+ *  `{label, team, home, attribution: {outcome, humanId, reason}, warnings}`. `label`
+ *  is the team label that maps to the team when exactly one does, else the team id,
+ *  and `root` for the shared root (team null). `home` is the directory that holds
+ *  `.aw`, as configured. A root is read once however many entries name it; a read
+ *  that gives no answer is `unavailable` with its reason. */
+function checkOnlyRoots({ aw, awUsable, deployment }) {
+  const entries = [];
+  const map = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
+  const rows = (() => { try { return parseOatsTeams(); } catch { return []; } })();
+  for (const [key, dir] of Object.entries(map)) {
+    const named = rows.filter((r) => r.label && r.team && sameAwebTeamId(r.team, key));
+    entries.push({ label: named.length === 1 ? named[0].label : key, team: key, dir });
+  }
+  if (settings.root !== undefined && settings.root !== null && settings.root !== "") entries.push({ label: "root", team: null, dir: settings.root });
+  const reads = new Map();
+  return entries.map(({ label, team, dir }) => {
+    const home = typeof dir === "string" ? dir : null;
+    let read;
+    if (!home || !isAbsolute(home)) read = { observation: { outcome: "unavailable", humanId: null, reason: "the configured root is not an absolute directory" } };
+    else if (!awUsable) read = { observation: { outcome: "unavailable", humanId: null, reason: `aw is not usable here (${aw.status})` } };
+    else {
+      const at = resolve(home);
+      if (!reads.has(at)) {
+        const r = readRoot(at, { deployment, cwd: process.cwd() });
+        for (const note of r.notes) console.error(`oats aweb setup: ${note}`);
+        reads.set(at, r);
+      }
+      read = reads.get(at);
+    }
+    const o = read.observation, warnings = [];
+    if (o.outcome === "nearest_human" && !versionAtLeast(aw.version, ATTRIBUTION_AW)) warnings.push(`spawning from this root needs aw ${ATTRIBUTION_AW} or later, and this host has aw ${aw.version || "of unreadable version"}: upgrade aw before spawning from it (${README_ATTRIBUTION})`);
+    if (read.warning) warnings.push(read.warning);
+    return { label, team, home, attribution: { outcome: o.outcome, humanId: o.humanId ?? null, reason: o.reason ?? null }, warnings };
+  });
+}
+
 /** Keep the host wake broker's registration for this home in step with the
  *  joined teams, and record each joined team's receive mode. Never throws: a
  *  refused registration leaves that team poll-only with a warning. A home that
@@ -2450,6 +2534,9 @@ if (event === "launch") {
   syncPrimaryDelivery(primaryIdentityHomeOf(started), { retained: started.retained === true });
   if (globalLaunch) globalGrantRenew(started, seatRecord);
   let oldMeta = withProviderTeams(started);
+  // C1 at every real start (the preview answered above, before any read): a local
+  // identity in this home's .aw, never a GLOBAL grant seat, which mints from no root.
+  if (!globalLaunch && oldMeta.identity && typeof oldMeta.identity === "object") oldMeta = withAttribution(oldMeta, instanceAttribution(oldMeta.identity.attribution));
   const joined = joinedTeamsOf(oldMeta);
   if (joined.length && process.env.OATS_TEAMS_SOURCE === "live") {
     const eligible = new Set(eligibleTeams().map((t) => t.label));
@@ -2518,6 +2605,10 @@ if (event === "launch") {
     const primary = resolvePrimaryTeam();
     const { team, root } = primary;
     const warnings = [...primary.warnings];
+    // One bounded read of the issuing root before the mint: C3's warning (on every
+    // answer, failure included) and whether a stopped mint came from a chained root.
+    const rootRead = readRoot(root);
+    for (const note of [rootRead.warning, ...rootRead.notes]) if (note) outNotes.push(note);
     // Write-ahead (awebai/oats-aweb#240): aw registers the identity before it
     // writes the binding, and the hook (or aw) can be killed between the two, so
     // the intended mint is on disk before aw starts. Retire finds it there when
@@ -2548,6 +2639,17 @@ if (event === "launch") {
         minted = { team, alias: late };
         dropPendingMint(); // the identity is in this answer's meta, and its binding in the home
         fatal(`aw init --join-from was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
+      }
+      // Signature pending (README, "Human attribution"): aw stopped before membership
+      // and kept the member's key and its pending invite. The home is kept for the
+      // operator: retire answers signature-pending while aw still holds that mint, so
+      // the kernel retains the home, and nothing remints into it. Read from aw's exit
+      // status and error.code only; on an aw without the code (below 1.36.59), its
+      // generic code after a key was written, from a root that isn't chainless.
+      const pendingStop = intent && signaturePendingStop({ status: e.status, stdout: e.stdout, keyWritten: existsSync(join(home, ".aw", "signing.key")), chained: chainedIssuer(rootRead.observation, rootRead.record), awVersion: spawnAwVersion });
+      if (pendingStop) {
+        const kept = writePendingMint({ ...intent, signaturePending: { did: signingDidKey(join(home, ".aw")) ?? null, code: pendingStop.code, at: new Date().toISOString() } });
+        fatal(`signature-pending — the mint stopped before membership (${pendingStop.code || "aw error from a chained root"}); this home, its key and aw's pending invite are kept for the operator, and nothing remints into it; retire it once aw settles the mint (${README_ATTRIBUTION}). Team: ${team}`, { pendingMint: kept });
       }
       // Another agent holds the alias in this team: an instance of that name
       // on another machine, or a retired one whose certificate stays. Say
@@ -2623,6 +2725,8 @@ if (event === "launch") {
     const env = { ...deliveryEnv, ...registryEnv(settings), AWEB_IDENTITY_HOME: localIdentityHome() };
     if (broker) wakeRegister(home, join(home, ".aw"));
     let meta = startedMeta({ team: joined.team_id, alias, delivery: deliveryMode, defaultTeam: { label: primary.label, team: joined.team_id, from: primary.from }, left: [], runtime: process.env.OATS_RUNTIME || "", identity: identityMeta({ mode: "local", alias, team: joined.team_id }) });
+    // C1: the person the new identity traces back to, as aw reads it now.
+    meta = withAttribution(meta, instanceAttribution(undefined));
     for (const row of joinRows) { const result = mintJoinedTeam(row, meta); meta = result.meta; spawnMeta = meta; writeProviderTeamsState(meta); if (result.warning) warnings.push(`oats-aweb: ${result.warning}`); }
     if (joinedTeamsOf(meta).length) { const synced = syncWakeReceive(meta); meta = synced.meta; for (const w of synced.warnings) warnings.push(`oats-aweb: ${w}`); }
     writeProviderTeamsState(meta);
@@ -2643,7 +2747,7 @@ if (event === "launch") {
     const pendingJoins = minted ? readProviderTeamsState().pendingJoins : [];
     // No identity recorded: the mint's intent, while it stands, is what retire acts on.
     const pendingMint = minted ? undefined : readPendingMint().intent;
-    fatal(`identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
+    fatal(`identity minting failed: ${typeof e?.code === "string" && /^E_[A-Z_]+$/.test(e.code) ? `${e.code}: ` : ""}${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
@@ -2852,8 +2956,15 @@ if (event === "launch") {
   // The read a person runs at the root: aw selects its destination there, with
   // admission only from the current operator setting.
   const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
-  const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
+  const retirePendingMint = async ({ team, alias, root: intendedRoot, signaturePending }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
+    // A mint stopped as signature pending is the operator's while aw still holds it
+    // (the same key, its pending invite and any prepared request): an incomplete
+    // cleanup, so the kernel retains the home. Once aw settles it, either way, this
+    // answers what is true below, and a plain retry clears the home.
+    if (signaturePending && signaturePendingHeld(join(home, ".aw"), signaturePending.did)) {
+      await finish({ meta: retiredMeta({ retired: false, reason: "signature-pending", pendingMint: { team, alias, root: intendedRoot, signaturePending } }), warning: said(`signature-pending — the mint of alias "${alias}" in team ${team} is waiting for an agent signature: aw keeps this home's key and its pending invite, so the home is kept; finish the exchange aw printed, or have aw settle the mint, then retire again (${README_ATTRIBUTION})`) }, 1);
+    }
     let root, doc, why;
     try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }
     catch (e) { why = e.message; }
@@ -3071,7 +3182,7 @@ if (event === "launch") {
   };
   const printSteps = () => {
     console.log(`oats aweb connect ${serverId}: ${team ? `team ${team.label} (${team.team})` : "team unknown"}`);
-    for (const s of steps) console.log(`  ${s.step}: ${s.status}${s.detail ? ` — ${s.detail}` : ""}`);
+    for (const s of steps) console.log(`  ${s.step}: ${s.status}${s.detail ? ` — ${s.detail}` : ""}${s.warning ? ` (warning: ${s.warning})` : ""}`);
   };
   const fail = (step, code, detail, remedy) => {
     steps.push({ step, status: "failed", code, detail, ...(remedy ? { remedy } : {}) });
@@ -3128,6 +3239,19 @@ if (event === "launch") {
     fail("invite", "E_TEAM_NOT_MEMBER", `this deployment is not a member of ${team.team}${localRoot ? ` (its root ${localRoot} holds no membership)` : " (it has no root for that team)"}, so it cannot invite ${serverId}`,
       `join ${team.label} here first (${remedyCommand(["setup", "--join", team.label, "--invite-stdin"])}, with an invite from a member on stdin), or ask a member to connect ${serverId}`);
   }
+  // The inviting root, read before any invite is minted (README, "Human attribution"). A
+  // new root on another machine can't join unattended from a chained inviter's invite
+  // (nearest_human or no_human, or C3's record when the read has no answer): aw stops it
+  // as signature pending, and finishing it needs aw's cross-machine file exchange and a
+  // retry with the same invite, which connect never keeps. So connect refuses it.
+  const inviter = readRoot(localRoot, { cwd: process.cwd() });
+  if (chainedInviter(inviter.observation, inviter.record)) {
+    const how = inviter.observation.answered ? `reads ${inviter.observation.outcome}` : `has no answer from aw (${inviter.observation.reason}) and was last verified to ${inviter.record.humanId}`;
+    fail("invite", CONNECT_CHAINED_INVITER, `this deployment's root ${localRoot} for ${team.team} has an identity chain (it ${how}), so a new root on ${serverId} can't join from its invite unattended; nothing was minted`,
+      `the manual route (${README_ATTRIBUTION}): mint an invite from ${localRoot} yourself, accept it on ${serverId}, move the files aw prints between the two hosts, then retry that accept on ${serverId} with the same invite`);
+  }
+  const inviteWarnings = [inviter.warning, ...inviter.notes,
+    ...(!inviter.observation.answered && !inviter.observation.noIdentity && !inviter.record ? [`the inviting root ${localRoot} could not be read (${inviter.observation.reason}), so whether it has an identity chain is unknown; if it has one, the join on ${serverId} stops as signature pending (${README_ATTRIBUTION})`] : [])].filter(Boolean);
   // The token is a variable here and the routed join's stdin, and nothing else: aw's own
   // output is withheld (secretSafe) and the token is dropped as soon as the join returns.
   let token;
@@ -3142,7 +3266,7 @@ if (event === "launch") {
       remedy: `on ${serverId}: \`aw id team request\` (in a new root for ${team.team}); a controller of ${team.team} runs the \`aw id team add-member\` command it prints; then on ${serverId}: \`aw id team fetch-cert\`` });
     skipRest("invite");
   }
-  steps.push({ step: "invite", status: "done" });
+  steps.push({ step: "invite", status: "done", ...(inviteWarnings.length ? { warning: inviteWarnings.join(" | ") } : {}) });
 
   let service;
   try { service = yamlScalar(readFileSync(join(localRoot, ".aw", "workspace.yaml"), "utf8"), "aweb_url"); } catch { /* the host finds its own */ }
@@ -3371,7 +3495,10 @@ ${JSON.stringify(problem.details || {})}`);
         teamRoot = awUsable && team ? awebRootForTeam(team) || null : null;
         if (awUsable) member = !!teamRoot && rootListsTeam(teamRoot, team);
       } catch (e) { member = null; membershipError = e; console.error(`oats aweb setup: ${e.message}`); }
-      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot }));
+      // C2 (README, "Human attribution"): each configured root as aw reads it, with the
+      // aw-version note and C3's warning. Additive; nothing here changes the exit status.
+      const roots = checkOnlyRoots({ aw, awUsable, deployment: lineageDeployment(setupDir) });
+      console.log(JSON.stringify({ aw, defaultTeam: label || team ? { label, team } : null, member, root: teamRoot, roots }));
       process.exit(membershipError || aw.status === "failed" ? 1 : 0);
     }
     if (aw.status === "failed") { console.error(`oats aweb setup: ${aw.detail}`); process.exit(1); }

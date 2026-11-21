@@ -5,6 +5,11 @@
     "command": "mail send",
     "flag": "--new-conversation"
   },
+  "next": {
+    "version": "aw 1.36.59-rc.3\n  commit: d36bfb9de23a0256c1b8721c009ca2895f985064 (github.com/awebai/aw)\n  built:  2026-11-18T07:05:52Z",
+    "command": "id team accept-invite",
+    "flag": "--parent"
+  },
   "commands": {
     "version": {
       "--help": false,
@@ -249,7 +254,8 @@
       "--identity-home": true,
       "--json": false,
       "--server-name": true,
-      "--trace": false
+      "--trace": false,
+      "--parent": true
     },
     "id team register": {
       "--dry-run": false,
@@ -514,6 +520,20 @@
       "--document": true,
       "--help": false,
       "--print-signed": false,
+      "--debug": false,
+      "--human": true,
+      "--human-domain": true,
+      "--identity-home": true,
+      "--json": false,
+      "--server-name": true,
+      "--trace": false
+    },
+    "who": {
+      "--help": false,
+      "--message-id": true,
+      "--registry": true,
+      "--room": false,
+      "--session-id": true,
       "--debug": false,
       "--human": true,
       "--human-domain": true,

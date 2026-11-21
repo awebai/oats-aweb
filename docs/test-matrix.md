@@ -8,10 +8,10 @@ HOME for every group. Tests never select a person's identity or tmux server.
 
 | Group | Versions and prerequisites | What runs |
 | --- | --- | --- |
-| `unit` | aw 1.36.33, 1.36.58, 1.36.59; Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
+| `unit` | aw 1.36.33, 1.36.58, 1.36.59-rc.3 (the next by its pinned npm integrity); Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing, the offline `aw who` read of a chainless root. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
 | `kernel` | OATS v0.70.0 at `7512163012876511088da79168c74540f9523c66`, tested aw, tmux; isolated local Git repositories | Public hostOnly, requirement backends, roots, disposal, registry, preview, runtime, upgrade, tasks and attention contracts. Only disposable kernel deployments are exercised. |
 | `host` | Same pinned kernel and tested aw, tmux on a private socket directory | Native health commands, scheduler and process observations. Identity reads moved to disposable stack journeys. |
-| `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, legacy bare-label grant fill/retire, roster/count, joined and retained seats, the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
+| `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, legacy bare-label grant fill/retire, roster/count, joined and retained seats (a chainless root's join passes no `--parent`; on an aw with it, the parented accept's argv is parsed by the real aw), the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
 | `historical` (manual) | OATS `bb2ba8c9a254edb745913b9c5a9d9b833fda932d` and `e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b` | The retained 0.42/0.47 inventory projection comparison. Those kernels are below the package's supported 0.70 floor, so current CI does not provision them. |
 | `hosted` (acceptance) | Disposable hosted team, pi extension, dashboard token and status API | `health-live.test.mjs`; no Cloud credentials are available to the OSS CI stack. |
 
@@ -56,6 +56,14 @@ Next remains prerelease qualification, not an increase in the tested window.
   unit test pins. `test/mail-read-native.test.mjs` asserts the command is
   absent at the floor and admits every built argv at tested and next. The
   stack journey for `messaging:mail` asserts the refusal at the floor.
+- On aw 1.36.33, `who` does not exist; the guard asserts its absence and
+  excludes it. The provider's reads then answer nothing: C1 keeps what was
+  recorded and check-only reports `unavailable` (README, "Human attribution").
+- Below aw 1.36.59, `id team accept-invite --parent` is excluded only where the
+  real aw lacks it (1.36.33 and 1.36.58; the pinned next, 1.36.59-rc.3, has it):
+  only a join from an adopted root passes it, and that join stops before any
+  invite there with `E_ADOPTED_ROOT_AW_TOO_OLD`. The grammar's `--parent` comes
+  from the next aw (`node scripts/capture-aw-argv.mjs <tested> <floor> <next>`).
 - Status publishing requires aw >=1.36.38. The floor signing test asserts
   that the command is unsupported; it does not skip.
 - The Linux lingering test runs in Linux CI. A local non-Linux package group
@@ -75,7 +83,7 @@ The grant, setup, wake, join-from and mail-read CLI doubles record the hook's bu
 aw runner. This includes `mail send --new-conversation --to --subject
 --body-file`, both `mail show` selectors and its conversation limit, and
 identity-home/team selection. The real help guard requires witnesses for all
-30 recorded command paths and checks every used flag, parsed together.
+31 recorded command paths and checks every used flag, parsed together.
 Appending `--help` proves parse acceptance; it does not exercise required-together
 or mutually exclusive flag groups, or value validation performed by the command.
 Values are never written to the shared recording log. For mail send, the

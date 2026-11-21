@@ -38,6 +38,70 @@ the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
 
+## Human attribution
+
+aw 1.36.59 lets a person adopt a minting root: the root then carries an identity
+chain that ends at that person, and every identity it mints carries the same chain.
+This provider reads that chain with `aw --identity-home <home> who --json` and shows
+it; it never adopts a root, changes a setting or respawns anything. The contract is
+OATS's `docs/design/2026-11-21-human-ids-contract.md`.
+
+- **What a served identity records.** With a kernel that lists the
+  `spawn-attribution` feature (`oats version --json`, read at run time), spawn (after
+  the mint) and each real start record `identity.attribution` in the served identity:
+  `{mode: "human", human: {id, label}, parent: {id}}` for aw's `nearest_human` (the
+  label is the human's id; the parent, the root that minted the identity),
+  `{mode: "none", human: null, parent: null}` for `no_human`, and `mode: "unknown"`
+  for anything else. The read is one `aw who` bounded at 5 s, never retried; a read
+  that fails, times out, answers no JSON or answers `unavailable` keeps what was
+  recorded, or `unknown` when nothing was. A start preview (`OATS_LAUNCH_PREVIEW=1`)
+  reads nothing. Without the feature, nothing is recorded. A GLOBAL grant seat's
+  identity is not read at start.
+- **What `setup --check-only --json` reports.** A `roots` array, one entry per
+  `settings.oats.aweb.roots` entry and one for the shared `root`:
+  `{label, team, home, attribution: {outcome, humanId, reason}, warnings}`. The
+  label is the workspace's team label for that team when exactly one label maps it,
+  else the team id, and `root` for the shared root (whose `team` is `null`). A root
+  that can't be read, an aw without `who` (below 1.36.58) included, is `unavailable`
+  with the reason. A root that reads `nearest_human` on an aw below 1.36.59 has a
+  warning: spawning from it needs that aw.
+- **A root that loses its person.** The provider keeps each root's last verified
+  `nearest_human` in `<deployment>/.oats-aweb/root-lineage.json`, by the root's id
+  and key. While a root it recorded reads `unknown` or `no_human`, every spawn from
+  it and every check-only warns `attribution-lineage-missing`, naming the root, aw's
+  reason and the human it was verified to. A read that is `unavailable` keeps the
+  record and doesn't warn. Nothing is refused for it.
+- **Joined teams.** The join's accept passes `--parent <root>/.aw` only when the
+  team's root reads `nearest_human` (one bounded read at join time; on
+  `unavailable`, the record above decides). A join from an adopted root on an aw
+  below 1.36.59 stops before any `team invite` with `E_ADOPTED_ROOT_AW_TOO_OLD`: the
+  fix is to upgrade aw to 1.36.59.
+- **Connect.** `oats aweb connect` reads the inviting root before it mints. A root
+  with an identity chain (`nearest_human` or `no_human`) is refused with
+  `E_CONNECT_CHAINED_INVITER`, because the host's join would stop as signature
+  pending and connect can't finish it: aw retries that join only with the same
+  invite, which connect never keeps. The manual route: mint an invite from the root
+  yourself, accept it on the host, move the files aw prints between the two hosts,
+  then retry that accept on the host with the same invite. A root that can't be read
+  falls back to the record above; with none, connect goes on with a warning.
+- **A mint waiting for a signature.** When aw stops a mint as
+  `native_agent_signature_pending` (aw 1.36.59), the spawn fails and the home is
+  kept: retire answers `retired: false, reason: "signature-pending"` while aw still
+  holds that exact pending mint (its key, `hosted-invite-creation.json` or
+  `pending-hosted-accept`), and the kernel keeps the home. Once aw settles the mint, a
+  plain `oats retire` clears it. On aw 1.36.58, which has no such code, a failure
+  after the key was written is kept the same way only when the issuing root has an
+  identity chain.
+- **Roots with no chain change nothing.** For a root with no chain (a local
+  `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
+  retire behave as before; the only differences are `attribution` `unknown` and the
+  `roots` entries. For a root under a namespace with no person (`no_human`), nothing
+  changes that aw wouldn't already stop.
+- **Undoing it.** adoption can't be undone on a root; the way out is removing the root from the team and starting a new root
+
+The provider reads only aw's exit status and the `--json` envelope's `error.code`,
+`http_status` and `reason`, never `error.message` or other prose.
+
 ## messaging:mail: an instance's mail, read without acknowledging it
 
 `oats operation run messaging:mail --home <abs> --json` (and `oats aweb mail`
