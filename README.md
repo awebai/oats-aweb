@@ -91,8 +91,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   the same key, with aw's `hosted-invite-creation.json` naming the same invite
   selection and prepared request as when the mint stopped (the provider records a
   digest of the selection and the request's id, never the token or its hash), or its
-  `pending-hosted-accept` marker. Pending files that name another mint, or can't be
-  read, are kept too, as `mint-outcome-unknown`, for the operator to reconcile with
+  `pending-hosted-accept` marker. Pending files that name another mint or can't be
+  read, or a key that is gone or can't be read while they stay, are kept too, as
+  `mint-outcome-unknown`, for the operator to reconcile with
   aw: nothing is settled or deleted on a guess. Once aw settles the mint, a plain
   `oats retire` clears the home. On aw 1.36.58, which has no such code, a failure
   after the key was written is kept the same way only when the issuing root has an

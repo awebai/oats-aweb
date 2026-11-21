@@ -158,12 +158,12 @@ const boundedByHook = ["spawn", "launch", "retire"].includes(process.env.OATS_EV
  *  started. Every aw child of the hook takes its timeout from here. */
 const hookTimeout = (requested) => boundedByHook ? Math.min(requested, Math.floor(HOOK_STARTED_AT + HOOK_BUDGET_MS - performance.now())) : requested;
 const timeoutSignal = boundedByHook ? "SIGKILL" : "SIGTERM";
-const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input, classify } = {}) => {
+const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, failureDetail = false, withhold, env: extraEnv, unsetEnv = [], input, classify, killSignal = timeoutSignal } = {}) => {
   const timeout = hookTimeout(requested);
   try {
     if (timeout <= 0) throw Object.assign(new Error("hook deadline"), { code: "E_HOOK_DEADLINE" });
     const childEnv = childEnvFor({ env: extraEnv, unsetEnv, argv });
-    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, killSignal: timeoutSignal, env: childEnv }).trim();
+    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], ...(input === undefined ? {} : { input }), timeout, killSignal, env: childEnv }).trim();
   } catch (e) {
     // execFileSync puts the WHOLE ARGV in e.message ("Command failed: aw team
     // join <token> …"). This hook's failures are reported by the kernel and land
@@ -270,7 +270,7 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
 /** Fatal for a REQUIRED spawn hook: emit metadata for compensation, then exit
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
-const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
+const fatal = (m, meta, tail = "") => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}${tail}` }, 1);
 /** aw's JSON answer: the whole output, or the JSON from the first line that opens it when aw
  *  prints progress before it. Diagnostics such as gone-workspace checks go to stderr;
  *  trailing stdout text is not a JSON answer. */
@@ -1937,39 +1937,45 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   // with --parent, which needs aw 1.36.59; any other root joins as before.
   const rootRead = readRoot(root);
   const parentHome = adoptedRoot(rootRead.observation, rootRead.record) ? join(root, ".aw") : undefined;
-  if (parentHome && !versionAtLeast(spawnAwVersion, ATTRIBUTION_AW)) {
-    throw Object.assign(new Error(`root ${root} for ${row.label} (${row.team}) is adopted by a person, and joining from it needs aw ${ATTRIBUTION_AW} or later; this host has aw ${spawnAwVersion || "of unreadable version"}: upgrade aw to ${ATTRIBUTION_AW} and join again; nothing was minted (${README_ATTRIBUTION})`), { code: ADOPTED_ROOT_AW_TOO_OLD });
-  }
+  // The root's own warnings (C3's) are said whether or not this join completes.
   const rootNotes = [rootRead.warning, ...rootRead.notes].filter(Boolean);
-  let minted;
-  try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
-  catch (e) {
-    // aw's own output stays withheld (it can hold a token); the failure says
-    // which root and setting minted, the class of the cause and where to look.
-    // A spawn-time join has no home yet to run --plan from: the root and its setting are enough.
-    throw new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`);
-  }
-  const inv = parseSecretJson(minted, "aw team invite");
-  if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
-  const alias = instance || meta.alias;
-  // Write-ahead: the intended join is on disk before aw accepts it, so a hook
-  // killed after the accept leaves it for the next join, leave or retire.
-  // An identity already in the home is not this join's (aw refuses to
-  // overwrite it), so it is never recorded as one to settle.
-  const preexisting = holdsIdentity(identityHome);
-  const hadState = existsSync(providerTeamsFile());
-  if (!preexisting) writeProviderTeamsState({ ...meta, pendingJoins: [...pendingJoinsOf(meta), { label: row.label, team: row.team, identityHome, alias, root, at: new Date().toISOString() }] });
-  let joined;
-  try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv], parentHome })); }
-  catch (e) {
-    if (preexisting) throw e;
-    if (holdsIdentity(identityHome)) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
-    // Confirmed: aw left no identity, so nothing was joined and nothing needs releasing.
-    try { rmdirSync(identityHome); } catch { /* never created, or holds what is not an identity */ }
-    if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });
-    throw e;
-  }
-  return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true, ...(rootNotes.length ? { warning: rootNotes.join(" | ") } : {}) };
+  // `rootNotes` and `baseMessage` let a spawn keep its 300-character cap on the
+  // failure itself and still say the root's warnings, which hold no aw output.
+  const withRootNotes = (e) => rootNotes.length ? Object.assign(e instanceof Error ? e : new Error(String(e)), { baseMessage: e?.message || String(e), rootNotes, message: `${e?.message || e} | ${rootNotes.join(" | ")}` }) : e;
+  try {
+    if (parentHome && !versionAtLeast(spawnAwVersion, ATTRIBUTION_AW)) {
+      throw Object.assign(new Error(`root ${root} for ${row.label} (${row.team}) is adopted by a person, and joining from it needs aw ${ATTRIBUTION_AW} or later; this host has aw ${spawnAwVersion || "of unreadable version"}: upgrade aw to ${ATTRIBUTION_AW} and join again; nothing was minted (${README_ATTRIBUTION})`), { code: ADOPTED_ROOT_AW_TOO_OLD });
+    }
+    let minted;
+    try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
+    catch (e) {
+      // aw's own output stays withheld (it can hold a token); the failure says
+      // which root and setting minted, the class of the cause and where to look.
+      // A spawn-time join has no home yet to run --plan from: the root and its setting are enough.
+      throw new Error(`${e.message || e}; nothing was joined; ${current ? `check with oats aweb join --labels ${row.label} --plan; ` : ""}root ${root} (from ${source})`);
+    }
+    const inv = parseSecretJson(minted, "aw team invite");
+    if (!inv?.token || typeof inv.token !== "string") throw new Error(`aw team invite returned no usable token for ${row.label}`);
+    const alias = instance || meta.alias;
+    // Write-ahead: the intended join is on disk before aw accepts it, so a hook
+    // killed after the accept leaves it for the next join, leave or retire.
+    // An identity already in the home is not this join's (aw refuses to
+    // overwrite it), so it is never recorded as one to settle.
+    const preexisting = holdsIdentity(identityHome);
+    const hadState = existsSync(providerTeamsFile());
+    if (!preexisting) writeProviderTeamsState({ ...meta, pendingJoins: [...pendingJoinsOf(meta), { label: row.label, team: row.team, identityHome, alias, root, at: new Date().toISOString() }] });
+    let joined;
+    try { ({ joined } = acceptConnectVerifyJoinedTeam({ label: row.label, token: inv.token, identityHome, alias, expectedTeam: row.team, root, cwd: home, serviceDocs: [inv], parentHome })); }
+    catch (e) {
+      if (preexisting) throw e;
+      if (holdsIdentity(identityHome)) throw new Error(`${e.message || e}; the join of ${row.label} stays recorded as unfinished: ${unfinishedJoinFix(row.label)}`);
+      // Confirmed: aw left no identity, so nothing was joined and nothing needs releasing.
+      try { rmdirSync(identityHome); } catch { /* never created, or holds what is not an identity */ }
+      if (hadState) writeProviderTeamsState(meta); else rmSync(providerTeamsFile(), { force: true });
+      throw e;
+    }
+    return { meta: { ...meta, joinedTeams: [...joinedTeamsOf(meta), joined] }, joined, changed: true, ...(rootNotes.length ? { warning: rootNotes.join(" | ") } : {}) };
+  } catch (e) { throw withRootNotes(e); }
 }
 const rootListsTeam = (root, team) => teamIdsOf(readTeamsAt(root)).some((id) => sameAwebTeamId(String(id), team));
 /** `join --plan`: the root each label's join would mint from, chosen exactly as
@@ -2414,7 +2420,9 @@ function primaryIdentityHomeOf(meta = {}) {
 // Human attribution (README, "Human attribution"; lib/attribution.mjs). Every read
 // is one `aw who --json`, bounded at 5 s, never retried, and never refuses anything.
 /** aw for one P5 read, as the hook runs aw: its runner, cut to the read's bound. */
-const whoRunner = (cwd = home) => (args, timeout) => run(["aw", ...args], cwd, timeout);
+// SIGKILL in every event: the read's 5 s bound holds for setup, connect and join
+// too, whatever a child does with SIGTERM.
+const whoRunner = (cwd = home) => (args, timeout) => run(["aw", ...args], cwd, timeout, { killSignal: "SIGKILL" });
 /** The deployment that keeps C3's record, or undefined when it can't be resolved:
  *  the read still runs, and nothing is recorded or recalled. */
 const lineageDeployment = (explicitDir) => { try { return selectedDeployment(process.env, explicitDir); } catch { return undefined; } };
@@ -2756,7 +2764,7 @@ if (event === "launch") {
     const pendingJoins = minted ? readProviderTeamsState().pendingJoins : [];
     // No identity recorded: the mint's intent, while it stands, is what retire acts on.
     const pendingMint = minted ? undefined : readPendingMint().intent;
-    fatal(`identity minting failed: ${typeof e?.code === "string" && /^E_[A-Z_]+$/.test(e.code) ? `${e.code}: ` : ""}${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
+    fatal(`identity minting failed: ${typeof e?.code === "string" && /^E_[A-Z_]+$/.test(e.code) ? `${e.code}: ` : ""}${e.baseMessage || e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined), Array.isArray(e?.rootNotes) && e.rootNotes.length ? ` | ${e.rootNotes.join(" | ")}` : "");
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));

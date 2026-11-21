@@ -195,7 +195,16 @@ export function recordLineage(deployment, entry, { lockWaitMs = LINEAGE_LOCK_WAI
 
 /** The did:key of `<identityHome>/signing.key`, or undefined. */
 export function signingDidKey(identityHome) {
-  try { return didKeyOfSigningKey(readFileSync(join(identityHome, "signing.key"), "utf8")); } catch { return undefined; }
+  const read = signingKeyRead(identityHome);
+  return read.did;
+}
+/** `<identityHome>/signing.key` read: `{did}`, `{missing: true}` when there is none,
+ *  or `{unreadable: true}` when it is there and can't be read or parsed. */
+export function signingKeyRead(identityHome) {
+  let text;
+  try { text = readFileSync(join(identityHome, "signing.key"), "utf8"); }
+  catch (e) { return e?.code === "ENOENT" || e?.code === "ENOTDIR" ? { missing: true } : { unreadable: true }; }
+  try { const did = didKeyOfSigningKey(text); return did ? { did } : { unreadable: true }; } catch { return { unreadable: true }; }
 }
 
 /** C3's warning for a root with a record that now reads unknown or no_human, or undefined. */
@@ -273,9 +282,13 @@ export function pendingMintBinding(identityHome) {
  *  pending files are there but name another mint or can't be read, which is kept
  *  for the operator, never settled or deleted on a guess. */
 export function signaturePendingState(identityHome, { did, binding } = {}) {
-  if (!did || signingDidKey(identityHome) !== did) return { state: "settled" };
-  if (["identity.yaml", "workspace.yaml"].some((name) => existsSync(join(identityHome, name)))) return { state: "settled" };
   const present = PENDING_MINT_FILES.filter((name) => existsSync(join(identityHome, name)));
+  const key = signingKeyRead(identityHome);
+  // A key that can't be established while aw's pending files remain is never a
+  // settled one: kept, as is a stop whose key couldn't be read then.
+  if (present.length && (!key.did || !did)) return { state: "changed", cause: !did ? "the key aw kept could not be read when the mint stopped" : key.missing ? "the key aw kept is gone while its pending files stay" : "the key aw kept can't be read now" };
+  if (!did || key.did !== did) return { state: "settled" };
+  if (["identity.yaml", "workspace.yaml"].some((name) => existsSync(join(identityHome, name)))) return { state: "settled" };
   if (!present.length) return { state: "settled" };
   if (present.includes(PENDING_MINT_FILES[1])) {
     let body;
