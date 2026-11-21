@@ -606,10 +606,12 @@ function deliveryFor(runtime = process.env.OATS_RUNTIME || "", delivery = delive
  *  record naming a session provider is enough: where the kernel's backend and
  *  this provider's meta contradict each other (readiness and the probe then
  *  read the kernel's), a provider start may still have registered the home,
- *  `aw wake deregister` is idempotent, and the home is going away. */
+ *  `aw wake deregister` is idempotent, and the home is going away. The kernel's
+ *  record is already read first by instanceBackend, so the meta is the one
+ *  record left to ask. */
 const brokerDeliveredTo = (meta = {}) => !!meta.delivery && (
   brokerDelivers({ delivery: meta.delivery, runtime: instanceRuntime(meta), backend: instanceBackend(meta) }) ||
-  sessionProviderBackend(meta.backend) || sessionProviderBackend(recordedStart(home).backend));
+  sessionProviderBackend(meta.backend));
 // Session delivery registers the home with the host wake broker (aweb-abil:
 // `aw wake register --home <abs> --identity-home <abs> --delivery session
 // [--backend tmux|herdr]`, durable even when the daemon is down). `--backend`

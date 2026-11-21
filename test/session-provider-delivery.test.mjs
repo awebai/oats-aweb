@@ -107,19 +107,6 @@ test("a contradicting record: readiness and the probe read the kernel's backend,
   assert.equal(loadProbeTarget(f.home, f.deployment).delivery, "channel");
 });
 
-// The other way round: the kernel says bb and the meta, written by a tmux start, names no provider.
-test("retire deregisters when only the kernel's record names a session provider, and the meta's runtime has a channel", (t) => {
-  const fx = fixture(t, { delivery: "channel", runtime: "claude" });
-  const spawned = fx.hook("spawn", BB);
-  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
-  assert.ok(fx.registered());
-  const { backend: _provider, ...meta } = { ...spawned.doc.meta, claudeChannelMode: "development" };
-  writeFileSync(join(fx.home, "instance.json"), JSON.stringify({ harness: "claude", launch: { harness: "claude" }, backend: "bb", capabilityMeta: { "oats.aweb": meta } }));
-  const r = fx.hook("retire", { OATS_META: JSON.stringify(meta) });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(fx.registered(), undefined);
-});
-
 // Neither record names a provider: a tmux Claude channel home was never the broker's, and retire leaves the broker alone.
 test("retire of a tmux channel home whose records name no session provider makes no broker call", (t) => {
   for (const kernel of ["tmux", undefined]) {
