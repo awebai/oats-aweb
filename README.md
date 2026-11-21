@@ -113,12 +113,13 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   `.aweb-identity`, `.aweb-identity-*` among them), in a symlink's target inside the
   home, or in any identity home a record names inside the home (the meta's grant home
   and joined or pending-join homes, and those `teams.json` names, read at that
-  moment), which covers every place aw writes: aw writes only at the
-  `--identity-home` it's given (or one of them
-  can't be inspected), an answer that would let the kernel remove the home
+  moment), or one of them can't be inspected, an answer that would let the kernel
+  remove the home
   (`retired: true`, `nothing-to-delete`, or a plain exit 0) becomes `retired: false`,
   `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle
-  above, of `<home>/.aw` alone. Every delete retire makes before it answers makes the
+  above, of `<home>/.aw` alone. That covers every place aw writes: aw writes only at
+  the `--identity-home` it's given, which the provider takes from those records. No
+  deeper scan is made. Every delete retire makes before it answers makes the
   same check first and leaves such a directory in place: a global seat's grant-home
   cleanup, a joined team's leave and a pending join's settlement. A record retire
   reasons about (the record of adoptions, the provider's record of an interrupted
