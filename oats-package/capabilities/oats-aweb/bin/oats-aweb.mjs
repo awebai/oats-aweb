@@ -67,7 +67,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { awChildEnv } from "../lib/aw-child-env.mjs";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
-import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
+import { join, basename, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
@@ -257,9 +257,48 @@ if (operation) {
     if (!code) process.exitCode = 1;
   });
 }
+/** Set only when retire's one retention decision settled the mint in <home>/.aw under
+ *  rule (b), its issuer shown genuinely chainless (#240): the one settle the retire
+ *  choke point lets through while aw's pending files are in that home. */
+let retireChainlessSettle = false;
+/** The identity homes of `dir` where aw holds a pending mint (README, "Human
+ *  attribution"): `.aw` and each `.aweb-identity-*` entry holding either of aw's pending
+ *  files, and any entry that can't be inspected. Read from the directory itself; a
+ *  `.aweb-identity-*` symlink or file is never followed. */
+function identityHomesHeldByAw(dir) {
+  const held = pendingMintFilesIn(join(dir, ".aw")).length ? [".aw"] : [];
+  let names;
+  try { names = readdirSync(dir); }
+  catch (e) { return e?.code === "ENOENT" ? held : [...held, `${dir} (it can't be listed)`]; }
+  for (const name of names.filter((n) => n.startsWith(".aweb-identity-"))) {
+    let entry;
+    try { entry = lstatSync(join(dir, name)); }
+    catch (e) { if (e?.code !== "ENOENT") held.push(`${name} (it can't be inspected)`); continue; }
+    if (entry.isDirectory() && pendingMintFilesIn(join(dir, name)).length) held.push(name);
+  }
+  return held;
+}
+/** The retire choke point (README, "Human attribution"): every answer of the retire
+ *  hook passes here on its way out. One that would let the kernel delete the home
+ *  (retired: true, nothing-to-delete, or an exit 0 that says no incomplete cleanup)
+ *  is kept instead, retired: false, mint-outcome-unknown, status 1, while aw holds a
+ *  pending mint in any of its identity homes; the one exception is rule (b)'s settle
+ *  of <home>/.aw, with no other identity home held. */
+function retireChokePoint(o, code) {
+  const meta = o?.meta && typeof o.meta === "object" ? o.meta : undefined;
+  const incomplete = !!meta && meta.retired === false && meta.reason !== "nothing-to-delete";
+  const deletes = !incomplete && (code === 0 || meta?.retired === true || meta?.reason === "nothing-to-delete");
+  if (!deletes) return { o, code };
+  const held = identityHomesHeldByAw(home);
+  if (!held.length || (retireChainlessSettle && held.length === 1 && held[0] === ".aw")) return { o, code };
+  const carried = ["joinedTeams", "pendingJoins", "pendingControllerCleanup", "pendingMint", "failedLeaves", "identity", "grant"].filter((k) => meta?.[k] !== undefined);
+  const was = meta?.retired === true ? "retired: true" : meta?.reason === "nothing-to-delete" ? "nothing-to-delete" : "a completed cleanup";
+  return { code: 1, o: { ...o, meta: { ...Object.fromEntries(carried.map((k) => [k, meta[k]])), retired: false, reason: "mint-outcome-unknown" }, warning: [o?.warning, `oats-aweb: aw still holds a pending mint in ${held.join(", ")} of ${home}, so retire keeps this home instead of answering ${was}; finish or settle it with aw, then retire again (${README_ATTRIBUTION})`].filter(Boolean).join(" | ") } };
+}
 /** Notes a start or retire adds to whatever it answers (its grant sweep). */
 const outNotes = [];
 const out = (o, code = 0) => {
+  if ((process.env.OATS_EVENT || process.argv[2]) === "retire") ({ o, code } = retireChokePoint(o, code));
   if (outNotes.length) o = { ...o, warning: [o?.warning, ...outNotes.map((n) => `oats-aweb: ${n}`)].filter(Boolean).join(" | ") };
   if (o?.launch?.claude) o = withChannelModeWarning(o);
   if (operation) operationFail("E_OPERATION_FAILED", String(o?.warning || o?.problems?.[0]?.message || "failed").replace(/^oats-aweb: /, ""));
@@ -1833,19 +1872,12 @@ const awHoldsJoinedPendingMint = (identityHome) => {
   const files = pendingMintFilesIn(identityHome);
   return files.includes(PENDING_MINT_FILES[0]) || (files.length > 0 && !holdsIdentity(identityHome));
 };
-/** The home's own .aweb-identity-* entries where aw holds a pending mint, or that
- *  can't be inspected. Read from the directory itself, never from the provider's
- *  records; a symlink or a file is never followed. */
-function joinedHomesHeldByAw() {
-  let names;
-  try { names = readdirSync(home); } catch { return [`${home} (can't be listed)`]; }
-  const held = [];
-  for (const name of names.filter((n) => n.startsWith(".aweb-identity-"))) {
-    let entry;
-    try { entry = lstatSync(join(home, name)); } catch { held.push(`${name} (can't be inspected)`); continue; }
-    if (entry.isDirectory() && awHoldsJoinedPendingMint(join(home, name))) held.push(name);
-  }
-  return held;
+/** The home's own .aweb-identity-* entries where aw holds a pending mint (either of its
+ *  pending files), or that can't be inspected, other than those the provider's usable
+ *  records name: those go through their own leave, with its own recovery (#217). The
+ *  retire choke point keeps the home for any of them. */
+function joinedHomesHeldByAw(recorded) {
+  return identityHomesHeldByAw(home).filter((name) => name !== ".aw" && !recorded.has(name));
 }
 const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to finish it or oats aweb leave --labels ${label} to release it`;
 /** What a pending join left in its identity home (awebai/oats-aweb#217):
@@ -2810,6 +2842,8 @@ if (event === "launch") {
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
+  // Only the boolean true records a retained seat: any other value records none.
+  if (meta.retained !== undefined && meta.retained !== true) { const { retained: _notBoolean, ...rest } = meta; meta = rest; }
   const retireWarnings = [];
   // Use the selected kernel and authoritative hook scope; no event-log writes
   // or inherited instance selectors. Clear even on an incomplete retirement.
@@ -2880,10 +2914,11 @@ if (event === "launch") {
     }
     out(o, code);
   };
-  // The home-level retention fence (README, "Human attribution"), before anything
-  // reads the provider's records: a joined identity home where aw holds a pending
-  // mint keeps the whole home, whatever those records say.
-  const heldJoined = joinedHomesHeldByAw();
+  // The home-level retention fence (README, "Human attribution"), before anything is
+  // released: a joined identity home where aw holds a pending mint and that no usable
+  // record names keeps the whole home. A recorded one goes through its own leave
+  // below; the retire choke point (retireChokePoint) keeps the home for either.
+  const heldJoined = joinedHomesHeldByAw(new Set([...joinedTeamsOf(meta), ...pendingJoinsOf(meta)].filter((e) => dirname(e.identityHome) === home).map((e) => basename(e.identityHome))));
   if (heldJoined.length) {
     await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `aw holds a pending mint in ${heldJoined.join(", ")} of ${home}, so nothing was released and the home is kept; finish the exchange aw printed, or have aw settle it, then retire again (${README_ATTRIBUTION})`].join(" | ")}` }, 1);
   }
@@ -3027,6 +3062,7 @@ if (event === "launch") {
       return lineageRead === true && observation.answered && observation.outcome === "unknown" && observation.reason === "legacy_no_chain" && !record;
     };
     const retention = pendingMintRetention(join(home, ".aw"), { signaturePending, issuerChainless });
+    if (retention.chainlessIssuer) retireChainlessSettle = true;
     if (retention.keep === "signature-pending") {
       await finish({ meta: retiredMeta({ retired: false, reason: "signature-pending", pendingMint: { team, alias, root: intendedRoot, signaturePending, ...(issuer ? { issuer } : {}) } }), warning: said(`signature-pending — the mint of alias "${alias}" in team ${team} is waiting for an agent signature: aw keeps this home's key and its pending invite, so the home is kept; finish the exchange aw printed, or have aw settle the mint, then retire again (${README_ATTRIBUTION})`) }, 1);
     }

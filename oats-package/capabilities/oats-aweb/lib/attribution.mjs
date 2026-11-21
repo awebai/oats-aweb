@@ -320,7 +320,9 @@ function exactPendingMint(identityHome, present, { did, binding, invalid }) {
  *  keeping it is wrong: (a) aw holds no pending mint in `identityHome` (none of its
  *  pending files is there), or (b) no signature-pending stop was recorded and the
  *  issuing root is genuinely chainless (`issuerChainless()`: P5 reads unknown /
- *  legacy_no_chain, with no C3 record), aw's #240 behaviour. Otherwise the home is
+ *  legacy_no_chain, with no C3 record), aw's #240 behaviour, answered as
+ *  `{settle: true, chainlessIssuer: true}`: the one settle retire's choke point lets
+ *  through while aw's pending files are in that home. Otherwise the home is
  *  kept: `{keep: "signature-pending"}` for the exact recorded mint, else
  *  `{keep: "mint-outcome-unknown", cause}`. `signaturePending` is the recorded stop,
  *  undefined when none was recorded. */
@@ -328,7 +330,7 @@ export function pendingMintRetention(identityHome, { signaturePending, issuerCha
   const present = pendingMintFilesIn(identityHome);
   if (!present.length) return { settle: true };
   if (!signaturePending) {
-    if (issuerChainless()) return { settle: true };
+    if (issuerChainless()) return { settle: true, chainlessIssuer: true };
     return { keep: "mint-outcome-unknown", cause: "its issuing root isn't shown to be that same root, genuinely chainless" };
   }
   const match = exactPendingMint(identityHome, present, signaturePending);

@@ -824,8 +824,8 @@ test("retention fence, joined teams: an accept aw leaves signature pending in .a
   const retire = () => fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
   const kept = retire();
   assert.notEqual(kept.status, 0, kept.stdout + kept.stderr);
-  assert.match(kept.doc.warning, /aw holds a pending mint in \.aweb-identity-joined of .*, so nothing was released and the home is kept/);
-  assert.equal(kept.doc.meta.reason, "mint-outcome-unknown");
+  assert.match(kept.doc.warning, /signature pending: aw holds the pending mint of the join of joined/);
+  assert.equal(kept.doc.meta.retired, false);
   for (const f of awFiles) assert.ok(existsSync(join(joinedHome, f)), `${f} kept by retire`);
   assert.equal(fx.fake.calls().filter((c) => c.identityHome === joinedHome && c.args.includes("delete")).length, 0, "nothing released");
   const left = fx.run(["leave", "--labels", "joined"]);
@@ -862,9 +862,10 @@ test("home-level fence: a joined home aw holds is found from the directory, what
     const spawned = fx.run(["spawn"]);
     spoil(fx);
     const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(meta(spawned)) } });
-    assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, "mint-outcome-unknown"], name);
-    assert.match(r.doc.warning, /aw holds a pending mint in \.aweb-identity-joined/, name);
-    assert.equal(fx.fake.calls().filter((c) => c.args.includes("delete")).length, 0, `${name}: no self-delete, no leave`);
+    // The mirror names it: its own leave keeps it. No record: the home-level fence does.
+    assert.deepEqual([r.status, r.doc.meta.retired], [1, false], name);
+    assert.match(r.doc.warning, /aw holds (a|the) pending mint (in \.aweb-identity-joined|of the join of joined)/, name);
+    assert.equal(fx.fake.calls().filter((c) => c.identityHome === join(fx.home, ".aweb-identity-joined") && c.args.includes("delete")).length, 0, `${name}: nothing released from the joined home`);
     assert.ok(existsSync(join(fx.home, ".aweb-identity-joined", "hosted-invite-creation.json")), name);
   }
   // A symlink at that name is never followed: what it points at is not this home's.
@@ -898,6 +899,42 @@ test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainle
   const { issuer: _metaIssuer, ...unboundMeta } = older.doc.meta.pendingMint;
   const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
   assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], "no issuer binding");
+});
+
+test("retire choke point: no answer lets the kernel delete a home where aw holds a pending file, whichever branch gives it", (t) => {
+  const pendingIn = (dir) => spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(dir)})`]);
+  // A joined home holding only a key and aw's marker (an interrupted hosted accept), no record of it.
+  const fx = fixture(t);
+  const primary = fx.run(["spawn"]);
+  assert.equal(primary.status, 0);
+  const joined = join(fx.home, ".aweb-identity-joined");
+  writeKey(joined);
+  writeFileSync(join(joined, "pending-hosted-accept"), "pending hosted accept\n");
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(primary.doc.meta) } });
+  assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, "mint-outcome-unknown"], r.stdout + r.stderr);
+  assert.match(r.doc.warning, /aw holds a pending mint in \.aweb-identity-joined of /);
+  assert.ok(existsSync(join(joined, "pending-hosted-accept")) && existsSync(join(joined, "signing.key")));
+  // A retained seat's branch, by a record of the wrong type or the boolean itself.
+  for (const retained of ["false", true]) {
+    const fy = fixture(t);
+    fy.fake.set({ version: "1.36.59", signaturePending: "code" });
+    const stopped = fy.run(["spawn"]);
+    assert.equal(stopped.status, 1);
+    const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...stopped.doc.meta, retained }) } });
+    assert.deepEqual([k.status, k.doc.meta.retired], [1, false], `retained ${JSON.stringify(retained)}: ${k.stdout}${k.stderr}`);
+    for (const f of ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"]) assert.ok(existsSync(join(fy.home, ".aw", f)), `retained ${JSON.stringify(retained)}: ${f} kept`);
+  }
+  // Rule (b) settles <home>/.aw alone: a held joined home keeps the home all the same.
+  const fz = fixture(t);
+  fz.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fz.rootHome]: chainless(fz.rootKey) } });
+  const spawned = fz.run(["spawn"]);
+  pendingIn(join(fz.home, ".aweb-identity-other"));
+  const z = fz.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  assert.deepEqual([z.status, z.doc.meta.retired, z.doc.meta.reason], [1, false, "mint-outcome-unknown"], z.stdout + z.stderr);
+  assert.match(z.doc.warning, /\.aweb-identity-other/);
+  rmSync(join(fz.home, ".aweb-identity-other"), { recursive: true });
+  const settled = fz.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  assert.deepEqual([settled.status, settled.doc.meta.reason], [0, "nothing-to-delete"], "rule (b) alone settles, as #240");
 });
 
 test("retention invariant: an unreadable C3 record never shows a root chainless", (t) => {

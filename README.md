@@ -105,7 +105,15 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   (`<home>/.aweb-identity-<label>`), where aw can leave a `--parent` accept signature
   pending: retire looks at those directories themselves, whatever the provider's
   records say, and a join, leave or retire releases nothing from one aw holds; its
-  pending join stays recorded until aw settles it. Anything else is kept, with exit status 1 and
+  pending join stays recorded until aw settles it. A joined accept that aw cut off
+  after storing its certificate but before removing its marker is kept by retire
+  too; `oats aweb leave` or `join` settles it as before. Whatever path retire takes,
+  its answer passes one last check on the way out: while either of aw's pending files
+  is in `<home>/.aw` or in any `<home>/.aweb-identity-*` directory (or one of them
+  can't be inspected), an answer that would let the kernel remove the home
+  (`retired: true`, `nothing-to-delete`, or a plain exit 0) becomes `retired: false`,
+  `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle
+  above, of `<home>/.aw` alone. Anything else is kept, with exit status 1 and
   `retired: false` in the
   meta, which the kernel reads as an incomplete cleanup: it keeps the home and marks
   it `.oats-rollback-incomplete.json`. The reason is `signature-pending` for the exact
