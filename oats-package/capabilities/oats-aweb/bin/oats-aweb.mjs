@@ -1662,8 +1662,13 @@ const signaturePendingOf = (v) => v && typeof v === "object" && !Array.isArray(v
   : undefined;
 // A record that names a signature-pending stop it can't be read back as is kept as
 // one (`invalid`): never downgraded to an ordinary pending mint, which retire settles.
+/** The root that issued a recorded mint, as spawn read it before the mint: its
+ *  signing did:key and, when aw answered, its who id. */
+const issuerOf = (v) => v && typeof v === "object" && !Array.isArray(v) && typeof v.key === "string" && /^did:key:z[1-9A-HJ-NP-Za-km-z]{1,128}$/.test(v.key)
+  ? { key: v.key, id: typeof v.id === "string" && v.id.length <= 512 && !/[\u0000-\u001f]/.test(v.id) ? v.id : null }
+  : undefined;
 const pendingMintOf = (doc) => doc && typeof doc === "object" && typeof doc.team === "string" && validAwebTeamId(doc.team) && typeof doc.alias === "string" && AWEB_ALIAS_RE.test(doc.alias)
-  ? { team: doc.team, alias: doc.alias, root: typeof doc.root === "string" && isAbsolute(doc.root) ? doc.root : null, at: typeof doc.at === "string" ? doc.at : null, ...(doc.signaturePending === undefined ? {} : { signaturePending: signaturePendingOf(doc.signaturePending) ?? { did: null, code: null, at: null, binding: { unreadable: true }, invalid: true } }) }
+  ? { team: doc.team, alias: doc.alias, root: typeof doc.root === "string" && isAbsolute(doc.root) ? doc.root : null, at: typeof doc.at === "string" ? doc.at : null, ...(issuerOf(doc.issuer) ? { issuer: issuerOf(doc.issuer) } : {}), ...(doc.signaturePending === undefined ? {} : { signaturePending: signaturePendingOf(doc.signaturePending) ?? { did: null, code: null, at: null, binding: { unreadable: true }, invalid: true } }) }
   : undefined;
 /** `{ intent }`, `{}` when there is none, or `{ problem }` when the file is there and is not one. */
 function readPendingMint() {
@@ -1713,6 +1718,9 @@ function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReaso
 function readProviderTeamsState(meta = {}) {
   try {
     const doc = JSON.parse(readFileSync(providerTeamsFile(), "utf8"));
+    // A document of the wrong shape is unusable, never an empty inventory: the meta's
+    // mirror answers instead (README, "Human attribution").
+    if (!doc || typeof doc !== "object" || Array.isArray(doc) || ["joinedTeams", "pendingJoins", "left"].some((k) => doc[k] !== undefined && !Array.isArray(doc[k]))) throw new Error("unusable");
     return { joinedTeams: joinedTeamsOf(doc), wakeJoined: doc.wakeJoined === true, left: leftTeamsOf(doc), pendingJoins: pendingJoinsOf(doc) };
   } catch { return { joinedTeams: joinedTeamsOf(meta), wakeJoined: meta.wakeJoined === true, left: leftTeamsOf(meta), pendingJoins: pendingJoinsOf(meta) }; }
 }
@@ -1818,6 +1826,27 @@ function connectJoinedWorkspace({ label, team, identityHome, root, cwd = home, s
 const HOSTED_ACCEPT_PENDING_MARKER = "pending-hosted-accept";
 /** Whether aw wrote an identity into this home: any of the files that make one. */
 const holdsIdentity = (identityHome) => IDENTITY_AUTHORITY.some((name) => existsSync(join(identityHome, name)));
+/** Whether aw holds a pending mint in a joined identity home (README, "Human
+ *  attribution"): its pending invite record, or no identity and any of its pending
+ *  files. An interrupted hosted accept with its key (the marker alone) is #217's. */
+const awHoldsJoinedPendingMint = (identityHome) => {
+  const files = pendingMintFilesIn(identityHome);
+  return files.includes(PENDING_MINT_FILES[0]) || (files.length > 0 && !holdsIdentity(identityHome));
+};
+/** The home's own .aweb-identity-* entries where aw holds a pending mint, or that
+ *  can't be inspected. Read from the directory itself, never from the provider's
+ *  records; a symlink or a file is never followed. */
+function joinedHomesHeldByAw() {
+  let names;
+  try { names = readdirSync(home); } catch { return [`${home} (can't be listed)`]; }
+  const held = [];
+  for (const name of names.filter((n) => n.startsWith(".aweb-identity-"))) {
+    let entry;
+    try { entry = lstatSync(join(home, name)); } catch { held.push(`${name} (can't be inspected)`); continue; }
+    if (entry.isDirectory() && awHoldsJoinedPendingMint(join(home, name))) held.push(name);
+  }
+  return held;
+}
 const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to finish it or oats aweb leave --labels ${label} to release it`;
 /** What a pending join left in its identity home (awebai/oats-aweb#217):
  *  `root` returns the root to take the service from when the intent's own
@@ -1832,7 +1861,7 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
   // The retention fence: aw's pending mint in this home (a signature-pending accept)
   // is never settled from here. An interrupted hosted accept (its marker alone) keeps
   // the #217 handling below.
-  if (existsSync(join(identityHome, PENDING_MINT_FILES[0])) || (!holdsIdentity(identityHome) && pendingMintFilesIn(identityHome).length)) {
+  if (awHoldsJoinedPendingMint(identityHome)) {
     throw new Error(`signature pending: aw holds the pending mint of the join of ${label} (${team}) in ${identityHome}; finish the exchange aw printed, or have aw settle it, then oats aweb leave --labels ${label}. Kept ${identityHome}, its key, aw's files and the pending join`);
   }
   if (!holdsIdentity(identityHome)) {
@@ -2646,7 +2675,7 @@ if (event === "launch") {
     // anything (cmd/aw/connect.go ensureConnectTargetClean), and what is there is
     // not this mint's.
     const preexisting = ["signing.key", "identity.yaml", "team-certs", "workspace.yaml"].some((name) => existsSync(join(home, ".aw", name)));
-    const intent = preexisting ? undefined : writePendingMint({ team, alias: instance, root, at: new Date().toISOString() });
+    const intent = preexisting ? undefined : writePendingMint({ team, alias: instance, root, at: new Date().toISOString(), issuer: { key: rootRead.key ?? null, id: rootRead.observation.answered ? rootRead.observation.id : null } });
     let raw;
     try {
       // ONE aw process mints the identity: it creates an invite from the root
@@ -2851,6 +2880,13 @@ if (event === "launch") {
     }
     out(o, code);
   };
+  // The home-level retention fence (README, "Human attribution"), before anything
+  // reads the provider's records: a joined identity home where aw holds a pending
+  // mint keeps the whole home, whatever those records say.
+  const heldJoined = joinedHomesHeldByAw();
+  if (heldJoined.length) {
+    await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown" }), warning: `oats-aweb: ${[...retireWarnings, `aw holds a pending mint in ${heldJoined.join(", ")} of ${home}, so nothing was released and the home is kept; finish the exchange aw printed, or have aw settle it, then retire again (${README_ATTRIBUTION})`].join(" | ")}` }, 1);
+  }
   // A grant seat, or a home whose seat record outlived its meta (a hook killed
   // after the mint, before it answered), retires through the grant path.
   if (!meta.retained) {
@@ -2974,7 +3010,7 @@ if (event === "launch") {
   // The read a person runs at the root: aw selects its destination there, with
   // admission only from the current operator setting.
   const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
-  const retirePendingMint = async ({ team, alias, root: intendedRoot, signaturePending }) => {
+  const retirePendingMint = async ({ team, alias, root: intendedRoot, signaturePending, issuer }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
     // One retention decision, fail closed (README, "Human attribution"): the mint is
     // settled below only when aw holds no pending mint in this home, or when no
@@ -2982,17 +3018,20 @@ if (event === "launch") {
     // chainless (#240). Anything else is kept: an incomplete cleanup (status 1; the
     // kernel reads this meta and retains the home), never settled or deleted on a guess.
     const issuerChainless = () => {
-      if (!intendedRoot || !existsSync(join(intendedRoot, ".aw"))) return false;
+      // The root that issued this mint, bound at mint time: an intent with no binding
+      // (written by an older provider) never shows it.
+      if (!issuer?.key || !intendedRoot || !existsSync(join(intendedRoot, ".aw"))) return false;
       // No record must be shown, not assumed: the record store has to have been read.
-      const { observation, record, lineageRead } = readRoot(intendedRoot);
+      const { observation, record, lineageRead, key } = readRoot(intendedRoot);
+      if (key !== issuer.key || (issuer.id && observation.id !== issuer.id)) return false;
       return lineageRead === true && observation.answered && observation.outcome === "unknown" && observation.reason === "legacy_no_chain" && !record;
     };
     const retention = pendingMintRetention(join(home, ".aw"), { signaturePending, issuerChainless });
     if (retention.keep === "signature-pending") {
-      await finish({ meta: retiredMeta({ retired: false, reason: "signature-pending", pendingMint: { team, alias, root: intendedRoot, signaturePending } }), warning: said(`signature-pending — the mint of alias "${alias}" in team ${team} is waiting for an agent signature: aw keeps this home's key and its pending invite, so the home is kept; finish the exchange aw printed, or have aw settle the mint, then retire again (${README_ATTRIBUTION})`) }, 1);
+      await finish({ meta: retiredMeta({ retired: false, reason: "signature-pending", pendingMint: { team, alias, root: intendedRoot, signaturePending, ...(issuer ? { issuer } : {}) } }), warning: said(`signature-pending — the mint of alias "${alias}" in team ${team} is waiting for an agent signature: aw keeps this home's key and its pending invite, so the home is kept; finish the exchange aw printed, or have aw settle the mint, then retire again (${README_ATTRIBUTION})`) }, 1);
     }
     if (retention.keep) {
-      await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, ...(signaturePending ? { signaturePending } : {}) } }), warning: said(`aw still holds a pending mint in this home, and ${retention.cause}, so whether the mint of alias "${alias}" in team ${team} can be settled is unknown: this home, aw's files in ${join(home, ".aw")} and the record of the mint are kept; reconcile them with aw, then retire again (${README_ATTRIBUTION})`) }, 1);
+      await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, ...(signaturePending ? { signaturePending } : {}), ...(issuer ? { issuer } : {}) } }), warning: said(`aw still holds a pending mint in this home, and ${retention.cause}, so whether the mint of alias "${alias}" in team ${team} can be settled is unknown: this home, aw's files in ${join(home, ".aw")} and the record of the mint are kept; reconcile them with aw, then retire again (${README_ATTRIBUTION})`) }, 1);
     }
     let root, doc, why;
     try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }
@@ -3006,7 +3045,7 @@ if (event === "launch") {
       } catch (e) { why = String(e.message || e).replace(/\s+/g, " ").trim().slice(0, 200); }
     }
     // Unknown: the home, its key and the intent stay for the retry.
-    if (!doc) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: the team's members could not be read (${why}); run ${membersRead(team)}${where} to see whether "${alias}" holds a certificate there, then retire again; this home and its record of the mint are kept`) }, 1);
+    if (!doc) await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, ...(signaturePending ? { signaturePending } : {}), ...(issuer ? { issuer } : {}) } }), warning: said(`whether the interrupted mint registered alias "${alias}" in team ${team} is unknown: the team's members could not be read (${why}); run ${membersRead(team)}${where} to see whether "${alias}" holds a certificate there, then retire again; this home and its record of the mint are kept`) }, 1);
     const held = doc.members.filter((m) => m && typeof m === "object" && m.alias === alias && !m.revoked_at && (m.team_id === undefined || sameAwebTeamId(m.team_id, team)));
     let key; try { key = readFileSync(join(home, ".aw", "signing.key"), "utf8"); } catch { key = undefined; }
     const did = key === undefined ? undefined : didKeyOfSigningKey(key);

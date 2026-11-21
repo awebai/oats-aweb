@@ -95,13 +95,17 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   `hosted-invite-creation.json` nor `pending-hosted-accept` is there), or when no
   signature-pending stop was recorded and the issuing root reads genuinely chainless
   (`unknown`, `legacy_no_chain`, with no record of an adoption), as before
-  (#240), which needs the record of adoptions to have been read. While aw's pending
+  (#240), which needs the record of adoptions to have been read and the root to be
+  the one that issued the mint (its key, recorded when the mint started). A home from
+  an older provider version whose mint was cut short has no such record and is kept
+  for the operator. While aw's pending
   files are in the home, no other retire path runs: not the self-delete of an alias
   in its binding, not a completed-retire marker, and a home with no record of the
   mint is kept. The same fence holds for each joined team's identity home
   (`<home>/.aweb-identity-<label>`), where aw can leave a `--parent` accept signature
-  pending: a join, leave or retire releases nothing from it, and its pending join
-  stays recorded until aw settles it. Anything else is kept, with exit status 1 and
+  pending: retire looks at those directories themselves, whatever the provider's
+  records say, and a join, leave or retire releases nothing from one aw holds; its
+  pending join stays recorded until aw settles it. Anything else is kept, with exit status 1 and
   `retired: false` in the
   meta, which the kernel reads as an incomplete cleanup: it keeps the home and marks
   it `.oats-rollback-incomplete.json`. The reason is `signature-pending` for the exact

@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
@@ -824,7 +824,8 @@ test("retention fence, joined teams: an accept aw leaves signature pending in .a
   const retire = () => fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
   const kept = retire();
   assert.notEqual(kept.status, 0, kept.stdout + kept.stderr);
-  assert.match(kept.doc.warning, /signature pending: aw holds the pending mint of the join of joined/);
+  assert.match(kept.doc.warning, /aw holds a pending mint in \.aweb-identity-joined of .*, so nothing was released and the home is kept/);
+  assert.equal(kept.doc.meta.reason, "mint-outcome-unknown");
   for (const f of awFiles) assert.ok(existsSync(join(joinedHome, f)), `${f} kept by retire`);
   assert.equal(fx.fake.calls().filter((c) => c.identityHome === joinedHome && c.args.includes("delete")).length, 0, "nothing released");
   const left = fx.run(["leave", "--labels", "joined"]);
@@ -849,6 +850,54 @@ test("retention fence, joined teams: a recorded joined team whose home holds aw'
   assert.match(left.stderr, /aw holds a pending mint in .*\.aweb-identity-joined .*so nothing was released and it is kept/);
   assert.equal(fx.fake.calls().filter((c) => c.identityHome === joinedHome && c.args.includes("delete")).length, 0);
   assert.ok(existsSync(join(joinedHome, "signing.key")));
+});
+
+test("home-level fence: a joined home aw holds is found from the directory, whatever the provider's records say", (t) => {
+  for (const [name, spoil, meta] of [
+    ["teams.json of the wrong type, the meta's mirror intact", (fx) => writeFileSync(join(fx.home, ".oats-aweb", "teams.json"), "[]"), (spawned) => spawned.doc.meta],
+    ["no record and no mirror", (fx) => rmSync(join(fx.home, ".oats-aweb", "teams.json")), () => ({})],
+  ]) {
+    const fx = fixture(t, { join: "joined" });
+    fx.fake.set({ version: "1.36.59", joinPending: true });
+    const spawned = fx.run(["spawn"]);
+    spoil(fx);
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(meta(spawned)) } });
+    assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, "mint-outcome-unknown"], name);
+    assert.match(r.doc.warning, /aw holds a pending mint in \.aweb-identity-joined/, name);
+    assert.equal(fx.fake.calls().filter((c) => c.args.includes("delete")).length, 0, `${name}: no self-delete, no leave`);
+    assert.ok(existsSync(join(fx.home, ".aweb-identity-joined", "hosted-invite-creation.json")), name);
+  }
+  // A symlink at that name is never followed: what it points at is not this home's.
+  const fx = fixture(t);
+  const elsewhere = join(fx.base, "elsewhere");
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(elsewhere)})`]);
+  assert.equal(fx.run(["spawn"]).status, 0);
+  symlinkSync(elsewhere, join(fx.home, ".aweb-identity-linked"));
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify({ alias: "dev-1", team: TEAM }) } });
+  assert.notEqual(r.doc.meta.reason, "mint-outcome-unknown", "a symlink is not followed");
+});
+
+test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainless key, or an intent with no issuer, is kept", (t) => {
+  const fx = fixture(t);
+  fx.fake.set({ version: "1.36.59", signaturePending: "error", who: { [fx.rootHome]: noHuman("did:aw:example.test/original-root") } });
+  const stopped = fx.run(["spawn"]);
+  assert.equal(stopped.doc.meta.pendingMint.signaturePending, undefined, "aw 1.36.59's generic error is no recorded stop");
+  assert.deepEqual(stopped.doc.meta.pendingMint.issuer, { key: fx.rootKey, id: "did:aw:example.test/original-root" });
+  const replacement = writeKey(fx.rootHome);
+  fx.fake.set({ who: { [fx.rootHome]: chainless(replacement) } });
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(stopped.doc.meta) } });
+  assert.deepEqual([r.status, r.doc.meta.reason], [1, "mint-outcome-unknown"], "another root at the issuing path");
+  assert.deepEqual(r.doc.meta.pendingMint.issuer, stopped.doc.meta.pendingMint.issuer, "the binding is kept for the retry");
+  // An intent from an older provider, with no issuer binding: kept for the operator.
+  const fy = fixture(t);
+  fy.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fy.rootHome]: chainless(fy.rootKey) } });
+  const older = fy.run(["spawn"]);
+  const file = join(fy.home, ".oats-aweb", "pending-mint.json");
+  const { issuer: _issuer, ...unbound } = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify(unbound));
+  const { issuer: _metaIssuer, ...unboundMeta } = older.doc.meta.pendingMint;
+  const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
+  assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], "no issuer binding");
 });
 
 test("retention invariant: an unreadable C3 record never shows a root chainless", (t) => {
@@ -885,7 +934,7 @@ test("retention invariant: with aw's pending files in the home, retire settles o
     if (settles) assert.deepEqual([r.status, r.doc.meta.reason], [0, "nothing-to-delete"], name);
     else {
       assert.deepEqual([r.status, r.doc.meta.retired, r.doc.meta.reason], [1, false, "mint-outcome-unknown"], name);
-      assert.match(r.doc.warning, /its issuing root isn't shown to be chainless/, name);
+      assert.match(r.doc.warning, /its issuing root isn't shown to be that same root, genuinely chainless/, name);
       assert.equal(fx.fake.calls().filter((c) => c.args.includes("members")).length, 0, `${name}: nothing settled on a guess`);
     }
   }

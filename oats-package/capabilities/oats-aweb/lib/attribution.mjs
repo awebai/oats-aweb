@@ -329,7 +329,7 @@ export function pendingMintRetention(identityHome, { signaturePending, issuerCha
   if (!present.length) return { settle: true };
   if (!signaturePending) {
     if (issuerChainless()) return { settle: true };
-    return { keep: "mint-outcome-unknown", cause: "aw holds a pending mint in this home and its issuing root isn't shown to be chainless" };
+    return { keep: "mint-outcome-unknown", cause: "its issuing root isn't shown to be that same root, genuinely chainless" };
   }
   const match = exactPendingMint(identityHome, present, signaturePending);
   return match.exact ? { keep: "signature-pending" } : { keep: "mint-outcome-unknown", cause: match.cause };
