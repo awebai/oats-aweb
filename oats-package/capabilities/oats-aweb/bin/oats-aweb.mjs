@@ -97,7 +97,7 @@ import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
-import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, entryAbsent, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -272,16 +272,27 @@ function awHoldsPendingIn(dir) {
   catch (e) { return e?.code !== "ENOENT" && e?.code !== "ENOTDIR"; }
   return entry.isDirectory() && pendingMintFilesIn(dir).length > 0;
 }
-/** The identity homes of `dir` where aw holds a pending mint, or that can't be
- *  inspected (awHoldsPendingIn): `.aw` and each `.aweb-identity-*` entry. Read from the
- *  directory itself. */
-function identityHomesHeldByAw(dir) {
-  const held = awHoldsPendingIn(join(dir, ".aw")) ? [".aw"] : [];
+/** The one rule that names an instance home's aw identity homes (README, "Human
+ *  attribution"): its own `.aw`, the legacy grant home `.aweb-identity`, and every
+ *  `.aweb-identity-*` (grant homes `.aweb-identity-<digits>`, joined teams
+ *  `.aweb-identity-<label>`). Retire's choke point, its early fence and grantHomeDirs
+ *  all take their names from here. */
+const isIdentityHomeName = (name) => name === ".aw" || name === ".aweb-identity" || name.startsWith(".aweb-identity-");
+/** Identity homes a provider record names inside the instance home that the rule
+ *  above doesn't (a record names `.aweb-identity-<label>`; one edited by hand may name
+ *  anything): retire registers them before it acts, so the scan covers them too. */
+const recordedIdentityHomes = new Set();
+/** The identity homes inside `dir` (the rule's names, and the recorded ones) where aw
+ *  holds a pending mint, or that can't be inspected (awHoldsPendingIn). */
+function heldIdentityHomeNames(dir) {
   let names;
-  try { names = readdirSync(dir); }
-  catch (e) { return e?.code === "ENOENT" ? held : [...held, `${dir} (it can't be listed)`]; }
-  for (const name of names.filter((n) => n.startsWith(".aweb-identity-"))) if (awHoldsPendingIn(join(dir, name))) held.push(name);
-  return held;
+  try { names = readdirSync(dir).filter(isIdentityHomeName); }
+  catch (e) { if (e?.code === "ENOENT") return []; return [`${dir} (it can't be listed)`]; }
+  for (const p of recordedIdentityHomes) {
+    const rel = relative(dir, p);
+    if (rel && !rel.startsWith("..") && !isAbsolute(rel) && !names.includes(rel)) names.push(rel);
+  }
+  return names.filter((name) => awHoldsPendingIn(join(dir, name)));
 }
 /** The retire choke point (README, "Human attribution"): every answer of the retire
  *  hook passes here on its way out. One that would let the kernel delete the home
@@ -294,7 +305,7 @@ function retireChokePoint(o, code) {
   const incomplete = !!meta && meta.retired === false && meta.reason !== "nothing-to-delete";
   const deletes = !incomplete && (code === 0 || meta?.retired === true || meta?.reason === "nothing-to-delete");
   if (!deletes) return { o, code };
-  const held = identityHomesHeldByAw(home);
+  const held = heldIdentityHomeNames(home);
   if (!held.length || (retireChainlessSettle && held.length === 1 && held[0] === ".aw")) return { o, code };
   const carried = ["joinedTeams", "pendingJoins", "pendingControllerCleanup", "pendingMint", "failedLeaves", "identity", "grant"].filter((k) => meta?.[k] !== undefined);
   const was = meta?.retired === true ? "retired: true" : meta?.reason === "nothing-to-delete" ? "nothing-to-delete" : "a completed cleanup";
@@ -852,7 +863,7 @@ function requirePreflightCustodySocket(preflight) {
 function grantHomeDirs() {
   try {
     return readdirSync(home)
-      .filter((name) => name === ".aweb-identity" || /^\.aweb-identity-\d+$/.test(name))
+      .filter((name) => isIdentityHomeName(name) && (name === ".aweb-identity" || /^\.aweb-identity-\d+$/.test(name)))
       .map((name) => join(home, name))
       .filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } });
   } catch { return []; }
@@ -1722,7 +1733,7 @@ const pendingMintOf = (doc) => doc && typeof doc === "object" && typeof doc.team
 function readPendingMint() {
   let text;
   try { text = readFileSync(pendingMintFile(), "utf8"); }
-  catch (e) { return e?.code === "ENOENT" ? {} : { problem: `it cannot be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
+  catch (e) { return entryAbsent(e, pendingMintFile()) ? {} : { problem: `it cannot be read (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
   let intent; try { intent = pendingMintOf(JSON.parse(text)); } catch { intent = undefined; }
   return intent ? { intent } : { problem: "it does not name a valid team and alias" };
 }
@@ -1887,7 +1898,7 @@ const awHoldsJoinedPendingMint = (identityHome) => {
  *  records name: those go through their own leave, with its own recovery (#217). The
  *  retire choke point keeps the home for any of them. */
 function joinedHomesHeldByAw(recorded) {
-  return identityHomesHeldByAw(home).filter((name) => name !== ".aw" && !recorded.has(name));
+  return heldIdentityHomeNames(home).filter((name) => name !== ".aw" && !recorded.has(name));
 }
 const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to finish it or oats aweb leave --labels ${label} to release it`;
 /** What a pending join left in its identity home (awebai/oats-aweb#217):
@@ -2852,6 +2863,7 @@ if (event === "launch") {
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
+  for (const e of [...joinedTeamsOf(meta), ...pendingJoinsOf(meta)]) if (typeof e.identityHome === "string" && isAbsolute(e.identityHome)) recordedIdentityHomes.add(resolve(e.identityHome));
   // Only the boolean true records a retained seat: any other value records none.
   if (meta.retained !== undefined && meta.retained !== true) { const { retained: _notBoolean, ...rest } = meta; meta = rest; }
   const retireWarnings = [];

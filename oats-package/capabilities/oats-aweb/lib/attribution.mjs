@@ -139,6 +139,15 @@ export const chainedIssuer = (observation, record) => (observation.answered && [
 // within LOCK_WAIT_MS is skipped and said so (the next read records it again).
 
 const LINEAGE_LOCK_WAIT_MS = 500;
+/** Whether a read that failed `e` means there is nothing at `path` (README, "Human
+ *  attribution"): only when the directory entry itself is absent. A dangling symlink
+ *  reads ENOENT but is there, and anything there that can't be read is a problem,
+ *  never "none". */
+export function entryAbsent(e, path) {
+  if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") return false;
+  try { lstatSync(path); return false; }
+  catch (l) { return l?.code === "ENOENT" || l?.code === "ENOTDIR"; }
+}
 export const lineageFile = (deployment) => join(deployment, ".oats-aweb", "root-lineage.json");
 const validEntry = (e) => object(e) && !!opaque(e.id) && !!opaque(e.key) && !!opaque(e.humanId) && typeof e.seenAt === "string" && !Number.isNaN(Date.parse(e.seenAt));
 function parseLineage(text) {
@@ -151,7 +160,7 @@ function parseLineage(text) {
 export function readLineage(deployment) {
   let text;
   try { text = readFileSync(lineageFile(deployment), "utf8"); }
-  catch (e) { return e?.code === "ENOENT" || e?.code === "ENOTDIR" ? { entries: [] } : { entries: [], problem: "the record of adopted roots could not be read" }; }
+  catch (e) { return entryAbsent(e, lineageFile(deployment)) ? { entries: [] } : { entries: [], problem: "the record of adopted roots could not be read" }; }
   const entries = parseLineage(text);
   return entries ? { entries } : { entries: [], problem: "the record of adopted roots is malformed" };
 }
@@ -184,7 +193,7 @@ export function recordLineage(deployment, entry, { lockWaitMs = LINEAGE_LOCK_WAI
     // read or parsed is left as it is, never replaced by a partial one.
     let text;
     try { text = readFileSync(file, "utf8"); }
-    catch (e) { if (e?.code !== "ENOENT") return { cause: `the existing record ${file} could not be read, and is left as it is: move it aside to record roots again` }; }
+    catch (e) { if (!entryAbsent(e, file)) return { cause: `the existing record ${file} could not be read, and is left as it is: move it aside to record roots again` }; }
     const entries = text === undefined ? [] : parseLineage(text);
     if (!entries) return { cause: `the existing record ${file} is malformed, and is left as it is: move it aside to record roots again` };
     const merged = [...entries.filter((e) => !(e.key === entry.key && e.id === entry.id)), { id: entry.id, key: entry.key, humanId: entry.humanId, seenAt: entry.seenAt }];
@@ -208,7 +217,7 @@ export function signingDidKey(identityHome) {
 export function signingKeyRead(identityHome) {
   let text;
   try { text = readFileSync(join(identityHome, "signing.key"), "utf8"); }
-  catch (e) { return e?.code === "ENOENT" || e?.code === "ENOTDIR" ? { missing: true } : { unreadable: true }; }
+  catch (e) { return entryAbsent(e, join(identityHome, "signing.key")) ? { missing: true } : { unreadable: true }; }
   try { const did = didKeyOfSigningKey(text); return did ? { did } : { unreadable: true }; } catch { return { unreadable: true }; }
 }
 
@@ -273,7 +282,7 @@ const readBounded = (path, max) => {
 export function pendingMintBinding(identityHome) {
   let text;
   try { text = readBounded(join(identityHome, PENDING_MINT_FILES[0]), PENDING_RECORD_MAX_BYTES); }
-  catch (e) { return e?.code === "ENOENT" ? { selection: null, request: null, did: null } : { unreadable: "aw's pending invite record could not be read" }; }
+  catch (e) { return entryAbsent(e, join(identityHome, PENDING_MINT_FILES[0])) ? { selection: null, request: null, did: null } : { unreadable: "aw's pending invite record could not be read" }; }
   let doc;
   try { doc = JSON.parse(text); } catch { return { unreadable: "aw's pending invite record is not JSON" }; }
   const tokenHash = object(doc) ? doc.token_hash : undefined, request = object(doc?.id_tree) ? doc.id_tree.request_id : undefined;

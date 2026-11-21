@@ -109,13 +109,19 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   after storing its certificate but before removing its marker is kept by retire
   too; `oats aweb leave` or `join` settles it as before. Whatever path retire takes,
   its answer passes one last check on the way out: while either of aw's pending files
-  is in `<home>/.aw` or in any `<home>/.aweb-identity-*` directory (or one of them
+  is in `<home>/.aw`, the legacy grant home `<home>/.aweb-identity`, any
+  `<home>/.aweb-identity-*` directory or an identity home a provider record names
+  inside the home (or one of them
   can't be inspected), an answer that would let the kernel remove the home
   (`retired: true`, `nothing-to-delete`, or a plain exit 0) becomes `retired: false`,
   `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle
   above, of `<home>/.aw` alone. Every delete retire makes before it answers makes the
   same check first and leaves such a directory in place: a global seat's grant-home
-  cleanup, a joined team's leave and a pending join's settlement. Anything else is kept, with exit status 1 and
+  cleanup, a joined team's leave and a pending join's settlement. A record retire
+  reasons about (the record of adoptions, the provider's record of an interrupted
+  mint, aw's pending invite record, a signing key) counts as absent only when nothing
+  is at its path: a dangling symlink or anything else there that can't be read is a
+  problem, left as it is, never "none". Anything else is kept, with exit status 1 and
   `retired: false` in the
   meta, which the kernel reads as an incomplete cleanup: it keeps the home and marks
   it `.oats-rollback-incomplete.json`. The reason is `signature-pending` for the exact

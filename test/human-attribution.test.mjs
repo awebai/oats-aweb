@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
@@ -980,6 +980,55 @@ test("retention invariant: an unreadable C3 record never shows a root chainless"
   rmSync(join(fx.ws, ".oats-aweb", "root-lineage.json"));
   const settled = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
   assert.deepEqual([settled.status, settled.doc.meta.reason], [0, "nothing-to-delete"], "a store that isn't there yet is read: chainless, settled (#240)");
+});
+
+test("absent means no directory entry: a dangling symlink at a record retire reasons about is a problem, never \"none\"", (t) => {
+  // C3's record: the reader reports it, the writer leaves it, and rule (b) isn't shown.
+  const dep = tempDir(t), file = join(dep, ".oats-aweb", "root-lineage.json");
+  mkdirSync(dirname(file), { recursive: true });
+  symlinkSync(join(dep, "nowhere.json"), file);
+  assert.ok(readLineage(dep).problem, "the reader names a problem");
+  const w = recordLineage(dep, { id: "did:aw:person.example.test/root-a", key: "did:key:z6MkA", humanId: HUMAN, seenAt: new Date(0).toISOString() });
+  assert.match(w.cause ?? "", /left as it is: move it aside/);
+  assert.ok(lstatSync(file).isSymbolicLink() && readlinkSync(file) === join(dep, "nowhere.json"), "the symlink is untouched");
+  const fx = fixture(t);
+  fx.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fx.rootHome]: chainless(fx.rootKey) } });
+  const spawned = fx.run(["spawn"]);
+  mkdirSync(join(fx.ws, ".oats-aweb"), { recursive: true });
+  symlinkSync(join(fx.base, "nowhere.json"), join(fx.ws, ".oats-aweb", "root-lineage.json"));
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  assert.deepEqual([r.status, r.doc.meta.reason], [1, "mint-outcome-unknown"], "not shown chainless");
+  assert.ok(existsSync(join(fx.home, ".aw", "hosted-invite-creation.json")));
+  // The provider's own record of an interrupted mint: a dangling one is unusable, not absent.
+  const fy = fixture(t);
+  mkdirSync(join(fy.home, ".oats-aweb"), { recursive: true });
+  symlinkSync(join(fy.base, "nowhere.json"), join(fy.home, ".oats-aweb", "pending-mint.json"));
+  const k = fy.run(["retire"], { env: { OATS_META: "{}" } });
+  assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], k.stdout + k.stderr);
+});
+
+test("one inventory: the legacy grant home and a recorded identity home of any name are kept while aw holds a pending mint there", (t) => {
+  for (const revoke of ["ok", "fail"]) {
+    const fx = fixture(t);
+    const bare = join(fx.home, ".aweb-identity");
+    spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(bare)})`]);
+    writeFileSync(join(fx.rootHome, "identity.yaml"), `did: ${fx.rootKey}\n`);
+    fx.fake.set({ grantRevoke: revoke });
+    const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify({ identity: { mode: "global", team: TEAM, resident: "fixture", grant: { id: "g1" } } }), OATS_SETTINGS: JSON.stringify({ ...fx.settings, residents: { fixture: fx.root } }) } });
+    assert.deepEqual([r.status, r.doc.meta.retired], [1, false], `revoke ${revoke}: ${r.stdout}${r.stderr}`);
+    for (const f of ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"]) assert.ok(existsSync(join(bare, f)), `revoke ${revoke}: ${f} kept`);
+  }
+  const fx = fixture(t);
+  assert.equal(fx.run(["spawn"]).status, 0);
+  const custom = join(fx.home, "custom-identity");
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(custom)})`]);
+  // The provider's teams state is the record (it outranks the meta's mirror).
+  const pendingJoins = [{ label: "custom", team: JOINED, identityHome: custom, alias: "dev-1", root: fx.joinedRoot, at: new Date(0).toISOString() }];
+  const state = join(fx.home, ".oats-aweb", "teams.json");
+  writeFileSync(state, JSON.stringify({ ...JSON.parse(readFileSync(state, "utf8")), pendingJoins }));
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify({ alias: "dev-1", team: TEAM }) } });
+  assert.deepEqual([r.status, r.doc.meta.retired], [1, false], r.stdout + r.stderr);
+  assert.ok(existsSync(join(custom, "hosted-invite-creation.json")) && existsSync(join(custom, "signing.key")));
 });
 
 test("retention invariant: with aw's pending files in the home, retire settles only a mint with no recorded stop from a genuinely chainless root", (t) => {
