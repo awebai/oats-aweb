@@ -1013,23 +1013,32 @@ and where to set it. The provider settings are:
   own terminal backends there (`tmux`, `herdr`) as a status label. The start
   records the provider's name as `backend` in the home's `oats.aweb` meta, so
   a later retire, join or leave, which run under no `OATS_BACKEND` of their
-  own, and readiness decide the same path; they fall back to the kernel's
-  `backend` in `instance.json`; the health publisher reads the meta alone. A
+  own, and readiness decide the same path. They, and the round-trip probe,
+  read the kernel's `backend` in `instance.json` first and that meta where the
+  kernel recorded none; the health publisher reads the meta alone. A
   start on `tmux` records none.
 
-  A known gap: this capability's package requirements (`requires` in
-  `oats.json`) are keyed by the `delivery` setting alone, since a requirement
-  cannot name a backend yet. The floors that make an installed `aweb-channel`
-  (1.7.9) or `@awebai/pi` (0.3.10) honour `AWEB_DELIVERY=session` are
-  declared only for `delivery: session`, so nothing declares them for a
-  provider launch under `delivery: channel`, where an older ambient plugin or
-  extension that the session loads can open its own stream beside the broker. Until a requirement
-  can name the backend, keep any installed `aweb-channel` and `@awebai/pi` at
-  or above those versions on a host that runs provider launches. Which
-  package checks the kernel runs for a provider launch is the kernel's to
-  say, not this package's. The backend is chosen per spawn, not
-  per soul, so `delivery: session` on a soul is not the remedy: it would also
-  take that soul's `tmux` launches off their channel.
+  The package requirements (`requires` in `oats.json`) follow the backend too,
+  through the kernel's `backends` key on a requirement:
+
+  | launch | `delivery: channel` | `delivery: session` |
+  |---|---|---|
+  | `tmux`, Claude Code or pi | the channel package is required (`aweb-channel`, `@awebai/pi`) | an installed channel package must be at its floor |
+  | a session provider, Claude Code or pi | an installed channel package must be at its floor | an installed channel package must be at its floor |
+
+  The floors are `aweb-channel` 1.7.9 and `@awebai/pi` 0.3.10, from which an
+  ambient plugin or extension honours `AWEB_DELIVERY=session`; an older one
+  would open its own stream beside the broker. No channel package at all
+  satisfies a floor, and a provider launch is never asked to install one.
+  Every package row names its backend: the `tmux` rows are the ones there
+  were, and a provider launch has two floor rows of its own, which hold under
+  either `delivery` value. Those two name only session providers, and a
+  kernel from before session providers applies a requirement to every launch
+  whatever its `backends` says, so under `delivery: channel` it would hold
+  every `tmux` launch to those floors too. This package's OATS floor is
+  therefore 0.70.0: among the releases whose kernel reads `backends`, the
+  first that also speaks the released session-provider wire (1.3), which the
+  session-provider contract asks of any package that declares such a row.
 
   New Claude/channel compositions default to
   `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.

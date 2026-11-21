@@ -66,6 +66,10 @@ function validateSchema(value, schema, at, rootSchema = schema, references = [])
   }
   if (value && actual === "object") {
     for (const key of schema.required || []) if (!Object.hasOwn(value, key)) report(at, `missing required property ${key}`);
+    // A property that may be present only beside others (the kernel's schema: `sandboxDomains` beside `layer`).
+    for (const [key, needed] of Object.entries(schema.dependentRequired || {})) {
+      if (Object.hasOwn(value, key)) for (const other of needed) if (!Object.hasOwn(value, other)) report(at, `property ${key} requires property ${other}`);
+    }
     const properties = schema.properties || {};
     for (const [key, item] of Object.entries(value)) {
       if (schema.propertyNames?.pattern && !(new RegExp(schema.propertyNames.pattern)).test(key)) report(`${at}.${key}`, `property name must match ${schema.propertyNames.pattern}`);

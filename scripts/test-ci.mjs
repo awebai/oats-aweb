@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 import { exclusionArgs } from './ci-exclusions.mjs';
 
 const groups = {
-  kernel: ['claude-channel-host-only', 'public-kernel-team-roots', 'public-kernel-disposable-home', 'public-kernel-seat-registry', 'public-kernel-launch-preview', 'public-kernel-codex-delivery', 'public-kernel-upgrade', 'aweb-tasks-kernel', 'aweb-tasks-team-kernel', 'unread-attention-native'],
+  kernel: ['claude-channel-host-only', 'public-kernel-requirement-backends', 'public-kernel-team-roots', 'public-kernel-disposable-home', 'public-kernel-seat-registry', 'public-kernel-launch-preview', 'public-kernel-codex-delivery', 'public-kernel-upgrade', 'aweb-tasks-kernel', 'aweb-tasks-team-kernel', 'unread-attention-native'],
   historical: ['public-kernel-grant-inventory'],
   host: ['health-command-native', 'health-host-native'],
   stack: ['resident-journey'],

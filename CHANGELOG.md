@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+- **Changed: the package requirements follow the session backend, and the OATS
+  floor moves to 0.70.0 (#297).** This closes the gap 1.45.0 left for a
+  session provider's launch. The channel packages (`aweb-channel`,
+  `@awebai/pi`) are required of `tmux` launches only (`backends: ["tmux"]`),
+  so a provider launch under `delivery: channel` is no longer asked to install
+  one. Two new rows (`backends: ["session-provider"]`) hold an installed
+  `aweb-channel` to 1.7.9 and an installed `@awebai/pi` to 0.3.10 on a provider
+  launch under either `delivery` value, since the broker delivers there and an
+  older ambient package would open its own stream beside it; no package at all
+  satisfies them. The two existing floor rows for `delivery: session` now name
+  `tmux` too, so each launch meets exactly one row for its package, and `tmux`
+  launches are checked as before under either `delivery` value.
+
+  **What a deployment must change:** upgrade OATS to 0.70.0 or later before
+  taking this release. A kernel from before session providers applies a
+  requirement to every launch whatever its `backends` says, so it would hold
+  every `tmux` launch under `delivery: channel` to the two new floors; 0.70.0
+  is the first release whose kernel also speaks the released session-provider
+  wire (1.3). The release lane confirms the number when it cuts this release.
+
+- **Changed: one order for a home's recorded backend.** Readiness, the
+  round-trip probe, retire, join and leave read the kernel's `backend` in
+  `instance.json` first, and the provider's own `backend` meta where the kernel
+  recorded none. Before, readiness read the kernel's first and the others the
+  meta's; the two differ only in a record that contradicts itself.
+
+- The capability-manifest schema copy is the kernel's at v0.70.0
+  (`requires[].backends`, `sessionProviders`, `sandboxDomains`), and the
+  manifest validator enforces `dependentRequired`.
+
 ## 1.47.0 — 2026-11-20
 
 Requires OATS >=0.68.0. The aw floor stays 1.36.33 and the tested aw 1.36.58.

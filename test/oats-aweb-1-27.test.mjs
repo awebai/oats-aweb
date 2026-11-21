@@ -13,6 +13,6 @@ const manifest = JSON.parse(readFileSync(join(CAPABILITY, "oats.json"), "utf8"))
 
 test("the kernel floor admits stopped-home upgrades", () => {
   const distribution = JSON.parse(readFileSync(join(REPO, "oats-package", "oats-package.json"), "utf8"));
-  assert.equal(manifest.compatibility.oats, ">=0.68.0");
-  assert.equal(distribution.compatibility.oats, ">=0.68.0");
+  assert.equal(manifest.compatibility.oats, ">=0.70.0");
+  assert.equal(distribution.compatibility.oats, ">=0.70.0");
 });

@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fakeAw } from './helpers/fake-aw-grant.mjs';
 
-const PINNED = '13f8f133808f5932bf461108703c1bada4b3f3d3'; // OATS v0.68.1 release pin
+const PINNED = '7512163012876511088da79168c74540f9523c66'; // OATS v0.70.0 release pin
 const capability = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb', import.meta.url));
 const identity = fileURLToPath(new URL('./fixtures/resident/identity-global.yaml', import.meta.url));
 const kernel = process.env.OATS_HOST_ONLY_KERNEL_ROOT;
