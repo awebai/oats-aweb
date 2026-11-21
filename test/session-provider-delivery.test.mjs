@@ -217,6 +217,63 @@ test("a later start on tmux returns the home to its channel and forgets the prov
   }
 });
 
+// The same for the other runtimes: a tmux start leaves a provider-registered home on exactly the
+// path a tmux home of that runtime has.
+test("a later start on tmux takes a pi home off the broker: its extension delivers", (t) => {
+  for (const extra of [{ OATS_BACKEND: "tmux" }, {}]) {
+    const fx = fixture(t, { delivery: "channel", runtime: "pi" });
+    const spawned = fx.hook("spawn", BB);
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    assert.ok(fx.registered(), "the provider spawn registers the pi home");
+    const r = fx.launch(spawned.doc.meta, "pi", { extra });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(fx.registered(), undefined, `${JSON.stringify(extra)}: the broker registration is removed`);
+    assert.ok(fx.wakeCalls().includes("deregister"));
+    assert.equal(r.doc.env.AWEB_DELIVERY, undefined);
+    assert.equal(r.doc.launch, undefined, "pi loads its extension itself: no launch argument");
+    assert.equal("backend" in r.doc.meta, false);
+  }
+});
+
+test("a later start on tmux keeps only a pi home's joined team on the broker, never its primary", (t) => {
+  for (const extra of [{ OATS_BACKEND: "tmux" }, {}]) {
+    const label = JSON.stringify(extra);
+    const fx = fixture(t, { delivery: "channel", runtime: "pi", settings: { join: "alpha" } });
+    const spawned = fx.hook("spawn", BB);
+    assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+    const primary = join(fx.home, ".aw");
+    assert.equal(fx.registered().runtime_delivery, "external-session");
+    assert.deepEqual(fx.registered().receive_identities.map((x) => x.label), ["default", "alpha"], "the provider start has the primary and the team on the broker");
+    assert.equal("backend" in fx.registered(), false, "a provider's name is never aw's backend hint");
+    const r = fx.launch(spawned.doc.meta, "pi", { extra });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const doc = fx.registered();
+    assert.equal(doc.runtime_delivery, "native-pi", label);
+    assert.equal(doc.primary_identity_home, primary, "the extension owns the primary");
+    assert.deepEqual(doc.receive_identities.map((x) => x.label), ["alpha"], label);
+    assert.equal(doc.receive_identities.some((x) => x.identity_home === primary), false, "the broker receives nothing for the primary");
+    // The registration carries aw's backend hint as any tmux home's does: tmux when the kernel names it, none when it names none.
+    assert.equal(doc.backend, extra.OATS_BACKEND, label);
+    assert.equal(r.doc.env.AWEB_DELIVERY, undefined, label);
+    assert.equal(r.doc.meta.joinedTeams[0].receive, "native", label);
+    assert.equal("backend" in r.doc.meta, false, label);
+  }
+});
+
+test("a later start on tmux keeps a codex home registered: the broker is still its path", (t) => {
+  const fx = fixture(t, { delivery: "channel", runtime: "codex" });
+  const spawned = fx.hook("spawn", BB);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const r = fx.launch(spawned.doc.meta, "codex", { extra: { OATS_BACKEND: "tmux" } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fx.registered(), { home: fx.home, identity_home: join(fx.home, ".aw"), delivery: "session" });
+  assert.equal(fx.wakeCalls().includes("deregister"), false);
+  assert.equal(r.doc.env.AWEB_DELIVERY, "session");
+  // The tmux start registers again, now with aw's own backend hint.
+  assert.deepEqual(registers(fx).at(-1), ["wake", "register", "--home", fx.home, "--identity-home", join(fx.home, ".aw"), "--delivery", "session", "--backend", "tmux"]);
+  assert.equal("backend" in r.doc.meta, false);
+});
+
 test("a session provider's start needs the broker running, like any broker-delivered home", (t) => {
   const fx = fixture(t, { delivery: "channel", runtime: "claude", daemon: false });
   const r = fx.hook("spawn", BB);
