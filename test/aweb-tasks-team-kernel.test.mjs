@@ -29,7 +29,12 @@ function kernelFixture(t) {
   const home = join(base, 'home'), bin = join(base, 'bin'), marker = join(base, 'aw-called');
   mkdirSync(home); mkdirSync(bin);
   writeFileSync(join(bin, 'aw'), `#!/bin/sh\necho called >> '${marker}'\nexit 97\n`, { mode: 0o755 });
-  const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
+  // The previews name a harness, and a kernel from 0.70 refuses one that is not on PATH
+  // (E_HARNESS_UNAVAILABLE). A preview never runs it; this one says so if anything does.
+  writeFileSync(join(bin, 'codex'), `#!/bin/sh\necho 'the fixture codex must never run' >&2\nexit 97\n`, { mode: 0o755 });
+  // TMUX_TMPDIR: the kernel reads a running OATS tmux server's environment for a launch's PATH;
+  // without it a run on a developer's host would read that person's server.
+  const env = { HOME: home, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, TMUX_TMPDIR: join(base, 'tmux'),
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0',
     OATS_REMOTE_CACHE: join(base, 'cache'), OATS_HOME_DIR: join(base, 'data'),
     GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
