@@ -286,7 +286,10 @@ export function signaturePendingState(identityHome, { did, binding } = {}) {
   const key = signingKeyRead(identityHome);
   // A key that can't be established while aw's pending files remain is never a
   // settled one: kept, as is a stop whose key couldn't be read then.
-  if (present.length && (!key.did || !did)) return { state: "changed", cause: !did ? "the key aw kept could not be read when the mint stopped" : key.missing ? "the key aw kept is gone while its pending files stay" : "the key aw kept can't be read now" };
+  // A key that can't be established, or another key, while aw's pending files remain
+  // is never a settled mint: kept, as is a stop whose key couldn't be read then. Only
+  // when aw's pending files are gone is another key (or none) a settled one.
+  if (present.length && (!key.did || !did || key.did !== did)) return { state: "changed", cause: !did ? "the key aw kept could not be read when the mint stopped" : key.missing ? "the key aw kept is gone while its pending files stay" : key.unreadable ? "the key aw kept can't be read now" : "the home holds another key while aw's pending files stay" };
   if (!did || key.did !== did) return { state: "settled" };
   if (["identity.yaml", "workspace.yaml"].some((name) => existsSync(join(identityHome, name)))) return { state: "settled" };
   if (!present.length) return { state: "settled" };

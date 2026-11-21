@@ -674,13 +674,28 @@ test("A8 (signature pending): a key that can't be read, or is gone, while aw's p
   assert.equal(signaturePendingState(aw, { did: null, binding: { selection: null, request: null } }).state, "settled");
 });
 
-test("A8 (signature pending): a held mint whose key was replaced is no longer the one recorded", (t) => {
-  const fx = fixture(t);
-  fx.fake.set({ signaturePending: "code" });
-  const spawned = fx.run(["spawn"]);
-  writeKey(fx.homeAw);
-  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
-  assert.notEqual(r.doc.meta.reason, "signature-pending");
+test("A8 (signature pending): another key is kept while aw's pending files stay, and settled once they are gone", (t) => {
+  for (const [name, replace] of [
+    ["another key, the same pending files", (fx) => writeKey(fx.homeAw)],
+    ["another key with its own pending mint", (fx) => { for (const f of ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"]) rmSync(join(fx.homeAw, f)); spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(fx.homeAw)})`]); }],
+  ]) {
+    const fx = fixture(t);
+    fx.fake.set({ signaturePending: "code" });
+    const spawned = fx.run(["spawn"]);
+    const before = readFileSync(join(fx.homeAw, "signing.key"), "utf8");
+    replace(fx);
+    assert.notEqual(readFileSync(join(fx.homeAw, "signing.key"), "utf8"), before, `${name}: the key was replaced`);
+    const kept = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+    assert.deepEqual([kept.status, kept.doc.meta.retired, kept.doc.meta.reason], [1, false, "mint-outcome-unknown"], name);
+    assert.match(kept.doc.warning, /the home holds another key while aw's pending files stay/, name);
+    for (const f of ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"]) assert.ok(existsSync(join(fx.homeAw, f)), `${name}: ${f} kept`);
+    assert.equal(fx.fake.calls().filter((c) => c.args.includes("members")).length, 0, `${name}: nothing settled on a guess`);
+    // aw's pending files gone: another key is no longer this mint's, and retire answers what is true.
+    for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) rmSync(join(fx.homeAw, f));
+    const settled = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+    assert.notEqual(settled.doc.meta.reason, "signature-pending", name);
+    assert.notEqual(settled.doc.meta.reason, "mint-outcome-unknown", name);
+  }
 });
 
 test("A8 (signature pending) on aw without the code: a post-key failure from a chainless root is retired as today, from a chained root kept", (t) => {
