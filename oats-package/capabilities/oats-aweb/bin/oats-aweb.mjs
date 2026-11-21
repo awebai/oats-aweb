@@ -344,8 +344,16 @@ function heldIdentityHomeNames(dir) {
   catch (e) { if (e?.code === "ENOENT") return []; return [`${dir} (it can't be listed)`]; }
   const held = names.filter((name) => awHoldsPendingIn(join(dir, name)));
   // A root an earlier provider set up directly in the home, under a setting this
-  // instance's captured settings don't hold, keeps aw's files at <dir>/<name>/.aw.
-  for (const name of names) if (!held.includes(name) && awHoldsPendingIn(join(dir, name, ".aw"))) held.push(`${name}/.aw`);
+  // instance's captured settings don't hold, keeps aw's files at <dir>/<name>/.aw:
+  // checked whether or not <name> itself is held (<home>/.aw/.aw is one), and only
+  // through an entry that resolves inside the home (an unresolvable one is held above).
+  let realDir;
+  try { realDir = realpathSync(dir); } catch { realDir = dir; }
+  for (const name of names) {
+    let real;
+    try { real = realpathSync(join(dir, name)); } catch { continue; }
+    if (isInside(realDir, real) && awHoldsPendingIn(join(dir, name, ".aw"))) held.push(`${name}/.aw`);
+  }
   const { locators, configured, unreadable } = recordedIdentityLocators(dir);
   if (unreadable) held.push(`${relative(dir, unreadable)} (it can't be read, so the identity homes it names are unknown)`);
   const candidates = [...locators.map((p) => [p]), ...configured.map((p) => [p, join(p, ".aw")])].flat();

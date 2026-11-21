@@ -125,9 +125,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   an instance home (`E_ROOT_INSIDE_INSTANCE_HOME`, below), so OATS's own flows put
   aw's files under a home only at those locators. Not covered: a root an earlier
   provider set up two or more levels down in a home, under a setting made after that
-  instance's spawn. Its retire isn't given that setting. aw's files are left there
-  only by a signature-pending stop, which needs an adopted root and so aw 1.36.59
-  final, released after this provider, or by that setup's accept cut short by a kill.
+  instance's spawn. Its retire isn't given that setting. aw's files are left there by
+  any hosted accept that stops or fails partway: a signature-pending stop (aw 1.36.58
+  has one for an ID-tree issuer), a kill, or an IO or service error.
   `oats aweb setup --check-only` is to warn of a root inside an instance home
   (awebai/oats-aweb#311). Every delete retire makes before it answers makes the
   same check first and leaves such a directory in place: a global seat's grant-home

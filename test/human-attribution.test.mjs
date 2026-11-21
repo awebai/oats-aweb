@@ -1215,6 +1215,35 @@ test("a root an earlier provider set up directly in the home, under a setting re
   }
 });
 
+test("a root at <home>/.aw/.aw is checked even while <home>/.aw holds the primary mint: rule (b) doesn't release the home over it", (t) => {
+  // The primary mint, cut short from a genuinely chainless root, is rule (b)'s to settle;
+  // an earlier provider's root at <home>/.aw (a roots setting made after spawn) holds
+  // another pending mint in <home>/.aw/.aw.
+  const fx = fixture(t);
+  fx.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fx.rootHome]: chainless(fx.rootKey) } });
+  const spawned = fx.run(["spawn"]);
+  assert.equal(spawned.doc.meta.pendingMint?.signaturePending, undefined, spawned.stdout + spawned.stderr);
+  const nested = join(fx.homeAw, ".aw");
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(nested)})`]);
+  assert.ok(existsSync(join(nested, "pending-hosted-accept")));
+  const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], r.stdout + r.stderr);
+  assert.ok(r.doc.warning.includes(".aw/.aw"), r.doc.warning);
+  assert.ok(existsSync(join(nested, "pending-hosted-accept")) && existsSync(join(fx.homeAw, "pending-hosted-accept")), "both mints kept");
+});
+
+test("a top-level entry that resolves outside the home isn't descended into for its .aw", (t) => {
+  // OATS's attached work mode links ./work to a tree outside the home: its pending files
+  // survive the home's removal, so they don't pin it.
+  const d = homeDeployment(t), external = join(d.deployment, "external-tree");
+  mkdirSync(join(external, ".aw"), { recursive: true });
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(join(external, ".aw"))})`]);
+  symlinkSync(external, join(d.home, "work"));
+  const r = d.hook(["retire"], { OATS_META: "{}" }, undefined, d.settingsWith(undefined));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.notEqual(r.doc?.meta?.reason, "mint-outcome-unknown", r.stdout);
+});
+
 test("setup refuses to accept into a root inside an instance home, before any aw call: nested, ..-named, or a symlink resolving into it", (t) => {
   for (const [name, place] of [
     ["nested", (d) => join(d.home, "nested-root")],
