@@ -305,8 +305,14 @@ export function pendingMintBinding(identityHome) {
  *  absent or empty) and no human (`for_human` absent or null). aw prepares no request
  *  for such an invite (aw 1.36.58 cli/go/cmd/aw/hosted_invite_creation.go:94,114;
  *  1.36.59-rc.3 :168,:199,:206). A record cut short by a kill or an IO error doesn't
- *  parse, so it shows nothing. Diagnostic only: it decides no retention.
- *  `{proven: true}`, else `{why}`. */
+ *  parse, so it shows nothing. The hosted record isn't the only exchange: on
+ *  1.36.59-rc.3, `accept-invite --parent` saves it before a creator exchange of its
+ *  own (cli/go/cmd/aw/id_team.go:2312-2333, invite_condition.go:115-163), whose
+ *  outgoing request aw keeps in `<identity-home>/requests`
+ *  (cli/go/awconfig/id_request_store.go:41-42) and whose chain it installs at
+ *  `<identity-home>/id-chain.json` (id_chain_install.go:25). Any trace of that
+ *  exchange (those, or `identity.yaml`), or one that can't be looked at, shows
+ *  nothing. Diagnostic only: it decides no retention. `{proven: true}`, else `{why}`. */
 export function noSignatureCanBePending(identityHome) {
   const key = signingKeyRead(identityHome);
   if (!key.did) return { why: key.missing ? "this home has no key" : "this home's key can't be read" };
@@ -318,14 +324,22 @@ export function noSignatureCanBePending(identityHome) {
   try { doc = JSON.parse(text); } catch { return { why: "aw's pending invite record is not JSON (it may have been cut short)" }; }
   if (!object(doc) || !object(doc.id_tree)) return { why: "aw's pending invite record is not one aw writes" };
   const tree = doc.id_tree;
-  const absentOr = (v, type) => v === undefined || typeof v === type;
-  if (!opaque(doc.token_hash) || typeof tree.request_id !== "string" || !UUID_RE.test(tree.request_id)
-    || typeof doc.did_key !== "string" || !absentOr(tree.domain, "string") || !(doc.for_human === undefined || doc.for_human === null || typeof doc.for_human === "string")) {
+  // Every field aw decodes, by its type in aw's structs at both tags (Go takes null
+  // for any of them); a value of another type is a record aw rejects.
+  const typed = (v, type) => v === undefined || v === null || (type === "object" ? object(v) : typeof v === type);
+  const fields = (o, spec) => Object.entries(spec).every(([k, type]) => typed(o[k], type));
+  if (!opaque(doc.token_hash) || typeof tree.request_id !== "string" || !UUID_RE.test(tree.request_id) || typeof doc.did_key !== "string"
+    || !fields(doc, { accept_attempted: "boolean", for_human: "string", membership_chain: "object", issuer_creation_started: "boolean", aweb_url: "string", alias: "string", address: "string", scope: "string", no_address: "boolean", stable_id: "string", invite_id: "string", team_id: "string", request_ready: "boolean", response_json: "string" })
+    || !fields(tree, { invitation_id: "string", mode: "string", domain: "string", parent: "object", native_chain_header: "string", response_fields_present: "boolean", response_json: "string" })) {
     return { why: "aw's pending invite record is not one aw writes" };
   }
   if (doc.did_key !== key.did) return { why: "aw's pending invite record names another key" };
   if (tree.domain !== undefined && tree.domain !== "") return { why: "aw's record names an ID-tree issuer" };
   if (typeof doc.for_human === "string") return { why: "aw's record names a human" };
+  for (const name of ["requests", "id-chain.json", "identity.yaml"]) {
+    try { lstatSync(join(identityHome, name)); return { why: `this home holds ${name}, so a creator exchange may be pending` }; }
+    catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") return { why: `${name} in this home can't be looked at` }; }
+  }
   return { proven: true };
 }
 

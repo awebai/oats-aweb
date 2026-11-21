@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -1007,6 +1007,13 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
     ["empty", (dir) => writeFileSync(record(dir), "")],
     ["a domain of another type", (dir) => edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, domain: 1 } }))],
     ["for_human of another type", (dir) => edit(dir, (d) => ({ ...d, for_human: {} }))],
+    ["another field of another type", (dir) => edit(dir, (d) => ({ ...d, alias: {} }))],
+    ["an id_tree field of another type", (dir) => edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, parent: "x" } }))],
+    // A creator exchange of its own (aw 1.36.59-rc.3 accept-invite --parent), cut short: its trace shows nothing.
+    ["an outstanding creator request", (dir) => { mkdirSync(join(dir, "requests")); writeFileSync(join(dir, "requests", `${randomUUID()}.json`), "{}"); }],
+    ["an empty requests directory", (dir) => mkdirSync(join(dir, "requests"))],
+    ["an installed chain", (dir) => writeFileSync(join(dir, "id-chain.json"), "{}")],
+    ["an identity", (dir) => writeFileSync(join(dir, "identity.yaml"), "did: did:key:z6MkFixture\n")],
   ]) {
     const dir = pending(t);
     spoil(dir);

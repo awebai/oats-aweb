@@ -152,8 +152,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
      "aw's record of the accept is this home key's and names no ID-tree issuer and no
      human, so no signature can be pending for it". That means the record is one aw
      accepts, made for this home's own key, with no `id_tree.domain` and no
-     `for_human`. The check reads the file as aw writes it; a file edited by hand
-     isn't covered. If the warning instead says aw's record "doesn't show that no
+     `for_human`, and that the home holds no trace of a creator exchange of its own
+     (`<home>/.aw/requests`, `<home>/.aw/id-chain.json` or `<home>/.aw/identity.yaml`).
+     The check reads the file as aw writes it; a file edited by hand isn't covered. If the warning instead says aw's record "doesn't show that no
      signature can be pending", stop: the mint may be waiting for a signature, so
      finish the exchange aw printed for it, or reconcile it with aw.
   3. Check that the root reads chainless:
@@ -193,8 +194,13 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
   1.36.59-rc.3 `:206-215`), or when it names a human (1.36.59-rc.3 `:199-200`). An
   invite with no ID-tree binding leaves `id_tree.domain` empty (1.36.58 `:94`;
-  1.36.59-rc.3 `:168`), and aw then prepares no request at all. The provider's
-  invites (`aw team invite --team-id=<team>`) name no human.
+  1.36.59-rc.3 `:168`), and aw then prepares no request for it. The provider's
+  invites (`aw team invite --team-id=<team>`) name no human. On 1.36.59-rc.3,
+  `accept-invite --parent` runs a creator exchange of its own after saving that
+  record (`cli/go/cmd/aw/id_team.go:2312-2333`), keeping its outgoing request in
+  `<home>/.aw/requests` (`cli/go/awconfig/id_request_store.go:41-42`) and its chain
+  in `<home>/.aw/id-chain.json`; the check finds no proof while either, or
+  `identity.yaml`, is there.
 - **Roots with no chain change nothing.** For a root with no chain (a local
   `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
   retire behave as before; the only differences are `attribution` `unknown` and the
