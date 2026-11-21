@@ -139,9 +139,12 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
 - **Roots with no chain change nothing.** For a root with no chain (a local
   `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
   retire behave as before; the only differences are `attribution` `unknown` and the
-  `roots` entries. For a root under a namespace with no person (`no_human`), nothing
+  `roots` entries. Retire is stricter in three cases and keeps the home instead: it
+  settles a cut-short mint only on a strict chainless read at retire (`unavailable` is
+  not chainless), and it keeps a home with an unreadable `teams.json` or an older
+  provider's mint that was cut short. For a root under a namespace with no person (`no_human`), nothing
   changes that aw wouldn't already stop.
-- **Undoing it.** adoption can't be undone on a root; the way out is removing the root from the team and starting a new root
+- **Undoing it.** Adoption can't be undone on a root; the way out is removing the root from the team and starting a new root.
 
 The provider reads only aw's exit status and the `--json` envelope's `error.code`,
 `http_status` and `reason`, never `error.message` or other prose.
