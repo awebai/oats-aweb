@@ -12,24 +12,25 @@ import { usernameUnavailable, usernameUnavailableCause } from './aw-failure-caus
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** Whether a root's `.aw` holds a signup aw started and has not finished, so that re-running
- *  the same `aw init` resumes it. From aw 1.36.59 (fc8c2b797), a signup whose outcome is
- *  unknown (a 5xx) keeps the journal `signup-recovery.json`, its signer and exact request
- *  (aw cmd/aw/hosted_signup_recovery.go:19 at 4c0bb2b8ed, the 1.36.59 cut). Beside it may be
- *  its lock `signup-recovery.lock` (:241; later aw keeps the lock in its own state, so it
- *  is never required), aw's `.tmp.*` atomic-write temps (internal/atomicfile/atomicfile.go:134)
- *  and whatever aw installed before the outcome became unknown (a signing key and
- *  certificate when connect failed after the signup).
- *  aw removes the journal only once signer, membership and credential are installed
- *  (hosted_signup_recovery.go:283-287), so while it is there aw's signup is unfinished:
- *  `aw init` in that root loads it before anything else (onboarding_wizard.go:124-130), a
- *  confirmed journal skips the signup (hosted_signup_recovery.go:170-225), and aw refuses
- *  a changed username, name, service or scope itself. A `.aw` that is not a directory, or
- *  whose journal is not a regular file, is not a resume. Read only: setup never writes,
- *  moves or removes anything in that `.aw`. */
+ *  the same `aw init` resumes it: true, false, or undefined when the journal cannot be
+ *  inspected (a `.aw` this user cannot search). aw's contract (docs/cli-integration-contract.md:42,
+ *  aweb de09a6c3c9, the same code as 1.36.59-rc.5): a valid `.aw/signup-recovery.json` is the
+ *  resumption signal for an interrupted hosted signup, and the original command, retried in
+ *  the same directory with the same AWEB_URL and selections, resumes it, also when a signing
+ *  key and team certificate exist after a failed connect, with no second signup request.
+ *  In aw (de09a6c3c9) the journal is cmd/aw/hosted_signup_recovery.go:21; `aw init` resumes
+ *  it before any other outcome (init.go:707-717, init_signup_recovery.go:24-78) and refuses a
+ *  changed scope, registry, API key or outcome itself; a confirmed signup is not sent again
+ *  (hosted_signup_recovery.go:185-239); the journal is removed only once signer, membership
+ *  and credential are installed (:309-331). Its lock lives in aw's own state (:251-261), and
+ *  1.36.59-rc.4 kept it in `.aw`: never required here. Only the journal's presence is
+ *  read, never its content (it holds the signer). A `.aw` that is not a directory, or whose
+ *  journal is not a regular file, is not a resume. Setup never writes, moves or removes
+ *  anything in that `.aw`. */
 export function signupUnfinished(awDir) {
-  try {
-    return lstatSync(awDir).isDirectory() && lstatSync(join(awDir, 'signup-recovery.json')).isFile();
-  } catch { return false; }
+  try { if (!lstatSync(awDir).isDirectory()) return false; } catch { return false; }
+  try { return lstatSync(join(awDir, 'signup-recovery.json')).isFile(); }
+  catch (error) { return error.code === 'ENOENT' ? false : undefined; }
 }
 export function setupFailure(code, message, details = {}) {
   return Object.assign(new Error(message), { code, details });
@@ -218,7 +219,11 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     const usableAw = aw.status === 'ok' || aw.status === 'done';
     // A root holding a signup aw has not finished is not an identity yet: re-running the
     // same signup resumes it (signupUnfinished). Any other `.aw` is an existing identity.
-    const resume = signupUnfinished(join(root, '.aw'));
+    const journal = signupUnfinished(join(root, '.aw'));
+    // Neither a resume nor a membership read can be chosen safely: an aw that keeps no
+    // journal (up to 1.36.58) could sign up a second time into that root.
+    if (journal === undefined) throw setupFailure('E_SETUP_MEMBERSHIP', "selected root's identity directory cannot be searched, so whether aw left an unfinished signup in it is unknown; root retained, no repeated signup: let this user search it, then re-run");
+    const resume = journal === true;
     const hasIdentity = !resume && existsSync(join(root, '.aw'));
     const readMembership = () => {
       try { if (!statSync(join(root, '.aw')).isDirectory()) throw new Error(); } catch {
@@ -261,7 +266,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
         const exit = `aw init failed${Number.isInteger(error.status) ? ` (exit ${error.status})` : ''}; output withheld because it handles credentials`;
         // An unknown outcome (a 5xx): aw kept the signup it attempted, and the account may
         // exist. Only the same command resumes it, with the same signer.
-        if (signupUnfinished(join(root, '.aw'))) throw setupFailure('E_SETUP_NATIVE', `${exit}; aw recorded this signup in the root: re-run the same setup command and aw resumes it; root retained`);
+        if (signupUnfinished(join(root, '.aw')) === true) throw setupFailure('E_SETUP_NATIVE', `${exit}; aw recorded this signup in the root: re-run the same setup command, with the same flags and AWEB_URL, and aw resumes it; root retained`);
         throw setupFailure('E_SETUP_NATIVE', `${exit}; root retained`);
       }
       steps.push({ step: 'bootstrap', status: 'command-completed' });

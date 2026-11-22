@@ -4,7 +4,7 @@
 // binary's side is test/username-signup-resume-native.test.mjs.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, lstatSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, lstatSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -75,7 +75,7 @@ test('a root holding aw\'s signup journal is a resume: the plan says so and runs
     assert.deepEqual(f.calls, [], `${name}: the plan runs nothing`);
     await assert.rejects(f.setup(), error => {
       assert.equal(error.code, 'E_SETUP_NATIVE');
-      assert.match(error.message, /^aw init failed \(exit 1\); output withheld because it handles credentials; aw recorded this signup in the root: re-run the same setup command and aw resumes it; root retained$/);
+      assert.match(error.message, /^aw init failed \(exit 1\); output withheld because it handles credentials; aw recorded this signup in the root: re-run the same setup command, with the same flags and AWEB_URL, and aw resumes it; root retained$/);
       assert.deepEqual(error.details.steps, [{ step: 'bootstrap', status: 'unconfirmed' }]);
       return true;
     });
@@ -129,6 +129,29 @@ test('a .aw that is a symlink to a directory holding a journal is not a resume',
   await assert.rejects(f.setup(true), error => error.code === 'E_SETUP_MEMBERSHIP');
   assert.deepEqual(f.calls, [['aw', 'team', 'list', '--json']]);
   assert.deepEqual(listing(target), before);
+});
+
+test('a .aw this user cannot search: no aw command, and a refusal that says the journal is unknown', async t => {
+  const f = fixture(t, { 'signup-recovery.json': 'file', 'signup-recovery.lock': 'file' });
+  const before = listing(f.awDir);
+  chmodSync(f.awDir, 0o600);
+  try {
+    // A privileged user searches it anyway; then it is a plain resume.
+    let searchable = true;
+    try { lstatSync(join(f.awDir, 'signup-recovery.json')); } catch { searchable = false; }
+    assert.equal(signupUnfinished(f.awDir), searchable ? true : undefined);
+    if (searchable) return;
+    for (const plan of [true, false]) {
+      await assert.rejects(f.setup(plan), error => {
+        assert.equal(error.code, 'E_SETUP_MEMBERSHIP');
+        assert.match(error.message, /cannot be searched, so whether aw left an unfinished signup in it is unknown; root retained, no repeated signup/);
+        return true;
+      });
+    }
+    // No signup and no membership read: an aw that keeps no journal could sign up again.
+    assert.deepEqual(f.calls, []);
+  } finally { chmodSync(f.awDir, 0o700); }
+  assert.deepEqual(listing(f.awDir), before);
 });
 
 test('a failed first signup that leaves no journal keeps today\'s message', async t => {

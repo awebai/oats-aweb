@@ -88,7 +88,7 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   if (keepsSignupJournal) {
     // aw 1.36.59-rc.4 keeps the journal's lock beside it; later aw keeps the lock in its own state.
     assert.deepEqual(readdirSync(join(root, '.aw')).filter(name => name !== 'signup-recovery.lock').sort(), ['signup-recovery.json']);
-    assert.match(result.stderr, /re-run the same setup command and aw resumes it/);
+    assert.match(result.stderr, /re-run the same setup command, with the same flags and AWEB_URL, and aw resumes it/);
   } else {
     assert.equal(existsSync(join(root, '.aw')), false);
     assert.doesNotMatch(result.stderr, /re-run the same setup command/);

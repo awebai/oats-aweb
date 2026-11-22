@@ -5,9 +5,9 @@
 // nothing and the re-run is a fresh signup. Both end with the account set up.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,14 +38,15 @@ const base58 = bytes => {
   return out;
 };
 const didKey = publicKey => 'did:key:z' + base58(Buffer.concat([Buffer.from([0xed, 1]), publicKey.export({ format: 'der', type: 'spki' }).subarray(-32)]));
-/** Every entry of a directory tree with its mode and content digest: what changed, not when. */
+/** Every entry of a directory tree with its mode, size and modification time. Contents are
+ *  never read: aw's journal holds its signer. */
 function listing(dir) {
   if (!existsSync(dir)) return null;
   const out = {};
   const walk = rel => {
     for (const name of readdirSync(join(dir, rel)).sort()) {
       const path = join(rel, name), stat = statSync(join(dir, path));
-      out[path] = stat.isDirectory() ? `dir ${(stat.mode & 0o777).toString(8)}` : `${(stat.mode & 0o777).toString(8)} ${createHash('sha256').update(readFileSync(join(dir, path))).digest('hex')}`;
+      out[path] = `${stat.isDirectory() ? 'dir' : 'file'} ${(stat.mode & 0o777).toString(8)} ${stat.size} ${stat.mtimeMs}`;
       if (stat.isDirectory()) walk(path);
     }
   };
@@ -145,7 +146,7 @@ test('username setup resumes the signup aw kept after a 5xx signup, and its plan
   assert.equal(h.count(SIGNUP), 1);
   if (h.keepsJournal) {
     assert.deepEqual(withoutLock(h.awDir), ['signup-recovery.json']);
-    assert.match(unknown.doc.error.message, /re-run the same setup command and aw resumes it/);
+    assert.match(unknown.doc.error.message, /re-run the same setup command, with the same flags and AWEB_URL, and aw resumes it/);
   } else {
     assert.equal(existsSync(h.awDir), false);
     assert.doesNotMatch(unknown.doc.error.message, /re-run/);
@@ -185,7 +186,7 @@ test('a 5xx at connect after the signup: setup resumes what aw installed without
   h.answers.connect = true;
   if (h.keepsJournal) {
     assert.ok(installed.includes('signup-recovery.json'), installed.join(' '));
-    assert.match(unknown.doc.error.message, /re-run the same setup command and aw resumes it/);
+    assert.match(unknown.doc.error.message, /re-run the same setup command, with the same flags and AWEB_URL, and aw resumes it/);
     await planRunsNothing(h, 'resume');
     completed(await h.setup());
     assert.equal(existsSync(join(h.awDir, 'signup-recovery.json')), false);

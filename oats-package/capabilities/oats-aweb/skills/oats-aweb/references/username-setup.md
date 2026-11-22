@@ -36,8 +36,11 @@ output; aw refuses it before it creates anything. `E_SETUP_NATIVE` preserves saf
 exit context and withholds credential-bearing output. A failed signup can leave partial state; no automatic retry or deletion
 is performed. When the outcome is unknown (the service answered 5xx: the account may
 exist), aw 1.36.59 and later keep the attempted signup in the root's `.aw`, and
-`E_SETUP_NATIVE` says so: re-run the same setup command and aw resumes it. A changed
-username, name or service is aw's refusal, under `E_SETUP_NATIVE`. `E_SETUP_AW` requires the explicit operator installation procedure
+`E_SETUP_NATIVE` says so: re-run the same setup command, with the same flags and
+`AWEB_URL`, and aw resumes it. A changed username, name, service, scope, registry or
+API key is aw's refusal, under `E_SETUP_NATIVE`. A root whose `.aw` this user cannot
+search is refused with `E_SETUP_MEMBERSHIP` before any aw command: whether aw left a
+signup there is unknown, and an aw that keeps none could sign up again. `E_SETUP_AW` requires the explicit operator installation procedure
 in `/oats-aweb` §8; `--install-aw` is never acted on by a plan. `--label/--plan`
 apply only to `--username`, not API-key, controller-team, invite-join or GLOBAL
 setup. Configuration success does not establish a connected receiver or consent.
