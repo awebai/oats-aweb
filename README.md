@@ -1717,13 +1717,14 @@ Supported acts:
   it on every invocation, by name as `AWID_REGISTRY_URL`, to registry calls,
   LOCAL and GLOBAL sessions, custody serve and wake run. What aw itself does
   with a registry URL saved in its own files depends on its version: aw 1.36.58
-  applies no address policy to it. From aw 1.36.59, aw reaches a saved URL
-  only at a public address, unless aw recorded it as the operator's own choice
-  (`registry_operator_origin`, which aw writes only for the URL the operator
-  named and `aw id registry-trust <origin>` sets for a recorded one), or it is
-  one a 1.36.58 home kept: its `identity.yaml` `registry_url`, or the route of
-  an implicit local team whose controller and team keys this machine holds.
-  Those may reach a private network without the pin.
+  applies no address policy to it. From aw 1.36.59, aw normally reaches a
+  saved URL only at a public address. aw has exceptions, and they include a URL
+  aw recorded as the operator's own choice (`registry_operator_origin`, which
+  aw writes only for the URL the operator named and `aw id registry-trust
+  <origin>` sets for a recorded one) and one a 1.36.58 home kept: its
+  `identity.yaml` `registry_url`, or the route of an implicit local team whose
+  controller and team keys this machine holds. Those may reach a private
+  network without the pin.
   Existing non-public ambient-only deployments receive
   `registry-setting-required` at spawn/join and readiness, with the setup and
   restart steps. GLOBAL homes with a recorded non-default registry also get
