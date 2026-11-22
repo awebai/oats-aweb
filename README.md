@@ -1852,7 +1852,7 @@ link appears afterwards, the directory copy preserves it as a link. The mode
 walk uses `lstat`, rejects that destination link before chmodding it, and rolls
 the copy back before connect; it never changes the link target's permissions.
 After connect, the parsed `workspace status` path and `whoami` identity verify
-the seat. `aw check --online` is not a gate: it exits zero even for failed checks.
+the seat.
 The seat and pending-mint records are written with mode 0600.
 
 The spawn reads the server only from that `workspace.yaml`. Any http or https
