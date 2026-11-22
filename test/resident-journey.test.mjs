@@ -29,7 +29,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -166,6 +166,27 @@ function globalIdentity(j, root, name, ns) {
   assert.equal(optedIn.doc.ok, true);
   assert.equal(optedIn.doc.result.registry, AWID_URL);
   return label;
+}
+/** From aw 1.36.59 (aweb 32b8f4977; cmd/aw/workspace_local_retire.go at
+ *  57359d18ae), a delete of a local member of a team that is not hosted, on a
+ *  machine holding that team's controller key, retires the member itself: it
+ *  deletes the workspace and revokes the certificate, and answers
+ *  alias_released: true. Without the key, aw keeps the released team_not_hosted
+ *  refusal, which hands the membership to the controller. */
+const retiresLocalMember = (version) => versionAtLeast(version, "1.36.59-rc.4");
+/** The one active certificate the team lists for alias, read as its controller. */
+function seatCertificate(step, teamId, alias) {
+  const listed = JSON.parse(step(["id", "team", "members", "--team-id", teamId, "--registry", AWID_URL, "--json"])).members.filter((m) => m.alias === alias);
+  assert.equal(listed.length, 1, `${teamId} lists one active certificate for ${alias}: ${JSON.stringify(listed)}`);
+  return listed[0].certificate_id;
+}
+/** The team lists certificateId only as revoked. */
+function assertRetiredAtService(step, teamId, certificateId) {
+  const active = JSON.parse(step(["id", "team", "members", "--team-id", teamId, "--registry", AWID_URL, "--json"])).members;
+  assert.equal(active.some((m) => m.certificate_id === certificateId), false, `${teamId} no longer lists ${certificateId} as a member`);
+  const all = JSON.parse(step(["id", "team", "members", "--team-id", teamId, "--registry", AWID_URL, "--include-revoked", "--json"])).members;
+  const row = all.find((m) => m.certificate_id === certificateId);
+  assert.ok(row?.revoked_at, `${teamId} records ${certificateId} as revoked: ${JSON.stringify(row)}`);
 }
 const yamlField = (text, key) => new RegExp(`^${key}:\\s*"?([^"\\n]+)"?\\s*$`, "m").exec(text)?.[1];
 async function awidKey(stableId) {
@@ -538,11 +559,24 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   const seat = roster.members.find(member => member.alias === spawned.doc.result.instance);
   assert.ok(seat, 'the provider roster contains the joined seat');
   assert.deepEqual(seat.sources, ['certificate', 'presence']);
+  const seatCerts = retiresLocalMember(j.awVersion) ? { default: seatCertificate(step, team, seat.alias), alpha: seatCertificate(step, joinedTeam, seat.alias) } : undefined;
   const retired = j.shell("oats retire joined-seat --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false);
-  // Neither team is hosted here, so aw's refusal hands both memberships to the controller.
-  assert.deepEqual(JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup.map((c) => c.label).sort(), ["alpha", "default"]);
+  const meta = JSON.parse(retired.stdout).capabilityMeta["oats.aweb"];
+  if (!retiresLocalMember(j.awVersion)) {
+    // Neither team is hosted here, so aw's refusal hands both memberships to the controller.
+    assert.deepEqual(meta.pendingControllerCleanup.map((c) => c.label).sort(), ["alpha", "default"]);
+    return;
+  }
+  // This root holds both teams' controller keys, so aw retires the member itself:
+  // nothing is left for the controller, and nothing stays at the service.
+  assert.equal(meta.pendingControllerCleanup, undefined, retired.stdout);
+  assertRetiredAtService(step, team, seatCerts.default);
+  assertRetiredAtService(step, joinedTeam, seatCerts.alpha);
+  const after = j.shell("oats aweb roster --soul probe --json");
+  assert.equal(after.status, 0, after.stdout + after.stderr);
+  assert.equal(JSON.parse(after.stdout).members.find((member) => member.alias === seat.alias), undefined, "the default team's roster no longer lists the seat");
 });
 
 test("a real join killed right after this aw accepted the invite (awebai/oats-aweb#217): retire releases the unrecorded membership, and nothing stays at the service", (t) => {
@@ -584,10 +618,18 @@ test("a real join killed right after this aw accepted the invite (awebai/oats-aw
   assert.match(listed.stdout, new RegExp(joinedTeam.replace(/\./g, "\\.")), "aw holds the accepted membership");
   const members = () => step(["id", "team", "members", "--team-id", joinedTeam, "--registry", AWID_URL, "--json"]);
   const before = members();
+  const killedCert = retiresLocalMember(j.awVersion) ? seatCertificate(step, joinedTeam, "killed-seat") : undefined;
 
   const retired = j.shell("oats retire killed-seat --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false);
+  if (retiresLocalMember(j.awVersion)) {
+    // This root holds the team's controller key, so aw retires the unrecorded
+    // member itself: no controller cleanup, and its certificate is revoked.
+    assert.equal(JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup, undefined, retired.stdout);
+    assertRetiredAtService(step, joinedTeam, killedCert);
+    return;
+  }
   // As for a recorded joined team, aw refuses a self-release on a team not
   // hosted here, so retire hands the membership to the controller.
   const cleanup = JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup.find((c) => c.label === "alpha");
@@ -597,6 +639,56 @@ test("a real join killed right after this aw accepted the invite (awebai/oats-aw
   const cleaned = j.shell(cleanup.command);
   assert.equal(cleaned.status, 0, cleaned.stdout + cleaned.stderr);
   assert.ok(!members().includes(cleanup.certificateId), "the team no longer lists the member");
+});
+
+test("a real joined-team seat whose teams' controller keys are not on this machine: retire hands both memberships to the controller, and its printed cleanup removes them", (t) => {
+  if (!configured(t)) return;
+  if (!["darwin", "linux"].includes(process.platform)) { t.skip("no per-user service manager on this platform"); return; }
+  const j = journey(t);
+  const ns = `keyless-${randomBytes(4).toString("hex")}.test`;
+  const team = `default:${ns}`, joinedTeam = `alpha:${ns}`;
+  j.workspace({ teams: `teams:\n  default: { team: '${team}' }\n  alpha: { team: '${joinedTeam}' }\nsouls:\n  '*':\n    teams: any\n`, defaultTeam: "default" });
+  globalIdentity(j, j.deployment, "root", ns);
+  const step = (args) => { const r = j.aw(j.deployment, args, { AWID_SKIP_DNS_VERIFY: "1" }); assert.equal(r.status, 0, `aw ${args.join(" ")}: ${r.stdout}${r.stderr}`); return r.stdout; };
+  step(["id", "team", "create", "--namespace", ns, "--name", "alpha", "--registry", AWID_URL, "--json"]);
+  const cert = JSON.parse(step(["id", "team", "add-member", "--namespace", ns, "--team", "alpha", "--member", `${ns}/root`, "--json"])).certificate_id;
+  step(["id", "team", "fetch-cert", "--namespace", ns, "--team", "alpha", "--cert-id", cert, "--registry", AWID_URL, "--json"]);
+  const local = join(j.deployment, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replace("    delivery: session\n", `    delivery: session\n    root: ${j.deployment}\n`));
+  Object.assign(j.env, { AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
+
+  const spawned = j.shell("oats spawn probe --name keyless-seat --provider oats.aweb join=alpha --no-launch --json");
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  const identityHome = join(spawned.doc.result.home, ".aweb-identity-alpha");
+  assert.ok(existsSync(join(identityHome, "workspace.yaml")), "the joined identity is connected");
+
+  // The controller keys are held by people elsewhere: for the retire only, move
+  // this namespace's keys out of aw's key directories in the private HOME, as
+  // on a machine that never held them. Every aw in the matrix then refuses the
+  // self-release with its released team_not_hosted sentence.
+  const keyDirs = [join(j.home, ".awid", "team-keys", ns), join(j.home, ".config", "aw", "team-keys", ns)].filter((dir) => existsSync(dir));
+  assert.ok(keyDirs.some((dir) => existsSync(join(dir, "alpha.key")) && existsSync(join(dir, "default.key"))), `aw keeps both teams' controller keys in ${keyDirs.join(", ") || "none of its key directories"}`);
+  const aside = join(j.base, "keys-aside");
+  mkdirSync(aside);
+  const moved = keyDirs.map((dir, i) => [dir, join(aside, String(i))]);
+  const restore = () => { for (const [dir, to] of moved) if (existsSync(to) && !existsSync(dir)) renameSync(to, dir); };
+  j.cleanups.push(restore);
+  for (const [dir, to] of moved) renameSync(dir, to);
+  let retired;
+  try { retired = j.shell("oats retire keyless-seat --json"); } finally { restore(); }
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  assert.equal(existsSync(identityHome), false, "controller cleanup needs no member key: the home may go");
+  const pending = JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup ?? [];
+  assert.deepEqual(pending.map((c) => c.label).sort(), ["alpha", "default"], retired.stdout);
+
+  // The keys are back: the controller runs each printed line as it is.
+  for (const [teamId, cleanup] of [[team, pending.find((c) => c.label === "default")], [joinedTeam, pending.find((c) => c.label === "alpha")]]) {
+    assert.ok(cleanup.command && cleanup.certificateId, JSON.stringify(cleanup));
+    const cleaned = j.shell(cleanup.command);
+    assert.equal(cleaned.status, 0, cleaned.stdout + cleaned.stderr);
+    const listed = JSON.parse(step(["id", "team", "members", "--team-id", teamId, "--registry", AWID_URL, "--json"])).members;
+    assert.equal(listed.some((m) => m.certificate_id === cleanup.certificateId), false, `${teamId} no longer lists ${cleanup.certificateId}`);
+  }
 });
 
 test('a real retained seat copies authority, reconnects, checks, heartbeats, reports its identity and releases only its own lock', async t => {

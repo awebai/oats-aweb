@@ -881,8 +881,10 @@ aweb team aweb:example.aweb.ai — 9 entries (membership certificates and worksp
   is held by people (retire answered `team_not_hosted`) is marked: its line ends
   `; retired by OATS on this host <YYYY-MM-DD>; the team controller removes it
   with: <command>`, and the footer counts those certificates. Only the team's
-  controller can remove them, with the printed command. The command's admission
-  pin comes only from the current `settings.oats.aweb.registry`, safely quoted
+  controller can remove them, with the printed command. From aw 1.36.59, a
+  retire on a machine that holds the team's controller key leaves no such
+  certificate: aw retires the member itself (see "What spawn and retire run").
+  The command's admission pin comes only from the current `settings.oats.aweb.registry`, safely quoted
   as AWID_REGISTRY_URL. The membership's saved registry_url stays a locator;
   it is never promoted to a native admission flag or environment. Retire records
   entries in `<deployment>/.oats-aweb/retired-certificates.json` (team,
@@ -1794,6 +1796,19 @@ whose last start was on the broker path, `aw wake deregister` runs at the same
 time as the delete. Before that, retire leaves each joined team and releases each
 unfinished join. While a release that needs the member key fails (anything but
 `team_not_hosted`), retire keeps the key and the record and exits nonzero.
+
+From aw 1.36.59, a member of a team that is not hosted is retired by aw itself
+when this machine holds that team's controller key (a minting root that made
+the team holds it): `aw workspace delete` deletes the workspace, revokes the
+member's certificate with the team key and answers `alias_released: true`, so
+retire removes the identity home and records no controller cleanup. If aw stops
+after deleting the workspace (`retired_revocation_pending`,
+`retired_key_holder_required`, `workspace_cleanup_incomplete` or
+`retirement_receipt_unavailable`), it exits nonzero and keeps its receipt under
+the identity home's `retirements/`: retire keeps that home and exits nonzero,
+and a plain retry of the retire finishes it, as aw resumes the receipt. Without
+the team's key on this machine nothing changes: aw refuses with
+`team_not_hosted` and retire hands the membership to the controller, as above.
 
 A grant seat with no grant or seat id answers `retired: false` with
 `reason: "nothing-to-delete"`, the kernel's completed no-op vocabulary.

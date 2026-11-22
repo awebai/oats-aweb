@@ -18,6 +18,15 @@
   any aw command. A `.aw` without the journal keeps the membership read as
   before; aw up to 1.36.58 left no `.aw` after a 5xx signup, so a re-run there
   signs up afresh, as before.
+- **aw 1.36.59 retires a local member itself where this machine holds its
+  team's controller key.** A retire of a seat in a team that is not hosted
+  then leaves no controller cleanup: aw deletes the workspace and revokes the
+  certificate, and retire removes the identity home. When aw stops after
+  deleting the workspace, retire keeps the home with aw's receipt and exits
+  nonzero, and a plain retry finishes. Without the key, aw's `team_not_hosted`
+  refusal still hands the membership to the controller. The provider is
+  unchanged; the real-stack journeys now prove both outcomes on aw 1.36.59, and
+  a fake-aw test the partial one.
 
 ## 1.48.0 — 2026-11-21
 
