@@ -668,7 +668,7 @@ test("a real joined-team seat whose teams' controller keys are not on this machi
   // self-release with its released team_not_hosted sentence.
   const keyDirs = [join(j.home, ".awid", "team-keys", ns), join(j.home, ".config", "aw", "team-keys", ns)].filter((dir) => existsSync(dir));
   assert.ok(keyDirs.some((dir) => existsSync(join(dir, "alpha.key")) && existsSync(join(dir, "default.key"))), `aw keeps both teams' controller keys in ${keyDirs.join(", ") || "none of its key directories"}`);
-  const aside = join(j.base, "keys-aside");
+  const aside = join(j.home, "keys-aside");
   mkdirSync(aside);
   const moved = keyDirs.map((dir, i) => [dir, join(aside, String(i))]);
   const restore = () => { for (const [dir, to] of moved) if (existsSync(to) && !existsSync(dir)) renameSync(to, dir); };
