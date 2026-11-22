@@ -54,7 +54,8 @@
     apart from `attribution: unknown` and the new `roots` entries. A consumer that
     compares the check-only document's keys exactly sees `roots`.
   - **A root inside an instance home of this deployment** (`root` or a `roots` value,
-    or a symlink that resolves there) is refused at its next accept or mint with
+    or a symlink that resolves there) is refused at its next setup that creates,
+    accepts or mints into it (`--username`, `--create`, `--join`, an invite) with
     `E_ROOT_INSIDE_INSTANCE_HOME`: move it beside the deployment's other roots
     (`<deployment>/.aweb-roots/<label>`) and set the setting there.
   - **A home left by a mint cut short under an older provider:** its record of the

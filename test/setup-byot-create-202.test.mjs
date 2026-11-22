@@ -87,6 +87,18 @@ test('a deployment inside an agent\'s instance home creates into its own .aweb-r
   assert.ok(existsSync(join(f.teamRoot, '.aw', 'workspace.yaml')));
 });
 
+test('a create into a root inside one of the deployment\'s instance homes is refused before team create, register or invite', (t) => {
+  const f = fixture(t), home = join(f.root, 'agents', 'dev', 'instances', 'dev-1'), inside = join(home, 'a', 'b', 'root');
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, 'instance.json'), '{}\n');
+  const r = f.run({ OATS_SETTINGS: JSON.stringify({ root: f.root, roots: { [TEAM]: inside } }) });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /E_ROOT_INSIDE_INSTANCE_HOME/);
+  assert.match(r.stdout + r.stderr, /nothing was created, accepted or minted/);
+  assert.deepEqual(f.calls().filter((c) => /^id team (create|register|set-server|invite|accept-invite)/.test(c)), [], 'no team effect');
+  assert.equal(existsSync(inside), false);
+});
+
 test('the result names where the team key is, user-wide, and never prints the key', (t) => {
   const f = fixture(t), r = f.run();
   assert.equal(r.status, 0, r.stderr);

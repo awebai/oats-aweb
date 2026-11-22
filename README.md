@@ -1476,9 +1476,11 @@ and where to set it. The provider settings are:
   symlinks): retiring that instance removes its home, and the root with it. A
   deployment that itself sits inside an agent's home (a scratch, journey or live-test
   deployment) is not refused for that. If the deployment can't be resolved, any
-  instance home above the root counts, and the error says so. Setup refuses to accept or mint into one, before
-  any aw call, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and a place
-  beside the deployment's other roots (`<deployment>/.aweb-roots/<label>`).
+  instance home above the root counts, and the error says so. Every setup path that
+  creates, accepts or mints into a root (`--username`, `--create`, `--join`, an
+  invite, and a bare API-key setup) refuses one once it has chosen the root, before
+  any aw call or install, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and
+  a place beside the deployment's other roots (`<deployment>/.aweb-roots/<label>`).
 - `residents`: map of resident name to absolute custody directory for
   `identity.mode: global`; host-only because it points at custody material.
   `oats aweb resident create <name>` records its resident here.

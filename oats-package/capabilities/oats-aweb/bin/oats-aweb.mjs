@@ -68,7 +68,7 @@ import { awChildEnv } from "../lib/aw-child-env.mjs";
 import { appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, basename, dirname, resolve, delimiter, isAbsolute, relative, sep } from "node:path";
-import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName, rootInsideInstanceHomeError } from "../lib/team-roots.mjs";
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
@@ -285,25 +285,6 @@ function awHoldsPendingIn(path) {
  *  segments: `..nested-root` is a name inside, `..` or `../x` is outside. */
 const relInside = (rel) => rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 const isInside = (root, p) => relInside(relative(root, p));
-/** The instance home `dir` lies in: the nearest directory at or above it holding an
- *  `instance.json`, by realpath (a symlinked root that resolves into a home is in it),
- *  walking whole segments up from the deepest part that exists. With `within` (a
- *  deployment's realpath), only a home strictly between `dir` and `within` counts: a
- *  home of that deployment, never one that contains the deployment. Undefined when
- *  none. */
-function instanceHomeHolding(dir, within) {
-  let real = resolve(dir);
-  for (;;) {
-    try { real = realpathSync(real); break; }
-    catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e; const parent = dirname(real); if (parent === real) break; real = parent; }
-  }
-  for (let d = real; ; d = dirname(d)) {
-    if (within !== undefined && (d === within || !isInside(within, d))) return undefined;
-    try { lstatSync(join(d, "instance.json")); return d; }
-    catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e; }
-    if (dirname(d) === d) return undefined;
-  }
-}
 /** The names grant homes take (legacy `.aweb-identity`, generated
  *  `.aweb-identity-<digits>`); a joined team's home is `.aweb-identity-<label>`. */
 const isIdentityHomeName = (name) => name === ".aw" || name === ".aweb-identity" || name.startsWith(".aweb-identity-");
@@ -3761,18 +3742,11 @@ ${JSON.stringify(problem.details || {})}`);
   /** Setup never accepts or mints into a root inside an instance home: retiring that
    *  instance removes its home, and the root with it (README, "Human attribution";
    *  awebai/oats-aweb#311). Checked before any aw call. */
+  const rootSettingName = (recordedKey) => recordedKey !== undefined ? `settings.oats.aweb.roots[${JSON.stringify(recordedKey)}]` : "the deployment's per-team root";
   const refuseRootInsideInstanceHome = (rootDir, setting, label) => {
-    // Only a home of this deployment counts: a deployment may itself sit inside an
-    // agent's home (scratch, journey and live-test deployments). When the deployment
-    // can't be resolved, any home above the root counts, and the message says why.
     const base = deployment || process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE;
-    let within;
-    try { within = base ? realpathSync(base) : undefined; } catch { within = undefined; }
-    const owner = instanceHomeHolding(rootDir, within);
-    if (!owner) return;
-    const beside = perTeamRoot(base || process.cwd(), label || "<label>");
-    const unresolved = within === undefined ? ` (the deployment${base ? ` ${base}` : ""} couldn't be resolved, so any instance home above the root counts)` : "";
-    throw Object.assign(new Error(`${setting} puts ${label ? `${label}'s ` : "the "}root at ${rootDir}, inside the instance home ${owner}${unresolved}: retiring that instance would remove the root with its home. Move it beside the deployment's other roots (for example ${beside}) and set ${setting} there; nothing was accepted or minted`), { code: "E_ROOT_INSIDE_INSTANCE_HOME", details: { root: rootDir, instanceHome: owner, setting } });
+    const refused = rootInsideInstanceHomeError({ root: rootDir, setting, label, deployment: base, beside: perTeamRoot(base || process.cwd(), label || "<label>") });
+    if (refused) throw refused;
   };
 
   const setupServiceDocs = (teamRoot) => {
@@ -3812,7 +3786,7 @@ ${JSON.stringify(problem.details || {})}`);
   };
   const acceptIntoTeamRoot = (label, token, expectedTeam, ...serviceDocs) => {
     const { configured, recordedKey, teamRoot } = teamRootFor(label, expectedTeam);
-    refuseRootInsideInstanceHome(teamRoot, recordedKey !== undefined ? `settings.oats.aweb.roots[${JSON.stringify(recordedKey)}]` : "the deployment's per-team root", label);
+    refuseRootInsideInstanceHome(teamRoot, rootSettingName(recordedKey), label);
     const idHome = join(teamRoot, ".aw");
     const resumeCommand = setupResumeCommand(label);
     // The caller's own service (create's canonical one) comes before setup's general sources.
@@ -4014,6 +3988,9 @@ ${JSON.stringify(problem.details || {})}`);
     if (createLabel || joinLabel) {
       const team = createLabel ? candidateTeamId(normalizeAwebTeamName(createLabel)) : joinConfiguration.expectedTeam;
       target = teamRootFor(createLabel || joinLabel, team);
+      // A create's effects (team create, register, invite) come before its accept, so its
+      // root is admitted here, before any of them.
+      if (createLabel) refuseRootInsideInstanceHome(target.teamRoot, rootSettingName(target.recordedKey), createLabel);
       printSetupRoot(target.teamRoot, team, target.source);
       if (independentTarget && existsSync(join(target.teamRoot, ".aw"))) {
         try { verifyTargetMembership(target, team); }

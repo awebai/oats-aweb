@@ -128,3 +128,23 @@ test('the success text names claim-human against the setup root before onboardin
  const g=fixture(t),spaced=join(g.dir,"a b's root"),q=g.text([],{OATS_SETTINGS:JSON.stringify({root:spaced})});assert.equal(q.status,0,q.stdout+q.stderr);
  assert.ok(q.stdout.includes(`  aw --identity-home '${join(g.dir,"a b'\\''s root")}/.aw' claim-human --email <their email>`),q.stdout);
 });
+
+// A root inside one of this deployment's instance homes would be removed with that home
+// when its instance retires (README, "Human attribution"): refused before any effect.
+test('a root inside one of the deployment\'s instance homes is refused before install or signup, for root and roots[predicted team]',t=>{
+ for(const key of ['root','roots']){
+  const f=fixture(t),home=join(f.dep,'agents','dev','instances','dev-1');mkdirSync(home,{recursive:true});writeFileSync(join(home,'instance.json'),'{}\n');
+  const inside=join(home,'a','b','root');
+  const settings=key==='root'?{root:inside}:{root:f.root,roots:{[row.team_id]:inside}};
+  const r=f.run(['--install-aw'],{OATS_SETTINGS:JSON.stringify(settings)});
+  assert.equal(r.status,1,r.stdout+r.stderr);const error=JSON.parse(r.stdout).error;
+  assert.equal(error.code,'E_ROOT_INSIDE_INSTANCE_HOME',key);
+  assert.ok(error.message.includes(key==='root'?'settings.oats.aweb.root':`settings.oats.aweb.roots[${JSON.stringify(row.team_id)}]`),error.message);
+  assert.ok(error.message.includes(join(f.dep,'.aweb-roots','alice')),'names a place beside the deployment\'s roots');
+  assert.deepEqual(f.aw.readCalls(),[],`${key}: no aw call`);assert.equal(existsSync(inside),false,key);assert.equal(existsSync(f.installs),false,`${key}: nothing installed`);
+ }
+});
+test('a deployment that itself sits inside an agent\'s home sets up its own root as before',t=>{
+ const f=fixture(t);writeFileSync(join(f.dir,'instance.json'),'{}\n');
+ const result=answer(f.run());assert.equal(result.team,row.team_id);assert.equal(result.membershipVerified,true);
+});
