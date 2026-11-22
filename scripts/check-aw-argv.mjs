@@ -60,7 +60,7 @@ export function checkRecordedAwArgv(binary, records, { version } = {}) {
       if (command === 'id team accept-invite' && flags.includes('--parent') && version && !versionAtLeast(version, ATTRIBUTION_AW) && !cache.get(command).has('--parent')) {
         // Only a join from an adopted root passes it, and below aw 1.36.59 that join
         // stops before any invite with the provider's own code. An aw that has the flag
-        // (the pinned next, 1.36.59-rc.5) is checked like any other.
+        // (the pinned next, 1.36.59-rc.6) is checked like any other.
         console.log(`Capability exclusion: aw ${version} lacks ${command} --parent; a join from an adopted root needs aw >= ${ATTRIBUTION_AW} and stops before any invite below it (${ADOPTED_ROOT_AW_TOO_OLD})`);
         flags = flags.filter((flag) => flag !== '--parent');
       }

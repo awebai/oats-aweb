@@ -76,7 +76,7 @@
     Why it's safe, with aw's source lines: README, "Human attribution", "A mint cut
     short under an older provider".
   aw-compat.json is unchanged (`tested` moves to 1.36.59 when it is published); CI
-  qualifies 1.36.59-rc.5 by its pinned npm integrity.
+  qualifies 1.36.59-rc.6 by its pinned npm integrity.
 
 ## 1.48.0 — 2026-11-21
 
