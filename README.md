@@ -1886,8 +1886,9 @@ retained seat reuses it, and the spawn moves its path to the instance home;
 that second connect does not update the seat directory's own
 `workspace.yaml`. Retiring the instance releases the seat's lock and neither
 deletes nor restores that server workspace: to use the seat directory itself
-again, run `aw workspace connect` from there again; otherwise the next
-retained spawn moves the workspace to its new home.
+again, run `aw workspace connect --service <url> --team <team id>` from there
+(the server and team the seat used); otherwise the next retained spawn moves
+the workspace to its new home.
 
 These work on aweb Cloud only, because aw treats only a Cloud team as hosted:
 releasing an identity at retire, `oats aweb connect`, `setup --username` and
