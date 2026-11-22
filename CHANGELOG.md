@@ -53,34 +53,24 @@
   - **Nothing, in most deployments.** Roots with no identity chain behave as before,
     apart from `attribution: unknown` and the new `roots` entries. A consumer that
     compares the check-only document's keys exactly sees `roots`.
-  - **A root inside an instance home** (`root` or a `roots` value, or a symlink that
-    resolves there) is refused at its next accept or mint with
+  - **A root inside an instance home of this deployment** (`root` or a `roots` value,
+    or a symlink that resolves there) is refused at its next accept or mint with
     `E_ROOT_INSIDE_INSTANCE_HOME`: move it beside the deployment's other roots
     (`<deployment>/.aweb-roots/<label>`) and set the setting there.
   - **A home left by a mint cut short under an older provider:** its record of the
-    mint names no issuing key. Retire settled such a home under #240. It now keeps it
-    as `mint-outcome-unknown`, even in a deployment that adopts nothing. aw 1.36.58
-    and 1.36.59 have no command that abandons a pending accept. To clear one:
-    1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`.
-    2. Read retire's warning for that home. Go on only if it says aw's record of the
-       accept "is this home key's and names no ID-tree issuer and no human, so no
-       signature can be pending for it". The provider checks that the record is one
-       aw accepts, made for this home's key, with no `id_tree.domain` and no
-       `for_human`. If it says aw's record "doesn't show that no signature can be
-       pending", stop: the mint may be waiting for a signature.
-    3. Check that root reads chainless: `aw --identity-home <root>/.aw who --json`
-       answers `unknown` / `legacy_no_chain`, and
-       `oats aweb setup --check-only --json` lists `<root>` with no warnings. On any
-       other answer, stop. This check alone proves nothing about the mint, because
-       the root at that path may have been replaced.
-    4. Optionally, `aw id team members --team-id=<team> --json` at `<root>`: only a
-       certificate for alias `<instance>` whose `member_did_key` is this home's key
-       is this mint's. Retire makes the same read.
-    5. Move aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
-       `<home>/.aw/pending-hosted-accept`, to a dated directory beside the home,
-       never `rm` them:
-       `aside="<home>.aw-pending-aside-$(date -u +%Y%m%dT%H%M%SZ)" && mkdir "$aside" && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/`.
-    6. Run `oats retire <instance>`: it settles the mint as before.
+    mint names no issuing key. Retire still settles it as under #240 when aw's own
+    record of the accept proves no signature can be pending, and its warning says so
+    ("aw's record proves no signature can be pending"). Nothing to change there. Only
+    when the warning says aw's record "doesn't show that no signature can be
+    pending" does retire keep the home (`mint-outcome-unknown`): the mint may be
+    waiting for a signature. Don't move aw's files on the warning alone; finish the
+    exchange aw printed, or reconcile it with aw. aw 1.36.58 and 1.36.59 have no
+    command that abandons a pending accept. Once aw shows nothing is pending, move
+    aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
+    `<home>/.aw/pending-hosted-accept`, to a dated directory beside the home, never
+    `rm` them:
+    `aside="<home>.aw-pending-aside-$(date -u +%Y%m%dT%H%M%SZ)" && mkdir "$aside" && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/`,
+    then run `oats retire <instance>`: it settles the mint as before.
 
     Why it's safe, with aw's source lines: README, "Human attribution", "A mint cut
     short under an older provider".

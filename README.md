@@ -97,8 +97,10 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   (`unknown`, `legacy_no_chain`, with no record of an adoption), as before
   (#240), which needs the record of adoptions to have been read and the root to be
   the one that issued the mint (its key, recorded when the mint started). A home from
-  an older provider version whose mint was cut short has no such record and is kept
-  for the operator. While aw's pending
+  an older provider version whose mint was cut short has no such record: it is
+  settled as before only when aw's own record of the accept proves no signature can
+  be pending, and kept otherwise ("A mint cut short under an older provider",
+  below). While aw's pending
   files are in the home, no other retire path runs: not the self-delete of an alias
   in its binding, not a completed-retire marker, and a home with no record of the
   mint is kept. The same fence holds for each joined team's identity home
@@ -149,40 +151,43 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
 - **A mint cut short under an older provider.** A home whose spawn was killed or
   failed during its mint under an oats-aweb release before this one has a record of
   the mint, `<home>/.oats-aweb/pending-mint.json`, that names no issuing key. Retire
-  can't show its issuer genuinely chainless, so it keeps the home
-  (`mint-outcome-unknown`), even in a deployment that adopts nothing; its warning
-  points here. aw 1.36.58 and 1.36.59 have no command that abandons or settles a
-  pending accept: `aw id team accept-invite` completes one or is refused, and
-  `aw reset` removes only a workspace binding. To clear it:
+  then reads aw's own record of the accept (`<home>/.aw/hosted-invite-creation.json`),
+  which pinned the invite's issuer when it was made:
+  - **When it proves no signature can be pending,** retire settles the mint as
+    releases before this one did (#240), and its warning says so: "aw's record proves
+    no signature can be pending (aw's record of the accept is this home key's and
+    names no ID-tree issuer and no human, so no signature can be pending for it)".
+    The proof is a record aw accepts, made for this home's own key, with no
+    `id_tree.domain` and no `for_human`, and no trace in the home of a creator
+    exchange of its own (`<home>/.aw/requests`, `<home>/.aw/id-chain.json` or
+    `<home>/.aw/identity.yaml`). The check reads the file as aw writes it; a file
+    edited by hand isn't covered.
+  - **When the warning says aw's record "doesn't show that no signature can be
+    pending",** retire keeps the home (`mint-outcome-unknown`) and its warning points
+    here. The mint may be waiting for a signature: don't move aw's files on the
+    warning alone. Finish the exchange aw printed for it, or reconcile it with aw.
+    aw 1.36.58 and 1.36.59 have no command that abandons or settles a pending accept:
+    `aw id team accept-invite` completes one or is refused, and `aw reset` removes
+    only a workspace binding. Once you have shown with aw that nothing is pending for
+    it, this clears it:
   1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`: the root
      the mint used (`<root>` below) and its team (`<team>`).
-  2. Read the warning retire gave when it kept the home. The provider has checked
-     aw's own record of the accept (`<home>/.aw/hosted-invite-creation.json`), which
-     pinned the invite's issuer when it was made. Go on only if the warning says
-     "aw's record of the accept is this home key's and names no ID-tree issuer and no
-     human, so no signature can be pending for it". That means the record is one aw
-     accepts, made for this home's own key, with no `id_tree.domain` and no
-     `for_human`, and that the home holds no trace of a creator exchange of its own
-     (`<home>/.aw/requests`, `<home>/.aw/id-chain.json` or `<home>/.aw/identity.yaml`).
-     The check reads the file as aw writes it; a file edited by hand isn't covered. If the warning instead says aw's record "doesn't show that no
-     signature can be pending", stop: the mint may be waiting for a signature, so
-     finish the exchange aw printed for it, or reconcile it with aw.
-  3. Check that the root reads chainless:
+  2. Check that the root reads chainless:
      - `aw --identity-home <root>/.aw who --json` answers `"outcome": "unknown"` and
        `"reason": "legacy_no_chain"`;
      - `oats aweb setup --check-only --json` lists `<root>` in `roots` with no
        warnings.
 
      This proves nothing about the mint on its own, since the root at that path may
-     have been replaced. Step 2 is the proof. On any other answer, stop.
-  4. Optionally, see what the mint registered. At `<root>`, run
+     have been replaced. On any other answer, stop.
+  3. Optionally, see what the mint registered. At `<root>`, run
      `aw id team members --team-id=<team> --json`. Retire makes this same read in
-     step 6 and looks for a certificate for alias `<instance>` whose
+     step 5 and looks for a certificate for alias `<instance>` whose
      `member_did_key` is this home's key. Only that one is this mint's, and retire
      hands it to the team's controller. A certificate for `<instance>` held by
      another key belongs to another agent. With none of this home's key, retire
      answers `nothing-to-delete`.
-  5. Move aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
+  4. Move aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
      `<home>/.aw/pending-hosted-accept`, out of the home to a dated name. Never `rm`
      them:
 
@@ -195,11 +200,11 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
      dated directory sits beside the home, not inside it, so the kernel's removal
      of the home leaves it. Renaming the files inside `<home>/.aw` would not keep
      them: that removal would take them with the home.
-  6. Run `oats retire <instance>`. It settles the mint as releases before this one
+  5. Run `oats retire <instance>`. It settles the mint as releases before this one
      did (#240): `nothing-to-delete`, or the controller's removal command for this
      home's certificate.
 
-  This is safe only after step 2. aw stops an accept to wait for a signature only
+  Why retire's own settle is safe. aw stops an accept to wait for a signature only
   when the invite it recorded has an ID-tree issuer and the child has no chain
   installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
   1.36.59-rc.3 `:206-215`), or when it names a human (1.36.59-rc.3 `:199-200`). An
@@ -216,8 +221,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   retire behave as before; the only differences are `attribution` `unknown` and the
   `roots` entries. Retire is stricter in three cases and keeps the home instead: it
   settles a cut-short mint only on a strict chainless read at retire (`unavailable` is
-  not chainless), and it keeps a home with an unreadable `teams.json` or an older
-  provider's mint that was cut short. For a root under a namespace with no person (`no_human`), nothing
+  not chainless), and it keeps a home with an unreadable `teams.json`, or an older
+  provider's mint that was cut short unless aw's own record proves no signature can
+  be pending. For a root under a namespace with no person (`no_human`), nothing
   changes that aw wouldn't already stop.
 - **Undoing it.** Adoption can't be undone on a root; the way out is removing the root from the team and starting a new root.
 
@@ -1465,9 +1471,12 @@ and where to set it. The provider settings are:
 - `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over
   `root` and is required when a deployment mints into more than one aweb team.
   Each mapped directory owns its own `.aw` identity for exactly that team.
-- A `root` or `roots` directory never lies inside an instance home (a directory with
-  an `instance.json` at or above it, through symlinks): retiring that instance removes
-  its home, and the root with it. Setup refuses to accept or mint into one, before
+- A `root` or `roots` directory never lies inside an instance home of this deployment
+  (a directory with an `instance.json` between the root and the deployment, through
+  symlinks): retiring that instance removes its home, and the root with it. A
+  deployment that itself sits inside an agent's home (a scratch, journey or live-test
+  deployment) is not refused for that. If the deployment can't be resolved, any
+  instance home above the root counts, and the error says so. Setup refuses to accept or mint into one, before
   any aw call, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and a place
   beside the deployment's other roots (`<deployment>/.aweb-roots/<label>`).
 - `residents`: map of resident name to absolute custody directory for

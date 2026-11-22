@@ -20,9 +20,13 @@ const SENTINEL = 'RAW-AW-SENTINEL';
 const SHOW = `id team show-server --team=eng --namespace=${NS} --json`;
 const publish = (service = SERVICE) => [SHOW, `id team set-server --team=eng --namespace=${NS} --url=${service} --json`, SHOW];
 
-function fixture(t) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'byot-create-202-')));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+function fixture(t, { insideHome = false } = {}) {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'byot-create-202-')));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  // insideHome: the deployment sits in an agent's instance home (its work tree), as
+  // scratch, journey and live-test deployments do.
+  const root = insideHome ? join(base, 'work', 'deployment') : base;
+  if (insideHome) { mkdirSync(root, { recursive: true }); writeFileSync(join(base, 'instance.json'), '{}\n'); }
   writeFileSync(join(root, 'oats-local.yaml'), 'schemaVersion: 2\nworkspace: fixture\n');
   const kernelCalls = join(root, 'kernel-calls.jsonl'), cli = join(root, 'oats');
   const teams = { teamsApi: 1, deployment: root, defaultTeam: null, teams: [], souls: { teams: {}, default: {} }, problems: [] };
@@ -73,6 +77,14 @@ test('a BYOT create registers the team, mints a local invite and accepts it; the
   assert.match(readFileSync(join(f.teamRoot, '.aw', 'workspace.yaml'), 'utf8'), new RegExp(`aweb_url: ${SERVICE}`));
   assert.match(readFileSync(join(f.root, 'oats-local.yaml'), 'utf8'), /"eng:example\.invalid": ".*\.aweb-roots\/eng"/);
   assert.deepEqual(f.kernel(), [['teams', '--json'], ['teams', 'add', 'eng', `--team=${TEAM}`]]);
+});
+
+test('a deployment inside an agent\'s instance home creates into its own .aweb-roots: that home is not one of the deployment\'s', (t) => {
+  const f = fixture(t, { insideHome: true }), r = f.run();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(r.stdout + r.stderr, /E_ROOT_INSIDE_INSTANCE_HOME/);
+  assert.match(r.stdout, new RegExp(`created ${TEAM}, accepted it into ${f.teamRoot}`));
+  assert.ok(existsSync(join(f.teamRoot, '.aw', 'workspace.yaml')));
 });
 
 test('the result names where the team key is, user-wide, and never prints the key', (t) => {

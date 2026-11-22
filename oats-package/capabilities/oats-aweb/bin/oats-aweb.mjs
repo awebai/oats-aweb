@@ -97,7 +97,7 @@ import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
-import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, README_OLDER_MINT, NO_SIGNATURE_PENDING_PROOF, noSignatureCanBePending, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, entryAbsent, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, README_OLDER_MINT, NO_SIGNATURE_PENDING_PROOF, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, entryAbsent, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -287,14 +287,18 @@ const relInside = (rel) => rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbs
 const isInside = (root, p) => relInside(relative(root, p));
 /** The instance home `dir` lies in: the nearest directory at or above it holding an
  *  `instance.json`, by realpath (a symlinked root that resolves into a home is in it),
- *  walking whole segments up from the deepest part that exists. Undefined when none. */
-function instanceHomeHolding(dir) {
+ *  walking whole segments up from the deepest part that exists. With `within` (a
+ *  deployment's realpath), only a home strictly between `dir` and `within` counts: a
+ *  home of that deployment, never one that contains the deployment. Undefined when
+ *  none. */
+function instanceHomeHolding(dir, within) {
   let real = resolve(dir);
   for (;;) {
     try { real = realpathSync(real); break; }
     catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e; const parent = dirname(real); if (parent === real) break; real = parent; }
   }
   for (let d = real; ; d = dirname(d)) {
+    if (within !== undefined && (d === within || !isInside(within, d))) return undefined;
     try { lstatSync(join(d, "instance.json")); return d; }
     catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e; }
     if (dirname(d) === d) return undefined;
@@ -3153,18 +3157,17 @@ if (event === "launch") {
       if (key !== issuer.key || (issuer.id && observation.id !== issuer.id)) return false;
       return lineageRead === true && observation.answered && observation.outcome === "unknown" && observation.reason === "legacy_no_chain" && !record;
     };
-    const retention = pendingMintRetention(join(home, ".aw"), { signaturePending, issuerChainless });
+    const retention = pendingMintRetention(join(home, ".aw"), { signaturePending, issuerChainless, unbound: !issuer?.key });
     if (retention.chainlessIssuer) retireChainlessSettle = true;
+    if (retention.proven) retireWarnings.push(`the mint of alias "${alias}" in team ${team}, recorded by an older provider with no issuing key, is settled as before (#240): aw's record proves no signature can be pending (${NO_SIGNATURE_PENDING_PROOF})`);
     if (retention.keep === "signature-pending") {
       await finish({ meta: retiredMeta({ retired: false, reason: "signature-pending", pendingMint: { team, alias, root: intendedRoot, signaturePending, ...(issuer ? { issuer } : {}) } }), warning: said(`signature-pending — the mint of alias "${alias}" in team ${team} is waiting for an agent signature: aw keeps this home's key and its pending invite, so the home is kept; finish the exchange aw printed, or have aw settle the mint, then retire again (${README_ATTRIBUTION})`) }, 1);
     }
     if (retention.keep) {
-      // A mint recorded by an older provider names no issuing key: the operator's way
-      // out is its own README entry, not a general reconciliation with aw.
-      const older = !signaturePending && !issuer?.key ? noSignatureCanBePending(join(home, ".aw")) : undefined;
-      const remedy = !older ? `reconcile them with aw, then retire again (${README_ATTRIBUTION})`
-        : older.proven ? `this record of the mint, from an older provider, names no issuing key, and ${NO_SIGNATURE_PENDING_PROOF}: it can be cleared as ${README_ATTRIBUTION}, "${README_OLDER_MINT}" says, then retire again`
-        : `this record of the mint, from an older provider, names no issuing key, and aw's record of the accept doesn't show that no signature can be pending (${older.why}): don't move aw's files; finish the exchange aw printed, or reconcile them with aw (${README_ATTRIBUTION}, "${README_OLDER_MINT}")`;
+      // A mint recorded by an older provider names no issuing key, and aw's record didn't
+      // prove it settled: the operator's way out is its own README entry.
+      const remedy = retention.unproven === undefined ? `reconcile them with aw, then retire again (${README_ATTRIBUTION})`
+        : `aw's record of the accept doesn't show that no signature can be pending (${retention.unproven}): don't move aw's files; finish the exchange aw printed, or reconcile them with aw (${README_ATTRIBUTION}, "${README_OLDER_MINT}")`;
       await finish({ meta: retiredMeta({ retired: false, reason: "mint-outcome-unknown", pendingMint: { team, alias, root: intendedRoot, ...(signaturePending ? { signaturePending } : {}), ...(issuer ? { issuer } : {}) } }), warning: said(`aw still holds a pending mint in this home, and ${retention.cause}, so whether the mint of alias "${alias}" in team ${team} can be settled is unknown: this home, aw's files in ${join(home, ".aw")} and the record of the mint are kept; ${remedy}`) }, 1);
     }
     let root, doc, why;
@@ -3759,10 +3762,17 @@ ${JSON.stringify(problem.details || {})}`);
    *  instance removes its home, and the root with it (README, "Human attribution";
    *  awebai/oats-aweb#311). Checked before any aw call. */
   const refuseRootInsideInstanceHome = (rootDir, setting, label) => {
-    const owner = instanceHomeHolding(rootDir);
+    // Only a home of this deployment counts: a deployment may itself sit inside an
+    // agent's home (scratch, journey and live-test deployments). When the deployment
+    // can't be resolved, any home above the root counts, and the message says why.
+    const base = deployment || process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE;
+    let within;
+    try { within = base ? realpathSync(base) : undefined; } catch { within = undefined; }
+    const owner = instanceHomeHolding(rootDir, within);
     if (!owner) return;
-    const beside = perTeamRoot(deployment || process.env.OATS_TEAM_SCOPE || process.env.OATS_WORKSPACE || process.cwd(), label || "<label>");
-    throw Object.assign(new Error(`${setting} puts ${label ? `${label}'s ` : "the "}root at ${rootDir}, inside the instance home ${owner}: retiring that instance would remove the root with its home. Move it beside the deployment's other roots (for example ${beside}) and set ${setting} there; nothing was accepted or minted`), { code: "E_ROOT_INSIDE_INSTANCE_HOME", details: { root: rootDir, instanceHome: owner, setting } });
+    const beside = perTeamRoot(base || process.cwd(), label || "<label>");
+    const unresolved = within === undefined ? ` (the deployment${base ? ` ${base}` : ""} couldn't be resolved, so any instance home above the root counts)` : "";
+    throw Object.assign(new Error(`${setting} puts ${label ? `${label}'s ` : "the "}root at ${rootDir}, inside the instance home ${owner}${unresolved}: retiring that instance would remove the root with its home. Move it beside the deployment's other roots (for example ${beside}) and set ${setting} there; nothing was accepted or minted`), { code: "E_ROOT_INSIDE_INSTANCE_HOME", details: { root: rootDir, instanceHome: owner, setting } });
   };
 
   const setupServiceDocs = (teamRoot) => {

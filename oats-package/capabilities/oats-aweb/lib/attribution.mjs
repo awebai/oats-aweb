@@ -387,15 +387,25 @@ function exactPendingMint(identityHome, present, { did, binding, invalid }) {
  *  issuing root is genuinely chainless (`issuerChainless()`: P5 reads unknown /
  *  legacy_no_chain, with no C3 record), aw's #240 behaviour, answered as
  *  `{settle: true, chainlessIssuer: true}`: the one settle retire's choke point lets
- *  through while aw's pending files are in that home. Otherwise the home is
+ *  through while aw's pending files are in that home; or (c) no stop was recorded,
+ *  the record is an older provider's with no issuer binding (`unbound`), and aw's own
+ *  record proves no signature can be pending, `{settle, chainlessIssuer, proven}`. Otherwise the home is
  *  kept: `{keep: "signature-pending"}` for the exact recorded mint, else
  *  `{keep: "mint-outcome-unknown", cause}`. `signaturePending` is the recorded stop,
  *  undefined when none was recorded. */
-export function pendingMintRetention(identityHome, { signaturePending, issuerChainless }) {
+export function pendingMintRetention(identityHome, { signaturePending, issuerChainless, unbound = false }) {
   const present = pendingMintFilesIn(identityHome);
   if (!present.length) return { settle: true };
   if (!signaturePending) {
     if (issuerChainless()) return { settle: true, chainlessIssuer: true };
+    // A record from an older provider binds no issuer (`unbound`): aw's own record of
+    // the accept decides, as #240 settled it, only when it proves no signature can be
+    // pending (`noSignatureCanBePending`); anything it doesn't show keeps the home.
+    if (unbound) {
+      const proof = noSignatureCanBePending(identityHome);
+      if (proof.proven) return { settle: true, chainlessIssuer: true, proven: true };
+      return { keep: "mint-outcome-unknown", cause: "its record, from an older provider, names no issuing key", unproven: proof.why };
+    }
     return { keep: "mint-outcome-unknown", cause: "its issuing root isn't shown to be that same root, genuinely chainless" };
   }
   const match = exactPendingMint(identityHome, present, signaturePending);

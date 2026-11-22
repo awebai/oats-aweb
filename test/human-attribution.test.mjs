@@ -892,7 +892,7 @@ test("home-level fence: a joined home aw holds is found from the directory, what
   assert.notEqual(r.doc.meta.reason, "mint-outcome-unknown", "a symlink is not followed");
 });
 
-test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainless key, or an intent with no issuer, is kept", (t) => {
+test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainless key is kept", (t) => {
   const fx = fixture(t);
   fx.fake.set({ version: "1.36.59", signaturePending: "error", who: { [fx.rootHome]: noHuman("did:aw:example.test/original-root") } });
   const stopped = fx.run(["spawn"]);
@@ -903,32 +903,69 @@ test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainle
   const r = fx.run(["retire"], { env: { OATS_META: JSON.stringify(stopped.doc.meta) } });
   assert.deepEqual([r.status, r.doc.meta.reason], [1, "mint-outcome-unknown"], "another root at the issuing path");
   assert.deepEqual(r.doc.meta.pendingMint.issuer, stopped.doc.meta.pendingMint.issuer, "the binding is kept for the retry");
-  // An intent from an older provider, with no issuer binding: kept for the operator.
-  const fy = fixture(t);
-  fy.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fy.rootHome]: chainless(fy.rootKey) } });
-  const older = fy.run(["spawn"]);
-  const file = join(fy.home, ".oats-aweb", "pending-mint.json");
+  assert.doesNotMatch(r.doc.warning, /older provider/, "a bound issuer's keep points elsewhere");
+});
+
+/** A mint an older provider recorded with no issuer binding (its pending-mint intent and
+ *  meta carry no `issuer`), cut short from a chainless root, with aw's files in the home. */
+function olderProviderMint(t) {
+  const fx = fixture(t);
+  fx.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fx.rootHome]: chainless(fx.rootKey) } });
+  const spawned = fx.run(["spawn"]);
+  const file = join(fx.home, ".oats-aweb", "pending-mint.json");
   const { issuer: _issuer, ...unbound } = JSON.parse(readFileSync(file, "utf8"));
   writeFileSync(file, JSON.stringify(unbound));
-  const { issuer: _metaIssuer, ...unboundMeta } = older.doc.meta.pendingMint;
-  const k = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
-  assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], "no issuer binding");
-  // Its warning points to the README entry with the way out, which exists by that name.
-  assert.ok(k.doc.warning.includes('it can be cleared as README, "Human attribution", "A mint cut short under an older provider" says'), k.doc.warning);
+  const { issuer: _metaIssuer, ...unboundMeta } = spawned.doc.meta.pendingMint;
+  const meta = { ...spawned.doc.meta, pendingMint: unboundMeta };
+  const retire = () => fx.run(["retire"], { env: { OATS_META: JSON.stringify(meta) } });
+  const record = join(fx.homeAw, "hosted-invite-creation.json");
+  const edit = (f) => writeFileSync(record, JSON.stringify(f(JSON.parse(readFileSync(record, "utf8")))));
+  return { fx, retire, record, edit };
+}
+
+test("an older provider's cut-short mint settles as #240 did when aw's record proves no signature can be pending, and is kept otherwise", (t) => {
+  // Proven: settled as before, with a warning that says why (contract §1 principle 1, §4).
+  const proven = olderProviderMint(t);
+  const r = proven.retire();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.notEqual(r.doc.meta.reason, "mint-outcome-unknown", r.stdout);
+  assert.ok(r.doc.warning.includes("aw's record proves no signature can be pending"), r.doc.warning);
+  assert.ok(r.doc.warning.includes(NO_SIGNATURE_PENDING_PROOF), r.doc.warning);
+  // Not proven: kept, and the warning points to the README entry, which exists by that name.
+  const unproven = olderProviderMint(t);
+  writeFileSync(unproven.record, "{");
+  const k = unproven.retire();
+  assert.deepEqual([k.status, k.doc.meta.reason], [1, "mint-outcome-unknown"], k.stdout + k.stderr);
+  assert.ok(!k.doc.warning.includes("proves no signature"), k.doc.warning);
+  assert.ok(k.doc.warning.includes('"A mint cut short under an older provider"'), k.doc.warning);
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   assert.ok(readme.includes("- **A mint cut short under an older provider.**"));
-  // Its proof is aw's own record of the accept, never the root now at that path: the
-  // warning says the provider found it, in the words the README's step 2 waits for.
-  assert.ok(k.doc.warning.includes(NO_SIGNATURE_PENDING_PROOF), k.doc.warning);
-  assert.ok(readme.replace(/\s+/g, " ").includes(`"${NO_SIGNATURE_PENDING_PROOF}"`), "the README's step 2 quotes the proof's words");
-  assert.doesNotMatch(r.doc.warning, /older provider/, "a bound issuer's keep points elsewhere");
-  // The README's way out on a chainless root: aw's two files moved aside, then a plain retire settles it.
-  const aside = `${fy.home}.aw-pending-aside-20261121T230000Z`;
+  // The README's way out for that case: aw's two files moved aside, then a plain retire settles it.
+  const home = unproven.fx.home, aside = `${home}.aw-pending-aside-20261121T230000Z`;
   mkdirSync(aside);
-  for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) renameSync(join(fy.home, ".aw", f), join(aside, f));
-  const cleared = fy.run(["retire"], { env: { OATS_META: JSON.stringify({ ...older.doc.meta, pendingMint: unboundMeta }) } });
+  for (const f of ["hosted-invite-creation.json", "pending-hosted-accept"]) renameSync(join(home, ".aw", f), join(aside, f));
+  const cleared = unproven.retire();
   assert.deepEqual([cleared.status, cleared.doc.meta.reason], [0, "nothing-to-delete"], cleared.stdout + cleared.stderr);
   assert.ok(existsSync(join(aside, "hosted-invite-creation.json")), "moved aside, never deleted");
+});
+
+test("an older provider's cut-short mint is kept, never settled, when aw's record names an issuer or a human, another key, or the home holds a creator exchange's trace", (t) => {
+  for (const [name, spoil] of [
+    ["an ID-tree issuer", (m) => m.edit((d) => ({ ...d, id_tree: { ...d.id_tree, domain: "example.test", mode: "self_custodial" } }))],
+    ["a named human", (m) => m.edit((d) => ({ ...d, for_human: HUMAN }))],
+    ["another key in the record", (m) => m.edit((d) => ({ ...d, did_key: "did:key:z6MkAnotherKeyEntirely" }))],
+    ["an outstanding creator request", (m) => { mkdirSync(join(m.fx.homeAw, "requests")); writeFileSync(join(m.fx.homeAw, "requests", `${randomUUID()}.json`), "{}"); }],
+    ["an installed chain", (m) => writeFileSync(join(m.fx.homeAw, "id-chain.json"), "{}")],
+    ["an identity", (m) => writeFileSync(join(m.fx.homeAw, "identity.yaml"), "did: did:key:z6MkFixture\n")],
+  ]) {
+    const m = olderProviderMint(t);
+    spoil(m);
+    const r = m.retire();
+    assert.equal(r.status, 1, `${name}: ${r.stdout}${r.stderr}`);
+    assert.equal(r.doc?.meta?.retired, false, name);
+    assert.ok(!String(r.doc?.warning).includes("proves no signature"), `${name}: ${r.doc?.warning}`);
+    for (const f of ["signing.key", "hosted-invite-creation.json", "pending-hosted-accept"]) assert.ok(existsSync(join(m.fx.homeAw, f)), `${name}: ${f} kept`);
+  }
 });
 
 test("retire choke point: no answer lets the kernel delete a home where aw holds a pending file, whichever branch gives it", (t) => {
@@ -1163,12 +1200,14 @@ test("the choke point's inventory is what is in the home at exit: any top-level 
  *  setup fake (its accept stops signature pending). `hook(args, extra, input, settings)`
  *  runs the provider with those settings (the live ones at setup, the captured ones at
  *  retire); `instanceJson` marks `home` as an instance home, as the kernel does. */
-function homeDeployment(t, { instanceJson = false } = {}) {
+function homeDeployment(t, { instanceJson = false, outerHome = false } = {}) {
   const base = tempDir(t), deployment = join(base, "deployment"), home = join(deployment, "agents", "dev", "instances", "dev-1");
   const root = join(deployment, ".aweb-roots", "default");
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home, { recursive: true });
   if (instanceJson) writeFileSync(join(home, "instance.json"), "{}\n");
+  // The deployment itself inside an agent's instance home (a scratch or journey deployment).
+  if (outerHome) writeFileSync(join(base, "instance.json"), "{}\n");
   writeFileSync(join(deployment, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ memberships: [{ team_id: "default:example.invalid" }] }));
   const fake = fakeAwSetupPath(t);
@@ -1291,6 +1330,15 @@ test("setup refuses to accept into a root inside an instance home, before any aw
     assert.deepEqual(touching, [], `${name}: no aw call into the root`);
     assert.ok(!existsSync(join(rootDir, ".aw")), `${name}: nothing minted`);
   }
+  // A deployment inside an agent's own home: its homes still refuse, the outer one doesn't count.
+  const inner = homeDeployment(t, { instanceJson: true, outerHome: true });
+  const refused = inner.join(inner.settingsWith(join(inner.home, "nested-root")));
+  assert.equal(refused.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", refused.stdout + refused.stderr);
+  assert.equal(refused.doc.error.details.instanceHome, realpathSync(inner.home), "the deployment's own home, not the outer one");
+  const besideInner = join(inner.deployment, ".aweb-roots", "joined");
+  const accepted = inner.join(inner.settingsWith(besideInner));
+  assert.notEqual(accepted.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", accepted.stdout + accepted.stderr);
+  assert.equal(inner.fake.readCalls().find((c) => c.args.includes("accept-invite"))?.identityHome, join(besideInner, ".aw"), "accepted into <deployment>/.aweb-roots/joined");
   // A root beside the deployment's others is accepted as before.
   const d = homeDeployment(t, { instanceJson: true }), beside = join(d.deployment, ".aweb-roots", "joined");
   const r = d.join(d.settingsWith(beside));
