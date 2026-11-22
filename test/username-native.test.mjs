@@ -6,12 +6,13 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { generateKeyPairSync, sign, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { fakeKernelTeamConfig } from './helpers/fake-kernel-team-config.mjs';
+import { versionAtLeast } from '../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs';
 
 const hook = fileURLToPath(new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs', import.meta.url));
 function run(command, args, options) {
@@ -37,6 +38,9 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   const env = { PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: home, XDG_CONFIG_HOME: join(home, 'config'), XDG_CACHE_HOME: join(home, 'cache'), TMPDIR: scratch };
   const version = spawnSync(binary, ['version'], { env, cwd: scratch, encoding: 'utf8' });
   t.diagnostic(JSON.stringify(verifyPinnedAw(binary, version)));
+  // From aw 1.36.59 (fc8c2b797) a signup whose outcome is unknown (a 5xx) keeps its signer and
+  // exact request in .aw, so the same command resumes it; earlier aw leaves nothing.
+  const keepsSignupJournal = versionAtLeast(/^aw (\S+)$/m.exec(version.stdout)[1], '1.36.59-rc.4');
   const help = spawnSync(binary, ['init', '--help'], { env, cwd: scratch, encoding: 'utf8' });
   assert.equal(help.status, 0); assert.match(help.stdout, /--name string/); assert.match(help.stdout, /--new-account/);
   const calls = [];
@@ -79,7 +83,16 @@ test('pinned real aw username contract accepts explicit root name and preserves 
   assert.equal(signupCalls[0].body.username, 'fixture-user');
   assert.equal(signupCalls[1].body.username, 'fixture-user');
   assert.equal(signupCalls[1].body.alias, 'fixture-root');
-  assert.equal(existsSync(join(root, '.aw')), false);
+  // The 503 is an unknown outcome, not a refused username: nothing classifies it.
+  assert.match(result.stderr, /E_SETUP_NATIVE/); assert.doesNotMatch(result.stderr, /E_SETUP_USERNAME_UNAVAILABLE/);
+  if (keepsSignupJournal) {
+    // aw 1.36.59-rc.4 keeps the journal's lock beside it; later aw keeps the lock in its own state.
+    assert.deepEqual(readdirSync(join(root, '.aw')).filter(name => name !== 'signup-recovery.lock').sort(), ['signup-recovery.json']);
+    assert.match(result.stderr, /re-run the same setup command and aw resumes it/);
+  } else {
+    assert.equal(existsSync(join(root, '.aw')), false);
+    assert.doesNotMatch(result.stderr, /re-run the same setup command/);
+  }
   // aw 1.36.58 awid/request_compression.go:242 probes GET /health for request
   // compression support; this read carries no body and performs no signup.
   for (const c of calls.filter(c => c.path === '/health')) assert.deepEqual(c, { method: 'GET', path: '/health', body: null });

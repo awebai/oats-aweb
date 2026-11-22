@@ -3,13 +3,34 @@ import { parseProviderSettings } from './provider-settings.mjs';
 // imports or file edits: each mutation is followed by an authoritative read.
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, resolve, join } from 'node:path';
-import { realpathSync, existsSync, statSync, mkdirSync } from 'node:fs';
+import { realpathSync, existsSync, statSync, lstatSync, mkdirSync } from 'node:fs';
 import { selectedDeployment } from './team-roots.mjs';
 import { kernelQueryEnvironment } from './session-readiness.mjs';
 import { sameAwebTeamId, teamKeyIn } from "./aweb-team-id.mjs";
 import { usernameUnavailable, usernameUnavailableCause } from './aw-failure-cause.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** Whether a root's `.aw` holds a signup aw started and has not finished, so that re-running
+ *  the same `aw init` resumes it. From aw 1.36.59 (fc8c2b797), a signup whose outcome is
+ *  unknown (a 5xx) keeps the journal `signup-recovery.json`, its signer and exact request
+ *  (aw cmd/aw/hosted_signup_recovery.go:19 at 4c0bb2b8ed, the 1.36.59 cut). Beside it may be
+ *  its lock `signup-recovery.lock` (:241; later aw keeps the lock in its own state, so it
+ *  is never required), aw's `.tmp.*` atomic-write temps (internal/atomicfile/atomicfile.go:134)
+ *  and whatever aw installed before the outcome became unknown (a signing key and
+ *  certificate when connect failed after the signup).
+ *  aw removes the journal only once signer, membership and credential are installed
+ *  (hosted_signup_recovery.go:283-287), so while it is there aw's signup is unfinished:
+ *  `aw init` in that root loads it before anything else (onboarding_wizard.go:124-130), a
+ *  confirmed journal skips the signup (hosted_signup_recovery.go:170-225), and aw refuses
+ *  a changed username, name, service or scope itself. A `.aw` that is not a directory, or
+ *  whose journal is not a regular file, is not a resume. Read only: setup never writes,
+ *  moves or removes anything in that `.aw`. */
+export function signupUnfinished(awDir) {
+  try {
+    return lstatSync(awDir).isDirectory() && lstatSync(join(awDir, 'signup-recovery.json')).isFile();
+  } catch { return false; }
+}
 export function setupFailure(code, message, details = {}) {
   return Object.assign(new Error(message), { code, details });
 }
@@ -195,7 +216,10 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     const configuration = teamConfigurationPlan(initial, label, predictedTeam, deployment);
     const aw = await ensureAw({ install: plan ? false : installAw, version: awVersion });
     const usableAw = aw.status === 'ok' || aw.status === 'done';
-    const hasIdentity = existsSync(join(root, '.aw'));
+    // A root holding a signup aw has not finished is not an identity yet: re-running the
+    // same signup resumes it (signupUnfinished). Any other `.aw` is an existing identity.
+    const resume = signupUnfinished(join(root, '.aw'));
+    const hasIdentity = !resume && existsSync(join(root, '.aw'));
     const readMembership = () => {
       try { if (!statSync(join(root, '.aw')).isDirectory()) throw new Error(); } catch {
         throw setupFailure('E_SETUP_MEMBERSHIP', 'selected root has no readable identity directory; root retained, no repeated signup');
@@ -214,7 +238,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     if (plan) {
       if (hasIdentity && !usableAw) throw setupFailure('E_SETUP_AW', 'aw is required to verify a retained root; plan never installs');
       const team = hasIdentity ? readMembership() : null;
-      return { plan: true, label, predictedTeam, team, root, aw, bootstrap: hasIdentity ? 'reuse' : 'required', configuration };
+      return { plan: true, label, predictedTeam, team, root, aw, bootstrap: hasIdentity ? 'reuse' : resume ? 'resume' : 'required', configuration };
     }
     if (!usableAw) throw setupFailure('E_SETUP_AW', 'aw is missing, below the required floor, or installation failed; check the explicit --install-aw prerequisite');
     if (!hasIdentity) {
@@ -234,7 +258,11 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
           throw setupFailure('E_SETUP_USERNAME_UNAVAILABLE', `${usernameUnavailableCause(reason)}; nothing was created: re-run setup with another --username`);
         }
         steps.push({ step: 'bootstrap', status: 'unconfirmed' });
-        throw setupFailure('E_SETUP_NATIVE', `aw init failed${Number.isInteger(error.status) ? ` (exit ${error.status})` : ''}; output withheld because it handles credentials; root retained`);
+        const exit = `aw init failed${Number.isInteger(error.status) ? ` (exit ${error.status})` : ''}; output withheld because it handles credentials`;
+        // An unknown outcome (a 5xx): aw kept the signup it attempted, and the account may
+        // exist. Only the same command resumes it, with the same signer.
+        if (signupUnfinished(join(root, '.aw'))) throw setupFailure('E_SETUP_NATIVE', `${exit}; aw recorded this signup in the root: re-run the same setup command and aw resumes it; root retained`);
+        throw setupFailure('E_SETUP_NATIVE', `${exit}; root retained`);
       }
       steps.push({ step: 'bootstrap', status: 'command-completed' });
     }

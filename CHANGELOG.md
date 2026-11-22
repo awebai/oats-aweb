@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: username setup resumes the signup aw kept after an unknown outcome
+  (aw 1.36.59).** When the hosted service answers a signup or the connect
+  after it with a 5xx, the account may exist, so aw 1.36.59 (fc8c2b797) keeps
+  the attempted signup, its signer and exact request, in the root's `.aw`
+  (`signup-recovery.json`), and the same `aw init` resumes it: with the same
+  signer, and without a second signup once the service had accepted it.
+  Setup read any `.aw` as an existing identity, so a re-run stopped with
+  `E_SETUP_MEMBERSHIP` and never reached aw's resume. Now a root whose `.aw`
+  holds that journal re-runs the same `aw init`; `--plan` reports
+  `bootstrap: resume` and runs nothing; and `E_SETUP_NATIVE` after an unknown
+  outcome says to re-run the same setup command. Setup never changes that
+  `.aw`. A `.aw` without the journal keeps the membership read as before; aw
+  up to 1.36.58 left no `.aw` after a 5xx signup, so a re-run there signs up
+  afresh, as before.
+
 ## 1.48.0 — 2026-11-21
 
 - **Changed: the package requirements follow the session backend, and the OATS
