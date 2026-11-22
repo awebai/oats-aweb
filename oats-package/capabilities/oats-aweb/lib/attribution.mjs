@@ -304,7 +304,7 @@ const CREATOR_LINK_MAX_BYTES = 1 << 20;
 
 /** Whether aw holds a creator link for `identityHome` (or the key `did`): an invite aw
  *  retained in `<user state>/team-invites` (awconfig/team_invites.go:133-146 at aw
- *  1.36.59, aweb 4c0bb2b8ed; :88-101 at 1.36.58) whose `id_child` names this home as
+ *  1.36.59, aweb 57359d18ae (rc.5); :88-101 at 1.36.58) whose `id_child` names this home as
  *  `child_home`, by path or realpath, or this key as `child_did_key` (:21-29; :19-27).
  *  aw saves one before a creator exchange writes anything into the child:
  *  `accept-invite --parent` (1.36.59 invite_condition.go:140, before identity.yaml at
@@ -357,15 +357,15 @@ function creatorLinkHeld(identityHome, did, userHome) {
  *  must be this home's own key, and it must name no ID-tree issuer (`id_tree.domain`
  *  absent or empty) and no human (`for_human` absent or null). aw prepares no request
  *  for such an invite (aw 1.36.58 cli/go/cmd/aw/hosted_invite_creation.go:94,114;
- *  1.36.59, aweb 4c0bb2b8ed, :247-249,:279-281,:292, where a human with no issuer is
+ *  1.36.59, aweb 57359d18ae (rc.5), :247-249,:279-281,:292, where a human with no issuer is
  *  aw's `human_required` refusal, invite_condition.go:55-60). 1.36.59 also saves the
  *  record before its preview (:220-224), with no issuer or human yet: a kill there
  *  has sent nothing but that read and prepared no request, which is #240's case;
- *  the issuer and human are saved before any request (id_team.go:2003-2011,
+ *  the issuer and human are saved before any request (id_team.go:2000-2008,
  *  team_invite_accept.go:267-268). A record cut short by a kill or an IO error
  *  doesn't parse, so it shows nothing. The hosted record isn't the only exchange:
  *  `accept-invite --parent` saves it before a creator exchange of its own (1.36.59
- *  id_team.go:2003-2011, team_invite_accept.go:249-251, invite_condition.go:107-150), whose
+ *  id_team.go:2000-2008, team_invite_accept.go:249-251, invite_condition.go:107-150), whose
  *  outgoing request aw keeps in `<identity-home>/requests`
  *  (cli/go/awconfig/id_request_store.go:41-42) and whose chain it installs at
  *  `<identity-home>/id-chain.json` (id_chain_install.go:25). Any trace of that
