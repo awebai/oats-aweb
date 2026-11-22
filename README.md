@@ -215,22 +215,30 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   Why retire's own settle is safe. aw stops an accept to wait for a signature only
   when the invite it recorded has an ID-tree issuer and the child has no chain
   installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
-  1.36.59-rc.3 `:206-215`), or when it names a human (1.36.59-rc.3 `:199-200`). An
+  1.36.59, aweb `4c0bb2b8ed`, `:292`). On 1.36.59 an invite that names a human
+  with no issuer is refused (`human_required`, `:279-281`), not left pending. An
   invite with no ID-tree binding leaves `id_tree.domain` empty (1.36.58 `:94`;
-  1.36.59-rc.3 `:168`), and aw then prepares no request for it. The provider's
-  invites (`aw team invite --team-id=<team>`) name no human. On 1.36.59-rc.3,
+  1.36.59 `:247-249`), and aw then prepares no request for it. 1.36.59 also saves
+  the record before its preview (`:220-224`), with no issuer or human yet; nothing
+  is sent there but that read, and the issuer and human are saved before any
+  request (`id_team.go:2003-2011`, `team_invite_accept.go:267-268`). The provider's
+  invites (`aw team invite --team-id=<team>`) name no human. On 1.36.59,
   `accept-invite --parent` runs a creator exchange of its own after saving that
-  record (`cli/go/cmd/aw/id_team.go:2312-2333`), keeping its outgoing request in
+  record (`team_invite_accept.go:249-251`), keeping its outgoing request in
   `<home>/.aw/requests` (`cli/go/awconfig/id_request_store.go:41-42`) and its chain
   in `<home>/.aw/id-chain.json`; the check finds no proof while either, or
   `identity.yaml`, is there. Before any of those, a creator exchange saves its link in
-  aw's user state: `accept-invite --parent` (1.36.59-rc.3
-  `cli/go/cmd/aw/invite_condition.go:149`, then `identity.yaml` at `:156`) and an
+  aw's user state: `accept-invite --parent` (1.36.59
+  `cli/go/cmd/aw/invite_condition.go:140`, then `identity.yaml` at `:147`) and an
   `init --join-from` from an adopted root (1.36.58 `cli/go/cmd/aw/id_team.go:1761-1765`).
   aw keeps it at `$HOME/.config/aw/team-invites/<id>.json`
-  (`cli/go/awconfig/state.go:10-16,26-33`; `team_invites.go:88-101`, its `id_child`
-  fields at `:19-27`), the same at both tags; the check finds no proof while one names
-  this home or its key.
+  (`cli/go/awconfig/state.go:10-16,26-33`, the same at both versions;
+  `team_invites.go:133-146`, its `id_child` fields at `:21-29`; 1.36.58 `:88-101`,
+  `:19-27`); the check finds no proof while one names this home or its key. It reads
+  that directory's invites as aw does, its non-directory `*.json` entries
+  (`team_invites.go:237`), skipping aw's `<id>.lock` files (`:81-86`) and the
+  `.tmp.*` names of its writes, which are renamed into place: a kill that leaves a
+  link only there came before the child's `identity.yaml`.
 - **Roots with no chain change nothing.** For a root with no chain (a local
   `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
   retire behave as before; the only differences are `attribution` `unknown` and the

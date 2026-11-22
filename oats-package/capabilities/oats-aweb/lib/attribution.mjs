@@ -281,7 +281,7 @@ const readBounded = (path, max) => {
 };
 
 /** What binds aw's pending mint in `identityHome` (hosted-invite-creation.json, as aw
- *  1.36.58 and 1.36.59-rc.3 write and validate it): `selection`, a digest of the invite
+ *  1.36.58 and 1.36.59 write and validate it): `selection`, a digest of the invite
  *  selection's token_hash (never the hash itself), `request`, the prepared id_tree
  *  request's id, and `did`, the key the record names. `{selection: null, request: null,
  *  did: null}` with no record; `{unreadable}` when it is there and isn't one aw accepts. */
@@ -298,25 +298,33 @@ export function pendingMintBinding(identityHome) {
 
 /** aw's user state, found as aw finds it: os.UserHomeDir() ($HOME on Unix) joined with
  *  `.config/aw`, with no environment override (awconfig/state.go:10-16,26-33, the same
- *  at aw 1.36.58 and 1.36.59-rc.3). */
+ *  at aw 1.36.58 and 1.36.59). */
 export const awUserStateDir = (userHome) => join(userHome, ".config", "aw");
 const CREATOR_LINK_MAX_BYTES = 1 << 20;
 
 /** Whether aw holds a creator link for `identityHome` (or the key `did`): an invite aw
- *  retained in `<user state>/team-invites` (awconfig/team_invites.go:88-101) whose
- *  `id_child` names this home as `child_home`, by path or realpath, or this key as
- *  `child_did_key` (:19-27). aw saves one before a creator exchange writes anything
- *  into the child: `accept-invite --parent` (1.36.59-rc.3 invite_condition.go:149,
- *  before identity.yaml at :156) and `init --join-from` from an adopted root (1.36.58
- *  id_team.go:1761-1765). Fail closed: an absent directory (no entry) shows none; one
- *  that can't be listed, or any entry that can't be read as aw writes it, shows
- *  nothing. Undefined when it shows none, else why. */
+ *  retained in `<user state>/team-invites` (awconfig/team_invites.go:133-146 at aw
+ *  1.36.59, aweb 4c0bb2b8ed; :88-101 at 1.36.58) whose `id_child` names this home as
+ *  `child_home`, by path or realpath, or this key as `child_did_key` (:21-29; :19-27).
+ *  aw saves one before a creator exchange writes anything into the child:
+ *  `accept-invite --parent` (1.36.59 invite_condition.go:140, before identity.yaml at
+ *  :147, written at :160-170) and `init --join-from` from an adopted root (1.36.58
+ *  id_team.go:1761-1765). Its invites are the directory's non-directory `*.json`
+ *  entries, read as aw reads them (team_invites.go:237): it skips everything else,
+ *  its `<id>.lock` files among them (1.36.59 :81-86, kept after every local-invite
+ *  accept) and the `.tmp.*` names of its atomic writes (internal/atomicfile:134, then
+ *  a rename). A link that a kill leaves only under a temp name was cut before
+ *  prepareInviteChildIdentity ran, so no identity.yaml, request or chain of that
+ *  exchange can exist, and noSignatureCanBePending's other checks keep anything
+ *  past it. Fail closed: an absent directory (no entry) shows none; one that can't
+ *  be listed, or any invite that can't be read as aw writes it, shows nothing.
+ *  Undefined when it shows none, else why. */
 function creatorLinkHeld(identityHome, did, userHome) {
   if (typeof userHome !== "string" || !isAbsolute(userHome)) return "aw's user state can't be located (no absolute HOME)";
   const dir = join(awUserStateDir(userHome), "team-invites");
   try { lstatSync(dir); } catch (e) { return entryAbsent(e, dir) ? undefined : "aw's retained invites can't be looked at"; }
-  let names;
-  try { names = readdirSync(dir); } catch { return "aw's retained invites can't be listed"; }
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return "aw's retained invites can't be listed"; }
   let homeReal;
   try { homeReal = realpathSync(identityHome); } catch { homeReal = undefined; }
   const isThisHome = (p) => {
@@ -324,7 +332,9 @@ function creatorLinkHeld(identityHome, did, userHome) {
     if (resolve(p) === resolve(identityHome)) return true;
     try { return homeReal !== undefined && realpathSync(p) === homeReal; } catch { return false; }
   };
-  for (const name of names) {
+  for (const entry of entries) {
+    const name = entry.name;
+    if (entry.isDirectory() || !name.endsWith(".json")) continue;
     let doc;
     try { doc = JSON.parse(readBounded(join(dir, name), CREATOR_LINK_MAX_BYTES)); }
     catch { return `aw's retained invite ${name} can't be read as one aw writes`; }
@@ -343,14 +353,19 @@ function creatorLinkHeld(identityHome, did, userHome) {
  *  pending for it (README, "Human attribution", "A mint cut short under an older
  *  provider"). One bounded read of the record, as aw writes it with its own encoder:
  *  it must parse, its top level and its `id_tree` must be objects, every field read
- *  here must be absent or have aw's type at 1.36.58 and 1.36.59-rc.3, its `did_key`
+ *  here must be absent or have aw's type at 1.36.58 and 1.36.59, its `did_key`
  *  must be this home's own key, and it must name no ID-tree issuer (`id_tree.domain`
  *  absent or empty) and no human (`for_human` absent or null). aw prepares no request
  *  for such an invite (aw 1.36.58 cli/go/cmd/aw/hosted_invite_creation.go:94,114;
- *  1.36.59-rc.3 :168,:199,:206). A record cut short by a kill or an IO error doesn't
- *  parse, so it shows nothing. The hosted record isn't the only exchange: on
- *  1.36.59-rc.3, `accept-invite --parent` saves it before a creator exchange of its
- *  own (cli/go/cmd/aw/id_team.go:2312-2333, invite_condition.go:115-163), whose
+ *  1.36.59, aweb 4c0bb2b8ed, :247-249,:279-281,:292, where a human with no issuer is
+ *  aw's `human_required` refusal, invite_condition.go:55-60). 1.36.59 also saves the
+ *  record before its preview (:220-224), with no issuer or human yet: a kill there
+ *  has sent nothing but that read and prepared no request, which is #240's case;
+ *  the issuer and human are saved before any request (id_team.go:2003-2011,
+ *  team_invite_accept.go:267-268). A record cut short by a kill or an IO error
+ *  doesn't parse, so it shows nothing. The hosted record isn't the only exchange:
+ *  `accept-invite --parent` saves it before a creator exchange of its own (1.36.59
+ *  id_team.go:2003-2011, team_invite_accept.go:249-251, invite_condition.go:107-150), whose
  *  outgoing request aw keeps in `<identity-home>/requests`
  *  (cli/go/awconfig/id_request_store.go:41-42) and whose chain it installs at
  *  `<identity-home>/id-chain.json` (id_chain_install.go:25). Any trace of that

@@ -1066,13 +1066,13 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
     ["for_human of another type", (dir) => edit(dir, (d) => ({ ...d, for_human: {} }))],
     ["another field of another type", (dir) => edit(dir, (d) => ({ ...d, alias: {} }))],
     ["an id_tree field of another type", (dir) => edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, parent: "x" } }))],
-    // A creator exchange of its own (aw 1.36.59-rc.3 accept-invite --parent), cut short: its trace shows nothing.
+    // A creator exchange of its own (aw 1.36.59 accept-invite --parent), cut short: its trace shows nothing.
     ["an outstanding creator request", (dir) => { mkdirSync(join(dir, "requests")); writeFileSync(join(dir, "requests", `${randomUUID()}.json`), "{}"); }],
     ["an empty requests directory", (dir) => mkdirSync(join(dir, "requests"))],
     ["an installed chain", (dir) => writeFileSync(join(dir, "id-chain.json"), "{}")],
     ["an identity", (dir) => writeFileSync(join(dir, "identity.yaml"), "did: did:key:z6MkFixture\n")],
     // A creator exchange's link, saved in aw's user state before anything reaches the
-    // child (rc.3 invite_condition.go:149, then identity.yaml at :156): a kill between.
+    // child (1.36.59 invite_condition.go:140, then identity.yaml at :147): a kill between.
     ["a creator link naming this home", (dir) => link("creator-a.json", { child_home: dir })],
     ["a creator link naming this home through a symlink", (dir) => { const alias = `${dir}-alias`; symlinkSync(dir, alias); link("creator-b.json", { child_home: alias }); }],
     ["a creator link naming this key", (dir) => link("creator-c.json", { child_did_key: didKeyOfSigningKey(readFileSync(join(dir, "signing.key"), "utf8")) })],
@@ -1091,6 +1091,19 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
   link("creator-other.json", { child_home: "/elsewhere/.aw", child_did_key: "did:key:z6MkSomeoneElse" });
   writeFileSync(join(invites, "plain.json"), JSON.stringify({ invite_id: "plain", domain: "example.test", team_name: "t", identity_scope: "local", secret: "", created_at: "" }));
   assert.deepEqual(proof(pending(t)), { proven: true }, "another home's link, and a plain invite");
+  // aw reads only non-directory *.json entries as invites (1.36.59 team_invites.go:237).
+  // Its lock files (kept after every local-invite accept, :81-86), its writes' temp
+  // names and a directory are not invites: they show nothing against the proof, beside
+  // a link, while a .json named for this home still does.
+  rmSync(invites, { recursive: true, force: true });
+  const dir = pending(t), own = didKeyOfSigningKey(readFileSync(join(dir, "signing.key"), "utf8"));
+  link("creator-other.json", { child_home: "/elsewhere/.aw", child_did_key: "did:key:z6MkSomeoneElse" });
+  writeFileSync(join(invites, "creator-other.lock"), "");
+  writeFileSync(join(invites, ".tmp.123456"), JSON.stringify({ id_child: { child_home: dir, child_did_key: own } }));
+  mkdirSync(join(invites, "creator-dir.json"));
+  assert.deepEqual(proof(dir), { proven: true }, "a lock file, a temp name and a directory beside a link");
+  link("creator-this.json", { child_did_key: own });
+  assert.ok(!proof(dir).proven, "a .json link for this key still keeps it, with a lock beside it");
   // Through retire: a malformed record keeps the home and the warning says not to move aw's files.
   const fy = fixture(t);
   fy.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fy.rootHome]: chainless(fy.rootKey) } });
