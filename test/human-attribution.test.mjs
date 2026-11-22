@@ -1244,6 +1244,34 @@ test("a top-level entry that resolves outside the home isn't descended into for 
   assert.notEqual(r.doc?.meta?.reason, "mint-outcome-unknown", r.stdout);
 });
 
+const FAULT_REALPATH = resolve(new URL("./helpers/fault-realpath.mjs", import.meta.url).pathname);
+test("an IO error reading an entry's real path keeps the home: its .aw is held, never skipped", (t) => {
+  const d = homeDeployment(t), nested = join(d.home, "nested-root");
+  d.join(d.settingsWith(nested));
+  const pending = join(nested, ".aw", "pending-hosted-accept");
+  assert.ok(existsSync(pending));
+  const r = d.hook(["retire"], { OATS_META: "{}", NODE_OPTIONS: `--import=${FAULT_REALPATH}`, FAULT_REALPATH: nested }, undefined, d.settingsWith(undefined));
+  assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], r.stdout + r.stderr);
+  assert.ok(r.doc.warning.includes("nested-root/.aw (its real path can't be read)"), r.doc.warning);
+  assert.ok(existsSync(pending));
+});
+
+test("an IO error reading a grant home's real path keeps aw's files in its .aw: no grant-home delete before retire answers", (t) => {
+  const fx = fixture(t), bare = join(fx.home, ".aweb-identity"), nested = join(bare, ".aw");
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(nested)})`]);
+  const pending = join(nested, "pending-hosted-accept");
+  writeFileSync(join(fx.rootHome, "identity.yaml"), `did: ${fx.rootKey}\n`);
+  fx.fake.set({ grantRevoke: "ok" });
+  const r = fx.run(["retire"], { env: {
+    OATS_META: JSON.stringify({ identity: { mode: "global", team: TEAM, resident: "fixture", grant: { id: "g1" } } }),
+    OATS_SETTINGS: JSON.stringify({ ...fx.settings, residents: { fixture: fx.root } }),
+    NODE_OPTIONS: `--import=${FAULT_REALPATH}`, FAULT_REALPATH: bare,
+  } });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.notEqual(r.doc?.meta?.retired, true, r.stdout);
+  assert.ok(existsSync(pending), "aw's pending files are kept");
+});
+
 test("setup refuses to accept into a root inside an instance home, before any aw call: nested, ..-named, or a symlink resolving into it", (t) => {
   for (const [name, place] of [
     ["nested", (d) => join(d.home, "nested-root")],

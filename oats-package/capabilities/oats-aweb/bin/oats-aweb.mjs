@@ -346,12 +346,19 @@ function heldIdentityHomeNames(dir) {
   // A root an earlier provider set up directly in the home, under a setting this
   // instance's captured settings don't hold, keeps aw's files at <dir>/<name>/.aw:
   // checked whether or not <name> itself is held (<home>/.aw/.aw is one), and only
-  // through an entry that resolves inside the home (an unresolvable one is held above).
+  // through an entry that resolves inside the home. Fail closed: an entry whose real
+  // path can't be read is held as its .aw, unless it's positively gone.
   let realDir;
-  try { realDir = realpathSync(dir); } catch { realDir = dir; }
+  try { realDir = realpathSync(dir); }
+  catch { held.push(`${dir} (its real path can't be read, so what lies under it is unknown)`); return held; }
   for (const name of names) {
     let real;
-    try { real = realpathSync(join(dir, name)); } catch { continue; }
+    try { real = realpathSync(join(dir, name)); }
+    catch (e) {
+      if (entryAbsent(e, join(dir, name))) continue;
+      held.push(`${name}/.aw (its real path can't be read)`);
+      continue;
+    }
     if (isInside(realDir, real) && awHoldsPendingIn(join(dir, name, ".aw"))) held.push(`${name}/.aw`);
   }
   const { locators, configured, unreadable } = recordedIdentityLocators(dir);
