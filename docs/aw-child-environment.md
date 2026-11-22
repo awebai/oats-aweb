@@ -64,7 +64,7 @@ oats.aweb 1.42.1 the hook's `run` passed the ambient key to all of these, except
 | --- | --- |
 | Delivery | `wake status`, `wake register`, `wake deregister` (including the asynchronous child) |
 | Grants | `custody status`, `id grant mint`, `id grant list`, `id grant show`, `id grant revoke` |
-| Retained seats | `workspace connect`, `check --online`, `workspace status`, `whoami`, `heartbeat` |
+| Retained seats | `workspace connect`, `workspace status`, `whoami`, `heartbeat` |
 | Team reads and joins | `team list`, `team invite`, `team invite inspect`, `id team list`, `id team accept-invite`, `workspace connect` |
 | Cleanup and roster | `workspace delete`, `id team members`, `workspace status` |
 | Setup/connect | `whoami`, `id team create`, `id team show-server`, `id team register`, `id team set-server`, `id team invite`, API-key `init` |
