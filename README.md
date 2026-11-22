@@ -124,8 +124,12 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   above, of `<home>/.aw` alone. That covers every place aw writes: aw writes only at
   the `--identity-home` it's given, which the provider takes from those records and
   settings. No deeper scan is made. Setup refuses to accept or mint into a root inside
-  an instance home (`E_ROOT_INSIDE_INSTANCE_HOME`, below), so OATS's own flows put
-  aw's files under a home only at those locators. Not covered: a root an earlier
+  an instance home of its own deployment (`E_ROOT_INSIDE_INSTANCE_HOME`, below), so
+  that deployment's flows put aw's files under a home only at those locators. A
+  deployment that itself sits inside an agent's home (a scratch, journey or live-test
+  deployment) belongs to that agent: retiring the agent removes the whole deployment
+  with its home, its roots and any mint pending in them included, and retire doesn't
+  look inside it. Not covered: a root an earlier
   provider set up two or more levels down in a home, under a setting made after that
   instance's spawn. Its retire isn't given that setting. aw's files are left there by
   any hosted accept that stops or fails partway: a signature-pending stop (aw 1.36.58
@@ -1486,11 +1490,13 @@ and where to set it. The provider settings are:
   (a directory with an `instance.json` between the root and the deployment, through
   symlinks): retiring that instance removes its home, and the root with it. A
   deployment that itself sits inside an agent's home (a scratch, journey or live-test
-  deployment) is not refused for that. If the deployment can't be resolved, any
+  deployment) is not refused for that: it belongs to that agent, and retiring the
+  agent removes the whole deployment with its home, its roots and any mint pending in
+  them included. If the deployment can't be resolved, any
   instance home above the root counts, and the error says so. Every setup path that
   creates, accepts or mints into a root (`--username`, `--create`, `--join`, an
   invite, and a bare API-key setup) refuses one once it has chosen the root, before
-  any aw call or install, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and
+  any aw call into the root, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and
   a place beside the deployment's other roots (`<deployment>/.aweb-roots/<label>`).
 - `residents`: map of resident name to absolute custody directory for
   `identity.mode: global`; host-only because it points at custody material.
