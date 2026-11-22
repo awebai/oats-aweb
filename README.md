@@ -216,7 +216,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   when the invite it recorded has an ID-tree issuer and the child has no chain
   installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
   1.36.59, aweb `4c0bb2b8ed`, `:292`). On 1.36.59 an invite that names a human
-  with no issuer is refused (`human_required`, `:279-281`), not left pending. An
+  with no issuer is refused (`human_required`, `:279-281`) rather than stopped as
+  signature pending; aw keeps its record and marker, and the proof keeps the home
+  because the record names a human. An
   invite with no ID-tree binding leaves `id_tree.domain` empty (1.36.58 `:94`;
   1.36.59 `:247-249`), and aw then prepares no request for it. 1.36.59 also saves
   the record before its preview (`:220-224`), with no issuer or human yet; nothing
