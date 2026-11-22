@@ -19,7 +19,7 @@ import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
 import { joinKernelEnvironment } from "./helpers/fake-kernel-team-config.mjs";
 import { fakeAwArgvCheck } from "./helpers/aw-argv.mjs";
 import { didKeyOfSigningKey } from "../oats-package/capabilities/oats-aweb/lib/member-key.mjs";
-import { attributionFor, lineageEntryFor, noSignatureCanBePending, NO_SIGNATURE_PENDING_PROOF, pendingMintRetention, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
+import { attributionFor, awUserStateDir, lineageEntryFor, noSignatureCanBePending, NO_SIGNATURE_PENDING_PROOF, pendingMintRetention, readLineage, readWho, recordLineage, whoObservation, UNKNOWN_ATTRIBUTION } from "../oats-package/capabilities/oats-aweb/lib/attribution.mjs";
 
 const HOOK = resolve(new URL("../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const TEAM = "default:example.test";
@@ -957,6 +957,9 @@ test("an older provider's cut-short mint is kept, never settled, when aw's recor
     ["an outstanding creator request", (m) => { mkdirSync(join(m.fx.homeAw, "requests")); writeFileSync(join(m.fx.homeAw, "requests", `${randomUUID()}.json`), "{}"); }],
     ["an installed chain", (m) => writeFileSync(join(m.fx.homeAw, "id-chain.json"), "{}")],
     ["an identity", (m) => writeFileSync(join(m.fx.homeAw, "identity.yaml"), "did: did:key:z6MkFixture\n")],
+    // The cut between aw's SaveTeamInvite and identity.yaml: its creator link is in aw's
+    // user state ($HOME/.config/aw/team-invites), nothing of it in the child yet.
+    ["a creator link for this home in aw's user state", (m) => { const dir = join(awUserStateDir(m.fx.base), "team-invites"); mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, "creator-x.json"), JSON.stringify({ invite_id: "creator-x", id_child: { invitation_id: randomUUID(), parent: "did:aw:example.test/creator", domain: "example.test", issuer_home: "/creator/.aw", child_home: m.fx.homeAw, child_did_key: didKeyOfSigningKey(readFileSync(join(m.fx.homeAw, "signing.key"), "utf8")) } })); }],
   ]) {
     const m = olderProviderMint(t);
     spoil(m);
@@ -1034,11 +1037,15 @@ test("retire's deletes: a global retire never removes a numeric joined home wher
 });
 
 test("an older provider's cut-short mint: only aw's own record, valid and this home key's, with no ID-tree issuer and no human, shows no signature can be pending", (t) => {
+  // aw's user state for these reads: a private directory, never the real ~/.config/aw.
+  const userHome = tempDir(t), invites = join(awUserStateDir(userHome), "team-invites");
+  const proof = (dir) => noSignatureCanBePending(dir, { userHome });
+  const link = (name, child) => { mkdirSync(invites, { recursive: true }); writeFileSync(join(invites, name), JSON.stringify({ invite_id: name.replace(/\.json$/, ""), domain: "", team_name: "", identity_scope: "local", secret: "", created_at: "", id_child: { invitation_id: randomUUID(), parent: "did:aw:example.test/creator", domain: "example.test", issuer_home: "/creator/.aw", ...child } })); };
   const pending = (t) => { const dir = join(tempDir(t), ".aw"); spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(dir)})`]); return dir; };
   const record = (dir) => join(dir, "hosted-invite-creation.json");
   const edit = (dir, f) => writeFileSync(record(dir), JSON.stringify(f(JSON.parse(readFileSync(record(dir), "utf8")))));
-  assert.deepEqual(noSignatureCanBePending(pending(t)), { proven: true }, "aw's record of a legacy accept");
-  assert.deepEqual(noSignatureCanBePending((() => { const dir = pending(t); edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, domain: "" }, for_human: null })); return dir; })()), { proven: true }, "an empty domain and a null human, as aw's encoder writes them");
+  assert.deepEqual(proof(pending(t)), { proven: true }, "aw's record of a legacy accept");
+  assert.deepEqual(proof((() => { const dir = pending(t); edit(dir, (d) => ({ ...d, id_tree: { ...d.id_tree, domain: "" }, for_human: null })); return dir; })()), { proven: true }, "an empty domain and a null human, as aw's encoder writes them");
   for (const [name, spoil] of [
     ["an empty object", (dir) => writeFileSync(record(dir), "{}")],
     ["JSON null", (dir) => writeFileSync(record(dir), "null")],
@@ -1064,12 +1071,26 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
     ["an empty requests directory", (dir) => mkdirSync(join(dir, "requests"))],
     ["an installed chain", (dir) => writeFileSync(join(dir, "id-chain.json"), "{}")],
     ["an identity", (dir) => writeFileSync(join(dir, "identity.yaml"), "did: did:key:z6MkFixture\n")],
+    // A creator exchange's link, saved in aw's user state before anything reaches the
+    // child (rc.3 invite_condition.go:149, then identity.yaml at :156): a kill between.
+    ["a creator link naming this home", (dir) => link("creator-a.json", { child_home: dir })],
+    ["a creator link naming this home through a symlink", (dir) => { const alias = `${dir}-alias`; symlinkSync(dir, alias); link("creator-b.json", { child_home: alias }); }],
+    ["a creator link naming this key", (dir) => link("creator-c.json", { child_did_key: didKeyOfSigningKey(readFileSync(join(dir, "signing.key"), "utf8")) })],
+    ["a retained invite aw can't read", () => { mkdirSync(invites, { recursive: true }); writeFileSync(join(invites, "creator-d.json"), "{cut sh"); }],
+    ["a retained invite of another shape", () => { mkdirSync(invites, { recursive: true }); writeFileSync(join(invites, "creator-e.json"), JSON.stringify({ id_child: "x" })); }],
+    ["aw's retained invites that can't be listed", () => { mkdirSync(dirname(invites), { recursive: true }); writeFileSync(invites, "not a directory"); }],
   ]) {
+    rmSync(invites, { recursive: true, force: true });
     const dir = pending(t);
     spoil(dir);
-    const r = noSignatureCanBePending(dir);
+    const r = proof(dir);
     assert.ok(!r.proven && r.why, `${name}: ${JSON.stringify(r)}`);
   }
+  rmSync(invites, { recursive: true, force: true });
+  // Links for other homes and keys, and invites with no creator link, show nothing against it.
+  link("creator-other.json", { child_home: "/elsewhere/.aw", child_did_key: "did:key:z6MkSomeoneElse" });
+  writeFileSync(join(invites, "plain.json"), JSON.stringify({ invite_id: "plain", domain: "example.test", team_name: "t", identity_scope: "local", secret: "", created_at: "" }));
+  assert.deepEqual(proof(pending(t)), { proven: true }, "another home's link, and a plain invite");
   // Through retire: a malformed record keeps the home and the warning says not to move aw's files.
   const fy = fixture(t);
   fy.fake.set({ version: "1.36.58", signaturePending: "error", who: { [fy.rootHome]: chainless(fy.rootKey) } });

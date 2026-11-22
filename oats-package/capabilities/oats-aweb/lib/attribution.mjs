@@ -11,8 +11,8 @@
 //   the root's identity and key, never its label (observeRoot, the lineage record).
 // - Signature pending: a mint aw stopped before membership, kept for the operator.
 import { createHash } from "node:crypto";
-import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { leadingJsonObject } from "./aw-failure-cause.mjs";
 import { versionAtLeast } from "./aw-floor.mjs";
 import { didKeyOfSigningKey } from "./member-key.mjs";
@@ -33,7 +33,7 @@ export const README_ATTRIBUTION = 'README, "Human attribution"';
 export const README_OLDER_MINT = "A mint cut short under an older provider";
 /** What retire's warning says when aw's record proves no signature can be pending
  *  (noSignatureCanBePending): the README's step 2 waits for these words. */
-export const NO_SIGNATURE_PENDING_PROOF = "aw's record of the accept is this home key's and names no ID-tree issuer and no human, so no signature can be pending for it";
+export const NO_SIGNATURE_PENDING_PROOF = "aw's record of the accept is this home key's and names no ID-tree issuer and no human, and aw holds no creator link for this home, so no signature can be pending for it";
 export const UNKNOWN_ATTRIBUTION = Object.freeze({ mode: "unknown", human: null, parent: null });
 
 /** A string aw gives that is copied, never interpreted: bounded, no control characters. */
@@ -296,6 +296,49 @@ export function pendingMintBinding(identityHome) {
   return { selection: createHash("sha256").update(`oats-aweb pending selection\0${tokenHash}`).digest("hex"), request: request.toLowerCase(), did: doc.did_key };
 }
 
+/** aw's user state, found as aw finds it: os.UserHomeDir() ($HOME on Unix) joined with
+ *  `.config/aw`, with no environment override (awconfig/state.go:10-16,26-33, the same
+ *  at aw 1.36.58 and 1.36.59-rc.3). */
+export const awUserStateDir = (userHome) => join(userHome, ".config", "aw");
+const CREATOR_LINK_MAX_BYTES = 1 << 20;
+
+/** Whether aw holds a creator link for `identityHome` (or the key `did`): an invite aw
+ *  retained in `<user state>/team-invites` (awconfig/team_invites.go:88-101) whose
+ *  `id_child` names this home as `child_home`, by path or realpath, or this key as
+ *  `child_did_key` (:19-27). aw saves one before a creator exchange writes anything
+ *  into the child: `accept-invite --parent` (1.36.59-rc.3 invite_condition.go:149,
+ *  before identity.yaml at :156) and `init --join-from` from an adopted root (1.36.58
+ *  id_team.go:1761-1765). Fail closed: an absent directory (no entry) shows none; one
+ *  that can't be listed, or any entry that can't be read as aw writes it, shows
+ *  nothing. Undefined when it shows none, else why. */
+function creatorLinkHeld(identityHome, did, userHome) {
+  if (typeof userHome !== "string" || !isAbsolute(userHome)) return "aw's user state can't be located (no absolute HOME)";
+  const dir = join(awUserStateDir(userHome), "team-invites");
+  try { lstatSync(dir); } catch (e) { return entryAbsent(e, dir) ? undefined : "aw's retained invites can't be looked at"; }
+  let names;
+  try { names = readdirSync(dir); } catch { return "aw's retained invites can't be listed"; }
+  let homeReal;
+  try { homeReal = realpathSync(identityHome); } catch { homeReal = undefined; }
+  const isThisHome = (p) => {
+    if (typeof p !== "string" || !p) return false;
+    if (resolve(p) === resolve(identityHome)) return true;
+    try { return homeReal !== undefined && realpathSync(p) === homeReal; } catch { return false; }
+  };
+  for (const name of names) {
+    let doc;
+    try { doc = JSON.parse(readBounded(join(dir, name), CREATOR_LINK_MAX_BYTES)); }
+    catch { return `aw's retained invite ${name} can't be read as one aw writes`; }
+    if (!object(doc)) return `aw's retained invite ${name} is not one aw writes`;
+    const link = doc.id_child;
+    if (link === undefined || link === null) continue;
+    if (!object(link) || !(link.child_home === undefined || typeof link.child_home === "string") || !(link.child_did_key === undefined || typeof link.child_did_key === "string")) {
+      return `aw's retained invite ${name} is not one aw writes`;
+    }
+    if ((link.child_did_key && link.child_did_key === did) || isThisHome(link.child_home)) return `aw holds a creator link for this home (${name})`;
+  }
+  return undefined;
+}
+
 /** Whether aw's record of the accept in `identityHome` shows that no signature can be
  *  pending for it (README, "Human attribution", "A mint cut short under an older
  *  provider"). One bounded read of the record, as aw writes it with its own encoder:
@@ -312,8 +355,10 @@ export function pendingMintBinding(identityHome) {
  *  (cli/go/awconfig/id_request_store.go:41-42) and whose chain it installs at
  *  `<identity-home>/id-chain.json` (id_chain_install.go:25). Any trace of that
  *  exchange (those, or `identity.yaml`), or one that can't be looked at, shows
- *  nothing. Diagnostic only: it decides no retention. `{proven: true}`, else `{why}`. */
-export function noSignatureCanBePending(identityHome) {
+ *  nothing; so does a creator link aw holds for this home in its user state
+ *  (`creatorLinkHeld`). It decides retention rule (c) (`pendingMintRetention`), and
+ *  retire's warning quotes it. `{proven: true}`, else `{why}`. */
+export function noSignatureCanBePending(identityHome, { userHome = process.env.HOME } = {}) {
   const key = signingKeyRead(identityHome);
   if (!key.did) return { why: key.missing ? "this home has no key" : "this home's key can't be read" };
   const file = join(identityHome, PENDING_MINT_FILES[0]);
@@ -340,6 +385,8 @@ export function noSignatureCanBePending(identityHome) {
     try { lstatSync(join(identityHome, name)); return { why: `this home holds ${name}, so a creator exchange may be pending` }; }
     catch (e) { if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") return { why: `${name} in this home can't be looked at` }; }
   }
+  const link = creatorLinkHeld(identityHome, key.did, userHome);
+  if (link) return { why: link };
   return { proven: true };
 }
 
@@ -393,7 +440,7 @@ function exactPendingMint(identityHome, present, { did, binding, invalid }) {
  *  kept: `{keep: "signature-pending"}` for the exact recorded mint, else
  *  `{keep: "mint-outcome-unknown", cause}`. `signaturePending` is the recorded stop,
  *  undefined when none was recorded. */
-export function pendingMintRetention(identityHome, { signaturePending, issuerChainless, unbound = false }) {
+export function pendingMintRetention(identityHome, { signaturePending, issuerChainless, unbound = false, userHome = process.env.HOME }) {
   const present = pendingMintFilesIn(identityHome);
   if (!present.length) return { settle: true };
   if (!signaturePending) {
@@ -402,7 +449,7 @@ export function pendingMintRetention(identityHome, { signaturePending, issuerCha
     // the accept decides, as #240 settled it, only when it proves no signature can be
     // pending (`noSignatureCanBePending`); anything it doesn't show keeps the home.
     if (unbound) {
-      const proof = noSignatureCanBePending(identityHome);
+      const proof = noSignatureCanBePending(identityHome, { userHome });
       if (proof.proven) return { settle: true, chainlessIssuer: true, proven: true };
       return { keep: "mint-outcome-unknown", cause: "its record, from an older provider, names no issuing key", unproven: proof.why };
     }

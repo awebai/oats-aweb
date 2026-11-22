@@ -156,11 +156,15 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   - **When it proves no signature can be pending,** retire settles the mint as
     releases before this one did (#240), and its warning says so: "aw's record proves
     no signature can be pending (aw's record of the accept is this home key's and
-    names no ID-tree issuer and no human, so no signature can be pending for it)".
-    The proof is a record aw accepts, made for this home's own key, with no
-    `id_tree.domain` and no `for_human`, and no trace in the home of a creator
-    exchange of its own (`<home>/.aw/requests`, `<home>/.aw/id-chain.json` or
-    `<home>/.aw/identity.yaml`). The check reads the file as aw writes it; a file
+    names no ID-tree issuer and no human, and aw holds no creator link for this home,
+    so no signature can be pending for it)". The proof is a record aw accepts, made
+    for this home's own key, with no `id_tree.domain` and no `for_human`; no trace in
+    the home of a creator exchange of its own (`<home>/.aw/requests`,
+    `<home>/.aw/id-chain.json` or `<home>/.aw/identity.yaml`); and no creator link in
+    aw's user state (`$HOME/.config/aw/team-invites`) whose `id_child` names this home
+    (`child_home`, by path or realpath) or this key (`child_did_key`). That directory
+    absent means no links; one that can't be listed, or an entry that can't be read as
+    aw writes it, keeps the home. The check reads the files as aw writes them; a file
     edited by hand isn't covered.
   - **When the warning says aw's record "doesn't show that no signature can be
     pending",** retire keeps the home (`mint-outcome-unknown`) and its warning points
@@ -215,7 +219,14 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   record (`cli/go/cmd/aw/id_team.go:2312-2333`), keeping its outgoing request in
   `<home>/.aw/requests` (`cli/go/awconfig/id_request_store.go:41-42`) and its chain
   in `<home>/.aw/id-chain.json`; the check finds no proof while either, or
-  `identity.yaml`, is there.
+  `identity.yaml`, is there. Before any of those, a creator exchange saves its link in
+  aw's user state: `accept-invite --parent` (1.36.59-rc.3
+  `cli/go/cmd/aw/invite_condition.go:149`, then `identity.yaml` at `:156`) and an
+  `init --join-from` from an adopted root (1.36.58 `cli/go/cmd/aw/id_team.go:1761-1765`).
+  aw keeps it at `$HOME/.config/aw/team-invites/<id>.json`
+  (`cli/go/awconfig/state.go:10-16,26-33`; `team_invites.go:88-101`, its `id_child`
+  fields at `:19-27`), the same at both tags; the check finds no proof while one names
+  this home or its key.
 - **Roots with no chain change nothing.** For a root with no chain (a local
   `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
   retire behave as before; the only differences are `attribution` `unknown` and the
