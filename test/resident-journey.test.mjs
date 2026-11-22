@@ -54,7 +54,7 @@ const OATS = KERNEL ? join(KERNEL, "bin", "oats.mjs") : undefined;
 const QUALIFIED_AW = Object.freeze({
   "1.36.33": "877bbee94ce45aa1ff103912bc9850556e61dfb4",
   "1.36.58": "a3223c1d32b8144abfd34d63b521b38d2b227ad5",
-  "1.36.59-rc.5": "83a416bb9d987a00a217a6daa4c7bf9c10b87095",
+  "1.36.59-rc.6": "ab4a750318fa7a9108706450747755622de9146c",
 });
 
 test("the journeys are qualified on the floor, tested and pinned next aw", () => {
