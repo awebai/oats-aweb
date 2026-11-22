@@ -1712,11 +1712,18 @@ Supported acts:
   the updated session pin. The registry setting is never taken from ambient
   `AWID_REGISTRY_URL`, `identity.yaml`, `teams.yaml` or a saved receipt.
 
-  A private-address registry requires this explicit administrative pin on
-  every invocation. OATS passes it by name as `AWID_REGISTRY_URL` to registry
-  calls, LOCAL and GLOBAL sessions, custody serve and wake run. Saved URLs
-  choose destinations under aw's public-address policy; they never grant
-  private-network access. Existing non-public ambient-only deployments receive
+  OATS takes a private-address registry only from this explicit
+  administrative pin in `oats-local.yaml`, never from aw's files, and passes
+  it on every invocation, by name as `AWID_REGISTRY_URL`, to registry calls,
+  LOCAL and GLOBAL sessions, custody serve and wake run. aw reaches a URL saved
+  in its own files under its public-address policy, with one exception from aw
+  1.36.59: an origin aw recorded as the operator's own choice
+  (`registry_operator_origin` in `identity.yaml` or a `teams.yaml` membership,
+  which aw writes only when the URL is the one the operator named, or which
+  `aw id registry-trust <origin>` sets), and a 1.36.58 home's own
+  `identity.yaml` `registry_url`, may reach a private network without the pin.
+  Up to aw 1.36.58, saved URLs never grant private-network access.
+  Existing non-public ambient-only deployments receive
   `registry-setting-required` at spawn/join and readiness, with the setup and
   restart steps. GLOBAL homes with a recorded non-default registry also get
   that migration instead of silently losing messaging verification. Public
