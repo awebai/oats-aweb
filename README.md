@@ -215,7 +215,7 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   Why retire's own settle is safe. aw stops an accept to wait for a signature only
   when the invite it recorded has an ID-tree issuer and the child has no chain
   installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
-  1.36.59, aweb `57359d18ae` (rc.5), `:292`). On 1.36.59 an invite that names a human
+  1.36.59, aweb `b9c015732` (rc.6), `:292`). On 1.36.59 an invite that names a human
   with no issuer is refused (`human_required`, `:279-281`) rather than stopped as
   signature pending; aw keeps its record and marker, and the proof keeps the home
   because the record names a human. An
