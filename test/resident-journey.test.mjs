@@ -54,7 +54,7 @@ const OATS = KERNEL ? join(KERNEL, "bin", "oats.mjs") : undefined;
 const QUALIFIED_AW = Object.freeze({
   "1.36.33": "877bbee94ce45aa1ff103912bc9850556e61dfb4",
   "1.36.58": "a3223c1d32b8144abfd34d63b521b38d2b227ad5",
-  "1.36.59": "ab4a750318fa7a9108706450747755622de9146c",
+  "1.36.59-rc.4": "3096b07551594a8d6eca7594829639aff7102812",
 });
 
 test("the journeys are qualified on the floor, tested and pinned next aw", () => {
@@ -572,7 +572,7 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   const seat = roster.members.find(member => member.alias === spawned.doc.result.instance);
   assert.ok(seat, 'the provider roster contains the joined seat');
   assert.deepEqual(seat.sources, ['certificate', 'presence']);
-  // On an aw with accept-invite --parent (the pinned next, 1.36.59-rc.3), the argv
+  // On an aw with accept-invite --parent (the pinned next, 1.36.59-rc.4), the argv
   // an adopted root's join passes is parsed by the real aw, which answers its JSON:
   // here against a chainless parent on the stack. The completed parented accept is
   // proven by aweb's own E2E against an adopted root.
