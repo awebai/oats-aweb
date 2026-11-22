@@ -1496,7 +1496,7 @@ and where to set it. The provider settings are:
   instance home above the root counts, and the error says so. Every setup path that
   creates, accepts or mints into a root (`--username`, `--create`, `--join`, an
   invite, and a bare API-key setup) refuses one once it has chosen the root, before
-  any aw call into the root, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and
+  it creates, accepts or mints into it, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and
   a place beside the deployment's other roots (`<deployment>/.aweb-roots/<label>`).
 - `residents`: map of resident name to absolute custody directory for
   `identity.mode: global`; host-only because it points at custody material.
