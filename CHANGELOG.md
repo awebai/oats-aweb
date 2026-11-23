@@ -59,7 +59,10 @@
     spawn, start, join and check-only, apart from `attribution` and the new `roots`
     entries: a fresh hosted root (it reads `no_human` from aw 1.36.53) records
     `none`, a legacy chainless root (aw 1.36.51 or earlier) `unknown`. Connect from
-    a `no_human` root is refused with the manual route (above). A consumer that
+    a `no_human` root is refused with the manual route (above). On aw 1.36.58,
+    retire now keeps an instance whose mint from a `no_human` root failed after the
+    key was written, where it used to settle and remove it: the mint may be waiting
+    for a signature (README, "A mint waiting for a signature"). A consumer that
     compares the check-only document's keys exactly sees `roots`.
   - **A root inside an instance home of this deployment** (`root` or a `roots` value,
     or a symlink that resolves there) is refused at its next setup that creates,
