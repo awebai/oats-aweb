@@ -152,20 +152,23 @@ function ownerWritable(path) {
   for (const name of readdirSync(path)) ownerWritable(join(path, name));
 }
 
-/** Remove every credential entry of `home` (a symlink as the link itself), and
+/** Remove every credential entry of `home` (a symlink as the link itself) but one
+ *  for which `keep(name)` answers a reason, which stays where it is, said so; and
  *  the held directory once it is empty. An entry that can't be removed, even
  *  once its directories are made owner-writable, is held instead, out of aw's
  *  reach; each one that is neither removed nor held is named, with why. */
-export function removeEntries(home) {
-  return withWritableHome(home, () => removeEntriesNow(home));
+export function removeEntries(home, { keep = () => undefined } = {}) {
+  return withWritableHome(home, () => removeEntriesNow(home, { keep }));
 }
-function removeEntriesNow(home) {
+function removeEntriesNow(home, { keep }) {
   const removed = [], heldInstead = [], problems = [];
   let names;
   try { names = credentialEntries(home); }
   catch (e) { return { removed, heldInstead, problems: [`${home} could not be listed (${codeOf(e)}), so its key material was not removed`] }; }
   for (const name of names) {
     const path = join(home, name);
+    const reason = keep(name);
+    if (reason) { problems.push(`${path} stays in place: ${reason}`); continue; }
     try { removeOne(path); removed.push(name); continue; }
     catch { /* a read-only directory: made writable below */ }
     let why;

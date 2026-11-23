@@ -26,7 +26,12 @@
   grant seat's grant homes are removed on every exit, as before, since its
   retry revokes through the resident's custody. A retire with aw not on PATH
   still answers exit 0 with its warning, but holds the keys, so the next
-  retire does the cleanup it skipped. Not a boundary against another process of
+  retire does the cleanup it skipped. Only a retire the kernel dispatched
+  (`OATS_EVENT=retire`, `OATS_HOME` and `OATS_INSTANCE_HOME` the same absolute
+  home) touches the entries: run by hand in any directory, the hook refuses
+  and touches nothing. An entry that a `root`, `roots`, `residents` or
+  `identity.source` setting names inside the home stays in place, named in the
+  warning; with unreadable settings no entry moves. Not a boundary against another process of
   the same OS user; a crashed retire leaves the entries in place. README, "What
   retire does with the key material".
 - **Fixed: username setup resumes the signup aw kept after an unknown outcome

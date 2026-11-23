@@ -45,7 +45,7 @@ function seat(t) {
   const custody = join(base, "custody", "merlin"); write(join(custody, ".aw", "identity.yaml"), "alias: resident-alias\n");
   const settings = (identity = {}) => ({ identity: { mode: "global", resident: "merlin", ...identity }, residents: { merlin: custody } });
   const hook = (event, env = {}) => {
-    const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...teamEnv, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, ...env } });
+    const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, ...teamEnv, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, ...env } });
     let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
     return { ...r, doc };
   };

@@ -62,7 +62,7 @@ function fixture(t, { settings = {}, defaultFrom = "deployment", prefix } = {}) 
     { label: "shared", team: "shared:example.test", default: false, from: "shared" },
   ];
   const env = {
-    OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: defaultFrom,
     OATS_TEAMS: JSON.stringify(teams), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
     // The workspace's .aw is the declared root of every team: a joined team mints

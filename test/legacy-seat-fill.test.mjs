@@ -31,7 +31,7 @@ function legacy(t) {
   const run = (event='launch', input=meta, extra={}, preload) => {
     const r = spawnSync(process.execPath, [...(preload ? ['--import',preload] : []),HOOK,event], {cwd:home, encoding:'utf8', env:{
       HOME:base, PATH:`${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
-      OATS_EVENT:event, OATS_INSTANCE:'probe', OATS_HOME:home, OATS_WORKSPACE:base, OATS_CONTEXT:base,
+      OATS_EVENT:event, OATS_INSTANCE:'probe', OATS_HOME:home, OATS_INSTANCE_HOME:home, OATS_WORKSPACE:base, OATS_CONTEXT:base,
       OATS_RUNTIME:'pi', OATS_DEFAULT_TEAM:'default', OATS_DEFAULT_TEAM_ID:TEAM, OATS_DEFAULT_TEAM_FROM:'deployment',
       OATS_SETTINGS:JSON.stringify(settings), OATS_META:JSON.stringify(input), ...extra,
     }});

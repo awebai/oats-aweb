@@ -21,7 +21,7 @@ function seat(t) {
   const run = (event, meta = {}, env = {}) => {
     const r = spawnSync(process.execPath, [HOOK, event], {cwd:home, encoding:'utf8', env:{
       HOME:base, PATH:`${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
-      OATS_EVENT:event, OATS_INSTANCE:'probe', OATS_HOME:home, OATS_WORKSPACE:base,
+      OATS_EVENT:event, OATS_INSTANCE:'probe', OATS_HOME:home, OATS_INSTANCE_HOME:home, OATS_WORKSPACE:base,
       OATS_CONTEXT:base, OATS_DEFAULT_TEAM:'default', OATS_DEFAULT_TEAM_ID:TEAM,
       OATS_DEFAULT_TEAM_FROM:'deployment', OATS_TEAMS:JSON.stringify([{label:'default',team:TEAM,default:true,from:'local'}]),
       OATS_SETTINGS:JSON.stringify(settings), OATS_META:JSON.stringify(meta),
@@ -209,11 +209,11 @@ test('a long home path cannot truncate the respawn remedy from a launch refusal'
   const record = join(longHome,'.oats-aweb','seat.json');
   mkdirSync(dirname(record),{recursive:true});
   writeFileSync(record,readFileSync(s.recordPath));
-  const r = s.run('launch',spawned.doc.meta,{OATS_HOME:longHome,OATS_DEFAULT_TEAM_ID:OTHER});
+  const r = s.run('launch',spawned.doc.meta,{OATS_HOME:longHome, OATS_INSTANCE_HOME:longHome,OATS_DEFAULT_TEAM_ID:OTHER});
   assert.equal(r.status,1);
   assert.match(r.doc.warning,/respawn this home/);
   writeFileSync(record,'{truncated');
-  const unreadable = s.run('launch',spawned.doc.meta,{OATS_HOME:longHome});
+  const unreadable = s.run('launch',spawned.doc.meta,{OATS_HOME:longHome, OATS_INSTANCE_HOME:longHome});
   assert.equal(unreadable.status,1);
   assert.match(unreadable.doc.warning,/respawn this home/);
 });

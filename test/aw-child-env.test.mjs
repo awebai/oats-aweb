@@ -49,7 +49,7 @@ else if (args.slice(0, 2).join(' ') === 'workspace delete') {
   writeFileSync(kernel, 'console.log(JSON.stringify({features: []}));');
   const env = {PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: base,
     OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: kernel,
-    OATS_HOME: home, OATS_INSTANCE: 'probe', OATS_TEAM_SCOPE: base,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'probe', OATS_TEAM_SCOPE: base,
     OATS_WORKSPACE_NAME: 'fixture', OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: 't:example.test',
     OATS_SETTINGS: JSON.stringify({root: home}), OATS_META: JSON.stringify({alias: 'probe', runtime: 'pi', delivery: 'channel'}),
     ...Object.fromEntries(SELECTORS.map(k => [k, `ambient-${k}`])),

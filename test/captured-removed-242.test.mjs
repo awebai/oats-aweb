@@ -109,7 +109,7 @@ function seat(t) {
 }
 function hook(fx, event, env = {}, args = []) {
   const r = spawnSync(process.execPath, [HOOK, event, ...args], { encoding: "utf8", env: { ...cleanEnv(), PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained",
-    OATS_HOME: fx.home, OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_RUNTIME: "codex", FAKE_RETAINED: "1", ...teamEnv,
+    OATS_HOME: fx.home, OATS_INSTANCE_HOME: fx.home, OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_RUNTIME: "codex", FAKE_RETAINED: "1", ...teamEnv,
     OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", source: fx.source } }), ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
   return { ...r, doc };

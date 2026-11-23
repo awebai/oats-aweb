@@ -74,7 +74,7 @@ console.error("fake aw: unexpected " + args.join(" ")); process.exit(93);
   const meta = { alias: "dev-1", team: DEFAULT, identity: { mode: "local", alias: "dev-1", team: DEFAULT }, joinedTeams: [{ label: "shared", team: joinedTeam, identityHome: sharedHome, alias: "dev-1", receive: "poll", since: "2026-11-01T00:00:00.000Z" }] };
   const teams = [{ label: "personal", team: DEFAULT, default: true, from: "local" }, { label: "shared", team: joinedTeam, default: false, from: "shared" }];
   const env = {
-    PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
+    PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: DEFAULT, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify(teams), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
     OATS_SETTINGS: JSON.stringify({ roots: { [DEFAULT]: root } }), OATS_EVENT: "retire", OATS_META: JSON.stringify(meta),

@@ -40,7 +40,7 @@ function fixture(t, { key = HOSTED_KEY, settings = {}, delivery, runtime = "clau
   writeFileSync(join(ws, "oats-local.yaml"), "schemaVersion: 2\nworkspace: fixture\n");
   const env = {
     OATS_CLI_BIN: currentRootQuery(ws, { home, deployment: ws, settings: { root: ws, ...merged } }).cli,
-    OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: key, OATS_WORKSPACE_NAME: "acme",
+    OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws, OATS_WORKSPACE_KEY: key, OATS_WORKSPACE_NAME: "acme",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "legacy:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: teamsEnv, OATS_TEAMS_SOURCE: "live",
     OATS_RUNTIME: runtime, OATS_SETTINGS: JSON.stringify(merged),
   };
@@ -424,7 +424,7 @@ test("commands run from inside an instance session (AWEB_IDENTITY_HOME set) stil
   // still mints its own identity, and retiring it deletes ITS workspace.
   const worker = join(fx.ws, "agents", "dev", "instances", "dev-w");
   mkdirSync(worker, { recursive: true });
-  const nested = { ...env, AWEB_IDENTITY_HOME: join(fx.home, ".aw"), OATS_HOME: worker, OATS_INSTANCE: "dev-w" };
+  const nested = { ...env, AWEB_IDENTITY_HOME: join(fx.home, ".aw"), OATS_HOME: worker, OATS_INSTANCE_HOME: worker, OATS_INSTANCE: "dev-w" };
   const wdoc = spawnDoc(runHook("spawn", { cwd: worker, env: nested }));
   assert.equal(wdoc.meta.alias, "dev-w");
   const retired = runHook("retire", { cwd: worker, env: { ...nested, OATS_META: JSON.stringify(wdoc.meta) } });

@@ -98,7 +98,7 @@ function fixture(t, { delivery = "session", runtime = "claude", extraEnv = {} } 
   mkdirSync(home, { recursive: true });
   const env = {
     HOME: fake.base, PATH: fake.path,
-    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_WORKSPACE: ws, OATS_RUNTIME: runtime,
+    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: ws, OATS_RUNTIME: runtime,
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]),
     OATS_SETTINGS: JSON.stringify({ root: ws, delivery }),

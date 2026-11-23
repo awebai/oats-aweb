@@ -72,7 +72,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName, rootI
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
-import { HELD_RELATIVE, REMOVED_KEYS_RELATIVE, credentialEntries, grantHomeEntries, holdEntries, removeEntries, removeNamed, restoreHeld, retiredKeysMessage } from "../lib/retire-key-material.mjs";
+import { CREDENTIAL_ENTRY_RE, HELD_RELATIVE, REMOVED_KEYS_RELATIVE, credentialEntries, grantHomeEntries, holdEntries, removeEntries, removeNamed, restoreHeld, retiredKeysMessage } from "../lib/retire-key-material.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
@@ -467,10 +467,65 @@ if ((process.env.OATS_EVENT || process.argv[2]) === "upgrade") upgrade();
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;
 let home = process.env.OATS_HOME || process.cwd();
+/** Why this run is not a retire the kernel dispatched, or undefined. The kernel
+ *  (lib/hook-env.mjs, every retire path from 0.70.0 on: a retire, its --self
+ *  completion, the quarantine retry, a spawn's compensation) sets OATS_EVENT=retire
+ *  and OATS_HOME and OATS_INSTANCE_HOME to the same absolute home. */
+function retireNotDispatched() {
+  const { OATS_EVENT: dispatched, OATS_HOME: hookHome, OATS_INSTANCE_HOME: instanceHome } = process.env;
+  if (dispatched !== "retire") return "OATS_EVENT is not retire";
+  if (!hookHome || !instanceHome) return `${!hookHome ? "OATS_HOME" : "OATS_INSTANCE_HOME"} is not set`;
+  if (!isAbsolute(hookHome) || !isAbsolute(instanceHome)) return "OATS_HOME and OATS_INSTANCE_HOME must be absolute";
+  if (resolve(hookHome) !== resolve(instanceHome)) return "OATS_HOME and OATS_INSTANCE_HOME name different directories";
+  return undefined;
+}
+// A retire removes, holds and restores the key material of the home it runs in,
+// and acts remotely with it: only for a retire the kernel dispatched, never in
+// whatever directory `oats-aweb.mjs retire` was typed in (a deployment root, a
+// resident's custody). Anything else touches nothing, runs no aw command and
+// refuses (awebai/oats-aweb#321).
+if (event === "retire") {
+  const why = retireNotDispatched();
+  if (why) {
+    process.stdout.write(`${JSON.stringify({ warning: `oats-aweb: the retire hook runs only under \`oats retire\` (${why}); nothing was touched and no aw command ran` })}\n`);
+    process.exit(1);
+  }
+}
 const AWEB_ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const AWEB_ALIAS_RULE = "invalid alias: aweb aliases must be 1-64 characters, start with a letter or digit, and then contain only letters, digits, '-' or '_'";
 /** A retired alias held until the server releases it: --purpose derives <agent>-<purpose>, so either flag gives a free one. */
 const ALIAS_UNRELEASED_REMEDY = "spawn successors with a different --name or --purpose until it is released";
+/** The home's credential entries a setting names (root, roots, identity.source,
+ *  residents: the directory, or its .aw, inside this home): a deployment's root, a
+ *  resident's custody or a standing identity placed in the home, not this
+ *  instance's key (awebai/oats-aweb#321). `{ named: Map(entry → [setting]) }`, or
+ *  `{ unreadable }` when the settings can't be read. */
+function settingNamedEntries(dir) {
+  let set;
+  try { set = JSON.parse(process.env.OATS_SETTINGS || "{}"); }
+  catch { return { unreadable: "OATS_SETTINGS is not JSON" }; }
+  if (!set || typeof set !== "object" || Array.isArray(set)) return { unreadable: "OATS_SETTINGS is not an object" };
+  const entries = (o) => o && typeof o === "object" && !Array.isArray(o) ? Object.entries(o) : [];
+  const settings = [["root", set.root], ...entries(set.roots).map(([k, v]) => [`roots[${k}]`, v]), ["identity.source", set.identity?.source], ...entries(set.residents).map(([k, v]) => [`residents.${k}`, v])];
+  const named = new Map();
+  const homes = [resolve(dir)];
+  try { const real = realpathSync(dir); if (real !== homes[0]) homes.push(real); } catch { /* compared as given */ }
+  for (const [key, value] of settings) {
+    // A setting a root needs is absolute (rootProblem refuses any other); one that
+    // isn't can't name an entry of this home.
+    if (typeof value !== "string" || !isAbsolute(value.trim())) continue;
+    for (const p of [resolve(value.trim()), join(resolve(value.trim()), ".aw")]) {
+      for (const h of homes) {
+        const rel = relative(h, p);
+        if (!rel || !relInside(rel)) continue;
+        const name = rel.split(sep)[0];
+        if (!CREDENTIAL_ENTRY_RE.test(name)) continue;
+        named.set(name, [...new Set([...(named.get(name) || []), `settings.oats.aweb.${key}`])]);
+      }
+    }
+  }
+  return { named };
+}
 /** A grant seat (globalGrantRetire's test: identity.mode global, or a seat record),
  *  read from the hook's input so that an answer before the retire branch knows it too. */
 function grantSeatHome() {
@@ -494,6 +549,14 @@ if (event === "retire") {
   // marker, a recorded handoff, a revoked grant, a released retained seat);
   // the one exit 0 that skips owed cleanup (aw not on PATH) holds them.
   settleRetireKeys = (code) => {
+    // An entry a setting names (a root, a custody or a standing identity placed in
+    // this home) is not this instance's key: removing it destroys a key others use,
+    // and holding it moves it from the path every later spawn, mint or custody
+    // reads. It stays where it is, as before #318, and the warning names it. When
+    // the settings can't be read, nothing is removed or held (awebai/oats-aweb#321).
+    const configured = settingNamedEntries(home);
+    if (configured.unreadable) return [`key material left in place: the settings that say which entries are a root's, a custody's or a standing identity's can't be read (${configured.unreadable}), so nothing was removed or held`];
+    const ownedElsewhere = (name) => configured.named.has(name) ? `${configured.named.get(name).join(" and ")} names it, so it is that root's, custody's or standing identity's, not this instance's key` : undefined;
     if (code !== 0 || retireCleanupSkipped) {
       // An entry where aw holds a pending mint, at any depth the choke point checks
       // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human
@@ -505,8 +568,8 @@ if (event === "retire") {
       // custody, never with a grant home, so holding one would only keep a live
       // grant credential whose revoke failed. What can't be removed is held below.
       // Said in no note, as before #318: the warning ends with the revoke command.
-      if (grantSeatHome()) removeNamed(home, grantHomeEntries(home).filter((name) => !pending(name)));
-      const { held, problems } = holdEntries(home, { keep: (name) => pending(name) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined });
+      if (grantSeatHome()) removeNamed(home, grantHomeEntries(home).filter((name) => !pending(name) && !ownedElsewhere(name)));
+      const { held, problems } = holdEntries(home, { keep: (name) => ownedElsewhere(name) ?? (pending(name) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined) });
       // An exit 0 that skipped its cleanup keeps its warning as it was (spec v5).
       if (code === 0) return problems.map((p) => `key material not held: ${p}`);
       return [
@@ -516,7 +579,7 @@ if (event === "retire") {
     }
     const notes = [];
     let names = [];
-    try { names = credentialEntries(home); } catch { /* removeEntries reports an unlistable home */ }
+    try { names = credentialEntries(home).filter((name) => !ownedElsewhere(name)); } catch { /* removeEntries reports an unlistable home */ }
     // A rerun answers from what this run read from .aw once .aw is gone, and a
     // reader of the kept home says it was retired (retiredKeysMessage).
     if (names.length) {
@@ -525,7 +588,7 @@ if (event === "retire") {
       try { mkdirSync(join(home, ".oats-aweb"), { recursive: true, mode: 0o700 }); atomicWrite(removedKeysFile(), JSON.stringify({ schemaVersion: 1, removedAt: new Date().toISOString(), ...(facts.workspaceAlias ? { workspaceAlias: facts.workspaceAlias } : {}), workspaceYaml: facts.workspaceYaml }, null, 2) + "\n"); }
       catch { notes.push(`could not record what ${join(home, ".aw")} held before removing it (${removedKeysFile()}); a rerun of this retire may word its answer differently`); }
     }
-    const { problems } = removeEntries(home);
+    const { problems } = removeEntries(home, { keep: ownedElsewhere });
     return [...notes, ...problems.map((p) => `key material not removed: ${p}`)];
   };
 }

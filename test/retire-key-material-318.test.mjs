@@ -106,7 +106,7 @@ function fixture(t, { joined = false } = {}) {
   const meta = { runtime: "codex", delivery: "session", team: TEAM, alias: "dev-1", identity: { mode: "local", alias: "dev-1", team: TEAM }, ...(joined ? { joinedTeams: [{ label: "ops", team: OPS, alias: "dev-1", identityHome: joinedHome, receive: "poll", since: "2026-11-23T00:00:00.000Z" }] } : {}) };
   const env = {
     PATH: fake.path, HOME: base, OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: kernel,
-    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_WORKSPACE: ws,
+    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }, { label: "ops", team: OPS, default: false, from: "local" }]),
     OATS_SETTINGS: JSON.stringify({ delivery: "session" }),
@@ -128,6 +128,55 @@ function fixture(t, { joined = false } = {}) {
 }
 const deletes = (calls) => calls.filter((c) => c.args[0] === "workspace" && c.args[1] === "delete");
 const withKey = (calls) => calls.filter((c) => c.args[0] !== "version" && c.args[0] !== "wake");
+
+// ------------------------------------- only a retire the kernel dispatched (#321)
+
+/** A home whose .aw, joined identity home and a held entry are all present, and
+ *  an env with none of the kernel's variables: what a person typing
+ *  `oats-aweb.mjs retire` somewhere has. */
+function notDispatched(t) {
+  const fx = fixture(t, { joined: true });
+  identityHome(join(fx.home, ".oats-aweb", "held", ".aweb-identity-old"), OPS, "cert-old-1");
+  const bare = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("OATS_")));
+  const run = (env, cwd = fx.home) => spawnSync(process.execPath, [HOOK, "retire"], { cwd, env: { ...bare, PATH: fx.fake.path, HOME: fx.base, ...env }, encoding: "utf8", timeout: 60000 });
+  const untouched = () => listing(fx.home);
+  return { fx, run, before: untouched(), untouched };
+}
+const refusedNotDispatched = (r, why) => {
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const doc = JSON.parse(r.stdout.trim().split("\n").at(-1));
+  assert.equal(doc.warning, `oats-aweb: the retire hook runs only under \`oats retire\` (${why}); nothing was touched and no aw command ran`);
+  assert.equal(doc.meta, undefined);
+};
+
+test("a retire with none of the kernel's variables, in a directory with .aw, touches nothing, runs no aw command and refuses", (t) => {
+  const { fx, run, before, untouched } = notDispatched(t);
+  refusedNotDispatched(run({}), "OATS_EVENT is not retire");
+  assert.deepEqual(untouched(), before, ".aw, the joined identity home and the held entry are byte-identical");
+  assert.deepEqual(fx.fake.calls(), [], "no aw command ran");
+});
+
+test("a retire with OATS_EVENT=retire and no home touches nothing, runs no aw command and refuses, never falling back to the cwd", (t) => {
+  const { fx, run, before, untouched } = notDispatched(t);
+  refusedNotDispatched(run({ OATS_EVENT: "retire" }), "OATS_HOME is not set");
+  refusedNotDispatched(run({ OATS_EVENT: "retire", OATS_HOME: fx.home }), "OATS_INSTANCE_HOME is not set");
+  refusedNotDispatched(run({ OATS_EVENT: "retire", OATS_INSTANCE_HOME: fx.home }), "OATS_HOME is not set");
+  assert.deepEqual(untouched(), before);
+  assert.deepEqual(fx.fake.calls(), []);
+});
+
+test("a retire whose OATS_HOME and OATS_INSTANCE_HOME differ, or aren't absolute, touches neither and runs no aw command", (t) => {
+  const { fx, run, before, untouched } = notDispatched(t);
+  const other = join(fx.base, "other-home");
+  identityHome(join(other, ".aw"), TEAM, "cert-other-1");
+  const otherBefore = listing(other);
+  refusedNotDispatched(run({ OATS_EVENT: "retire", OATS_HOME: fx.home, OATS_INSTANCE_HOME: other }), "OATS_HOME and OATS_INSTANCE_HOME name different directories");
+  refusedNotDispatched(run({ OATS_EVENT: "retire", OATS_HOME: other, OATS_INSTANCE_HOME: fx.home }), "OATS_HOME and OATS_INSTANCE_HOME name different directories");
+  refusedNotDispatched(run({ OATS_EVENT: "retire", OATS_HOME: ".", OATS_INSTANCE_HOME: "." }), "OATS_HOME and OATS_INSTANCE_HOME must be absolute");
+  assert.deepEqual(untouched(), before);
+  assert.deepEqual(listing(other), otherBefore);
+  assert.deepEqual(fx.fake.calls(), []);
+});
 
 // ------------------------------------------------------------ exit 0 removes
 
@@ -568,13 +617,59 @@ test("an answer from a gate before the retire branch settles the keys too: an in
   assert.deepEqual(held(fx.home), []);
 });
 
-test("an answer from a gate before the retire branch settles the keys too: settings that can't be parsed (exit 1) hold them", (t) => {
-  const fx = fixture(t);
+test("settings that can't be parsed (exit 1): which entries are a root's can't be told, so every entry is left in place and the warning says so", (t) => {
+  const fx = fixture(t, { joined: true });
+  const before = listing(fx.home);
   const r = fx.retire({ OATS_SETTINGS: "{not json" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.doc.warning, /OATS_SETTINGS must be a JSON object/);
-  assert.deepEqual(entriesAt(fx.home), []);
+  assert.match(r.doc.warning, /key material left in place: the settings that say which entries are a root's, a custody's or a standing identity's can't be read \(OATS_SETTINGS is not JSON\), so nothing was removed or held/);
+  assert.deepEqual(listing(fx.home), before, "nothing removed or held");
+});
+
+// ------------------------- an entry a setting names is not this instance's (#321)
+
+test("a root configured inside the home survives an exit 0 byte-identical, named in the warning; this instance's .aw is removed", (t) => {
+  const fx = fixture(t);
+  const root = join(fx.home, ".aweb-identity-root");
+  identityHome(join(root, ".aw"), TEAM, "cert-root-1", "root");
+  const rootBefore = listing(root);
+  const r = fx.retire({ OATS_SETTINGS: JSON.stringify({ delivery: "session", roots: { [TEAM]: root } }) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.meta.retired, true);
+  assert.deepEqual(entriesAt(fx.home), [".aweb-identity-root"]);
+  assert.deepEqual(listing(root), rootBefore, "the root is byte-identical");
+  assert.ok(r.doc.warning.includes(`key material not removed: ${root} stays in place: settings.oats.aweb.roots[${TEAM}] names it, so it is that root's, custody's or standing identity's, not this instance's key`), r.doc.warning);
+});
+
+test("a root configured inside the home survives a nonzero exit byte-identical, neither removed nor held; this instance's .aw is held", (t) => {
+  const fx = fixture(t);
+  const root = join(fx.home, ".aweb-identity-root");
+  identityHome(join(root, ".aw"), TEAM, "cert-root-1", "root");
+  const rootBefore = listing(root);
+  const settings = JSON.stringify({ delivery: "session", root });
+  const r = fx.retire({ FAKE_DELETE: "fail", OATS_SETTINGS: settings });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.deepEqual(entriesAt(fx.home), [".aweb-identity-root"]);
   assert.deepEqual(held(fx.home), [".aw"]);
+  assert.deepEqual(listing(root), rootBefore);
+  assert.ok(r.doc.warning.includes(`key material not held: ${root} stays in place: settings.oats.aweb.root names it`), r.doc.warning);
+  const retry = fx.retire({ OATS_SETTINGS: settings }, r.doc.meta);
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.deepEqual(entriesAt(fx.home), [".aweb-identity-root"]);
+  assert.deepEqual(held(fx.home), []);
+  assert.deepEqual(listing(root), rootBefore);
+});
+
+test("a resident's custody or a standing identity whose directory is the home keeps the home's .aw in place", (t) => {
+  for (const settings of [{ residents: { merlin: "HOME" } }, { identity: { source: "HOME" } }]) {
+    const fx = fixture(t);
+    const before = listing(join(fx.home, ".aw"));
+    const r = fx.retire({ OATS_SETTINGS: JSON.stringify({ delivery: "session", ...JSON.parse(JSON.stringify(settings).replaceAll("HOME", fx.home)) }) });
+    assert.deepEqual(entriesAt(fx.home), [".aw"], JSON.stringify(settings) + r.stdout + r.stderr);
+    assert.deepEqual(listing(join(fx.home, ".aw")), before);
+    assert.match(r.doc.warning, /stays in place: settings\.oats\.aweb\.(residents\.merlin|identity\.source) names it/);
+  }
 });
 
 test("the restore comes before every gate: a held entry and its original both present fails closed even when a later gate would refuse", (t) => {
@@ -658,7 +753,7 @@ test("a start, a join or leave and mail from a home whose keys a failed retire h
   assert.equal(launch.status, 1, launch.stdout + launch.stderr);
   assert.ok(launch.doc.warning.includes(`this home is being retired: its aweb keys are held in ${join(fx.home, ".oats-aweb", "held")} until \`oats retire dev-1\` finishes`), launch.doc.warning);
   for (const [event, argv] of [["leave", ["--labels", "ops"]], ["mail", []]]) {
-    const r = spawnSync(process.execPath, [HOOK, event, ...argv], { cwd: fx.home, env: { ...process.env, PATH: fx.fake.path, HOME: fx.base, OATS_EVENT: event, OATS_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_META: JSON.stringify(fx.meta), OATS_SETTINGS: JSON.stringify({ delivery: "session" }), OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: false, from: "local" }]) }, encoding: "utf8" });
+    const r = spawnSync(process.execPath, [HOOK, event, ...argv], { cwd: fx.home, env: { ...process.env, PATH: fx.fake.path, HOME: fx.base, OATS_EVENT: event, OATS_HOME: fx.home, OATS_INSTANCE_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_META: JSON.stringify(fx.meta), OATS_SETTINGS: JSON.stringify({ delivery: "session" }), OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: false, from: "local" }]) }, encoding: "utf8" });
     assert.equal(r.status, 1, event + r.stdout + r.stderr);
     assert.match(r.stderr, /E_INSTANCE_RETIRING: this home is being retired/, event);
   }
@@ -671,7 +766,7 @@ test("a join or leave and mail with --home naming a home whose keys are held, or
   assert.equal(failed.status, 1);
   const elsewhere = join(fx.base, "healthy");
   mkdirSync(elsewhere);
-  const run = (event, argv) => spawnSync(process.execPath, [HOOK, event, "--home", fx.home, ...argv], { cwd: elsewhere, env: { ...process.env, PATH: fx.fake.path, HOME: fx.base, OATS_EVENT: event, OATS_HOME: elsewhere, OATS_INSTANCE: "other-1", OATS_WORKSPACE: fx.ws, OATS_SETTINGS: JSON.stringify({ delivery: "session" }), OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: false, from: "local" }]) }, encoding: "utf8" });
+  const run = (event, argv) => spawnSync(process.execPath, [HOOK, event, "--home", fx.home, ...argv], { cwd: elsewhere, env: { ...process.env, PATH: fx.fake.path, HOME: fx.base, OATS_EVENT: event, OATS_HOME: elsewhere, OATS_INSTANCE_HOME: elsewhere, OATS_INSTANCE: "other-1", OATS_WORKSPACE: fx.ws, OATS_SETTINGS: JSON.stringify({ delivery: "session" }), OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: false, from: "local" }]) }, encoding: "utf8" });
   const before = fx.fake.calls().length;
   for (const [event, argv] of [["leave", ["--labels", "ops"]], ["mail", []]]) {
     const r = run(event, argv);
@@ -718,7 +813,7 @@ function grantSeat(t) {
   const custody = join(base, "custody", "merlin"); write(join(custody, ".aw", "identity.yaml"), "alias: resident-alias\n");
   const settings = { identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } };
   const hook = (event, env = {}) => {
-    const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "t:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team: "t:example.test", default: true, from: "local" }]), OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(settings), ...env } });
+    const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "t:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS: JSON.stringify([{ label: "default", team: "t:example.test", default: true, from: "local" }]), OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(settings), ...env } });
     let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
     return { ...r, doc };
   };
@@ -772,7 +867,7 @@ function retainedSeat(t) {
   write(join(source, "workspace.yaml"), "alias: retained\naweb_url: https://fixture.invalid/api\n");
   const hook = (event, env = {}) => {
     const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: {
-      ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained", OATS_HOME: home,
+      ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained", OATS_HOME: home, OATS_INSTANCE_HOME: home,
       OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "codex", FAKE_RETAINED: "1",
       OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "t:example.test", OATS_DEFAULT_TEAM_FROM: "deployment",
       OATS_TEAMS: JSON.stringify([{ label: "default", team: "t:example.test", default: true, from: "local" }]),

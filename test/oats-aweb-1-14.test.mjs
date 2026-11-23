@@ -97,7 +97,7 @@ test("1.14 refuses classic OATS environments consistently", (t) => {
   const root = tempDir(t), home = join(root, "home");
   mkdirSync(home);
   const fake = fakeAw114(t);
-  const classicEnv = { PATH: fake.path, OATS_TEAM_SCOPE: root, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "probe" };
+  const classicEnv = { PATH: fake.path, OATS_TEAM_SCOPE: root, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "probe" };
 
   const spawned = runHook("spawn", { cwd: home, env: classicEnv });
   assert.notEqual(spawned.status, 0);
@@ -176,7 +176,7 @@ test("mapped primary label in OATS_TEAMS is eligible while no settings team mint
   const env = {
     PATH: fake.path,
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
@@ -218,7 +218,7 @@ test("spawn join setting mints joined-team identities and teams/join/leave updat
     OATS_CLI_BIN: currentRootQuery(root, { home, deployment: root, settings: { root } }).cli,
     PATH: fake.path,
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
@@ -316,7 +316,7 @@ test("mapped primary joined team can be joined and left", (t) => {
     OATS_CLI_BIN: currentRootQuery(root, { home, deployment: root, settings: { root } }).cli,
     PATH: fake.path,
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
@@ -343,7 +343,7 @@ test("mapped primary joined team can be joined and left", (t) => {
 
   const joinedAtSpawnHome = join(root, "home-joined-at-spawn");
   mkdirSync(joinedAtSpawnHome);
-  const joinedAtSpawn = runHook("spawn", { cwd: joinedAtSpawnHome, env: { ...env, OATS_HOME: joinedAtSpawnHome, OATS_SETTINGS: JSON.stringify({ root, join: "alpha" }) } });
+  const joinedAtSpawn = runHook("spawn", { cwd: joinedAtSpawnHome, env: { ...env, OATS_HOME: joinedAtSpawnHome, OATS_INSTANCE_HOME: joinedAtSpawnHome, OATS_SETTINGS: JSON.stringify({ root, join: "alpha" }) } });
   assert.equal(joinedAtSpawn.status, 0, joinedAtSpawn.stdout + joinedAtSpawn.stderr);
   const joinedAtSpawnDoc = JSON.parse(joinedAtSpawn.stdout);
   assert.equal(joinedAtSpawnDoc.meta.team, "default:example.test");
@@ -363,7 +363,7 @@ test("retained session seat registers with the broker and gives recovery rule", 
   const env = {
     PATH: fake.path,
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "retained",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
@@ -416,7 +416,7 @@ test("retained seat retire leaves joined team identities before releasing the re
     joinedTeams: [{ label: "alpha", team: "alpha:example.test", identityHome: join(home, ".aweb-identity-alpha"), receive: "poll", since: "2026-09-25T00:00:00Z", alias: "probe" }],
   };
   writeFileSync(join(home, ".oats-aweb", "teams.json"), JSON.stringify({ joinedTeams: meta.joinedTeams }, null, 2));
-  const retired = runHook("retire", { cwd: home, env: { PATH: fake.path, OATS_EVENT: "retire", OATS_HOME: home, OATS_META: JSON.stringify(meta), OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" } });
+  const retired = runHook("retire", { cwd: home, env: { PATH: fake.path, OATS_EVENT: "retire", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_META: JSON.stringify(meta), OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture" } });
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   const doc = JSON.parse(retired.stdout);
   assert.equal(doc.meta.retained, true);
@@ -437,7 +437,7 @@ test("kernel default label mints without team-unmapped fallback", (t) => {
   const env = {
     PATH: fake.path,
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "probe",
     OATS_WORKSPACE: root,
     OATS_WORKSPACE_KEY: "repo:fixture",
@@ -494,7 +494,7 @@ test("leaving the default team is refused as E_TEAM_DEFAULT", (t) => {
   mkdirSync(join(root, ".aw"), { recursive: true });
   mkdirSync(home);
   const fake = fakeAw114(t);
-  const left = runHook("leave", { cwd: home, env: { PATH: fake.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAM_LABEL: "default", OATS_TEAM_LABELS: "default", OATS_EVENT: "leave", OATS_HOME: home, OATS_SETTINGS: JSON.stringify({ root }) }, args: ["--labels", "default", "--json"] });
+  const left = runHook("leave", { cwd: home, env: { PATH: fake.path, OATS_WORKSPACE: root, OATS_WORKSPACE_KEY: "repo:fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAM_LABEL: "default", OATS_TEAM_LABELS: "default", OATS_EVENT: "leave", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_SETTINGS: JSON.stringify({ root }) }, args: ["--labels", "default", "--json"] });
   assert.notEqual(left.status, 0);
   assert.match(left.stderr, /E_TEAM_DEFAULT/);
 });

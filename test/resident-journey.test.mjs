@@ -1002,7 +1002,7 @@ test("a real legacy bare-label grant seat fills at launch and retires its grant 
   const receipt=JSON.parse(minted.stdout);
   const meta={identity:{mode:'global',alias:'resident',resident:'resident',team,grant:{id:receipt.grant_id,home:grantHome,expiresAt:receipt.expires_at,ttl:'720h',scopes:['mail.read']}}};
   const hook=(event,input)=>spawnSync(process.execPath,[HOOK,event],{cwd:home,encoding:'utf8',env:{...j.env,
-    OATS_EVENT:event,OATS_HOME:home,OATS_INSTANCE:'legacy-seat',OATS_CONTEXT:j.deployment,
+    OATS_EVENT:event,OATS_HOME:home, OATS_INSTANCE_HOME:home,OATS_INSTANCE:'legacy-seat',OATS_CONTEXT:j.deployment,
     OATS_RUNTIME:'pi',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:team,
     OATS_SETTINGS:JSON.stringify({registry:AWID_URL,identity:{mode:'global',resident:'resident',renew:'off'},residents:{resident:custody}}),OATS_META:JSON.stringify(input)}});
   const launched=hook('launch',meta);

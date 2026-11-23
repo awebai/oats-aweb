@@ -120,7 +120,7 @@ function fixture(t, { teamOf = {}, captured, sharedLabel = "shared" } = {}) {
     { label: "extra", team: EXTRA, default: false, from: "shared" },
   ]);
   const env = {
-    PATH: fake.path, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
+    PATH: fake.path, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: DEFAULT, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: teams(teamOf), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
     OATS_SETTINGS: JSON.stringify(captured ? captured(ws) : { root: ws }),
