@@ -528,7 +528,7 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   const awArgv = readFileSync(argvLog, "utf8").trim().split("\n");
   const acceptArgv = awArgv.filter((line) => line.includes(" id team accept-invite "));
   assert.equal(acceptArgv.length, 1, awArgv.join("\n"));
-  assert.doesNotMatch(acceptArgv[0], /--parent/, "a chainless root's join passes no --parent");
+  assert.doesNotMatch(acceptArgv[0], /--parent/, "an unadopted root's join passes no --parent");
   assert.ok(awArgv.some((line) => line === `--identity-home ${join(j.deployment, ".aw")} who --json`), "the join read its root with aw who");
   const record = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
   const [joined] = record.capabilityMeta["oats.aweb"].joinedTeams;
@@ -574,7 +574,7 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   assert.deepEqual(seat.sources, ['certificate', 'presence']);
   // On an aw with accept-invite --parent (the pinned next, 1.36.59-rc.6), the argv
   // an adopted root's join passes is parsed by the real aw, which answers its JSON:
-  // here against a chainless parent on the stack. The completed parented accept is
+  // here against an unadopted parent on the stack. The completed parented accept is
   // proven by aweb's own E2E against an adopted root.
   const acceptHelp = j.aw(home, ["id", "team", "accept-invite", "--help"]);
   assert.equal(acceptHelp.status, 0, acceptHelp.stderr);

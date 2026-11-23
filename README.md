@@ -42,6 +42,11 @@ change to a field is release-noted.
 
 aw 1.36.59 lets a person adopt a minting root: the root then carries an identity
 chain that ends at that person, and every identity it mints carries the same chain.
+Whether a root can be adopted is the service's to accept. The aweb Cloud adopts a
+legacy chainless root today. It refuses one that already has a creation chain
+(`already_certified`), which is any fresh hosted root from aw 1.36.53 (it reads
+`no_human`), until the Cloud release aweb names for that adoption. `aw who --json`
+says which kind a root is.
 This provider reads that chain with `aw --identity-home <home> who --json` and shows
 it; it never adopts a root, changes a setting or respawns anything. The contract is
 OATS's `docs/design/2026-11-21-human-ids-contract.md`.
@@ -187,7 +192,7 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
     it, this clears it:
   1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`: the root
      the mint used (`<root>` below) and its team (`<team>`).
-  2. Check that the root reads chainless:
+  2. Check that the root reads legacy chainless:
      - `aw --identity-home <root>/.aw who --json` answers `"outcome": "unknown"` and
        `"reason": "legacy_no_chain"`;
      - `oats aweb setup --check-only --json` lists `<root>` in `roots` with no
