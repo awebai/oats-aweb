@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.49.0 — 2026-11-23
+## 1.49.0 — 2026-11-24
 
 - **Fixed: P5 (`aw who`) now passes the configured registry explicitly (#326).**
 
