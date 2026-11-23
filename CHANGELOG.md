@@ -18,9 +18,11 @@
   controller handoffs are recorded before the key is removed). What a person
   sees: a session revived in a failed-retire home gets aw's "not initialized",
   and in a retired kept home finds no identity; a start, `oats aweb join|leave`
-  and `oats aweb mail` there say the home is being retired, or was
-  (`E_INSTANCE_RETIRING`); the health publisher skips a held home with that
-  reason. A grant seat whose revoke failed now holds its grant homes for the
+  and `oats aweb mail` there refuse with `E_INSTANCE_RETIRING`, and readiness
+  says the same, instead of aw's raw error: keys held until `oats retire
+  <instance>` finishes, or the home was retired and its keys removed; the
+  health publisher skips a held home with that reason. An identity home where
+  aw holds a pending mint is never moved (it stays where aw finishes it). A grant seat whose revoke failed now holds its grant homes for the
   retry instead of removing them. Not a boundary against another process of
   the same OS user; a crashed retire leaves the entries in place. README, "What
   retire does with the key material".

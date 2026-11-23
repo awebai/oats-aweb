@@ -19,7 +19,7 @@
 // identity, or one a person linked, is never touched). This stops a revived
 // session from acting as the agent through aw's identity lookup; it is no
 // boundary against a process of the same OS user that looks in .oats-aweb/held.
-import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, unlinkSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 /** The provider's credential entries in a home: aw's own identity home and
@@ -27,6 +27,8 @@ import { join } from "node:path";
 export const CREDENTIAL_ENTRY_RE = /^(?:\.aw|\.aweb-identity|\.aweb-identity-.+)$/;
 export const HELD_RELATIVE = join(".oats-aweb", "held");
 export const heldDir = (home) => join(home, HELD_RELATIVE);
+/** Written by a retire that removed the entries (what it read from .aw, for its reruns). */
+export const REMOVED_KEYS_RELATIVE = join(".oats-aweb", "removed-keys.json");
 
 const codeOf = (e) => (/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error");
 /** lstat that answers undefined for ENOENT and throws anything else. */
@@ -112,25 +114,62 @@ export function holdEntries(home, { keep = () => undefined } = {}) {
   return { held, problems };
 }
 
+/** Remove one entry as itself: a directory recursively, anything else (a
+ *  symlink included) by unlinking it. */
+function removeOne(path) {
+  const st = lstatOrNone(path);
+  if (!st) return;
+  if (st.isDirectory()) rmSync(path, { recursive: true, force: true });
+  else unlinkSync(path);
+}
+/** Give the owner write and search on every directory under `path`, never
+ *  following a symlink, so what is in a read-only directory can be removed. */
+function ownerWritable(path) {
+  const st = lstatSync(path);
+  if (!st.isDirectory()) return;
+  chmodSync(path, (st.mode & 0o7777) | 0o700);
+  for (const name of readdirSync(path)) ownerWritable(join(path, name));
+}
+
 /** Remove every credential entry of `home` (a symlink as the link itself), and
- *  the held directory once it is empty. Each removal that fails says why. */
+ *  the held directory once it is empty. An entry that can't be removed, even
+ *  once its directories are made owner-writable, is held instead, out of aw's
+ *  reach; each one that is neither removed nor held is named, with why. */
 export function removeEntries(home) {
-  const removed = [], problems = [];
+  const removed = [], heldInstead = [], problems = [];
   let names;
   try { names = credentialEntries(home); }
-  catch (e) { return { removed, problems: [`${home} could not be listed (${codeOf(e)}), so its key material was not removed`] }; }
+  catch (e) { return { removed, heldInstead, problems: [`${home} could not be listed (${codeOf(e)}), so its key material was not removed`] }; }
   for (const name of names) {
     const path = join(home, name);
+    try { removeOne(path); removed.push(name); continue; }
+    catch { /* a read-only directory: made writable below */ }
+    let why;
+    try { ownerWritable(path); removeOne(path); removed.push(name); continue; }
+    catch (e) { why = codeOf(e); }
+    const target = join(heldDir(home), name);
     try {
-      const st = lstatOrNone(path);
-      if (!st) continue;
-      if (st.isDirectory()) rmSync(path, { recursive: true, force: true });
-      else unlinkSync(path);
-      removed.push(name);
-    } catch (e) { problems.push(`${path} could not be removed (${codeOf(e)})`); }
+      mkdirSync(heldDir(home), { recursive: true, mode: 0o700 });
+      if (lstatOrNone(target)) throw Object.assign(new Error("taken"), { code: "EEXIST" });
+      renameSync(path, target);
+      heldInstead.push(name);
+      problems.push(`${path} could not be removed (${why}), so it was moved to ${target}, where aw doesn't look: remove it`);
+    } catch (e) { problems.push(`${path} could not be removed (${why}) or moved to ${target} (${codeOf(e)}): aw can still use it there; remove it`); }
   }
   // An empty held directory is all a completed retry leaves of the hold.
   try { rmdirSync(heldDir(home)); }
   catch (e) { if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(e?.code)) problems.push(`${heldDir(home)} could not be removed (${codeOf(e)})`); }
-  return { removed, problems };
+  return { removed, heldInstead, problems };
+}
+
+/** Why a reader of `home`'s aweb identity (a start, a join or leave, mail,
+ *  readiness) finds none because of a retire, or undefined: its entries are held
+ *  by a retire that did not finish, or were removed by one that did. */
+export function retiredKeysMessage(home, instance) {
+  const held = heldEntries(home);
+  if (held.problem || held.names.length) return `this home is being retired: its aweb keys are held in ${heldDir(home)} until \`oats retire ${instance || "<instance>"}\` finishes`;
+  try { lstatSync(join(home, REMOVED_KEYS_RELATIVE)); } catch { return undefined; }
+  let names;
+  try { names = credentialEntries(home); } catch { return undefined; }
+  return names.length ? undefined : "this home was retired and its aweb keys were removed, so it has no aweb identity: spawn a new instance instead";
 }

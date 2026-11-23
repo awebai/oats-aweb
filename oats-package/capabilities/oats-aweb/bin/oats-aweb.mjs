@@ -72,7 +72,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName, rootI
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
-import { HELD_RELATIVE, credentialEntries, heldEntries, holdEntries, removeEntries, restoreHeld } from "../lib/retire-key-material.mjs";
+import { HELD_RELATIVE, REMOVED_KEYS_RELATIVE, credentialEntries, holdEntries, removeEntries, restoreHeld, retiredKeysMessage } from "../lib/retire-key-material.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
@@ -467,6 +467,45 @@ const AWEB_ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const AWEB_ALIAS_RULE = "invalid alias: aweb aliases must be 1-64 characters, start with a letter or digit, and then contain only letters, digits, '-' or '_'";
 /** A retired alias held until the server releases it: --purpose derives <agent>-<purpose>, so either flag gives a free one. */
 const ALIAS_UNRELEASED_REMEDY = "spawn successors with a different --name or --purpose until it is released";
+if (event === "retire") {
+  // The key material a failed retire held goes back first, before any setting or
+  // state is read or anything remote is done, and before the first gate that can
+  // answer, so this run sees the home that retire saw (awebai/oats-aweb#318).
+  // When it cannot (an entry and its held copy both exist, or a held one can't be put
+  // back), nothing is touched and nothing is retired.
+  const restore = restoreHeld(home);
+  if (restore.problem) out({ meta: { retired: false, reason: "held-credentials-not-restored" }, warning: `oats-aweb: the aweb key material a failed retire held in ${join(home, HELD_RELATIVE)} was not put back, so nothing was retired and no aw command ran: ${restore.problem}. Check which copy is this instance's key, remove the other, then retire again` }, 1);
+  // From here every answer removes the home's credential entries (exit 0) or holds
+  // them in .oats-aweb/held (nonzero) just before it is printed. An exit 0 means no
+  // cleanup left needs the member key; a nonzero exit keeps it for the retry.
+  // An uncaught crash prints no answer and leaves them where they are.
+  settleRetireKeys = (code) => {
+    if (code !== 0) {
+      // An entry where aw holds a pending mint, at any depth the choke point checks
+      // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human
+      // attribution"); the choke point keeps the home for it.
+      const pendingAt = heldIdentityHomeNames(home);
+      const { held, problems } = holdEntries(home, { keep: (name) => pendingAt.some((p) => p === name || p.startsWith(`${name}/`) || p.startsWith(`${name} `)) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined });
+      return [
+        ...(held.length ? [`held ${held.join(", ")} in ${join(home, HELD_RELATIVE)}: a session started in this home cannot act as this identity; the next retire puts ${held.length === 1 ? "it" : "them"} back first`] : []),
+        ...problems.map((p) => `key material not held: ${p}`),
+      ];
+    }
+    const notes = [];
+    let names = [];
+    try { names = credentialEntries(home); } catch { /* removeEntries reports an unlistable home */ }
+    // A rerun answers from what this run read from .aw once .aw is gone, and a
+    // reader of the kept home says it was retired (retiredKeysMessage).
+    if (names.length) {
+      const earlier = readRemovedKeys();
+      const facts = names.includes(".aw") ? { workspaceAlias: workspaceAliasOf(home), workspaceYaml: existsSync(join(home, ".aw", "workspace.yaml")) } : { workspaceAlias: earlier?.workspaceAlias, workspaceYaml: earlier?.workspaceYaml === true };
+      try { mkdirSync(join(home, ".oats-aweb"), { recursive: true, mode: 0o700 }); atomicWrite(removedKeysFile(), JSON.stringify({ schemaVersion: 1, removedAt: new Date().toISOString(), ...(facts.workspaceAlias ? { workspaceAlias: facts.workspaceAlias } : {}), workspaceYaml: facts.workspaceYaml }, null, 2) + "\n"); }
+      catch { notes.push(`could not record what ${join(home, ".aw")} held before removing it (${removedKeysFile()}); a rerun of this retire may word its answer differently`); }
+    }
+    const { problems } = removeEntries(home);
+    return [...notes, ...problems.map((p) => `key material not removed: ${p}`)];
+  };
+}
 // Keep this guard: kernel 0.68.1 teamEnv can emit empty workspace name/key
 // for partial workspace facts; its floor alone does not prove this path dead.
 const CLASSIC_REFUSAL = "oats.aweb 1.14 needs OATS 0.26.0 or newer (workspace model); on an older kernel pin oats.aweb v1.13.x";
@@ -1308,10 +1347,10 @@ function globalGrantRetire(meta, seatRecord) {
 const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json");
 /** The alias a home's .aw/workspace.yaml records under memberships (indented),
  *  or undefined. Read only when the hook has no alias of its own. */
-const workspaceAliasOf = (homeDir) => {
+function workspaceAliasOf(homeDir) {
   try { const m = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8").match(/^\s*alias:\s*["']?([a-z0-9][a-z0-9_-]{0,63})["']?\s*$/mi); return m ? m[1] : undefined; }
   catch { return undefined; }
-};
+}
 const WORKSPACE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The workspace id a home's .aw/workspace.yaml records for the membership
  *  whose team_id and alias are these, or undefined when the file is missing,
@@ -1852,7 +1891,8 @@ const pendingMintHandoffFor = (team, alias) => {
 };
 /** What a retire read from the home's .aw before it removed it, for its reruns:
  *  the workspace binding's alias and whether the binding was there. */
-const removedKeysFile = () => join(providerStateDir(), "removed-keys.json");
+// Function declarations: retire's answer reads them from the hook's first gate on.
+function removedKeysFile() { return join(home, REMOVED_KEYS_RELATIVE); }
 function readRemovedKeys() {
   try {
     const doc = JSON.parse(readFileSync(removedKeysFile(), "utf8"));
@@ -1866,14 +1906,7 @@ const homeWorkspaceAlias = () => workspaceAliasOf(home) ?? (existsSync(join(home
  *  reader of it (a start, a join or leave, mail) gives instead of aw's own: its entries
  *  are held by a retire that did not finish, or were removed by one that did. */
 function retiredHomeError() {
-  const held = heldEntries(home);
-  let why;
-  if (held.problem || held.names.length) why = `this home is being retired: its aweb key material is held in ${join(home, HELD_RELATIVE)} by a retire that did not finish, so it has no identity until that retire is run again (\`oats retire ${instance || "<instance>"}\`)`;
-  else if (readRemovedKeys()) {
-    let names = [];
-    try { names = credentialEntries(home); } catch { /* an unlistable home is reported by the reader */ }
-    if (!names.length) why = "this home was retired: its aweb key material was removed, so it has no identity";
-  }
+  const why = retiredKeysMessage(home, instance);
   return why ? Object.assign(new Error(why), { code: "E_INSTANCE_RETIRING" }) : undefined;
 }
 const homeWorkspaceYaml = () => existsSync(join(home, ".aw", "workspace.yaml")) || (!existsSync(join(home, ".aw")) && readRemovedKeys()?.workspaceYaml === true);
@@ -2984,42 +3017,6 @@ if (event === "launch") {
     fatal(`identity minting failed: ${typeof e?.code === "string" && /^E_[A-Z_]+$/.test(e.code) ? `${e.code}: ` : ""}${e.baseMessage || e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined), Array.isArray(e?.rootNotes) && e.rootNotes.length ? ` | ${e.rootNotes.join(" | ")}` : "");
   }
 } else if (event === "retire") {
-  // The key material a failed retire held goes back first, before any state is read
-  // or anything remote is done, so this run sees the home that retire saw (awebai/oats-aweb#318).
-  // When it cannot (an entry and its held copy both exist, or a held one can't be put
-  // back), nothing is touched and nothing is retired.
-  const restore = restoreHeld(home);
-  if (restore.problem) out({ meta: { retired: false, reason: "held-credentials-not-restored" }, warning: `oats-aweb: the aweb key material a failed retire held in ${join(home, HELD_RELATIVE)} was not put back, so nothing was retired and no aw command ran: ${restore.problem}. Check which copy is this instance's key, remove the other, then retire again` }, 1);
-  // From here every answer removes the home's credential entries (exit 0) or holds
-  // them in .oats-aweb/held (nonzero) just before it is printed. An exit 0 means no
-  // cleanup left needs the member key; a nonzero exit keeps it for the retry.
-  // An uncaught crash prints no answer and leaves them where they are.
-  settleRetireKeys = (code) => {
-    if (code !== 0) {
-      // An entry where aw holds a pending mint, at any depth the choke point checks
-      // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human
-      // attribution"); the choke point keeps the home for it.
-      const pendingAt = heldIdentityHomeNames(home);
-      const { held, problems } = holdEntries(home, { keep: (name) => pendingAt.some((p) => p === name || p.startsWith(`${name}/`) || p.startsWith(`${name} `)) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined });
-      return [
-        ...(held.length ? [`held ${held.join(", ")} in ${join(home, HELD_RELATIVE)}: a session started in this home cannot act as this identity; the next retire puts ${held.length === 1 ? "it" : "them"} back first`] : []),
-        ...problems.map((p) => `key material not held: ${p}`),
-      ];
-    }
-    const notes = [];
-    let names = [];
-    try { names = credentialEntries(home); } catch { /* removeEntries reports an unlistable home */ }
-    // A rerun answers from what this run read from .aw once .aw is gone, and a
-    // reader of the kept home says it was retired (retiredHomeError).
-    if (names.length) {
-      const earlier = readRemovedKeys();
-      const facts = names.includes(".aw") ? { workspaceAlias: workspaceAliasOf(home), workspaceYaml: existsSync(join(home, ".aw", "workspace.yaml")) } : { workspaceAlias: earlier?.workspaceAlias, workspaceYaml: earlier?.workspaceYaml === true };
-      try { mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 }); atomicWrite(removedKeysFile(), JSON.stringify({ schemaVersion: 1, removedAt: new Date().toISOString(), ...(facts.workspaceAlias ? { workspaceAlias: facts.workspaceAlias } : {}), workspaceYaml: facts.workspaceYaml }, null, 2) + "\n"); }
-      catch { notes.push(`could not record what ${join(home, ".aw")} held before removing it (${removedKeysFile()}); a rerun of this retire may word its answer differently`); }
-    }
-    const { problems } = removeEntries(home);
-    return [...notes, ...problems.map((p) => `key material not removed: ${p}`)];
-  };
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
   // Only the boolean true records a retained seat: any other value records none.
   if (meta.retained !== undefined && meta.retained !== true) { const { retained: _notBoolean, ...rest } = meta; meta = rest; }

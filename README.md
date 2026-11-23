@@ -2093,7 +2093,13 @@ credential entries (`.aw`, `.aweb-identity`, `.aweb-identity-*`, each a
 directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
 
 - **An answer that exits 0 removes them**, after the remote cleanup and the
-  provider state are written, just before the answer is printed. An exit 0
+  provider state are written, just before the answer is printed, whatever
+  gives the answer: a refusal before any cleanup (aw not on PATH, settings
+  that can't be read) too. An entry that can't be removed is removed again
+  once its directories are made owner-writable; one that still can't be is
+  moved to `.oats-aweb/held/<name>`, out of aw's reach, and the warning says
+  to remove it; only one that can't be moved either stays, named, with the
+  exit code unchanged. An exit 0
   already means no remaining cleanup needs the member key (a `team_not_hosted`
   handoff is done by the team's controller, without it), so nothing a retry
   needs is lost. This covers every exit 0: released or not, the controller
@@ -2132,9 +2138,14 @@ A session revived in a home whose retire failed gets aw's "not initialized"
 error, and the aweb channel plugin has no identity to connect with; in a home
 whose retire finished, it finds no identity at all. From such a home, a start
 (the launch hook), `oats aweb join|leave` and `oats aweb mail` refuse with
-`E_INSTANCE_RETIRING`, saying the home is being retired (keys held) or was
-retired (keys removed), instead of an aw error. The health publisher skips a
-home whose keys are held, with that reason, rather than reporting it failing.
+`E_INSTANCE_RETIRING` instead of an aw error, and readiness reports
+`receive-record-unavailable` with the same words: "this home is being retired:
+its aweb keys are held in `<home>/.oats-aweb/held` until `oats retire
+<instance>` finishes" while a retire is owed, or "this home was retired and its
+aweb keys were removed, so it has no aweb identity: spawn a new instance
+instead" once one finished (`.oats-aweb/removed-keys.json` records it). The
+health publisher skips a home whose keys are held, with that reason, rather
+than reporting it failing.
 
 The limits: this stops a revived session from acting as the agent through aw's
 normal identity lookup. It is not a boundary against a process of the same OS

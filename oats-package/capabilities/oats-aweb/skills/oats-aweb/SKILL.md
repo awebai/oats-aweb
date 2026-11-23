@@ -1084,7 +1084,9 @@ before it reads anything, and fails closed (`retired: false`,
 `held-credentials-not-restored`, nothing touched, no aw call) when an entry and
 its held copy both exist. A rerun after the key is gone repeats the first run's
 answer from `.oats-aweb` records. A start, `oats aweb join|leave` and `oats aweb
-mail` in such a home refuse with `E_INSTANCE_RETIRING`. Not a boundary against
+mail` in such a home refuse with `E_INSTANCE_RETIRING`, and readiness says the
+same: keys held until `oats retire <instance>` finishes, or the home was
+retired and its keys removed (spawn a new instance). Not a boundary against
 another process of the same OS user; a crashed retire leaves the entries in place.
 
 ## Gotchas

@@ -482,7 +482,7 @@ test("restoreHeld is all or none: a rename that fails puts back the ones it rest
   assert.deepEqual(entriesAt(home), [], "nothing left at aw's paths");
   assert.deepEqual(held(home), [".aw", ".aweb-identity-a", ".aweb-identity-b"]);
   assert.deepEqual(restoreHeld(home).restored, [".aw", ".aweb-identity-a", ".aweb-identity-b"]);
-  assert.deepEqual(removeEntries(home), { removed: [".aw", ".aweb-identity-a", ".aweb-identity-b"], problems: [] });
+  assert.deepEqual(removeEntries(home), { removed: [".aw", ".aweb-identity-a", ".aweb-identity-b"], heldInstead: [], problems: [] });
 });
 
 test("an identity home where aw holds a pending mint is never moved: it stays where aw finishes it, named in the warning, and the others are held", (t) => {
@@ -503,6 +503,82 @@ test("an identity home where aw holds a pending mint is never moved: it stays wh
   assert.deepEqual(listing(join(fx.home, ".aw")), files);
 });
 
+// ------------------------------------------- answers before the retire branch
+
+test("an answer from a gate before the retire branch settles the keys too: aw missing from PATH (exit 0) removes them", (t) => {
+  const fx = fixture(t);
+  // A PATH with node and nothing else: no aw.
+  const bare = join(fx.base, "bare-bin");
+  mkdirSync(bare);
+  symlinkSync(process.execPath, join(bare, "node"));
+  const r = fx.retire({ PATH: `${bare}:/usr/bin:/bin` });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /aw CLI not on PATH/);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), []);
+});
+
+test("an answer from a gate before the retire branch settles the keys too: an invalid registry setting (exit 1) holds them, and a retry with it fixed finishes", (t) => {
+  const fx = fixture(t, { joined: true });
+  const r = fx.retire({ OATS_SETTINGS: JSON.stringify({ delivery: "session", registry: "invalid-origin" }) });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /nothing was cleaned; fix settings\.oats\.aweb\.registry/);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), [".aw", ".aweb-identity-ops"]);
+  assert.deepEqual(withKey(fx.fake.calls()), [], "nothing remote ran");
+  const retry = fx.retire();
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.equal(retry.doc.meta.retired, true);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), []);
+});
+
+test("an answer from a gate before the retire branch settles the keys too: settings that can't be parsed (exit 1) hold them", (t) => {
+  const fx = fixture(t);
+  const r = fx.retire({ OATS_SETTINGS: "{not json" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /OATS_SETTINGS must be a JSON object/);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), [".aw"]);
+});
+
+test("the restore comes before every gate: a held entry and its original both present fails closed even when a later gate would refuse", (t) => {
+  const fx = fixture(t);
+  const failed = fx.retire({ FAKE_DELETE: "fail" });
+  assert.equal(failed.status, 1);
+  identityHome(join(fx.home, ".aw"), TEAM, "cert-revived");
+  const both = [listing(join(fx.home, ".aw")), listing(join(fx.home, ".oats-aweb", "held", ".aw"))];
+  const r = fx.retire({ OATS_SETTINGS: JSON.stringify({ delivery: "session", registry: "invalid-origin" }) }, failed.doc.meta);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.deepEqual(r.doc.meta, { retired: false, reason: "held-credentials-not-restored" });
+  assert.deepEqual([listing(join(fx.home, ".aw")), listing(join(fx.home, ".oats-aweb", "held", ".aw"))], both);
+});
+
+// ------------------------------------------------ a removal that fails at first
+
+test("#318 case 2: a read-only .aw on an exit 0 (team_not_hosted) is still removed: its directories are made writable first", (t) => {
+  const fx = fixture(t);
+  chmodSync(join(fx.home, ".aw", "team-certs"), 0o500);
+  chmodSync(join(fx.home, ".aw"), 0o500);
+  t.after(() => { for (const d of [join(fx.home, ".aw"), join(fx.home, ".aw", "team-certs")]) { try { chmodSync(d, 0o700); } catch { /* removed */ } } });
+  const r = fx.retire({ FAKE_DELETE: "team_not_hosted" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.meta.aliasReason, "team_not_hosted");
+  assert.deepEqual(entriesAt(fx.home), [], "no key left where aw reads it");
+  assert.doesNotMatch(r.doc.warning, /not removed/);
+});
+
+test("an entry that can't be removed even when made writable is moved where aw doesn't look, said so, and the exit code is unchanged", (t) => {
+  const fx = fixture(t);
+  const keyHash = sha(join(fx.home, ".aw", "signing.key"));
+  const r = fx.retire({ FAKE_DELETE: "team_not_hosted", ...fx.killAt(`const rm = fs.rmSync;\nfs.rmSync = function (p, ...a) { if (String(p).endsWith("/.aw")) throw Object.assign(new Error("denied"), { code: "EACCES" }); return rm.call(this, p, ...a); };`) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.meta.retired, true);
+  assert.deepEqual(entriesAt(fx.home), [], "nothing at aw's paths");
+  assert.equal(sha(join(fx.home, ".oats-aweb", "held", ".aw", "signing.key")), keyHash);
+  assert.ok(r.doc.warning.includes(`key material not removed: ${join(fx.home, ".aw")} could not be removed (EACCES), so it was moved to ${join(fx.home, ".oats-aweb", "held", ".aw")}, where aw doesn't look: remove it`), r.doc.warning);
+});
+
 // -------------------------------------------------- readers of a retiring home
 
 test("a start, a join or leave and mail from a home whose keys a failed retire holds say the home is being retired, not aw's error", (t) => {
@@ -512,7 +588,7 @@ test("a start, a join or leave and mail from a home whose keys a failed retire h
   const before = fx.fake.calls().length;
   const launch = fx.hook("launch", { OATS_META: JSON.stringify(fx.meta) });
   assert.equal(launch.status, 1, launch.stdout + launch.stderr);
-  assert.match(launch.doc.warning, /this home is being retired: its aweb key material is held in .*\.oats-aweb\/held by a retire that did not finish/);
+  assert.ok(launch.doc.warning.includes(`this home is being retired: its aweb keys are held in ${join(fx.home, ".oats-aweb", "held")} until \`oats retire dev-1\` finishes`), launch.doc.warning);
   for (const [event, argv] of [["leave", ["--labels", "ops"]], ["mail", ["inbox"]]]) {
     const r = spawnSync(process.execPath, [HOOK, event, ...argv], { cwd: fx.home, env: { ...process.env, PATH: fx.fake.path, HOME: fx.base, OATS_EVENT: event, OATS_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_META: JSON.stringify(fx.meta), OATS_SETTINGS: JSON.stringify({ delivery: "session" }), OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: false, from: "local" }]) }, encoding: "utf8" });
     assert.equal(r.status, 1, event + r.stdout + r.stderr);
@@ -527,7 +603,20 @@ test("a start from a kept home a retire finished says the home was retired", (t)
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const launch = fx.hook("launch", { OATS_META: JSON.stringify(fx.meta) });
   assert.equal(launch.status, 1, launch.stdout + launch.stderr);
-  assert.match(launch.doc.warning, /this home was retired: its aweb key material was removed, so it has no identity/);
+  assert.match(launch.doc.warning, /this home was retired and its aweb keys were removed, so it has no aweb identity: spawn a new instance instead/);
+  assert.doesNotMatch(launch.doc.warning, /being retired/);
+});
+
+test("readiness of a home whose keys are held, or were removed, says so instead of reading its locator as broken", async (t) => {
+  const { expectedReceive } = await import("../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs");
+  const fx = fixture(t);
+  const failed = fx.retire({ FAKE_DELETE: "fail" });
+  assert.equal(failed.status, 1);
+  let r = expectedReceive(fx.home, { delivery: "session" });
+  assert.deepEqual(r.problems.map((p) => p.message), [`this home is being retired: its aweb keys are held in ${join(fx.home, ".oats-aweb", "held")} until \`oats retire dev-1\` finishes`]);
+  assert.equal(fx.retire({}, failed.doc.meta).status, 0);
+  r = expectedReceive(fx.home, { delivery: "session" });
+  assert.deepEqual(r.problems.map((p) => p.message), ["this home was retired and its aweb keys were removed, so it has no aweb identity: spawn a new instance instead"]);
 });
 
 // -------------------------------------------------------- grant and retained seats
