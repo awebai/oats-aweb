@@ -578,12 +578,16 @@ if (event === "retire") {
     const configured = settingNamedEntries(home);
     const ownedElsewhere = (name) => configured.named?.has(name) ? `${configured.named.get(name).join(" and ")} names it, so it is that root's, custody's or standing identity's, not this instance's key` : undefined;
     // When a setting's path can't be resolved, which entries are whose can't be
-    // told: none is removed, and an answer that holds holds again only what this run
-    // put back from held, which an earlier run held after reading its settings,
-    // so it is this instance's own (awebai/oats-aweb#322).
+    // told. What this run put back from held is held again, whatever the exit: an
+    // earlier run held it after reading its settings, but they can have changed
+    // since, so no removal; a hold can be undone, and keeps it where aw doesn't
+    // look. Every other entry stays in place, named: it is not proven dead, since an
+    // unreleased alias's certificate or a retained seat's standing key outlives the
+    // cleanup. A retire with the setting fixed settles both (awebai/oats-aweb#322).
     const cantTell = configured.unreadable && `which entries are a root's, a custody's or a standing identity's can't be told (${configured.unreadable})`;
     const restoredHere = new Set(restore.restored);
-    if (code !== 0 || retireCleanupSkipped) {
+    const notRestored = cantTell && `${cantTell}, and this run did not put it back from ${join(home, HELD_RELATIVE)}, so it may still be a live key: fix the setting, then remove it`;
+    if (code !== 0 || retireCleanupSkipped || cantTell) {
       // An entry where aw holds a pending mint, at any depth the choke point checks
       // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human
       // attribution"); the choke point keeps the home for it.
@@ -597,19 +601,16 @@ if (event === "retire") {
       // Said in no note, as before #318: the warning ends with the revoke command.
       if (!cantTell && grantSeatHome()) removeNamed(home, grantHomeEntries(home).filter((name) => !pending(name) && !ownedElsewhere(name)));
       const keep = cantTell
-        ? (name) => !restoredHere.has(name) ? `${cantTell}, and this run did not put it back from ${join(home, HELD_RELATIVE)}` : pending(name) ? pendingReason : undefined
+        ? (name) => !restoredHere.has(name) ? notRestored : pending(name) ? pendingReason : undefined
         : (name) => ownedElsewhere(name) ?? (pending(name) ? pendingReason : undefined);
       const { held, problems } = holdEntries(home, { keep });
       // An exit 0 that skipped its cleanup keeps its warning as it was (spec v5).
-      if (code === 0) return problems.map((p) => `key material not held: ${p}`);
+      if (code === 0 && !cantTell) return problems.map((p) => `key material not held: ${p}`);
       return [
         ...(held.length ? [`held ${held.join(", ")} in ${join(home, HELD_RELATIVE)}: a session started in this home cannot act as this identity; the next retire puts ${held.length === 1 ? "it" : "them"} back first`] : []),
         ...problems.map((p) => `key material not held: ${p}`),
       ];
     }
-    // The retire's remote cleanup ran, so what it left is no live key of this
-    // instance; with no way to tell whose each entry is, none is removed.
-    if (cantTell) return [`key material left in place: ${cantTell}, so nothing was removed${restoredHere.size ? `, and ${[...restoredHere].join(", ")}, which this run put back from ${join(home, HELD_RELATIVE)} for its cleanup, ${restoredHere.size === 1 ? "stays" : "stay"} in place too` : ""}`];
     const notes = [];
     let names = [];
     try { names = credentialEntries(home).filter((name) => !ownedElsewhere(name)); } catch { /* removeEntries reports an unlistable home */ }

@@ -1084,8 +1084,9 @@ hand anywhere refuses and touches nothing. An entry a `root`, `roots`,
 or in another case on a case-insensitive filesystem) is a root's or custody's
 key and stays in place, named in the warning (#321, #322). Settings that don't
 parse stop the retire before it puts anything back: held stays held, no aw call,
-exit 1. A setting path that can't be resolved removes nothing; a failing retire
-then holds again only what it put back, and leaves the rest in place, named (#322). An exit 0 removes them
+exit 1. With a setting path that can't be resolved, the retire removes nothing and
+holds again what it put back from held, whatever its exit; every other entry stays
+in place, named, and may still be a live key: fix the setting, then remove it (#322). An exit 0 removes them
 (a retained seat's copy too; its source is never touched), but one that skipped
 cleanup it owes (aw not on PATH) holds them for the next retire. A nonzero exit moves
 each, as itself, to `.oats-aweb/held/<name>` (never one where aw holds a pending

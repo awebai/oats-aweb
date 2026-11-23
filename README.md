@@ -2117,11 +2117,14 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
   fix the settings, then retire again (#322).
 - **A setting path that can't be resolved** (a link loop, a directory it may
   not read) leaves which entries are whose unknown. The retire still puts held
-  entries back and runs its remote cleanup with them, but removes no entry. An
-  answer that holds (below) holds again only what this run put back, which an
-  earlier run held after reading its settings, so it is this instance's own;
-  every other entry stays in place, named in the warning. An exit 0 leaves
-  every entry in place, its cleanup done, and says so (#322).
+  entries back and runs its remote cleanup with them, but removes no entry:
+  whatever its exit (0 included), it holds again exactly what it put back, since
+  settings can change between runs and a hold can be undone. Every other entry
+  stays in place, named in the warning. Such an entry may still be a live key
+  (an unreleased alias's certificate, a retained seat's standing key): fix the
+  setting, then remove it yourself. A rerun puts the held entries back, answers
+  what the first run answered, and holds them again until the setting is
+  fixed; a retire with it fixed settles them as usual (#322).
 - **An answer that exits 0 removes them** when it followed the retire's remote
   cleanup or proved none was owed, after the provider state is written, just
   before the answer is printed: a released or unreleased self-delete, a
