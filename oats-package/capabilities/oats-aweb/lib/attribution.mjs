@@ -22,7 +22,7 @@ export const WHO_TIMEOUT_MS = 5000;
 /** The kernel feature that serves `attribution` (`attributedHuman`); read at run time. */
 export const SPAWN_ATTRIBUTION_FEATURE = "spawn-attribution";
 /** The aw a host needs to mint or join from an adopted root (P4's `--parent`). */
-export const ATTRIBUTION_AW = "1.36.59";
+export const AW_ATTRIBUTION = '1.36.59';
 /** aw's code for a mint stopped before membership, waiting for an agent signature. */
 export const SIGNATURE_PENDING_CODE = "native_agent_signature_pending";
 export const ADOPTED_ROOT_AW_TOO_OLD = "E_ADOPTED_ROOT_AW_TOO_OLD";
@@ -267,7 +267,7 @@ export function signaturePendingStop({ status, stdout, keyWritten, chained, awVe
   if (status !== 1) return undefined;
   const { code } = awErrorEnvelope(stdout);
   if (code === SIGNATURE_PENDING_CODE) return { code };
-  if (code === "error" && keyWritten && chained && !versionAtLeast(awVersion, ATTRIBUTION_AW)) return { code: null };
+  if (code === "error" && keyWritten && chained && !versionAtLeast(awVersion, AW_ATTRIBUTION)) return { code: null };
   return undefined;
 }
 

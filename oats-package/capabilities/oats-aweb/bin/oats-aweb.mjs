@@ -97,7 +97,7 @@ import { promptHidden } from "../lib/hidden-prompt.mjs";
 import { channelCacheNote, clearChannelFailure, recordedClaudeConfigDir } from "../lib/claude-channel.mjs";
 import { MAIL_AW_MIN, parseMailArgs, readMail } from "../lib/mail-read.mjs";
 import { querySelectedKernel } from "../lib/session-readiness.mjs";
-import { ADOPTED_ROOT_AW_TOO_OLD, ATTRIBUTION_AW, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, README_OLDER_MINT, NO_SIGNATURE_PENDING_PROOF, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, entryAbsent, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
+import { ADOPTED_ROOT_AW_TOO_OLD, AW_ATTRIBUTION, CONNECT_CHAINED_INVITER, README_ATTRIBUTION, README_OLDER_MINT, NO_SIGNATURE_PENDING_PROOF, SPAWN_ATTRIBUTION_FEATURE, WHO_TIMEOUT_MS, adoptedRoot, attributionFor, chainedInviter, chainedIssuer, observeRoot, PENDING_MINT_FILES, entryAbsent, pendingMintBinding, pendingMintFilesIn, pendingMintRetention, readWho, signaturePendingStop, signingDidKey } from "../lib/attribution.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, joinedTeamsPolled, recordedBackend, recordedRuntime, recordedStart, sessionProviderBackend, statusListsHome, wakeBackendHint, wakeBrokerRefusal, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -2091,8 +2091,8 @@ function mintJoinedTeam(row, meta, { current = false } = {}) {
   // failure itself and still say the root's warnings, which hold no aw output.
   const withRootNotes = (e) => rootNotes.length ? Object.assign(e instanceof Error ? e : new Error(String(e)), { baseMessage: e?.message || String(e), rootNotes, message: `${e?.message || e} | ${rootNotes.join(" | ")}` }) : e;
   try {
-    if (parentHome && !versionAtLeast(spawnAwVersion, ATTRIBUTION_AW)) {
-      throw Object.assign(new Error(`root ${root} for ${row.label} (${row.team}) is adopted by a person, and joining from it needs aw ${ATTRIBUTION_AW} or later; this host has aw ${spawnAwVersion || "of unreadable version"}: upgrade aw to ${ATTRIBUTION_AW} and join again; nothing was minted (${README_ATTRIBUTION})`), { code: ADOPTED_ROOT_AW_TOO_OLD });
+    if (parentHome && !versionAtLeast(spawnAwVersion, AW_ATTRIBUTION)) {
+      throw Object.assign(new Error(`root ${root} for ${row.label} (${row.team}) is adopted by a person, and joining from it needs aw ${AW_ATTRIBUTION} or later; this host has aw ${spawnAwVersion || "of unreadable version"}: upgrade aw to ${AW_ATTRIBUTION} and join again; nothing was minted (${README_ATTRIBUTION})`), { code: ADOPTED_ROOT_AW_TOO_OLD });
     }
     let minted;
     try { minted = run(["aw", "team", "invite", flagEq("--team-id", row.team), "--json"], root, 45000, { secretSafe: true, failureDetail: true }); }
@@ -2628,7 +2628,7 @@ function checkOnlyRoots({ aw, awUsable, deployment }) {
       read = reads.get(at);
     }
     const o = read.observation, warnings = [];
-    if (o.outcome === "nearest_human" && !versionAtLeast(aw.version, ATTRIBUTION_AW)) warnings.push(`spawning from this root needs aw ${ATTRIBUTION_AW} or later, and this host has aw ${aw.version || "of unreadable version"}: upgrade aw before spawning from it (${README_ATTRIBUTION})`);
+    if (o.outcome === "nearest_human" && !versionAtLeast(aw.version, AW_ATTRIBUTION)) warnings.push(`spawning from this root needs aw ${AW_ATTRIBUTION} or later, and this host has aw ${aw.version || "of unreadable version"}: upgrade aw before spawning from it (${README_ATTRIBUTION})`);
     if (read.warning) warnings.push(read.warning);
     return { label, team, home, attribution: { outcome: o.outcome, humanId: o.humanId ?? null, reason: o.reason ?? null }, warnings };
   });
