@@ -1,5 +1,5 @@
 // lib/aweb-team-id.mjs reads team ids the way aw does. Every expected value below comes from
-// aw's own rule at aw-compat's tested version (aw 1.36.58, cli/go):
+// aw's own rule at aw 1.36.58 and 1.36.59 (aweb b9c015732), the same lines in both (cli/go):
 //   - awid/team_id.go:8-32, BuildTeamID and ParseTeamID: the id is trimmed and split at its
 //     first ":"; the name is trimmed and lowercased; neither part may be empty;
 //   - awid/registry_dns.go:162-164, canonicalizeDomain: the domain is trimmed, lowercased,

@@ -13,7 +13,7 @@ this oats.aweb supports, in two fields:
 ```json
 {
   "min": "1.36.33",
-  "tested": "1.36.58"
+  "tested": "1.36.59"
 }
 ```
 
@@ -21,8 +21,8 @@ this oats.aweb supports, in two fields:
   hooks, the probe and a grant seat's custody refuse an older aw ("aw floor"
   below).
 - **`tested`** is the highest aw the CI journeys pass on. CI's resident-journey
-  matrix runs the floor, tested and pinned next from `scripts/aw-test-versions.mjs`, each checked to be the aw it
-  installed. Above `tested`, on a server other than the aweb Cloud, readiness
+  matrix runs the floor, the previous tested (`AW_PREVIOUS`), tested and pinned next from
+  `scripts/aw-test-versions.mjs`, each checked to be the aw it installed. Above `tested`, on a server other than the aweb Cloud, readiness
   and spawn warn `aw-newer-than-tested`.
 
 Each value is an exact semver version, never a range, and `min` is never above
@@ -37,6 +37,245 @@ The file is public. OATS's getting-started skill reads it at the oats.aweb ref
 the OATS catalog pins, never at `main`, to install the tested aw for a
 customer-run aweb server. Its path and its two keys stay as they are, and any
 change to a field is release-noted.
+
+## Human attribution
+
+aw 1.36.59 lets a person adopt a minting root: the root then carries an identity
+chain that ends at that person, and every identity it mints carries the same chain.
+Whether a root can be adopted is the service's to accept. The aweb Cloud adopts a
+legacy chainless root today. It refuses one that already has a creation chain
+(`already_certified`), which is any fresh hosted root from aw 1.36.53 (it reads
+`no_human`), until the Cloud release aweb names for that adoption. `aw who --json`
+says which kind a root is.
+This provider reads that chain with `aw --identity-home <home> who --json` and shows
+it; it never adopts a root, changes a setting or respawns anything. The contract is
+OATS's `docs/design/2026-11-21-human-ids-contract.md`.
+
+- **What a served identity records.** With a kernel that lists the
+  `spawn-attribution` feature (`oats version --json`, read at run time), spawn (after
+  the mint) and each real start record `identity.attribution` in the served identity:
+  `{mode: "human", human: {id, label}, parent: {id}}` for aw's `nearest_human` (the
+  label is the human's id; the parent, the root that minted the identity),
+  `{mode: "none", human: null, parent: null}` for `no_human`, and `mode: "unknown"`
+  for anything else. The read is one `aw who` bounded at 5 s, never retried; a read
+  that fails, times out, answers no JSON or answers `unavailable` keeps what was
+  recorded, or `unknown` when nothing was. A start preview (`OATS_LAUNCH_PREVIEW=1`)
+  reads nothing. Without the feature, nothing is recorded. A GLOBAL grant seat's
+  identity is not read at start.
+- **What `setup --check-only --json` reports.** A `roots` array, one entry per
+  `settings.oats.aweb.roots` entry and one for the shared `root`:
+  `{label, team, home, attribution: {outcome, humanId, reason}, warnings}`. The
+  label is the workspace's team label for that team when exactly one label maps it,
+  else the team id, and `root` for the shared root (whose `team` is `null`). A root
+  that can't be read, an aw without `who` (below 1.36.58) included, is `unavailable`
+  with the reason. A root that reads `nearest_human` on an aw below 1.36.59 has a
+  warning: spawning from it needs that aw.
+- **A root that loses its person.** The provider keeps each root's last verified
+  `nearest_human` in `<deployment>/.oats-aweb/root-lineage.json`, by the root's id
+  and key. While a root it recorded reads `unknown` or `no_human`, every spawn from
+  it and every check-only warns `attribution-lineage-missing`, naming the root, aw's
+  reason and the human it was verified to. A read that is `unavailable` keeps the
+  record and doesn't warn. Nothing is refused for it. A record file that can't be
+  read or is malformed is left as it is, and the note says the root's adoption
+  wasn't recorded and names the file: move it aside to record roots again.
+- **Joined teams.** The join's accept passes `--parent <root>/.aw` only when the
+  team's root reads `nearest_human` (one bounded read at join time; on
+  `unavailable`, the record above decides). A join from an adopted root on an aw
+  below 1.36.59 stops before any `team invite` with `E_ADOPTED_ROOT_AW_TOO_OLD`: the
+  fix is to upgrade aw to 1.36.59.
+- **Connect.** `oats aweb connect` reads the inviting root before it mints. A root
+  with an identity chain (`nearest_human` or `no_human`) is refused with
+  `E_CONNECT_CHAINED_INVITER`, because the host's join would stop as signature
+  pending and connect can't finish it: aw retries that join only with the same
+  invite, which connect never keeps. The manual route: mint an invite from the root
+  yourself, accept it on the host, move the files aw prints between the two hosts,
+  then retry that accept on the host with the same invite. On recent aw this is the
+  normal case for a fresh hosted deployment nobody adopted: from aw 1.36.53 its root
+  reads `no_human` (below), and the manual route is how it connects another host.
+  Its connect's outcome doesn't change, only how it ends: without this refusal the
+  host's accept fails (on aw 1.36.58 generically, on 1.36.59 as signature pending)
+  and connect answers `E_JOIN_FAILED` after an invite was minted; now it answers
+  `E_CONNECT_CHAINED_INVITER` before any invite. A legacy chainless root goes on as
+  before. A root that can't be read falls back to the record above; with none,
+  connect goes on with a warning.
+- **A mint waiting for a signature.** When aw stops a mint as
+  `native_agent_signature_pending` (aw 1.36.59), the spawn fails and the home is
+  kept. On aw 1.36.58, which has no such code, a failure after the key was written
+  is recorded the same way only when the issuing root has an identity chain.
+  Retire keeps such a home on one rule, which fails closed: it settles a recorded
+  mint only when aw holds no pending mint in the home (neither
+  `hosted-invite-creation.json` nor `pending-hosted-accept` is there), or when no
+  signature-pending stop was recorded and the issuing root reads genuinely chainless
+  (`unknown`, `legacy_no_chain`, with no record of an adoption), as before
+  (#240), which needs the record of adoptions to have been read and the root to be
+  the one that issued the mint (its key, recorded when the mint started). A home from
+  an older provider version whose mint was cut short has no such record: it is
+  settled as before only when aw's own record of the accept proves no signature can
+  be pending, and kept otherwise ("A mint cut short under an older provider",
+  below). While aw's pending
+  files are in the home, no other retire path runs: not the self-delete of an alias
+  in its binding, not a completed-retire marker, and a home with no record of the
+  mint is kept. The same fence holds for each joined team's identity home
+  (`<home>/.aweb-identity-<label>`), where aw can leave a `--parent` accept signature
+  pending: retire looks at those directories themselves, whatever the provider's
+  records say, and a join, leave or retire releases nothing from one aw holds; its
+  pending join stays recorded until aw settles it. A joined accept that aw cut off
+  after storing its certificate but before removing its marker is kept by retire
+  too; `oats aweb leave` or `join` settles it as before. Whatever path retire takes,
+  its answer passes one last check on the way out: while either of aw's pending files
+  is in any directory directly in the home, whatever its name (`.aw`,
+  `.aweb-identity`, `.aweb-identity-*` among them), or in its `.aw`, in a symlink's target inside the
+  home, or in any identity home a record names inside the home (the meta's grant home
+  and joined or pending-join homes, and those `teams.json` names, read at that
+  moment), or in any directory a setting names inside the home, or its `.aw` (`root`,
+  every `roots` value, `identity.source`, every `residents` value), or one of them
+  can't be inspected, an answer that would let the kernel
+  remove the home
+  (`retired: true`, `nothing-to-delete`, or a plain exit 0) becomes `retired: false`,
+  `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle
+  above, of `<home>/.aw` alone. That covers every place aw writes: aw writes only at
+  the `--identity-home` it's given, which the provider takes from those records and
+  settings. No deeper scan is made. Setup refuses to accept or mint into a root inside
+  an instance home of its own deployment (`E_ROOT_INSIDE_INSTANCE_HOME`, below), so
+  that deployment's flows put aw's files under a home only at those locators. A
+  deployment that itself sits inside an agent's home (a scratch, journey or live-test
+  deployment) belongs to that agent: retiring the agent removes the whole deployment
+  with its home, its roots and any mint pending in them included, and retire doesn't
+  look inside it. Not covered: a root an earlier
+  provider set up two or more levels down in a home, under a setting made after that
+  instance's spawn. Its retire isn't given that setting. aw's files are left there by
+  any hosted accept that stops or fails partway: a signature-pending stop (aw 1.36.58
+  has one for an ID-tree issuer), a kill, or an IO or service error.
+  `oats aweb setup --check-only` is to warn of a root inside an instance home
+  (awebai/oats-aweb#311). Every delete retire makes before it answers makes the
+  same check first and leaves such a directory in place: a global seat's grant-home
+  cleanup, a joined team's leave and a pending join's settlement. A record retire
+  reasons about (the record of adoptions, the provider's record of an interrupted
+  mint, aw's pending invite record, a signing key) counts as absent only when nothing
+  is at its path: a dangling symlink or anything else there that can't be read is a
+  problem, left as it is, never "none". Anything else is kept, with exit status 1 and
+  `retired: false` in the
+  meta, which the kernel reads as an incomplete cleanup: it keeps the home and marks
+  it `.oats-rollback-incomplete.json`. The reason is `signature-pending` for the exact
+  mint that stopped (the same key, with aw's files naming the same invite selection
+  and prepared request; the provider records a digest of the selection and the
+  request's id, never the token or its hash), and `mint-outcome-unknown` for
+  anything else (another key, another selection or request, or files or a record
+  that can't be read), for the operator to reconcile with aw. Nothing is settled or
+  deleted on a guess. Once aw settles the mint, a plain `oats retire` clears the
+  home.
+- **A mint cut short under an older provider.** A home whose spawn was killed or
+  failed during its mint under an oats-aweb release before this one has a record of
+  the mint, `<home>/.oats-aweb/pending-mint.json`, that names no issuing key. Retire
+  then reads aw's own record of the accept (`<home>/.aw/hosted-invite-creation.json`),
+  which pinned the invite's issuer when it was made:
+  - **When it proves no signature can be pending,** retire settles the mint as
+    releases before this one did (#240), and its warning says so: "aw's record proves
+    no signature can be pending (aw's record of the accept is this home key's and
+    names no ID-tree issuer and no human, and aw holds no creator link for this home,
+    so no signature can be pending for it)". The proof is a record aw accepts, made
+    for this home's own key, with no `id_tree.domain` and no `for_human`; no trace in
+    the home of a creator exchange of its own (`<home>/.aw/requests`,
+    `<home>/.aw/id-chain.json` or `<home>/.aw/identity.yaml`); and no creator link in
+    aw's user state (`$HOME/.config/aw/team-invites`) whose `id_child` names this home
+    (`child_home`, by path or realpath) or this key (`child_did_key`). That directory
+    absent means no links; one that can't be listed, or an entry that can't be read as
+    aw writes it, keeps the home. The check reads the files as aw writes them; a file
+    edited by hand isn't covered.
+  - **When the warning says aw's record "doesn't show that no signature can be
+    pending",** retire keeps the home (`mint-outcome-unknown`) and its warning points
+    here. The mint may be waiting for a signature: don't move aw's files on the
+    warning alone. Finish the exchange aw printed for it, or reconcile it with aw.
+    aw 1.36.58 and 1.36.59 have no command that abandons or settles a pending accept:
+    `aw id team accept-invite` completes one or is refused, and `aw reset` removes
+    only a workspace binding. Once you have shown with aw that nothing is pending for
+    it, this clears it:
+  1. Read `"root"` and `"team"` in `<home>/.oats-aweb/pending-mint.json`: the root
+     the mint used (`<root>` below) and its team (`<team>`).
+  2. Check that the root reads legacy chainless:
+     - `aw --identity-home <root>/.aw who --json` answers `"outcome": "unknown"` and
+       `"reason": "legacy_no_chain"`;
+     - `oats aweb setup --check-only --json` lists `<root>` in `roots` with no
+       warnings.
+
+     This proves nothing about the mint on its own, since the root at that path may
+     have been replaced. On any other answer, stop.
+  3. Optionally, see what the mint registered. At `<root>`, run
+     `aw id team members --team-id=<team> --json`. Retire makes this same read in
+     step 5 and looks for a certificate for alias `<instance>` whose
+     `member_did_key` is this home's key. Only that one is this mint's, and retire
+     hands it to the team's controller. A certificate for `<instance>` held by
+     another key belongs to another agent. With none of this home's key, retire
+     answers `nothing-to-delete`.
+  4. Move aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
+     `<home>/.aw/pending-hosted-accept`, out of the home to a dated name. Never `rm`
+     them:
+
+     ```bash
+     aside="<home>.aw-pending-aside-$(date -u +%Y%m%dT%H%M%SZ)"
+     mkdir "$aside" && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/
+     ```
+
+     If `mkdir` fails (that name is taken), nothing moves: choose another name. The
+     dated directory sits beside the home, not inside it, so the kernel's removal
+     of the home leaves it. Renaming the files inside `<home>/.aw` would not keep
+     them: that removal would take them with the home.
+  5. Run `oats retire <instance>`. It settles the mint as releases before this one
+     did (#240): `nothing-to-delete`, or the controller's removal command for this
+     home's certificate.
+
+  Why retire's own settle is safe. aw stops an accept to wait for a signature only
+  when the invite it recorded has an ID-tree issuer and the child has no chain
+  installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
+  1.36.59, aweb `b9c015732`, `:292`). On 1.36.59 an invite that names a human
+  with no issuer is refused (`human_required`, `:279-281`) rather than stopped as
+  signature pending; aw keeps its record and marker, and the proof keeps the home
+  because the record names a human. An
+  invite with no ID-tree binding leaves `id_tree.domain` empty (1.36.58 `:94`;
+  1.36.59 `:247-249`), and aw then prepares no request for it. 1.36.59 also saves
+  the record before its preview (`:220-224`), with no issuer or human yet; nothing
+  is sent there but that read, and the issuer and human are saved before any
+  request (`id_team.go:2000-2008`, `team_invite_accept.go:267-268`). The provider's
+  invites (`aw team invite --team-id=<team>`) name no human. On 1.36.59,
+  `accept-invite --parent` runs a creator exchange of its own after saving that
+  record (`team_invite_accept.go:249-251`), keeping its outgoing request in
+  `<home>/.aw/requests` (`cli/go/awconfig/id_request_store.go:41-42`) and its chain
+  in `<home>/.aw/id-chain.json`; the check finds no proof while either, or
+  `identity.yaml`, is there. Before any of those, a creator exchange saves its link in
+  aw's user state: `accept-invite --parent` (1.36.59
+  `cli/go/cmd/aw/invite_condition.go:140`, then `identity.yaml` at `:147`) and an
+  `init --join-from` from an adopted root (1.36.58 `cli/go/cmd/aw/id_team.go:1761-1765`).
+  aw keeps it at `$HOME/.config/aw/team-invites/<id>.json`
+  (`cli/go/awconfig/state.go:10-16,26-33`, the same at both versions;
+  `team_invites.go:133-146`, its `id_child` fields at `:21-29`; 1.36.58 `:88-101`,
+  `:19-27`); the check finds no proof while one names this home or its key. It reads
+  that directory's invites as aw does, its non-directory `*.json` entries
+  (`team_invites.go:237`), skipping aw's `<id>.lock` files (`:81-86`) and the
+  `.tmp.*` names of its writes, which are renamed into place: a kill that leaves a
+  link only there came before the child's `identity.yaml`.
+- **Roots nobody adopted.** There are two kinds, and neither changes what spawn,
+  start, join (no `--parent`) or check-only do; the only differences are
+  `attribution` and the `roots` entries.
+  - **A fresh hosted root reads `no_human`.** From aw 1.36.53, a root made from a
+    plain setup key carries its namespace's chain with no person in it. That is a
+    fresh, unadopted hosted deployment's normal state: its identities record
+    `attribution` `none`, and its connect is refused, as above. On aw 1.36.58 a mint
+    that fails after the key was written is kept as signature pending for it, as for
+    any root with a chain ("A mint waiting for a signature").
+  - **A legacy chainless root reads `unknown`, `legacy_no_chain`.** That is a root
+    made with aw 1.36.51 or earlier (a local `did:key` root), or a member whose
+    ancestry the registry couldn't verify. Its identities record `attribution`
+    `unknown`, and its connect goes on as before.
+
+  Retire is stricter in three cases and keeps the home instead: it settles a
+  cut-short mint only on a strict chainless read at retire (`unavailable` is not
+  chainless), and it keeps a home with an unreadable `teams.json`, or an older
+  provider's mint that was cut short unless aw's own record proves no signature can
+  be pending.
+- **Undoing it.** Adoption can't be undone on a root; the way out is removing the root from the team and starting a new root.
+
+The provider reads only aw's exit status and the `--json` envelope's `error.code`,
+`http_status` and `reason`, never `error.message` or other prose.
 
 ## messaging:mail: an instance's mail, read without acknowledging it
 
@@ -817,7 +1056,9 @@ team}, ready, steps}}`. A `failed` step ends the run with `ok: false`,
 `error.code` = that step's code and `error.details.steps` = the steps so far.
 Failures: `E_TEAM_NOT_MEMBER` (this deployment cannot invite to the host's
 team: join it here first), a kernel route code such as `E_SSH`,
-`E_INVITE_FAILED`, `E_JOIN_FAILED`, and the host's `E_AW_INSTALL` /
+`E_INVITE_FAILED`, `E_JOIN_FAILED`, `E_CONNECT_CHAINED_INVITER` (an inviting root
+with an identity chain, refused before any invite: "Human attribution"), and the
+host's `E_AW_INSTALL` /
 `E_AW_FLOOR`. `E_INVITE_FAILED` keeps aw's output withheld and names the cause
 (the HTTP status and redacted server `detail`, else aw's `--json` error code, an
 unreachable service, or that its output held none of these), that nothing was
@@ -1279,6 +1520,18 @@ and where to set it. The provider settings are:
 - `roots`: map `{ <team id>: <absolute directory> }`. `roots[team]` wins over
   `root` and is required when a deployment mints into more than one aweb team.
   Each mapped directory owns its own `.aw` identity for exactly that team.
+- A `root` or `roots` directory never lies inside an instance home of this deployment
+  (a directory with an `instance.json` between the root and the deployment, through
+  symlinks): retiring that instance removes its home, and the root with it. A
+  deployment that itself sits inside an agent's home (a scratch, journey or live-test
+  deployment) is not refused for that: it belongs to that agent, and retiring the
+  agent removes the whole deployment with its home, its roots and any mint pending in
+  them included. If the deployment can't be resolved, any
+  instance home above the root counts, and the error says so. Every setup path that
+  creates, accepts or mints into a root (`--username`, `--create`, `--join`, an
+  invite, and a bare API-key setup) refuses one once it has chosen the root, before
+  it creates, accepts or mints into it, with `E_ROOT_INSIDE_INSTANCE_HOME`, naming the setting and
+  a place beside the deployment's other roots (`<deployment>/.aweb-roots/<label>`).
 - `residents`: map of resident name to absolute custody directory for
   `identity.mode: global`; host-only because it points at custody material.
   `oats aweb resident create <name>` records its resident here.
@@ -1483,11 +1736,20 @@ Supported acts:
   the updated session pin. The registry setting is never taken from ambient
   `AWID_REGISTRY_URL`, `identity.yaml`, `teams.yaml` or a saved receipt.
 
-  A private-address registry requires this explicit administrative pin on
-  every invocation. OATS passes it by name as `AWID_REGISTRY_URL` to registry
-  calls, LOCAL and GLOBAL sessions, custody serve and wake run. Saved URLs
-  choose destinations under aw's public-address policy; they never grant
-  private-network access. Existing non-public ambient-only deployments receive
+  OATS takes a private-address registry only from this explicit
+  administrative pin in `oats-local.yaml`, never from aw's files, and passes
+  it on every invocation, by name as `AWID_REGISTRY_URL`, to registry calls,
+  LOCAL and GLOBAL sessions, custody serve and wake run. What aw itself does
+  with a registry URL saved in its own files depends on its version: aw 1.36.58
+  applies no address policy to it. From aw 1.36.59, aw normally reaches a
+  saved URL only at a public address. aw has exceptions, and they include a URL
+  aw recorded as the operator's own choice (`registry_operator_origin`, which
+  aw writes only for the URL the operator named and `aw id registry-trust
+  <origin>` sets for a recorded one) and one a 1.36.58 home kept: its
+  `identity.yaml` `registry_url`, or the route of an implicit local team whose
+  controller and team keys this machine holds. Those may reach a private
+  network without the pin.
+  Existing non-public ambient-only deployments receive
   `registry-setting-required` at spawn/join and readiness, with the setup and
   restart steps. GLOBAL homes with a recorded non-default registry also get
   that migration instead of silently losing messaging verification. Public
@@ -2022,8 +2284,8 @@ installation, Claude admission or live delivery.
 
 ## Native aw contracts in CI
 
-CI runs the unit and native CLI group with the floor, tested and pinned next
-versions from `scripts/aw-test-versions.mjs`. The shared recording fakes reject
+CI runs the unit and native CLI group with the floor, the previous tested, tested
+and pinned next versions from `scripts/aw-test-versions.mjs`. The shared recording fakes reject
 unknown flags before acting. After exercising the hook's paths, CI checks every
 recorded full command path and flag against that real aw's help; a parent
 command's successful help does not establish a missing child command.
@@ -2167,7 +2429,7 @@ It uses isolated local Git repositories and a fake aw; it does not verify live
 service behavior or perform host onboarding.
 
 The opt-in `test/username-native.test.mjs` checks #66 with an explicitly selected
-real aw at the supported floor, tested or pinned next version.
+real aw at the supported floor, the previous tested, tested or pinned next version.
 Run `OATS_TEST_AW=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
 node --test test/username-native.test.mjs`. It records the executable path,
 version/build and SHA-256; isolated HOME and loopback service fixtures prevent
@@ -2279,7 +2541,7 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   the stack up from an aweb checkout at ci.yml's `AWEB_STACK_COMMIT` with
   `docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis
   awid aweb`, then set `OATS_RESIDENT_JOURNEY_AW` (an aw executable of
-  the floor, tested or pinned next from `scripts/aw-test-versions.mjs`, at the commit the test qualifies it on),
+  the floor, the previous tested, tested or pinned next from `scripts/aw-test-versions.mjs`, at the commit the test qualifies it on),
   `OATS_RESIDENT_JOURNEY_AWEB_URL=http://127.0.0.1:18000` and
   `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`, and
   `OATS_RESIDENT_JOURNEY_KERNEL` (a checkout of an OATS kernel with
@@ -2290,8 +2552,9 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   next steps through that kernel in a fixture workspace: the spawn mints a real
   grant at the resident's custody, and the retire revokes it. CI's
   `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`, once
-  for the floor, tested and pinned next from `scripts/aw-test-versions.mjs`. Moving `tested` moves three things together:
-  the matrix (generated from `scripts/aw-test-versions.mjs`), the
+  for each version `scripts/aw-test-versions.mjs` lists. Moving `tested` moves three things together:
+  the matrix (generated from `scripts/aw-test-versions.mjs`, where `AW_PREVIOUS` keeps the
+  tested aw it replaces), the
   journey test's qualified aw and commit (its first test fails until they
   match), and the stack commit, to aweb's release of that aw (no test checks
   it).

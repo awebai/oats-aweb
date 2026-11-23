@@ -1,6 +1,8 @@
-# Pinned AWID verifies covering controller signatures against this explicit
-# client-facing origin (awid_service/main.py and awid/controller_request.py).
+# Pinned AWID verifies covering controller signatures against these explicit
+# origins (awid_service/main.py and awid/controller_request.py): the host origin
+# aw uses, and the in-network one the aweb server's own controller writes use
+# (aweb 7419528f8, which sets the same pair in its own e2e compose file).
 services:
   awid:
     environment:
-      AWID_PUBLIC_ORIGINS: http://127.0.0.1:18010
+      AWID_PUBLIC_ORIGINS: http://awid:8010,http://127.0.0.1:18010
