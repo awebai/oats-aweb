@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: username setup resumes the signup aw kept after an unknown outcome
+  (aw 1.36.59).** When the hosted service answers a signup or the connect
+  after it with a 5xx, the account may exist, so aw 1.36.59 (fc8c2b797) keeps
+  the attempted signup, its signer and exact request, in the root's `.aw`
+  (`signup-recovery.json`), and the same `aw init` resumes it: with the same
+  signer, and without a second signup once the service had accepted it. Setup
+  read any `.aw` as an existing identity, so a re-run stopped with
+  `E_SETUP_MEMBERSHIP` and never reached aw's resume. Now a root whose `.aw`
+  holds that journal re-runs the same `aw init`; `--plan` reports `bootstrap:
+  resume` and runs nothing; and `E_SETUP_NATIVE` after an unknown outcome says
+  to re-run the same setup command, with the same flags and `AWEB_URL`. Setup
+  never changes that `.aw`, and reads only whether the journal is there. A
+  `.aw` this user cannot search is refused with `E_SETUP_MEMBERSHIP` before
+  any aw command. A `.aw` without the journal keeps the membership read as
+  before; aw up to 1.36.58 left no `.aw` after a 5xx signup, so a re-run there
+  signs up afresh, as before.
+- **aw 1.36.59 retires a local member itself where this machine holds its
+  team's controller key.** A retire of a seat in a team that is not hosted
+  then leaves no controller cleanup: aw deletes the workspace and revokes the
+  certificate, and retire removes the identity home. When aw stops after
+  deleting the workspace, retire keeps the home with aw's receipt and exits
+  nonzero, and a plain retry finishes. Without the key, aw's `team_not_hosted`
+  refusal still hands the membership to the controller. The provider is
+  unchanged; the real-stack journeys now prove both outcomes on aw 1.36.59, and
+  a fake-aw test the partial one.
+
 ## 1.48.0 — 2026-11-21
 
 - **Changed: the package requirements follow the session backend, and the OATS

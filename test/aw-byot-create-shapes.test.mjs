@@ -114,7 +114,11 @@ test('real aw: the offline answers still have the captured shapes', { skip: !rea
   const dir = scratch(t), home = join(dir, 'home'), cwd = join(home, 'deployment');
   const refused = runAw(realAw, home, cwd, ['id', 'team', 'create', '--name=eng', `--namespace=${NS}`, '--json']);
   const realRefused = captured('create-no-controller-key');
-  assert.deepEqual([refused.status, refused.stdout, refused.stderr], [realRefused.exit, realRefused.stdout, realRefused.stderr]);
+  // aw 1.36.59 adds the typed code `controller_key_missing` to this refusal (cmd/aw/integration_codes.go);
+  // its message is unchanged, and the provider reads the message (withheldFailureCause). Either code is
+  // accepted; everything else stays byte-for-byte the captured answer.
+  const legacyCode = stdout => stdout.replace(/^\{"error":\{"code":"controller_key_missing",/, '{"error":{"code":"error",');
+  assert.deepEqual([refused.status, legacyCode(refused.stdout), refused.stderr], [realRefused.exit, realRefused.stdout, realRefused.stderr]);
 
   writeTeamKey(home);
   const invite = runAw(realAw, home, cwd, ['id', 'team', 'invite', '--team=eng', `--namespace=${NS}`, '--json']);

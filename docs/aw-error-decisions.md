@@ -9,7 +9,7 @@ The current decisions and structured signals needed from aw:
 
 | Decision | Current native signal | Evidence and follow-up |
 | --- | --- | --- |
-| Joined cleanup may release its key | `team_not_hosted` exact stderr on the old floor; native code at newer aw | Code-only cleanup waits for that floor. CI's real joined-team journey is its service proof. |
+| Joined cleanup may release its key | `team_not_hosted` exact stderr on the old floor; native code at newer aw | Code-only cleanup waits for that floor. CI's real keyless joined-team journey is its service proof on every matrix aw; from aw 1.36.59 a machine holding the team key gets no refusal, as aw retires the member itself (the real joined-team journeys). |
 | Failed default mint created no invite | `; alternatively use --admission-team-id ` suffix | Real-aw failed join-from invite test. Ask aw for an explicit no-mint outcome instead of the suffix. |
 | Alias conflict remedy | Broad `already/exists/conflict/422/active certificate/self_custody_reinit_unproven` legacy match, plus native alias refusal fields where available | Code-only alias classification waits for that floor. The legacy match can classify unrelated text; no new reliance on it is introduced here. |
 | Failed revoke needs a readback | `may have applied`, timeout/deadline text | Real-aw heartbeat mutation timeout pins the shared HTTP client's ambiguous-outcome text. This is a native client wording check, not a grant-revoke journey. Ask aw for an explicit uncertain-outcome signal. |

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {generateKeyPairSync, randomBytes, randomUUID, sign} from 'node:crypto';
-import {existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {createServer} from 'node:http';
@@ -12,6 +12,7 @@ import {didKeyOfSigningKey} from '../oats-package/capabilities/oats-aweb/lib/mem
 import {NAMESPACE_CONTROLLER_KEY_MISSING, TEAM_KEY_MISSING, teamNameTaken, teamServerRecordMissing, usernameUnavailable, withheldFailureCause} from '../oats-package/capabilities/oats-aweb/lib/aw-failure-cause.mjs';
 import {readAwVersion} from '../oats-package/capabilities/oats-aweb/lib/binding-wire.mjs';
 import {probeAwVersion} from '../oats-package/capabilities/oats-aweb/lib/probe-support.mjs';
+import {versionAtLeast} from '../oats-package/capabilities/oats-aweb/lib/aw-floor.mjs';
 
 const binary = process.env.OATS_AWEB_TEST_AW;
 const options = {skip: !binary && 'set OATS_AWEB_TEST_AW to the CI tested aw'};
@@ -147,7 +148,7 @@ test('real aw prose: a native mutating timeout names the uncertain outcome', opt
 // username inside aw's own words still classifies; the same words in a wrapped HTTP
 // error body do not.
 test('real aw prose: an unavailable username is one fixed sentence with its reason', options, async t => {
-  const signupWith = async (username, check, signup) => {
+  const signupWith = async (username, check, signup, keepsJournal = false) => {
     const f = fixture(t);
     const s = await service(t, (req, res) => {
       if (req.method === 'GET' && req.url === '/api/v1/discovery') res.end(JSON.stringify({onboarding_url: s.url, aweb_url: `${s.url}/api`, registry_url: s.url}));
@@ -159,7 +160,9 @@ test('real aw prose: an unavailable username is one fixed sentence with its reas
     const paths = s.requests.map(q => q.path);
     assert.ok(paths.includes('/api/v1/onboarding/check-username'), paths.join(' '));
     assert.equal(paths.includes('/api/v1/onboarding/cli-signup'), !!signup, paths.join(' '));
-    assert.equal(existsSync(join(f.cwd, '.aw')), false, 'aw creates nothing before it refuses');
+    // aw 1.36.59-rc.4 keeps the journal's lock beside it; later aw keeps the lock in its own state.
+    if (keepsJournal) assert.deepEqual(readdirSync(join(f.cwd, '.aw')).filter(name => name !== 'signup-recovery.lock').sort(), ['signup-recovery.json'], 'aw keeps the signup whose outcome is unknown');
+    else assert.equal(existsSync(join(f.cwd, '.aw')), false, 'aw creates nothing before it refuses');
     return r;
   };
   for (const username of ['fixture-user', 'user', 'taken', 'ken']) {
@@ -177,7 +180,10 @@ test('real aw prose: an unavailable username is one fixed sentence with its reas
     assert.ok(!r.stderr.includes(username), 'aw escapes the invisible character');
     assert.equal(usernameUnavailable(r, username), 'invalid_format', r.stderr);
   }
-  const wrapped = await signupWith('fixture-user', {available: true}, {status: 500, body: 'username "fixture-user" is not available (taken)'});
+  // A 500 is an unknown outcome, not a refusal: the account may exist. From aw 1.36.59
+  // (fc8c2b797) aw keeps its signer and request in .aw so the same command resumes it.
+  const keepsJournal = versionAtLeast(probeAwVersion((await fixture(t).run(['version'])).stdout), '1.36.59-rc.4');
+  const wrapped = await signupWith('fixture-user', {available: true}, {status: 500, body: 'username "fixture-user" is not available (taken)'}, keepsJournal);
   assert.notEqual(wrapped.status, 2, wrapped.stderr);
   assert.match(wrapped.stderr, /username "fixture-user" is not available \(taken\)/);
   assert.equal(usernameUnavailable(wrapped, 'fixture-user'), undefined);
