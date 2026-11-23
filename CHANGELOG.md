@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.49.0 — 2026-11-23
 
 - **Fixed: a retire's key settlement in two edge cases (#322).** A setting
   that names an entry inside the home in another case now protects it on a
@@ -74,7 +74,8 @@
 - **Added: human attribution (aweb-acxy7.7; OATS
   `docs/design/2026-11-21-human-ids-contract.md`).** The provider reads who
   stands behind a root or an identity with `aw who --json` and shows it; it adopts
-  nothing and changes no setting. README, "Human attribution".
+  nothing and changes no setting. README, "Human attribution". Adopting a root
+  on a hosted team is not open yet: this release reads and shows attribution only.
   - With a kernel that lists `spawn-attribution`, spawn and each real start record
     `identity.attribution` in the served identity (`human`, `none` or `unknown`),
     from one `aw who` bounded at 5 s; a failed read keeps what was recorded.
