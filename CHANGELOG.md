@@ -2,6 +2,11 @@
 
 ## 1.49.0 — 2026-11-23
 
+- **Fixed: P5 now passes the configured registry explicitly.**
+
+  **What a deployment must change:** a private deployment names its registry
+  in DNS or in OATS's registry setting (`settings.oats.aweb.registry`).
+
 - **Fixed: a retire's key settlement in two edge cases (#322).** A setting
   that names an entry inside the home in another case now protects it on a
   case-insensitive filesystem (macOS): paths are compared in their on-disk

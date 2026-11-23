@@ -2802,7 +2802,9 @@ function primaryIdentityHomeOf(meta = {}) {
 /** aw for one P5 read, as the hook runs aw: its runner, cut to the read's bound. */
 // SIGKILL in every event: the read's 5 s bound holds for setup, connect and join
 // too, whatever a child does with SIGTERM.
-const whoRunner = (cwd = home) => (args, timeout) => run(["aw", ...args], cwd, timeout, { killSignal: "SIGKILL" });
+// P5 passes the configured registry explicitly. With no setting the argv is unchanged.
+const whoRegistryArgs = () => { const origin = configuredRegistryOrigin(settings); return origin ? ["--registry", origin] : []; };
+const whoRunner = (cwd = home) => (args, timeout) => run(["aw", ...args, ...whoRegistryArgs()], cwd, timeout, { killSignal: "SIGKILL" });
 /** The deployment that keeps C3's record, or undefined when it can't be resolved:
  *  the read still runs, and nothing is recorded or recalled. */
 const lineageDeployment = (explicitDir) => { try { return selectedDeployment(process.env, explicitDir); } catch { return undefined; } };
