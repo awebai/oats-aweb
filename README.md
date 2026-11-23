@@ -2104,14 +2104,27 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
   falls back to the current directory (#321).
 - **An entry a setting names stays where it is**: one that `root`, a `roots`
   value, `identity.source` or a `residents` value resolves to inside the home
-  (the directory, or its `.aw`, as written or through any link) is that root's,
+  (the directory, or its `.aw`, as written, through any link, or spelled in
+  another case where the filesystem ignores case, as macOS's usually does) is that root's,
   custody's or standing identity's key, not this instance's. A retire's
   reconciliation of an unfinished join removes nothing itself either. Removing it would destroy a key others
   use, and holding it would move it from the path every later spawn, mint or
   custody reads, so it is neither, whatever the exit, and the warning names it
-  and the setting. When the settings can't be read, no entry is removed or
-  held, and the warning says so; so too when a setting's path can't be
-  resolved (#321).
+  and the setting (#321, #322).
+- **Settings that don't parse** (`OATS_SETTINGS` empty, or not a JSON
+  object) stop the retire before it does anything: no held entry is put back,
+  no aw command runs, no entry moves, and it exits 1, naming what stays held:
+  fix the settings, then retire again (#322).
+- **A setting path that can't be resolved** (a link loop, a directory it may
+  not read) leaves which entries are whose unknown. The retire still puts held
+  entries back and runs its remote cleanup with them, but removes no entry:
+  whatever its exit (0 included), it holds again exactly what it put back, since
+  settings can change between runs and a hold can be undone. Every other entry
+  stays in place, named in the warning. Such an entry may still be a live key
+  (an unreleased alias's certificate, a retained seat's standing key): fix the
+  setting, then remove it yourself. A rerun puts the held entries back, answers
+  what the first run answered, and holds them again until the setting is
+  fixed; a retire with it fixed settles them as usual (#322).
 - **An answer that exits 0 removes them** when it followed the retire's remote
   cleanup or proved none was owed, after the provider state is written, just
   before the answer is printed: a released or unreleased self-delete, a
@@ -2137,7 +2150,10 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
   before its identity home goes with the rest at the answer, so a retire
   killed after that leave doesn't try it again without the key. The warning
   names what was held. A rename that fails leaves that entry in place and says
-  which and why; the exit code is the retire's own. `.oats-aweb` is never
+  which and why; the exit code is the retire's own. To retry, run `oats retire
+  <instance>` again, which puts them back first, not the `aw workspace delete`
+  that aw's own next step names: while the keys are held it finds no `.aw`.
+  `.oats-aweb` is never
   copied to recovery and is owner-only. Two exceptions (besides an entry a
   setting names, above):
   - An identity home where aw holds a pending mint is never moved: it stays
@@ -2149,7 +2165,8 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
     grant home, so a held one would only keep a live grant whose revoke
     failed. A grant seat joins no teams; on any other seat an identity home
     with such a name (a numeric joined label) is held like any entry.
-- **Every retire puts held entries back first**, before it reads any state, so
+- **Every retire puts held entries back first** (but one whose settings don't
+  parse, above), before it reads any state, so
   a retry sees exactly the home the failed retire saw and finishes as it would
   have, with recorded absolute paths (a joined team's `identityHome`) valid
   again. If an entry and its held copy both exist (something re-created it,
@@ -2186,8 +2203,10 @@ normal identity lookup. It is not a boundary against a process of the same OS
 user that goes looking in `.oats-aweb/held`. A retire hook that crashes (an
 uncaught error, or a kill) prints no answer and leaves the entries where they
 are: a kill after the remote acts and before the removal leaves the key in
-place, as before, and the next retire finishes. Homes retired before this
-release are not changed.
+place, as before, and the next retire finishes. A hold is a rename within the
+home: if `.oats-aweb` is on another filesystem (a link or a mount to one), the
+rename fails (`EXDEV`) and the entry stays usable in place, named in the
+warning. Homes retired before this release are not changed.
 
 ### A retained seat on a server other than aweb Cloud
 

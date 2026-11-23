@@ -617,13 +617,17 @@ test("an answer from a gate before the retire branch settles the keys too: an in
   assert.deepEqual(held(fx.home), []);
 });
 
-test("settings that can't be parsed (exit 1): which entries are a root's can't be told, so every entry is left in place and the warning says so", (t) => {
+const UNPARSED = /^oats-aweb: OATS_SETTINGS must be a JSON object, so nothing was retired and no aw command ran; /;
+
+test("settings that can't be parsed (exit 1): the retire does nothing, every entry is left in place and the warning says so", (t) => {
   const fx = fixture(t, { joined: true });
   const before = listing(fx.home);
   const r = fx.retire({ OATS_SETTINGS: "{not json" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.doc.warning, /OATS_SETTINGS must be a JSON object/);
-  assert.match(r.doc.warning, /key material left in place: which entries are a root's, a custody's or a standing identity's can't be told \(OATS_SETTINGS must be a JSON object\), so nothing was removed or held/);
+  assert.match(r.doc.warning, UNPARSED);
+  assert.match(r.doc.warning, /no aweb key material was moved\. Fix the settings, then retire again$/);
+  assert.equal(r.doc.meta, undefined);
+  assert.deepEqual(fx.fake.calls(), []);
   assert.deepEqual(listing(fx.home), before, "nothing removed or held");
 });
 
@@ -632,12 +636,101 @@ test("empty OATS_SETTINGS is unreadable settings too: every entry is left in pla
   const before = listing(fx.home);
   const r = fx.retire({ OATS_SETTINGS: "" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.doc.warning, /OATS_SETTINGS must be a JSON object/);
-  assert.match(r.doc.warning, /key material left in place/);
+  assert.match(r.doc.warning, UNPARSED);
+  assert.deepEqual(fx.fake.calls(), []);
   assert.deepEqual(listing(fx.home), before);
 });
 
-// ------------------------- an entry a setting names is not this instance's (#321)
+// ------------------ a retry whose settings can't be read or resolved (#322)
+
+/** A home whose failed retire held .aw, and an entry made since (not held). */
+function heldHome(t) {
+  const fx = fixture(t);
+  const first = fx.retire({ FAKE_DELETE: "fail" });
+  assert.equal(first.status, 1, first.stdout + first.stderr);
+  assert.deepEqual(held(fx.home), [".aw"]);
+  const heldAw = join(fx.home, ".oats-aweb", "held", ".aw");
+  const extra = join(fx.home, ".aweb-identity-extra");
+  write(join(extra, "signing.key"), "another key\n");
+  return { ...fx, heldAw, extra, heldBefore: listing(heldAw), extraBefore: listing(extra), callsBefore: fx.fake.calls().length };
+}
+/** A root setting whose path can't be resolved (a link to itself: ELOOP). */
+function loopingRoot(fx) {
+  const loop = join(fx.base, "loop");
+  symlinkSync(loop, loop);
+  return JSON.stringify({ delivery: "session", root: loop });
+}
+
+test("a held home retried with settings that don't parse, or empty ones: held stays held byte-identical, nothing is at .aw, no aw runs", (t) => {
+  for (const settings of ["{not json", ""]) {
+    const fx = heldHome(t);
+    const r = fx.retire({ OATS_SETTINGS: settings });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.doc.warning, UNPARSED);
+    assert.ok(r.doc.warning.endsWith(`.aw, held by a failed retire, was kept held in ${join(fx.home, ".oats-aweb", "held")}. Fix the settings, then retire again`), r.doc.warning);
+    assert.equal(r.doc.meta, undefined);
+    assert.deepEqual(fx.fake.calls().slice(fx.callsBefore), [], "no aw command ran");
+    assert.deepEqual(held(fx.home), [".aw"]);
+    assert.deepEqual(listing(fx.heldAw), fx.heldBefore, "the held .aw is byte-identical");
+    assert.deepEqual(entriesAt(fx.home), [".aweb-identity-extra"], "nothing at .aw");
+    assert.deepEqual(listing(fx.extra), fx.extraBefore);
+  }
+});
+
+test("a held home retried with a setting path that can't be resolved and a failing cleanup: what it restored is held again byte-identical, the rest stays in place, named", (t) => {
+  const fx = heldHome(t);
+  const r = fx.retire({ FAKE_DELETE: "fail", OATS_SETTINGS: loopingRoot(fx) });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(deletes(fx.fake.calls().slice(fx.callsBefore)).length > 0, "the cleanup ran on the restored key");
+  assert.deepEqual(held(fx.home), [".aw"]);
+  assert.deepEqual(listing(fx.heldAw), fx.heldBefore, "the restored .aw is held again, byte-identical");
+  assert.deepEqual(entriesAt(fx.home), [".aweb-identity-extra"]);
+  assert.deepEqual(listing(fx.extra), fx.extraBefore);
+  assert.match(r.doc.warning, /held \.aw in /);
+  assert.ok(r.doc.warning.includes(`${fx.extra} stays in place: which entries are a root's, a custody's or a standing identity's can't be told (settings.oats.aweb.root (`), r.doc.warning);
+  assert.match(r.doc.warning, /can't be resolved \(ELOOP\)\), and this run did not put it back from /);
+});
+
+test("a held home retried with a setting path that can't be resolved and a cleanup that succeeds: exit 0 holds again what it restored, byte-identical; the other entry stays byte-identical, named as maybe live (spec v7.1)", (t) => {
+  // released, and #318 case 2: an unreleased alias whose certificate stays active.
+  for (const mode of ["released", "team_not_hosted"]) {
+    const fx = heldHome(t);
+    const r = fx.retire({ FAKE_DELETE: mode, OATS_SETTINGS: loopingRoot(fx) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.retired, true);
+    if (mode === "team_not_hosted") assert.equal(r.doc.meta.aliasReason, "team_not_hosted");
+    assert.ok(deletes(fx.fake.calls().slice(fx.callsBefore)).length > 0, "the cleanup ran on the restored key");
+    assert.deepEqual(held(fx.home), [".aw"]);
+    assert.deepEqual(listing(fx.heldAw), fx.heldBefore, "the restored .aw is held again, byte-identical");
+    assert.deepEqual(entriesAt(fx.home), [".aweb-identity-extra"]);
+    assert.deepEqual(listing(fx.extra), fx.extraBefore);
+    assert.match(r.doc.warning, /held \.aw in .*: a session started in this home cannot act as this identity; the next retire puts it back first/);
+    assert.ok(r.doc.warning.includes(`key material not held: ${fx.extra} stays in place: which entries are a root's, a custody's or a standing identity's can't be told (settings.oats.aweb.root (`), r.doc.warning);
+    assert.match(r.doc.warning, /can't be resolved \(ELOOP\)\), and this run did not put it back from .*, so it may still be a live key: fix the setting, then remove it/);
+  }
+});
+
+test("a rerun of that exit 0 puts the held .aw back, answers the first run's answer with no aw call that needs the key, and holds it again while the setting can't be resolved; with the setting fixed, a rerun removes the keys", (t) => {
+  for (const mode of ["released", "team_not_hosted"]) {
+    const fx = heldHome(t);
+    const settings = loopingRoot(fx);
+    const first = fx.retire({ FAKE_DELETE: mode, OATS_SETTINGS: settings });
+    assert.equal(first.status, 0, first.stdout + first.stderr);
+    const before = fx.fake.calls().length;
+    const rerun = fx.retire({ FAKE_DELETE: mode, OATS_SETTINGS: settings }, first.doc.meta);
+    assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
+    assert.deepEqual(rerun.doc.meta, first.doc.meta, "the same answer");
+    assert.deepEqual(withKey(fx.fake.calls().slice(before)), [], "no aw call that needs the key");
+    assert.deepEqual(held(fx.home), [".aw"]);
+    assert.deepEqual(listing(fx.heldAw), fx.heldBefore, "held again, byte-identical");
+    assert.deepEqual(entriesAt(fx.home), [".aweb-identity-extra"]);
+    const fixed = fx.retire({ FAKE_DELETE: mode }, first.doc.meta);
+    assert.equal(fixed.status, 0, fixed.stdout + fixed.stderr);
+    assert.deepEqual(fixed.doc.meta, first.doc.meta);
+    assert.deepEqual(held(fx.home), []);
+    assert.deepEqual(entriesAt(fx.home), [], "with the setting readable, nothing names either entry: both go");
+  }
+});// ------------------------- an entry a setting names is not this instance's (#321)
 
 test("a root configured inside the home survives an exit 0 byte-identical, named in the warning; this instance's .aw is removed", (t) => {
   const fx = fixture(t);
@@ -684,6 +777,26 @@ test("a root configured through a link outside the home, pointing at an entry in
     assert.deepEqual(entriesAt(fx.home), [".aweb-identity-root"]);
     assert.deepEqual(listing(root), rootBefore, "the root behind the link is byte-identical");
     assert.ok(r.doc.warning.includes(`${root} stays in place: settings.oats.aweb.roots[${TEAM}] names it`), r.doc.warning);
+  }
+});
+
+test("a root setting that spells the entry in another case: on a case-insensitive filesystem it names that entry, which survives; on a case-sensitive one it names another path (#322)", (t) => {
+  const fx = fixture(t);
+  const root = join(fx.home, ".aweb-identity-root");
+  identityHome(join(root, ".aw"), TEAM, "cert-root-1", "root");
+  const otherCase = join(fx.home, ".AWEB-IDENTITY-ROOT");
+  // What this filesystem does with the other spelling: CI's Linux is case-sensitive,
+  // a macOS volume usually isn't. Both outcomes are pinned, so neither is skipped.
+  const caseInsensitive = existsSync(otherCase);
+  const rootBefore = listing(root);
+  const r = fx.retire({ OATS_SETTINGS: JSON.stringify({ delivery: "session", roots: { [TEAM]: otherCase } }) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  if (caseInsensitive) {
+    assert.deepEqual(entriesAt(fx.home), [".aweb-identity-root"]);
+    assert.deepEqual(listing(root), rootBefore, "the root spelled in another case is byte-identical");
+    assert.ok(r.doc.warning.includes(`${root} stays in place: settings.oats.aweb.roots[${TEAM}] names it`), r.doc.warning);
+  } else {
+    assert.deepEqual(entriesAt(fx.home), [], "another spelling is another path: no setting names the entry");
   }
 });
 

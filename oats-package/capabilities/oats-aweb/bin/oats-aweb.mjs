@@ -72,7 +72,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName, rootI
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
-import { CREDENTIAL_ENTRY_RE, HELD_RELATIVE, REMOVED_KEYS_RELATIVE, credentialEntries, grantHomeEntries, holdEntries, removeEntries, removeNamed, restoreHeld, retiredKeysMessage } from "../lib/retire-key-material.mjs";
+import { CREDENTIAL_ENTRY_RE, HELD_RELATIVE, REMOVED_KEYS_RELATIVE, credentialEntries, grantHomeEntries, heldEntries, holdEntries, removeEntries, removeNamed, restoreHeld, retiredKeysMessage } from "../lib/retire-key-material.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
@@ -509,8 +509,11 @@ function settingNamedEntries(dir) {
   const entries = (o) => o && typeof o === "object" && !Array.isArray(o) ? Object.entries(o) : [];
   const settings = [["root", set.root], ...entries(set.roots).map(([k, v]) => [`roots[${k}]`, v]), ["identity.source", set.identity?.source], ...entries(set.residents).map(([k, v]) => [`residents.${k}`, v])];
   const named = new Map();
+  // realpathSync.native answers the on-disk spelling: on a case-insensitive
+  // filesystem (macOS) a setting that spells the path in another case names the
+  // same entry, which realpathSync would keep in the case it was given (#322).
   const homes = [resolve(dir)];
-  try { const real = realpathSync(dir); if (real !== homes[0]) homes.push(real); } catch { /* compared as given */ }
+  try { const real = realpathSync.native(dir); if (real !== homes[0]) homes.push(real); } catch { /* compared as given */ }
   for (const [key, value] of settings) {
     // A setting a root needs is absolute (rootProblem refuses any other); one that
     // isn't can't name an entry of this home.
@@ -520,7 +523,7 @@ function settingNamedEntries(dir) {
     const paths = [];
     for (const p of [resolve(value.trim()), join(resolve(value.trim()), ".aw")]) {
       paths.push(p);
-      try { paths.push(realpathSync(p)); }
+      try { paths.push(realpathSync.native(p)); }
       catch (e) { if (!["ENOENT", "ENOTDIR"].includes(e?.code)) return { unreadable: `settings.oats.aweb.${key} (${p}) can't be resolved (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
     }
     for (const p of paths) {
@@ -547,6 +550,15 @@ if (event === "retire") {
   // answer, so this run sees the home that retire saw (awebai/oats-aweb#318).
   // When it cannot (an entry and its held copy both exist, or a held one can't be put
   // back), nothing is touched and nothing is retired.
+  // Settings that don't parse stop every retire before it acts, so they stop it
+  // before the restore too: what a failed retire held stays held, and nothing
+  // else moves (awebai/oats-aweb#322).
+  try { parseProviderSettings(); }
+  catch (error) {
+    const kept = heldEntries(home);
+    const heldNow = kept.problem ? `whatever ${join(home, HELD_RELATIVE)} holds was left there (${kept.problem})` : kept.names.length ? `${kept.names.join(", ")}, held by a failed retire, ${kept.names.length === 1 ? "was" : "were"} kept held in ${join(home, HELD_RELATIVE)}` : "no aweb key material was moved";
+    out({ warning: `oats-aweb: ${error.message}, so nothing was retired and no aw command ran; ${heldNow}. Fix the settings, then retire again` }, 1);
+  }
   const restore = restoreHeld(home);
   if (restore.problem) out({ meta: { retired: false, reason: "held-credentials-not-restored" }, warning: `oats-aweb: the aweb key material a failed retire held in ${join(home, HELD_RELATIVE)} was not put back, so nothing was retired and no aw command ran: ${restore.problem}. Check which copy is this instance's key, remove the other, then retire again` }, 1);
   // From here every answer removes the home's credential entries (exit 0) or holds
@@ -561,26 +573,39 @@ if (event === "retire") {
     // An entry a setting names (a root, a custody or a standing identity placed in
     // this home) is not this instance's key: removing it destroys a key others use,
     // and holding it moves it from the path every later spawn, mint or custody
-    // reads. It stays where it is, as before #318, and the warning names it. When
-    // the settings can't be read, nothing is removed or held (awebai/oats-aweb#321).
+    // reads. It stays where it is, as before #318, and the warning names it
+    // (awebai/oats-aweb#321).
     const configured = settingNamedEntries(home);
-    if (configured.unreadable) return [`key material left in place: which entries are a root's, a custody's or a standing identity's can't be told (${configured.unreadable}), so nothing was removed or held`];
-    const ownedElsewhere = (name) => configured.named.has(name) ? `${configured.named.get(name).join(" and ")} names it, so it is that root's, custody's or standing identity's, not this instance's key` : undefined;
-    if (code !== 0 || retireCleanupSkipped) {
+    const ownedElsewhere = (name) => configured.named?.has(name) ? `${configured.named.get(name).join(" and ")} names it, so it is that root's, custody's or standing identity's, not this instance's key` : undefined;
+    // When a setting's path can't be resolved, which entries are whose can't be
+    // told. What this run put back from held is held again, whatever the exit: an
+    // earlier run held it after reading its settings, but they can have changed
+    // since, so no removal; a hold can be undone, and keeps it where aw doesn't
+    // look. Every other entry stays in place, named: it is not proven dead, since an
+    // unreleased alias's certificate or a retained seat's standing key outlives the
+    // cleanup. A retire with the setting fixed settles both (awebai/oats-aweb#322).
+    const cantTell = configured.unreadable && `which entries are a root's, a custody's or a standing identity's can't be told (${configured.unreadable})`;
+    const restoredHere = new Set(restore.restored);
+    const notRestored = cantTell && `${cantTell}, and this run did not put it back from ${join(home, HELD_RELATIVE)}, so it may still be a live key: fix the setting, then remove it`;
+    if (code !== 0 || retireCleanupSkipped || cantTell) {
       // An entry where aw holds a pending mint, at any depth the choke point checks
       // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human
       // attribution"); the choke point keeps the home for it.
       const pendingAt = heldIdentityHomeNames(home);
       const pending = (name) => pendingAt.some((p) => p === name || p.startsWith(`${name}/`) || p.startsWith(`${name} `));
+      const pendingReason = "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")";
       // A grant seat's grant homes go on every exit, as before #318, but one aw
       // holds a pending mint in: its grants are revoked through the resident's
       // custody, never with a grant home, so holding one would only keep a live
       // grant credential whose revoke failed. What can't be removed is held below.
       // Said in no note, as before #318: the warning ends with the revoke command.
-      if (grantSeatHome()) removeNamed(home, grantHomeEntries(home).filter((name) => !pending(name) && !ownedElsewhere(name)));
-      const { held, problems } = holdEntries(home, { keep: (name) => ownedElsewhere(name) ?? (pending(name) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined) });
+      if (!cantTell && grantSeatHome()) removeNamed(home, grantHomeEntries(home).filter((name) => !pending(name) && !ownedElsewhere(name)));
+      const keep = cantTell
+        ? (name) => !restoredHere.has(name) ? notRestored : pending(name) ? pendingReason : undefined
+        : (name) => ownedElsewhere(name) ?? (pending(name) ? pendingReason : undefined);
+      const { held, problems } = holdEntries(home, { keep });
       // An exit 0 that skipped its cleanup keeps its warning as it was (spec v5).
-      if (code === 0) return problems.map((p) => `key material not held: ${p}`);
+      if (code === 0 && !cantTell) return problems.map((p) => `key material not held: ${p}`);
       return [
         ...(held.length ? [`held ${held.join(", ")} in ${join(home, HELD_RELATIVE)}: a session started in this home cannot act as this identity; the next retire puts ${held.length === 1 ? "it" : "them"} back first`] : []),
         ...problems.map((p) => `key material not held: ${p}`),
