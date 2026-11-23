@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.49.0 — 2026-11-24
 
-- **Fixed: P5 now passes the configured registry explicitly.**
+- **Fixed: P5 (`aw who`) now passes the configured registry explicitly (#326).**
 
-  **What a deployment must change:** a private deployment names its registry
-  in DNS or in OATS's registry setting (`settings.oats.aweb.registry`).
+  **What a deployment must change:** publish the namespace authority in DNS. For
+  a registry at a non-public address, set the registry origin in oats-local.yaml
+  (`settings.oats.aweb.registry`). If DNS also names a non-default registry, the
+  two must agree.
 
 - **Fixed: a retire's key settlement in two edge cases (#322).** A setting
   that names an entry inside the home in another case now protects it on a
@@ -76,10 +78,11 @@
   refusal still hands the membership to the controller. The provider is
   unchanged; the real-stack journeys now prove both outcomes on aw 1.36.59, and
   a fake-aw test the partial one.
-- **Added: human attribution (aweb-acxy7.7; OATS
+- **Added: human attribution (aweb-acxy.7; OATS
   `docs/design/2026-11-21-human-ids-contract.md`).** The provider reads who
   stands behind a root or an identity with `aw who --json` and shows it; it adopts
-  nothing and changes no setting. README, "Human attribution".
+  nothing and changes no setting. README, "Human attribution". Adopting a root
+  on a hosted team is not open yet.
   - With a kernel that lists `spawn-attribution`, spawn and each real start record
     `identity.attribution` in the served identity (`human`, `none` or `unknown`),
     from one `aw who` bounded at 5 s; a failed read keeps what was recorded.
