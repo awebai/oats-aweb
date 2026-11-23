@@ -83,8 +83,10 @@
 
     Why it's safe, with aw's source lines: README, "Human attribution", "A mint cut
     short under an older provider".
-  aw-compat.json is unchanged (`tested` moves to 1.36.59 when it is published); CI
-  qualifies 1.36.59-rc.6 by its pinned npm integrity.
+  aw-compat.json's `tested` moves to 1.36.59 (`min` stays 1.36.33), so setup's
+  default install and the `aw-newer-than-tested` warning follow it. CI runs 1.36.33,
+  1.36.58 (`AW_PREVIOUS`, the previous tested) and 1.36.59, which it installs only
+  at its pinned npm integrity.
 
 ## 1.48.0 — 2026-11-21
 

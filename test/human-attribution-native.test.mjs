@@ -1,6 +1,7 @@
 // A10 (README, "Human attribution"): the provider's `aw who --json` read against the
 // real, explicitly selected aw of the CI matrix (OATS_TEST_AW: the floor, tested and
-// the pinned next, 1.36.59-rc.6, whose npm integrity CI checks). A legacy chainless
+// 1.36.58 as the previous tested, and 1.36.59, tested and the pinned next, whose npm
+// integrity CI checks). A legacy chainless
 // local did:key root (as aw <= 1.36.51 left one; a fresh hosted root reads no_human), built from throwaway keys in a private HOME, reads `unknown` /
 // `legacy_no_chain` on an aw that has `who`, offline and fast: every network route the
 // child could take points at a closed loopback port. On an aw without `who` (the floor)

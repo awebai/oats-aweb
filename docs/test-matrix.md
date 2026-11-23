@@ -8,7 +8,7 @@ HOME for every group. Tests never select a person's identity or tmux server.
 
 | Group | Versions and prerequisites | What runs |
 | --- | --- | --- |
-| `unit` | aw 1.36.33, 1.36.58, 1.36.59-rc.6 (the next by its pinned npm integrity); Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing, the offline `aw who` read of a chainless root. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
+| `unit` | aw 1.36.33, 1.36.58 (the previous tested), 1.36.59 (tested and the next, by its pinned npm integrity); Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing, the offline `aw who` read of a chainless root. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
 | `kernel` | OATS v0.70.0 at `7512163012876511088da79168c74540f9523c66`, tested aw, tmux; isolated local Git repositories | Public hostOnly, requirement backends, roots, disposal, registry, preview, runtime, upgrade, tasks and attention contracts. Only disposable kernel deployments are exercised. |
 | `host` | Same pinned kernel and tested aw, tmux on a private socket directory | Native health commands, scheduler and process observations. Identity reads moved to disposable stack journeys. |
 | `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, legacy bare-label grant fill/retire, roster/count, joined and retained seats (an unadopted root's join passes no `--parent`; on an aw with it, the parented accept's argv is parsed by the real aw), the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
@@ -27,10 +27,11 @@ only booleans for the known private-registry refusal, never command output.
 
 The runtime version list comes from `scripts/aw-test-versions.mjs`, which
 imports the supported floor and tested version from `lib/aw-floor.mjs`,
-which reads `aw-compat.json` and pins
+which reads `aw-compat.json`, and pins the previous tested (`AW_PREVIOUS`) and
 next separately. CI verifies the installed version before running tests. The resident baseline
 recapture uses the exported floor value, so a floor bump cannot silently drop it.
-Next remains prerelease qualification, not an increase in the tested window.
+Next is qualification beyond the tested window, never an increase in it; it may
+equal tested, as now.
 
 ## Explicit capability exclusions
 
@@ -60,7 +61,7 @@ Next remains prerelease qualification, not an increase in the tested window.
   excludes it. The provider's reads then answer nothing: C1 keeps what was
   recorded and check-only reports `unavailable` (README, "Human attribution").
 - Below aw 1.36.59, `id team accept-invite --parent` is excluded only where the
-  real aw lacks it (1.36.33 and 1.36.58; the pinned next, 1.36.59-rc.6, has it):
+  real aw lacks it (1.36.33 and 1.36.58; 1.36.59, tested and the pinned next, has it):
   only a join from an adopted root passes it, and that join stops before any
   invite there with `E_ADOPTED_ROOT_AW_TOO_OLD`. The grammar's `--parent` comes
   from the next aw (`node scripts/capture-aw-argv.mjs <tested> <floor> <next>`).

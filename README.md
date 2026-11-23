@@ -13,7 +13,7 @@ this oats.aweb supports, in two fields:
 ```json
 {
   "min": "1.36.33",
-  "tested": "1.36.58"
+  "tested": "1.36.59"
 }
 ```
 
@@ -21,8 +21,8 @@ this oats.aweb supports, in two fields:
   hooks, the probe and a grant seat's custody refuse an older aw ("aw floor"
   below).
 - **`tested`** is the highest aw the CI journeys pass on. CI's resident-journey
-  matrix runs the floor, tested and pinned next from `scripts/aw-test-versions.mjs`, each checked to be the aw it
-  installed. Above `tested`, on a server other than the aweb Cloud, readiness
+  matrix runs the floor, the previous tested (`AW_PREVIOUS`), tested and pinned next from
+  `scripts/aw-test-versions.mjs`, each checked to be the aw it installed. Above `tested`, on a server other than the aweb Cloud, readiness
   and spawn warn `aw-newer-than-tested`.
 
 Each value is an exact semver version, never a range, and `min` is never above
@@ -227,7 +227,7 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   Why retire's own settle is safe. aw stops an accept to wait for a signature only
   when the invite it recorded has an ID-tree issuer and the child has no chain
   installed (aw 1.36.58 `cli/go/cmd/aw/hosted_invite_creation.go:114-123`;
-  1.36.59, aweb `b9c015732` (rc.6), `:292`). On 1.36.59 an invite that names a human
+  1.36.59, aweb `b9c015732`, `:292`). On 1.36.59 an invite that names a human
   with no issuer is refused (`human_required`, `:279-281`) rather than stopped as
   signature pending; aw keeps its record and marker, and the proof keeps the home
   because the record names a human. An
@@ -2284,8 +2284,8 @@ installation, Claude admission or live delivery.
 
 ## Native aw contracts in CI
 
-CI runs the unit and native CLI group with the floor, tested and pinned next
-versions from `scripts/aw-test-versions.mjs`. The shared recording fakes reject
+CI runs the unit and native CLI group with the floor, the previous tested, tested
+and pinned next versions from `scripts/aw-test-versions.mjs`. The shared recording fakes reject
 unknown flags before acting. After exercising the hook's paths, CI checks every
 recorded full command path and flag against that real aw's help; a parent
 command's successful help does not establish a missing child command.
@@ -2429,7 +2429,7 @@ It uses isolated local Git repositories and a fake aw; it does not verify live
 service behavior or perform host onboarding.
 
 The opt-in `test/username-native.test.mjs` checks #66 with an explicitly selected
-real aw at the supported floor, tested or pinned next version.
+real aw at the supported floor, the previous tested, tested or pinned next version.
 Run `OATS_TEST_AW=/absolute/path/to/aw OATS_USERNAME_NATIVE_REQUIRED=1
 node --test test/username-native.test.mjs`. It records the executable path,
 version/build and SHA-256; isolated HOME and loopback service fixtures prevent
@@ -2541,7 +2541,7 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   the stack up from an aweb checkout at ci.yml's `AWEB_STACK_COMMIT` with
   `docker compose -f docker-compose.e2e.yml up -d --build --wait postgres redis
   awid aweb`, then set `OATS_RESIDENT_JOURNEY_AW` (an aw executable of
-  the floor, tested or pinned next from `scripts/aw-test-versions.mjs`, at the commit the test qualifies it on),
+  the floor, the previous tested, tested or pinned next from `scripts/aw-test-versions.mjs`, at the commit the test qualifies it on),
   `OATS_RESIDENT_JOURNEY_AWEB_URL=http://127.0.0.1:18000` and
   `OATS_RESIDENT_JOURNEY_AWID_URL=http://127.0.0.1:18010`, and
   `OATS_RESIDENT_JOURNEY_KERNEL` (a checkout of an OATS kernel with
@@ -2552,8 +2552,9 @@ envelopes and coverage are in [docs/resident-create.md](docs/resident-create.md)
   next steps through that kernel in a fixture workspace: the spawn mints a real
   grant at the resident's custody, and the retire revokes it. CI's
   `resident-journey` job runs them with `OATS_RESIDENT_JOURNEY_REQUIRED=1`, once
-  for the floor, tested and pinned next from `scripts/aw-test-versions.mjs`. Moving `tested` moves three things together:
-  the matrix (generated from `scripts/aw-test-versions.mjs`), the
+  for each version `scripts/aw-test-versions.mjs` lists. Moving `tested` moves three things together:
+  the matrix (generated from `scripts/aw-test-versions.mjs`, where `AW_PREVIOUS` keeps the
+  tested aw it replaces), the
   journey test's qualified aw and commit (its first test fails until they
   match), and the stack commit, to aweb's release of that aw (no test checks
   it).
