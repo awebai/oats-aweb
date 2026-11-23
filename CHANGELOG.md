@@ -71,7 +71,7 @@
   refusal still hands the membership to the controller. The provider is
   unchanged; the real-stack journeys now prove both outcomes on aw 1.36.59, and
   a fake-aw test the partial one.
-- **Added: human attribution (aweb-acxy7.7; OATS
+- **Added: human attribution (aweb-acxy.7; OATS
   `docs/design/2026-11-21-human-ids-contract.md`).** The provider reads who
   stands behind a root or an identity with `aw who --json` and shows it; it adopts
   nothing and changes no setting. README, "Human attribution". Adopting a root
