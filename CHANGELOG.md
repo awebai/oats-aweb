@@ -4,8 +4,10 @@
 
 - **Fixed: P5 (`aw who`) now passes the configured registry explicitly (#326).**
 
-  **What a deployment must change:** a private deployment names its registry
-  in DNS or in OATS's registry setting (`settings.oats.aweb.registry`).
+  **What a deployment must change:** publish the namespace authority in DNS. For
+  a registry at a non-public address, set the registry origin in oats-local.yaml
+  (`settings.oats.aweb.registry`). If DNS also names a non-default registry, the
+  two must agree.
 
 - **Fixed: a retire's key settlement in two edge cases (#322).** A setting
   that names an entry inside the home in another case now protects it on a
