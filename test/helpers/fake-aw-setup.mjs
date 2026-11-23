@@ -72,8 +72,9 @@ import { fakeAwArgvCheck } from "./aw-argv.mjs";
 //                     HTTP 500 error, exit 1, as aw prints a server body
 //   who --json        as aw 1.36.58 answers it: AW_WHO_JSON, a JSON object from an identity
 //                     home's path to aw's answer (an object), or {"status": N, "stdout": text};
-//                     any other home answers what aw says of a local did:key with no chain
-//                     (unknown, legacy_no_chain)
+//                     any other home answers what aw says of a legacy local did:key with no
+//                     chain (unknown, legacy_no_chain); a fresh hosted root reads no_human
+//                     from aw 1.36.53, so a test that means one says so
 //   AW_SIGNATURE_PENDING=code|error  init --join-from stops before membership as aw does
 //                     for a mint waiting for an agent signature: it writes what aw keeps
 //                     (test/helpers/fake-pending-mint.mjs), prints aw's

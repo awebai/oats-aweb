@@ -2,7 +2,8 @@
 // oats docs/design/2026-11-21-human-ids-contract.md): C1, the served identity's
 // `attribution`; C2, check-only's `roots[]`; C3, the record of a root's last verified
 // human; joined teams' `--parent` (P4); connect's inviter check; the signature-pending
-// home; and that a deployment of chainless roots changes in nothing else (A9).
+// home; and that a deployment of unadopted roots changes in nothing else (A9): legacy
+// chainless roots and fresh hosted ones, which read no_human from aw 1.36.53.
 // Acceptance A1-A9 are named as such. A10 (the real binaries) is
 // test/human-attribution-native.test.mjs and the stack journey; the kernel's retention
 // of a signature-pending home is test/public-kernel-signature-pending.test.mjs.
@@ -44,6 +45,9 @@ function writeKey(identityHome) {
 }
 
 // aw's own answers (aw 1.36.58 who.go; chain root side first, ending with the identity).
+// `chainless` is the legacy case: a root made with aw <= 1.36.51, or a member whose
+// ancestry the registry couldn't verify. A fresh hosted root from aw 1.36.53 (aweb
+// 3a88ea92d0) reads `noHuman`: its namespace's chain with no person.
 const chainless = (id) => ({ domain: "", human_id: null, id, identity_valid: null, kind: null, outcome: "unknown", reason: "legacy_no_chain" });
 const nearest = (id, chainIds) => ({ domain: "person.example.test", human_id: HUMAN, id, identity_valid: true, kind: "agent", outcome: "nearest_human", reason: "verified", chain: chainIds.map((c, i) => ({ id: c, kind: i === 0 ? "human" : "agent" })) });
 const noHuman = (id) => ({ domain: "example.test", human_id: null, id, identity_valid: true, kind: "agent", outcome: "no_human", reason: "no_human_in_chain", chain: [{ id: "did:aw:example.test", kind: "namespace" }, { id, kind: "agent" }] });
@@ -346,7 +350,7 @@ test("A3 (bound): a root's who that ignores SIGTERM is cut at 5 s in check-only 
   assert.ok(joined.ms < 9000, `join: cut at 5 s (${joined.ms} ms)`);
 });
 
-test("a chainless did:key root's read at spawn is offline and fast, and adds nothing to the answer", (t) => {
+test("a legacy chainless did:key root's read at spawn is offline and fast, and adds nothing to the answer", (t) => {
   const fx = fixture(t);
   fx.fake.set({ who: { [fx.rootHome]: chainless(fx.rootKey), [fx.homeAw]: chainless("did:key:zLeaf") } });
   const r = fx.run(["spawn"]);
@@ -513,7 +517,7 @@ test("A5 (C3): the warning shows at every spawn from that root", (t) => {
 const accepts = (fx) => fx.fake.calls().filter((c) => c.args.includes("accept-invite"));
 const invites = (fx) => fx.fake.calls().filter((c) => c.args[0] === "team" && c.args[1] === "invite");
 
-test("A6 (P4): a chainless root's join passes no --parent; an adopted root's passes --parent <root>/.aw", (t) => {
+test("A6 (P4): a legacy chainless root's join passes no --parent; an adopted root's passes --parent <root>/.aw", (t) => {
   const fx = fixture(t, { join: "joined" });
   const joinedHome = join(fx.joinedRoot, ".aw");
   let r = fx.run(["spawn"]);
@@ -610,7 +614,7 @@ test("A7 (connect): an unavailable read with C3's record is refused; with none i
   assert.deepEqual(invites(fy), []);
 });
 
-test("A7 (connect) and A9: a chainless inviter's connect is unchanged", (t) => {
+test("A7 (connect) and A9: a legacy chainless inviter's connect is unchanged", (t) => {
   const fx = fixture(t);
   fx.fake.set({ who: { [fx.rootHome]: chainless(fx.rootKey) } });
   const r = connect(fx);
@@ -765,7 +769,7 @@ test("A8 (signature pending): a provider record whose signature-pending stop can
   }
 });
 
-test("A8 (signature pending) on aw without the code: a post-key failure from a chainless root is retired as today, from a chained root kept", (t) => {
+test("A8 (signature pending) on aw without the code: a post-key failure from a legacy chainless root is retired as today, from a chained root (a fresh no_human one included) kept", (t) => {
   // [name, aw, issuing root's answer, recorded as signature pending, retire's status and reason]
   for (const [name, version, root, recorded, expected] of [
     ["chainless, 1.36.58", "1.36.58", (fx) => chainless(fx.rootKey), false, [0, "nothing-to-delete"]],
@@ -892,7 +896,7 @@ test("home-level fence: a joined home aw holds is found from the directory, what
   assert.notEqual(r.doc.meta.reason, "mint-outcome-unknown", "a symlink is not followed");
 });
 
-test("rule (b) is bound to the mint's issuer: a root replaced by a fresh chainless key is kept", (t) => {
+test("rule (b) is bound to the mint's issuer: a root replaced by another, legacy chainless key is kept", (t) => {
   const fx = fixture(t);
   fx.fake.set({ version: "1.36.59", signaturePending: "error", who: { [fx.rootHome]: noHuman("did:aw:example.test/original-root") } });
   const stopped = fx.run(["spawn"]);
@@ -1443,10 +1447,18 @@ test("A8 (signature pending) on aw without the code: an unavailable root read fa
 // ---------------------------------------------------------------------------
 // A9: chainless roots change in nothing else.
 
-test("A9 (opt-in, chainless roots): spawn, start, join and check-only are unchanged apart from attribution unknown and roots[]", (t) => {
+// A9 holds for both kinds of unadopted root. A fresh hosted root reads no_human on
+// aw >= 1.36.53 (aweb 3a88ea92d0): its attribution is "none". A legacy chainless root
+// reads unknown. Neither changes what spawn, start, join or check-only do; connect
+// from a no_human root is refused before any invite (A7).
+for (const [kind, answer, attribution, outcome] of [
+  ["legacy chainless roots", chainless, UNKNOWN_ATTRIBUTION, "unknown"],
+  ["fresh no_human roots", noHuman, { mode: "none", human: null, parent: null }, "no_human"],
+]) test(`A9 (opt-in, ${kind}): spawn, start, join and check-only are unchanged apart from attribution ${attribution.mode} and roots[]`, (t) => {
   const run = (features) => {
     const fx = fixture(t, { join: "joined" });
-    fx.fake.set({ features, who: { [fx.rootHome]: chainless(fx.rootKey), [join(fx.joinedRoot, ".aw")]: chainless(fx.joinedRootKey) } });
+    // What the root mints reads as its root does: no_human under a no_human root.
+    fx.fake.set({ features, who: { [fx.rootHome]: answer(fx.rootKey), [join(fx.joinedRoot, ".aw")]: answer(fx.joinedRootKey), [fx.homeAw]: answer("did:key:zLeaf") } });
     const spawned = fx.run(["spawn"]);
     assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
     const started = fx.run(["launch"], { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
@@ -1455,13 +1467,13 @@ test("A9 (opt-in, chainless roots): spawn, start, join and check-only are unchan
     return { fx, spawned: strip(spawned.doc), started: strip(started.doc), checked: checked.doc, accepts: accepts(fx).map((c) => c.args.slice(2)) };
   };
   const without = run(["served-identity"]), withIt = run(["spawn-attribution"]);
-  const add = (doc) => ({ ...doc, meta: { ...doc.meta, identity: { ...doc.meta.identity, attribution: UNKNOWN_ATTRIBUTION } } });
+  const add = (doc) => ({ ...doc, meta: { ...doc.meta, identity: { ...doc.meta.identity, attribution: attribution } } });
   assert.deepEqual(withIt.spawned, add(without.spawned));
   assert.deepEqual(withIt.started, add(without.started));
   assert.deepEqual(withIt.accepts, without.accepts, "the join's argv is the same, without --parent");
   const { roots, ...rest } = withIt.checked;
   assert.deepEqual(Object.keys(rest), ["aw", "defaultTeam", "member", "root"]);
-  assert.ok(roots.every((e) => e.attribution.outcome === "unknown" && e.warnings.length === 0), JSON.stringify(roots));
+  assert.ok(roots.every((e) => e.attribution.outcome === outcome && e.warnings.length === 0), JSON.stringify(roots));
   assert.equal(withIt.spawned.warning, undefined);
   assert.equal(existsSync(join(withIt.fx.ws, ".oats-aweb", "root-lineage.json")), false);
 });

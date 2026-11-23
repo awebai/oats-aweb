@@ -44,14 +44,22 @@
     adopted; on an aw below 1.36.59 that join stops before any invite with
     `E_ADOPTED_ROOT_AW_TOO_OLD` (upgrade aw to 1.36.59).
   - `connect` refuses an inviting root with an identity chain
-    (`E_CONNECT_CHAINED_INVITER`) and names the manual route.
+    (`E_CONNECT_CHAINED_INVITER`) and names the manual route. From aw 1.36.53 a
+    fresh hosted root nobody adopted reads `no_human`, so for such a deployment
+    this refusal and the manual route are the normal case. Its connect's outcome
+    doesn't change, only how it ends: it already failed at the host's accept, as
+    `E_JOIN_FAILED` after an invite was minted; now it is refused before any
+    invite.
   - A mint aw stops as `native_agent_signature_pending` fails the spawn and keeps
     the home (`retired: false, reason: "signature-pending"`) while aw holds the
     pending mint; a plain retire clears it once aw settles it.
 
   **What a deployment must change:**
-  - **Nothing, in most deployments.** Roots with no identity chain behave as before,
-    apart from `attribution: unknown` and the new `roots` entries. A consumer that
+  - **Nothing, in most deployments.** Roots nobody adopted behave as before in
+    spawn, start, join and check-only, apart from `attribution` and the new `roots`
+    entries: a fresh hosted root (it reads `no_human` from aw 1.36.53) records
+    `none`, a legacy chainless root (aw 1.36.51 or earlier) `unknown`. Connect from
+    a `no_human` root is refused with the manual route (above). A consumer that
     compares the check-only document's keys exactly sees `roots`.
   - **A root inside an instance home of this deployment** (`root` or a `roots` value,
     or a symlink that resolves there) is refused at its next setup that creates,

@@ -84,8 +84,15 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   pending and connect can't finish it: aw retries that join only with the same
   invite, which connect never keeps. The manual route: mint an invite from the root
   yourself, accept it on the host, move the files aw prints between the two hosts,
-  then retry that accept on the host with the same invite. A root that can't be read
-  falls back to the record above; with none, connect goes on with a warning.
+  then retry that accept on the host with the same invite. On recent aw this is the
+  normal case for a fresh hosted deployment nobody adopted: from aw 1.36.53 its root
+  reads `no_human` (below), and the manual route is how it connects another host.
+  Its connect's outcome doesn't change, only how it ends: without this refusal the
+  host's accept fails (on aw 1.36.58 generically, on 1.36.59 as signature pending)
+  and connect answers `E_JOIN_FAILED` after an invite was minted; now it answers
+  `E_CONNECT_CHAINED_INVITER` before any invite. A legacy chainless root goes on as
+  before. A root that can't be read falls back to the record above; with none,
+  connect goes on with a warning.
 - **A mint waiting for a signature.** When aw stops a mint as
   `native_agent_signature_pending` (aw 1.36.59), the spawn fails and the home is
   kept. On aw 1.36.58, which has no such code, a failure after the key was written
@@ -241,15 +248,25 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   (`team_invites.go:237`), skipping aw's `<id>.lock` files (`:81-86`) and the
   `.tmp.*` names of its writes, which are renamed into place: a kill that leaves a
   link only there came before the child's `identity.yaml`.
-- **Roots with no chain change nothing.** For a root with no chain (a local
-  `did:key` root reads `unknown`, `legacy_no_chain`), spawn, start, join, connect and
-  retire behave as before; the only differences are `attribution` `unknown` and the
-  `roots` entries. Retire is stricter in three cases and keeps the home instead: it
-  settles a cut-short mint only on a strict chainless read at retire (`unavailable` is
-  not chainless), and it keeps a home with an unreadable `teams.json`, or an older
+- **Roots nobody adopted.** There are two kinds, and neither changes what spawn,
+  start, join (no `--parent`) or check-only do; the only differences are
+  `attribution` and the `roots` entries.
+  - **A fresh hosted root reads `no_human`.** From aw 1.36.53, a root made from a
+    plain setup key carries its namespace's chain with no person in it. That is a
+    fresh, unadopted hosted deployment's normal state: its identities record
+    `attribution` `none`, and its connect is refused, as above. On aw 1.36.58 a mint
+    that fails after the key was written is kept as signature pending for it, as for
+    any root with a chain ("A mint waiting for a signature").
+  - **A legacy chainless root reads `unknown`, `legacy_no_chain`.** That is a root
+    made with aw 1.36.51 or earlier (a local `did:key` root), or a member whose
+    ancestry the registry couldn't verify. Its identities record `attribution`
+    `unknown`, and its connect goes on as before.
+
+  Retire is stricter in three cases and keeps the home instead: it settles a
+  cut-short mint only on a strict chainless read at retire (`unavailable` is not
+  chainless), and it keeps a home with an unreadable `teams.json`, or an older
   provider's mint that was cut short unless aw's own record proves no signature can
-  be pending. For a root under a namespace with no person (`no_human`), nothing
-  changes that aw wouldn't already stop.
+  be pending.
 - **Undoing it.** Adoption can't be undone on a root; the way out is removing the root from the team and starting a new root.
 
 The provider reads only aw's exit status and the `--json` envelope's `error.code`,
@@ -1034,7 +1051,9 @@ team}, ready, steps}}`. A `failed` step ends the run with `ok: false`,
 `error.code` = that step's code and `error.details.steps` = the steps so far.
 Failures: `E_TEAM_NOT_MEMBER` (this deployment cannot invite to the host's
 team: join it here first), a kernel route code such as `E_SSH`,
-`E_INVITE_FAILED`, `E_JOIN_FAILED`, and the host's `E_AW_INSTALL` /
+`E_INVITE_FAILED`, `E_JOIN_FAILED`, `E_CONNECT_CHAINED_INVITER` (an inviting root
+with an identity chain, refused before any invite: "Human attribution"), and the
+host's `E_AW_INSTALL` /
 `E_AW_FLOOR`. `E_INVITE_FAILED` keeps aw's output withheld and names the cause
 (the HTTP status and redacted server `detail`, else aw's `--json` error code, an
 unreachable service, or that its output held none of these), that nothing was

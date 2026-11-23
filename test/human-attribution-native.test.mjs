@@ -1,7 +1,7 @@
 // A10 (README, "Human attribution"): the provider's `aw who --json` read against the
 // real, explicitly selected aw of the CI matrix (OATS_TEST_AW: the floor, tested and
-// the pinned next, 1.36.59-rc.6, whose npm integrity CI checks). A chainless local
-// did:key root, built from throwaway keys in a private HOME, reads `unknown` /
+// the pinned next, 1.36.59-rc.6, whose npm integrity CI checks). A legacy chainless
+// local did:key root (as aw <= 1.36.51 left one; a fresh hosted root reads no_human), built from throwaway keys in a private HOME, reads `unknown` /
 // `legacy_no_chain` on an aw that has `who`, offline and fast: every network route the
 // child could take points at a closed loopback port. On an aw without `who` (the floor)
 // the read gives no answer and check-only reports `unavailable`. The joined-team accept,
@@ -32,7 +32,7 @@ function key() {
   const pair = generateKeyPairSync("ed25519");
   return { ...pair, did: "did:key:z" + b58(Buffer.concat([Buffer.from([0xed, 1]), pair.publicKey.export({ format: "der", type: "spki" }).subarray(-32)])) };
 }
-/** A local did:key root with one synthetic membership, as aw lays it out; no chain. */
+/** A legacy local did:key root with one synthetic membership, as aw lays it out; no chain. */
 function chainlessRoot(root) {
   const aw = join(root, ".aw");
   mkdirSync(join(aw, "team-certs"), { recursive: true });
@@ -48,7 +48,7 @@ function chainlessRoot(root) {
   return member.did;
 }
 
-test("A10: the provider's who read on this real aw: a chainless did:key root reads unknown/legacy_no_chain offline and fast, and check-only reports it", (t) => {
+test("A10: the provider's who read on this real aw: a legacy chainless did:key root reads unknown/legacy_no_chain offline and fast, and check-only reports it", (t) => {
   if (!process.env.OATS_TEST_AW) {
     assert.notEqual(process.env.OATS_ATTRIBUTION_NATIVE_REQUIRED, "1", "set OATS_TEST_AW");
     t.skip("requires an explicitly selected real aw (OATS_TEST_AW)"); return;

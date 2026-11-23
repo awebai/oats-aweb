@@ -3452,6 +3452,14 @@ if (event === "launch") {
   // (nearest_human or no_human, or C3's record when the read has no answer): aw stops it
   // as signature pending, and finishing it needs aw's cross-machine file exchange and a
   // retry with the same invite, which connect never keeps. So connect refuses it.
+  // aw stops that join only for a self-custodial inviter, and `aw who --json` doesn't
+  // report custody (aw 1.36.59, aweb b9c015732 cmd/aw/who.go:66-72: id, domain,
+  // outcome, human_id, identity_valid, kind, reason, chain, evidence). Connect's
+  // inviter is this deployment's own root, minted locally, so it is self-custodial.
+  // legacy chainless (unknown, legacy_no_chain) goes on as before; unavailable falls
+  // back to C3's record. Without this refusal, a fresh no_human root's connect fails
+  // anyway at the host's accept (generic on aw 1.36.58; native_agent_signature_pending
+  // on 1.36.59), after the invite was minted.
   const inviter = readRoot(localRoot, { cwd: process.cwd() });
   if (chainedInviter(inviter.observation, inviter.record)) {
     const how = inviter.observation.answered ? `reads ${inviter.observation.outcome}` : `has no answer from aw (${inviter.observation.reason}) and was last verified to ${inviter.record.humanId}`;

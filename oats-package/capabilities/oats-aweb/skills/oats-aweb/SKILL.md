@@ -447,7 +447,9 @@ minting root):
 - `E_ADOPTED_ROOT_AW_TOO_OLD`: a join from an adopted root needs aw 1.36.59 or
   later; nothing was minted. The operator upgrades aw to 1.36.59.
 - `E_CONNECT_CHAINED_INVITER`: connect stops before minting from a root with an
-  identity chain. The operator takes the manual route the error names.
+  identity chain. From aw 1.36.53 that includes a fresh hosted root nobody adopted
+  (it reads `no_human`), so it is the normal case there. The operator takes the
+  manual route the error names.
 - `signature-pending` at spawn: aw stopped the mint until an agent signature
   arrives. The home is kept while aw holds the pending mint; a plain retire
   clears it once aw settles it. Never delete aw's files to force it.
