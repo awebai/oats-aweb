@@ -531,15 +531,24 @@ test("an identity home where aw holds a pending mint is never moved: it stays wh
 
 // ------------------------------------------- answers before the retire branch
 
-test("an answer from a gate before the retire branch settles the keys too: aw missing from PATH (exit 0) removes them", (t) => {
+test("an exit 0 that skipped owed cleanup holds the keys: aw missing from PATH answers exit 0 with its warning unchanged, and the next retire with aw restores them, releases and removes them", (t) => {
   const fx = fixture(t);
+  const keyHash = sha(join(fx.home, ".aw", "signing.key"));
   // A PATH with node and nothing else: no aw.
   const bare = join(fx.base, "bare-bin");
   mkdirSync(bare);
   symlinkSync(process.execPath, join(bare, "node"));
   const r = fx.retire({ PATH: `${bare}:/usr/bin:/bin` });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.doc.warning, /aw CLI not on PATH/);
+  assert.equal(r.doc.warning, "oats-aweb: aw CLI not on PATH — no identity minted; install the aw CLI first — see https://aweb.ai/docs (or `oats aweb setup` for guided onboarding)");
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), [".aw"]);
+  assert.equal(sha(join(fx.home, ".oats-aweb", "held", ".aw", "signing.key")), keyHash);
+  const next = fx.retire();
+  assert.equal(next.status, 0, next.stdout + next.stderr);
+  assert.equal(next.doc.meta.retired, true);
+  assert.equal(next.doc.meta.aliasReason, "released");
+  assert.equal(deletes(fx.fake.calls()).length, 1, "the cleanup the first run skipped is done");
   assert.deepEqual(entriesAt(fx.home), []);
   assert.deepEqual(held(fx.home), []);
 });

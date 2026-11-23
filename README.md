@@ -2092,20 +2092,23 @@ standing identity's key. So no answer of the retire hook leaves the provider's
 credential entries (`.aw`, `.aweb-identity`, `.aweb-identity-*`, each a
 directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
 
-- **An answer that exits 0 removes them**, after the remote cleanup and the
-  provider state are written, just before the answer is printed, whatever
-  gives the answer: an answer before any cleanup (aw not on PATH) too. A home made read-only is made owner-writable for
+- **An answer that exits 0 removes them** when it followed the retire's remote
+  cleanup or proved none was owed, after the provider state is written, just
+  before the answer is printed: a released or unreleased self-delete, a
+  controller handoff (recorded, or replayed from its record),
+  `nothing-to-delete`, a completed default-retire marker, an interrupted mint
+  that registered nothing, a revoked grant, a released retained seat. The one
+  exit 0 that skips cleanup it owes, aw not on PATH, holds them instead (below),
+  with its exit code and warning as they were, so the next retire, with aw, puts
+  them back and does that cleanup. A home made read-only is made owner-writable for
   the moment it takes, and its mode put back. An entry that can't be removed
   is removed again once its directories are made owner-writable; one that
   still can't be is moved to `.oats-aweb/held/<name>`, out of aw's reach, and
   the warning says to remove it. Only one in a home this user can't change
   (another user's) can stay, named in the warning, with the exit code
-  unchanged. An exit 0
-  already means no remaining cleanup needs the member key (a `team_not_hosted`
-  handoff is done by the team's controller, without it), so nothing a retry
-  needs is lost. This covers every exit 0: released or not, the controller
-  handoffs, `nothing-to-delete`, a completed default retire, a grant seat whose
-  grants were revoked, and a retained seat, whose home copy goes while the
+  unchanged. Such an exit 0 means no remaining cleanup needs the member key
+  (a `team_not_hosted` handoff is done by the team's controller, without it),
+  so nothing a retry needs is lost. A retained seat's home copy goes while the
   source `.aw` named by `identity.source` is never touched.
 - **An answer that exits nonzero holds them**: each is renamed, as itself, to
   `.oats-aweb/held/<name>` (`.oats-aweb/held/.aw`,

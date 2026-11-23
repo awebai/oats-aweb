@@ -371,6 +371,10 @@ const outNotes = [];
  *  of that retire, whatever path gives it, removes (exit 0) or holds (nonzero) the
  *  home's credential entries just before it is printed (lib/retire-key-material.mjs). */
 let settleRetireKeys;
+// Set by a retire answer that exits 0 without the remote cleanup it owes (aw not
+// on PATH): its keys are held like a nonzero answer's, so the next retire puts
+// them back and does that cleanup, as before #318 (spec v5).
+let retireCleanupSkipped = false;
 const out = (o, code = 0) => {
   if ((process.env.OATS_EVENT || process.argv[2]) === "retire") ({ o, code } = retireChokePoint(o, code));
   if (settleRetireKeys) { const settle = settleRetireKeys; settleRetireKeys = undefined; outNotes.push(...settle(code)); }
@@ -485,8 +489,12 @@ if (event === "retire") {
   // them in .oats-aweb/held (nonzero) just before it is printed. An exit 0 means no
   // cleanup left needs the member key; a nonzero exit keeps it for the retry.
   // An uncaught crash prints no answer and leaves them where they are.
+  // Every exit 0 removes the keys after the remote cleanup it owed, or after
+  // proving none was owed (nothing-to-delete, a completed default-retire
+  // marker, a recorded handoff, a revoked grant, a released retained seat);
+  // the one exit 0 that skips owed cleanup (aw not on PATH) holds them.
   settleRetireKeys = (code) => {
-    if (code !== 0) {
+    if (code !== 0 || retireCleanupSkipped) {
       // An entry where aw holds a pending mint, at any depth the choke point checks
       // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human
       // attribution"); the choke point keeps the home for it.
@@ -499,6 +507,8 @@ if (event === "retire") {
       // Said in no note, as before #318: the warning ends with the revoke command.
       if (grantSeatHome()) removeNamed(home, grantHomeEntries(home).filter((name) => !pending(name)));
       const { held, problems } = holdEntries(home, { keep: (name) => pending(name) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined });
+      // An exit 0 that skipped its cleanup keeps its warning as it was (spec v5).
+      if (code === 0) return problems.map((p) => `key material not held: ${p}`);
       return [
         ...(held.length ? [`held ${held.join(", ")} in ${join(home, HELD_RELATIVE)}: a session started in this home cannot act as this identity; the next retire puts ${held.length === 1 ? "it" : "them"} back first`] : []),
         ...problems.map((p) => `key material not held: ${p}`),
@@ -710,6 +720,9 @@ const setupHandlesAw = event === "setup" && process.argv.slice(3).some((arg) => 
 if (!onPath("aw") && !setupHandlesAw) {
   if (isCommand) { console.error(`oats aweb ${event}: aw CLI not on PATH — ${AW_INSTALL}`); process.exit(1); }
   if (event === "spawn") fatal(`aw CLI not on PATH, so no identity could be minted and this instance would have no messaging — ${AW_INSTALL}`);
+  // Exit 0 as before, though nothing remote was cleaned: retire keeps the keys
+  // for the next retire (held, settleRetireKeys).
+  if (event === "retire") retireCleanupSkipped = true;
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
 // The aw version spawn read for the floor, reused for the tested-range warning.
