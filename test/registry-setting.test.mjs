@@ -194,6 +194,8 @@ test('retire with an invalid registry reports no cleanup and the repair before a
   assert.match(r.stdout,/oats aweb setup --registry <origin>/);
   assert.match(r.stdout,/retry retire/);
   assert.doesNotMatch(r.stdout+r.stderr,/SECRET|user@|registry\.invalid/);
-  assert.equal(readFileSync(key,'utf8'),'fixture authority retained');
+  // Kept for the retry, held where aw doesn't look (awebai/oats-aweb#318).
+  assert.equal(existsSync(join(f.home,'.aw')),false);
+  assert.equal(readFileSync(join(f.home,'.oats-aweb','held','.aw','signing.key'),'utf8'),'fixture authority retained');
   assert.deepEqual(f.calls(),[]);
 });

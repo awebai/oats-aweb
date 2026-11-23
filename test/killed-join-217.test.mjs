@@ -215,7 +215,9 @@ test("A: after a killed join, retire whose delete fails exits nonzero and keeps 
   killedAfterAccept(fx);
   const r = retire217(fx, { FAKE_DELETE_FAIL: "1" });
   assert.notEqual(r.status, 0, r.stdout + r.stderr);
-  assert.ok(existsSync(join(fx.identityHome("shared"), "signing.key")), "the member key is kept");
+  // Kept for the retry, held where aw doesn't look (awebai/oats-aweb#318).
+  assert.ok(!existsSync(fx.identityHome("shared")), "no key where aw reads it");
+  assert.ok(existsSync(join(fx.home, ".oats-aweb", "held", ".aweb-identity-shared", "signing.key")), "the member key is kept");
   assert.deepEqual(fx.state().pendingJoins.map((p) => [p.label, p.team]), [["shared", SHARED]]);
   const doc = lastDoc(r);
   assert.equal(doc.meta.retired, false);

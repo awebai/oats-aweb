@@ -127,8 +127,10 @@ test('a refused self-delete keeps the home with its keys for the retry, and the 
   assert.equal(retired.removedDir, false);
   assert.equal(retired.retainedHome, home, 'an incomplete cleanup keeps the home');
   assert.ok(retired.rollbackIncomplete.some((line) => /oats\.aweb: reported incomplete cleanup \(self-delete-failed\)/.test(line)), JSON.stringify(retired.rollbackIncomplete));
-  assert.equal(readFileSync(join(home, '.aw', 'signing.key'), 'utf8'), 'FIXTURE-PRIVATE-SIGNING-KEY\n', 'the key stays in place for the retry');
-  assert.ok(existsSync(join(home, '.aw', 'encryption-keys', 'fixture.x25519.key')));
+  // Kept for the retry, held where aw doesn't look (awebai/oats-aweb#318).
+  assert.equal(existsSync(join(home, '.aw')), false, 'no key where aw reads it');
+  assert.equal(readFileSync(join(home, '.oats-aweb', 'held', '.aw', 'signing.key'), 'utf8'), 'FIXTURE-PRIVATE-SIGNING-KEY\n', 'the key is kept for the retry');
+  assert.ok(existsSync(join(home, '.oats-aweb', 'held', '.aw', 'encryption-keys', 'fixture.x25519.key')));
   const own = f.fake.readCalls().find((c) => c.args[0] === 'workspace' && c.args[1] === 'delete' && !c.identityHome);
   assert.equal(own?.cwd, home);
   assert.equal(own?.signingKey, true);
@@ -154,7 +156,9 @@ for (const [variant, prefix, suffix] of [['plain', 'public-disposable-home-', ''
   let retired = JSON.parse(r.stdout);
   assert.equal(retired.retainedHome, home, 'the home is kept for the retry');
   assert.ok(retired.rollbackIncomplete.some((line) => /oats\.aweb: reported incomplete cleanup \(joined-team-leave-failed\)/.test(line)), JSON.stringify(retired.rollbackIncomplete));
-  assert.equal(readFileSync(join(joinedHome, 'signing.key'), 'utf8'), 'FIXTURE-PRIVATE-SIGNING-KEY\n', 'the joined key stays in the home');
+  // Kept for the retry, held where aw doesn't look (awebai/oats-aweb#318).
+  assert.equal(existsSync(joinedHome), false, 'no joined key where aw reads it');
+  assert.equal(readFileSync(join(home, '.oats-aweb', 'held', '.aweb-identity-joined', 'signing.key'), 'utf8'), 'FIXTURE-PRIVATE-SIGNING-KEY\n', 'the joined key stays in the home');
   assert.ok(existsSync(join(home, '.oats-aweb', 'default-retire.json')), 'the default self-delete completed and was recorded');
   assert.equal(deletes().filter((c) => !c.identityHome).length, 1);
   assertNoProviderState(retired.workRecovery.path);

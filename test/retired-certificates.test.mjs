@@ -81,8 +81,9 @@ function fixture(t, { registry = true } = {}) {
   };
   const hook = (event, args = [], extra = {}) => spawnSync(process.execPath, [HOOK, event, ...args], { cwd: home, env: { ...env, OATS_EVENT: event, ...extra }, encoding: "utf8", timeout: 30000 });
   const retire = () => {
-    // A fresh retire of the same identities: the default-retire marker would skip the self-delete.
-    rmSync(join(home, ".oats-aweb", "default-retire.json"), { force: true });
+    // A second retire of the same identities is a rerun: the first removed their keys
+    // (awebai/oats-aweb#318), so it answers from the handoffs that retire recorded and
+    // records the controller cleanups again.
     const r = hook("retire", [], { OATS_META: JSON.stringify(meta) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     return JSON.parse(r.stdout);

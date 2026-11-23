@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync,mkdtempSync,readFileSync,writeFileSync,rmSync,realpathSync} from 'node:fs';
+import {existsSync,mkdirSync,mkdtempSync,readFileSync,writeFileSync,rmSync,realpathSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -104,7 +104,9 @@ for(const onDisk of [false,true]) test(`pending mint from ${onDisk?'disk':'metad
   assert.ok(r.doc.warning.includes(`aw id team members --team-id=${OTHER} --json`));
   assert.match(r.doc.warning,/home and its record of the mint are kept/);
   assert.doesNotMatch(r.stderr,/file:\/\/|^\s+at |^Error:/m);
-  assert.equal(readFileSync(join(f.home,'.aw','signing.key'),'utf8'),'fixture-key-kept');
+  // Kept for the retry, held where aw doesn't look (awebai/oats-aweb#318).
+  assert.equal(existsSync(join(f.home,'.aw')),false);
+  assert.equal(readFileSync(join(f.home,'.oats-aweb','held','.aw','signing.key'),'utf8'),'fixture-key-kept');
   if(onDisk) assert.equal(readFileSync(marker,'utf8'),recorded);
   assert.ok(f.fake.readCalls().every(c=>c.args[0]==='wake'||(c.args[0]==='team'&&c.args[1]==='list')));
 });
