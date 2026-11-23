@@ -1741,7 +1741,9 @@ Supported acts:
   OATS takes a private-address registry only from this explicit
   administrative pin in `oats-local.yaml`, never from aw's files, and passes
   it on every invocation, by name as `AWID_REGISTRY_URL`, to registry calls,
-  LOCAL and GLOBAL sessions, custody serve and wake run. What aw itself does
+  LOCAL and GLOBAL sessions, custody serve and wake run. P5 (`aw who`, "Human
+  attribution") also gets it explicitly, as `--registry <origin>`. A private
+  deployment names its registry in DNS or in this setting. What aw itself does
   with a registry URL saved in its own files depends on its version: aw 1.36.58
   applies no address policy to it. From aw 1.36.59, aw normally reaches a
   saved URL only at a public address. aw has exceptions, and they include a URL
