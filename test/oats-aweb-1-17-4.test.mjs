@@ -597,7 +597,8 @@ test("retire retry after successful self-delete does not call the revoked certif
   const first = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_RETRY_401_AFTER_DELETE: "1" });
   assert.equal(first.status, 0, first.stdout + first.stderr);
   assert.deepEqual(first.doc, { meta: { retired: true, aliasReusable: true, aliasReason: "released", joinedTeams: [] } });
-  assert.equal(existsSync(join(fx.home, ".aw", "revoked")), true);
+  // The fake marked the key revoked; the answer removed it with .aw (awebai/oats-aweb#318).
+  assert.equal(existsSync(join(fx.home, ".aw")), false);
   assert.equal(fx.fake.readCalls().filter((c) => c.args[0] === "workspace" && c.args[1] === "delete" && c.span).length, 1);
   const marker = JSON.parse(readFileSync(join(fx.home, ".oats-aweb", "default-retire.json"), "utf8"));
   assert.equal(marker.kind, "default-workspace-delete");

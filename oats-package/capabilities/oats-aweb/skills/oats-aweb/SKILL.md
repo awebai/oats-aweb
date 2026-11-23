@@ -1059,6 +1059,18 @@ owner removes the membership. Exceptions: a failed spawn's preservation (directo
 mode) copies the whole home, keys included, and homes spawned before 1.24.0 are
 copied whole.
 
+No retire answer leaves `.aw`, `.aweb-identity` or `.aweb-identity-*` where aw
+reads it, so a home the kernel keeps (`--keep-dir`, quarantined, failed) can't
+act as the agent if a session is revived in it (#318). An exit 0 removes them
+(a retained seat's copy too; its source is never touched). A nonzero exit moves
+each, as itself, to `.oats-aweb/held/<name>`; the next retire puts them back
+before it reads anything, and fails closed (`retired: false`,
+`held-credentials-not-restored`, nothing touched, no aw call) when an entry and
+its held copy both exist. A rerun after the key is gone repeats the first run's
+answer from `.oats-aweb` records. A start, `oats aweb join|leave` and `oats aweb
+mail` in such a home refuse with `E_INSTANCE_RETIRING`. Not a boundary against
+another process of the same OS user; a crashed retire leaves the entries in place.
+
 ## Gotchas
 
 - `aw mail inbox` shows **unread** only. Section 4's shared recovery procedure covers session delivery and the version-scoped Pi interrupt workaround: reconcile by message id, not read state or `--conversation-id`; affected Pi instances scan `aw mail inbox --show-all --json` after interrupted turns and at task boundaries.

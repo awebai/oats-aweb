@@ -226,10 +226,49 @@ test("an unknown outcome keeps the home, and the retry settles it once the read 
   assert.equal(first.status, 1, first.stdout + first.stderr);
   assert.equal(first.doc.meta.retired, false);
   assert.ok(first.doc.warning.includes(MEMBERS_READ), first.doc.warning);
-  assert.equal(existsSync(join(fx.home, ".aw", "signing.key")), true);
+  // Held for the retry, out of aw's reach (awebai/oats-aweb#318).
+  assert.equal(existsSync(join(fx.home, ".aw")), false);
+  assert.equal(existsSync(join(fx.home, ".oats-aweb", "held", ".aw", "signing.key")), true);
   const retry = fx.retire(first.doc.meta);
   assert.equal(retry.status, 0, retry.stdout + retry.stderr);
   assert.ok(retry.doc.warning.includes(COMMAND), retry.doc.warning);
+});
+
+// awebai/oats-aweb#318: no retire answer leaves the key at aw's path. A nonzero one
+// holds it in .oats-aweb/held for the retry; an exit 0 removes it, and the handoff of
+// this home's own certificate is recorded first, so a rerun answers it again without it.
+test("#318 case 3 (A9): a mint outcome unknown holds .aw, and the retry with a readable members list finishes as before", (t) => {
+  const fx = fixture(t);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const key = readFileSync(join(fx.home, ".aw", "signing.key"), "utf8");
+  const first = fx.retire(r.doc.meta, { FAKE_MEMBERS_FAIL: "1" });
+  assert.equal(first.status, 1, first.stdout + first.stderr);
+  assert.equal(first.doc.meta.reason, "mint-outcome-unknown");
+  assert.equal(existsSync(join(fx.home, ".aw")), false, "nothing at aw's path");
+  assert.equal(readFileSync(join(fx.home, ".oats-aweb", "held", ".aw", "signing.key"), "utf8") === key, true, "the same key, held");
+  const retry = fx.retire(first.doc.meta);
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.ok(retry.doc.warning.includes(COMMAND), retry.doc.warning);
+  assert.doesNotMatch(retry.doc.warning, /most likely another instance's/, "the restored key matched the certificate");
+  assert.equal(existsSync(join(fx.home, ".aw")), false);
+  assert.equal(existsSync(join(fx.home, ".oats-aweb", "held")), false);
+});
+
+test("#318 case 2 (A9): the pending-mint handoff of this home's certificate exits 0 with no .aw left, and a rerun answers the same handoff", (t) => {
+  const fx = fixture(t);
+  const r = killedSpawn(fx, { FAKE_JOIN_FROM_STOP_AFTER: "register" });
+  const first = fx.retire(r.doc.meta);
+  assert.equal(first.status, 0, first.stdout + first.stderr);
+  assert.ok(first.doc.warning.includes(COMMAND), first.doc.warning);
+  assert.equal(existsSync(join(fx.home, ".aw")), false, "the key is gone");
+  const reads = fx.fake.readCalls().length;
+  const rerun = fx.retire(r.doc.meta);
+  assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
+  assert.deepEqual(rerun.doc.meta, first.doc.meta);
+  assert.equal(rerun.doc.warning, first.doc.warning, "the same handoff, in the same words");
+  assert.doesNotMatch(rerun.doc.warning, /another instance's/);
+  assert.deepEqual(fx.fake.readCalls().slice(reads).filter((c) => c.args[0] !== "version" && c.args[0] !== "wake"), [], "answered from the record, with no read");
+  assert.equal(JSON.parse(readFileSync(fx.recordFile, "utf8")).entries.length, 1);
 });
 
 test("the controller command never grants access from the root's recorded registry", (t) => {

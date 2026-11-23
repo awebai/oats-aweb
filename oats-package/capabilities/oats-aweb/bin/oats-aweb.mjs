@@ -72,6 +72,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName } from
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
+import { HELD_RELATIVE, credentialEntries, heldEntries, holdEntries, removeEntries, restoreHeld } from "../lib/retire-key-material.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
@@ -257,7 +258,12 @@ if (operation) {
 }
 /** Notes a start or retire adds to whatever it answers (its grant sweep). */
 const outNotes = [];
+/** Set by the retire branch once its held key material is restored: every answer
+ *  of that retire, whatever path gives it, removes (exit 0) or holds (nonzero) the
+ *  home's credential entries just before it is printed (lib/retire-key-material.mjs). */
+let settleRetireKeys;
 const out = (o, code = 0) => {
+  if (settleRetireKeys) { const settle = settleRetireKeys; settleRetireKeys = undefined; outNotes.push(...settle(code)); }
   if (outNotes.length) o = { ...o, warning: [o?.warning, ...outNotes.map((n) => `oats-aweb: ${n}`)].filter(Boolean).join(" | ") };
   if (o?.launch?.claude) o = withChannelModeWarning(o);
   if (operation) operationFail("E_OPERATION_FAILED", String(o?.warning || o?.problems?.[0]?.message || "failed").replace(/^oats-aweb: /, ""));
@@ -811,7 +817,6 @@ function grantHomeDirs() {
       .filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } });
   } catch { return []; }
 }
-function removeGrantHomes() { for (const p of grantHomeDirs()) { try { rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } } }
 function newestGrantHome() {
   const dirs = grantHomeDirs().map((p) => {
     try { return { path: p, mtime: statSync(p).mtimeMs }; } catch { return { path: p, mtime: 0 }; }
@@ -1181,7 +1186,8 @@ function globalGrantRetire(meta, seatRecord) {
       catch (e) { unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, team, error: String(e.message || e).slice(0, 200) }); }
     }
   }
-  removeGrantHomes();
+  // The grant homes go with the answer: removed when it exits 0, held for the
+  // retry when it does not (settleRetireKeys, lib/retire-key-material.mjs).
   // A grant that survives a retire is a live credential, and an unread list
   // may hide one: the retire fails, and the kernel keeps the home and this meta
   // for the retry. Under --force each grant and its revoke command is printed.
@@ -1678,7 +1684,71 @@ function readDefaultRetireMarker() {
   } catch { /* no completed default retire marker */ }
   return undefined;
 }
-function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReason, receipt }) {
+/** A controller handoff a retire made, as recorded for its reruns (awebai/oats-aweb#318):
+ *  the cleanup it reported and the words it said. A rerun after the key is gone answers
+ *  from this, never from the removed key. Anything else on disk is no record. */
+const handoffRecord = (data, warning) => ({ data: { cleanup: "controller", label: data.label, team: data.team, alias: data.alias ?? null, certificateId: data.certificateId ?? null, ...(data.command ? { command: data.command } : {}), registry: data.registry ?? null }, warning });
+const recordedHandoffOf = (doc) => {
+  const data = doc?.data;
+  if (!data || typeof data !== "object" || data.cleanup !== "controller" || typeof doc.warning !== "string" || doc.warning.length > 4000) return undefined;
+  if (![data.label, data.team].every((v) => typeof v === "string" && v)) return undefined;
+  if (![data.alias, data.certificateId, data.command, data.registry].every((v) => v === undefined || v === null || typeof v === "string")) return undefined;
+  return handoffRecord(data, doc.warning);
+};
+/** The joined teams and interrupted mints a retire handed to the team's controller
+ *  (team_not_hosted, or a mint only the controller can remove): written, atomically,
+ *  before the key that made the handoff is removed, so a rerun neither leaves nor
+ *  reads again with a key that is gone. The default identity's is in its marker. */
+const retireHandoffsFile = () => join(providerStateDir(), "retire-handoffs.json");
+function readRetireHandoffs() {
+  try {
+    const doc = JSON.parse(readFileSync(retireHandoffsFile(), "utf8"));
+    if (doc?.schemaVersion !== 1 || !Array.isArray(doc.handoffs)) return [];
+    return doc.handoffs.filter((h) => h && typeof h === "object" && ["joined", "pending-mint"].includes(h.kind) && recordedHandoffOf(h));
+  } catch { return []; }
+}
+function writeRetireHandoff(entry) {
+  const same = (h) => h.kind === entry.kind && h.data.label === entry.data.label && sameAwebTeamId(h.data.team, entry.data.team);
+  mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
+  atomicWrite(retireHandoffsFile(), JSON.stringify({ schemaVersion: 1, handoffs: [...readRetireHandoffs().filter((h) => !same(h)), entry] }, null, 2) + "\n");
+}
+/** The handoff recorded for a joined (or pending) team's row: its label, team and identity home all match. */
+const joinedHandoffFor = (row) => {
+  const h = readRetireHandoffs().find((r) => r.kind === "joined" && r.data.label === row.label && sameAwebTeamId(r.data.team, row.team) && r.identityHome === row.identityHome);
+  return h ? recordedHandoffOf(h) : undefined;
+};
+const pendingMintHandoffFor = (team, alias) => {
+  const h = readRetireHandoffs().find((r) => r.kind === "pending-mint" && sameAwebTeamId(r.data.team, team) && r.data.alias === alias);
+  return h ? recordedHandoffOf(h) : undefined;
+};
+/** What a retire read from the home's .aw before it removed it, for its reruns:
+ *  the workspace binding's alias and whether the binding was there. */
+const removedKeysFile = () => join(providerStateDir(), "removed-keys.json");
+function readRemovedKeys() {
+  try {
+    const doc = JSON.parse(readFileSync(removedKeysFile(), "utf8"));
+    if (doc?.schemaVersion !== 1) return undefined;
+    return { workspaceAlias: typeof doc.workspaceAlias === "string" && AWEB_ALIAS_RE.test(doc.workspaceAlias) ? doc.workspaceAlias : undefined, workspaceYaml: doc.workspaceYaml === true };
+  } catch { return undefined; }
+}
+/** The home's workspace alias: from its .aw, else from what a retire recorded before removing it. */
+const homeWorkspaceAlias = () => workspaceAliasOf(home) ?? (existsSync(join(home, ".aw")) ? undefined : readRemovedKeys()?.workspaceAlias);
+/** Why this home's aweb identity is out of reach because of a retire, as an error a
+ *  reader of it (a start, a join or leave, mail) gives instead of aw's own: its entries
+ *  are held by a retire that did not finish, or were removed by one that did. */
+function retiredHomeError() {
+  const held = heldEntries(home);
+  let why;
+  if (held.problem || held.names.length) why = `this home is being retired: its aweb key material is held in ${join(home, HELD_RELATIVE)} by a retire that did not finish, so it has no identity until that retire is run again (\`oats retire ${instance || "<instance>"}\`)`;
+  else if (readRemovedKeys()) {
+    let names = [];
+    try { names = credentialEntries(home); } catch { /* an unlistable home is reported by the reader */ }
+    if (!names.length) why = "this home was retired: its aweb key material was removed, so it has no identity";
+  }
+  return why ? Object.assign(new Error(why), { code: "E_INSTANCE_RETIRING" }) : undefined;
+}
+const homeWorkspaceYaml = () => existsSync(join(home, ".aw", "workspace.yaml")) || (!existsSync(join(home, ".aw")) && readRemovedKeys()?.workspaceYaml === true);
+function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReason, receipt, controllerHandoff }) {
   const doc = {
     schemaVersion: 1,
     kind: "default-workspace-delete",
@@ -1690,6 +1760,8 @@ function writeDefaultRetireMarker({ meta, workspaceId, aliasReusable, aliasReaso
     aliasReason: aliasReason || "unstated",
     recordedAt: new Date().toISOString(),
     ...(receipt?.identity_deleted === true ? { identityDeleted: true } : {}),
+    // The default identity's controller handoff, for a rerun's answer once .aw is gone.
+    ...(controllerHandoff ? { controllerHandoff } : {}),
   };
   atomicWrite(defaultRetireMarkerFile(), JSON.stringify(doc, null, 2) + "\n");
   return doc;
@@ -2417,6 +2489,7 @@ function syncWakeReceive(meta) {
 }
 
 if (event === "launch") {
+  { const retiring = retiredHomeError(); if (retiring) fatal(retiring.message); }
   // The delivery path is decided afresh at every start: the runtime may have
   // changed since the last one (OATS_PREVIOUS_RUNTIME), and the setting wins
   // over what the meta recorded.
@@ -2646,6 +2719,38 @@ if (event === "launch") {
     fatal(`identity minting failed: ${e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined));
   }
 } else if (event === "retire") {
+  // The key material a failed retire held goes back first, before any state is read
+  // or anything remote is done, so this run sees the home that retire saw (awebai/oats-aweb#318).
+  // When it cannot (an entry and its held copy both exist, or a held one can't be put
+  // back), nothing is touched and nothing is retired.
+  const restore = restoreHeld(home);
+  if (restore.problem) out({ meta: { retired: false, reason: "held-credentials-not-restored" }, warning: `oats-aweb: the aweb key material a failed retire held in ${join(home, HELD_RELATIVE)} was not put back, so nothing was retired and no aw command ran: ${restore.problem}. Check which copy is this instance's key, remove the other, then retire again` }, 1);
+  // From here every answer removes the home's credential entries (exit 0) or holds
+  // them in .oats-aweb/held (nonzero) just before it is printed. An exit 0 means no
+  // cleanup left needs the member key; a nonzero exit keeps it for the retry.
+  // An uncaught crash prints no answer and leaves them where they are.
+  settleRetireKeys = (code) => {
+    if (code !== 0) {
+      const { held, problems } = holdEntries(home);
+      return [
+        ...(held.length ? [`held ${held.join(", ")} in ${join(home, HELD_RELATIVE)}: a session started in this home cannot act as this identity; the next retire puts ${held.length === 1 ? "it" : "them"} back first`] : []),
+        ...problems.map((p) => `key material not held: ${p}`),
+      ];
+    }
+    const notes = [];
+    let names = [];
+    try { names = credentialEntries(home); } catch { /* removeEntries reports an unlistable home */ }
+    // A rerun answers from what this run read from .aw once .aw is gone, and a
+    // reader of the kept home says it was retired (retiredHomeError).
+    if (names.length) {
+      const earlier = readRemovedKeys();
+      const facts = names.includes(".aw") ? { workspaceAlias: workspaceAliasOf(home), workspaceYaml: existsSync(join(home, ".aw", "workspace.yaml")) } : { workspaceAlias: earlier?.workspaceAlias, workspaceYaml: earlier?.workspaceYaml === true };
+      try { mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 }); atomicWrite(removedKeysFile(), JSON.stringify({ schemaVersion: 1, removedAt: new Date().toISOString(), ...(facts.workspaceAlias ? { workspaceAlias: facts.workspaceAlias } : {}), workspaceYaml: facts.workspaceYaml }, null, 2) + "\n"); }
+      catch { notes.push(`could not record what ${join(home, ".aw")} held before removing it (${removedKeysFile()}); a rerun of this retire may word its answer differently`); }
+    }
+    const { problems } = removeEntries(home);
+    return [...notes, ...problems.map((p) => `key material not removed: ${p}`)];
+  };
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));
   const retireWarnings = [];
   // Use the selected kernel and authoritative hook scope; no event-log writes
@@ -2667,6 +2772,11 @@ if (event === "launch") {
     pendingControllerCleanup.push(cleanup);
     cleanupRegistries.set(cleanup, data.registry ?? null);
   };
+  /** A handoff an earlier run of this retire made, said and reported again as it was
+   *  then, with nothing remote done: its key may be gone, and only the controller acts
+   *  on it. Recorded at the deployment again, which keeps one entry per certificate: an
+   *  earlier run killed before it wrote that record leaves it written by this one. */
+  const replayHandoff = (handoff) => { retireWarnings.push(handoff.warning); rememberControllerCleanup(handoff.data); };
   // A joined team whose leave failed for any reason but team_not_hosted (whose
   // controller cleanup needs no member key) can only be left with the key in
   // its .aweb-identity-<label>. That entry is never copied to recovery, so a
@@ -2696,7 +2806,7 @@ if (event === "launch") {
   // identity.source: the very setting spawn took the retained route on. Such a
   // home is retired as a retained seat, never through the self-delete (#228).
   const retainedSource = retainedSourceSetting === undefined ? undefined : String(retainedSourceSetting);
-  if (!meta.retained && retainedSource) meta = { ...meta, retained: true, source: retainedSource, lock: seatLockPath(retainedSource), alias: meta.alias || workspaceAliasOf(home), spawnUnanswered: true };
+  if (!meta.retained && retainedSource) meta = { ...meta, retained: true, source: retainedSource, lock: seatLockPath(retainedSource), alias: meta.alias || homeWorkspaceAlias(), spawnUnanswered: true };
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
@@ -2727,16 +2837,24 @@ if (event === "launch") {
     }
     if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(meta, seatRecord);
   }
-  for (const joined of joinedTeamsOf(meta)) {
-    try { meta = leaveJoinedTeam(joined.label, meta).meta; }
-    catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
-  }
+  // A team handed to its controller is recorded before its identity home can be
+  // removed (retire-handoffs.json): a rerun answers that handoff again and never
+  // leaves it with a key that is gone. The row stays in teams.json, as before.
+  const leaveOrHandOff = (row, leave) => {
+    const handed = joinedHandoffFor(row);
+    if (handed) { replayHandoff(handed); return; }
+    try { meta = leave().meta; }
+    catch (e) {
+      const failed = failedLeaveDisposition(row, e);
+      if (failed.data.cleanup === "controller") writeRetireHandoff({ kind: "joined", identityHome: row.identityHome, ...handoffRecord(failed.data, failed.warning) });
+      retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data);
+      if (failed.data.cleanup !== "controller") failedLeaves.push(row.label);
+    }
+  };
+  for (const joined of joinedTeamsOf(meta)) leaveOrHandOff(joined, () => leaveJoinedTeam(joined.label, meta));
   // A join killed or failed after its accept is released the same way
   // (adopted, then left), with the same rule for keeping the key.
-  for (const pending of pendingJoinsOf(meta)) {
-    try { meta = releasePendingJoin(pending, meta).meta; }
-    catch (e) { const failed = failedLeaveDisposition(pending, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(pending.label); }
-  }
+  for (const pending of pendingJoinsOf(meta)) leaveOrHandOff(pending, () => releasePendingJoin(pending, meta));
   // A native (channel/pi) home registered with the broker only for its joined
   // teams; a broker home was deregistered above.
   if (meta.wakeJoined && !brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) retireWarnings.push("aw wake deregister failed; the broker treats a retired home as inactive on its own"); }
@@ -2812,7 +2930,7 @@ if (event === "launch") {
     // nothing. Name the way back to the source. The command is printed for a
     // person, so it holds only values that pass their own shapes.
     let rebind = "";
-    if (meta.spawnUnanswered && (heldHere !== false || goneAfterRead || existsSync(join(home, ".aw", "workspace.yaml")))) {
+    if (meta.spawnUnanswered && (heldHere !== false || goneAfterRead || homeWorkspaceYaml())) {
       const target = retainedSeatTarget(meta.source);
       const plainRole = typeof target.role === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.role) ? target.role : undefined;
       // Any accepted service is bound, but only a plain service URL is printed in a command.
@@ -2836,9 +2954,12 @@ if (event === "launch") {
   // A home whose spawn hook could not report its alias (a join killed on
   // timeout that completed anyway) still carries the alias in its workspace
   // binding: use it rather than leaving the workspace orphaned.
-  if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
+  if (!meta.alias) { const late = homeWorkspaceAlias(); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
   const completedDefaultRetire = readDefaultRetireMarker();
   if (completedDefaultRetire && (!meta.alias || completedDefaultRetire.alias === meta.alias)) {
+    // Its controller handoff, said and reported as the run that made it did.
+    const handed = recordedHandoffOf(completedDefaultRetire.controllerHandoff);
+    if (handed) replayHandoff(handed);
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: completedDefaultRetire.aliasReusable === true, aliasReason: completedDefaultRetire.aliasReason || "previously-retired", joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : completedDefaultRetire.aliasReusable === true ? {} : { warning: `oats-aweb: workspace "${completedDefaultRetire.alias || meta.alias}" was already deleted but its alias was not released (${completedDefaultRetire.aliasReason || "previously-retired"}); ${ALIAS_UNRELEASED_REMEDY}` }) });
   }
   // A mint killed or failed after aw may have registered the identity, with no bound
@@ -2854,6 +2975,13 @@ if (event === "launch") {
   const membersRead = (team) => `\`${configuredRegistryOrigin(settings) ? registryShellAssignment(configuredRegistryOrigin(settings))+" " : ""}aw id team members --team-id=${team} --json\``;
   const retirePendingMint = async ({ team, alias, root: intendedRoot }) => {
     const said = (text) => `oats-aweb: ${[...retireWarnings, text].join(" | ")}`;
+    // A handoff of this home's own certificate that an earlier run made: answered as
+    // then, with no read, since the key it was matched by may be gone.
+    const handed = pendingMintHandoffFor(team, alias);
+    if (handed) {
+      rememberControllerCleanup(handed.data);
+      await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(handed.warning) });
+    }
     let root, doc, why;
     try { root = intendedRoot && existsSync(join(intendedRoot, ".aw")) ? intendedRoot : awebRootForTeam(team); }
     catch (e) { why = e.message; }
@@ -2883,13 +3011,17 @@ if (event === "launch") {
     const command = problem ? undefined : controllerCleanupCommand(cleanup);
     const named = problem ? "" : ` (certificate ${cert.certificate_id})`;
     const removal = command ? `the team's controller removes it with: ${command}${recordedLocator.registryError ? ` (${recordedLocator.registryError})` : ""}` : `the team's controller removes it, but no command is shown: the certificate read for it is unusable (${problem})`;
-    // The intent stays: a retire killed before this answer, or before the record below
-    // is written, leaves the home and its intent, and the next retire hands the
-    // certificate over again. The answer exits 0, so the kernel removes the home with it.
+    // The intent stays: a retire killed before this answer leaves the home and its
+    // intent, and the next retire hands the certificate over again, from the handoff
+    // recorded here before the answer removes the key it was matched by. The answer
+    // exits 0, so the kernel removes the home with it.
     if (ours) {
       // The home's own registration, which only the controller can now remove.
-      rememberControllerCleanup({ cleanup: "controller", label: "default", team, alias, certificateId: cert.certificate_id, ...(command ? { command } : {}), registry: recordedLocator.registry });
-      await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(`the interrupted mint registered alias "${alias}" in team ${team}${named} but could not be released: this home holds its key and no workspace binding, and retire never finishes a half-done mint; ${removal}`) });
+      const data = { cleanup: "controller", label: "default", team, alias, certificateId: cert.certificate_id, ...(command ? { command } : {}), registry: recordedLocator.registry };
+      const text = `the interrupted mint registered alias "${alias}" in team ${team}${named} but could not be released: this home held its key and no workspace binding, and retire never finishes a half-done mint; ${removal}`;
+      writeRetireHandoff({ kind: "pending-mint", ...handoffRecord(data, text) });
+      rememberControllerCleanup(data);
+      await finish({ meta: retiredMeta({ retired: true, aliasReusable: false, aliasReason: "mint-interrupted" }), warning: said(text) });
     }
     // No key to compare. aw writes the key before it registers, so the certificate is most
     // likely another instance's, and the alias comes from the home's own intent: no
@@ -2921,12 +3053,16 @@ if (event === "launch") {
     let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
     const released = doc?.alias_released === true;
     const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : (doc ? "unstated" : "no JSON answer");
+    let controllerHandoff;
     if (!released && reason === "team_not_hosted") {
       const failed = failedLeaveDisposition({ label: "default", team: meta.team || meta.defaultTeam?.team || meta.identity?.team || defaultTeamId(), alias: meta.alias, identityHome: join(home, ".aw") }, reason);
-      retireWarnings.push(failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:"));
+      const warning = failed.warning.replace(/^joined team default cleanup failed:/, "default identity cleanup failed:");
+      retireWarnings.push(warning);
       rememberControllerCleanup({ ...failed.data, label: "default" });
+      controllerHandoff = handoffRecord({ ...failed.data, label: "default" }, warning);
     }
-    writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: released, aliasReason: reason, receipt: doc });
+    // The marker, with any handoff, is on disk before the answer removes .aw.
+    writeDefaultRetireMarker({ meta, workspaceId, aliasReusable: released, aliasReason: reason, receipt: doc, controllerHandoff });
     await finish({ meta: retiredMeta({ retired: true, aliasReusable: released, aliasReason: reason, joinedTeams: joinedTeamsOf(meta) }), ...(retireWarnings.length ? { warning: `oats-aweb: ${retireWarnings.join(" | ")}` } : released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); ${ALIAS_UNRELEASED_REMEDY}` }) });
   } catch (e) {
     // Exit nonzero: during a required-hook rollback this is the signal that
@@ -2935,14 +3071,21 @@ if (event === "launch") {
     await finish({ meta: retiredMeta({ retired: false, reason: "self-delete-failed" }), warning: `oats-aweb: self-delete failed (the remote record will linger until stale): ${e.message || e}` }, 1);
   }
 } else if (["teams", "join", "leave"].includes(event)) {
-  try { runTeamsCommand(event); process.exit(0); }
+  try {
+    // `teams` reads only this home's records; a join or leave acts with its keys.
+    if (event !== "teams") { const retiring = retiredHomeError(); if (retiring) throw retiring; }
+    runTeamsCommand(event); process.exit(0);
+  }
   catch (e) {
     console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb ${event}: ${e.message || e}`);
     if (operation) operationFail(e.code, e.message || String(e), e.partial ? { ...e.partial, joined: teamsDocument(readCapabilityMeta()).joined } : undefined);
     process.exit(1);
   }
 } else if (event === "mail") {
-  try { await runMailCommand(); process.exit(0); }
+  try {
+    { const retiring = retiredHomeError(); if (retiring) throw retiring; }
+    await runMailCommand(); process.exit(0);
+  }
   catch (e) {
     console.error(e.code ? `${e.code}: ${e.message}` : `oats aweb mail: ${e.message || e}`);
     if (operation) operationFail(e.code, e.message || String(e), e.details);

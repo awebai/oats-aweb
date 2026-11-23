@@ -8,6 +8,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { clearDesignations, healthSettings, publishTick } from "../oats-package/capabilities/oats-aweb/lib/health-publisher.mjs";
 import { checkDocument } from "../oats-package/capabilities/oats-aweb/lib/status-document.mjs";
 
@@ -367,6 +370,22 @@ test("a joined team with no identity home recorded is not published as whatever 
   const result = await publishTick({ settings, now: () => NOW, host });
   assert.deepEqual(host.calls.publish.map((p) => p.document.team_id), [TEAM]);
   assert.deepEqual(result.skipped, [{ home: row.home, reason: `joined team ${OTHER} has no identity home recorded` }]);
+});
+
+test("A14 (#318): a home whose .aw a failed retire holds is skipped with its reason, not reported failing, and aw is never asked about it", async (t) => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "oats-aweb-health-318-")));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(join(home, ".oats-aweb", "held", ".aw"), { recursive: true });
+  writeFileSync(join(home, ".oats-aweb", "held", ".aw", "signing.key"), "fixture");
+  const row = localRow("dev-1", { home });
+  const host = fakeHost({ rows: [row, localRow("dev-2")], ids: idsFor });
+  const result = await publishTick({ settings, now: () => NOW, host });
+  assert.deepEqual(result.skipped, [{ home, reason: `its aweb key material is held in ${join(home, ".oats-aweb", "held")} by a retire that did not finish` }]);
+  assert.deepEqual(result.failed, []);
+  assert.deepEqual(result.published.map((p) => p.alias), ["dev-2"], "the other home is published as before");
+  assert.equal(host.calls.readiness.includes(home), false, "the held home is not assessed");
+  assert.equal(host.calls.set.some((c) => c.dir.startsWith(home)), false);
+  assert.doesNotMatch(JSON.stringify(result.skipped), /INCOMPLETE|quarantin|retain|could not verif/);
 });
 
 test("the tick's reasons never use the words that make the scheduler hold the job", async () => {

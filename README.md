@@ -1782,7 +1782,10 @@ is this mint's only when its `member_did_key` is the did:key of the home's
 
 Where a certificate is found, the intent stays until the kernel removes the
 home. So a retire killed before it records or answers the handoff leaves the
-intent, and the next retire hands the certificate over again.
+intent, and the next retire hands the certificate over again. The handoff of
+this mint's own certificate is recorded in `.oats-aweb/retire-handoffs.json`
+before the answer removes the key it was matched by, and a rerun answers that
+same handoff from the record, with no members read.
 
 A later spawn of the same name still meets the alias refusal; when this host's
 record holds a certificate for that alias and team, the refusal says so and
@@ -1795,7 +1798,8 @@ the recorded ones. It falls back to the alias when no entry matches. For a home
 whose last start was on the broker path, `aw wake deregister` runs at the same
 time as the delete. Before that, retire leaves each joined team and releases each
 unfinished join. While a release that needs the member key fails (anything but
-`team_not_hosted`), retire keeps the key and the record and exits nonzero.
+`team_not_hosted`), retire keeps the key (held, below) and the record and exits
+nonzero.
 
 From aw 1.36.59, a member of a team that is not hosted is retired by aw itself
 when this machine holds that team's controller key (a minting root that made
@@ -1814,6 +1818,66 @@ A grant seat with no grant or seat id answers `retired: false` with
 `reason: "nothing-to-delete"`, the kernel's completed no-op vocabulary.
 Workspace deletion reads the native `alias_released_reason` field only;
 an answer without it records `unstated` (or `no JSON answer` when unreadable).
+
+### What retire does with the key material
+
+A home can outlive its retire: `oats retire --keep-dir`, a retire that ended
+quarantined, or a retire that failed. A session provider can start a session in
+such a home again with no OATS around it (on bb, Unarchive), and aw finds an
+identity at `<cwd>/.aw` or `$AWEB_IDENTITY_HOME`. A key whose alias was not
+released keeps a valid certificate, and a retained seat's `.aw` is a copy of the
+standing identity's key. So no answer of the retire hook leaves the provider's
+credential entries (`.aw`, `.aweb-identity`, `.aweb-identity-*`, each a
+directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
+
+- **An answer that exits 0 removes them**, after the remote cleanup and the
+  provider state are written, just before the answer is printed. An exit 0
+  already means no remaining cleanup needs the member key (a `team_not_hosted`
+  handoff is done by the team's controller, without it), so nothing a retry
+  needs is lost. This covers every exit 0: released or not, the controller
+  handoffs, `nothing-to-delete`, a completed default retire, a grant seat whose
+  grants were revoked, and a retained seat, whose home copy goes while the
+  source `.aw` named by `identity.source` is never touched.
+- **An answer that exits nonzero holds them**: each is renamed, as itself, to
+  `.oats-aweb/held/<name>` (`.oats-aweb/held/.aw`,
+  `.oats-aweb/held/.aweb-identity-research`), because the key is the only
+  authority a retry has. The warning names what was held. A rename that fails
+  leaves that entry in place and says which and why; the exit code is the
+  retire's own. `.oats-aweb` is never copied to recovery and is owner-only.
+- **Every retire puts held entries back first**, before it reads any state, so
+  a retry sees exactly the home the failed retire saw and finishes as it would
+  have, with recorded absolute paths (a joined team's `identityHome`) valid
+  again. If an entry and its held copy both exist (something re-created it,
+  such as `aw init` in a revived session), or a held entry can't be read or put
+  back, the retire touches neither, runs no aw command, and answers
+  `retired: false` with `reason: "held-credentials-not-restored"`, naming both
+  paths: check which is this instance's key, remove the other, and retire again.
+- **A rerun after the key is gone answers what the first run answered.** The
+  kernel reruns every retire hook when a later step quarantines the home. The
+  default identity's controller handoff is kept in its completed-retire marker
+  (`.oats-aweb/default-retire.json`), and a joined team's or an interrupted
+  mint's in `.oats-aweb/retire-handoffs.json`, each written before the key is
+  removed. A rerun repeats that handoff's words and `pendingControllerCleanup`
+  and makes no aw call that needs the removed key; the deployment's
+  retired-certificates record keeps one entry per certificate. What a retained
+  seat's rerun reads from its copy (the workspace alias and whether it was
+  bound) is kept in `.oats-aweb/removed-keys.json`.
+
+A session revived in a home whose retire failed gets aw's "not initialized"
+error, and the aweb channel plugin has no identity to connect with; in a home
+whose retire finished, it finds no identity at all. From such a home, a start
+(the launch hook), `oats aweb join|leave` and `oats aweb mail` refuse with
+`E_INSTANCE_RETIRING`, saying the home is being retired (keys held) or was
+retired (keys removed), instead of an aw error. The health publisher skips a
+home whose keys are held, with that reason, rather than reporting it failing.
+
+The limits: this stops a revived session from acting as the agent through aw's
+normal identity lookup. It is not a boundary against a process of the same OS
+user that goes looking in `.oats-aweb/held`. A retire hook that crashes (an
+uncaught error, or a kill) prints no answer and leaves the entries where they
+are: a kill after the remote acts and before the removal leaves the key in
+place, as before, and the next retire finishes. Homes retired before this
+release are not changed.
 
 ### A retained seat on a server other than aweb Cloud
 
