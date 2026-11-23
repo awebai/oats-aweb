@@ -2095,11 +2095,13 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
 - **An answer that exits 0 removes them**, after the remote cleanup and the
   provider state are written, just before the answer is printed, whatever
   gives the answer: a refusal before any cleanup (aw not on PATH, settings
-  that can't be read) too. An entry that can't be removed is removed again
-  once its directories are made owner-writable; one that still can't be is
-  moved to `.oats-aweb/held/<name>`, out of aw's reach, and the warning says
-  to remove it; only one that can't be moved either stays, named, with the
-  exit code unchanged. An exit 0
+  that can't be read) too. A home made read-only is made owner-writable for
+  the moment it takes, and its mode put back. An entry that can't be removed
+  is removed again once its directories are made owner-writable; one that
+  still can't be is moved to `.oats-aweb/held/<name>`, out of aw's reach, and
+  the warning says to remove it. Only one in a home this user can't change
+  (another user's) can stay, named in the warning, with the exit code
+  unchanged. An exit 0
   already means no remaining cleanup needs the member key (a `team_not_hosted`
   handoff is done by the team's controller, without it), so nothing a retry
   needs is lost. This covers every exit 0: released or not, the controller
@@ -2109,7 +2111,9 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
 - **An answer that exits nonzero holds them**: each is renamed, as itself, to
   `.oats-aweb/held/<name>` (`.oats-aweb/held/.aw`,
   `.oats-aweb/held/.aweb-identity-research`), because the key is the only
-  authority a retry has. The warning names what was held. A rename that fails
+  authority a retry has. A joined team retire leaves is recorded as left
+  before its identity home goes with the rest at the answer, so a retire
+  killed after that leave doesn't try it again without the key. The warning names what was held. A rename that fails
   leaves that entry in place and says which and why; the exit code is the
   retire's own. `.oats-aweb` is never copied to recovery and is owner-only.
   One entry is never moved: an identity home where aw holds a pending mint

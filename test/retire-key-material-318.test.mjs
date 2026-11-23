@@ -299,6 +299,32 @@ test("A10: a held directory that is a symlink is never followed: the retire fail
 
 // ------------------------------------------------------------- kill points
 
+test("#318 case 4 (A11): a retire killed after a joined leave succeeded and was recorded: the next run doesn't leave again and exits 0", (t) => {
+  const fx = fixture(t, { joined: true });
+  const killed = fx.retire({ ...fx.killAt(`const rm = fs.rmSync;\nfs.rmSync = function (p, ...a) { const r = rm.call(this, p, ...a); if (String(p).endsWith(".aweb-identity-ops")) kill(); return r; };`) });
+  assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
+  assert.equal(killed.stdout, "", "no answer was printed");
+  assert.deepEqual(JSON.parse(readFileSync(join(fx.home, ".oats-aweb", "teams.json"), "utf8")).joinedTeams, [], "the leave was recorded before its identity home went");
+  const before = fx.fake.calls().length;
+  const next = fx.retire();
+  assert.equal(next.status, 0, next.stdout + next.stderr);
+  assert.equal(next.doc.meta.retired, true);
+  assert.equal(deletes(fx.fake.calls().slice(before)).filter((c) => c.identityHome).length, 0, "the leave is not attempted again");
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), []);
+});
+
+test("a retire killed after a joined leave succeeded and before it was recorded still has that key: the next run leaves with it and exits 0", (t) => {
+  const fx = fixture(t, { joined: true });
+  const killed = fx.retire({ ...fx.killAt(`const mv = fs.renameSync;\nfs.renameSync = function (from, to, ...a) { if (String(to).endsWith("/.oats-aweb/teams.json")) kill(); return mv.call(this, from, to, ...a); };`) });
+  assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
+  assert.ok(existsSync(join(fx.home, ".aweb-identity-ops")), "the left team's identity home is still there");
+  const next = fx.retire();
+  assert.equal(next.status, 0, next.stdout + next.stderr);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), []);
+});
+
 test("A11: a retire killed after the joined handoff was recorded and before the identity home was removed: the next run removes it and exits 0, without leaving", (t) => {
   const fx = fixture(t, { joined: true });
   const killed = fx.retire({ FAKE_LEAVE: "team_not_hosted", ...fx.killAt(`const rm = fs.rmSync;\nfs.rmSync = function (p, ...a) { if (String(p).endsWith(".aweb-identity-ops")) kill(); return rm.call(this, p, ...a); };`) });
@@ -568,6 +594,39 @@ test("#318 case 2: a read-only .aw on an exit 0 (team_not_hosted) is still remov
   assert.doesNotMatch(r.doc.warning, /not removed/);
 });
 
+test("#318 case 2: a read-only home whose .aw is a symlink: an exit 0 still removes the link, leaves its target, and puts the home's mode back", (t) => {
+  const fx = fixture(t);
+  const target = join(fx.base, "linked-identity");
+  renameSync(join(fx.home, ".aw"), target);
+  symlinkSync(target, join(fx.home, ".aw"));
+  const targetBefore = listing(target);
+  mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true, mode: 0o700 });
+  chmodSync(fx.home, 0o500);
+  const r = fx.retire({ FAKE_DELETE: "team_not_hosted" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.doc.meta.aliasReason, "team_not_hosted");
+  assert.deepEqual(entriesAt(fx.home), [], "no key left where aw reads it");
+  assert.deepEqual(listing(target), targetBefore, "the link's target is untouched");
+  assert.equal(lstatSync(fx.home).mode & 0o777, 0o500, "the home's mode is put back");
+  chmodSync(fx.home, 0o700);
+});
+
+test("a read-only home on a nonzero exit: its keys are still held, and the retry puts them back and removes them", (t) => {
+  const fx = fixture(t, { joined: true });
+  mkdirSync(join(fx.home, ".oats-aweb"), { recursive: true, mode: 0o700 });
+  chmodSync(fx.home, 0o500);
+  const failed = fx.retire({ FAKE_DELETE: "fail" });
+  assert.equal(failed.status, 1, failed.stdout + failed.stderr);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), [".aw", ".aweb-identity-ops"]);
+  assert.equal(lstatSync(fx.home).mode & 0o777, 0o500);
+  const retry = fx.retire({}, failed.doc.meta);
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), []);
+  chmodSync(fx.home, 0o700);
+});
+
 test("an entry that can't be removed even when made writable is moved where aw doesn't look, said so, and the exit code is unchanged", (t) => {
   const fx = fixture(t);
   const keyHash = sha(join(fx.home, ".aw", "signing.key"));
@@ -589,12 +648,34 @@ test("a start, a join or leave and mail from a home whose keys a failed retire h
   const launch = fx.hook("launch", { OATS_META: JSON.stringify(fx.meta) });
   assert.equal(launch.status, 1, launch.stdout + launch.stderr);
   assert.ok(launch.doc.warning.includes(`this home is being retired: its aweb keys are held in ${join(fx.home, ".oats-aweb", "held")} until \`oats retire dev-1\` finishes`), launch.doc.warning);
-  for (const [event, argv] of [["leave", ["--labels", "ops"]], ["mail", ["inbox"]]]) {
+  for (const [event, argv] of [["leave", ["--labels", "ops"]], ["mail", []]]) {
     const r = spawnSync(process.execPath, [HOOK, event, ...argv], { cwd: fx.home, env: { ...process.env, PATH: fx.fake.path, HOME: fx.base, OATS_EVENT: event, OATS_HOME: fx.home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: fx.ws, OATS_META: JSON.stringify(fx.meta), OATS_SETTINGS: JSON.stringify({ delivery: "session" }), OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: false, from: "local" }]) }, encoding: "utf8" });
     assert.equal(r.status, 1, event + r.stdout + r.stderr);
     assert.match(r.stderr, /E_INSTANCE_RETIRING: this home is being retired/, event);
   }
   assert.deepEqual(withKey(fx.fake.calls().slice(before)), [], "no aw call reached the missing identity");
+});
+
+test("a join or leave and mail with --home naming a home whose keys are held, or were removed, say so, whatever home they run from", (t) => {
+  const fx = fixture(t, { joined: true });
+  const failed = fx.retire({ FAKE_LEAVE: "fail" });
+  assert.equal(failed.status, 1);
+  const elsewhere = join(fx.base, "healthy");
+  mkdirSync(elsewhere);
+  const run = (event, argv) => spawnSync(process.execPath, [HOOK, event, "--home", fx.home, ...argv], { cwd: elsewhere, env: { ...process.env, PATH: fx.fake.path, HOME: fx.base, OATS_EVENT: event, OATS_HOME: elsewhere, OATS_INSTANCE: "other-1", OATS_WORKSPACE: fx.ws, OATS_SETTINGS: JSON.stringify({ delivery: "session" }), OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_TEAMS: JSON.stringify([{ label: "ops", team: OPS, default: false, from: "local" }]) }, encoding: "utf8" });
+  const before = fx.fake.calls().length;
+  for (const [event, argv] of [["leave", ["--labels", "ops"]], ["mail", []]]) {
+    const r = run(event, argv);
+    assert.equal(r.status, 1, event + r.stdout + r.stderr);
+    assert.ok(r.stderr.includes(`E_INSTANCE_RETIRING: this home is being retired: its aweb keys are held in ${join(fx.home, ".oats-aweb", "held")} until \`oats retire dev-1\` finishes`), event + r.stderr);
+  }
+  assert.deepEqual(withKey(fx.fake.calls().slice(before)), [], "no aw call reached the missing identity");
+  assert.equal(fx.retire({}, failed.doc.meta).status, 0);
+  for (const [event, argv] of [["leave", ["--labels", "ops"]], ["mail", []]]) {
+    const r = run(event, argv);
+    assert.equal(r.status, 1, event + r.stdout + r.stderr);
+    assert.match(r.stderr, /E_INSTANCE_RETIRING: this home was retired and its aweb keys were removed/, event);
+  }
 });
 
 test("a start from a kept home a retire finished says the home was retired", (t) => {

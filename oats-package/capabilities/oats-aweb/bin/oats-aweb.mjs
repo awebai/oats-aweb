@@ -1906,7 +1906,8 @@ const homeWorkspaceAlias = () => workspaceAliasOf(home) ?? (existsSync(join(home
  *  reader of it (a start, a join or leave, mail) gives instead of aw's own: its entries
  *  are held by a retire that did not finish, or were removed by one that did. */
 function retiredHomeError() {
-  const why = retiredKeysMessage(home, instance);
+  // The selected home's own name: a command's --home may name another instance's.
+  const why = retiredKeysMessage(home, basename(home));
   return why ? Object.assign(new Error(why), { code: "E_INSTANCE_RETIRING" }) : undefined;
 }
 const homeWorkspaceYaml = () => existsSync(join(home, ".aw", "workspace.yaml")) || (!existsSync(join(home, ".aw")) && readRemovedKeys()?.workspaceYaml === true);
@@ -1983,7 +1984,10 @@ function teamNotHostedRefusal(e, identityHome) {
   } catch { /* no identity to name: aw names the path */ }
   return [...principals].some((principal) => stderr === `refusing aw workspace delete through external identity home for principal ${principal}; only own hosted local self-release is supported for an external identity home (reason: team_not_hosted)`);
 }
-function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
+/** Release a joined identity's membership, then remove its identity home, unless
+ *  `removeLocal` is false: a retire leaves that to its answer, which removes the
+ *  home's keys only after the leave is recorded (awebai/oats-aweb#318). */
+function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home, { removeLocal = true } = {}) {
   // The retention fence (README, "Human attribution"): a joined identity home where
   // aw holds a pending mint (a signature-pending accept, from aw's
   // team_invite_accept.go) releases nothing and is kept, never its key.
@@ -2006,7 +2010,7 @@ function cleanupJoinedIdentity(entry, fallbackAlias, cwd = home) {
     throw error;
   }
   if (awHoldsPendingIn(entry.identityHome)) throw heldByAw("its workspace was deleted but nothing local was removed");
-  try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ }
+  if (removeLocal) { try { rmSync(entry.identityHome, { recursive: true, force: true }); } catch { /* best effort */ } }
   return { released, receipt };
 }
 function acceptedTeamMembership(identityHome, expectedTeam) {
@@ -2102,11 +2106,11 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
 /** Release a pending join through the one release path: adopt it, then
  *  cleanupJoinedIdentity (remote first, the key last). Answers the meta
  *  without it; throws, keeping it and its identity home, on any failure. */
-function releasePendingJoin(pending, meta, { resumeCommand = `oats aweb leave --labels ${pending.label}` } = {}) {
+function releasePendingJoin(pending, meta, { resumeCommand = `oats aweb leave --labels ${pending.label}`, removeLocal = true } = {}) {
   const settled = settlePendingJoin(pending, { root: () => awebRootForTeam(pending.team), resumeCommand });
   const next = withoutPendingJoin(meta, pending.label);
   if (settled.absent) return { meta: next, changed: true };
-  const { released, receipt } = cleanupJoinedIdentity(settled.joined, meta.alias || instance, home);
+  const { released, receipt } = cleanupJoinedIdentity(settled.joined, meta.alias || instance, home, { removeLocal });
   return { meta: next, changed: true, released, receipt };
 }
 function acceptConnectVerifyJoinedTeam({ label, token, identityHome, alias: requestedAlias, expectedTeam, root, cwd = home, serviceDocs = [], cleanupOnFailure = true, resumeCommand, useAcceptedService = true, parentHome }) {
@@ -2247,14 +2251,14 @@ function outputJoinPlan(plan, json) {
     else console.log(`${p.label} (${p.team}): refused: ${p.problem}`);
   }
 }
-function leaveJoinedTeam(label, meta) {
+function leaveJoinedTeam(label, meta, { removeLocal = true } = {}) {
   const joined = joinedTeamsOf(meta);
   const entry = joined.find((j) => j.label === label);
   if (!entry) {
     const pending = pendingJoinsOf(meta).find((p) => p.label === label);
-    return pending ? releasePendingJoin(pending, meta) : { meta, changed: false };
+    return pending ? releasePendingJoin(pending, meta, { removeLocal }) : { meta, changed: false };
   }
-  const { released, receipt } = cleanupJoinedIdentity(entry, meta.alias || instance, home);
+  const { released, receipt } = cleanupJoinedIdentity(entry, meta.alias || instance, home, { removeLocal });
   return { meta: { ...meta, joinedTeams: joined.filter((j) => j.label !== label) }, changed: true, released, receipt };
 }
 function awebRootForTeam(team) {
@@ -2541,6 +2545,8 @@ function failedLeaveDisposition(row, error) {
 }
 function runTeamsCommand(kind) {
   const args = parseHomeCommandArgs();
+  // `teams` reads only the selected home's records; a join or leave acts with its keys.
+  if (kind !== "teams") { const retiring = retiredHomeError(); if (retiring) throw retiring; }
   let meta = readCapabilityMeta();
   const actions = [];
   const warnings = [];
@@ -2613,6 +2619,7 @@ function awMailRead(identityHome, args) {
 async function runMailCommand() {
   const args = parseMailArgs(stripForwardedSoul());
   if (args.home) { home = resolve(args.home); process.env.OATS_HOME = home; }
+  { const retiring = retiredHomeError(); if (retiring) throw retiring; }
   if (!versionAtLeast(spawnAwVersion, MAIL_AW_MIN)) {
     const error = new Error(`aw ${spawnAwVersion || "unreadable"} cannot list mail threads, so mail can't be read without acknowledging it: messaging:mail needs aw >= ${MAIL_AW_MIN}; upgrade with \`npm i -g @awebai/aw@latest\``);
     error.code = "E_AW_TOO_OLD";
@@ -3122,7 +3129,10 @@ if (event === "launch") {
   const leaveOrHandOff = (row, leave) => {
     const handed = joinedHandoffFor(row);
     if (handed) { replayHandoff(handed); return; }
-    try { meta = leave().meta; }
+    // The left team's identity home stays until this retire's answer removes or
+    // holds it, after its leave is recorded here: a retire killed in between
+    // still has the key, and one killed after it no longer has the row to leave.
+    try { meta = leave().meta; writeProviderTeamsState(meta); }
     catch (e) {
       const failed = failedLeaveDisposition(row, e);
       if (failed.data.cleanup === "controller") writeRetireHandoff({ kind: "joined", identityHome: row.identityHome, ...handoffRecord(failed.data, failed.warning) });
@@ -3130,10 +3140,10 @@ if (event === "launch") {
       if (failed.data.cleanup !== "controller") failedLeaves.push(row.label);
     }
   };
-  for (const joined of joinedTeamsOf(meta)) leaveOrHandOff(joined, () => leaveJoinedTeam(joined.label, meta));
+  for (const joined of joinedTeamsOf(meta)) leaveOrHandOff(joined, () => leaveJoinedTeam(joined.label, meta, { removeLocal: false }));
   // A join killed or failed after its accept is released the same way
   // (adopted, then left), with the same rule for keeping the key.
-  for (const pending of pendingJoinsOf(meta)) leaveOrHandOff(pending, () => releasePendingJoin(pending, meta));
+  for (const pending of pendingJoinsOf(meta)) leaveOrHandOff(pending, () => releasePendingJoin(pending, meta, { removeLocal: false }));
   // A native (channel/pi) home registered with the broker only for its joined
   // teams; a broker home was deregistered above.
   if (meta.wakeJoined && !brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) retireWarnings.push("aw wake deregister failed; the broker treats a retired home as inactive on its own"); }
@@ -3389,8 +3399,6 @@ if (event === "launch") {
   }
 } else if (["teams", "join", "leave"].includes(event)) {
   try {
-    // `teams` reads only this home's records; a join or leave acts with its keys.
-    if (event !== "teams") { const retiring = retiredHomeError(); if (retiring) throw retiring; }
     runTeamsCommand(event); process.exit(0);
   }
   catch (e) {
@@ -3400,7 +3408,6 @@ if (event === "launch") {
   }
 } else if (event === "mail") {
   try {
-    { const retiring = retiredHomeError(); if (retiring) throw retiring; }
     await runMailCommand(); process.exit(0);
   }
   catch (e) {

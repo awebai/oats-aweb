@@ -19,7 +19,7 @@
 // identity, or one a person linked, is never touched). This stops a revived
 // session from acting as the agent through aw's identity lookup; it is no
 // boundary against a process of the same OS user that looks in .oats-aweb/held.
-import { chmodSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, unlinkSync } from "node:fs";
+import { accessSync, chmodSync, constants, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 /** The provider's credential entries in a home: aw's own identity home and
@@ -35,6 +35,21 @@ const codeOf = (e) => (/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error");
 function lstatOrNone(path) {
   try { return lstatSync(path); }
   catch (e) { if (e?.code === "ENOENT") return undefined; throw e; }
+}
+
+/** Run `fn` with `home` writable by its owner: a home made read-only (by a person,
+ *  or a tool) would otherwise keep every entry in it where aw reads it. Its mode is
+ *  put back afterwards. When it can't be changed (another user's home), `fn` runs
+ *  as it is and reports what it could not do. */
+function withWritableHome(home, fn) {
+  let mode;
+  try { accessSync(home, constants.W_OK | constants.X_OK); }
+  catch {
+    try { mode = lstatSync(home).mode & 0o7777; chmodSync(home, mode | 0o300); }
+    catch { mode = undefined; }
+  }
+  try { return fn(); }
+  finally { if (mode !== undefined) { try { chmodSync(home, mode); } catch { /* the home stays owner-writable */ } } }
 }
 
 /** The credential entries directly in `home`, by name (a broken symlink included). */
@@ -61,6 +76,9 @@ export function heldEntries(home) {
  *  entry where it was found: nothing is renamed when any original path is taken
  *  or cannot be checked, and a rename that fails puts back the ones before it. */
 export function restoreHeld(home) {
+  return withWritableHome(home, () => restoreHeldNow(home));
+}
+function restoreHeldNow(home) {
   const held = heldEntries(home);
   if (held.problem) return { problem: held.problem };
   const dir = heldDir(home);
@@ -89,6 +107,9 @@ export function restoreHeld(home) {
  *  `keep(name)` answers a reason, which stays where it is. Each rename that fails
  *  leaves that entry in place and says why; nothing is thrown. */
 export function holdEntries(home, { keep = () => undefined } = {}) {
+  return withWritableHome(home, () => holdEntriesNow(home, { keep }));
+}
+function holdEntriesNow(home, { keep = () => undefined }) {
   const held = [], problems = [];
   let names;
   try { names = credentialEntries(home); }
@@ -136,6 +157,9 @@ function ownerWritable(path) {
  *  once its directories are made owner-writable, is held instead, out of aw's
  *  reach; each one that is neither removed nor held is named, with why. */
 export function removeEntries(home) {
+  return withWritableHome(home, () => removeEntriesNow(home));
+}
+function removeEntriesNow(home) {
   const removed = [], heldInstead = [], problems = [];
   let names;
   try { names = credentialEntries(home); }
