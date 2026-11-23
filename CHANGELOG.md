@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Fixed: a retire's key settlement in two edge cases (#322).** A setting
+  that names an entry inside the home in another case now protects it on a
+  case-insensitive filesystem (macOS): paths are compared in their on-disk
+  case. Settings that don't parse now stop a retire before it puts held keys
+  back, so a retry no longer leaves them readable at `.aw`. A retry whose
+  setting path can't be resolved holds again what it put back when it fails.
+  The README now says to retry a held home with `oats retire`, not aw's
+  `aw workspace delete`, and that a hold onto a `.oats-aweb` on another
+  filesystem leaves the entry in place.
+
 - **Fixed: a home the kernel keeps after a retire no longer holds a usable
   aweb key (#318).** A home can outlive its retire (`oats retire --keep-dir`, a
   quarantined or failed retire), and a session provider can start a session in
@@ -31,7 +41,8 @@
   home) touches the entries: run by hand in any directory, the hook refuses
   and touches nothing. An entry that a `root`, `roots`, `residents` or
   `identity.source` setting names inside the home stays in place, named in the
-  warning; with unreadable settings no entry moves. Not a boundary against another process of
+  warning; when the settings can't be read, no entry is removed (#322,
+  above). Not a boundary against another process of
   the same OS user; a crashed retire leaves the entries in place. README, "What
   retire does with the key material".
 - **Fixed: username setup resumes the signup aw kept after an unknown outcome

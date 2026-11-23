@@ -1080,13 +1080,18 @@ act as the agent if a session is revived in it (#318). Only a retire the
 kernel dispatched does this (`OATS_EVENT=retire`, `OATS_HOME` and
 `OATS_INSTANCE_HOME` the same absolute home); `oats-aweb.mjs retire` run by
 hand anywhere refuses and touches nothing. An entry a `root`, `roots`,
-`residents` or `identity.source` setting names inside the home is a root's or
-custody's key and stays in place, named in the warning (#321). An exit 0 removes them
+`residents` or `identity.source` setting names inside the home (through a link,
+or in another case on a case-insensitive filesystem) is a root's or custody's
+key and stays in place, named in the warning (#321, #322). Settings that don't
+parse stop the retire before it puts anything back: held stays held, no aw call,
+exit 1. A setting path that can't be resolved removes nothing; a failing retire
+then holds again only what it put back, and leaves the rest in place, named (#322). An exit 0 removes them
 (a retained seat's copy too; its source is never touched), but one that skipped
 cleanup it owes (aw not on PATH) holds them for the next retire. A nonzero exit moves
 each, as itself, to `.oats-aweb/held/<name>` (never one where aw holds a pending
 mint; a grant seat's grant homes are removed instead, its retry revoking
-through the custody); the next retire puts them back
+through the custody). Retry with `oats retire <instance>`, not aw's suggested
+`aw workspace delete`, which finds no `.aw` while they are held: the next retire puts them back
 before it reads anything, and fails closed (`retired: false`,
 `held-credentials-not-restored`, nothing touched, no aw call) when an entry and
 its held copy both exist. A rerun after the key is gone repeats the first run's
@@ -1094,7 +1099,8 @@ answer from `.oats-aweb` records. A start, `oats aweb join|leave` and `oats aweb
 mail` in such a home refuse with `E_INSTANCE_RETIRING`, and readiness says the
 same: keys held until `oats retire <instance>` finishes, or the home was
 retired and its keys removed (spawn a new instance). Not a boundary against
-another process of the same OS user; a crashed retire leaves the entries in place.
+another process of the same OS user; a crashed retire leaves the entries in place,
+and so does a hold onto a `.oats-aweb` on another filesystem (`EXDEV`, named in the warning).
 
 ## Gotchas
 
