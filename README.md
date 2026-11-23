@@ -46,7 +46,9 @@ Whether a root can be adopted is the service's to accept. The aweb Cloud adopts 
 legacy chainless root today. It refuses one that already has a creation chain
 (`already_certified`), which is any fresh hosted root from aw 1.36.53 (it reads
 `no_human`), until the Cloud release aweb names for that adoption. `aw who --json`
-says which kind a root is.
+says which kind a root is. OATS's adoption of hosted roots waits for the contract's
+gates G2 (aweb's Cloud journey run) and G3 (the Cloud release aweb pairs with aw
+1.36.59).
 This provider reads that chain with `aw --identity-home <home> who --json` and shows
 it; it never adopts a root, changes a setting or respawns anything. The contract is
 OATS's `docs/design/2026-11-21-human-ids-contract.md`.
