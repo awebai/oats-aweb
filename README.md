@@ -2104,12 +2104,14 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
   falls back to the current directory (#321).
 - **An entry a setting names stays where it is**: one that `root`, a `roots`
   value, `identity.source` or a `residents` value resolves to inside the home
-  (the directory, or its `.aw`) is that root's, custody's or standing
-  identity's key, not this instance's. Removing it would destroy a key others
+  (the directory, or its `.aw`, as written or through any link) is that root's,
+  custody's or standing identity's key, not this instance's. A retire's
+  reconciliation of an unfinished join removes nothing itself either. Removing it would destroy a key others
   use, and holding it would move it from the path every later spawn, mint or
   custody reads, so it is neither, whatever the exit, and the warning names it
   and the setting. When the settings can't be read, no entry is removed or
-  held, and the warning says so (#321).
+  held, and the warning says so; so too when a setting's path can't be
+  resolved (#321).
 - **An answer that exits 0 removes them** when it followed the retire's remote
   cleanup or proved none was owed, after the provider state is written, just
   before the answer is printed: a released or unreleased self-delete, a

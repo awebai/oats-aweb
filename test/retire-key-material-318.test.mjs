@@ -623,8 +623,18 @@ test("settings that can't be parsed (exit 1): which entries are a root's can't b
   const r = fx.retire({ OATS_SETTINGS: "{not json" });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.doc.warning, /OATS_SETTINGS must be a JSON object/);
-  assert.match(r.doc.warning, /key material left in place: the settings that say which entries are a root's, a custody's or a standing identity's can't be read \(OATS_SETTINGS is not JSON\), so nothing was removed or held/);
+  assert.match(r.doc.warning, /key material left in place: which entries are a root's, a custody's or a standing identity's can't be told \(OATS_SETTINGS must be a JSON object\), so nothing was removed or held/);
   assert.deepEqual(listing(fx.home), before, "nothing removed or held");
+});
+
+test("empty OATS_SETTINGS is unreadable settings too: every entry is left in place", (t) => {
+  const fx = fixture(t);
+  const before = listing(fx.home);
+  const r = fx.retire({ OATS_SETTINGS: "" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.doc.warning, /OATS_SETTINGS must be a JSON object/);
+  assert.match(r.doc.warning, /key material left in place/);
+  assert.deepEqual(listing(fx.home), before);
 });
 
 // ------------------------- an entry a setting names is not this instance's (#321)
@@ -659,6 +669,50 @@ test("a root configured inside the home survives a nonzero exit byte-identical, 
   assert.deepEqual(entriesAt(fx.home), [".aweb-identity-root"]);
   assert.deepEqual(held(fx.home), []);
   assert.deepEqual(listing(root), rootBefore);
+});
+
+test("a root configured through a link outside the home, pointing at an entry inside it, survives an exit 0 and a nonzero exit byte-identical", (t) => {
+  for (const [more, status] of [[{}, 0], [{ FAKE_DELETE: "fail" }, 1]]) {
+    const fx = fixture(t);
+    const root = join(fx.home, ".aweb-identity-root");
+    identityHome(join(root, ".aw"), TEAM, "cert-root-1", "root");
+    const link = join(fx.base, "root-link");
+    symlinkSync(root, link);
+    const rootBefore = listing(root);
+    const r = fx.retire({ ...more, OATS_SETTINGS: JSON.stringify({ delivery: "session", roots: { [TEAM]: link } }) });
+    assert.equal(r.status, status, r.stdout + r.stderr);
+    assert.deepEqual(entriesAt(fx.home), [".aweb-identity-root"]);
+    assert.deepEqual(listing(root), rootBefore, "the root behind the link is byte-identical");
+    assert.ok(r.doc.warning.includes(`${root} stays in place: settings.oats.aweb.roots[${TEAM}] names it`), r.doc.warning);
+  }
+});
+
+test("a pending join whose identity home a setting names: the retire's reconciliation removes nothing, and the entry survives byte-identical", (t) => {
+  const fx = fixture(t);
+  const pendingHome = join(fx.home, ".aweb-identity-ops");
+  // An identity with no membership of the pending team: before #321 the
+  // reconciliation removed it on the spot, ahead of the settle rule.
+  write(join(pendingHome, "identity.yaml"), "alias: dev-1\n");
+  write(join(pendingHome, "signing.key"), "standing key\n");
+  const before = listing(pendingHome);
+  const meta = { ...fx.meta, pendingJoins: [{ label: "ops", team: OPS, identityHome: pendingHome, alias: "dev-1" }] };
+  const r = fx.retire({ OATS_SETTINGS: JSON.stringify({ delivery: "session", root: pendingHome }) }, meta);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(entriesAt(fx.home), [".aweb-identity-ops"]);
+  assert.deepEqual(listing(pendingHome), before);
+  assert.ok(r.doc.warning.includes(`${pendingHome} stays in place: settings.oats.aweb.root names it`), r.doc.warning);
+});
+
+test("a pending join with no membership and no setting naming it is still removed, by the retire's answer", (t) => {
+  const fx = fixture(t);
+  const pendingHome = join(fx.home, ".aweb-identity-ops");
+  write(join(pendingHome, "identity.yaml"), "alias: dev-1\n");
+  write(join(pendingHome, "signing.key"), "join key\n");
+  const meta = { ...fx.meta, pendingJoins: [{ label: "ops", team: OPS, identityHome: pendingHome, alias: "dev-1" }] };
+  const r = fx.retire({}, meta);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), []);
 });
 
 test("a resident's custody or a standing identity whose directory is the home keeps the home's .aw in place", (t) => {

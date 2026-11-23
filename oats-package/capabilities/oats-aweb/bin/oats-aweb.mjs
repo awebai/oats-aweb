@@ -501,10 +501,11 @@ const ALIAS_UNRELEASED_REMEDY = "spawn successors with a different --name or --p
  *  instance's key (awebai/oats-aweb#321). `{ named: Map(entry → [setting]) }`, or
  *  `{ unreadable }` when the settings can't be read. */
 function settingNamedEntries(dir) {
+  // The hook's own reading of the settings (OATS_SETTINGS unset is {}, anything
+  // else must be a JSON object), so what it refuses is unreadable here too.
   let set;
-  try { set = JSON.parse(process.env.OATS_SETTINGS || "{}"); }
-  catch { return { unreadable: "OATS_SETTINGS is not JSON" }; }
-  if (!set || typeof set !== "object" || Array.isArray(set)) return { unreadable: "OATS_SETTINGS is not an object" };
+  try { set = parseProviderSettings(); }
+  catch (e) { return { unreadable: e.message }; }
   const entries = (o) => o && typeof o === "object" && !Array.isArray(o) ? Object.entries(o) : [];
   const settings = [["root", set.root], ...entries(set.roots).map(([k, v]) => [`roots[${k}]`, v]), ["identity.source", set.identity?.source], ...entries(set.residents).map(([k, v]) => [`residents.${k}`, v])];
   const named = new Map();
@@ -514,7 +515,15 @@ function settingNamedEntries(dir) {
     // A setting a root needs is absolute (rootProblem refuses any other); one that
     // isn't can't name an entry of this home.
     if (typeof value !== "string" || !isAbsolute(value.trim())) continue;
+    // The directory and its .aw, as written and with every link resolved: a root
+    // reached through a link outside the home is the entry the link points at (#311).
+    const paths = [];
     for (const p of [resolve(value.trim()), join(resolve(value.trim()), ".aw")]) {
+      paths.push(p);
+      try { paths.push(realpathSync(p)); }
+      catch (e) { if (!["ENOENT", "ENOTDIR"].includes(e?.code)) return { unreadable: `settings.oats.aweb.${key} (${p}) can't be resolved (${/^E[A-Z]+$/.test(String(e?.code)) ? e.code : "error"})` }; }
+    }
+    for (const p of paths) {
       for (const h of homes) {
         const rel = relative(h, p);
         if (!rel || !relInside(rel)) continue;
@@ -555,7 +564,7 @@ if (event === "retire") {
     // reads. It stays where it is, as before #318, and the warning names it. When
     // the settings can't be read, nothing is removed or held (awebai/oats-aweb#321).
     const configured = settingNamedEntries(home);
-    if (configured.unreadable) return [`key material left in place: the settings that say which entries are a root's, a custody's or a standing identity's can't be read (${configured.unreadable}), so nothing was removed or held`];
+    if (configured.unreadable) return [`key material left in place: which entries are a root's, a custody's or a standing identity's can't be told (${configured.unreadable}), so nothing was removed or held`];
     const ownedElsewhere = (name) => configured.named.has(name) ? `${configured.named.get(name).join(" and ")} names it, so it is that root's, custody's or standing identity's, not this instance's key` : undefined;
     if (code !== 0 || retireCleanupSkipped) {
       // An entry where aw holds a pending mint, at any depth the choke point checks
@@ -2156,7 +2165,7 @@ const unfinishedJoinFix = (label) => `run oats aweb join --labels ${label} to fi
  *  else `{ joined }`, adopted for the recorded team with its workspace
  *  connected. Throws, removing nothing, when aw cannot say (its team list
  *  fails, or a hosted accept was cut short) or the connect fails. */
-function settlePendingJoin(pending, { root, resumeCommand }) {
+function settlePendingJoin(pending, { root, resumeCommand, removeLocal = true }) {
   const { label, team, identityHome } = pending;
   // The retention fence: aw's pending mint in this home (a signature-pending accept)
   // is never settled from here. An interrupted hosted accept (its marker alone) keeps
@@ -2166,7 +2175,8 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
   }
   if (!holdsIdentity(identityHome)) {
     // ENOENT (never created) or ENOTEMPTY (what is there is not an identity, and the next accept decides): both leave nothing to release.
-    try { rmdirSync(identityHome); } catch { /* see above */ }
+    // A retire removes nothing here: its answer removes or holds what is left (awebai/oats-aweb#321).
+    if (removeLocal) { try { rmdirSync(identityHome); } catch { /* see above */ } }
     return { absent: true };
   }
   let member;
@@ -2182,7 +2192,7 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
     // The whole remedy comes first, the label once: retire keeps 300
     // characters of it, which hold it for a label of 64.
     if (awHoldsPendingIn(identityHome)) throw new Error(`hosted accept interrupted: the server may hold the membership; rerun the same aw id team accept-invite with the original invite, or have the team controller remove the member and delete the marker; then oats aweb leave --labels ${label}. Team ${team}: kept ${identityHome}, its key, its ${HOSTED_ACCEPT_PENDING_MARKER} and the pending join`);
-    rmSync(identityHome, { recursive: true, force: true });
+    if (removeLocal) rmSync(identityHome, { recursive: true, force: true });
     return { absent: true };
   }
   // The root the join minted from comes first: it names the service that join
@@ -2196,7 +2206,7 @@ function settlePendingJoin(pending, { root, resumeCommand }) {
  *  cleanupJoinedIdentity (remote first, the key last). Answers the meta
  *  without it; throws, keeping it and its identity home, on any failure. */
 function releasePendingJoin(pending, meta, { resumeCommand = `oats aweb leave --labels ${pending.label}`, removeLocal = true } = {}) {
-  const settled = settlePendingJoin(pending, { root: () => awebRootForTeam(pending.team), resumeCommand });
+  const settled = settlePendingJoin(pending, { root: () => awebRootForTeam(pending.team), resumeCommand, removeLocal });
   const next = withoutPendingJoin(meta, pending.label);
   if (settled.absent) return { meta: next, changed: true };
   const { released, receipt } = cleanupJoinedIdentity(settled.joined, meta.alias || instance, home, { removeLocal });
