@@ -2,7 +2,7 @@
 
 ## 1.49.0 — 2026-11-23
 
-- **Fixed: P5 now passes the configured registry explicitly.**
+- **Fixed: P5 (`aw who`) now passes the configured registry explicitly (#326).**
 
   **What a deployment must change:** a private deployment names its registry
   in DNS or in OATS's registry setting (`settings.oats.aweb.registry`).
