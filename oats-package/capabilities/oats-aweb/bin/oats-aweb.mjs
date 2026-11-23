@@ -1348,8 +1348,8 @@ function globalGrantRetire(meta, seatRecord) {
       catch (e) { unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, team, error: String(e.message || e).slice(0, 200) }); }
     }
   }
-  // The grant homes go with the answer: removed when it exits 0, held for the
-  // retry when it does not (settleRetireKeys, lib/retire-key-material.mjs).
+  // The grant homes go with the answer, removed whatever it exits, but one where
+  // aw holds a pending mint: the retry revokes through the custody (settleRetireKeys).
   // A grant that survives a retire is a live credential, and an unread list
   // may hide one: the retire fails, and the kernel keeps the home and this meta
   // for the retry. Under --force each grant and its revoke command is printed.

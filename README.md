@@ -2094,8 +2094,7 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
 
 - **An answer that exits 0 removes them**, after the remote cleanup and the
   provider state are written, just before the answer is printed, whatever
-  gives the answer: a refusal before any cleanup (aw not on PATH, settings
-  that can't be read) too. A home made read-only is made owner-writable for
+  gives the answer: an answer before any cleanup (aw not on PATH) too. A home made read-only is made owner-writable for
   the moment it takes, and its mode put back. An entry that can't be removed
   is removed again once its directories are made owner-writable; one that
   still can't be is moved to `.oats-aweb/held/<name>`, out of aw's reach, and
