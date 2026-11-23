@@ -86,7 +86,8 @@
   aw-compat.json's `tested` moves to 1.36.59 (`min` stays 1.36.33), so setup's
   default install and the `aw-newer-than-tested` warning follow it. CI runs 1.36.33,
   1.36.58 (`AW_PREVIOUS`, the previous tested) and 1.36.59, which it installs only
-  at its pinned npm integrity.
+  at its pinned npm integrity. The stack journeys run against aweb's release of
+  1.36.59 (aff5aac56: server 1.27.51, awid 0.5.40).
 
 ## 1.48.0 — 2026-11-21
 

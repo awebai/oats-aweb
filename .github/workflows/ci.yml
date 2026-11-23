@@ -113,7 +113,7 @@ jobs:
       matrix:
         aw: ${{ fromJSON(needs.aw-versions.outputs.versions) }}
     env:
-      AWEB_STACK_COMMIT: 679d50066d4160748f6f9cfa0537161992399573
+      AWEB_STACK_COMMIT: aff5aac56dc2f63c673d4e5f2f6df6a1b2c25d89
       AW_VERSION: ${{ matrix.aw }}
     steps:
       - uses: actions/checkout@v4

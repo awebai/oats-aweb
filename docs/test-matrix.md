@@ -11,13 +11,14 @@ HOME for every group. Tests never select a person's identity or tmux server.
 | `unit` | aw 1.36.33, 1.36.58 (the previous tested), 1.36.59 (tested and the next, by its pinned npm integrity); Python with pty; POSIX file modes | Provider behavior, strict recording fakes, native CLI/loopback signup and invite refusals, TTL vectors, offline status signing, the offline `aw who` read of a chainless root. Every recorded hook/probe command path and flag is then checked against this exact aw's help. |
 | `kernel` | OATS v0.70.0 at `7512163012876511088da79168c74540f9523c66`, tested aw, tmux; isolated local Git repositories | Public hostOnly, requirement backends, roots, disposal, registry, preview, runtime, upgrade, tasks and attention contracts. Only disposable kernel deployments are exercised. |
 | `host` | Same pinned kernel and tested aw, tmux on a private socket directory | Native health commands, scheduler and process observations. Identity reads moved to disposable stack journeys. |
-| `stack` | All three aw versions; OSS aweb at `679d50066d4160748f6f9cfa0537161992399573`, PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, legacy bare-label grant fill/retire, roster/count, joined and retained seats (an unadopted root's join passes no `--parent`; on an aw with it, the parented accept's argv is parsed by the real aw), the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
+| `stack` | All three aw versions; OSS aweb at `aff5aac56dc2f63c673d4e5f2f6df6a1b2c25d89` (server 1.27.51, awid 0.5.40, aw 1.36.59), PostgreSQL, Redis, awid, pinned kernel, disposable Linux user manager | Resident creation refusal/resume, custody, grants and show, legacy bare-label grant fill/retire, roster/count, joined and retained seats (an unadopted root's join passes no `--parent`; on an aw with it, the parented accept's argv is parsed by the real aw), the non-acknowledging `messaging:mail` read, native identity/readiness observations and sanitized capture generation. |
 | `historical` (manual) | OATS `bb2ba8c9a254edb745913b9c5a9d9b833fda932d` and `e6e75ed8ba5a0a07a4b3e26fc627cac9064c730b` | The retained 0.42/0.47 inventory projection comparison. Those kernels are below the package's supported 0.70 floor, so current CI does not provision them. |
 | `hosted` (acceptance) | Disposable hosted team, pi extension, dashboard token and status API | `health-live.test.mjs`; no Cloud credentials are available to the OSS CI stack. |
 
 The stack uses the CI-only `test/fixtures/stack/awid-public-origin.yaml`
-override to configure `AWID_PUBLIC_ORIGINS=http://127.0.0.1:18010` for native
-covering controller signatures. The pinned service code and authentication
+override to configure `AWID_PUBLIC_ORIGINS=http://awid:8010,http://127.0.0.1:18010`
+for covering controller signatures, aw's from the host and the server's from inside
+the stack's network. The pinned service code and authentication
 checks stay unchanged. Scratch host readers receive the selected
 `OATS_NODE_BIN` / `OATS_CLI_BIN` pair instead of relying on an installed oats.
 Printed-step journeys explicitly name that private registry through
@@ -120,8 +121,8 @@ with renewal off, and retire must revoke it in its recorded team. This case
 runs at every matrix version, including 1.36.33 and 1.36.58.
 
 The fill checks the list row's `status`. In the pinned service,
-[`list_identity_grants`](https://github.com/awebai/aweb/blob/679d50066d4160748f6f9cfa0537161992399573/server/src/aweb/routes/identity_grants.py#L173)
-uses [`grant_status`](https://github.com/awebai/aweb/blob/679d50066d4160748f6f9cfa0537161992399573/server/src/aweb/identity_grant_status.py#L15),
+[`list_identity_grants`](https://github.com/awebai/aweb/blob/aff5aac56dc2f63c673d4e5f2f6df6a1b2c25d89/server/src/aweb/routes/identity_grants.py#L174)
+uses [`grant_status`](https://github.com/awebai/aweb/blob/aff5aac56dc2f63c673d4e5f2f6df6a1b2c25d89/server/src/aweb/identity_grant_status.py#L56),
 which returns `expired` for a finite grant past its expiry. `aw id grant show`
 returns this list row; `effective_status` belongs to the separate grant
 status endpoint used by custody. Unit tests pin the no-write refusal for an
