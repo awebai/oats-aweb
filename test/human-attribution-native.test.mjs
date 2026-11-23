@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,4 +97,15 @@ test("A10: the provider's who read on this real aw: a legacy chainless did:key r
   assert.deepEqual({ label: entry.label, team: entry.team, home: entry.home, warnings: entry.warnings }, { label: "root", team: null, home: root, warnings: [] });
   if (hasWho) assert.deepEqual(entry.attribution, { outcome: "unknown", humanId: null, reason: "legacy_no_chain" });
   else assert.deepEqual([entry.attribution.outcome, entry.attribution.humanId, /^aw who failed \(exit 1\)/.test(entry.attribution.reason)], ["unavailable", null, true]);
+
+  // With settings.oats.aweb.registry set, the provider passes it to who as --registry: this
+  // real aw receives it (a shim records the argv) and answers as it did without it.
+  const shimBin = join(scratch, "shim-bin"), argvLog = join(scratch, "aw-argv.log"), registry = "http://127.0.0.1:1";
+  mkdirSync(shimBin);
+  writeFileSync(join(shimBin, "aw"), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}\nexec ${JSON.stringify(binary)} "$@"\n`, { mode: 0o755 });
+  const pinnedEnv = { ...env, PATH: `${shimBin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_SETTINGS: JSON.stringify({ root, registry }) };
+  const pinned = spawnSync(process.execPath, [HOOK, "setup", "--check-only", "--json"], { cwd: dep, env: pinnedEnv, encoding: "utf8", timeout: 60000 });
+  const pinnedEntry = JSON.parse(pinned.stdout.trim().split("\n").pop()).roots?.[0];
+  assert.ok(readFileSync(argvLog, "utf8").split("\n").includes(`--identity-home ${join(root, ".aw")} who --json --registry ${registry}`), readFileSync(argvLog, "utf8"));
+  assert.deepEqual(pinnedEntry?.attribution, entry.attribution, pinned.stdout + pinned.stderr);
 });

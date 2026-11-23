@@ -69,7 +69,7 @@ let identityHome = null, rest = args;
 if (rest[0] === "--identity-home") { identityHome = rest[1]; rest = rest.slice(2); }
 const accepting = rest.slice(0, 3).join(" ") === "id team accept-invite";
 const stdin = accepting ? fs.readFileSync(0, "utf8").trim() : undefined;
-fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, identityHome, cwd: process.cwd(), ...(accepting ? { stdin: !!stdin } : {}) }) + "\\n");
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, identityHome, cwd: process.cwd(), registry: process.env.AWID_REGISTRY_URL, ...(accepting ? { stdin: !!stdin } : {}) }) + "\\n");
 const awDir = identityHome || path.join(process.cwd(), ".aw");
 const flag = (n) => rest.find((a) => a.startsWith(n + "="))?.slice(n.length + 1) ?? (rest.includes(n) ? rest[rest.indexOf(n) + 1] : undefined);
 const key = (dir) => {
@@ -575,6 +575,43 @@ test("A6 (P4): an adopted root on aw < 1.36.59 stops before any team invite with
 // Connect.
 
 const connect = (fx, args = []) => fx.run(["connect", SERVER, "--json", ...args], { cwd: fx.ws });
+
+// P5 and the registry setting (contract r3, oats#2108, §4 "Registry"): with
+// settings.oats.aweb.registry set, every `aw who` the provider runs passes it as
+// `--registry <origin>`; with none, the argv is unchanged and no registry reaches aw. An
+// ambient AWID_REGISTRY_URL is never passed on. Spawn (the issuing root and C1), its join
+// (P4's read of the joined root), start (C1), check-only (C2) and connect (the inviter)
+// each read.
+for (const [kind, registry] of [["pinned", "https://registry.example.test"], ["unpinned", undefined]]) test(`P5 reads on spawn, join, start, check-only and connect carry the registry setting (${kind})`, (t) => {
+  const fx = fixture(t, { join: "joined" });
+  fx.fake.set({ version: "1.36.59", features: ["spawn-attribution"], who: { [fx.rootHome]: noHuman("did:aw:example.test/root"), [join(fx.joinedRoot, ".aw")]: noHuman("did:aw:example.test/joined"), [fx.homeAw]: noHuman("did:aw:example.test/dev-1") } });
+  // A public ambient value is harmless to the provider and must never reach aw.
+  const env = { OATS_SETTINGS: JSON.stringify({ ...fx.settings, ...(registry ? { registry } : {}) }), AWID_REGISTRY_URL: "https://api.awid.ai" };
+  const reads = {};
+  const step = (name, go) => {
+    const before = fx.fake.calls().length;
+    const r = go();
+    reads[name] = fx.fake.calls().slice(before).filter((c) => c.args.includes("who"));
+    return r;
+  };
+  const spawned = step("spawn and join", () => fx.run(["spawn"], { env }));
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  step("start", () => fx.run(["launch"], { env: { ...env, OATS_META: JSON.stringify(spawned.doc.meta) } }));
+  step("check-only", () => fx.run(["setup", "--check-only", "--json"], { cwd: fx.ws, env }));
+  step("connect", () => fx.run(["connect", SERVER, "--json"], { cwd: fx.ws, env }));
+  const homes = (name) => reads[name].map((c) => c.identityHome);
+  assert.ok(homes("spawn and join").includes(fx.rootHome), "spawn reads the issuing root");
+  assert.ok(homes("spawn and join").includes(join(fx.joinedRoot, ".aw")), "the join reads the joined root (P4)");
+  assert.ok(homes("spawn and join").includes(fx.homeAw), "spawn reads the minted identity (C1)");
+  assert.ok(homes("start").includes(fx.homeAw), "start reads the identity (C1)");
+  assert.ok(homes("check-only").includes(fx.rootHome), "check-only reads each root (C2)");
+  assert.ok(homes("connect").includes(fx.rootHome), "connect reads the inviter");
+  for (const [name, calls] of Object.entries(reads)) for (const c of calls) {
+    assert.deepEqual(c.args, ["--identity-home", c.identityHome, "who", "--json", ...(registry ? ["--registry", registry] : [])], `${name}: the exact argv`);
+    assert.equal(c.registry, registry, `${name}: ${c.args.join(" ")}`);
+  }
+});
+
 
 test("A7 (connect): a chained inviter is refused before any invite is minted", (t) => {
   for (const answer of [(id) => nearest(id, [HUMAN, id]), noHuman]) {

@@ -199,3 +199,13 @@ test('retire with an invalid registry reports no cleanup and the repair before a
   assert.equal(readFileSync(join(f.home,'.oats-aweb','held','.aw','signing.key'),'utf8'),'fixture authority retained');
   assert.deepEqual(f.calls(),[]);
 });
+
+test('P5 (aw who) is a registry read: the setting reaches it pinned, and nothing does unpinned', async () => {
+  const {registryEnv} = await import('../oats-package/capabilities/oats-aweb/lib/registry-setting.mjs');
+  const registry = 'https://registry.example.test';
+  for (const args of [['aw','--identity-home','/fixture/.aw','who','--json'], ['--identity-home=/fixture/.aw','who','--json'], ['who','--json']]) {
+    assert.deepEqual(registryEnv({registry},args), {AWID_REGISTRY_URL:registry}, JSON.stringify(args));
+    assert.deepEqual(registryEnv({},args), {}, JSON.stringify(args));
+  }
+  assert.deepEqual(registryEnv({registry},['--identity-home','/fixture/.aw','who','--help']), {}, 'help reads no registry');
+});
