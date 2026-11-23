@@ -167,7 +167,7 @@ test("spawn is fatal when aw is absent (required-hook contract)", async (t) => {
   const result = await run(["spawn"], {
     PATH: tempDir(t),
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "developer-api-1",
   }, home);
   // A required spawn hook that cannot mint an identity must fail the spawn:
@@ -186,7 +186,7 @@ test("spawn is fatal when aw version cannot be read", async (t) => {
   const result = await run(["spawn"], {
     PATH: bin,
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "developer-api-1",
   }, home);
   assert.notEqual(result.code, 0, result.stdout);
@@ -202,7 +202,7 @@ test("authority discovery does not walk above the workspace", async (t) => {
   const result = await run(["spawn"], {
     PATH: fakePath(t),
     OATS_EVENT: "spawn",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_INSTANCE: "example-1",
     OATS_CONTEXT: workspace,
     OATS_WORKSPACE: workspace,
@@ -225,7 +225,7 @@ test("roster guidance uses the required --to recipient flag", async (t) => {
   const result = await run(["roster", "--soul", "dev"], {
     PATH: fakePath(t, `printf '%s\\n' '{"team_id":"default:test","members":[]}'`),
     OATS_EVENT: "roster",
-    OATS_HOME: root,
+    OATS_HOME: root, OATS_INSTANCE_HOME: root,
     OATS_DEFAULT_TEAM: "default",
     OATS_DEFAULT_TEAM_ID: "default:test",
     OATS_DEFAULT_TEAM_FROM: "deployment",
@@ -815,7 +815,7 @@ test("oats aweb teams text mode handles null defaults and no unmapped field", as
   const result = await run(["teams"], {
     PATH: fake.path,
     OATS_EVENT: "teams",
-    OATS_HOME: root,
+    OATS_HOME: root, OATS_INSTANCE_HOME: root,
     OATS_SETTINGS: JSON.stringify({ root }),
     OATS_META: JSON.stringify({}),
     OATS_TEAMS: JSON.stringify([]),
@@ -844,13 +844,13 @@ test("spawn accepts a 64-character alias and rejects 65 before aw", async (t) =>
   mkdirSync(badHome);
   const fake = fakeAwSetupPath(t, { activeTeam: "active:example.invalid" });
   const alias64 = `a${"b".repeat(63)}`;
-  const accepted = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: okHome, OATS_INSTANCE: alias64, OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, okHome);
+  const accepted = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: okHome, OATS_INSTANCE_HOME: okHome, OATS_INSTANCE: alias64, OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, okHome);
   assert.equal(accepted.code, 0, accepted.stdout + accepted.stderr);
   assert.ok(joinFromCalls(fake.readCalls()).some((call) => call.args.includes(`--name=${alias64}`)));
 
   const callsBefore = fake.readCalls().length;
   const alias65 = `a${"b".repeat(64)}`;
-  const refused = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: badHome, OATS_INSTANCE: alias65, OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, badHome);
+  const refused = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: badHome, OATS_INSTANCE_HOME: badHome, OATS_INSTANCE: alias65, OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, badHome);
   assert.notEqual(refused.code, 0, refused.stdout);
   assert.match(JSON.parse(refused.stdout).warning, /invalid alias/i);
   assert.equal(fake.readCalls().length, callsBefore, "invalid alias must be refused before any aw call");
@@ -863,7 +863,7 @@ test("alias conflict remedy names --name, with no kernel version", async (t) => 
   const fake = fakeAwSetupPath(t);
   const aw = join(fake.path, "aw");
   writeFileSync(aw, `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === "version") { console.log("aw 1.36.33"); process.exit(0); }\nif (args[0] === "team" && args[1] === "list" && args.includes("--json")) { console.log(JSON.stringify({ active_team: "active:example.invalid", memberships: [{ team_id: "active:example.invalid" }] })); process.exit(0); }\nif (args[0] === "team" && args[1] === "invite") { console.log(JSON.stringify({ token: "INVITE-TOKEN" })); process.exit(0); }\nif (args[0] === "team" && args[1] === "join") { console.error("alias already exists"); process.exit(7); }\nif (args[0] === "init" && args.some((a) => a.startsWith("--join-from"))) { console.error("alias already exists"); process.exit(7); }\nif (args[0] === "wake" && args[1] === "status") { console.log(JSON.stringify({ daemon_running: true })); process.exit(0); }\nconsole.error("unexpected fake aw " + args.join(" ")); process.exit(93);\n`, { mode: 0o755 });
-  const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, home);
+  const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
   assert.match(warning, /; spawn with a different --name\. Team: active:example\.invalid$/);
@@ -882,7 +882,7 @@ test("no-team readiness and spawn refuse without kernel default", async (t) => {
   assert.equal(checked.status, 0, checked.stderr);
   assertKernelCheckAnswerRule(checked.stdout, request, "oats-aweb readiness check");
   assert.deepEqual(JSON.parse(checked.stdout).result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "no teams configured: run `oats aweb setup`" }], warnings: [] });
-  const spawned = await run(["spawn"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE: "fixture-1", OATS_WORKSPACE: root, OATS_SETTINGS: JSON.stringify({ root }) }, home);
+  const spawned = await run(["spawn"], { PATH: fake.path, AWEB_API_KEY: "", OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "fixture-1", OATS_WORKSPACE: root, OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(spawned.code, 0, spawned.stdout + spawned.stderr);
   assert.match(JSON.parse(spawned.stdout).warning, /no teams configured/);
 });
@@ -892,7 +892,7 @@ test("retire without persisted identity is an idempotent no-op", async (t) => {
   const result = await run(["retire"], {
     PATH: fakePath(t),
     OATS_EVENT: "retire",
-    OATS_HOME: home,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_META: "{}",
   }, home);
   assert.equal(result.code, 0, result.stderr);
@@ -973,7 +973,7 @@ test('primary spawn uses roots[team] before root/workspace and mints from the ne
   const ws = tempDir(t), declared = tempDir(t), selected = tempDir(t), home = tempDir(t);
   for (const root of [ws, declared, selected]) mkdirSync(join(root, '.aw'));
   const fake = fakeAwSetupPath(t), team = 'primary:example.invalid';
-  const result = await run(['spawn'], { PATH: fake.path, OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: home, OATS_INSTANCE: 'primary-child', OATS_WORKSPACE: ws,
+  const result = await run(['spawn'], { PATH: fake.path, OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'primary-child', OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: team, OATS_SETTINGS: JSON.stringify({ root: declared, roots: { [team]: selected } }) }, home);
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.deepEqual(JSON.parse(result.stdout).env, { AWEB_IDENTITY_HOME: join(home, '.aw') });
@@ -988,7 +988,7 @@ test('an explicitly selected empty root never falls back to a working workspace 
   const ws = tempDir(t), empty = tempDir(t), home = tempDir(t);
   mkdirSync(join(ws, '.aw'));
   const fake = fakeAwSetupPath(t);
-  const result = await run(['spawn'], { PATH: fake.path, OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: home, OATS_INSTANCE: 'primary-child', OATS_WORKSPACE: ws,
+  const result = await run(['spawn'], { PATH: fake.path, OATS_EVENT: 'spawn', OATS_RUNTIME: 'claude', OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'primary-child', OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: 'primary:example.invalid', OATS_SETTINGS: JSON.stringify({ root: empty }) }, home);
   assert.equal(result.code, 1);
   const doc = JSON.parse(result.stdout);

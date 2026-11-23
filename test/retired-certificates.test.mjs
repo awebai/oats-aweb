@@ -74,15 +74,16 @@ function fixture(t, { registry = true } = {}) {
   const meta = { alias: "dev-1", team: DEFAULT, identity: { mode: "local", alias: "dev-1", team: DEFAULT }, joinedTeams: [{ label: "shared", team: SHARED, identityHome: sharedHome, alias: "dev-1", receive: "poll", since: "2026-11-01T00:00:00.000Z" }] };
   const teams = [{ label: "personal", team: DEFAULT, default: true, from: "local" }, { label: "shared", team: SHARED, default: false, from: "shared" }];
   const env = {
-    PATH: fakeAw(t, ws, { registry }), OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
+    PATH: fakeAw(t, ws, { registry }), OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: DEFAULT, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify(teams), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
     OATS_SETTINGS: JSON.stringify({ roots: { [DEFAULT]: root } }),
   };
   const hook = (event, args = [], extra = {}) => spawnSync(process.execPath, [HOOK, event, ...args], { cwd: home, env: { ...env, OATS_EVENT: event, ...extra }, encoding: "utf8", timeout: 30000 });
   const retire = () => {
-    // A fresh retire of the same identities: the default-retire marker would skip the self-delete.
-    rmSync(join(home, ".oats-aweb", "default-retire.json"), { force: true });
+    // A second retire of the same identities is a rerun: the first removed their keys
+    // (awebai/oats-aweb#318), so it answers from the handoffs that retire recorded and
+    // records the controller cleanups again.
     const r = hook("retire", [], { OATS_META: JSON.stringify(meta) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     return JSON.parse(r.stdout);

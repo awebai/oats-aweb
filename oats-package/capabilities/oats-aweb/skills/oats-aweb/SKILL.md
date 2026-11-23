@@ -1074,6 +1074,28 @@ owner removes the membership. Exceptions: a failed spawn's preservation (directo
 mode) copies the whole home, keys included, and homes spawned before 1.24.0 are
 copied whole.
 
+No retire answer leaves `.aw`, `.aweb-identity` or `.aweb-identity-*` where aw
+reads it, so a home the kernel keeps (`--keep-dir`, quarantined, failed) can't
+act as the agent if a session is revived in it (#318). Only a retire the
+kernel dispatched does this (`OATS_EVENT=retire`, `OATS_HOME` and
+`OATS_INSTANCE_HOME` the same absolute home); `oats-aweb.mjs retire` run by
+hand anywhere refuses and touches nothing. An entry a `root`, `roots`,
+`residents` or `identity.source` setting names inside the home is a root's or
+custody's key and stays in place, named in the warning (#321). An exit 0 removes them
+(a retained seat's copy too; its source is never touched), but one that skipped
+cleanup it owes (aw not on PATH) holds them for the next retire. A nonzero exit moves
+each, as itself, to `.oats-aweb/held/<name>` (never one where aw holds a pending
+mint; a grant seat's grant homes are removed instead, its retry revoking
+through the custody); the next retire puts them back
+before it reads anything, and fails closed (`retired: false`,
+`held-credentials-not-restored`, nothing touched, no aw call) when an entry and
+its held copy both exist. A rerun after the key is gone repeats the first run's
+answer from `.oats-aweb` records. A start, `oats aweb join|leave` and `oats aweb
+mail` in such a home refuse with `E_INSTANCE_RETIRING`, and readiness says the
+same: keys held until `oats retire <instance>` finishes, or the home was
+retired and its keys removed (spawn a new instance). Not a boundary against
+another process of the same OS user; a crashed retire leaves the entries in place.
+
 ## Gotchas
 
 - `aw mail inbox` shows **unread** only. Section 4's shared recovery procedure covers session delivery and the version-scoped Pi interrupt workaround: reconcile by message id, not read state or `--conversation-id`; affected Pi instances scan `aw mail inbox --show-all --json` after interrupted turns and at task boundaries.

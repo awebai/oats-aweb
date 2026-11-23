@@ -19,7 +19,7 @@ function fixture(t) {
   writeFileSync(join(base,'oats-local.yaml'),'schemaVersion: 2\nworkspace: fixture\nsettings:\n  unrelated: true\n');
   writeFileSync(join(bin,'aw'),`#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(log)},JSON.stringify({args:process.argv.slice(2),registry:process.env.AWID_REGISTRY_URL})+'\\n'); if(process.argv[2]==='version')console.log('aw 1.36.58');else if(process.argv[2]==='wake')console.log('{}');else if(process.argv[2]==='workspace')console.log('{"alias_released":true,"alias_released_reason":"fixture"}');else process.exit(94);`);
   chmodSync(join(bin,'aw'),0o755);
-  const env={PATH:`${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,HOME:base,OATS_HOME:home,OATS_INSTANCE:'fixture',OATS_TEAM_SCOPE:base,OATS_WORKSPACE:base,OATS_WORKSPACE_NAME:'fixture',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:'t:example.invalid',OATS_SETTINGS:'{}',OATS_META:'{"alias":"fixture","runtime":"pi","delivery":"channel"}'};
+  const env={PATH:`${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,HOME:base,OATS_HOME:home, OATS_INSTANCE_HOME:home,OATS_INSTANCE:'fixture',OATS_TEAM_SCOPE:base,OATS_WORKSPACE:base,OATS_WORKSPACE_NAME:'fixture',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:'t:example.invalid',OATS_SETTINGS:'{}',OATS_META:'{"alias":"fixture","runtime":"pi","delivery":"channel"}'};
   const run=(event,args=[],extra={})=>spawnSync(process.execPath,[hook,event,...args],{cwd:base,env:{...env,OATS_EVENT:event,...extra},encoding:'utf8'});
   return {base,home,env,run,local:()=>readFileSync(join(base,'oats-local.yaml'),'utf8'),calls:()=>existsSync(log)?readFileSync(log,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[]};
 }
@@ -194,6 +194,8 @@ test('retire with an invalid registry reports no cleanup and the repair before a
   assert.match(r.stdout,/oats aweb setup --registry <origin>/);
   assert.match(r.stdout,/retry retire/);
   assert.doesNotMatch(r.stdout+r.stderr,/SECRET|user@|registry\.invalid/);
-  assert.equal(readFileSync(key,'utf8'),'fixture authority retained');
+  // Kept for the retry, held where aw doesn't look (awebai/oats-aweb#318).
+  assert.equal(existsSync(join(f.home,'.aw')),false);
+  assert.equal(readFileSync(join(f.home,'.oats-aweb','held','.aw','signing.key'),'utf8'),'fixture authority retained');
   assert.deepEqual(f.calls(),[]);
 });

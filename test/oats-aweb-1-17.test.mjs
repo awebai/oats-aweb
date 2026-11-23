@@ -62,7 +62,7 @@ function fixture(t, { settings = {}, defaultFrom = "deployment", prefix } = {}) 
     { label: "shared", team: "shared:example.test", default: false, from: "shared" },
   ];
   const env = {
-    OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
+    OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: defaultFrom,
     OATS_TEAMS: JSON.stringify(teams), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
     // The workspace's .aw is the declared root of every team: a joined team mints
@@ -218,7 +218,9 @@ test("a joined leave that needs its key keeps retire nonzero until a retry leave
   assert.deepEqual(doc.meta.joinedTeams.map((j) => j.label), ["shared"], "the team is still recorded as joined");
   assert.equal(doc.meta.pendingControllerCleanup, undefined, "a hosted team has no controller cleanup");
   assert.match(doc.warning, /joined team shared cleanup failed/);
-  assert.equal(existsSync(join(joinedHome, "identity.yaml")), true, "the joined identity stays for the retry");
+  // Held for the retry, out of aw's reach (awebai/oats-aweb#318); the retry puts it back first.
+  assert.equal(existsSync(joinedHome), false);
+  assert.equal(existsSync(join(fx.home, ".oats-aweb", "held", ".aweb-identity-shared", "identity.yaml")), true, "the joined identity is held for the retry");
   assert.equal(existsSync(join(fx.home, ".oats-aweb", "default-retire.json")), true);
   assert.equal(selfDeletes(), 1);
   // A retry that fails again: the completed-default-retire marker branch.
@@ -261,8 +263,10 @@ test("aw stopping after it deleted a joined workspace keeps the identity home an
   assert.equal(doc.meta.pendingControllerCleanup, undefined, "aw's partial retirement is not a hand-off to the controller");
   assert.deepEqual(doc.meta.joinedTeams.map((j) => j.label), ["shared"], "the team is still recorded as joined");
   assert.match(doc.warning, /joined team shared cleanup failed/);
-  assert.equal(existsSync(join(joinedHome, "identity.yaml")), true, "the joined identity stays for the retry");
-  assert.equal(existsSync(join(joinedHome, "retirements", "fixture-workspace.json")), true, "aw's receipt stays where aw resumes it");
+  // Held for the retry (awebai/oats-aweb#318), which puts it back at its own path, where aw resumes the receipt.
+  assert.equal(existsSync(joinedHome), false);
+  assert.equal(existsSync(join(fx.home, ".oats-aweb", "held", ".aweb-identity-shared", "identity.yaml")), true, "the joined identity is held for the retry");
+  assert.equal(existsSync(join(fx.home, ".oats-aweb", "held", ".aweb-identity-shared", "retirements", "fixture-workspace.json")), true, "aw's receipt is held with it");
   r = retire();
   assert.equal(r.status, 0, r.stdout + r.stderr);
   doc = JSON.parse(r.stdout);
@@ -333,7 +337,7 @@ test("a retained seat whose joined leave needs its key keeps retire nonzero", (t
   assert.equal(doc.meta.retired, false);
   assert.equal(doc.meta.reason, "joined-team-leave-failed");
   assert.deepEqual(doc.meta.failedLeaves, ["shared"]);
-  assert.equal(existsSync(join(joinedHome, "identity.yaml")), true);
+  assert.equal(existsSync(join(fx.home, ".oats-aweb", "held", ".aweb-identity-shared", "identity.yaml")), true, "held for the retry (awebai/oats-aweb#318)");
   assert.equal(existsSync(lock), false, "the seat lock is still released");
   assert.equal(fake.calls().some((c) => !c.identityHome && c.args[0] === "workspace" && c.args[1] === "delete"), false, "a retained seat never self-deletes");
 });

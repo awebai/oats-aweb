@@ -82,7 +82,7 @@ function awAtLeast(text, floor) {
 function spawnGrant(base, extraSettings = {}, extraEnv = {}) {
   const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
   const payload = { ...settings(custody), ...extraSettings, identity: { ...settings(custody).identity, ...(extraSettings.identity || {}) } };
-  const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(payload), ...extraEnv });
+  const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(payload), ...extraEnv });
   return { bin, root, home, custody, r };
 }
 
@@ -121,7 +121,7 @@ test("global grants use kernel default team, not mapped primary payload or custo
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base, "merlin", "default:example.test");
     const payload = settings(custody);
     const mappedTeams = JSON.stringify([{ label: "default", team: "default:example.test", default: true, from: "local" }, { label: "alpha", team: "mapped:example.test", default: false, from: "shared" }]);
-    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, OATS_SETTINGS: JSON.stringify(payload), FAKE_CUSTODY_TEAM: "default:example.test" };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.test", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_TEAMS_SOURCE: "live", OATS_TEAMS: mappedTeams, OATS_SETTINGS: JSON.stringify(payload), FAKE_CUSTODY_TEAM: "default:example.test" };
     const r = runHook(bin, "spawn", env);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(r.doc.meta.identity.team, "default:example.test");
@@ -200,7 +200,7 @@ test("real aw at the floor: custody preflight reports needs-configuration instea
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-real-"));
   try {
     const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(dirname(realAw), "spawn", { OATS_RUNTIME: "claude", OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(settings(custody)) });
+    const r = runHook(dirname(realAw), "spawn", { OATS_RUNTIME: "claude", OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify(settings(custody)) });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, /custody preflight failed for merlin/);
     assert.match(r.doc.warning, /status=not_running/);
@@ -337,7 +337,7 @@ test("launch with renewal off preserves the existing grant locator and session d
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
     legacyGrant(base, "grant-old", home);
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: oldHome });
     const recordPath = join(home, ".oats-aweb", "seat.json");
@@ -366,7 +366,7 @@ test("local-mode launch with renew=launch still preserves delivery launch contri
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const old = { delivery: "session", identity: { mode: "local", alias: "probe", team: "t:example.test", address: null, resident: null } };
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", renew: "launch" }, residents: { merlin: custody } }) });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", renew: "launch" }, residents: { merlin: custody } }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aw") });
     assert.equal(logLines(base).some((l) => l.argv[0] !== "wake"), false, "local renew=launch does not try grant renewal");
@@ -380,7 +380,7 @@ test("launch renewal mints into a fresh grant home, emits the new locator, and r
     mkdirSync(join(home, ".aweb-identity"), { recursive: true });
     const old = { delivery: "channel", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
     legacyGrant(base, "grant-old", home);
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.doc.env.AWEB_IDENTITY_HOME, /\.aweb-identity-\d+$/);
     assert.notEqual(r.doc.env.AWEB_IDENTITY_HOME, join(home, ".aweb-identity"));
@@ -408,7 +408,7 @@ test("upgraded 1.17.1 session launch renewal registers the wake broker with the 
     assert.equal(existsSync(join(base, 'aw.log')), false, 'upgrade made no host calls');
     const old = applied.doc.meta;
     legacyGrant(base, "grant-old", home);
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }), AWEB_IDENTITY_HOME: join(base, "foreign-parent-grant") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: r.doc.meta.identity.grant.home });
     assert.notEqual(r.doc.env.AWEB_IDENTITY_HOME, oldHome);
@@ -444,7 +444,7 @@ test("upgraded 1.17.1 session launch renewal keeps the old grant and revokes the
     assert.deepEqual(applied.doc.meta, { ...historical, runtime: 'codex' });
     assert.deepEqual(logLines(base), [], 'upgrade made no host calls');
     const old = applied.doc.meta;
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
       OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }),
       FAKE_WAKE_REGISTER_FAIL_UNLESS: oldHome });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -474,7 +474,7 @@ test("a launch preview with renew=launch names the current grant home as volatil
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"], home: oldHome } } };
     legacyGrant(base, "grant-old", home);
-    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }) };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "launch" }), delivery: "session" }) };
     const preview = runHook(bin, "launch", { ...env, OATS_LAUNCH_PREVIEW: "1" });
     assert.equal(preview.status, 0, preview.stdout + preview.stderr);
     assert.equal(existsSync(join(base, "aw.log")), false, "a preview calls no aw");
@@ -497,7 +497,7 @@ test("a launch preview with renewal off keeps the grant home and declares nothin
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
     legacyGrant(base, "grant-old", home);
-    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }) };
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ ...settings(custody, { renew: "off" }), delivery: "session" }) };
     const preview = runHook(bin, "launch", { ...env, OATS_LAUNCH_PREVIEW: "1" });
     assert.equal(preview.status, 0, preview.stdout + preview.stderr);
     assert.equal(existsSync(join(base, "aw.log")), false, "a preview calls no aw");
@@ -515,7 +515,7 @@ test("launch renewal keeps the old grant and locator when mint fails", () => {
     const oldHome = join(home, ".aweb-identity"); mkdirSync(oldHome, { recursive: true });
     const old = { identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
     legacyGrant(base, "grant-old", home);
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), OATS_RUNTIME: "claude", FAKE_MINT_FAIL: "1" });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), OATS_RUNTIME: "claude", FAKE_MINT_FAIL: "1" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_IDENTITY_HOME: oldHome });
     assert.equal(r.doc.meta.identity.grant.id, "grant-old");
@@ -538,7 +538,7 @@ test("launch renewal keeps the old grant when attachment verification or preflig
       write(join(oldHome, "grant.yaml"), "grant_id: grant-old\nteam_id: t:example.test\nexpires_at: old\ncustody:\n  socket_path: old.sock\n");
       const old = { identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"], home: oldHome } } };
       legacyGrant(base);
-      const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), OATS_RUNTIME: "claude", ...env });
+      const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), OATS_RUNTIME: "claude", ...env });
       assert.equal(r.status, 0, r.stdout + r.stderr);
       assert.equal(r.doc.meta.identity.grant.id, "grant-old");
       assert.deepEqual(r.doc.env, { AWEB_IDENTITY_HOME: oldHome });
@@ -561,7 +561,7 @@ test("launch renewal reports old revoke failure truthfully but keeps the new gra
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const old = { identity: { mode: "global", alias: "resident-alias", team: "t:example.test", resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
     legacyGrant(base, "grant-old", home);
-    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), FAKE_REVOKE_FAIL: "1" });
+    const r = runHook(bin, "launch", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })), FAKE_REVOKE_FAIL: "1" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.doc.warning, /previous grant grant-old was not revoked/);
     assert.equal(existsSync(r.doc.env.AWEB_IDENTITY_HOME), true, "new grant home kept");
@@ -578,7 +578,7 @@ test("retire revokes the current grant id and removes every .aweb-identity direc
     mkdirSync(join(home, ".aweb-identity-2"), { recursive: true });
     const meta = { identity: { mode: "global", resident: "merlin", grant: { id: "grant-current", expiresAt: "ttl", scopes: ["mail.read"] } } };
     legacyGrant(base, "grant-current");
-    const r = runHook(bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify({ residents: { merlin: custody } }) });
+    const r = runHook(bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify({ residents: { merlin: custody } }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.ok(logLines(base).some((l) => l.argv.join(" ") === "id grant revoke grant-current --team=t:example.test --json"));
     assert.equal(grantStatus(base, "grant-current"), "revoked");
@@ -617,7 +617,7 @@ for(const selection of [undefined,'approved','development']) test(`global grant 
     assert.equal(locator,join(home,'.aweb-identity'));
     assert.deepEqual(r.doc.env,{AWEB_IDENTITY_HOME:locator});
     const grant=readFileSync(join(locator,'grant.yaml'),'utf8');
-    const env={OATS_INSTANCE:'probe',OATS_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_META:JSON.stringify(r.doc.meta),OATS_SETTINGS:JSON.stringify({...settings(custody, { renew: "off" }),...selected}),AWEB_IDENTITY_HOME:join(base,'foreign-caller')};
+    const env={OATS_INSTANCE:'probe',OATS_HOME:home, OATS_INSTANCE_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_META:JSON.stringify(r.doc.meta),OATS_SETTINGS:JSON.stringify({...settings(custody, { renew: "off" }),...selected}),AWEB_IDENTITY_HOME:join(base,'foreign-caller')};
     const before=logLines(base);
     const preview=runHook(bin,'launch',{...env,OATS_LAUNCH_PREVIEW:'1'});
     assert.equal(preview.status,0,preview.stdout+preview.stderr);
@@ -644,7 +644,7 @@ for(const selection of [undefined,'approved','development']) test(`retained root
     write(join(source,'teams.yaml'),'active_team: t:example.test\n');
     write(join(source,'workspace.yaml'),'alias: retained\naweb_url: https://fixture.invalid/api\n');
     const selected={delivery:'channel',identity:{mode:'local',source},...(selection===undefined?{}:{claudeChannelMode:selection})};
-    const env={OATS_INSTANCE:'retained',OATS_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_SETTINGS:JSON.stringify(selected),FAKE_RETAINED:'1'};
+    const env={OATS_INSTANCE:'retained',OATS_HOME:home, OATS_INSTANCE_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_RUNTIME:'claude',OATS_SETTINGS:JSON.stringify(selected),FAKE_RETAINED:'1'};
     const spawned=runHook(bin,'spawn',env);
     assert.equal(spawned.status,0,spawned.stdout+spawned.stderr);
     assertSelectedClaudeChannel(spawned.doc,mode);
@@ -678,7 +678,7 @@ test("GLOBAL default and explicit TTL reach spawn and launch mint; preview never
     const base = mkdtempSync(join(tmpdir(), "oats-grant-default-"));
     try {
       const bin = fakeAw(base), { root, home } = deployment(base), custody = resident(base);
-      const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+      const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
         OATS_SETTINGS: JSON.stringify(settings(custody, ttl === undefined ? {} : { ttl })) };
       const spawned = runHook(bin, "spawn", env);
       assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
@@ -712,7 +712,7 @@ test("invalid GLOBAL TTL refuses before effects, including off and retained or p
     const base = mkdtempSync(join(tmpdir(), "oats-grant-invalid-"));
     try {
       const bin = fakeAw(base), { root, home } = deployment(base), custody = resident(base);
-      const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+      const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
         OATS_SETTINGS: JSON.stringify(settings(custody, { ttl, renew: "off" })) };
       const grantHome = join(home, ".aweb-identity");
       const old = { identity: { mode: "global", grant: { id: "retained", home: grantHome } } };
@@ -738,7 +738,7 @@ test("LOCAL launch with omitted renewal ignores GLOBAL-only TTL and retains norm
   try {
     const bin = fakeAw(base), { root, home } = deployment(base);
     const old = { delivery: "session", identity: { mode: "local", alias: "probe", team: "t:example.test" } };
-    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
+    const env = { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root,
       OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify({ delivery: "session", identity: { mode: "local", ttl: "721h" } }) };
     const preview = runHook(bin, "launch", { ...env, OATS_LAUNCH_PREVIEW: "1" });
     assert.equal(preview.status, 0, preview.stdout + preview.stderr);
@@ -763,7 +763,7 @@ test('actual-mint app snapshot is bound to each grant; preview/off/failure retai
     assert.match(r.doc.brief,/"tool_count":2/);
     assert.doesNotMatch(r.doc.brief,/https:\/\/notes.example|manifest_sha256|"create"|"list"/);
     assert.match(r.doc.brief,/oats inspect --home <home> --json/);
-    const env={OATS_INSTANCE:'probe',OATS_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_SETTINGS:JSON.stringify(settings(custody)),OATS_META:JSON.stringify(r.doc.meta)};
+    const env={OATS_INSTANCE:'probe',OATS_HOME:home, OATS_INSTANCE_HOME:home,OATS_WORKSPACE:root,OATS_CONTEXT:root,OATS_SETTINGS:JSON.stringify(settings(custody)),OATS_META:JSON.stringify(r.doc.meta)};
     writeFileSync(join(base,'aw.log'),'');
     const preview=runHook(bin,'launch',{...env,OATS_LAUNCH_PREVIEW:'1'});
     assert.equal(preview.status,0,preview.stdout+preview.stderr);assert.match(preview.doc.warning,/Retained last-successful.*grant-spawn.*Pending re-mint inventory is unknown/);
@@ -829,7 +829,7 @@ test("launch renewal of a team configured in mixed case takes the new grant aw m
     mkdirSync(join(home, ".aweb-identity"), { recursive: true });
     const old = { delivery: "channel", identity: { mode: "global", alias: "resident-alias", team: configured, resident: "merlin", grant: { id: "grant-old", expiresAt: "old", scopes: ["mail.read"] } } };
     legacyGrant(base, "grant-old", home);
-    const r = runHook(bin, "launch", { ...defaultTeamEnv(configured), OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })) });
+    const r = runHook(bin, "launch", { ...defaultTeamEnv(configured), OATS_INSTANCE: "probe", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(old), OATS_SETTINGS: JSON.stringify(settings(custody, { renew: "launch" })) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.doesNotMatch(r.stdout, /differs from/);
     assert.notEqual(r.doc.meta.identity.grant.id, "grant-old", "the new grant is taken");
@@ -845,7 +845,7 @@ for (const status of ['active', 'revoked']) test(`retire rechecks an uncertain r
     const { bin, root, home, custody, r: spawned } = spawnGrant(base, { delivery: 'session' });
     assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
     const grant = spawned.doc.meta.identity.grant;
-    const r = runHook(bin, 'retire', { OATS_INSTANCE: 'probe', OATS_HOME: home, OATS_WORKSPACE: root,
+    const r = runHook(bin, 'retire', { OATS_INSTANCE: 'probe', OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: root,
       OATS_META: JSON.stringify(spawned.doc.meta), OATS_SETTINGS: JSON.stringify(settings(custody)),
       FAKE_REVOKE_STDERR: 'revoke may have applied: context deadline exceeded', FAKE_GRANT_SHOW_STATUS: status });
     assert.ok(logLines(base).some(l => l.argv.join(' ') === `id grant show ${grant.id} --team=t:example.test --json`), 'uncertain outcome must be checked');
@@ -966,7 +966,7 @@ test('global retire uses custody, clears the caller identity, deregisters the wa
   const base = mkdtempSync(join(tmpdir(), 'oats-global-retire-'));
   try {
     const bin = fakeAw(base), { root, home } = deployment(base), custody = resident(base);
-    const env = { OATS_HOME: home, OATS_INSTANCE: 'probe', OATS_WORKSPACE: root, OATS_SETTINGS: JSON.stringify(settings(custody)), AWEB_IDENTITY_HOME: join(base, 'foreign-home') };
+    const env = { OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'probe', OATS_WORKSPACE: root, OATS_SETTINGS: JSON.stringify(settings(custody)), AWEB_IDENTITY_HOME: join(base, 'foreign-home') };
     const absent = runHook(bin, 'retire', { ...env, OATS_META: JSON.stringify({ identity: { mode: 'global', resident: 'merlin', team: 't:example.test' } }) });
     assert.equal(absent.status, 0, absent.stdout + absent.stderr);
     assert.equal(absent.doc.meta.retired, false);

@@ -18,7 +18,7 @@ function fixture(t, outside=false) {
  writeFileSync(join(deployment,'oats-local.yaml'),'schemaVersion: 2\nworkspace: fixture\n');
  writeFileSync(join(root,'.aw','teams.json'),JSON.stringify({memberships:[{team_id:'default:example.invalid'}]}));
  const fake=fakeAwSetupPath(t), env=Object.fromEntries(Object.entries(process.env).filter(([k])=>! /^(OATS_|AWEB_)/.test(k)));
- Object.assign(env,{PATH:fake.path,OATS_HOME:home,OATS_INSTANCE:'dev-1',OATS_TEAM_SCOPE:deployment,OATS_WORKSPACE_NAME:'fixture',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:'default:example.invalid',OATS_TEAMS:JSON.stringify([{label:'default',team:'default:example.invalid',default:true},{label:'joined',team:TEAM,default:false}]),OATS_SETTINGS:JSON.stringify({root}),AW_FAKE_TEAM:TEAM,AWEB_IDENTITY_HOME:'/caller/identity'});
+ Object.assign(env,{PATH:fake.path,OATS_HOME:home, OATS_INSTANCE_HOME:home,OATS_INSTANCE:'dev-1',OATS_TEAM_SCOPE:deployment,OATS_WORKSPACE_NAME:'fixture',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:'default:example.invalid',OATS_TEAMS:JSON.stringify([{label:'default',team:'default:example.invalid',default:true},{label:'joined',team:TEAM,default:false}]),OATS_SETTINGS:JSON.stringify({root}),AW_FAKE_TEAM:TEAM,AWEB_IDENTITY_HOME:'/caller/identity'});
  Object.assign(env,joinKernelEnvironment(env,deployment));
  const run=(args, extra={},input)=>spawnSync(process.execPath,[hook,...args],{cwd:deployment,env:{...env,...extra},input,encoding:'utf8',timeout:15000});
  return {base,deployment,root,home,fake,env,run};
@@ -124,7 +124,7 @@ for(const outside of [false,true])test(`create uses deployment sibling with ${ou
 });
 for(const event of ['launch','retire'])test(`${event} never queries current roots`,t=>{
  const f=fixture(t),q=currentRootQuery(f.base,{home:f.home,deployment:f.deployment,settings:{}});
- const r=f.run([event],{OATS_CLI_BIN:q.cli,OATS_LAUNCH_PREVIEW:'1',OATS_META:JSON.stringify({team:'default:example.invalid',alias:'dev-1',runtime:'claude',delivery:'channel'})});
+ const r=f.run([event],{OATS_EVENT:event,OATS_CLI_BIN:q.cli,OATS_LAUNCH_PREVIEW:'1',OATS_META:JSON.stringify({team:'default:example.invalid',alias:'dev-1',runtime:'claude',delivery:'channel'})});
  assert.ok(!existsSync(q.calls));assert.doesNotMatch(r.stdout+r.stderr,/live settings could not be read|oats inspect did not answer/);
 });
 test('GLOBAL error and operation error envelope remain intact',t=>{

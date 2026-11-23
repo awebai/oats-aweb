@@ -31,7 +31,7 @@ else { console.error('unexpected aw command'); process.exitCode = 1; }
     const r = spawnSync(process.execPath, [HOOK, 'retire'], {cwd: home, encoding: 'utf8', env: {
       PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: base,
       OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: kernel,
-      OATS_EVENT: 'retire', OATS_HOME: home, OATS_INSTANCE: 'probe',
+      OATS_EVENT: 'retire', OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'probe',
       OATS_TEAM_SCOPE: base, OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: 't:example.test',
       OATS_SETTINGS: '{}', OATS_META: JSON.stringify({runtime: 'pi', delivery: 'channel', ...meta}),
       DELETE_RECEIPT: JSON.stringify(receipt),

@@ -76,12 +76,14 @@ test('observer uses real kernel claims, idempotence and producer isolation', {sk
   assert.doesNotMatch(status(), /aweb: 1 unread/);
   assert.match(status(), /Other producer claim/);
 
-  // The real retire hook must clear the target despite foreign ambient instance
-  // selectors; no identity was minted, so retirement has no remote effects.
+  // The real retire hook must clear the target despite a foreign ambient instance
+  // selector; no identity was minted, so retirement has no remote effects. Its
+  // homes are what the kernel sets on every retire (OATS_INSTANCE_HOME is the
+  // target's): a retire with another refuses before any effect (awebai/oats-aweb#321).
   await setOne();
   writeFileSync(join(scratch.bin, 'aw'), '#!/bin/sh\n[ "$1 $2" = "wake deregister" ] && exit 0\nexit 1\n', {mode: 0o755});
   const hook = spawnSync(process.execPath, [new URL('../oats-package/capabilities/oats-aweb/bin/oats-aweb.mjs', import.meta.url).pathname, 'retire'], {
-    cwd: home, env: {...env, PATH: `${scratch.bin}:${env.PATH}`, OATS_EVENT: 'retire', OATS_HOME: home, OATS_INSTANCE_HOME: '/foreign', OATS_INSTANCE: 'foreign', OATS_TEAM_SCOPE: scratch.deployment, OATS_WORKSPACE: scratch.deployment, OATS_META: '{}'}, encoding: 'utf8', timeout: 30000,
+    cwd: home, env: {...env, PATH: `${scratch.bin}:${env.PATH}`, OATS_EVENT: 'retire', OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'foreign', OATS_TEAM_SCOPE: scratch.deployment, OATS_WORKSPACE: scratch.deployment, OATS_META: '{}'}, encoding: 'utf8', timeout: 30000,
   });
   assert.equal(hook.status, 0, hook.stdout + hook.stderr);
   assert.doesNotMatch(status(), /aweb: 1 unread/);

@@ -39,7 +39,7 @@ function runHook(fx, event, env = {}) {
   const base = { ...process.env };
   for (const k of MARKERS) delete base[k];
   const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: {
-    ...base, PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained", OATS_HOME: fx.home,
+    ...base, PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: "retained", OATS_HOME: fx.home, OATS_INSTANCE_HOME: fx.home,
     OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_RUNTIME: "codex", FAKE_RETAINED: "1",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]),

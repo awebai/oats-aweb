@@ -45,7 +45,7 @@ function deployment(t) {
 const globalSettings = (fx, identity = {}) => ({ identity: { mode: "global", resident: "merlin", ...identity }, residents: { merlin: fx.custody } });
 function runHook(fx, event, settings, env = {}) {
   const r = spawnSync(process.execPath, [HOOK, event], { encoding: "utf8", env: { ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, ...teamEnv,
-    OATS_INSTANCE: "probe", OATS_HOME: fx.home, OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_SETTINGS: JSON.stringify(settings), ...env } });
+    OATS_INSTANCE: "probe", OATS_HOME: fx.home, OATS_INSTANCE_HOME: fx.home, OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_SETTINGS: JSON.stringify(settings), ...env } });
   let doc; try { doc = JSON.parse(r.stdout.trim().split(/\n/).at(-1)); } catch { doc = undefined; }
   return { ...r, doc };
 }

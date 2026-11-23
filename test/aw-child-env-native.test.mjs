@@ -42,7 +42,7 @@ test('real aw: retire uses the home service despite every ambient selector', {sk
   write(join(home, '.aw', 'teams.yaml'), `active_team: ${team}\nmemberships:\n${member}      aweb_url: ${own.url}\n`);
   write(join(home, '.aw', 'workspace.yaml'), `aweb_url: ${own.url}\nmemberships:\n${member}`);
   const env = {HOME: base, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_EVENT: 'retire',
-    OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: kernel, OATS_HOME: home, OATS_INSTANCE: 'worker', OATS_TEAM_SCOPE: base,
+    OATS_NODE_BIN: process.execPath, OATS_CLI_BIN: kernel, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: 'worker', OATS_TEAM_SCOPE: base,
     OATS_DEFAULT_TEAM: 'default', OATS_DEFAULT_TEAM_ID: team, OATS_SETTINGS: '{}',
     OATS_META: JSON.stringify({alias: 'worker', team, runtime: 'pi', delivery: 'channel'}),
     AWEB_URL: caller.url, AWID_REGISTRY_URL: caller.url, AWEB_API_KEY: 'caller-key', AWEB_IDENTITY_HOME: '/caller/.aw', AWEB_ROLE_NAME: 'caller', AWEB_ROLE: 'caller'};

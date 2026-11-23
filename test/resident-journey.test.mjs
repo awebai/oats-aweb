@@ -188,6 +188,14 @@ function assertRetiredAtService(step, teamId, certificateId) {
   const row = all.find((m) => m.certificate_id === certificateId);
   assert.ok(row?.revoked_at, `${teamId} records ${certificateId} as revoked: ${JSON.stringify(row)}`);
 }
+/** awebai/oats-aweb#318: a home the kernel keeps (`--keep-dir`) after an exit-0
+ *  retire holds no aweb key material at a path aw reads, nor a held copy. */
+function assertNoKeyMaterial(home) {
+  assert.ok(existsSync(home), `--keep-dir kept ${home}`);
+  const left = readdirSync(home).filter((name) => /^(?:\.aw|\.aweb-identity|\.aweb-identity-.+)$/.test(name));
+  assert.deepEqual(left, [], `no aweb key material is left in the kept home ${home}`);
+  assert.equal(existsSync(join(home, ".oats-aweb", "held")), false, "nothing is held after an exit-0 retire");
+}
 const yamlField = (text, key) => new RegExp(`^${key}:\\s*"?([^"\\n]+)"?\\s*$`, "m").exec(text)?.[1];
 async function awidKey(stableId) {
   const res = await fetch(`${AWID_URL}/v1/did/${encodeURIComponent(stableId)}/key`);
@@ -591,9 +599,10 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
     assert.ok(!versionAtLeast(j.awVersion, "1.36.59-rc.3"), `aw ${j.awVersion} should have accept-invite --parent`);
   }
   const seatCerts = retiresLocalMember(j.awVersion) ? { default: seatCertificate(step, team, seat.alias), alpha: seatCertificate(step, joinedTeam, seat.alias) } : undefined;
-  const retired = j.shell("oats retire joined-seat --json");
+  const retired = j.shell("oats retire joined-seat --keep-dir --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false);
+  assertNoKeyMaterial(home);
   const meta = JSON.parse(retired.stdout).capabilityMeta["oats.aweb"];
   if (!retiresLocalMember(j.awVersion)) {
     // Neither team is hosted here, so aw's refusal hands both memberships to the controller.
@@ -706,9 +715,11 @@ test("a real joined-team seat whose teams' controller keys are not on this machi
   j.cleanups.push(restore);
   for (const [dir, to] of moved) renameSync(dir, to);
   let retired;
-  try { retired = j.shell("oats retire keyless-seat --json"); } finally { restore(); }
+  try { retired = j.shell("oats retire keyless-seat --keep-dir --json"); } finally { restore(); }
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(identityHome), false, "controller cleanup needs no member key: the home may go");
+  // The team_not_hosted handoff left both certificates valid: no key that can use them stays.
+  assertNoKeyMaterial(spawned.doc.result.home);
   const pending = JSON.parse(retired.stdout).capabilityMeta["oats.aweb"].pendingControllerCleanup ?? [];
   assert.deepEqual(pending.map((c) => c.label).sort(), ["alpha", "default"], retired.stdout);
 
@@ -844,10 +855,12 @@ test('a real retained seat copies authority, reconnects, checks, heartbeats, rep
   assert.equal(pane.status, 0, pane.stderr);
   assert.ok(pane.stdout.includes(marker), 'the controlled mail reached the inert pane; no model-consumption claim');
   nativeCapture('retained-delivered-pane', pane.stdout, { version: j.awVersion, commit: j.awCommit, paths });
-  const retired = j.shell('oats retire real-retained --json');
+  const retired = j.shell('oats retire real-retained --keep-dir --json');
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);
   assert.equal(existsSync(lock), false);
   assert.deepEqual(readFileSync(join(source, 'signing.key')), sourceKey);
+  // The home's copy of the standing identity's key is gone; the source is untouched.
+  assertNoKeyMaterial(home);
 });
 
 // messaging:mail, through the pinned kernel's `oats operation run`, against the
@@ -989,7 +1002,7 @@ test("a real legacy bare-label grant seat fills at launch and retires its grant 
   const receipt=JSON.parse(minted.stdout);
   const meta={identity:{mode:'global',alias:'resident',resident:'resident',team,grant:{id:receipt.grant_id,home:grantHome,expiresAt:receipt.expires_at,ttl:'720h',scopes:['mail.read']}}};
   const hook=(event,input)=>spawnSync(process.execPath,[HOOK,event],{cwd:home,encoding:'utf8',env:{...j.env,
-    OATS_EVENT:event,OATS_HOME:home,OATS_INSTANCE:'legacy-seat',OATS_CONTEXT:j.deployment,
+    OATS_EVENT:event,OATS_HOME:home, OATS_INSTANCE_HOME:home,OATS_INSTANCE:'legacy-seat',OATS_CONTEXT:j.deployment,
     OATS_RUNTIME:'pi',OATS_DEFAULT_TEAM:'default',OATS_DEFAULT_TEAM_ID:team,
     OATS_SETTINGS:JSON.stringify({registry:AWID_URL,identity:{mode:'global',resident:'resident',renew:'off'},residents:{resident:custody}}),OATS_META:JSON.stringify(input)}});
   const launched=hook('launch',meta);

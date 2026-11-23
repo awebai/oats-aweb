@@ -172,7 +172,7 @@ function fixture(t, { join: joinLabels } = {}) {
   fake.set({ home, ws, liveSettings: settings });
   const env = {
     HOME: base, PATH: fake.path, AW_NO_UPDATE_CHECK: "1",
-    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_WORKSPACE: ws, OATS_TEAM_SCOPE: ws, OATS_RUNTIME: "claude",
+    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: ws, OATS_TEAM_SCOPE: ws, OATS_RUNTIME: "claude",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }, { label: "joined", team: JOINED, default: false, from: "local" }]),
     OATS_SETTINGS: JSON.stringify(settings), OATS_CLI_BIN: join(fake.bin, "oats"), OATS_NODE_BIN: process.execPath,
@@ -505,7 +505,7 @@ test("A5 (C3): the warning shows at every spawn from that root", (t) => {
   for (const name of ["dev-1", "dev-2"]) {
     const home = join(fx.ws, "agents", "dev", "instances", name);
     mkdirSync(home, { recursive: true });
-    const r = fx.run(["spawn"], { cwd: home, env: { OATS_INSTANCE: name, OATS_HOME: home } });
+    const r = fx.run(["spawn"], { cwd: home, env: { OATS_INSTANCE: name, OATS_HOME: home, OATS_INSTANCE_HOME: home } });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.doc.warning, /attribution-lineage-missing — root .* now reads unknown \(revoked\)/);
   }
@@ -1250,7 +1250,7 @@ function homeDeployment(t, { instanceJson = false, outerHome = false } = {}) {
   writeFileSync(join(root, ".aw", "teams.json"), JSON.stringify({ memberships: [{ team_id: "default:example.invalid" }] }));
   const fake = fakeAwSetupPath(t);
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OATS_|AWEB_|AWID_)/.test(k)));
-  Object.assign(env, { PATH: fake.path, HOME: base, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_TEAM_SCOPE: deployment, OATS_WORKSPACE_NAME: "fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.invalid", OATS_TEAMS: JSON.stringify([{ label: "default", team: "default:example.invalid", default: true }, { label: "joined", team: "joined:example.invalid" }]), AW_ACCEPT_SIGNATURE_PENDING: "code" });
+  Object.assign(env, { PATH: fake.path, HOME: base, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_TEAM_SCOPE: deployment, OATS_WORKSPACE_NAME: "fixture", OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: "default:example.invalid", OATS_TEAMS: JSON.stringify([{ label: "default", team: "default:example.invalid", default: true }, { label: "joined", team: "joined:example.invalid" }]), AW_ACCEPT_SIGNATURE_PENDING: "code" });
   Object.assign(env, joinKernelEnvironment(env, deployment));
   const hook = (args, extra, input, settings) => {
     const r = spawnSync(process.execPath, [HOOK, ...args], { cwd: deployment, env: { ...env, OATS_SETTINGS: JSON.stringify(settings), OATS_EVENT: args[0], ...extra }, input, encoding: "utf8", timeout: 30000 });

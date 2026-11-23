@@ -35,7 +35,7 @@ function fixture(t) {
 }
 function hookEnv(fx, event, home, { identity = {}, env = {} } = {}) {
   return {
-    ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: home.split("/").at(-1), OATS_HOME: home,
+    ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, OATS_EVENT: event, OATS_INSTANCE: home.split("/").at(-1), OATS_HOME: home, OATS_INSTANCE_HOME: home,
     OATS_WORKSPACE: fx.root, OATS_CONTEXT: fx.root, OATS_RUNTIME: "codex", FAKE_RETAINED: "1",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]),

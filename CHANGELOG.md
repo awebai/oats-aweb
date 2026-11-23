@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **Fixed: a home the kernel keeps after a retire no longer holds a usable
+  aweb key (#318).** A home can outlive its retire (`oats retire --keep-dir`, a
+  quarantined or failed retire), and a session provider can start a session in
+  it again with no OATS around it (bb's Unarchive). Its `.aw` held a key whose
+  certificate can stay valid (an alias handed to the team's controller), or a
+  copy of a retained seat's standing identity. Now every retire answer that
+  exits 0 removes `.aw`, `.aweb-identity` and `.aweb-identity-*` from the home
+  (a retained seat's source `.aw` is never touched); one that exits nonzero
+  holds them in `.oats-aweb/held/` for the retry, and says so; and every retire
+  puts held entries back before it reads anything, so a retry finishes as it
+  did before. When an entry and its held copy both exist, the retire touches
+  neither and answers `retired: false`, `reason: "held-credentials-not-restored"`.
+  A rerun after the key is gone answers what the first run answered (the
+  controller handoffs are recorded before the key is removed). What a person
+  sees: a session revived in a failed-retire home gets aw's "not initialized",
+  and in a retired kept home finds no identity; a start, `oats aweb join|leave`
+  and `oats aweb mail` there refuse with `E_INSTANCE_RETIRING`, and readiness
+  says the same, instead of aw's raw error: keys held until `oats retire
+  <instance>` finishes, or the home was retired and its keys removed; the
+  health publisher skips a held home with that reason. An identity home where
+  aw holds a pending mint is never moved (it stays where aw finishes it). A
+  grant seat's grant homes are removed on every exit, as before, since its
+  retry revokes through the resident's custody. A retire with aw not on PATH
+  still answers exit 0 with its warning, but holds the keys, so the next
+  retire does the cleanup it skipped. Only a retire the kernel dispatched
+  (`OATS_EVENT=retire`, `OATS_HOME` and `OATS_INSTANCE_HOME` the same absolute
+  home) touches the entries: run by hand in any directory, the hook refuses
+  and touches nothing. An entry that a `root`, `roots`, `residents` or
+  `identity.source` setting names inside the home stays in place, named in the
+  warning; with unreadable settings no entry moves. Not a boundary against another process of
+  the same OS user; a crashed retire leaves the entries in place. README, "What
+  retire does with the key material".
 - **Fixed: username setup resumes the signup aw kept after an unknown outcome
   (aw 1.36.59).** When the hosted service answers a signup or the connect
   after it with a 5xx, the account may exist, so aw 1.36.59 (fc8c2b797) keeps

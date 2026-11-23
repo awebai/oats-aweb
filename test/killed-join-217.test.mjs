@@ -120,7 +120,7 @@ function fixture(t, { teamOf = {}, captured, sharedLabel = "shared" } = {}) {
     { label: "extra", team: EXTRA, default: false, from: "shared" },
   ]);
   const env = {
-    PATH: fake.path, OATS_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
+    PATH: fake.path, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "dev-1", OATS_WORKSPACE: ws,
     OATS_DEFAULT_TEAM: "personal", OATS_DEFAULT_TEAM_ID: DEFAULT, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: teams(teamOf), OATS_TEAMS_SOURCE: "live", OATS_RUNTIME: "claude",
     OATS_SETTINGS: JSON.stringify(captured ? captured(ws) : { root: ws }),
@@ -215,7 +215,9 @@ test("A: after a killed join, retire whose delete fails exits nonzero and keeps 
   killedAfterAccept(fx);
   const r = retire217(fx, { FAKE_DELETE_FAIL: "1" });
   assert.notEqual(r.status, 0, r.stdout + r.stderr);
-  assert.ok(existsSync(join(fx.identityHome("shared"), "signing.key")), "the member key is kept");
+  // Kept for the retry, held where aw doesn't look (awebai/oats-aweb#318).
+  assert.ok(!existsSync(fx.identityHome("shared")), "no key where aw reads it");
+  assert.ok(existsSync(join(fx.home, ".oats-aweb", "held", ".aweb-identity-shared", "signing.key")), "the member key is kept");
   assert.deepEqual(fx.state().pendingJoins.map((p) => [p.label, p.team]), [["shared", SHARED]]);
   const doc = lastDoc(r);
   assert.equal(doc.meta.retired, false);

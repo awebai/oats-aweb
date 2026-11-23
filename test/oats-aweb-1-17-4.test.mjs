@@ -98,7 +98,7 @@ function fixture(t, { delivery = "session", runtime = "claude", extraEnv = {} } 
   mkdirSync(home, { recursive: true });
   const env = {
     HOME: fake.base, PATH: fake.path,
-    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_WORKSPACE: ws, OATS_RUNTIME: runtime,
+    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: ws, OATS_RUNTIME: runtime,
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]),
     OATS_SETTINGS: JSON.stringify({ root: ws, delivery }),
@@ -597,7 +597,8 @@ test("retire retry after successful self-delete does not call the revoked certif
   const first = fx.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_RETRY_401_AFTER_DELETE: "1" });
   assert.equal(first.status, 0, first.stdout + first.stderr);
   assert.deepEqual(first.doc, { meta: { retired: true, aliasReusable: true, aliasReason: "released", joinedTeams: [] } });
-  assert.equal(existsSync(join(fx.home, ".aw", "revoked")), true);
+  // The fake marked the key revoked; the answer removed it with .aw (awebai/oats-aweb#318).
+  assert.equal(existsSync(join(fx.home, ".aw")), false);
   assert.equal(fx.fake.readCalls().filter((c) => c.args[0] === "workspace" && c.args[1] === "delete" && c.span).length, 1);
   const marker = JSON.parse(readFileSync(join(fx.home, ".oats-aweb", "default-retire.json"), "utf8"));
   assert.equal(marker.kind, "default-workspace-delete");
