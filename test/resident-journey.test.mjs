@@ -537,7 +537,8 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   const acceptArgv = awArgv.filter((line) => line.includes(" id team accept-invite "));
   assert.equal(acceptArgv.length, 1, awArgv.join("\n"));
   assert.doesNotMatch(acceptArgv[0], /--parent/, "an unadopted root's join passes no --parent");
-  assert.ok(awArgv.some((line) => line === `--identity-home ${join(j.deployment, ".aw")} who --json`), "the join read its root with aw who");
+  // The deployment sets the registry (setup --registry above), so P5 passes it explicitly.
+  assert.ok(awArgv.some((line) => line === `--identity-home ${join(j.deployment, ".aw")} who --json --registry ${AWID_URL}`), "the join read its root with aw who, passing the configured registry");
   const record = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
   const [joined] = record.capabilityMeta["oats.aweb"].joinedTeams;
   assert.deepEqual({ label: joined.label, team: joined.team, receive: joined.receive }, { label: "alpha", team: joinedTeam, receive: "native" });
