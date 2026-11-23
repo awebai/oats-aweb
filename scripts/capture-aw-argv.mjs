@@ -1,4 +1,8 @@
 // Refresh with an isolated released aw; help never touches a service or identity.
+// usage: node scripts/capture-aw-argv.mjs <tested-aw> [<floor-aw> [<next-aw>]]
+// The floor supplies the legacy `mail send --new-conversation`; the next aw (the
+// pinned AW_NEXT) supplies `id team accept-invite --parent`, which joined teams pass
+// only for an adopted root and only on aw >= 1.36.59 (README, "Human attribution").
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -12,7 +16,7 @@ try {
     assert.equal(r.status, 0, r.stderr);
     return r.stdout;
   };
-  const commands = ['version', 'init', 'whoami', 'check', 'heartbeat', 'doctor identity', 'doctor registry', 'team list', 'team invite', 'team invite inspect', 'team join', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id cert show', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'mail threads', 'status publish'];
+  const commands = ['version', 'init', 'whoami', 'check', 'heartbeat', 'doctor identity', 'doctor registry', 'team list', 'team invite', 'team invite inspect', 'team join', 'id team list', 'id team members', 'id team create', 'id team invite', 'id team accept-invite', 'id team register', 'id team set-server', 'id team show-server', 'id cert show', 'id grant mint', 'id grant revoke', 'id grant show', 'id grant list', 'custody status', 'workspace connect', 'workspace status', 'workspace delete', 'wake register', 'wake deregister', 'wake status', 'mail inbox', 'mail send', 'mail show', 'mail threads', 'status publish', 'who'];
   const grammar = Object.fromEntries(commands.map(command => {
     const help = run([...command.split(' '), '--help']);
     assert.ok(help.includes(`aw ${command}`), command);
@@ -28,5 +32,13 @@ try {
     grammar['mail send']['--new-conversation'] = false;
     compatibility = { version: run(['version'], legacy).trim(), command: 'mail send', flag: '--new-conversation' };
   }
-  writeFileSync(new URL('../test/fixtures/aw-argv/grammar.json', import.meta.url), JSON.stringify({ version: run(['version']).trim(), compatibility, commands: grammar }, null, 2) + '\n');
+  let next;
+  if (process.argv[4]) {
+    const later = resolve(process.argv[4]);
+    const help = run(['id', 'team', 'accept-invite', '--help'], later);
+    assert.match(help, /^\s+--parent string\s{2,}/m);
+    grammar['id team accept-invite']['--parent'] = true;
+    next = { version: run(['version'], later).trim(), command: 'id team accept-invite', flag: '--parent' };
+  }
+  writeFileSync(new URL('../test/fixtures/aw-argv/grammar.json', import.meta.url), JSON.stringify({ version: run(['version']).trim(), compatibility, ...(next ? { next } : {}), commands: grammar }, null, 2) + '\n');
 } finally { rmSync(home, { recursive: true, force: true }); }

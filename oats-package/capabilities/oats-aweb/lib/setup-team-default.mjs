@@ -4,7 +4,7 @@ import { parseProviderSettings } from './provider-settings.mjs';
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, resolve, join } from 'node:path';
 import { realpathSync, existsSync, statSync, lstatSync, mkdirSync } from 'node:fs';
-import { selectedDeployment } from './team-roots.mjs';
+import { rootInsideInstanceHomeError, selectedDeployment } from './team-roots.mjs';
 import { kernelQueryEnvironment } from './session-readiness.mjs';
 import { sameAwebTeamId, teamKeyIn } from "./aweb-team-id.mjs";
 import { usernameUnavailable, usernameUnavailableCause } from './aw-failure-cause.mjs';
@@ -211,6 +211,9 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     const raw = rootsKey !== undefined ? settings.roots[rootsKey] : Object.hasOwn(settings, 'root') ? settings.root : deployment;
     if (typeof raw !== 'string' || !isAbsolute(raw)) throw setupFailure('E_SETUP_ROOT', 'selected account root must be absolute; invalid explicit root cannot fall back');
     root = resolve(raw);
+    // Admitted before any effect (aw install, signup): never inside one of this deployment's instance homes.
+    const refused = rootInsideInstanceHomeError({ root, setting: rootsKey !== undefined ? `settings.oats.aweb.roots[${JSON.stringify(rootsKey)}]` : Object.hasOwn(settings, 'root') ? 'settings.oats.aweb.root' : 'the deployment directory', label, deployment, beside: join(resolve(deployment), '.aweb-roots', label) });
+    if (refused) throw refused;
     if (existsSync(root) && !statSync(root).isDirectory()) throw setupFailure('E_SETUP_ROOT', 'selected account root is not a directory');
     kernel = selectedTeamKernel(deployment, env);
     const initial = observe();
@@ -277,7 +280,7 @@ export async function setupUsernameDefault(options, { normalize, validTeam, ensu
     applyTeamConfiguration({ kernel, label, team, deployment, observe, steps });
     return { plan: false, label, team, root, steps, observed, membershipVerified: true };
   } catch (error) {
-    if (!error.code?.startsWith('E_SETUP_')) error = setupFailure('E_SETUP_FAILED', 'username setup failed; details withheld');
+    if (!error.code?.startsWith('E_SETUP_') && error.code !== 'E_ROOT_INSIDE_INSTANCE_HOME') error = setupFailure('E_SETUP_FAILED', 'username setup failed; details withheld');
     if (error.code === 'E_SETUP_POLICY' && !error.details.commands && label && predictedTeam && deployment) {
       error.details.commands = [['oats', 'teams', 'add', label, '--team', predictedTeam, '--dir', deployment], ['oats', 'teams', 'default', label, '--dir', deployment]];
     }

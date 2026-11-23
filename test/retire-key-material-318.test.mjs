@@ -485,6 +485,24 @@ test("restoreHeld is all or none: a rename that fails puts back the ones it rest
   assert.deepEqual(removeEntries(home), { removed: [".aw", ".aweb-identity-a", ".aweb-identity-b"], problems: [] });
 });
 
+test("an identity home where aw holds a pending mint is never moved: it stays where aw finishes it, named in the warning, and the others are held", (t) => {
+  const fx = fixture(t, { joined: true });
+  // aw's pending-accept marker (README, "Human attribution"): the retire keeps the home.
+  writeFileSync(join(fx.home, ".aw", "pending-hosted-accept"), "pending\n");
+  const files = listing(join(fx.home, ".aw"));
+  const r = fx.retire({ FAKE_LEAVE: "fail" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.equal(r.doc.meta.retired, false);
+  assert.deepEqual(entriesAt(fx.home), [".aw"], "aw's pending mint stays at its path");
+  assert.deepEqual(listing(join(fx.home, ".aw")), files);
+  assert.deepEqual(held(fx.home), [".aweb-identity-ops"]);
+  assert.ok(r.doc.warning.includes(`key material not held: ${join(fx.home, ".aw")} stays in place: aw holds a pending mint in it`), r.doc.warning);
+  const retry = fx.retire({ FAKE_LEAVE: "fail" }, r.doc.meta);
+  assert.equal(retry.status, 1, retry.stdout + retry.stderr);
+  assert.deepEqual(held(fx.home), [".aweb-identity-ops"], "restored, then held again");
+  assert.deepEqual(listing(join(fx.home, ".aw")), files);
+});
+
 // -------------------------------------------------- readers of a retiring home
 
 test("a start, a join or leave and mail from a home whose keys a failed retire holds say the home is being retired, not aw's error", (t) => {

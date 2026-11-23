@@ -50,14 +50,14 @@ const KERNEL = process.env.OATS_RESIDENT_JOURNEY_KERNEL;
 const OATS = KERNEL ? join(KERNEL, "bin", "oats.mjs") : undefined;
 
 /** The aw releases the journeys are qualified on, each with the commit its
- *  `aw version` prints: aw-compat.json's min and tested, in that order. */
+ *  `aw version` prints: scripts/aw-test-versions.mjs's AW_TEST_VERSIONS, in its order. */
 const QUALIFIED_AW = Object.freeze({
   "1.36.33": "877bbee94ce45aa1ff103912bc9850556e61dfb4",
   "1.36.58": "a3223c1d32b8144abfd34d63b521b38d2b227ad5",
   "1.36.59": "ab4a750318fa7a9108706450747755622de9146c",
 });
 
-test("the journeys are qualified on the floor, tested and pinned next aw", () => {
+test("the journeys are qualified on every aw of the CI matrix", () => {
   assert.deepEqual(Object.keys(QUALIFIED_AW), AW_TEST_VERSIONS);
 });
 
@@ -522,9 +522,22 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   writeFileSync(local, readFileSync(local, "utf8").replace("    delivery: session\n", `    delivery: session\n    root: ${j.deployment}\n`));
   Object.assign(j.env, { AWEB_URL, AWID_REGISTRY_URL: AWID_URL });
 
+  // Human attribution (README): this root has no person behind it, so the join passes
+  // no --parent. A shim records the argv the provider hands the real aw.
+  const argvBin = join(j.base, "argv-bin"), argvLog = join(j.base, "aw-argv.log");
+  mkdirSync(argvBin);
+  writeFileSync(join(argvBin, "aw"), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}\nexec ${JSON.stringify(join(j.bin, "aw"))} "$@"\n`, { mode: 0o755 });
+  const plainPath = j.env.PATH;
+  j.env.PATH = `${argvBin}:${plainPath}`;
   const spawned = j.shell("oats spawn probe --name joined-seat --provider oats.aweb join=alpha --no-launch --json");
+  j.env.PATH = plainPath;
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
   const { home } = spawned.doc.result;
+  const awArgv = readFileSync(argvLog, "utf8").trim().split("\n");
+  const acceptArgv = awArgv.filter((line) => line.includes(" id team accept-invite "));
+  assert.equal(acceptArgv.length, 1, awArgv.join("\n"));
+  assert.doesNotMatch(acceptArgv[0], /--parent/, "an unadopted root's join passes no --parent");
+  assert.ok(awArgv.some((line) => line === `--identity-home ${join(j.deployment, ".aw")} who --json`), "the join read its root with aw who");
   const record = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
   const [joined] = record.capabilityMeta["oats.aweb"].joinedTeams;
   assert.deepEqual({ label: joined.label, team: joined.team, receive: joined.receive }, { label: "alpha", team: joinedTeam, receive: "native" });
@@ -567,6 +580,24 @@ test("a real joined-team spawn: invite, accept, connect and register on this aw,
   const seat = roster.members.find(member => member.alias === spawned.doc.result.instance);
   assert.ok(seat, 'the provider roster contains the joined seat');
   assert.deepEqual(seat.sources, ['certificate', 'presence']);
+  // On an aw with accept-invite --parent (1.36.59, tested and the pinned next), the argv
+  // an adopted root's join passes is parsed by the real aw, which answers its JSON:
+  // here against an unadopted parent on the stack. The completed parented accept is
+  // proven by aweb's own E2E against an adopted root.
+  const acceptHelp = j.aw(home, ["id", "team", "accept-invite", "--help"]);
+  assert.equal(acceptHelp.status, 0, acceptHelp.stderr);
+  if (/^\s+--parent string\s/m.test(acceptHelp.stdout)) {
+    const invite = JSON.parse(step(["team", "invite", `--team-id=${joinedTeam}`, "--json"]));
+    const parentedHome = join(home, ".aweb-identity-parented");
+    const parented = spawnSync(join(j.bin, "aw"), ["--identity-home", parentedHome, "id", "team", "accept-invite", "--token-stdin", "--name=joined-seat-parented", "--local", `--parent=${join(j.deployment, ".aw")}`, "--json"], { cwd: home, encoding: "utf8", input: invite.token + "\n", env: { PATH: j.env.PATH, HOME: j.env.HOME, AWEB_URL, AWID_REGISTRY_URL: AWID_URL, AW_NO_UPDATE_CHECK: "1", NO_COLOR: "1" } });
+    assert.doesNotMatch(parented.stderr, /unknown flag|unknown command/, parented.stderr);
+    const answer = JSON.parse(parented.stdout.trim().split("\n").at(-1));
+    assert.ok(answer && typeof answer === "object", `aw answered its JSON: ${parented.stdout}${parented.stderr}`);
+    if (parented.status !== 0) assert.equal(typeof answer.error?.code, "string", `a refusal is aw's envelope: ${parented.stdout}`);
+    else rmSync(parentedHome, { recursive: true, force: true });
+  } else {
+    assert.ok(!versionAtLeast(j.awVersion, "1.36.59-rc.3"), `aw ${j.awVersion} should have accept-invite --parent`);
+  }
   const seatCerts = retiresLocalMember(j.awVersion) ? { default: seatCertificate(step, team, seat.alias), alpha: seatCertificate(step, joinedTeam, seat.alias) } : undefined;
   const retired = j.shell("oats retire joined-seat --keep-dir --json");
   assert.equal(retired.status, 0, retired.stdout + retired.stderr);

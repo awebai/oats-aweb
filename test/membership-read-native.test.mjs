@@ -25,7 +25,9 @@ for(const state of ['missing','malformed']) test(`real aw membership ${state} st
   assert.equal(provider.status,1,provider.stdout+provider.stderr);
   const doc=JSON.parse(provider.stdout);
   assert.equal(doc.member,null);assert.equal(doc.aw.status,'ok');
-  assert.deepEqual(Object.keys(doc).sort(),['aw','defaultTeam','member','root']);
+  // roots[] is C2's (README, "Human attribution"): this root has no key, so no who read.
+  assert.deepEqual(Object.keys(doc).sort(),['aw','defaultTeam','member','root','roots']);
+  assert.deepEqual(doc.roots.map(r=>[r.label,r.home,r.attribution.outcome]),[['root',root,'unavailable']]);
   assert.match(provider.stderr,/could not check membership/);
   assert.ok(provider.stderr.includes(`failed (exit ${native.status})`));
   assert.doesNotMatch(provider.stderr,/SECRET-NATIVE-INPUT|not a member/);

@@ -49,6 +49,67 @@
   refusal still hands the membership to the controller. The provider is
   unchanged; the real-stack journeys now prove both outcomes on aw 1.36.59, and
   a fake-aw test the partial one.
+- **Added: human attribution (aweb-acxy7.7; OATS
+  `docs/design/2026-11-21-human-ids-contract.md`).** The provider reads who
+  stands behind a root or an identity with `aw who --json` and shows it; it adopts
+  nothing and changes no setting. README, "Human attribution".
+  - With a kernel that lists `spawn-attribution`, spawn and each real start record
+    `identity.attribution` in the served identity (`human`, `none` or `unknown`),
+    from one `aw who` bounded at 5 s; a failed read keeps what was recorded.
+  - `setup --check-only --json` gains `roots[]`: each configured root's label,
+    team, home, `attribution {outcome, humanId, reason}` and warnings.
+  - The provider records each root's last verified human in
+    `<deployment>/.oats-aweb/root-lineage.json` and warns
+    `attribution-lineage-missing` at every spawn and check-only while that root
+    reads `unknown` or `no_human`.
+  - A joined team's accept passes `--parent <root>/.aw` for a root a person
+    adopted; on an aw below 1.36.59 that join stops before any invite with
+    `E_ADOPTED_ROOT_AW_TOO_OLD` (upgrade aw to 1.36.59).
+  - `connect` refuses an inviting root with an identity chain
+    (`E_CONNECT_CHAINED_INVITER`) and names the manual route. From aw 1.36.53 a
+    fresh hosted root nobody adopted reads `no_human`, so for such a deployment
+    this refusal and the manual route are the normal case. Its connect's outcome
+    doesn't change, only how it ends: it already failed at the host's accept, as
+    `E_JOIN_FAILED` after an invite was minted; now it is refused before any
+    invite.
+  - A mint aw stops as `native_agent_signature_pending` fails the spawn and keeps
+    the home (`retired: false, reason: "signature-pending"`) while aw holds the
+    pending mint; a plain retire clears it once aw settles it.
+
+  **What a deployment must change:**
+  - **Nothing, in most deployments.** Roots nobody adopted behave as before in
+    spawn, start, join and check-only, apart from `attribution` and the new `roots`
+    entries: a fresh hosted root (it reads `no_human` from aw 1.36.53) records
+    `none`, a legacy chainless root (aw 1.36.51 or earlier) `unknown`. Connect from
+    a `no_human` root is refused with the manual route (above). A consumer that
+    compares the check-only document's keys exactly sees `roots`.
+  - **A root inside an instance home of this deployment** (`root` or a `roots` value,
+    or a symlink that resolves there) is refused at its next setup that creates,
+    accepts or mints into it (`--username`, `--create`, `--join`, an invite) with
+    `E_ROOT_INSIDE_INSTANCE_HOME`: move it beside the deployment's other roots
+    (`<deployment>/.aweb-roots/<label>`) and set the setting there.
+  - **A home left by a mint cut short under an older provider:** its record of the
+    mint names no issuing key. Retire still settles it as under #240 when aw's own
+    record of the accept proves no signature can be pending, and its warning says so
+    ("aw's record proves no signature can be pending"). Nothing to change there. Only
+    when the warning says aw's record "doesn't show that no signature can be
+    pending" does retire keep the home (`mint-outcome-unknown`): the mint may be
+    waiting for a signature. Don't move aw's files on the warning alone; finish the
+    exchange aw printed, or reconcile it with aw. aw 1.36.58 and 1.36.59 have no
+    command that abandons a pending accept. Once aw shows nothing is pending, move
+    aw's two pending files, `<home>/.aw/hosted-invite-creation.json` and
+    `<home>/.aw/pending-hosted-accept`, to a dated directory beside the home, never
+    `rm` them:
+    `aside="<home>.aw-pending-aside-$(date -u +%Y%m%dT%H%M%SZ)" && mkdir "$aside" && mv <home>/.aw/hosted-invite-creation.json <home>/.aw/pending-hosted-accept "$aside"/`,
+    then run `oats retire <instance>`: it settles the mint as before.
+
+    Why it's safe, with aw's source lines: README, "Human attribution", "A mint cut
+    short under an older provider".
+  aw-compat.json's `tested` moves to 1.36.59 (`min` stays 1.36.33), so setup's
+  default install and the `aw-newer-than-tested` warning follow it. CI runs 1.36.33,
+  1.36.58 (`AW_PREVIOUS`, the previous tested) and 1.36.59, which it installs only
+  at its pinned npm integrity. The stack journeys run against aweb's release of
+  1.36.59 (aff5aac56: server 1.27.51, awid 0.5.40).
 
 ## 1.48.0 — 2026-11-21
 

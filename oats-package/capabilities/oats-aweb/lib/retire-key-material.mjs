@@ -83,18 +83,24 @@ export function restoreHeld(home) {
   return { restored };
 }
 
-/** Rename every credential entry of `home` into .oats-aweb/held. Each rename
- *  that fails leaves that entry in place and says why; nothing is thrown. */
-export function holdEntries(home) {
+/** Rename every credential entry of `home` into .oats-aweb/held, but one for which
+ *  `keep(name)` answers a reason, which stays where it is. Each rename that fails
+ *  leaves that entry in place and says why; nothing is thrown. */
+export function holdEntries(home, { keep = () => undefined } = {}) {
   const held = [], problems = [];
   let names;
   try { names = credentialEntries(home); }
   catch (e) { return { held, problems: [`${home} could not be listed (${codeOf(e)}), so no key material was held`] }; }
-  if (!names.length) return { held, problems };
+  const moving = [];
+  for (const name of names) {
+    const reason = keep(name);
+    if (reason) problems.push(`${join(home, name)} stays in place: ${reason}`); else moving.push(name);
+  }
+  if (!moving.length) return { held, problems };
   const dir = heldDir(home);
   try { mkdirSync(dir, { recursive: true, mode: 0o700 }); }
-  catch (e) { return { held, problems: names.map((name) => `${join(home, name)} stays in place: ${dir} could not be created (${codeOf(e)})`) }; }
-  for (const name of names) {
+  catch (e) { return { held, problems: [...problems, ...moving.map((name) => `${join(home, name)} stays in place: ${dir} could not be created (${codeOf(e)})`)] }; }
+  for (const name of moving) {
     const target = join(dir, name);
     try {
       // A rename onto an existing path would replace it: never overwrite a held entry.

@@ -51,6 +51,7 @@ jobs:
           echo "AW_NATIVE_BIN=$native" >> "$GITHUB_ENV"
           installed="$("$RUNNER_TEMP/aw/node_modules/.bin/aw" version)"
           test "${installed%%$'\n'*}" = "aw $AW_VERSION"
+          node scripts/check-aw-integrity.mjs "$RUNNER_TEMP/aw" "$AW_VERSION"
       - name: npm test unit and native CLI group, zero skips
         run: |
           mkdir -p "$RUNNER_TEMP/test-home"
@@ -59,7 +60,7 @@ jobs:
             AW_REAL_CLI_BIN="$AW_NATIVE_BIN" \
             OATS_TEST_AW="$AW_NATIVE_BIN" \
             OATS_AWEB_TEST_AW="$AW_NATIVE_BIN" \
-            OATS_GRANT_DURATION_NATIVE_REQUIRED=1 OATS_INVITE_NATIVE_REQUIRED=1 OATS_USERNAME_NATIVE_REQUIRED=1 \
+            OATS_GRANT_DURATION_NATIVE_REQUIRED=1 OATS_INVITE_NATIVE_REQUIRED=1 OATS_USERNAME_NATIVE_REQUIRED=1 OATS_ATTRIBUTION_NATIVE_REQUIRED=1 \
             OATS_TEST_AW_ARGV_LOG="$RUNNER_TEMP/recorded-argv.jsonl" \
             node scripts/test-ci.mjs unit
       - name: Every recorded hook command and flag exists in this real aw
@@ -112,7 +113,7 @@ jobs:
       matrix:
         aw: ${{ fromJSON(needs.aw-versions.outputs.versions) }}
     env:
-      AWEB_STACK_COMMIT: 679d50066d4160748f6f9cfa0537161992399573
+      AWEB_STACK_COMMIT: aff5aac56dc2f63c673d4e5f2f6df6a1b2c25d89
       AW_VERSION: ${{ matrix.aw }}
     steps:
       - uses: actions/checkout@v4
@@ -138,6 +139,7 @@ jobs:
           echo "AW_NATIVE_BIN=$native" >> "$GITHUB_ENV"
           installed="$("$RUNNER_TEMP/aw/node_modules/.bin/aw" version)"
           test "${installed%%$'\n'*}" = "aw $AW_VERSION"
+          node scripts/check-aw-integrity.mjs "$RUNNER_TEMP/aw" "$AW_VERSION"
       - name: Give the runner a disposable systemd user custody manager
         run: |
           sudo loginctl enable-linger "$(id -un)"
