@@ -716,23 +716,31 @@ function grantSeat(t) {
   return { base, home, hook };
 }
 
-test("#318 case 6 (A8): a grant seat whose revoke failed holds its grant homes; the revoke that succeeds removes them", (t) => {
+test("#318 case 6 (A8): a grant seat whose revoke failed removes its grant homes all the same (its retry revokes through the custody); the retry's revoke succeeds", (t) => {
   const s = grantSeat(t);
   const spawned = s.hook("spawn");
   assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
   assert.deepEqual(entriesAt(s.home), [".aweb-identity"], "the spawn's grant home");
-  const files = listing(join(s.home, ".aweb-identity"));
   const failed = s.hook("retire", { OATS_META: JSON.stringify(spawned.doc.meta), FAKE_REVOKE_FAIL: "grant-spawn" });
   assert.equal(failed.status, 1, failed.stdout + failed.stderr);
+  assert.equal(failed.doc.meta.retired, false);
   assert.equal(failed.doc.meta.reason, "grant-revoke-failed");
   assert.deepEqual(entriesAt(s.home), []);
-  assert.deepEqual(held(s.home), [".aweb-identity"]);
-  assert.deepEqual(listing(join(s.home, ".oats-aweb", "held", ".aweb-identity")), files);
+  assert.deepEqual(held(s.home), [], "a grant home is never held");
   const retried = s.hook("retire", { OATS_META: JSON.stringify(failed.doc.meta) });
   assert.equal(retried.status, 0, retried.stdout + retried.stderr);
   assert.equal(retried.doc.meta.identityRevoked, true);
   assert.deepEqual(entriesAt(s.home), []);
   assert.deepEqual(held(s.home), []);
+});
+
+test("a seat that is not a grant seat holds an identity home with a grant home's name (a joined team's numeric label) on a nonzero exit", (t) => {
+  const fx = fixture(t);
+  identityHome(join(fx.home, ".aweb-identity-7"), OPS, "cert-numeric");
+  const r = fx.retire({ FAKE_DELETE: "fail" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.deepEqual(entriesAt(fx.home), []);
+  assert.deepEqual(held(fx.home), [".aw", ".aweb-identity-7"]);
 });
 
 test("#318 case 6 (A8): a grant seat whose grants were revoked at the first retire leaves no grant home", (t) => {

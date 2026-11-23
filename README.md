@@ -2113,12 +2113,19 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
   `.oats-aweb/held/.aweb-identity-research`), because the key is the only
   authority a retry has. A joined team retire leaves is recorded as left
   before its identity home goes with the rest at the answer, so a retire
-  killed after that leave doesn't try it again without the key. The warning names what was held. A rename that fails
-  leaves that entry in place and says which and why; the exit code is the
-  retire's own. `.oats-aweb` is never copied to recovery and is owner-only.
-  One entry is never moved: an identity home where aw holds a pending mint
-  stays where aw finishes or settles it ("Human attribution"), and the warning
-  names it; the retire choke point keeps that home.
+  killed after that leave doesn't try it again without the key. The warning
+  names what was held. A rename that fails leaves that entry in place and says
+  which and why; the exit code is the retire's own. `.oats-aweb` is never
+  copied to recovery and is owner-only. Two exceptions:
+  - An identity home where aw holds a pending mint is never moved: it stays
+    where aw finishes or settles it ("Human attribution"), and the warning
+    names it; the retire choke point keeps that home.
+  - A grant seat's grant homes (`.aweb-identity`, `.aweb-identity-<n>`) are
+    removed, not held, on every exit (but one where aw holds a pending mint):
+    a grant's retry revokes through the resident's custody and never reads a
+    grant home, so a held one would only keep a live grant whose revoke
+    failed. A grant seat joins no teams; on any other seat an identity home
+    with such a name (a numeric joined label) is held like any entry.
 - **Every retire puts held entries back first**, before it reads any state, so
   a retry sees exactly the home the failed retire saw and finishes as it would
   have, with recorded absolute paths (a joined team's `identityHome`) valid

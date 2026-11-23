@@ -72,7 +72,7 @@ import { selectedDeployment, currentJoinRootChoice, normalizeAwebTeamName, rootI
 import { controllerCleanupArgs, controllerCleanupProblem, readRetiredRecord, recordRetiredCertificates } from "../lib/retired-certificates.mjs";
 import { sameAwebTeamId, teamCertificateRelativePath, teamKeyIn, validAwebTeamId } from "../lib/aweb-team-id.mjs";
 import { didKeyOfSigningKey } from "../lib/member-key.mjs";
-import { HELD_RELATIVE, REMOVED_KEYS_RELATIVE, credentialEntries, holdEntries, removeEntries, restoreHeld, retiredKeysMessage } from "../lib/retire-key-material.mjs";
+import { HELD_RELATIVE, REMOVED_KEYS_RELATIVE, credentialEntries, grantHomeEntries, holdEntries, removeEntries, removeNamed, restoreHeld, retiredKeysMessage } from "../lib/retire-key-material.mjs";
 import { isSeatLockLeftovers, isSeatLockRefusal, lockField, readSeatLockGuarded, sameSeatLock, seatLockHolderText, swapSeatLock } from "../lib/seat-lock.mjs";
 import { plainServiceUrl, registryOriginUrl } from "../lib/plain-service.mjs";
 import { awebUrlVariableSet, retainedSeatCheck } from "../lib/retained-seat-service.mjs";
@@ -467,6 +467,12 @@ const AWEB_ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const AWEB_ALIAS_RULE = "invalid alias: aweb aliases must be 1-64 characters, start with a letter or digit, and then contain only letters, digits, '-' or '_'";
 /** A retired alias held until the server releases it: --purpose derives <agent>-<purpose>, so either flag gives a free one. */
 const ALIAS_UNRELEASED_REMEDY = "spawn successors with a different --name or --purpose until it is released";
+/** A grant seat (globalGrantRetire's test: identity.mode global, or a seat record),
+ *  read from the hook's input so that an answer before the retire branch knows it too. */
+function grantSeatHome() {
+  try { if (JSON.parse(process.env.OATS_META || "{}")?.identity?.mode === "global") return true; } catch { /* not a grant seat by its meta */ }
+  return existsSync(join(home, ".oats-aweb", "seat.json"));
+}
 if (event === "retire") {
   // The key material a failed retire held goes back first, before any setting or
   // state is read or anything remote is done, and before the first gate that can
@@ -485,7 +491,14 @@ if (event === "retire") {
       // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human
       // attribution"); the choke point keeps the home for it.
       const pendingAt = heldIdentityHomeNames(home);
-      const { held, problems } = holdEntries(home, { keep: (name) => pendingAt.some((p) => p === name || p.startsWith(`${name}/`) || p.startsWith(`${name} `)) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined });
+      const pending = (name) => pendingAt.some((p) => p === name || p.startsWith(`${name}/`) || p.startsWith(`${name} `));
+      // A grant seat's grant homes go on every exit, as before #318, but one aw
+      // holds a pending mint in: its grants are revoked through the resident's
+      // custody, never with a grant home, so holding one would only keep a live
+      // grant credential whose revoke failed. What can't be removed is held below.
+      // Said in no note, as before #318: the warning ends with the revoke command.
+      if (grantSeatHome()) removeNamed(home, grantHomeEntries(home).filter((name) => !pending(name)));
+      const { held, problems } = holdEntries(home, { keep: (name) => pending(name) ? "aw holds a pending mint in it, or it can't be inspected, so it stays where aw finishes or settles it (README, \"Human attribution\")" : undefined });
       return [
         ...(held.length ? [`held ${held.join(", ")} in ${join(home, HELD_RELATIVE)}: a session started in this home cannot act as this identity; the next retire puts ${held.length === 1 ? "it" : "them"} back first`] : []),
         ...problems.map((p) => `key material not held: ${p}`),

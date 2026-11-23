@@ -22,8 +22,9 @@
   says the same, instead of aw's raw error: keys held until `oats retire
   <instance>` finishes, or the home was retired and its keys removed; the
   health publisher skips a held home with that reason. An identity home where
-  aw holds a pending mint is never moved (it stays where aw finishes it). A grant seat whose revoke failed now holds its grant homes for the
-  retry instead of removing them. Not a boundary against another process of
+  aw holds a pending mint is never moved (it stays where aw finishes it). A
+  grant seat's grant homes are removed on every exit, as before, since its
+  retry revokes through the resident's custody. Not a boundary against another process of
   the same OS user; a crashed retire leaves the entries in place. README, "What
   retire does with the key material".
 - **Fixed: username setup resumes the signup aw kept after an unknown outcome

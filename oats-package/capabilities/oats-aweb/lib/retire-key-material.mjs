@@ -186,6 +186,32 @@ function removeEntriesNow(home) {
   return { removed, heldInstead, problems };
 }
 
+/** A grant seat's grant homes in `home` (.aweb-identity, .aweb-identity-<digits>),
+ *  by name: a grant's retry revokes through the resident's custody and never
+ *  reads one. Only a grant seat has them: a joined team's numeric label can share
+ *  the name, and grant seats join no teams. */
+export function grantHomeEntries(home) {
+  try { return credentialEntries(home).filter((name) => name === ".aweb-identity" || /^\.aweb-identity-\d+$/.test(name)); }
+  catch { return []; }
+}
+
+/** Remove the named entries of `home` (a symlink as the link itself), made
+ *  owner-writable first when they resist; `{ removed, problems }`. What stays is
+ *  left for the caller to hold. */
+export function removeNamed(home, names) {
+  return withWritableHome(home, () => {
+    const removed = [], problems = [];
+    for (const name of names) {
+      const path = join(home, name);
+      try { removeOne(path); removed.push(name); continue; }
+      catch { /* made writable below */ }
+      try { ownerWritable(path); removeOne(path); removed.push(name); }
+      catch (e) { problems.push(`${path} could not be removed (${codeOf(e)})`); }
+    }
+    return { removed, problems };
+  });
+}
+
 /** Why a reader of `home`'s aweb identity (a start, a join or leave, mail,
  *  readiness) finds none because of a retire, or undefined: its entries are held
  *  by a retire that did not finish, or were removed by one that did. */

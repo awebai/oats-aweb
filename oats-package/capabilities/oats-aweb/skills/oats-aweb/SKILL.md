@@ -1079,7 +1079,8 @@ reads it, so a home the kernel keeps (`--keep-dir`, quarantined, failed) can't
 act as the agent if a session is revived in it (#318). An exit 0 removes them
 (a retained seat's copy too; its source is never touched). A nonzero exit moves
 each, as itself, to `.oats-aweb/held/<name>` (never one where aw holds a pending
-mint); the next retire puts them back
+mint; a grant seat's grant homes are removed instead, its retry revoking
+through the custody); the next retire puts them back
 before it reads anything, and fails closed (`retired: false`,
 `held-credentials-not-restored`, nothing touched, no aw call) when an entry and
 its held copy both exist. A rerun after the key is gone repeats the first run's
