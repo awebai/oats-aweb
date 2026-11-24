@@ -2126,10 +2126,13 @@ directory, a file or a symlink) at the paths aw reads (awebai/oats-aweb#318):
   whatever its exit (0 included), it holds again exactly what it put back, since
   settings can change between runs and a hold can be undone. Every other entry
   stays in place, named in the warning. Such an entry may still be a live key
-  (an unreleased alias's certificate, a retained seat's standing key): fix the
-  setting, then remove it yourself. A rerun puts the held entries back, answers
-  what the first run answered, and holds them again until the setting is
-  fixed; a retire with it fixed settles them as usual (#322).
+  (an unreleased alias's certificate, a retained seat's standing key), or a
+  root's, a custody's or a standing identity's: fix the setting, then retire
+  again. A rerun puts the held entries back, answers what the first run
+  answered, and holds them again until the setting is fixed; a retire with it
+  fixed tells the entries apart and settles them as usual, removing this
+  instance's and leaving in place one a setting names (#322). Where a retire
+  can't be rerun, remove an entry yourself only if no setting names it (#324).
 - **An answer that exits 0 removes them** when it followed the retire's remote
   cleanup or proved none was owed, after the provider state is written, just
   before the answer is printed: a released or unreleased self-delete, a
