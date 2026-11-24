@@ -7,8 +7,8 @@
   by a path outside the instance home, through a link to a root inside it, is now
   counted by its resolved target. While aw's pending files are there, retire
   keeps the home (`mint-outcome-unknown`) instead of answering
-  `nothing-to-delete`. A locator that can't be resolved keeps it too. Only a
-  hand-made symlink produced this: setup refuses a root inside an instance home.
+  `nothing-to-delete`. Only a hand-made symlink produced this: setup refuses a
+  root inside an instance home.
 
   **What a deployment must change:** nothing.
 

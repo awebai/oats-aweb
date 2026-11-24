@@ -346,10 +346,10 @@ function heldIdentityHomeNames(dir) {
     if (!rel || !relInside(rel)) {
       // Outside the home by path, it can still reach into it through a link
       // (awebai/oats-aweb#312): count its resolved target. One that can't be
-      // resolved holds the home, unless the entry is positively gone.
-      let real;
-      try { real = realpathSync(p); rel = relative(realpathSync(dir), real); }
-      catch (e) { if (!entryAbsent(e, p)) held.push(`${p} (it can't be resolved)`); continue; }
+      // resolved (a loop, a dangling link, an unreadable directory on the way)
+      // reaches no target, and the settings' own rules report it (#228, #318).
+      try { rel = relative(realpathSync(dir), realpathSync(p)); }
+      catch { continue; }
       if (!rel || !relInside(rel)) continue;
     }
     if (held.includes(rel) || names.includes(rel)) continue;
