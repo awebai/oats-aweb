@@ -709,8 +709,10 @@ if (["spawn", "launch"].includes(event)) {
   try { identityFlags = identityBooleans(identitySettings); }
   catch (error) { out({ warning: `oats-aweb: ${error.message}` }, 1); }
 }
-/** Whether two paths name the same place, by their real paths where both exist. */
-const samePath = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
+/** Whether two paths name the same place, by their real paths where both exist, in
+ *  their on-disk spelling (realpathSync.native): on a case-insensitive filesystem
+ *  (macOS) a lock naming this home in another case is this home's. */
+const samePath = (a, b) => { try { return realpathSync.native(a) === realpathSync.native(b); } catch { return resolve(a) === resolve(b); } };
 if (isClassicEnvironment() && ["spawn", "setup"].includes(event)) {
   if (event === "setup") { console.error(CLASSIC_REFUSAL); process.exit(1); }
   fatal(CLASSIC_REFUSAL);

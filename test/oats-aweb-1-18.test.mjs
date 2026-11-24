@@ -5,7 +5,7 @@
 // only: a start on the channel path deregisters the home from the broker, a
 // start on the broker path registers it.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -727,6 +727,25 @@ test('captured locators and retained membership fail closed, including global ea
   const alias=join(home,'identity-alias');symlinkSync(primary,alias);
   writeFileSync(file,JSON.stringify({joinedTeams:[]}));record(local,alias);
   assert.equal(expectedReceive(home).problems.length,0,'canonical locator aliases agree');
+});
+
+// A joined identity home that spells the primary .aw in another case: on a case-insensitive
+// filesystem it is the primary identity, so the receive record overlaps and fails closed;
+// on a case-sensitive one it is a directory of its own. Both outcomes are pinned (#322's shape).
+test('a joined identity home spelling the primary .aw in another case overlaps it on a case-insensitive filesystem, and is its own on a case-sensitive one', async(t)=>{
+  const {expectedReceive}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
+  const home=tempDir(t), primary=join(home,'.aw'), otherCase=join(home,'.AW');
+  for(const dir of [primary,join(home,'.oats-aweb')])mkdirSync(dir);
+  const caseInsensitive=existsSync(otherCase);
+  if(!caseInsensitive)mkdirSync(otherCase);
+  writeFileSync(join(home,'instance.json'),JSON.stringify({capabilityMeta:{'oats.aweb':{delivery:'channel',runtime:'codex',identity:{mode:'local',team:'default:example.test'}}},launch:{hooks:{env:{AWEB_IDENTITY_HOME:primary}}}}));
+  writeFileSync(join(home,'.oats-aweb','teams.json'),JSON.stringify({joinedTeams:[{label:'ops',team:'ops:example.test',identityHome:otherCase}]}));
+  const r=expectedReceive(home);
+  if(caseInsensitive)assert.equal(r.problems[0]?.code,'receive-record-unavailable',JSON.stringify(r));
+  else{
+    assert.deepEqual(r.problems,[],JSON.stringify(r));
+    assert.ok(r.bindings.some(b=>b.identity_home===otherCase),JSON.stringify(r.bindings));
+  }
 });
 
 test('observation-age warning boundaries, quiet workers and timing skew use an injected clock', async(t)=>{
