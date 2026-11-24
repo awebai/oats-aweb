@@ -348,7 +348,10 @@ function heldIdentityHomeNames(dir) {
       // (awebai/oats-aweb#312): count its resolved target. One that can't be
       // resolved (a loop, a dangling link, an unreadable directory on the way)
       // reaches no target, and the settings' own rules report it (#228, #318).
-      try { rel = relative(realpathSync(dir), realpathSync(p)); }
+      // realpathSync.native answers the on-disk spelling, so on a case-insensitive
+      // filesystem (macOS) a locator that spells the home in another case, directly
+      // or through a link, is counted too (#322).
+      try { rel = relative(realpathSync.native(dir), realpathSync.native(p)); }
       catch { continue; }
       if (!rel || !relInside(rel)) continue;
     }

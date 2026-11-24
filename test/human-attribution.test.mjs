@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { joinFromFake, membersFake } from "./helpers/fake-aw-join-from.mjs";
 import { pendingMintFake } from "./helpers/fake-pending-mint.mjs";
 import { fakeAwSetupPath } from "./helpers/fake-aw-setup.mjs";
@@ -1344,6 +1344,30 @@ test("a configured root reached through a symlink outside the home, to a nested 
     assert.ok(r.doc.warning.includes(join("deep", "nested", "root", ".aw")), `${name}: ${r.doc.warning}`);
     assert.ok(existsSync(pendingFile), `${name}: kept`);
   }
+});
+
+// The same, with the instance home's name spelled in another case: directly, and through a
+// link outside the home. What the filesystem does with the other spelling decides: CI's
+// Linux is case-sensitive, a macOS volume usually isn't. Both outcomes are pinned, so
+// neither is skipped (#322's shape).
+for (const via of ["spelled directly", "through a link outside the home"]) test(`a configured root that spells the home in another case (${via}): on a case-insensitive filesystem its pending files keep the home; on a case-sensitive one it names another path`, (t) => {
+  const d = homeDeployment(t), nested = join(d.home, "deep", "nested", "root");
+  mkdirSync(nested, { recursive: true });
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(join(nested, ".aw"))})`]);
+  const pendingFile = join(nested, ".aw", "pending-hosted-accept");
+  const otherCaseHome = join(dirname(d.home), basename(d.home).toUpperCase());
+  const caseInsensitive = existsSync(otherCaseHome);
+  const spelled = join(otherCaseHome, "deep", "nested", "root");
+  let locator = spelled;
+  if (via !== "spelled directly") { locator = join(dirname(d.deployment), "root-alias"); symlinkSync(spelled, locator); }
+  const r = d.hook(["retire"], { OATS_META: "{}" }, undefined, d.settingsWith(locator));
+  if (caseInsensitive) {
+    assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], r.stdout + r.stderr);
+    assert.ok(r.doc.warning.includes(join("deep", "nested", "root", ".aw")), r.doc.warning);
+  } else {
+    assert.deepEqual([r.status, r.doc?.meta?.reason], [0, "nothing-to-delete"], `another spelling is another path, which doesn't exist: ${r.stdout}${r.stderr}`);
+  }
+  assert.ok(existsSync(pendingFile), "retire itself removes nothing");
 });
 
 test("a root at <home>/.aw/.aw is checked even while <home>/.aw holds the primary mint: rule (b) doesn't release the home over it", (t) => {
