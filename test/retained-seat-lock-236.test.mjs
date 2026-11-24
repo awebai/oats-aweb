@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fakeAw } from "./helpers/fake-aw-grant.mjs";
 import { readSeatLockGuarded } from "../oats-package/capabilities/oats-aweb/lib/seat-lock.mjs";
@@ -226,6 +226,27 @@ test("3. the holder's retire, with no interleaving, removes its lock", (t) => {
 });
 
 // protocol: spawn-read/refused
+// The lock names the holder's home in another case. What the filesystem does with that
+// spelling decides: CI's Linux is case-sensitive, a macOS volume usually isn't. Both
+// outcomes are pinned, so neither is skipped (#322's shape).
+test("a lock that names the holder's home in another case: on a case-insensitive filesystem the holder's retire removes it; on a case-sensitive one it is another seat's, left in place", (t) => {
+  const fx = fixture(t);
+  const a = fx.homeOf("seat-a"), otherCase = join(dirname(a), basename(a).toUpperCase());
+  const caseInsensitive = existsSync(otherCase);
+  const spawned = runHook(fx, "spawn", a);
+  assert.equal(spawned.status, 0, spawned.stdout + spawned.stderr);
+  writeFileSync(fx.lock, JSON.stringify({ ...JSON.parse(readFileSync(fx.lock, "utf8")), home: otherCase }, null, 2) + "\n");
+  const retired = runHook(fx, "retire", a, { env: { OATS_META: JSON.stringify(spawned.doc.meta) } });
+  assert.equal(retired.status, 0, retired.stdout + retired.stderr);
+  if (caseInsensitive) {
+    assert.equal(existsSync(fx.lock), false, "this home's lock, spelled in another case, is removed");
+    assert.match(retired.doc.warning, /released the retained identity "retained" \(lock .* removed\)/);
+  } else {
+    assert.equal(existsSync(fx.lock), true, "another spelling is another seat's home: its lock stays");
+    assert.match(retired.doc.warning, /another seat/);
+  }
+});
+
 test("4. a retire killed while it changed the lock: the next spawn refuses, naming the guard, then the moved lock, and the fix for each", (t) => {
   const fx = fixture(t);
   const a = fx.homeOf("seat-a"), b = fx.homeOf("seat-b");

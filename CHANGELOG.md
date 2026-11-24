@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Fixed: on a case-insensitive filesystem (macOS), paths that spell the home,
+  the deployment or a root in another case are compared by their on-disk
+  spelling.** Six checks used the spelling they were given, so another case
+  read as another place:
+  - retire's check of a link in the home (`awHoldsPendingIn`) now counts a
+    target inside the home, so pending files there keep the home;
+  - setup's root admission (`E_ROOT_INSIDE_INSTANCE_HOME`) now refuses a root
+    inside an instance home that spells the deployment in another case;
+  - a join refuses the instance home spelled in another case as a captured
+    root, as the home's own identity;
+  - a retire's proof that no signature can be pending now sees aw's creator
+    link for the home spelled in another case;
+  - a retained seat's retire now removes its own lock when the lock names its
+    home in another case, instead of leaving it as another seat's;
+  - the receive record's overlap check now sees a joined identity home that
+    spells the primary identity in another case, and fails closed.
+
+  Each compares by the on-disk spelling, as #322 and #327 already do.
+  Case-sensitive filesystems are unchanged.
+
+  **What a deployment must change:** nothing.
+
 - **Fixed: retire counts a configured locator that resolves into the home
   (#312).** A `root`, `roots` value, `identity.source` or `residents` value named
   by a path outside the instance home, through a link to a root inside it, or

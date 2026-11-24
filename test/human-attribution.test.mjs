@@ -1132,6 +1132,17 @@ test("an older provider's cut-short mint: only aw's own record, valid and this h
   link("creator-other.json", { child_home: "/elsewhere/.aw", child_did_key: "did:key:z6MkSomeoneElse" });
   writeFileSync(join(invites, "plain.json"), JSON.stringify({ invite_id: "plain", domain: "example.test", team_name: "t", identity_scope: "local", secret: "", created_at: "" }));
   assert.deepEqual(proof(pending(t)), { proven: true }, "another home's link, and a plain invite");
+  // A link that spells this home in another case: this home on a case-insensitive
+  // filesystem (macOS), another path on a case-sensitive one. Both are pinned (#322's shape).
+  {
+    rmSync(invites, { recursive: true, force: true });
+    const dir = pending(t), otherCase = join(dirname(dir), basename(dir).toUpperCase());
+    const caseInsensitive = existsSync(otherCase);
+    link("creator-case.json", { child_home: otherCase });
+    const r = proof(dir);
+    if (caseInsensitive) assert.ok(!r.proven && r.why, JSON.stringify(r));
+    else assert.deepEqual(r, { proven: true }, "another spelling is another path");
+  }
   // aw reads only non-directory *.json entries as invites (1.36.59 team_invites.go:237).
   // Its lock files (kept after every local-invite accept, :81-86), its writes' temp
   // names and a directory are not invites: they show nothing against the proof, beside
@@ -1399,6 +1410,26 @@ test("a top-level link is descended into for its .aw, wherever it resolves: pend
   assert.ok(r.doc.warning.includes("work/.aw"), r.doc.warning);
 });
 
+// A link in the home whose text spells the home in another case. What the filesystem does
+// with that spelling decides: CI's Linux is case-sensitive, a macOS volume usually isn't.
+// Both outcomes are pinned, so neither is skipped (#322's shape).
+test("an in-home link whose text spells the home in another case: on a case-insensitive filesystem it points inside, and pending files there keep the home; on a case-sensitive one it points outside", (t) => {
+  const d = homeDeployment(t), otherCaseHome = join(dirname(d.home), basename(d.home).toUpperCase());
+  const caseInsensitive = existsSync(otherCaseHome);
+  const target = join(otherCaseHome, "deep", "nested", "aw");
+  mkdirSync(target, { recursive: true });
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(target)})`]);
+  symlinkSync(target, join(d.home, "linked"));
+  const r = d.hook(["retire"], { OATS_META: "{}" }, undefined, d.settingsWith(undefined));
+  if (caseInsensitive) {
+    assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], r.stdout + r.stderr);
+    assert.ok(r.doc.warning.includes("linked"), r.doc.warning);
+  } else {
+    assert.deepEqual([r.status, r.doc?.meta?.reason], [0, "nothing-to-delete"], `another spelling is another directory, outside the home: ${r.stdout}${r.stderr}`);
+  }
+  assert.ok(existsSync(join(target, "pending-hosted-accept")), "retire itself removes nothing");
+});
+
 const FAULT_FS = resolve(new URL("./helpers/fault-fs.mjs", import.meta.url).pathname);
 for (const [call, at] of [["lstatSync", (root) => join(root, ".aw")], ["lstatSync", (root) => join(root, ".aw", "pending-hosted-accept")], ["lstatSync", (root) => root]]) test(`an IO error (${call} of ${at("<root>")}) keeps the home: an unrecorded in-home root's .aw is held, never skipped`, (t) => {
   const d = homeDeployment(t), nested = join(d.home, "nested-root");
@@ -1455,6 +1486,17 @@ test("setup refuses to accept into a root inside an instance home, before any aw
   const accepted = inner.join(inner.settingsWith(besideInner));
   assert.notEqual(accepted.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", accepted.stdout + accepted.stderr);
   assert.equal(inner.fake.readCalls().find((c) => c.args.includes("accept-invite"))?.identityHome, join(besideInner, ".aw"), "accepted into <deployment>/.aweb-roots/joined");
+  // A root that spells the deployment in another case: inside the home on a case-insensitive
+  // filesystem, refused; another path on a case-sensitive one (#322's shape).
+  {
+    const d = homeDeployment(t, { instanceJson: true }), otherCase = join(dirname(d.deployment), basename(d.deployment).toUpperCase());
+    const caseInsensitive = existsSync(otherCase);
+    const r = d.join(d.settingsWith(join(otherCase, "agents", "dev", "instances", "dev-1", "nested-root")));
+    if (caseInsensitive) {
+      assert.equal(r.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", r.stdout + r.stderr);
+      assert.equal(r.doc.error.details.instanceHome, realpathSync.native(d.home));
+    } else assert.notEqual(r.doc?.error?.code, "E_ROOT_INSIDE_INSTANCE_HOME", `another spelling is another path: ${r.stdout}${r.stderr}`);
+  }
   // A root beside the deployment's others is accepted as before.
   const d = homeDeployment(t, { instanceJson: true }), beside = join(d.deployment, ".aweb-roots", "joined");
   const r = d.join(d.settingsWith(beside));
