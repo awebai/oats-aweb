@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { fakeAwSetupPath } from './helpers/fake-aw-setup.mjs';
@@ -108,6 +108,14 @@ test('(iv) spawn-time join refuses the instance home as a captured root', t=>{
  const f=spawnFixture(t,{settings:({defaultRoot,home})=>({roots:{[DEFAULT]:defaultRoot,[TEAM]:home}})});
  const r=f.spawn();assert.equal(r.status,1,r.stdout+r.stderr);
  assert.match(JSON.parse(r.stdout).warning,/the instance home's own identity/);
+ assert.deepEqual(f.invites(),[]);
+});
+test('(iv) spawn-time join refuses the instance home spelled in another case as a captured root, on a case-insensitive filesystem; on a case-sensitive one it is another path, with no .aw',t=>{
+ const other=(home)=>join(dirname(home),basename(home).toUpperCase());
+ const f=spawnFixture(t,{settings:({defaultRoot,home})=>({roots:{[DEFAULT]:defaultRoot,[TEAM]:other(home)}})});
+ const caseInsensitive=existsSync(other(f.home));
+ const r=f.spawn();assert.equal(r.status,1,r.stdout+r.stderr);
+ assert.match(JSON.parse(r.stdout).warning,caseInsensitive?/the instance home's own identity/:/no \.aw/);
  assert.deepEqual(f.invites(),[]);
 });
 for(const kind of ['a symlink to the home','a root whose .aw links to the home .aw']) test(`(iv) spawn-time join refuses ${kind} as a captured root`,t=>{
