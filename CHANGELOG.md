@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.49.1 — 2026-11-24
 
 - **Fixed: on a case-insensitive filesystem (macOS), paths that spell the home,
   the deployment or a root in another case are compared by their on-disk
