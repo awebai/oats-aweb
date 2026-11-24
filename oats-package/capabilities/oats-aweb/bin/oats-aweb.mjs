@@ -342,8 +342,20 @@ function heldIdentityHomeNames(dir) {
   const candidates = [...locators.map((p) => [p]), ...configured.map((p) => [p, join(p, ".aw")])].flat();
   for (const p of candidates) {
     if (!isAbsolute(p)) continue;
-    const rel = relative(dir, resolve(p));
-    if (!rel || !relInside(rel) || held.includes(rel) || names.includes(rel)) continue;
+    let rel = relative(dir, resolve(p));
+    if (!rel || !relInside(rel)) {
+      // Outside the home by path, it can still reach into it through a link
+      // (awebai/oats-aweb#312): count its resolved target. One that can't be
+      // resolved (a loop, a dangling link, an unreadable directory on the way)
+      // reaches no target, and the settings' own rules report it (#228, #318).
+      // realpathSync.native answers the on-disk spelling, so on a case-insensitive
+      // filesystem (macOS) a locator that spells the home in another case, directly
+      // or through a link, is counted too (#322).
+      try { rel = relative(realpathSync.native(dir), realpathSync.native(p)); }
+      catch { continue; }
+      if (!rel || !relInside(rel)) continue;
+    }
+    if (held.includes(rel) || names.includes(rel)) continue;
     if (awHoldsPendingIn(join(dir, rel))) held.push(rel);
   }
   return held;
