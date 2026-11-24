@@ -342,8 +342,17 @@ function heldIdentityHomeNames(dir) {
   const candidates = [...locators.map((p) => [p]), ...configured.map((p) => [p, join(p, ".aw")])].flat();
   for (const p of candidates) {
     if (!isAbsolute(p)) continue;
-    const rel = relative(dir, resolve(p));
-    if (!rel || !relInside(rel) || held.includes(rel) || names.includes(rel)) continue;
+    let rel = relative(dir, resolve(p));
+    if (!rel || !relInside(rel)) {
+      // Outside the home by path, it can still reach into it through a link
+      // (awebai/oats-aweb#312): count its resolved target. One that can't be
+      // resolved holds the home, unless the entry is positively gone.
+      let real;
+      try { real = realpathSync(p); rel = relative(realpathSync(dir), real); }
+      catch (e) { if (!entryAbsent(e, p)) held.push(`${p} (it can't be resolved)`); continue; }
+      if (!rel || !relInside(rel)) continue;
+    }
+    if (held.includes(rel) || names.includes(rel)) continue;
     if (awHoldsPendingIn(join(dir, rel))) held.push(rel);
   }
   return held;

@@ -130,8 +130,9 @@ OATS's `docs/design/2026-11-21-human-ids-contract.md`.
   home, or in any identity home a record names inside the home (the meta's grant home
   and joined or pending-join homes, and those `teams.json` names, read at that
   moment), or in any directory a setting names inside the home, or its `.aw` (`root`,
-  every `roots` value, `identity.source`, every `residents` value), or one of them
-  can't be inspected, an answer that would let the kernel
+  every `roots` value, `identity.source`, every `residents` value; one named by a path
+  outside the home counts when it resolves, through a link, to inside it, and one
+  that can't be resolved counts as held), or one of them can't be inspected, an answer that would let the kernel
   remove the home
   (`retired: true`, `nothing-to-delete`, or a plain exit 0) becomes `retired: false`,
   `mint-outcome-unknown`, exit status 1. The one exception is the chainless settle

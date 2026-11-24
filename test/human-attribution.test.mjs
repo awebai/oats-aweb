@@ -1,4 +1,4 @@
-// Human attribution (README, "Human attribution"; aweb-acxy7.7, PR a of
+// Human attribution (README, "Human attribution"; aweb-acxy.7, PR a of
 // oats docs/design/2026-11-21-human-ids-contract.md): C1, the served identity's
 // `attribution`; C2, check-only's `roots[]`; C3, the record of a root's last verified
 // human; joined teams' `--parent` (P4); connect's inviter check; the signature-pending
@@ -1326,6 +1326,23 @@ test("a root an earlier provider set up directly in the home, under a setting re
     assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], `${name}: ${r.stdout}${r.stderr}`);
     assert.ok(r.doc.warning.includes("nested-root/.aw"), `${name}: ${r.doc.warning}`);
     assert.ok(existsSync(join(nested, ".aw", "pending-hosted-accept")), `${name}: kept`);
+  }
+});
+
+// awebai/oats-aweb#312: a configured locator outside the home by path whose resolved target
+// lies inside it (a hand-made symlink to a nested root) is counted by its target.
+test("a configured root reached through a symlink outside the home, to a nested root inside it, keeps the home: its target is counted", (t) => {
+  const d = homeDeployment(t), nested = join(d.home, "deep", "nested", "root"), alias = join(dirname(d.deployment), "root-alias");
+  mkdirSync(nested, { recursive: true });
+  symlinkSync(nested, alias);
+  spawnSync(process.execPath, ["-e", `(${pendingMintFake})(${JSON.stringify(join(nested, ".aw"))})`]);
+  const pendingFile = join(nested, ".aw", "pending-hosted-accept");
+  assert.ok(existsSync(pendingFile));
+  for (const [name, extra] of [["with aw", {}], ["aw not on PATH", { PATH: "/no-aw-here" }]]) {
+    const r = d.hook(["retire"], { OATS_META: "{}", ...extra }, undefined, d.settingsWith(alias));
+    assert.deepEqual([r.status, r.doc?.meta?.retired, r.doc?.meta?.reason], [1, false, "mint-outcome-unknown"], `${name}: ${r.stdout}${r.stderr}`);
+    assert.ok(r.doc.warning.includes(join("deep", "nested", "root", ".aw")), `${name}: ${r.doc.warning}`);
+    assert.ok(existsSync(pendingFile), `${name}: kept`);
   }
 });
 
