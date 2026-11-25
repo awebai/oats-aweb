@@ -1,9 +1,10 @@
 // #332: under session delivery an idle, healthy home stays `yes`, and every
-// broken precondition still reads not-yes with its reason. The broker
-// inspects a session only at startup and before a delivery (aw v1.36.59,
-// wake/channel_core_runner_entry.ts:131-143), so an idle home's inspection
-// ages without a fault, while its snapshot is rewritten every 2 s
-// (wake/broker.go:32). Each case here runs a broker status through readiness
+// broken precondition still reads not-yes with its reason. The inspection
+// the broker records (last_inspect_at) is its worker's, made only at startup
+// and before a delivery (aw v1.36.59, wake/channel_core_runner_entry.ts:131-143);
+// its 5-minute presence heartbeat inspects too but records nothing
+// (wake/instance.go:430-475). So an idle home's recorded inspection ages
+// without a fault, while its snapshot is rewritten every 2 s (wake/broker.go:32). Each case here runs a broker status through readiness
 // (targetReceiveAssessment) and then the publisher's vocabulary, with the
 // home's inspection 10 minutes old.
 import test from "node:test";
@@ -27,7 +28,7 @@ function home(t) {
 }
 
 /** aw wake status for one healthy idle home: snapshot just written, its one
- *  inspection made at start, ten minutes ago, and nothing since. */
+ *  recorded inspection made at start, ten minutes ago, and none recorded since. */
 function idleStatus({ dir, primary }) {
   return {
     updated_at: iso(NOW - 1000), daemon_running: true, daemon_version_state: "reported", daemon_version: "1.36.59",
@@ -57,7 +58,7 @@ test("an idle, healthy home's inspection ages under its own code, and the snapsh
   const answer = readiness(idleStatus(h), h);
   assert.deepEqual(answer.problems, []);
   assert.deepEqual(answer.warnings.map((w) => w.code), ["receive-inspection-aged"]);
-  assert.match(answer.warnings[0].message, /broker inspection is 600 seconds old .*at startup and before each delivery/);
+  assert.match(answer.warnings[0].message, /broker inspection is 600 seconds old .*the inspection the broker records is its worker's, made at startup and before each delivery/);
 });
 
 test("an idle, healthy home is published yes past 30 s, however long it stays idle", (t) => {
