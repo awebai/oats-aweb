@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.49.2 — 2026-11-25
 
 - **Fixed: under session delivery, an idle agent is no longer published as
   degraded (#332).** Every idle home read `degraded`, `oats.receive_unproven`
