@@ -597,10 +597,11 @@ if (event === "retire") {
     // since, so no removal; a hold can be undone, and keeps it where aw doesn't
     // look. Every other entry stays in place, named: it is not proven dead, since an
     // unreleased alias's certificate or a retained seat's standing key outlives the
-    // cleanup. A retire with the setting fixed settles both (awebai/oats-aweb#322).
+    // cleanup. A retire with the setting fixed settles both (awebai/oats-aweb#322),
+    // so the warning says to retire again, not to remove the entry (#324).
     const cantTell = configured.unreadable && `which entries are a root's, a custody's or a standing identity's can't be told (${configured.unreadable})`;
     const restoredHere = new Set(restore.restored);
-    const notRestored = cantTell && `${cantTell}, and this run did not put it back from ${join(home, HELD_RELATIVE)}, so it may still be a live key: fix the setting, then remove it`;
+    const notRestored = cantTell && `${cantTell}, and this run did not put it back from ${join(home, HELD_RELATIVE)}, so it may still be a live key: fix the setting, then retire again; where a retire can't be rerun, remove it yourself only if no setting names it`;
     if (code !== 0 || retireCleanupSkipped || cantTell) {
       // An entry where aw holds a pending mint, at any depth the choke point checks
       // (heldIdentityHomeNames), stays where aw finishes or settles it (README, "Human

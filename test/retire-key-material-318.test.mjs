@@ -706,7 +706,8 @@ test("a held home retried with a setting path that can't be resolved and a clean
     assert.deepEqual(listing(fx.extra), fx.extraBefore);
     assert.match(r.doc.warning, /held \.aw in .*: a session started in this home cannot act as this identity; the next retire puts it back first/);
     assert.ok(r.doc.warning.includes(`key material not held: ${fx.extra} stays in place: which entries are a root's, a custody's or a standing identity's can't be told (settings.oats.aweb.root (`), r.doc.warning);
-    assert.match(r.doc.warning, /can't be resolved \(ELOOP\)\), and this run did not put it back from .*, so it may still be a live key: fix the setting, then remove it/);
+    assert.match(r.doc.warning, /can't be resolved \(ELOOP\)\), and this run did not put it back from .*, so it may still be a live key: fix the setting, then retire again; where a retire can't be rerun, remove it yourself only if no setting names it/);
+    assert.doesNotMatch(r.doc.warning, /fix the setting, then remove it/, "it never says to remove an entry a setting may name (#324)");
   }
 });
 
@@ -730,7 +731,9 @@ test("a rerun of that exit 0 puts the held .aw back, answers the first run's ans
     assert.deepEqual(held(fx.home), []);
     assert.deepEqual(entriesAt(fx.home), [], "with the setting readable, nothing names either entry: both go");
   }
-});// ------------------------- an entry a setting names is not this instance's (#321)
+});
+
+// ------------------------- an entry a setting names is not this instance's (#321)
 
 test("a root configured inside the home survives an exit 0 byte-identical, named in the warning; this instance's .aw is removed", (t) => {
   const fx = fixture(t);
