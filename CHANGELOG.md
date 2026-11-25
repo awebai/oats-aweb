@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Changed: when a setting's path can't be resolved, the retire warning says
+  to retire again, not to remove the entries it left in place (#324).** Each
+  such entry was named with "fix the setting, then remove it", which invited
+  deleting a key that may be a root's, a custody's or a standing identity's:
+  exactly what the retire declined to judge. It now says "fix the setting,
+  then retire again; where a retire can't be rerun, remove it yourself only if
+  no setting names it". A retire with the setting fixed tells the entries
+  apart: it removes this instance's and leaves one a setting names in place.
+  Wording only; the key handling is unchanged.
+
+  **What a deployment must change:** nothing.
+
 - **Fixed: in the mail read (`messaging:mail`), an identity whose `aw whoami`
   gives no alias is reported `identity-unreadable`, not read with an empty
   alias and no error.** aw's `whoami` can give a did with no alias (aw
