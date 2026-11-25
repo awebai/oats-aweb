@@ -118,29 +118,28 @@ export const AW_MINT_REFUSAL_REASONS = new Set(["alias_active", "alias_taken", "
  *  (awid/keys.go LoadSigningKey: "read <path>/signing.key: open ...: no such
  *  file or directory"). The path is matched, never relayed. */
 export const SIGNING_KEY_MISSING = "a signing key aw needs is not on this machine";
-const SIGNING_KEY_MISSING_RE = /\bread \S*signing\.key: open \S*signing\.key: no such file or directory\b/;
+const SIGNING_KEY_MISSING_RE = /\bread [^\n]*?signing\.key: open [^\n]*?signing\.key: no such file or directory\b/;
 
 /** The cause of a failed spawn mint, from a fixed vocabulary only
  *  (awebai/oats-aweb#280). Read from the RAW output, before any scrub: only this
  *  answer leaves, never aw's message or detail, which are free text.
- *   - a missing local key (aw's own words), first: it is the actionable cause;
- *   - else from aw's --json envelope, `{"error":{code, http_status, reason}}`:
- *     `aw error <code>` for a code on AW_MINT_ERROR_CODES, `http <status>`, and
- *     `reason <reason>` for a reason on AW_MINT_REFUSAL_REASONS;
- *   - with no HTTP status, a client-side class from the text: a network or TLS
- *     failure, or a signing key aw could not read;
- *   - with no envelope (aw before 1.36.52), `http <status>` from aw's text,
- *     and its detail's code only when the reason table lists it;
+ *   - a server refusal, by its HTTP status: from aw's --json envelope,
+ *     `{"error":{code, http_status, reason}}`, `aw error <code>` for a code on
+ *     AW_MINT_ERROR_CODES, `http <status>`, and `reason <reason>` for a reason on
+ *     AW_MINT_REFUSAL_REASONS; with no envelope (aw before 1.36.52), `http
+ *     <status>` from aw's text and its detail's code only when the reason table
+ *     lists it. A status wins over every text class, so no words of the
+ *     refusal's message or detail can name another cause;
+ *   - with no status, a client-side cause: a missing local key (aw's own words),
+ *     first, as the actionable one; else the envelope's code, with a network or
+ *     TLS failure or a signing key aw could not read;
  *   - else that the output held none of these. */
 export function mintFailureCause({ stderr, stdout }) {
   const text = `${stderr ?? ""}\n${stdout ?? ""}`;
-  const key = LOCAL_KEY_CAUSES.find(([re]) => re.test(text));
-  if (key) return key[1];
   let error;
   try { error = leadingJsonObject(String(stdout ?? "").trim())?.error; } catch { error = undefined; }
   if (!error || typeof error !== "object" || Array.isArray(error)) error = undefined;
-  const parts = [];
-  if (error && AW_MINT_ERROR_CODES.has(error.code)) parts.push(`aw error ${error.code}`);
+  const code = error && AW_MINT_ERROR_CODES.has(error.code) ? `aw error ${error.code}` : undefined;
   let status = error && Number.isInteger(error.http_status) && error.http_status >= 100 && error.http_status <= 599 ? error.http_status : undefined;
   let reason = error && AW_MINT_REFUSAL_REASONS.has(error.reason) ? error.reason : undefined;
   if (!error) {
@@ -151,18 +150,18 @@ export function mintFailureCause({ stderr, stdout }) {
       const body = text.indexOf("{", http.index);
       if (body >= 0) {
         try {
-          const code = leadingJsonObject(text.slice(body))?.detail?.code;
-          if (AW_MINT_REFUSAL_REASONS.has(code)) reason = code;
+          const detailCode = leadingJsonObject(text.slice(body))?.detail?.code;
+          if (AW_MINT_REFUSAL_REASONS.has(detailCode)) reason = detailCode;
         } catch { /* no JSON body */ }
       }
     }
   }
-  if (status !== undefined) parts.push(`http ${status}`);
-  if (status !== undefined && reason) parts.push(`reason ${reason}`);
-  if (status === undefined) {
-    if (NETWORK_FAILURE_RE.test(text)) parts.push("the aweb service could not be reached: a network or TLS failure");
-    else if (SIGNING_KEY_MISSING_RE.test(text)) parts.push(SIGNING_KEY_MISSING);
-  }
+  if (status !== undefined) return [code, `http ${status}`, reason && `reason ${reason}`].filter(Boolean).join(", ");
+  const key = LOCAL_KEY_CAUSES.find(([re]) => re.test(text));
+  if (key) return key[1];
+  const client = NETWORK_FAILURE_RE.test(text) ? "the aweb service could not be reached: a network or TLS failure"
+    : SIGNING_KEY_MISSING_RE.test(text) ? SIGNING_KEY_MISSING : undefined;
+  const parts = [code, client].filter(Boolean);
   return parts.length ? parts.join(", ") : "no HTTP status, aw error code, missing key or network failure in its output";
 }
 

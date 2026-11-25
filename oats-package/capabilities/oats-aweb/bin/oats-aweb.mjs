@@ -3095,7 +3095,9 @@ if (event === "launch") {
       // An alias refusal aw did not confirm by its code may be another failure whose
       // text only looks like one, after the registration: say so, and answer the
       // intent for retire to settle.
-      if (e.aliasConflict && !refused && intent) fatal(`aw init --join-from failed${e.failureCause ? ` (${e.failureCause})` : ""} with what may be a refusal of alias "${instance}" that aw did not confirm by its code, so whether it registered an identity is unknown and retire settles the recorded mint; spawn with a different --name. Team: ${team}`, { pendingMint: intent });
+      // The class goes in fatal's untruncated tail: the fixed text, with its retire
+      // guidance, keeps the 300 characters whatever the alias's length.
+      if (e.aliasConflict && !refused && intent) fatal(`aw init --join-from failed with what may be a refusal of alias "${instance}" that aw did not confirm by its code, so whether it registered an identity is unknown and retire settles the recorded mint; spawn with a different --name. Team: ${team}`, { pendingMint: intent }, e.failureCause ? `; cause: ${e.failureCause}` : "");
       if (e.aliasConflict) {
         const refusal = `alias "${instance}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
         // A certificate a retire on this host recorded for this alias and team
@@ -3108,8 +3110,8 @@ if (event === "launch") {
       }
       // A failure aw did not confirm as a refusal may follow a registration: the
       // intent stands in the answer's meta, and the message says what that means
-      // (awebai/oats-aweb#280).
-      if (intent && !refused) e.message = `${e.message}; the mint may have happened, so retire settles the recorded mint`;
+      // (awebai/oats-aweb#280), in fatal's untruncated tail.
+      if (intent && !refused) e.mintMayHaveHappened = true;
       throw e;
     }
     // aw exited 0, so it may have written the binding: the intent stays for retire.
@@ -3176,7 +3178,7 @@ if (event === "launch") {
     const pendingJoins = minted ? readProviderTeamsState().pendingJoins : [];
     // No identity recorded: the mint's intent, while it stands, is what retire acts on.
     const pendingMint = minted ? undefined : readPendingMint().intent;
-    fatal(`identity minting failed: ${typeof e?.code === "string" && /^E_[A-Z_]+$/.test(e.code) ? `${e.code}: ` : ""}${e.baseMessage || e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined), Array.isArray(e?.rootNotes) && e.rootNotes.length ? ` | ${e.rootNotes.join(" | ")}` : "");
+    fatal(`identity minting failed: ${typeof e?.code === "string" && /^E_[A-Z_]+$/.test(e.code) ? `${e.code}: ` : ""}${e.baseMessage || e.message || e}`, minted && (joinedTeamsOf(spawnMeta).length || pendingJoins.length) ? { ...minted, ...(joinedTeamsOf(spawnMeta).length ? { joinedTeams: joinedTeamsOf(spawnMeta) } : {}), ...(pendingJoins.length ? { pendingJoins } : {}) } : minted || (pendingMint ? { pendingMint } : undefined), `${e?.mintMayHaveHappened ? "; the mint may have happened, so retire settles the recorded mint" : ""}${Array.isArray(e?.rootNotes) && e.rootNotes.length ? ` | ${e.rootNotes.join(" | ")}` : ""}`);
   }
 } else if (event === "retire") {
   let meta = withProviderTeams(JSON.parse(process.env.OATS_META || "{}"));

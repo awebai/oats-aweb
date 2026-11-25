@@ -59,6 +59,7 @@ test("a missing local key is named from aw's own words, first", () => {
     ["local team controller key for default:example.test was not found: open /home/u/.awid/team-keys/example.test/default.key: no such file or directory", TEAM_KEY_MISSING],
     ["no local controller key for --namespace example.test", NAMESPACE_CONTROLLER_KEY_MISSING],
     ["read /home/u/root/.aw/signing.key: open /home/u/root/.aw/signing.key: no such file or directory", SIGNING_KEY_MISSING],
+    ["read /home/u/my root/.aw/signing.key: open /home/u/my root/.aw/signing.key: no such file or directory", SIGNING_KEY_MISSING],
   ]) {
     assert.equal(mintFailureCause({ stderr: `Error: ${message}`, stdout: envelope({ code: "invite_not_created", message }) }), cause === SIGNING_KEY_MISSING ? `aw error invite_not_created, ${cause}` : cause, message);
     assert.equal(mintFailureCause({ stderr: `Error: ${message}`, stdout: "" }), cause, `${message} (no envelope)`);
@@ -88,7 +89,7 @@ function tempDir(t) {
   return dir;
 }
 
-function fixture(t) {
+function fixture(t, alias = "dev-1") {
   const base = tempDir(t), bin = join(base, "bin");
   mkdirSync(bin);
   writeFileSync(join(bin, "aw"), `#!${process.execPath}
@@ -101,14 +102,14 @@ if (args[0] === "wake") { console.log("ok"); process.exit(0); }
 console.error("unexpected fake aw " + args.join(" ")); process.exit(93);
 `);
   chmodSync(join(bin, "aw"), 0o755);
-  const ws = join(base, "ws"), home = join(ws, "agents", "dev", "instances", "dev-1");
+  const ws = join(base, "ws"), home = join(ws, "agents", "dev", "instances", alias);
   mkdirSync(join(ws, ".aw"), { recursive: true });
   writeFileSync(join(ws, ".aw", "teams.yaml"), `active_team: ${TEAM}\nmemberships:\n    - team_id: ${TEAM}\n      alias: root\n      cert_path: team-certs/default__example.test.pem\n`);
   writeFileSync(join(ws, "oats-local.yaml"), "settings: {}\n");
   mkdirSync(home, { recursive: true });
   const env = {
     HOME: base, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
-    OATS_INSTANCE: "dev-1", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: ws, OATS_RUNTIME: "claude",
+    OATS_INSTANCE: alias, OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_WORKSPACE: ws, OATS_RUNTIME: "claude",
     OATS_DEFAULT_TEAM: "default", OATS_DEFAULT_TEAM_ID: TEAM, OATS_DEFAULT_TEAM_FROM: "deployment",
     OATS_TEAMS: JSON.stringify([{ label: "default", team: TEAM, default: true, from: "local" }]),
     OATS_SETTINGS: JSON.stringify({ root: ws, delivery: "session" }),
@@ -178,7 +179,37 @@ test("a failure whose text only looks like an alias refusal still names its clas
   const fx = fixture(t);
   const r = fx.spawn({ stderr: `Error: registry http 409: conflict ${PROSE}`, stdout: envelope({ code: "http_error", http_status: 409, reason: "registry_operation_in_progress" }) });
   assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.ok(r.warning.startsWith('oats-aweb: aw init --join-from failed (http 409) with what may be a refusal of alias "dev-1" that aw did not confirm by its code'), r.warning);
+  assert.ok(r.warning.startsWith('oats-aweb: aw init --join-from failed with what may be a refusal of alias "dev-1" that aw did not confirm by its code'), r.warning);
+  assert.ok(r.warning.endsWith("; cause: http 409"), r.warning);
   assert.equal(r.doc.meta.pendingMint.alias, "dev-1");
   assert.equal(r.warning.includes(PROSE), false, r.warning);
+});
+
+test("a server refusal's status wins over key or network words in its free text", () => {
+  for (const words of ["no team key for remote-text", "no local controller key for remote-text", "read /x/signing.key: open /x/signing.key: no such file or directory", 'Post "https://x.invalid/v1/a": dial tcp: lookup x.invalid: no such host']) {
+    assert.equal(mintFailureCause({ stderr: "", stdout: JSON.stringify({ error: { code: "http_error", http_status: 503, reason: "registry_operation_in_progress", message: words } }) }), "http 503", `message: ${words}`);
+    assert.equal(mintFailureCause({ stderr: "", stdout: JSON.stringify({ error: { code: "http_error", http_status: 503, detail: words } }) }), "http 503", `detail: ${words}`);
+    assert.equal(mintFailureCause({ stderr: `Error: registry http 500: {"detail":"${words.replace(/"/g, '\\"')}"}`, stdout: "" }), "http 500", `old aw's text: ${words}`);
+  }
+});
+
+// fatal keeps 300 characters of its message: the retire guidance and the class must not be cut.
+const LONG = "a".repeat(64);
+test("with the longest alias, a failure that keeps the intent still says retire settles the recorded mint, and its class", (t) => {
+  const fx = fixture(t, LONG);
+  const r = fx.spawn({ at: "register", stderr: 'Error: Post "https://aweb.example.invalid/v1/x": context deadline exceeded', stdout: JSON.stringify({ error: { code: "certificate_persistence_incomplete", http_status: 503, reason: "team_key_not_current" } }) });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const line = mintLine(r.warning);
+  assert.ok(line.includes("; aw error certificate_persistence_incomplete, http 503, reason team_key_not_current)"), line);
+  assert.ok(line.endsWith("; the mint may have happened, so retire settles the recorded mint"), line);
+  assert.equal(r.doc.meta.pendingMint.alias, LONG);
+});
+
+test("with the longest alias, a failure that only looks like an alias refusal keeps its retire guidance and names its class", (t) => {
+  const fx = fixture(t, LONG);
+  const r = fx.spawn({ stderr: 'Error: conflict: Post "https://x.invalid/v1/a": context deadline exceeded', stdout: JSON.stringify({ error: { code: "outcome_unknown" } }) });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.warning, /retire settles the recorded mint/);
+  assert.ok(r.warning.endsWith("; cause: aw error outcome_unknown, the aweb service could not be reached: a network or TLS failure"), r.warning);
+  assert.equal(r.doc.meta.pendingMint.alias, LONG);
 });
