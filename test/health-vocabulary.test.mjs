@@ -41,6 +41,7 @@ const ROWS = [
   ["grant expiring within 24 h", { readiness: warning("grant-expiring"), grant: { expiresAt: new Date(NOW + 23 * HOUR).toISOString() } }, ["degraded", "oats.grant_expiring", "operator"]],
   ["grant expiring in 3 days is still yes", { readiness: warning("grant-expiring"), grant: { expiresAt: new Date(NOW + 72 * HOUR).toISOString() } }, ["yes", null, null]],
   ...["receive-ownership-unproven", "receive-observation-aged", "receive-observation-unproven"].map((c) => [c, { readiness: warning(c) }, ["degraded", "oats.receive_unproven", "unknown"]]),
+  ["an aged broker inspection is an idle home, superseded by this tick's own session inspect (#332)", { readiness: warning("receive-inspection-aged"), launchPrompts: null, receive: { native: false, receipt: "absent" } }, ["yes", null, null]],
   ["native receive unproven, channel loaded after a confirmed prompt", { readiness: warning("native-receive-unproven") }, ["yes", null, null]],
   ["native receive unproven, approved mode never engages a prompt", { readiness: warning("native-receive-unproven"), launchPrompts: { status: "not-engaged" } }, ["yes", null, null]],
   ["native receive unproven, no record that the channel loaded", { readiness: warning("native-receive-unproven"), launchPrompts: null }, ["unknown", "oats.receive_unknown", "unknown"]],

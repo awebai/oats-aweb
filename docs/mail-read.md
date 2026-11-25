@@ -133,10 +133,22 @@ fails whole
 (`E_MAIL_UNREADABLE`, with `details.identities`) only when no identity could
 be read, or (`E_MAIL_TOO_LARGE`, above) when no answer can fit the bound.
 
+An identity row's `alias` and `identity` may be `""` only where its `error` is
+non-null. With `error: null`, both are non-empty. `team` is always non-empty.
+They are always strings, never absent or `null`. The rule names no error code:
+a client words such a row from its `team` and `error`, and never addresses,
+sends from, replies as or matches on an empty alias or identity. Rows of
+`E_MAIL_UNREADABLE`'s `details.identities` have the same shape. This read gives
+`""` for an identity it could not identify (`identity-missing`,
+`identity-unreadable`); `aw whoami` can give a did with no alias, and that
+identity is `identity-unreadable`, never a made-up alias. (The rule, decided on
+[oats-project/oats#2138](https://github.com/oats-project/oats/issues/2138#issuecomment-7162099672);
+`mailApi` stays 1.)
+
 | error | meaning |
 | --- | --- |
 | `identity-missing` | its identity home is not there |
-| `identity-unreadable` | `aw whoami` failed |
+| `identity-unreadable` | `aw whoami` failed, or gave no alias, or no did or stable id |
 | `no-mail-read` | a grant without the `mail.read` scope, or the server refused the identity's thread list |
 | `threads-unreadable` | `aw mail threads` failed: nothing of this identity was read |
 | `conversation-unreadable` | one conversation could not be read (an E2EE body that won't decrypt, a server error or refusal): its messages are missing, the rest are shown. The row then has `unreadableConversations`, the ids of those conversations (a legacy message without one isn't named); past the 256 KiB bound its tail is dropped first, before any message |

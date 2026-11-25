@@ -14,6 +14,47 @@
 
   **What a deployment must change:** nothing.
 
+- **Fixed: in the mail read (`messaging:mail`), an identity whose `aw whoami`
+  gives no alias is reported `identity-unreadable`, not read with an empty
+  alias and no error.** aw's `whoami` can give a did with no alias (aw
+  1.36.59 leaves `alias` out when neither the team membership nor the address
+  names one), and the read then answered that identity with `alias: ""` and
+  `error: null`. The rule decided on oats-project/oats#2138 is that
+  `identities[].alias` and `identity` may be `""` only where `error` is
+  non-null; with `error: null` both are non-empty, and `team` is always
+  non-empty. An identity whose whoami gives no alias, or a blank one, or no
+  did or stable id, is now `identity-unreadable`, with `alias` and `identity`
+  `""`, and its mail is not read. A test pins that shape, for
+  `identity-missing` too, and docs/mail-read.md states the rule. `mailApi`
+  stays 1. A Desktop whose mail decoder predates that decision still refuses
+  the whole answer when any identity has an empty alias or identity, as it did
+  before this change.
+
+  **What a deployment must change:** nothing.
+
+## 1.49.2 — 2026-11-25
+
+- **Fixed: under session delivery, an idle agent is no longer published as
+  degraded (#332).** Every idle home read `degraded`, `oats.receive_unproven`
+  from about 30 s after the host wake broker last inspected it. The
+  inspection the broker records is its worker's, made at startup and before
+  each delivery (its 5-minute presence check also inspects, but records
+  nothing), so an idle home's recorded inspection ages without any fault. The status publisher
+  already inspects each session itself on every tick, and reads readiness
+  only for a home it found alive, so that older inspection by the broker no
+  longer degrades it. An idle, healthy home now stays `yes`. Everything that
+  is broken still reads with its own reason: a broker that is down or stops
+  reporting, a registration that is missing, stale or paused, a stream or
+  worker that is down, a session that is gone, and a grant condition.
+
+  Readiness now gives each age its own warning. `receive-observation-aged` is
+  only the age of the broker's snapshot, rewritten every 2 s, and still
+  degrades. The new warning `receive-inspection-aged` is the age of the
+  broker's last inspection of the session. `oats readiness` on its own now
+  reports that age under the new code. The threshold is still 30 s.
+
+  **What a deployment must change:** nothing.
+
 ## 1.49.1 — 2026-11-24
 
 - **Fixed: on a case-insensitive filesystem (macOS), paths that spell the home,
