@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.49.3 — 2026-11-25
 
 - **Changed: when a setting's path can't be resolved, the retire warning says
   to retire again, not to remove the entries it left in place (#324).** Each
