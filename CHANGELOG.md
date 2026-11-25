@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.49.3 — 2026-11-25
 
 - **Fixed: in the mail read (`messaging:mail`), an identity whose `aw whoami`
   gives no alias is reported `identity-unreadable`, not read with an empty
