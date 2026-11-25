@@ -4,9 +4,10 @@
 
 - **Fixed: under session delivery, an idle agent is no longer published as
   degraded (#332).** Every idle home read `degraded`, `oats.receive_unproven`
-  from about 30 s after the host wake broker last inspected it. The broker
-  inspects a session at startup and before each delivery, never on a timer,
-  so an idle home's inspection ages without any fault. The status publisher
+  from about 30 s after the host wake broker last inspected it. The
+  inspection the broker records is its worker's, made at startup and before
+  each delivery (its 5-minute presence check also inspects, but records
+  nothing), so an idle home's recorded inspection ages without any fault. The status publisher
   already inspects each session itself on every tick, and reads readiness
   only for a home it found alive, so that older inspection by the broker no
   longer degrades it. An idle, healthy home now stays `yes`. Everything that

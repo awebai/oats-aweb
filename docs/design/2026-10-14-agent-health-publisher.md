@@ -129,9 +129,11 @@ Notes:
   `e2ee-disabled`, `wake-daemon-outdated`, `grant-revoke-*`, the Claude
   channel-policy warnings, and `channel-dev-confirmation`.
 - `receive-inspection-aged` (the broker's last inspection of the session is
-  over 30 s old) is ignored too, and stays `yes` (#332). The broker inspects
-  a session at startup and before each delivery, never on a timer, so an
-  idle home's inspection ages without any fault. Readiness is read only for a
+  over 30 s old) is ignored too, and stays `yes` (#332). The inspection the
+  broker records (`last_inspect_at`) is its worker's, made at startup and
+  before each delivery; its 5-minute presence check also inspects, but
+  records nothing. So an idle home's recorded inspection ages without any
+  fault. Readiness is read only for a
   home that this tick's own `oats session inspect` found alive: the same
   observation, made fresh. A session that is gone reads `no` from that
   inspection (rows 3 to 5). `receive-observation-aged` is now only the age of
