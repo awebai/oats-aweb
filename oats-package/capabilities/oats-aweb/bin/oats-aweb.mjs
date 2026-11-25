@@ -80,7 +80,7 @@ import { IDENTITY_AUTHORITY, checkAuthorityEntry, privateAuthorityModes } from "
 import { identityBooleans } from "../lib/boolean-setting.mjs";
 import { canonicalTeamServerURL } from "../lib/team-server-url.mjs";
 import { AW_BYOT_CREATE, byotCreateAwRefusal } from "../lib/byot-create.mjs";
-import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awAliasRefusal, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
+import { NAMESPACE_CONTROLLER_KEY_MISSING, SERVICE_REFUSED, TEAM_KEY_MISSING, awAliasRefusal, awErrorCode, leadingJsonObject, normalizeAwDomain, serviceDetailCode, mintFailureCause, teamNameTaken, teamServerRecordMissing, withheldFailureCause } from "../lib/aw-failure-cause.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { AW_INVITE_INSPECT, OPTIONAL_INSPECT_TIMEOUT_MS, checkInviteLabel, checkInviteService, inspectInvite, requireInviteInspect } from "../lib/setup-invite.mjs";
 import { selectedTeamKernel, setupUsernameDefault } from '../lib/setup-team-default.mjs';
@@ -186,9 +186,15 @@ const run = (argv, cwd, requested = 45000, { secrets = [], secretSafe = false, f
     // withhold: the output may hold a value that is never printed; the string says why.
     const output = secretSafe || withhold ? "" : scrub(e.stderr).trim();
     // failureDetail: a secretSafe command may still name its sanitized class.
-    const cls = secretSafe && failureDetail ? failureClass({ stderr: scrub(e.stderr), stdout: scrub(e.stdout) }) : "";
+    // "fixed": only a fixed vocabulary, read from the raw output and never any of
+    // its text (the spawn mint, awebai/oats-aweb#280).
+    const cls = !secretSafe || !failureDetail ? ""
+      : failureDetail === "fixed" ? mintFailureCause({ stderr: String(e.stderr ?? ""), stdout: String(e.stdout ?? "") })
+      : failureClass({ stderr: scrub(e.stderr), stdout: scrub(e.stdout) });
     const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? ` (output withheld: this command handles credentials${cls ? `; ${cls}` : ""})` : withhold ? ` (output withheld: ${withhold})` : ""}`);
     err.outcome = outcome;
+    // The sanitized class alone, for a caller that words its own message.
+    if (cls) err.failureCause = cls;
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
     err.stderr = scrub(e.stderr).trim();
@@ -3041,12 +3047,13 @@ if (event === "launch") {
       // (--join-from; --join-team always, so aw never picks among the root's
       // memberships), accepts it into this home and connects the workspace. The
       // invite token never reaches this hook or any argv. It still handles a
-      // credential, so neither its output nor its diagnostics may reach a log.
+      // credential, so neither its output nor its diagnostics may reach a log: its
+      // failure names a cause from a fixed vocabulary only (awebai/oats-aweb#280).
       // The service comes from the invite: no ambient locator, key or role
       // reaches the new identity.
       // 120 s: a mint on a slow or flapping link is slow, not broken; a killed
       // mint that completed server-side is caught below.
-      raw = parseSecretJson(run(["aw", "init", flagEq("--join-from", root), flagEq("--join-team", team), flagEq("--name", instance), "--json", "--do-not-touch-agents-md"], home, JOIN_TIMEOUT_MS, { secretSafe: true }), "aw init --join-from");
+      raw = parseSecretJson(run(["aw", "init", flagEq("--join-from", root), flagEq("--join-team", team), flagEq("--name", instance), "--json", "--do-not-touch-agents-md"], home, JOIN_TIMEOUT_MS, { secretSafe: true, failureDetail: "fixed" }), "aw init --join-from");
     } catch (e) {
       // The mint may have completed after the CLI was killed or reported a
       // failure: if the home now holds a bound identity, that identity EXISTS
@@ -3088,7 +3095,7 @@ if (event === "launch") {
       // An alias refusal aw did not confirm by its code may be another failure whose
       // text only looks like one, after the registration: say so, and answer the
       // intent for retire to settle.
-      if (e.aliasConflict && !refused && intent) fatal(`aw init --join-from failed with what may be a refusal of alias "${instance}" that aw did not confirm by its code, so whether it registered an identity is unknown and retire settles the recorded mint; spawn with a different --name. Team: ${team}`, { pendingMint: intent });
+      if (e.aliasConflict && !refused && intent) fatal(`aw init --join-from failed${e.failureCause ? ` (${e.failureCause})` : ""} with what may be a refusal of alias "${instance}" that aw did not confirm by its code, so whether it registered an identity is unknown and retire settles the recorded mint; spawn with a different --name. Team: ${team}`, { pendingMint: intent });
       if (e.aliasConflict) {
         const refusal = `alias "${instance}" already holds a certificate on this team, so no identity could be minted: another machine's instance has that name, or a retired one still holds it; spawn with a different --name. Team: ${team}`;
         // A certificate a retire on this host recorded for this alias and team
@@ -3099,6 +3106,10 @@ if (event === "launch") {
         if (!hasRetiredCertificateFor(team, instance)) fatal(refusal);
         out({ warning: `oats-aweb: ${refusal}; this host's record names a certificate a retire left for that alias and team: see \`oats aweb roster\`, which shows the team controller's command to remove it only after checking the member's presence` }, 1);
       }
+      // A failure aw did not confirm as a refusal may follow a registration: the
+      // intent stands in the answer's meta, and the message says what that means
+      // (awebai/oats-aweb#280).
+      if (intent && !refused) e.message = `${e.message}; the mint may have happened, so retire settles the recorded mint`;
       throw e;
     }
     // aw exited 0, so it may have written the binding: the intent stays for retire.

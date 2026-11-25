@@ -89,6 +89,83 @@ export function withheldFailureCause({ stderr, stdout }) {
   return "no HTTP status, aw error code or network failure in its output";
 }
 
+/** The `error.code` values of aw's --json envelope that the spawn mint
+ *  (`aw init --join-from ... --join-team ... --name ... --json`) may name
+ *  (awebai/oats-aweb#280). The list is the codes that mint can produce, traced
+ *  by aweb's maintainers against aw 1.36.59: aw's own refusals, its hosted invite
+ *  preview's and its accept certificate check's. aw's codes are a published
+ *  contract (aw docs/cli-integration-contract.md), so naming one relays nothing.
+ *  `http_error` and `error` name no class: the status and reason say more. Any
+ *  other code is not named. */
+export const AW_MINT_ERROR_CODES = new Set([
+  "invite_not_created", "alias_conflict", "outcome_unknown", "unknown_or_invalid",
+  "native_agent_signature_pending", "invite_already_used", "invite_unknown_or_expired",
+  "invite_issuance_pending", "certificate_persistence_incomplete", "team_name_unconfirmed",
+  "expired_or_revoked", "exhausted", "server_unreachable",
+  "certificate_invalid", "certificate_revoked", "team_key_not_current",
+]);
+
+/** The `error.reason` values (the server's or registry's own refusal code, as aw
+ *  carries it) that the spawn mint may name (awebai/oats-aweb#280), as aweb's
+ *  maintainers traced that mint. Server reasons are an open vocabulary and remote
+ *  text, so a reason is named only when this table lists it: any other shows as
+ *  the HTTP status alone. Left out on purpose: a reason that tells another
+ *  holder's custody mode, and any reason this mint does not reach or aw flattens. */
+export const AW_MINT_REFUSAL_REASONS = new Set(["alias_active", "alias_taken", "alias_mismatch", "team_key_not_current"]);
+
+/** A signing key aw needs that it could not read: the root's (to sign the
+ *  invite) or the new member's, as aw words a missing key file
+ *  (awid/keys.go LoadSigningKey: "read <path>/signing.key: open ...: no such
+ *  file or directory"). The path is matched, never relayed. */
+export const SIGNING_KEY_MISSING = "a signing key aw needs is not on this machine";
+const SIGNING_KEY_MISSING_RE = /\bread \S*signing\.key: open \S*signing\.key: no such file or directory\b/;
+
+/** The cause of a failed spawn mint, from a fixed vocabulary only
+ *  (awebai/oats-aweb#280). Read from the RAW output, before any scrub: only this
+ *  answer leaves, never aw's message or detail, which are free text.
+ *   - a missing local key (aw's own words), first: it is the actionable cause;
+ *   - else from aw's --json envelope, `{"error":{code, http_status, reason}}`:
+ *     `aw error <code>` for a code on AW_MINT_ERROR_CODES, `http <status>`, and
+ *     `reason <reason>` for a reason on AW_MINT_REFUSAL_REASONS;
+ *   - with no HTTP status, a client-side class from the text: a network or TLS
+ *     failure, or a signing key aw could not read;
+ *   - with no envelope (aw before 1.36.52), `http <status>` from aw's text,
+ *     and its detail's code only when the reason table lists it;
+ *   - else that the output held none of these. */
+export function mintFailureCause({ stderr, stdout }) {
+  const text = `${stderr ?? ""}\n${stdout ?? ""}`;
+  const key = LOCAL_KEY_CAUSES.find(([re]) => re.test(text));
+  if (key) return key[1];
+  let error;
+  try { error = leadingJsonObject(String(stdout ?? "").trim())?.error; } catch { error = undefined; }
+  if (!error || typeof error !== "object" || Array.isArray(error)) error = undefined;
+  const parts = [];
+  if (error && AW_MINT_ERROR_CODES.has(error.code)) parts.push(`aw error ${error.code}`);
+  let status = error && Number.isInteger(error.http_status) && error.http_status >= 100 && error.http_status <= 599 ? error.http_status : undefined;
+  let reason = error && AW_MINT_REFUSAL_REASONS.has(error.reason) ? error.reason : undefined;
+  if (!error) {
+    // No envelope: aw's text names a server refusal as `http <status>: <body>`.
+    const http = /\bhttp (\d{3})\b/.exec(text);
+    if (http) {
+      status = Number(http[1]);
+      const body = text.indexOf("{", http.index);
+      if (body >= 0) {
+        try {
+          const code = leadingJsonObject(text.slice(body))?.detail?.code;
+          if (AW_MINT_REFUSAL_REASONS.has(code)) reason = code;
+        } catch { /* no JSON body */ }
+      }
+    }
+  }
+  if (status !== undefined) parts.push(`http ${status}`);
+  if (status !== undefined && reason) parts.push(`reason ${reason}`);
+  if (status === undefined) {
+    if (NETWORK_FAILURE_RE.test(text)) parts.push("the aweb service could not be reached: a network or TLS failure");
+    else if (SIGNING_KEY_MISSING_RE.test(text)) parts.push(SIGNING_KEY_MISSING);
+  }
+  return parts.length ? parts.join(", ") : "no HTTP status, aw error code, missing key or network failure in its output";
+}
+
 /** Why aw refused a hosted username, as a plain sentence for the person who
  *  chose it, by aw's reason word (the service's check-username `reason`). */
 export const USERNAME_UNAVAILABLE_CAUSES = {
