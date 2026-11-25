@@ -29,6 +29,9 @@ import { awArgvCheckSource, awGrammar } from "./aw-argv.mjs";
 //   FAKE_JOIN_FROM_FAIL_AFTER_REGISTER  the certificate cannot be saved after the registration: aw fails with this text
 //   FAKE_JOIN_FROM_LATE        the home is written, then the command fails
 //   FAKE_JOIN_FROM_GARBAGE     exit 0 with output that is not JSON
+//   FAKE_JOIN_FROM_FAIL        a JSON object {at, status, stderr, stdout}: aw fails with exactly
+//                              that output and exit status, at "invite" (before the key is
+//                              written) or "register" (after it); awebai/oats-aweb#280
 //   FAKE_JOIN_FROM_HANG        the home is written, then the command hangs
 //   FAKE_JOIN_FROM_REGISTER_FIRST  NOT aw 1.36.58's order: the member is registered
 //                              before any local file is written, then the command
@@ -47,6 +50,14 @@ function joinFromImplementation(args) {
   for (const name of ["signing.key", "identity.yaml", "team-certs", "workspace.yaml"]) {
     if (fs.existsSync(path.join(aw, name))) { console.error("Error: refusing to overwrite existing " + path.join(aw, name)); process.exit(2); }
   }
+  const failAt = (step) => {
+    const f = process.env.FAKE_JOIN_FROM_FAIL ? JSON.parse(process.env.FAKE_JOIN_FROM_FAIL) : undefined;
+    if (!f || (f.at || "register") !== step) return;
+    if (f.stderr) process.stderr.write(f.stderr + "\n");
+    if (f.stdout) process.stdout.write(f.stdout + "\n");
+    process.exit(f.status ?? 1);
+  };
+  failAt("invite");
   // 2. The invite, from the root.
   if (process.env.FAKE_JOIN_FROM_NOT_MEMBER || !fs.existsSync(path.join(root, ".aw"))) {
     console.error("Error: create invite for " + team + " from " + root + ": 403 forbidden: not a member of the team; alternatively use --admission-team-id " + team + " with host authorization");
@@ -80,6 +91,7 @@ function joinFromImplementation(args) {
   fs.writeFileSync(path.join(aw, "signing.key"), pem, { mode: 0o600 });
   if (process.env.FAKE_JOIN_FROM_STOP_AFTER === "key") hang();
   // 4. The registration, and its refusals.
+  failAt("register");
   if (process.env.FAKE_JOIN_FROM_PREVIEW) { console.log(JSON.stringify({ error: { code: "unknown_or_invalid", message: "unknown_or_invalid: Invite is unknown or invalid, or this service does not support invite preview. TOKEN-SHOULD-NOT-LEAK" } })); process.exit(1); }
   // aw prints a failure on stderr and, under --json, its error envelope on stdout (cmd/aw/root.go reportCLIError).
   const refuse = (text, error) => { console.error(text); console.log(JSON.stringify({ error: { ...error, message: text } })); process.exit(1); };

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Fixed: a failed spawn mint names its cause (#280).** When `aw init
+  --join-from` failed, the spawn reported only "aw init failed (exit 1)"
+  with its output withheld, so the operator couldn't tell why. The message
+  now names the cause from a fixed vocabulary and still relays none of aw's
+  output. The hook reads aw's `--json` error code from the mint's
+  allow-list, the HTTP status, and the server's reason from a short
+  allow-list; a reason off the list shows as the status alone. It never reads
+  the error's `message` or `detail`. A failure on the client side, with no
+  server refusal, names a key aw needs that is not on this machine (the team
+  key, the namespace controller key, or a signing key, which is new), or a
+  network or TLS failure. When the mint's intent is kept, the message also
+  says that the mint may have happened, so retire settles the recorded mint.
+  A failure that only reads like an alias refusal now names its class too.
+  The hook's exit status, meta and warning prefix are unchanged; only the
+  message gains the class. Tests pin each class, and one checks that no
+  token, key, argv value or aw prose reaches the answer.
+
+  **What a deployment must change:** nothing.
+
 - **Fixed: in the mail read (`messaging:mail`), an identity whose `aw whoami`
   gives no alias is reported `identity-unreadable`, not read with an empty
   alias and no error.** aw's `whoami` can give a did with no alias (aw

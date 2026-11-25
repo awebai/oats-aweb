@@ -866,7 +866,8 @@ test("alias conflict remedy names --name, with no kernel version", async (t) => 
   const result = await run(["spawn"], { PATH: fake.path, OATS_EVENT: "spawn", OATS_HOME: home, OATS_INSTANCE_HOME: home, OATS_INSTANCE: "developer-api-1", OATS_WORKSPACE: root, OATS_DEFAULT_TEAM: "active", OATS_DEFAULT_TEAM_ID: "active:example.invalid", OATS_DEFAULT_TEAM_FROM: "deployment", OATS_SETTINGS: JSON.stringify({ root }) }, home);
   assert.notEqual(result.code, 0, result.stdout);
   const warning = JSON.parse(result.stdout).warning;
-  assert.match(warning, /; spawn with a different --name\. Team: active:example\.invalid$/);
+  // The withheld output's class follows the fixed text, in fatal's untruncated tail (#280).
+  assert.match(warning, /; spawn with a different --name\. Team: active:example\.invalid; cause: no HTTP status, aw error code, missing key or network failure in its output$/);
   assert.doesNotMatch(warning, /kernels?|0\.26|aweb-abim|fresh --purpose/);
 });
 

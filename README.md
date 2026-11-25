@@ -2018,6 +2018,20 @@ failure that only reads like an alias refusal keeps the intent. A home that alre
 identity material gets no intent, since aw refuses it before doing anything.
 Any other failed mint answers `pendingMint` in its meta.
 
+A failed mint's output stays withheld, and its message names the cause from a
+fixed vocabulary only (awebai/oats-aweb#280). The hook reads three fields of
+aw's `--json` error answer: `code`, `http_status` and `reason`. It never reads
+`message` or `detail`, which are free text. An aw code that this mint can
+produce reads `aw error <code>`. A server refusal reads `http <status>`, and
+`reason <reason>` follows it when the reason is on the mint's short list. Any
+other reason shows as the status alone. A failure with no server refusal names
+one of these instead: a key aw needs that is not on this machine (the team key,
+the namespace controller key or a signing key), or an unreachable service (a
+network or TLS failure). Otherwise it says that the output held none of these.
+When the hook keeps the intent, the message adds that the mint may have
+happened, so retire settles the recorded mint. The hook still exits 1, with the
+same `identity minting failed` warning as before.
+
 Retire acts on an intent, from the home or from that meta, only when the home
 holds no bound identity. A home that aw bound (it wrote `workspace.yaml`) is
 self-deleted as usual. Otherwise retire reads `aw id team members
