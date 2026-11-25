@@ -216,6 +216,44 @@ test('errors are per identity; the read fails whole only when no identity can be
   await assert.rejects(read({}, { identities: [{ team: 'acme', identityHome: undefined, primary: true }] }), { code: 'E_MAIL_UNREADABLE' });
 });
 
+test('an identity row with an error may have alias and identity "", never absent or null; with no error both are non-empty; team is always non-empty (oats#2138)', async () => {
+  // whoami: unreadable, a did with no alias (aw 1.36.59 omits an empty alias), a blank alias, an alias with no did or stable id.
+  const homes = { noAlias: '/fixture/h/no-alias/.aw', blank: '/fixture/h/blank/.aw', noId: '/fixture/h/no-id/.aw', fails: '/fixture/h/fails/.aw' };
+  const identities = [
+    { team: 'acme', identityHome: H1, primary: true },
+    { team: 'alpha', identityHome: homes.noAlias, primary: false },
+    { team: 'beta', identityHome: homes.blank, primary: false },
+    { team: 'gamma', identityHome: homes.noId, primary: false },
+    { team: 'delta', identityHome: homes.fails, primary: false },
+    { team: 'eps', identityHome: '/gone/.aw', primary: false },
+    { team: 'zeta', identityHome: undefined, primary: false },
+  ];
+  const r = await read({
+    [H1]: { whoami: ME, threads: [[thread('c1', 5)]], conversations: { c1: [msg('m1', 5)] } },
+    [homes.noAlias]: { whoami: { did: 'did:key:z6MkNoAlias', stable_id: 'did:aw:noalias', address: '' }, threads: [[thread('x1', 9)]], conversations: { x1: [msg('x', 9, { conversation: 'x1' })] } },
+    [homes.blank]: { whoami: { did: 'did:key:z6MkBlank', alias: '  ' } },
+    [homes.noId]: { whoami: { alias: 'dev-9', did: ' ' } },
+    [homes.fails]: {},
+  }, { identities, exists: (p) => !p.startsWith('/gone') });
+  const rows = r.result.mail.identities;
+  const { missing, unreadable } = MAIL_IDENTITY_ERRORS;
+  assert.deepEqual(rows.map((i) => [i.team, i.alias, i.identity, i.error]), [
+    ['acme', 'dev-1', 'did:aw:me', null],
+    ['alpha', '', '', unreadable], ['beta', '', '', unreadable], ['gamma', '', '', unreadable], ['delta', '', '', unreadable],
+    ['eps', '', '', missing], ['zeta', '', '', missing],
+  ]);
+  for (const row of rows) {
+    assert.ok(typeof row.team === 'string' && row.team !== '', 'team is always non-empty');
+    assert.ok(typeof row.alias === 'string' && typeof row.identity === 'string', 'alias and identity are strings, never absent or null');
+    if (row.error === null) assert.ok(row.alias.trim() && row.identity.trim(), 'with no error, alias and identity are non-empty');
+  }
+  assert.deepEqual(r.result.mail.messages.map((m) => m.id), ['m1'], 'an identity with no alias is not read');
+  assert.ok(!r.calls.some((c) => c[0] !== H1 && c[1] === 'mail'), 'only the readable identity is asked for mail');
+  // When no identity can be read, the refusal's rows have the same shape.
+  await assert.rejects(read({ [homes.noAlias]: { whoami: { did: 'did:key:z6MkNoAlias' } } }, { identities: [{ team: 'alpha', identityHome: homes.noAlias, primary: true }] }),
+    (e) => e.code === 'E_MAIL_UNREADABLE' && JSON.stringify(e.details.identities) === JSON.stringify([{ team: 'alpha', alias: '', identity: '', primary: true, error: unreadable }]));
+});
+
 test('a read past its conversation budget answers only what it can prove is newest', async () => {
   const threads = Array.from({ length: 20 }, (_, i) => thread(`c${i}`, 59 - i));
   const conversations = Object.fromEntries(threads.map((t, i) => [t.conversation_id, [msg(`m${i}`, 0, { conversation: t.conversation_id, created_at: iso(0) })]]));

@@ -302,8 +302,14 @@ export async function readMail({
     if (!state.row.identityHome || !exists(state.row.identityHome)) { setError(state, MAIL_IDENTITY_ERRORS.missing); return; }
     const r = await run(state, ['whoami', '--json']);
     const who = r.status === 0 ? parseJson(r.stdout) : undefined;
-    if (!who || typeof who !== 'object' || (!str(who.did) && !str(who.stable_id))) { setError(state, MAIL_IDENTITY_ERRORS.unreadable); return; }
-    state.self = { did: str(who.did), stableId: str(who.stable_id), alias: str(who.alias), address: strOrNull(who.address), identity: identityOf(who.stable_id, who.did) };
+    // An identity row with no error names its alias and identity, both
+    // non-empty (oats#2138). aw's whoami can give a did with no alias (aw
+    // 1.36.59: `alias` is omitempty, from the membership or the address's
+    // handle, awconfig/selection.go:196,242,302), so that identity is
+    // unreadable here: never a made-up alias, never an empty one with no error.
+    const alias = strOrNull(who?.alias), identity = strOrNull(identityOf(who?.stable_id, who?.did));
+    if (!alias || !identity) { setError(state, MAIL_IDENTITY_ERRORS.unreadable); return; }
+    state.self = { did: str(who.did), stableId: str(who.stable_id), alias, address: strOrNull(who.address), identity };
     if (Array.isArray(who.grant_scopes) && !who.grant_scopes.includes('mail.read')) setError(state, MAIL_IDENTITY_ERRORS.noMailRead);
   }));
   const live = () => states.filter((s) => s.self && s.error !== MAIL_IDENTITY_ERRORS.noMailRead);
