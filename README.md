@@ -1426,9 +1426,13 @@ and where to set it. The provider settings are:
   Observation age, absent optional inspection evidence and an inspection in
   progress warn without making otherwise satisfied prerequisites unavailable.
   The 30-second threshold only labels old evidence with its age; it is not a
-  readiness gate, broker guarantee or command timeout. Quiet workers inspect at
-  startup and on events, so their observations can age without a transport
-  failure. Missing observation evidence is unproven, never an invented
+  readiness gate, broker guarantee or command timeout. Each age has its own
+  warning. `receive-observation-aged` is the age of the broker's snapshot,
+  which the broker rewrites every 2 s. `receive-inspection-aged` is the age of
+  its last inspection of the session. Quiet workers inspect at startup and on
+  events, so an idle home's inspection ages without a transport failure; the
+  health publisher, which inspects the session itself on every tick, does not
+  count it against the home. Missing observation evidence is unproven, never an invented
   successful inspection. Supplied timestamps must still be valid, nonfuture
   and consistently ordered; malformed or contradictory status is a problem.
   A supplied malformed `status.updated_at` reports
