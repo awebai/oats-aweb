@@ -128,6 +128,15 @@ Notes:
 - Warnings that do not affect receive are ignored and stay `yes`:
   `e2ee-disabled`, `wake-daemon-outdated`, `grant-revoke-*`, the Claude
   channel-policy warnings, and `channel-dev-confirmation`.
+- `receive-inspection-aged` (the broker's last inspection of the session is
+  over 30 s old) is ignored too, and stays `yes` (#332). The broker inspects
+  a session at startup and before each delivery, never on a timer, so an
+  idle home's inspection ages without any fault. Readiness is read only for a
+  home that this tick's own `oats session inspect` found alive: the same
+  observation, made fresh. A session that is gone reads `no` from that
+  inspection (rows 3 to 5). `receive-observation-aged` is now only the age of
+  the broker's snapshot, which the broker rewrites every 2 s, so row 22 still
+  makes it `degraded`.
 - `reason.text` and `fixing.text` come from a fixed phrase table per code and
   language. A readiness message never reaches the document, because it carries
   paths and hostnames.

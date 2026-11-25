@@ -762,14 +762,15 @@ test('observation-age warning boundaries, quiet workers and timing skew use an i
   for(const elapsed of [0,29999,30000]) assert.deepEqual(evaluate(observed+elapsed),{problems:[],warnings:[]},String(elapsed));
   let answer=evaluate(observed+30001);
   assert.deepEqual(answer.problems,[]);
-  assert.ok(answer.warnings.some(w=>w.code==='receive-observation-aged'));
+  assert.deepEqual(answer.warnings.map(w=>w.code),['receive-observation-aged','receive-inspection-aged'],'each age has its own code');
+  assert.match(answer.warnings[0].message,/broker snapshot observation is 30 seconds old/);
   status.updated_at=new Date(observed+30001).toISOString();
   answer=evaluate(observed+30001);
   assert.deepEqual(answer.problems,[],'new snapshot with quiet old observation remains configured route ready');
-  assert.ok(answer.warnings.some(w=>w.code==='receive-observation-aged'),'fresh snapshot cannot freshen the observation');
+  assert.deepEqual(answer.warnings.map(w=>w.code),['receive-inspection-aged'],'fresh snapshot cannot freshen the inspection, and is not itself aged');
   // A prospective 30s poll plus inspection/jitter may exceed the warning
   // threshold. This changes the warning, never certifies current liveness.
-  assert.match(answer.warnings.find(w=>w.code==='receive-observation-aged').message,/30(?:\.001|001| seconds)/);
+  assert.match(answer.warnings[0].message,/broker inspection is 30 seconds old/);
   status.instances[0].last_inspect_at=status.updated_at;
   assert.deepEqual(evaluate(observed+30001),{problems:[],warnings:[]});
   assert.equal(evaluate(observed+30000).problems[0].code,'wake-status-stale','future timestamp remains malformed evidence');
@@ -810,7 +811,7 @@ for (const scenario of ['native', 'aged', 'inspect_start', 'legacy']) test(`rout
   }
   const result = fx.readiness();
   assert.equal(result.status, 'ready', JSON.stringify(result));
-  const code = {native:'native-receive-unproven', aged:'receive-observation-aged', inspect_start:'receive-inspection-pending', legacy:'receive-ownership-unproven'}[scenario];
+  const code = {native:'native-receive-unproven', aged:'receive-inspection-aged', inspect_start:'receive-inspection-pending', legacy:'receive-ownership-unproven'}[scenario];
   assert.ok(result.warnings.some(w => w.code === code), JSON.stringify(result));
   assert.deepEqual(result.problems, []);
 });
@@ -1126,7 +1127,7 @@ test('retained worker error reaches session Claude readiness as a warning withou
 // SHA256 02746fda83edbe1ac4bce2aeca1d9b2f30119fb2b6664fb7f6a739f8fffcd60e.
 // Receiving/presentation/public-inspect success is separately peer-reported;
 // the error has no timestamp with which to order it against these observations.
-test('unchanged sanitized peer status warns about retained error and observation age',async()=>{
+test('unchanged sanitized peer status warns about retained error and inspection age',async()=>{
   const {targetReceiveAssessment}=await import('../oats-package/capabilities/oats-aweb/lib/wake-receive.mjs');
   const status=JSON.parse(readFileSync(join(REPO,'test','fixtures','readiness-peer-status-6007169594.json'),'utf8'));
   const expected={home:'/fixture/home',runtimeDelivery:'external-session',primary:'/fixture/home/.aw',bindings:[{identity_home:'/fixture/home/.aw',controls:true,event_classes:[]}]};
@@ -1134,7 +1135,9 @@ test('unchanged sanitized peer status warns about retained error and observation
   const result=targetReceiveAssessment(status,expected,{minimumVersion:'1.36.13',now:Date.parse('2026-10-06T00:58:24.737Z')});
   assert.deepEqual(result.problems,[],JSON.stringify(result));
   assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
-  assert.ok(result.warnings.some(w=>w.code==='receive-observation-aged'));
+  // The peer's snapshot is fresh; its inspection is 42 seconds old (#332).
+  assert.ok(result.warnings.some(w=>w.code==='receive-inspection-aged'));
+  assert.ok(!result.warnings.some(w=>w.code==='receive-observation-aged'));
   assert.deepEqual(status,before);
 });
 

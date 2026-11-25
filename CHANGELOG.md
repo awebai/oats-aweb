@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: under session delivery, an idle agent is no longer published as
+  degraded (#332).** Every idle home read `degraded`, `oats.receive_unproven`
+  from about 30 s after the host wake broker last inspected it. The broker
+  inspects a session at startup and before each delivery, never on a timer,
+  so an idle home's inspection ages without any fault. The status publisher
+  already inspects each session itself on every tick, and reads readiness
+  only for a home it found alive, so that older inspection by the broker no
+  longer degrades it. An idle, healthy home now stays `yes`. Everything that
+  is broken still reads with its own reason: a broker that is down or stops
+  reporting, a registration that is missing, stale or paused, a stream or
+  worker that is down, a session that is gone, and a grant condition.
+
+  Readiness now gives each age its own warning. `receive-observation-aged` is
+  only the age of the broker's snapshot, rewritten every 2 s, and still
+  degrades. The new warning `receive-inspection-aged` is the age of the
+  broker's last inspection of the session. `oats readiness` on its own now
+  reports that age under the new code. The threshold is still 30 s.
+
+  **What a deployment must change:** nothing.
+
 ## 1.49.1 — 2026-11-24
 
 - **Fixed: on a case-insensitive filesystem (macOS), paths that spell the home,

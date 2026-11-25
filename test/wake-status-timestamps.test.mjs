@@ -50,5 +50,7 @@ test('operator daemon 1.36.40 excerpt preserves fractional timestamps and incomp
   const result=assess(augmented,options);
   assert.deepEqual(result.problems,[]);
   assert.ok(result.warnings.some(w=>w.code==='wake-worker-error-retained'));
-  assert.ok(result.warnings.some(w=>w.code==='receive-observation-aged'));
+  // The captured snapshot is fresh; its inspection is two minutes old (#332).
+  assert.ok(result.warnings.some(w=>w.code==='receive-inspection-aged'));
+  assert.ok(!result.warnings.some(w=>w.code==='receive-observation-aged'));
 });

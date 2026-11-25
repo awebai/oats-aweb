@@ -329,6 +329,15 @@ test("a home under session delivery reads no receipt", async () => {
   assert.equal(host.calls.publish[0].document.reachable, "yes");
 });
 
+test("an idle home under session delivery, its broker inspection aged, is published yes; gone, it is published no without reading readiness (#332)", async () => {
+  const idle = { status: "ready", problems: [], warnings: [{ code: "receive-inspection-aged", message: "broker inspection is 600 seconds old" }] };
+  const rows = ["dev-1", "dev-2"].map((name) => { const row = localRow(name); Object.assign(row.capabilityMeta["oats.aweb"], { delivery: "session", runtime: "codex" }); return row; });
+  const host = fakeHost({ rows, ids: idsFor, liveness: { "dev-2": { state: "stopped", lastEvent: "launched" } }, readiness: Object.fromEntries(rows.map((r) => [r.home, idle])) });
+  const result = await publishTick({ settings, now: () => NOW, host });
+  assert.deepEqual(result.published, [{ alias: "dev-1", team: TEAM, reachable: "yes", code: null }, { alias: "dev-2", team: TEAM, reachable: "no", code: "oats.not_running" }]);
+  assert.deepEqual(host.calls.readiness, [rows[0].home], "readiness is read only for the home this tick's session inspect found alive");
+});
+
 test("one home whose observation throws is published unknown, and every other home is still published", async () => {
   const host = fakeHost({ rows: [localRow("dev-1"), localRow("dev-2")], ids: idsFor });
   const liveness = host.liveness;
