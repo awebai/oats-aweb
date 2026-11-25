@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: in the mail read (`messaging:mail`), an identity whose `aw whoami`
+  gives no alias is reported `identity-unreadable`, not read with an empty
+  alias and no error.** aw's `whoami` can give a did with no alias (aw
+  1.36.59 leaves `alias` out when neither the team membership nor the address
+  names one), and the read then answered that identity with `alias: ""` and
+  `error: null`. The rule decided on oats-project/oats#2138 is that
+  `identities[].alias` and `identity` may be `""` only where `error` is
+  non-null; with `error: null` both are non-empty, and `team` is always
+  non-empty. An identity whose whoami gives no alias, or a blank one, or no
+  did or stable id, is now `identity-unreadable`, with `alias` and `identity`
+  `""`, and its mail is not read. A test pins that shape, for
+  `identity-missing` too, and docs/mail-read.md states the rule. `mailApi`
+  stays 1. A Desktop whose mail decoder predates that decision still refuses
+  the whole answer when any identity has an empty alias or identity, as it did
+  before this change.
+
+  **What a deployment must change:** nothing.
+
 ## 1.49.2 — 2026-11-25
 
 - **Fixed: under session delivery, an idle agent is no longer published as
